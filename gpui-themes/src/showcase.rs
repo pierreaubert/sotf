@@ -246,14 +246,12 @@ impl ComponentShowcase {
         VStack::new()
             .spacing(StackSpacing::Md)
             .child(self.section_header("Breadcrumbs"))
-            .child(
-                Breadcrumbs::new().items(vec![
-                    BreadcrumbItem::new("home", "Home").href("#"),
-                    BreadcrumbItem::new("library", "Library").href("#"),
-                    BreadcrumbItem::new("settings", "Settings").href("#"),
-                    BreadcrumbItem::new("current", "Current Page"),
-                ]),
-            )
+            .child(Breadcrumbs::new().items(vec![
+                BreadcrumbItem::new("home", "Home").href("#"),
+                BreadcrumbItem::new("library", "Library").href("#"),
+                BreadcrumbItem::new("settings", "Settings").href("#"),
+                BreadcrumbItem::new("current", "Current Page"),
+            ]))
             .build()
     }
 
@@ -332,105 +330,98 @@ impl Render for ComponentShowcase {
         let bg = self.theme.background.to_rgba();
         let surface = self.theme.surface.to_rgba();
 
-        div()
-            .size_full()
-            .bg(bg)
-            .p_4()
-            .child(
-                div()
-                    .max_w(px(1200.0))
-                    .mx_auto()
+        div().size_full().bg(bg).p_4().child(
+            div().max_w(px(1200.0)).mx_auto().child(
+                VStack::new()
+                    .spacing(StackSpacing::Xl)
+                    // Color swatches first
                     .child(
-                        VStack::new()
-                            .spacing(StackSpacing::Xl)
-                            // Color swatches first
+                        div()
+                            .p_4()
+                            .bg(surface)
+                            .rounded_lg()
+                            .border_1()
+                            .border_color(self.theme.border.to_rgba())
+                            .child(self.render_color_swatches(cx)),
+                    )
+                    // Two column layout for components
+                    .child(
+                        HStack::new()
+                            .spacing(StackSpacing::Lg)
+                            // Left column
                             .child(
-                                div()
-                                    .p_4()
-                                    .bg(surface)
-                                    .rounded_lg()
-                                    .border_1()
-                                    .border_color(self.theme.border.to_rgba())
-                                    .child(self.render_color_swatches(cx)),
+                                div().flex_1().child(
+                                    VStack::new()
+                                        .spacing(StackSpacing::Lg)
+                                        .child(
+                                            div()
+                                                .p_4()
+                                                .bg(surface)
+                                                .rounded_lg()
+                                                .border_1()
+                                                .border_color(self.theme.border.to_rgba())
+                                                .child(self.render_buttons(cx)),
+                                        )
+                                        .child(
+                                            div()
+                                                .p_4()
+                                                .bg(surface)
+                                                .rounded_lg()
+                                                .border_1()
+                                                .border_color(self.theme.border.to_rgba())
+                                                .child(self.render_text(cx)),
+                                        )
+                                        .child(
+                                            div()
+                                                .p_4()
+                                                .bg(surface)
+                                                .rounded_lg()
+                                                .border_1()
+                                                .border_color(self.theme.border.to_rgba())
+                                                .child(self.render_badges(cx)),
+                                        )
+                                        .child(
+                                            div()
+                                                .p_4()
+                                                .bg(surface)
+                                                .rounded_lg()
+                                                .border_1()
+                                                .border_color(self.theme.border.to_rgba())
+                                                .child(self.render_breadcrumbs(cx)),
+                                        )
+                                        .build(),
+                                ),
                             )
-                            // Two column layout for components
+                            // Right column
                             .child(
-                                HStack::new()
-                                    .spacing(StackSpacing::Lg)
-                                    // Left column
-                                    .child(
-                                        div().flex_1().child(
-                                            VStack::new()
-                                                .spacing(StackSpacing::Lg)
-                                                .child(
-                                                    div()
-                                                        .p_4()
-                                                        .bg(surface)
-                                                        .rounded_lg()
-                                                        .border_1()
-                                                        .border_color(self.theme.border.to_rgba())
-                                                        .child(self.render_buttons(cx)),
-                                                )
-                                                .child(
-                                                    div()
-                                                        .p_4()
-                                                        .bg(surface)
-                                                        .rounded_lg()
-                                                        .border_1()
-                                                        .border_color(self.theme.border.to_rgba())
-                                                        .child(self.render_text(cx)),
-                                                )
-                                                .child(
-                                                    div()
-                                                        .p_4()
-                                                        .bg(surface)
-                                                        .rounded_lg()
-                                                        .border_1()
-                                                        .border_color(self.theme.border.to_rgba())
-                                                        .child(self.render_badges(cx)),
-                                                )
-                                                .child(
-                                                    div()
-                                                        .p_4()
-                                                        .bg(surface)
-                                                        .rounded_lg()
-                                                        .border_1()
-                                                        .border_color(self.theme.border.to_rgba())
-                                                        .child(self.render_breadcrumbs(cx)),
-                                                )
-                                                .build(),
-                                        ),
-                                    )
-                                    // Right column
-                                    .child(
-                                        div().flex_1().child(
-                                            VStack::new()
-                                                .spacing(StackSpacing::Lg)
-                                                .child(
-                                                    div()
-                                                        .p_4()
-                                                        .bg(surface)
-                                                        .rounded_lg()
-                                                        .border_1()
-                                                        .border_color(self.theme.border.to_rgba())
-                                                        .child(self.render_alerts(cx)),
-                                                )
-                                                .child(
-                                                    div()
-                                                        .p_4()
-                                                        .bg(surface)
-                                                        .rounded_lg()
-                                                        .border_1()
-                                                        .border_color(self.theme.border.to_rgba())
-                                                        .child(self.render_cards(cx)),
-                                                )
-                                                .build(),
-                                        ),
-                                    )
-                                    .build(),
+                                div().flex_1().child(
+                                    VStack::new()
+                                        .spacing(StackSpacing::Lg)
+                                        .child(
+                                            div()
+                                                .p_4()
+                                                .bg(surface)
+                                                .rounded_lg()
+                                                .border_1()
+                                                .border_color(self.theme.border.to_rgba())
+                                                .child(self.render_alerts(cx)),
+                                        )
+                                        .child(
+                                            div()
+                                                .p_4()
+                                                .bg(surface)
+                                                .rounded_lg()
+                                                .border_1()
+                                                .border_color(self.theme.border.to_rgba())
+                                                .child(self.render_cards(cx)),
+                                        )
+                                        .build(),
+                                ),
                             )
                             .build(),
-                    ),
-            )
+                    )
+                    .build(),
+            ),
+        )
     }
 }

@@ -427,6 +427,381 @@ impl EditorTheme {
         }
     }
 
+    /// Create a high contrast dark theme
+    pub fn high_contrast() -> Self {
+        Self {
+            name: "High Contrast".to_string(),
+
+            background: Color::from_hex(0x000000),
+            background_secondary: Color::from_hex(0x0a0a0a),
+            background_tertiary: Color::from_hex(0x141414),
+            surface: Color::from_hex(0x1a1a1a),
+            surface_hover: Color::from_hex(0x2a2a2a),
+            surface_selected: Color::from_hex(0x3a3a3a),
+
+            text_primary: Color::from_hex(0xffffff),
+            text_secondary: Color::from_hex(0xdddddd),
+            text_muted: Color::from_hex(0x999999),
+            text_disabled: Color::from_hex(0x555555),
+
+            border: Color::from_hex(0x555555),
+            border_focused: Color::from_hex(0x00ffff),
+
+            accent: Color::from_hex(0x00ffff),
+            accent_hover: Color::from_hex(0x33ffff),
+            accent_muted: Color::from_hex(0x006666),
+
+            text_on_accent: Color::from_hex(0x000000),
+            text_on_accent_muted: Color::new(0, 0, 0, 204),
+
+            success: Color::from_hex(0x00ff00),
+            warning: Color::from_hex(0xffff00),
+            error: Color::from_hex(0xff0000),
+            info: Color::from_hex(0x00aaff),
+
+            meter_normal: Color::from_hex(0x00ff00),
+            meter_warning: Color::from_hex(0xffff00),
+            meter_clip: Color::from_hex(0xff0000),
+
+            button_mute_active: Color::from_hex(0xff0000),
+            button_solo_active: Color::from_hex(0xffff00),
+            button_dim_active: Color::from_hex(0x0088ff),
+
+            progress_bar_bg: Color::from_hex(0x333333),
+            progress_bar_fill: Color::from_hex(0x00ffff),
+
+            toast_success_bg: Color::from_hex(0x003300),
+            toast_error_bg: Color::from_hex(0x330000),
+            toast_info_bg: Color::from_hex(0x003333),
+            toast_warning_bg: Color::from_hex(0x333300),
+
+            plugin_colors: PluginColors {
+                eq: Color::from_hex(0x0088ff),
+                gain: Color::from_hex(0x00ff00),
+                upmixer: Color::from_hex(0xaa00ff),
+                compressor: Color::from_hex(0xff0000),
+                limiter: Color::from_hex(0xff6600),
+                gate: Color::from_hex(0xffaa00),
+                loudness: Color::from_hex(0x00aaff),
+                binaural: Color::from_hex(0xff00aa),
+                convolution: Color::from_hex(0x6600ff),
+                monitor: Color::from_hex(0x00ffaa),
+                spectrum: Color::from_hex(0xaa00ff),
+                mute_solo: Color::from_hex(0x8888ff),
+            },
+            graph_colors: GraphColors {
+                input: Color::from_hex(0x8888ff),
+                target: Color::from_hex(0x00ff00),
+                filter_response: Color::from_hex(0xffaa00),
+                corrected: Color::from_hex(0x0088ff),
+                error: Color::from_hex(0xff0000),
+                deviation: Color::from_hex(0xaa00ff),
+                grid: Color::new(255, 255, 255, 40),
+                secondary_line: Color::from_hex(0xcccccc),
+                directivity_er: Color::from_hex(0xff66cc),
+                directivity_sp: Color::from_hex(0xcc66ff),
+            },
+            band_colors: vec![
+                Color::from_hex(0xff0000),
+                Color::from_hex(0xff6600),
+                Color::from_hex(0xffaa00),
+                Color::from_hex(0x00ff00),
+                Color::from_hex(0x00ffaa),
+                Color::from_hex(0x0088ff),
+                Color::from_hex(0xaa00ff),
+                Color::from_hex(0xff00aa),
+                Color::from_hex(0x8888ff),
+                Color::from_hex(0x00aaff),
+                Color::from_hex(0xcccccc),
+            ],
+            eq_curve_colors: EQCurveColors {
+                background: Color::from_hex(0x000000),
+                grid: Color::new(255, 255, 255, 60),
+                curve_boost: Color::from_hex(0x00ff00),
+                curve_cut: Color::from_hex(0xff0000),
+                fill_boost: Color::new(0, 255, 0, 80),
+                fill_cut: Color::new(255, 0, 0, 80),
+                zero_line: Color::new(255, 255, 255, 100),
+            },
+            spectrum_colors: SpectrumColors {
+                background: Color::from_hex(0x000000),
+                bass: Color::from_hex(0x00ff00),
+                mids: Color::from_hex(0xffaa00),
+                treble: Color::from_hex(0xff0000),
+            },
+            meter_colors: MeterColors {
+                background: Color::from_hex(0x000000),
+                normal: Color::from_hex(0x00ff00),
+                warning: Color::from_hex(0xffff00),
+                clip: Color::from_hex(0xff0000),
+                peak: Color::from_hex(0xffffff),
+                text: Color::from_hex(0xdddddd),
+            },
+
+            peak_indicator: Color::from_hex(0xffffff),
+            drag_over_highlight: Color::new(0, 255, 255, 80),
+            drag_over_border: Color::from_hex(0x00ffff),
+            neutral_indicator: Color::from_hex(0x8888ff),
+            warning_background: Color::new(255, 255, 0, 60),
+            knob_color: Color::from_hex(0xffffff),
+            optimization_color: Color::from_hex(0xaa00ff),
+            grid_color: Color::new(255, 255, 255, 40),
+
+            separator_size: 20.0,
+            font_family: ".SystemUI".to_string(),
+        }
+    }
+
+    /// Create a Nord theme
+    pub fn nord() -> Self {
+        Self {
+            name: "Nord".to_string(),
+
+            background: Color::from_hex(0x2e3440),
+            background_secondary: Color::from_hex(0x3b4252),
+            background_tertiary: Color::from_hex(0x434c5e),
+            surface: Color::from_hex(0x3b4252),
+            surface_hover: Color::from_hex(0x434c5e),
+            surface_selected: Color::from_hex(0x4c566a),
+
+            text_primary: Color::from_hex(0xeceff4),
+            text_secondary: Color::from_hex(0xd8dee9),
+            text_muted: Color::from_hex(0x81a1c1),
+            text_disabled: Color::from_hex(0x4c566a),
+
+            border: Color::from_hex(0x4c566a),
+            border_focused: Color::from_hex(0x88c0d0),
+
+            accent: Color::from_hex(0x88c0d0),
+            accent_hover: Color::from_hex(0x8fbcbb),
+            accent_muted: Color::from_hex(0x5e81ac),
+
+            text_on_accent: Color::from_hex(0x2e3440),
+            text_on_accent_muted: Color::new(46, 52, 64, 204),
+
+            success: Color::from_hex(0xa3be8c),
+            warning: Color::from_hex(0xebcb8b),
+            error: Color::from_hex(0xbf616a),
+            info: Color::from_hex(0x81a1c1),
+
+            meter_normal: Color::from_hex(0xa3be8c),
+            meter_warning: Color::from_hex(0xebcb8b),
+            meter_clip: Color::from_hex(0xbf616a),
+
+            button_mute_active: Color::from_hex(0xbf616a),
+            button_solo_active: Color::from_hex(0xebcb8b),
+            button_dim_active: Color::from_hex(0x5e81ac),
+
+            progress_bar_bg: Color::from_hex(0x4c566a),
+            progress_bar_fill: Color::from_hex(0x88c0d0),
+
+            toast_success_bg: Color::from_hex(0x3e4f41),
+            toast_error_bg: Color::from_hex(0x4a3638),
+            toast_info_bg: Color::from_hex(0x38445a),
+            toast_warning_bg: Color::from_hex(0x4c4639),
+
+            plugin_colors: PluginColors {
+                eq: Color::from_hex(0x5e81ac),
+                gain: Color::from_hex(0xa3be8c),
+                upmixer: Color::from_hex(0xb48ead),
+                compressor: Color::from_hex(0xbf616a),
+                limiter: Color::from_hex(0xd08770),
+                gate: Color::from_hex(0xebcb8b),
+                loudness: Color::from_hex(0x88c0d0),
+                binaural: Color::from_hex(0xb48ead),
+                convolution: Color::from_hex(0x81a1c1),
+                monitor: Color::from_hex(0x8fbcbb),
+                spectrum: Color::from_hex(0xb48ead),
+                mute_solo: Color::from_hex(0x5e81ac),
+            },
+            graph_colors: GraphColors {
+                input: Color::from_hex(0x5e81ac),
+                target: Color::from_hex(0xa3be8c),
+                filter_response: Color::from_hex(0xebcb8b),
+                corrected: Color::from_hex(0x81a1c1),
+                error: Color::from_hex(0xbf616a),
+                deviation: Color::from_hex(0xb48ead),
+                grid: Color::new(216, 222, 233, 30),
+                secondary_line: Color::from_hex(0xd8dee9),
+                directivity_er: Color::from_hex(0xb48ead),
+                directivity_sp: Color::from_hex(0x81a1c1),
+            },
+            band_colors: vec![
+                Color::from_hex(0xbf616a),
+                Color::from_hex(0xd08770),
+                Color::from_hex(0xebcb8b),
+                Color::from_hex(0xa3be8c),
+                Color::from_hex(0x8fbcbb),
+                Color::from_hex(0x88c0d0),
+                Color::from_hex(0x81a1c1),
+                Color::from_hex(0x5e81ac),
+                Color::from_hex(0xb48ead),
+                Color::from_hex(0x88c0d0),
+                Color::from_hex(0x4c566a),
+            ],
+            eq_curve_colors: EQCurveColors {
+                background: Color::from_hex(0x2e3440),
+                grid: Color::new(216, 222, 233, 40),
+                curve_boost: Color::from_hex(0xa3be8c),
+                curve_cut: Color::from_hex(0xbf616a),
+                fill_boost: Color::new(163, 190, 140, 64),
+                fill_cut: Color::new(191, 97, 106, 64),
+                zero_line: Color::new(216, 222, 233, 80),
+            },
+            spectrum_colors: SpectrumColors {
+                background: Color::from_hex(0x2e3440),
+                bass: Color::from_hex(0xa3be8c),
+                mids: Color::from_hex(0xebcb8b),
+                treble: Color::from_hex(0xbf616a),
+            },
+            meter_colors: MeterColors {
+                background: Color::from_hex(0x2e3440),
+                normal: Color::from_hex(0xa3be8c),
+                warning: Color::from_hex(0xebcb8b),
+                clip: Color::from_hex(0xbf616a),
+                peak: Color::from_hex(0xeceff4),
+                text: Color::from_hex(0xd8dee9),
+            },
+
+            peak_indicator: Color::from_hex(0xeceff4),
+            drag_over_highlight: Color::new(136, 192, 208, 64),
+            drag_over_border: Color::from_hex(0x88c0d0),
+            neutral_indicator: Color::from_hex(0x5e81ac),
+            warning_background: Color::new(235, 203, 139, 51),
+            knob_color: Color::from_hex(0xeceff4),
+            optimization_color: Color::from_hex(0xb48ead),
+            grid_color: Color::new(216, 222, 233, 30),
+
+            separator_size: 20.0,
+            font_family: ".SystemUI".to_string(),
+        }
+    }
+
+    /// Create a Dracula theme
+    pub fn dracula() -> Self {
+        Self {
+            name: "Dracula".to_string(),
+
+            background: Color::from_hex(0x282a36),
+            background_secondary: Color::from_hex(0x21222c),
+            background_tertiary: Color::from_hex(0x191a21),
+            surface: Color::from_hex(0x44475a),
+            surface_hover: Color::from_hex(0x6272a4),
+            surface_selected: Color::from_hex(0x6272a4),
+
+            text_primary: Color::from_hex(0xf8f8f2),
+            text_secondary: Color::from_hex(0xbfbfbf),
+            text_muted: Color::from_hex(0x6272a4),
+            text_disabled: Color::from_hex(0x44475a),
+
+            border: Color::from_hex(0x44475a),
+            border_focused: Color::from_hex(0xbd93f9),
+
+            accent: Color::from_hex(0xbd93f9),
+            accent_hover: Color::from_hex(0xff79c6),
+            accent_muted: Color::from_hex(0x6272a4),
+
+            text_on_accent: Color::from_hex(0x282a36),
+            text_on_accent_muted: Color::new(40, 42, 54, 204),
+
+            success: Color::from_hex(0x50fa7b),
+            warning: Color::from_hex(0xf1fa8c),
+            error: Color::from_hex(0xff5555),
+            info: Color::from_hex(0x8be9fd),
+
+            meter_normal: Color::from_hex(0x50fa7b),
+            meter_warning: Color::from_hex(0xf1fa8c),
+            meter_clip: Color::from_hex(0xff5555),
+
+            button_mute_active: Color::from_hex(0xff5555),
+            button_solo_active: Color::from_hex(0xf1fa8c),
+            button_dim_active: Color::from_hex(0xbd93f9),
+
+            progress_bar_bg: Color::from_hex(0x44475a),
+            progress_bar_fill: Color::from_hex(0xbd93f9),
+
+            toast_success_bg: Color::from_hex(0x1e3a26),
+            toast_error_bg: Color::from_hex(0x3a1e1e),
+            toast_info_bg: Color::from_hex(0x1e2f3a),
+            toast_warning_bg: Color::from_hex(0x3a3a1e),
+
+            plugin_colors: PluginColors {
+                eq: Color::from_hex(0x8be9fd),
+                gain: Color::from_hex(0x50fa7b),
+                upmixer: Color::from_hex(0xbd93f9),
+                compressor: Color::from_hex(0xff5555),
+                limiter: Color::from_hex(0xffb86c),
+                gate: Color::from_hex(0xf1fa8c),
+                loudness: Color::from_hex(0x8be9fd),
+                binaural: Color::from_hex(0xff79c6),
+                convolution: Color::from_hex(0xbd93f9),
+                monitor: Color::from_hex(0x50fa7b),
+                spectrum: Color::from_hex(0xbd93f9),
+                mute_solo: Color::from_hex(0x6272a4),
+            },
+            graph_colors: GraphColors {
+                input: Color::from_hex(0x6272a4),
+                target: Color::from_hex(0x50fa7b),
+                filter_response: Color::from_hex(0xf1fa8c),
+                corrected: Color::from_hex(0x8be9fd),
+                error: Color::from_hex(0xff5555),
+                deviation: Color::from_hex(0xbd93f9),
+                grid: Color::new(248, 248, 242, 25),
+                secondary_line: Color::from_hex(0xbfbfbf),
+                directivity_er: Color::from_hex(0xff79c6),
+                directivity_sp: Color::from_hex(0xbd93f9),
+            },
+            band_colors: vec![
+                Color::from_hex(0xff5555),
+                Color::from_hex(0xffb86c),
+                Color::from_hex(0xf1fa8c),
+                Color::from_hex(0x50fa7b),
+                Color::from_hex(0x8be9fd),
+                Color::from_hex(0xbd93f9),
+                Color::from_hex(0xff79c6),
+                Color::from_hex(0x6272a4),
+                Color::from_hex(0xbd93f9),
+                Color::from_hex(0x8be9fd),
+                Color::from_hex(0x44475a),
+            ],
+            eq_curve_colors: EQCurveColors {
+                background: Color::from_hex(0x282a36),
+                grid: Color::new(248, 248, 242, 35),
+                curve_boost: Color::from_hex(0x50fa7b),
+                curve_cut: Color::from_hex(0xff5555),
+                fill_boost: Color::new(80, 250, 123, 64),
+                fill_cut: Color::new(255, 85, 85, 64),
+                zero_line: Color::new(248, 248, 242, 80),
+            },
+            spectrum_colors: SpectrumColors {
+                background: Color::from_hex(0x282a36),
+                bass: Color::from_hex(0x50fa7b),
+                mids: Color::from_hex(0xf1fa8c),
+                treble: Color::from_hex(0xff5555),
+            },
+            meter_colors: MeterColors {
+                background: Color::from_hex(0x282a36),
+                normal: Color::from_hex(0x50fa7b),
+                warning: Color::from_hex(0xf1fa8c),
+                clip: Color::from_hex(0xff5555),
+                peak: Color::from_hex(0xf8f8f2),
+                text: Color::from_hex(0xbfbfbf),
+            },
+
+            peak_indicator: Color::from_hex(0xf8f8f2),
+            drag_over_highlight: Color::new(189, 147, 249, 64),
+            drag_over_border: Color::from_hex(0xbd93f9),
+            neutral_indicator: Color::from_hex(0x6272a4),
+            warning_background: Color::new(241, 250, 140, 51),
+            knob_color: Color::from_hex(0xf8f8f2),
+            optimization_color: Color::from_hex(0xbd93f9),
+            grid_color: Color::new(248, 248, 242, 25),
+
+            separator_size: 20.0,
+            font_family: ".SystemUI".to_string(),
+        }
+    }
+
     /// Save theme to JSON string
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(self)

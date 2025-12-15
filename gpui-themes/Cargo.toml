@@ -26,3 +26,7 @@ path = "src/lib.rs"
 [[bin]]
 name = "theme-editor"
 path = "src/bin/theme_editor.rs"
+
+[[bin]]
+name = "theme-showcase"
+path = "src/bin/theme_showcase.rs"

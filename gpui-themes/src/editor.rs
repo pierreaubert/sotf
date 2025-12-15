@@ -599,7 +599,10 @@ impl ThemeEditor {
 
     /// Get fields for a specific group
     fn fields_for_group(&self, group: ColorGroup) -> Vec<&ColorField> {
-        self.color_fields.iter().filter(|f| f.group == group).collect()
+        self.color_fields
+            .iter()
+            .filter(|f| f.group == group)
+            .collect()
     }
 
     /// Get current selected field
@@ -726,7 +729,11 @@ impl ThemeEditor {
                             }
                         }),
                     )
-                    .child(Text::new(group.label()).size(TextSize::Sm).color(text_color))
+                    .child(
+                        Text::new(group.label())
+                            .size(TextSize::Sm)
+                            .color(text_color),
+                    )
             }))
             .build()
     }
@@ -813,86 +820,84 @@ impl ThemeEditor {
             let color = (field.getter)(&self.theme);
             let field_name = field.name;
 
-            div()
-                .p_4()
-                .child(
-                    VStack::new()
-                        .spacing(StackSpacing::Md)
-                        .child(
-                            Text::new(SharedString::from(format!("Edit: {}", field_name)))
-                                .size(TextSize::Md)
-                                .weight(TextWeight::Bold)
-                                .color(theme.text_primary.to_rgba()),
-                        )
-                        // Large color preview (clickable)
-                        .child(
-                            div()
-                                .id("color-preview")
-                                .w_full()
-                                .h(px(80.0))
-                                .rounded_lg()
-                                .bg(color.to_rgba())
-                                .border_1()
-                                .border_color(theme.border.to_rgba())
-                                .cursor_pointer()
-                                .hover(|s| s.border_color(theme.accent.to_rgba()))
-                                .on_mouse_up(
-                                    MouseButton::Left,
-                                    cx.listener(|this, _: &MouseUpEvent, _window, cx| {
-                                        this.open_color_modal(cx);
-                                    }),
-                                ),
-                        )
-                        // Hex display
-                        .child(
-                            HStack::new()
-                                .spacing(StackSpacing::Sm)
-                                .child(
-                                    Text::new("Hex:")
-                                        .size(TextSize::Sm)
-                                        .color(theme.text_secondary.to_rgba()),
-                                )
-                                .child(
-                                    Text::new(SharedString::from(color.to_hex_string()))
-                                        .size(TextSize::Md)
-                                        .weight(TextWeight::Medium)
-                                        .color(theme.text_primary.to_rgba()),
-                                )
-                                .build(),
-                        )
-                        // RGBA display
-                        .child(
-                            Text::new(SharedString::from(format!(
-                                "RGBA: {}, {}, {}, {}",
-                                color.r, color.g, color.b, color.a
-                            )))
-                            .size(TextSize::Sm)
-                            .color(theme.text_muted.to_rgba()),
-                        )
-                        // HSL display
-                        .child({
-                            let (h, s, l) = color.to_hsl();
-                            Text::new(SharedString::from(format!(
-                                "HSL: {:.0}°, {:.0}%, {:.0}%",
-                                h * 360.0,
-                                s * 100.0,
-                                l * 100.0
-                            )))
-                            .size(TextSize::Sm)
-                            .color(theme.text_muted.to_rgba())
-                        })
-                        // Edit button
-                        .child(
-                            Button::new("edit-color-btn", "Edit Color")
-                                .variant(ButtonVariant::Primary)
-                                .size(ButtonSize::Md)
-                                .build()
-                                .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+            div().p_4().child(
+                VStack::new()
+                    .spacing(StackSpacing::Md)
+                    .child(
+                        Text::new(SharedString::from(format!("Edit: {}", field_name)))
+                            .size(TextSize::Md)
+                            .weight(TextWeight::Bold)
+                            .color(theme.text_primary.to_rgba()),
+                    )
+                    // Large color preview (clickable)
+                    .child(
+                        div()
+                            .id("color-preview")
+                            .w_full()
+                            .h(px(80.0))
+                            .rounded_lg()
+                            .bg(color.to_rgba())
+                            .border_1()
+                            .border_color(theme.border.to_rgba())
+                            .cursor_pointer()
+                            .hover(|s| s.border_color(theme.accent.to_rgba()))
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(|this, _: &MouseUpEvent, _window, cx| {
                                     this.open_color_modal(cx);
-                                })),
-                        )
-                        .build(),
-                )
+                                }),
+                            ),
+                    )
+                    // Hex display
+                    .child(
+                        HStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .child(
+                                Text::new("Hex:")
+                                    .size(TextSize::Sm)
+                                    .color(theme.text_secondary.to_rgba()),
+                            )
+                            .child(
+                                Text::new(SharedString::from(color.to_hex_string()))
+                                    .size(TextSize::Md)
+                                    .weight(TextWeight::Medium)
+                                    .color(theme.text_primary.to_rgba()),
+                            )
+                            .build(),
+                    )
+                    // RGBA display
+                    .child(
+                        Text::new(SharedString::from(format!(
+                            "RGBA: {}, {}, {}, {}",
+                            color.r, color.g, color.b, color.a
+                        )))
+                        .size(TextSize::Sm)
+                        .color(theme.text_muted.to_rgba()),
+                    )
+                    // HSL display
+                    .child({
+                        let (h, s, l) = color.to_hsl();
+                        Text::new(SharedString::from(format!(
+                            "HSL: {:.0}°, {:.0}%, {:.0}%",
+                            h * 360.0,
+                            s * 100.0,
+                            l * 100.0
+                        )))
+                        .size(TextSize::Sm)
+                        .color(theme.text_muted.to_rgba())
+                    })
+                    // Edit button
+                    .child(
+                        Button::new("edit-color-btn", "Edit Color")
+                            .variant(ButtonVariant::Primary)
+                            .size(ButtonSize::Md)
+                            .build()
+                            .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                                this.open_color_modal(cx);
+                            })),
+                    )
+                    .build(),
+            )
         } else {
             div().p_4().child(
                 Text::new("Select a color to edit")
@@ -951,110 +956,109 @@ impl ThemeEditor {
         let export_format = self.export_format.clone();
 
         let export_content = if export_format == "json" {
-            self.theme.to_json().unwrap_or_else(|e| format!("Error: {}", e))
+            self.theme
+                .to_json()
+                .unwrap_or_else(|e| format!("Error: {}", e))
         } else {
             self.theme.to_rust_code()
         };
 
-        div()
-            .p_6()
-            .size_full()
-            .child(
-                VStack::new()
-                    .spacing(StackSpacing::Lg)
-                    // Theme name display
-                    .child(
-                        HStack::new()
-                            .spacing(StackSpacing::Md)
-                            .child(
-                                Text::new("Theme Name:")
-                                    .size(TextSize::Md)
-                                    .weight(TextWeight::Bold)
-                                    .color(theme.text_primary.to_rgba()),
-                            )
-                            .child(
-                                Text::new(SharedString::from(self.theme.name.clone()))
-                                    .size(TextSize::Md)
-                                    .color(theme.text_primary.to_rgba()),
-                            )
-                            .build(),
-                    )
-                    // Format selection
-                    .child(
-                        HStack::new()
-                            .spacing(StackSpacing::Md)
-                            .child(
-                                Text::new("Export Format:")
-                                    .size(TextSize::Md)
-                                    .color(theme.text_primary.to_rgba()),
-                            )
-                            .child(
-                                Button::new("format-json", "JSON")
-                                    .variant(if export_format == "json" {
-                                        ButtonVariant::Primary
-                                    } else {
-                                        ButtonVariant::Secondary
-                                    })
-                                    .size(ButtonSize::Sm)
-                                    .build()
-                                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                                        this.export_format = "json".to_string();
-                                        cx.notify();
-                                    })),
-                            )
-                            .child(
-                                Button::new("format-rust", "Rust")
-                                    .variant(if export_format == "rust" {
-                                        ButtonVariant::Primary
-                                    } else {
-                                        ButtonVariant::Secondary
-                                    })
-                                    .size(ButtonSize::Sm)
-                                    .build()
-                                    .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                                        this.export_format = "rust".to_string();
-                                        cx.notify();
-                                    })),
-                            )
-                            .build(),
-                    )
-                    // Export preview
-                    .child(
-                        div()
-                            .flex_1()
-                            .w_full()
-                            .p_4()
-                            .bg(theme.background_tertiary.to_rgba())
-                            .rounded_lg()
-                            .border_1()
-                            .border_color(theme.border.to_rgba())
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(theme.text_primary.to_rgba())
-                                    .child(export_content),
-                            ),
-                    )
-                    // Action buttons
-                    .child(
-                        HStack::new()
-                            .spacing(StackSpacing::Md)
-                            .child(
-                                Button::new("copy-btn", "Copy to Clipboard")
-                                    .variant(ButtonVariant::Primary)
-                                    .size(ButtonSize::Md)
-                                    .build(),
-                            )
-                            .child(
-                                Button::new("save-btn", "Save to File")
-                                    .variant(ButtonVariant::Secondary)
-                                    .size(ButtonSize::Md)
-                                    .build(),
-                            )
-                            .build(),
-                    )
-                    .build(),
-            )
+        div().p_6().size_full().child(
+            VStack::new()
+                .spacing(StackSpacing::Lg)
+                // Theme name display
+                .child(
+                    HStack::new()
+                        .spacing(StackSpacing::Md)
+                        .child(
+                            Text::new("Theme Name:")
+                                .size(TextSize::Md)
+                                .weight(TextWeight::Bold)
+                                .color(theme.text_primary.to_rgba()),
+                        )
+                        .child(
+                            Text::new(SharedString::from(self.theme.name.clone()))
+                                .size(TextSize::Md)
+                                .color(theme.text_primary.to_rgba()),
+                        )
+                        .build(),
+                )
+                // Format selection
+                .child(
+                    HStack::new()
+                        .spacing(StackSpacing::Md)
+                        .child(
+                            Text::new("Export Format:")
+                                .size(TextSize::Md)
+                                .color(theme.text_primary.to_rgba()),
+                        )
+                        .child(
+                            Button::new("format-json", "JSON")
+                                .variant(if export_format == "json" {
+                                    ButtonVariant::Primary
+                                } else {
+                                    ButtonVariant::Secondary
+                                })
+                                .size(ButtonSize::Sm)
+                                .build()
+                                .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                                    this.export_format = "json".to_string();
+                                    cx.notify();
+                                })),
+                        )
+                        .child(
+                            Button::new("format-rust", "Rust")
+                                .variant(if export_format == "rust" {
+                                    ButtonVariant::Primary
+                                } else {
+                                    ButtonVariant::Secondary
+                                })
+                                .size(ButtonSize::Sm)
+                                .build()
+                                .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
+                                    this.export_format = "rust".to_string();
+                                    cx.notify();
+                                })),
+                        )
+                        .build(),
+                )
+                // Export preview
+                .child(
+                    div()
+                        .flex_1()
+                        .w_full()
+                        .p_4()
+                        .bg(theme.background_tertiary.to_rgba())
+                        .rounded_lg()
+                        .border_1()
+                        .border_color(theme.border.to_rgba())
+                        .child(
+                            div()
+                                .text_sm()
+                                .text_color(theme.text_primary.to_rgba())
+                                .child(export_content),
+                        ),
+                )
+                // Action buttons
+                .child(
+                    HStack::new()
+                        .spacing(StackSpacing::Md)
+                        .child(
+                            Button::new("copy-btn", "Copy to Clipboard")
+                                .variant(ButtonVariant::Primary)
+                                .size(ButtonSize::Md)
+                                .build(),
+                        )
+                        .child(
+                            Button::new("save-btn", "Save to File")
+                                .variant(ButtonVariant::Secondary)
+                                .size(ButtonSize::Md)
+                                .build(),
+                        )
+                        .build(),
+                )
+                .build(),
+        )
     }
 
     /// Render the header with presets and tabs
@@ -1119,9 +1123,24 @@ impl ThemeEditor {
                     .child(
                         HStack::new()
                             .spacing(StackSpacing::None)
-                            .child(self.render_tab_button("Colors", EditorTab::Colors, current_tab, cx))
-                            .child(self.render_tab_button("Preview", EditorTab::Preview, current_tab, cx))
-                            .child(self.render_tab_button("Export", EditorTab::Export, current_tab, cx))
+                            .child(self.render_tab_button(
+                                "Colors",
+                                EditorTab::Colors,
+                                current_tab,
+                                cx,
+                            ))
+                            .child(self.render_tab_button(
+                                "Preview",
+                                EditorTab::Preview,
+                                current_tab,
+                                cx,
+                            ))
+                            .child(self.render_tab_button(
+                                "Export",
+                                EditorTab::Export,
+                                current_tab,
+                                cx,
+                            ))
                             .build(),
                     ),
             )
@@ -1179,7 +1198,7 @@ impl ThemeEditor {
             div().into_any_element()
         };
 
-// Build the dialog content manually since we need entity interaction
+        // Build the dialog content manually since we need entity interaction
         // The Dialog component expects global handlers, but we need entity context
         let backdrop_color = Rgba {
             r: 0.0,
@@ -1315,16 +1334,11 @@ impl Render for ThemeEditor {
             // Header
             .child(self.render_header(cx))
             // Content based on tab
-            .child(
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .child(match current_tab {
-                        EditorTab::Colors => self.render_colors_tab(cx).into_any_element(),
-                        EditorTab::Preview => self.render_preview_tab(cx).into_any_element(),
-                        EditorTab::Export => self.render_export_tab(cx).into_any_element(),
-                    }),
-            )
+            .child(div().flex_1().min_h_0().child(match current_tab {
+                EditorTab::Colors => self.render_colors_tab(cx).into_any_element(),
+                EditorTab::Preview => self.render_preview_tab(cx).into_any_element(),
+                EditorTab::Export => self.render_export_tab(cx).into_any_element(),
+            }))
             // Color picker modal (rendered on top when visible)
             .child(self.render_color_modal(cx))
     }
