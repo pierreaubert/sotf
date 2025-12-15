@@ -612,9 +612,25 @@ impl RenderOnce for Potentiometer {
             // Scroll wheel - adjust value
             if let Some(handler_rc) = on_change_rc {
                 container = container.on_scroll_wheel(move |event, window, cx| {
-                    let delta = event.delta.pixel_delta(px(20.0)).y;
-                    // Scroll down = increase, scroll up = decrease
-                    let direction = if delta > px(0.0) { -1.0 } else { 1.0 };
+                    // Get scroll delta (works for both pixel and line deltas)
+                    // On macOS, shift+scroll converts vertical to horizontal, so check both axes
+                    let (delta_x, delta_y): (f32, f32) = match event.delta {
+                        gpui::ScrollDelta::Pixels(point) => (point.x.into(), point.y.into()),
+                        gpui::ScrollDelta::Lines(point) => (point.x, point.y),
+                    };
+
+                    // Use Y delta primarily, but fall back to X delta (for shift+scroll on macOS)
+                    let delta = if delta_y.abs() > 0.0001 {
+                        delta_y
+                    } else if delta_x.abs() > 0.0001 {
+                        delta_x
+                    } else {
+                        return; // No meaningful scroll movement
+                    };
+
+                    // Scroll up/left (negative delta) = increase value
+                    // Scroll down/right (positive delta) = decrease value
+                    let direction = if delta < 0.0 { 1.0 } else { -1.0 };
 
                     // Check for shift key for fine-grained control
                     let step_size = if event.modifiers.shift { 0.005 } else { 0.05 };

@@ -10,6 +10,7 @@
 
 use gpui::*;
 use gpui_ui_kit::button_set::{ButtonSet, ButtonSetOption, ButtonSetSize};
+use gpui_ui_kit::i18n::{I18nExt, TranslationKey};
 use gpui_ui_kit::select::{Select, SelectOption};
 use gpui_ui_kit::theme::ThemeExt;
 use gpui_ui_kit::*;
@@ -74,6 +75,19 @@ impl Render for SelectDebug {
                     .child(Text::new(
                         "Testing: 1) Background transparency 2) Z-index/layering",
                     )),
+            )
+            // i18n Status Bar - demonstrates language switching works
+            .child(
+                div()
+                    .flex()
+                    .gap_4()
+                    .p_3()
+                    .bg(theme.surface)
+                    .rounded_lg()
+                    .child(Text::new(format!("🌐 {}: ", cx.t(TranslationKey::MenuLanguage))).weight(TextWeight::Medium))
+                    .child(Text::new(cx.language().native_name()).color(theme.accent))
+                    .child(Text::new(" | "))
+                    .child(Text::new(cx.t(TranslationKey::SectionFormControls)).color(theme.text_secondary)),
             )
             .child(Divider::new().build())
             // Problem description
@@ -339,7 +353,8 @@ fn main() {
         MiniAppConfig::new("Select Debug")
             .size(800.0, 700.0)
             .scrollable(true)
-            .with_theme(true),
+            .with_theme(true)
+            .with_i18n(true),
         |cx| cx.new(|cx| SelectDebug::new(cx)),
     );
 }

@@ -89,7 +89,8 @@ impl SliderSize {
 ///
 /// Supports:
 /// - Mouse drag on track or thumb
-/// - Scroll wheel adjustment
+/// - Scroll wheel adjustment (shift for fine-grained control)
+/// - Double-click to reset to default
 /// - Keyboard arrow keys (when focused)
 #[derive(IntoElement)]
 pub struct Slider {
@@ -105,6 +106,7 @@ pub struct Slider {
     width: f32,
     on_change: Option<Box<dyn Fn(f32, &mut Window, &mut App) + 'static>>,
     on_drag_start: Option<Box<dyn Fn(f32, f32, &mut Window, &mut App) + 'static>>,
+    on_reset: Option<Box<dyn Fn(&mut Window, &mut App) + 'static>>,
     track_color: Option<Rgba>,
     fill_color: Option<Rgba>,
     thumb_color: Option<Rgba>,
@@ -127,6 +129,7 @@ impl Slider {
             width: 200.0,
             on_change: None,
             on_drag_start: None,
+            on_reset: None,
             track_color: None,
             fill_color: None,
             thumb_color: None,
@@ -189,8 +192,23 @@ impl Slider {
     }
 
     /// Set the change handler
+    ///
+    /// The handler receives the new value by value.
     pub fn on_change(mut self, handler: impl Fn(f32, &mut Window, &mut App) + 'static) -> Self {
         self.on_change = Some(Box::new(handler));
+        self
+    }
+
+    /// Set the change handler with a reference argument
+    ///
+    /// This variant is useful when using `cx.listener()` which passes a reference.
+    pub fn on_change_ref(
+        mut self,
+        handler: impl Fn(&f32, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_change = Some(Box::new(move |value, window, app| {
+            handler(&value, window, app);
+        }));
         self
     }
 
@@ -203,6 +221,12 @@ impl Slider {
         handler: impl Fn(f32, f32, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_drag_start = Some(Box::new(handler));
+        self
+    }
+
+    /// Set reset handler (called on double-click)
+    pub fn on_reset(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
+        self.on_reset = Some(Box::new(handler));
         self
     }
 
@@ -412,7 +436,18 @@ impl RenderOnce for Slider {
                 });
             }
 
-            // Scroll wheel - adjust value
+            // Double-click to reset
+            if let Some(on_reset) = self.on_reset {
+                let reset_handler = std::rc::Rc::new(on_reset);
+                let reset_clone = reset_handler.clone();
+                track = track.on_click(move |event, window, cx| {
+                    if event.click_count() == 2 {
+                        reset_clone(window, cx);
+                    }
+                });
+            }
+
+            // Scroll wheel - adjust value (shift for fine-grained control)
             if let Some(ref handler_rc) = on_change_rc {
                 let handler_scroll = handler_rc.clone();
                 track = track.on_scroll_wheel(move |event, window, cx| {
@@ -420,17 +455,26 @@ impl RenderOnce for Slider {
                     let delta = event.delta.pixel_delta(px(20.0)).y;
                     let scroll_up = delta < px(0.0);
 
-                    // Calculate step amount (5% of range or step size)
-                    let step_amount = step.unwrap_or((max - min) * 0.05);
+                    // Calculate step amount: 5% normally, 0.5% with shift
+                    let step_amount = if event.modifiers.shift {
+                        step.unwrap_or((max - min) * 0.005)
+                    } else {
+                        step.unwrap_or((max - min) * 0.05)
+                    };
 
                     // Increase on scroll up, decrease on scroll down
                     let change = if scroll_up { step_amount } else { -step_amount };
                     let new_value = current_value + change;
 
-                    // Snap to step if defined
+                    // Snap to step if defined (only when not in fine mode)
                     let snapped = if let Some(step) = step {
-                        let steps = ((new_value - min) / step).round();
-                        (min + steps * step).clamp(min, max)
+                        if event.modifiers.shift {
+                            // In fine mode, don't snap to step
+                            new_value.clamp(min, max)
+                        } else {
+                            let steps = ((new_value - min) / step).round();
+                            (min + steps * step).clamp(min, max)
+                        }
                     } else {
                         new_value.clamp(min, max)
                     };
