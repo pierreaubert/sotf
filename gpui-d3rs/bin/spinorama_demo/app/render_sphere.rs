@@ -132,10 +132,9 @@ impl SpinoramaApp {
         // Check we have both horizontal and vertical data
         if directivity.horizontal.is_empty() || directivity.vertical.is_empty() {
             return div().flex().items_center().justify_center().h_full().child(
-                div()
-                    .text_base()
-                    .text_color(rgb(0x666666))
-                    .child("Both horizontal and vertical directivity data required for sphere plot."),
+                div().text_base().text_color(rgb(0x666666)).child(
+                    "Both horizontal and vertical directivity data required for sphere plot.",
+                ),
             );
         }
 
@@ -176,13 +175,9 @@ impl SpinoramaApp {
         let h_steps = 73; // -180 to 180 in 5° steps
         let v_steps = 37; // -90 to 90 in 5° steps
 
-        let h_values: Vec<f64> = (0..h_steps)
-            .map(|i| -180.0 + (i as f64) * 5.0)
-            .collect();
+        let h_values: Vec<f64> = (0..h_steps).map(|i| -180.0 + (i as f64) * 5.0).collect();
 
-        let v_values: Vec<f64> = (0..v_steps)
-            .map(|i| -90.0 + (i as f64) * 5.0)
-            .collect();
+        let v_values: Vec<f64> = (0..v_steps).map(|i| -90.0 + (i as f64) * 5.0).collect();
 
         // Build Z values grid: z_values[h_idx][v_idx]
         let mut z_values: Vec<Vec<f64>> = Vec::with_capacity(h_steps);
@@ -202,18 +197,17 @@ impl SpinoramaApp {
 
         // Configure Surface Data
         // X axis = Elevation (v_angle), Y axis = Azimuth (h_angle)
-        let surface_data =
-            Surface3DData::from_grid(v_values.clone(), h_values.clone(), z_values)
-                .with_log_x(false)
-                .with_x_label("Elevation (°)")
-                .with_x_range(-90.0, 90.0)
-                .with_x_ticks(vec![-90.0, -45.0, 0.0, 45.0, 90.0])
-                .with_y_label("Azimuth (°)")
-                .with_y_range(-180.0, 180.0)
-                .with_y_ticks(vec![-180.0, -90.0, 0.0, 90.0, 180.0])
-                .with_z_label("SPL (dB)")
-                .with_z_range(-40.0, 10.0)
-                .with_z_ticks(vec![-40.0, -30.0, -20.0, -10.0, 0.0, 10.0]);
+        let surface_data = Surface3DData::from_grid(v_values.clone(), h_values.clone(), z_values)
+            .with_log_x(false)
+            .with_x_label("Elevation (°)")
+            .with_x_range(-90.0, 90.0)
+            .with_x_ticks(vec![-90.0, -45.0, 0.0, 45.0, 90.0])
+            .with_y_label("Azimuth (°)")
+            .with_y_range(-180.0, 180.0)
+            .with_y_ticks(vec![-180.0, -90.0, 0.0, 90.0, 180.0])
+            .with_z_label("SPL (dB)")
+            .with_z_range(-40.0, 10.0)
+            .with_z_ticks(vec![-40.0, -30.0, -20.0, -10.0, 0.0, 10.0]);
 
         // Map colormap
         let colormap = match self.contour_colormap {
@@ -518,12 +512,7 @@ impl SpinoramaApp {
                             .child(freq_display_text),
                     ),
             )
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(rgb(0x888888))
-                    .child(range_info),
-            )
+            .child(div().text_xs().text_color(rgb(0x888888)).child(range_info))
             .child(div().flex().justify_center().child(surface_view))
     }
 }

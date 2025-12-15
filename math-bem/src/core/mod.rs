@@ -20,7 +20,6 @@
 //! - `algebra`: Pure Rust linear algebra fallbacks for WASM portability
 //! - `parallel`: Portable parallel iteration (works with native, WASM, or sequential)
 
-
 pub mod assembly;
 pub mod bem_solver;
 pub mod constants;

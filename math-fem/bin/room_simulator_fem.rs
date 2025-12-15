@@ -17,7 +17,9 @@
 //!   cargo run --release --bin roomsim-fem -- --help
 
 use clap::{Parser, ValueEnum};
-use fem::assembly::{HelmholtzMatrix, MassMatrix, StiffnessMatrix, assemble_mass, assemble_stiffness};
+use fem::assembly::{
+    HelmholtzMatrix, MassMatrix, StiffnessMatrix, assemble_mass, assemble_stiffness,
+};
 use fem::basis::PolynomialDegree;
 use fem::mesh::{ElementType, Mesh, Point};
 use fem::solver::{self, GmresConfigF64, SolverConfig, SolverType};
@@ -135,7 +137,8 @@ impl MemoryEstimate {
                 // Each subdomain has local ILU
                 // Subdomain size ≈ n_dofs / num_domains, with overlap
                 // Each subdomain ILU ≈ local_nnz * 2
-                let subdomain_size = (self.n_dofs as f64 / self.schwarz_domains as f64 * 1.5) as usize;
+                let subdomain_size =
+                    (self.n_dofs as f64 / self.schwarz_domains as f64 * 1.5) as usize;
                 let local_nnz = (self.k_nnz as f64 / self.schwarz_domains as f64 * 1.5) as usize;
                 let per_subdomain = local_nnz * 2 * (Self::USIZE_SIZE + Self::COMPLEX_SIZE)
                     + subdomain_size * Self::USIZE_SIZE; // index mapping
@@ -811,7 +814,12 @@ fn run_fem_simulation(
     };
 
     if verbose {
-        mem_estimate.print_summary(n_freqs_for_estimate, n_threads, available_memory_gb, Some(cpu_info));
+        mem_estimate.print_summary(
+            n_freqs_for_estimate,
+            n_threads,
+            available_memory_gb,
+            Some(cpu_info),
+        );
     }
 
     // Determine effective batch size
@@ -1074,14 +1082,34 @@ fn assemble_rhs_parallel(
             let mut local_contribs = Vec::with_capacity(n_nodes);
 
             for qp in quad.iter() {
-                let shape =
-                    evaluate_shape(elem_type, PolynomialDegree::P1, qp.xi(), qp.eta(), qp.zeta());
+                let shape = evaluate_shape(
+                    elem_type,
+                    PolynomialDegree::P1,
+                    qp.xi(),
+                    qp.eta(),
+                    qp.zeta(),
+                );
                 let jac = Jacobian::from_3d(&shape.gradients, &coords);
 
                 // Physical coordinates at quadrature point
-                let x: f64 = shape.values.iter().zip(&coords).map(|(n, c)| n * c[0]).sum();
-                let y: f64 = shape.values.iter().zip(&coords).map(|(n, c)| n * c[1]).sum();
-                let z: f64 = shape.values.iter().zip(&coords).map(|(n, c)| n * c[2]).sum();
+                let x: f64 = shape
+                    .values
+                    .iter()
+                    .zip(&coords)
+                    .map(|(n, c)| n * c[0])
+                    .sum();
+                let y: f64 = shape
+                    .values
+                    .iter()
+                    .zip(&coords)
+                    .map(|(n, c)| n * c[1])
+                    .sum();
+                let z: f64 = shape
+                    .values
+                    .iter()
+                    .zip(&coords)
+                    .map(|(n, c)| n * c[2])
+                    .sum();
 
                 let f_val = compute_source_term(x, y, z, sources, frequency, source_width);
                 let det_j = jac.det.abs();
@@ -1319,25 +1347,29 @@ fn run_hierarchical_solve(
     );
 
     // ===== PASS 1: Solve anchor frequencies in parallel (cold start) =====
-    println!("  Pass 1: Solving {} anchor frequencies (cold start)...", n_anchors);
+    println!(
+        "  Pass 1: Solving {} anchor frequencies (cold start)...",
+        n_anchors
+    );
 
     let anchor_results: Vec<FrequencyResultWithSolution> = anchor_indices
         .par_iter()
         .map(|&idx| {
             let freq = frequencies[idx];
-            let (solution, spl_values, iterations, residual) = solve_single_frequency_returning_solution(
-                mesh,
-                stiffness,
-                mass,
-                solver_config,
-                sources,
-                freq,
-                simulation.wavenumber(freq),
-                source_width,
-                listening_positions,
-                lp_elements,
-                None, // cold start
-            );
+            let (solution, spl_values, iterations, residual) =
+                solve_single_frequency_returning_solution(
+                    mesh,
+                    stiffness,
+                    mass,
+                    solver_config,
+                    sources,
+                    freq,
+                    simulation.wavenumber(freq),
+                    source_width,
+                    listening_positions,
+                    lp_elements,
+                    None, // cold start
+                );
 
             // Update progress
             let completed = progress_counter.fetch_add(1, Ordering::Relaxed) + 1;
@@ -1347,9 +1379,11 @@ fn run_hierarchical_solve(
                 let remaining = (n_freqs - completed) as f64 / rate;
                 print!(
                     "\r  Progress: {}/{} ({:.1}%) - {:.1} freq/s - ETA: {:.0}s    ",
-                    completed, n_freqs,
+                    completed,
+                    n_freqs,
                     100.0 * completed as f64 / n_freqs as f64,
-                    rate, remaining
+                    rate,
+                    remaining
                 );
                 use std::io::Write;
                 std::io::stdout().flush().ok();
@@ -1416,7 +1450,8 @@ fn run_hierarchical_solve(
             };
 
             // Interpolate solution vectors
-            let interpolated_guess = &lower_result.solution * (1.0 - t) + &upper_result.solution * t;
+            let interpolated_guess =
+                &lower_result.solution * (1.0 - t) + &upper_result.solution * t;
 
             // Solve with warm start
             let (_, spl_values, iterations, residual) = solve_single_frequency_returning_solution(
@@ -1441,9 +1476,11 @@ fn run_hierarchical_solve(
                 let remaining = (n_freqs - completed) as f64 / rate;
                 print!(
                     "\r  Progress: {}/{} ({:.1}%) - {:.1} freq/s - ETA: {:.0}s    ",
-                    completed, n_freqs,
+                    completed,
+                    n_freqs,
                     100.0 * completed as f64 / n_freqs as f64,
-                    rate, remaining
+                    rate,
+                    remaining
                 );
                 use std::io::Write;
                 std::io::stdout().flush().ok();
@@ -1559,5 +1596,10 @@ fn solve_single_frequency_returning_solution(
         })
         .collect();
 
-    (solution.values, spl_values, solution.iterations, solution.residual)
+    (
+        solution.values,
+        spl_values,
+        solution.iterations,
+        solution.residual,
+    )
 }

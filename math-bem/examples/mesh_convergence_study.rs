@@ -113,9 +113,10 @@ fn main() {
                 rhs[i] = p_inc[i] + beta * dpdn_inc[i];
             }
 
-                    // Solve
-                    let solution_x = lu_solve(&system.matrix, &rhs).expect("Solver failed");
-                    let bem_avg: f64 = solution_x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;            let error_pct = 100.0 * (bem_avg - mie_avg).abs() / mie_avg;
+            // Solve
+            let solution_x = lu_solve(&system.matrix, &rhs).expect("Solver failed");
+            let bem_avg: f64 = solution_x.iter().map(|x| x.norm()).sum::<f64>() / n as f64;
+            let error_pct = 100.0 * (bem_avg - mie_avg).abs() / mie_avg;
 
             errors.push((*subdivision, error_pct, epw));
         }

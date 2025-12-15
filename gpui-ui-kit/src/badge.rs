@@ -28,14 +28,6 @@ impl BadgeVariant {
     fn colors(&self, theme: &Theme) -> (Rgba, Rgba) {
         // Returns (background, text_color) based on theme variant
         match theme.variant {
-            ThemeVariant::Dark => match self {
-                BadgeVariant::Default => (theme.surface, theme.text_secondary),
-                BadgeVariant::Primary => (rgb(0x1a4a7a), rgb(0x7cc4ff)),
-                BadgeVariant::Success => (rgb(0x1a3a1a), rgb(0x7ccc7c)),
-                BadgeVariant::Warning => (rgb(0x3a3a1a), rgb(0xcccc7c)),
-                BadgeVariant::Error => (rgb(0x3a1a1a), rgb(0xcc7c7c)),
-                BadgeVariant::Info => (rgb(0x1a3a3a), rgb(0x7ccccc)),
-            },
             ThemeVariant::Light => match self {
                 BadgeVariant::Default => (theme.muted, theme.text_secondary),
                 BadgeVariant::Primary => (rgb(0xdbeafe), rgb(0x1d4ed8)),
@@ -43,6 +35,18 @@ impl BadgeVariant {
                 BadgeVariant::Warning => (rgb(0xfef3c7), rgb(0xd97706)),
                 BadgeVariant::Error => (rgb(0xfee2e2), rgb(0xdc2626)),
                 BadgeVariant::Info => (rgb(0xe0f2fe), rgb(0x0284c7)),
+            },
+            // Dark, Midnight, Forest, BlackAndWhite all use dark-style backgrounds
+            ThemeVariant::Dark
+            | ThemeVariant::Midnight
+            | ThemeVariant::Forest
+            | ThemeVariant::BlackAndWhite => match self {
+                BadgeVariant::Default => (theme.surface, theme.text_secondary),
+                BadgeVariant::Primary => (rgb(0x1a4a7a), rgb(0x7cc4ff)),
+                BadgeVariant::Success => (rgb(0x1a3a1a), rgb(0x7ccc7c)),
+                BadgeVariant::Warning => (rgb(0x3a3a1a), rgb(0xcccc7c)),
+                BadgeVariant::Error => (rgb(0x3a1a1a), rgb(0xcc7c7c)),
+                BadgeVariant::Info => (rgb(0x1a3a3a), rgb(0x7ccccc)),
             },
         }
     }

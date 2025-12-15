@@ -74,7 +74,8 @@ fn gauss_seidel_sweep(
     b: &[Complex64],
     backward: bool,
 ) {
-    #[allow(unused_variables)] let n = matrix.dim;
+    #[allow(unused_variables)]
+    let n = matrix.dim;
 
     // Build CSR-like structure for efficient row access
     let mut row_data: HashMap<usize, Vec<(usize, Complex64)>> = HashMap::new();

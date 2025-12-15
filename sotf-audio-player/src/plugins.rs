@@ -70,6 +70,14 @@ impl PluginType {
             Self::ChannelMuteSolo,
         ]
     }
+
+    /// Returns true if this is a monitoring/analyzer plugin (non-processing)
+    pub fn is_monitoring(&self) -> bool {
+        matches!(
+            self,
+            Self::LoudnessMonitor | Self::SpectrumAnalyzer | Self::ChannelMuteSolo
+        )
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -642,10 +650,10 @@ impl PluginSettings {
                 sidechain_hpf_hz: default_gate_sidechain_hpf_hz(),
             },
             PluginType::LoudnessCompensation => Self::LoudnessCompensation {
-                low_freq: 100.0,  // param_specs::loudness_compensation::LOW_FREQ_DEFAULT
-                low_gain: 6.0,    // param_specs::loudness_compensation::LOW_GAIN_DEFAULT
+                low_freq: 100.0,    // param_specs::loudness_compensation::LOW_FREQ_DEFAULT
+                low_gain: 6.0,      // param_specs::loudness_compensation::LOW_GAIN_DEFAULT
                 high_freq: 10000.0, // param_specs::loudness_compensation::HIGH_FREQ_DEFAULT
-                high_gain: 6.0,   // param_specs::loudness_compensation::HIGH_GAIN_DEFAULT
+                high_gain: 6.0,     // param_specs::loudness_compensation::HIGH_GAIN_DEFAULT
             },
             PluginType::BinauralDecoder => Self::BinauralDecoder {
                 sofa_file: String::new(),
@@ -715,7 +723,7 @@ impl Plugin {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct PluginChain {
     plugins: Vec<Plugin>,
     next_id: usize,
@@ -772,6 +780,34 @@ impl PluginChain {
             let plugin = self.plugins.remove(from);
             self.plugins.insert(to, plugin);
         }
+    }
+
+    /// Insert a plugin at a specific index
+    pub fn insert_plugin(&mut self, index: usize, plugin_type: &PluginType) -> usize {
+        let id = self.next_id;
+        self.next_id += 1;
+        let insert_idx = index.min(self.plugins.len());
+        self.plugins.insert(insert_idx, Plugin::new(id, plugin_type));
+        id
+    }
+
+    /// Find the index of the first plugin of a given type
+    pub fn find_plugin_index(&self, plugin_type: &PluginType) -> Option<usize> {
+        self.plugins
+            .iter()
+            .position(|p| p.plugin_type() == *plugin_type)
+    }
+
+    /// Find the insertion index for a new processing plugin (before monitoring plugins)
+    pub fn find_processing_insert_index(&self) -> usize {
+        // Find the first monitoring plugin
+        for (idx, plugin) in self.plugins.iter().enumerate() {
+            if plugin.plugin_type().is_monitoring() {
+                return idx;
+            }
+        }
+        // No monitoring plugins, insert at end
+        self.plugins.len()
     }
 
     pub fn to_plugin_configs(&self, sample_rate: f64) -> Vec<PluginConfig> {

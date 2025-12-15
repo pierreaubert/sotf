@@ -23,26 +23,22 @@ pub use solvers::direct;
 pub use solvers::traits::{LinearOperator, Preconditioner};
 
 // Core operator types from fmm_interface
-pub use fmm_interface::{
-    CsrOperator, DenseOperator, DiagonalPreconditioner, MlfmmOperator,
-};
+pub use fmm_interface::{CsrOperator, DenseOperator, DiagonalPreconditioner, MlfmmOperator};
 
 #[cfg(any(feature = "native", feature = "wasm"))]
 pub use fmm_interface::SlfmmOperator;
 
 // Helper functions for solving BEM systems
 pub use fmm_interface::{
-    solve_cgs, solve_bicgstab, solve_gmres,
-    solve_with_ilu, solve_with_ilu_operator, solve_tbem_with_ilu,
-    gmres_solve_with_ilu, gmres_solve_with_ilu_operator,
-    gmres_solve_tbem_with_ilu,
+    gmres_solve_tbem_with_ilu, gmres_solve_with_ilu, gmres_solve_with_ilu_operator, solve_bicgstab,
+    solve_cgs, solve_gmres, solve_tbem_with_ilu, solve_with_ilu, solve_with_ilu_operator,
 };
 
 // Hierarchical FMM preconditioner
 #[cfg(any(feature = "native", feature = "wasm"))]
 pub use fmm_interface::{
-    gmres_solve_fmm_hierarchical, gmres_solve_with_hierarchical_precond,
-    HierarchicalFmmPreconditioner, SparseNearfieldIlu,
+    HierarchicalFmmPreconditioner, SparseNearfieldIlu, gmres_solve_fmm_hierarchical,
+    gmres_solve_with_hierarchical_precond,
 };
 
 // Batched BLAS solvers
@@ -56,9 +52,9 @@ pub use fmm_interface::{
 };
 
 // Re-export specific configuration types for convenience
-pub use solvers::iterative::{GmresConfig, GmresSolution};
-pub use solvers::iterative::{CgsConfig, CgsSolution};
 pub use solvers::iterative::{BiCgstabConfig, BiCgstabSolution};
+pub use solvers::iterative::{CgsConfig, CgsSolution};
+pub use solvers::iterative::{GmresConfig, GmresSolution};
 pub use solvers::preconditioners::IluPreconditioner;
 pub use solvers::preconditioners::{AmgConfig, AmgPreconditioner};
 

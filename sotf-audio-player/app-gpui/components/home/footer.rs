@@ -1,7 +1,7 @@
 //! Footer component rendering with transport controls, track info, and volume
 
+use crate::components::icons::{Icon, IconName, IconSize};
 use crate::ui::PlayerView;
-use crate::ui::components::icon::{Icon, IconName, IconSize};
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
@@ -313,7 +313,11 @@ impl PlayerView {
     }
 
     /// Center section: Transport controls + waveform + time
-    fn render_footer_center(&self, show_waveform: bool, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_footer_center(
+        &self,
+        show_waveform: bool,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = &state.app.theme;
 
@@ -380,7 +384,7 @@ impl PlayerView {
                         div()
                             .id("transport-prev-wrapper")
                             .on_click(cx.listener(|view, _event: &ClickEvent, window, cx| {
-                                view.prev_track(&crate::actions::PrevTrack, window, cx);
+                                view.prev_track(&crate::app::actions::PrevTrack, window, cx);
                             }))
                             .child(
                                 IconButton::with_child(
@@ -429,7 +433,7 @@ impl PlayerView {
                         div()
                             .id("transport-play-wrapper")
                             .on_click(cx.listener(|view, _event: &ClickEvent, window, cx| {
-                                view.toggle_playback(&crate::actions::PlayPause, window, cx);
+                                view.toggle_playback(&crate::app::actions::PlayPause, window, cx);
                             }))
                             .child(
                                 IconButton::with_child(
@@ -475,7 +479,7 @@ impl PlayerView {
                         div()
                             .id("transport-next-wrapper")
                             .on_click(cx.listener(|view, _event: &ClickEvent, window, cx| {
-                                view.next_track(&crate::actions::NextTrack, window, cx);
+                                view.next_track(&crate::app::actions::NextTrack, window, cx);
                             }))
                             .child(
                                 IconButton::with_child(
@@ -506,7 +510,7 @@ impl PlayerView {
                                 .text_xs()
                                 .text_color(text_muted)
                                 .min_w(px(40.0))
-				.mb(px(24.0))
+                                .mb(px(24.0))
                                 .flex()
                                 .items_center()
                                 .justify_center()
@@ -522,20 +526,23 @@ impl PlayerView {
                                 .cursor_pointer()
                                 .on_mouse_down(
                                     MouseButton::Left,
-                                    cx.listener(move |view, event: &MouseDownEvent, _window, cx| {
-                                        if let Some(bounds) = *bounds_ref_clone.borrow() {
-                                            // Calculate relative position
-                                            let x = event.position.x - bounds.origin.x;
-                                            let width = bounds.size.width;
-                                            let ratio = (x / width).clamp(0.0, 1.0);
+                                    cx.listener(
+                                        move |view, event: &MouseDownEvent, _window, cx| {
+                                            if let Some(bounds) = *bounds_ref_clone.borrow() {
+                                                // Calculate relative position
+                                                let x = event.position.x - bounds.origin.x;
+                                                let width = bounds.size.width;
+                                                let ratio = (x / width).clamp(0.0, 1.0);
 
-                                            view.state.update(cx, |state, _cx| {
-                                                let new_pos = state.app.duration_secs * ratio as f64;
-                                                state.app.position_secs = new_pos;
-                                            });
-                                            cx.notify();
-                                        }
-                                    }),
+                                                view.state.update(cx, |state, _cx| {
+                                                    let new_pos =
+                                                        state.app.duration_secs * ratio as f64;
+                                                    state.app.position_secs = new_pos;
+                                                });
+                                                cx.notify();
+                                            }
+                                        },
+                                    ),
                                 )
                                 .child(WaveformElement::new(
                                     waveform.clone(),
@@ -551,7 +558,7 @@ impl PlayerView {
                                 .text_xs()
                                 .text_color(text_muted)
                                 .min_w(px(40.0))
-				.mb(px(24.0))
+                                .mb(px(24.0))
                                 .flex()
                                 .items_center()
                                 .justify_center()
@@ -649,7 +656,8 @@ impl PlayerView {
                                         // Already open: Check if modified
                                         if state.app.plugin_chain_modified {
                                             // Propose to save (enter save mode)
-                                            state.app.input_mode = crate::app::InputMode::SavePlugins;
+                                            state.app.input_mode =
+                                                crate::app::InputMode::SavePlugins;
                                             state.app.pending_studio_close = true;
                                         } else {
                                             // Close: Go back to last screen
@@ -657,7 +665,8 @@ impl PlayerView {
                                         }
                                     } else {
                                         // Open Studio logic
-                                        if state.app.current_screen != crate::app::Screen::Settings {
+                                        if state.app.current_screen != crate::app::Screen::Settings
+                                        {
                                             state.app.last_screen = state.app.current_screen;
                                             state.app.current_screen = crate::app::Screen::Settings;
                                         }

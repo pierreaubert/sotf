@@ -447,8 +447,10 @@ fn investigate_solution(
     let total_rhs_cbie = &system_cbie.rhs + &incident_rhs_cbie;
 
     // Solve all systems
-    let solution_trad = lu_solve(&system_traditional.matrix, &total_rhs_trad).expect("Solver failed");
-    let solution_floored = lu_solve(&system_floored.matrix, &total_rhs_floored).expect("Solver failed");
+    let solution_trad =
+        lu_solve(&system_traditional.matrix, &total_rhs_trad).expect("Solver failed");
+    let solution_floored =
+        lu_solve(&system_floored.matrix, &total_rhs_floored).expect("Solver failed");
     let solution_cbie = lu_solve(&system_cbie.matrix, &total_rhs_cbie).expect("Solver failed");
 
     // Traditional solution statistics

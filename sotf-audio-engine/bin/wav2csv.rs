@@ -1,5 +1,5 @@
 use clap::Parser;
-use sotf_audio::signal_analysis::{analyze_wav_file, write_wav_analysis_csv, WavAnalysisConfig};
+use sotf_audio::signal_analysis::{WavAnalysisConfig, analyze_wav_file, write_wav_analysis_csv};
 use std::path::PathBuf;
 
 /// Convert WAV file to frequency/SPL/phase CSV

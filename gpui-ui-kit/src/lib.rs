@@ -71,7 +71,9 @@ pub use accordion::{Accordion, AccordionItem, AccordionMode, AccordionTheme};
 pub use breadcrumbs::{BreadcrumbItem, BreadcrumbSeparator, Breadcrumbs};
 pub use menu::{Menu, MenuBar, MenuBarItem, MenuItem, MenuTheme, menu_bar_button};
 pub use tabs::{TabItem, TabVariant, Tabs, TabsTheme};
-pub use wizard::{StepStatus, Wizard, WizardHeader, WizardNavigation, WizardStep, WizardTheme, WizardVariant};
+pub use wizard::{
+    StepStatus, Wizard, WizardHeader, WizardNavigation, WizardStep, WizardTheme, WizardVariant,
+};
 
 // Notifications
 pub use alert::{Alert, AlertVariant, InlineAlert};
@@ -79,8 +81,8 @@ pub use toast::{Toast, ToastContainer, ToastPosition, ToastVariant};
 
 // Form
 pub use autoeq_form::{
-    AutoEqConfig, AutoEqForm, AutoEqFormTheme, AutoEqFormUiState, ParamLimits,
-    ALGORITHM_OPTIONS, DE_STRATEGY_OPTIONS, LOCAL_ALGO_OPTIONS, PEQ_MODEL_OPTIONS,
+    ALGORITHM_OPTIONS, AutoEqConfig, AutoEqForm, AutoEqFormTheme, AutoEqFormUiState,
+    DE_STRATEGY_OPTIONS, LOCAL_ALGO_OPTIONS, PEQ_MODEL_OPTIONS, ParamLimits,
 };
 pub use checkbox::{Checkbox, CheckboxSize};
 pub use color::Color;

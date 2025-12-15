@@ -12,8 +12,8 @@ use tokio::sync::mpsc;
 
 use super::output;
 use super::types::{
-    ChannelConfig, ChannelMeasurements, ChannelOptimizationResult, ChannelOptStatus, CrossoverType,
-    Curve, DspChainOutput, OptimizerConfig, OptimizationProgress, SpeakerConfigType,
+    ChannelConfig, ChannelMeasurements, ChannelOptStatus, ChannelOptimizationResult, CrossoverType,
+    Curve, DspChainOutput, OptimizationProgress, OptimizerConfig, SpeakerConfigType,
 };
 
 /// Room EQ Optimizer
@@ -61,7 +61,8 @@ impl RoomEqOptimizer {
         log::info!("Optimizing single channel: {}", channel_name);
 
         // Compute pre-score (simple RMS deviation from flat)
-        let pre_score = compute_flat_deviation(measurement, self.config.min_freq, self.config.max_freq);
+        let pre_score =
+            compute_flat_deviation(measurement, self.config.min_freq, self.config.max_freq);
 
         // TODO: Integrate actual optimization from autoeq crate
         // For now, return a placeholder result
@@ -104,14 +105,17 @@ impl RoomEqOptimizer {
 
         // Use first driver as combined for pre-score
         let combined = driver_measurements.first().cloned().unwrap_or_default();
-        let pre_score = compute_flat_deviation(&combined, self.config.min_freq, self.config.max_freq);
+        let pre_score =
+            compute_flat_deviation(&combined, self.config.min_freq, self.config.max_freq);
 
         // Initial crossover frequencies (geometric mean between adjacent drivers)
         let crossover_freqs = compute_initial_crossover_freqs(&driver_measurements);
         let driver_gains = vec![0.0; driver_measurements.len()];
 
         // TODO: Integrate actual optimization from autoeq crate
-        log::warn!("Room EQ multi-driver optimization not yet implemented - returning placeholder result");
+        log::warn!(
+            "Room EQ multi-driver optimization not yet implemented - returning placeholder result"
+        );
 
         Ok(ChannelOptimizationResult {
             channel_name: channel_name.to_string(),
@@ -173,11 +177,15 @@ impl RoomEqOptimizer {
             // Run optimization
             let result = if is_multidriver && !measurements.drivers.is_empty() {
                 // Multi-driver optimization
-                let driver_curves: Vec<Curve> =
-                    measurements.drivers.iter().map(|m| m.curve.clone()).collect();
+                let driver_curves: Vec<Curve> = measurements
+                    .drivers
+                    .iter()
+                    .map(|m| m.curve.clone())
+                    .collect();
 
                 // Update status for crossover
-                channel_statuses.insert(channel_name.clone(), ChannelOptStatus::OptimizingCrossover);
+                channel_statuses
+                    .insert(channel_name.clone(), ChannelOptStatus::OptimizingCrossover);
                 if let Some(ref mut tx) = progress_tx {
                     let progress = OptimizationProgress {
                         current_channel: Some(channel_name.clone()),
@@ -203,7 +211,10 @@ impl RoomEqOptimizer {
                 Err(e) => {
                     log::error!("Failed to optimize channel {}: {}", channel_name, e);
                     channel_statuses.insert(channel_name.clone(), ChannelOptStatus::Failed);
-                    return Err(format!("Failed to optimize channel {}: {}", channel_name, e));
+                    return Err(format!(
+                        "Failed to optimize channel {}: {}",
+                        channel_name, e
+                    ));
                 }
             }
         }
@@ -284,7 +295,8 @@ fn compute_initial_crossover_freqs(drivers: &[Curve]) -> Vec<f64> {
     for i in 0..(drivers.len().saturating_sub(1)) {
         // Geometric mean between adjacent driver frequency ranges
         let lower_mean = drivers[i].freq.iter().sum::<f64>() / drivers[i].freq.len().max(1) as f64;
-        let upper_mean = drivers[i + 1].freq.iter().sum::<f64>() / drivers[i + 1].freq.len().max(1) as f64;
+        let upper_mean =
+            drivers[i + 1].freq.iter().sum::<f64>() / drivers[i + 1].freq.len().max(1) as f64;
         let geom_mean = (lower_mean * upper_mean).sqrt();
         freqs.push(geom_mean);
     }
@@ -300,7 +312,9 @@ pub async fn run_optimization_task(
     configs: HashMap<String, ChannelConfig>,
     progress_tx: mpsc::Sender<OptimizationProgress>,
 ) -> Result<HashMap<String, ChannelOptimizationResult>, String> {
-    optimizer.optimize_all_channels(channels, configs, Some(progress_tx)).await
+    optimizer
+        .optimize_all_channels(channels, configs, Some(progress_tx))
+        .await
 }
 
 #[cfg(test)]

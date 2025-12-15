@@ -1,12 +1,15 @@
+use autoeq_iir::{Biquad, BiquadFilterType};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde_json::json;
 use sotf_audio::engine::{AudioEngine, EngineConfig, PluginConfig};
-use autoeq_iir::{Biquad, BiquadFilterType};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 // Helper to find device (copied from previous test to avoid external dependencies on test modules)
-fn find_device(name_part: &str, input: bool) -> Option<(cpal::Device, cpal::SupportedStreamConfig)> {
+fn find_device(
+    name_part: &str,
+    input: bool,
+) -> Option<(cpal::Device, cpal::SupportedStreamConfig)> {
     let host = cpal::default_host();
     let devices = if input {
         host.input_devices().ok()?
@@ -49,12 +52,12 @@ fn test_eq_sweep_loopback_verification() {
 
     for name in device_names {
         if let Some(out) = find_device(name, false) {
-             if let Some(in_) = find_device(name, true) {
-                 output_setup = Some(out);
-                 input_setup = Some(in_);
-                 println!("Found device: {}", name);
-                 break;
-             }
+            if let Some(in_) = find_device(name, true) {
+                output_setup = Some(out);
+                input_setup = Some(in_);
+                println!("Found device: {}", name);
+                break;
+            }
         }
     }
 
@@ -65,28 +68,28 @@ fn test_eq_sweep_loopback_verification() {
 
     let (out_device, out_config) = output_setup.unwrap();
     let (in_device, in_config) = input_setup.unwrap();
-    
+
     // Ensure we use the device's native sample rate to avoid resampling artifacts in the loopback
     let sample_rate = out_config.sample_rate().0 as f64;
     println!("Testing at sample rate: {} Hz", sample_rate);
 
     // 2. Configure EQ Parameters (Test Case: +6dB Peak at 1kHz)
     let eq_freq = 1000.0;
-    let eq_gain = 6.0; 
+    let eq_gain = 6.0;
     let eq_q = 1.0;
 
     // 3. Generate Sweep Signal (Source)
     let duration_secs = 2.0;
     let num_samples = (duration_secs * sample_rate) as usize;
     let mut source_signal = Vec::with_capacity(num_samples);
-    
+
     // Logarithmic sweep 20Hz to 20kHz
     let start_freq: f64 = 20.0;
     let end_freq: f64 = 20000.0;
     // f(t) = start * exp(k*t)
     // k = ln(end/start) / T
     let k = (end_freq / start_freq).ln() / duration_secs;
-    
+
     for i in 0..num_samples {
         let t = i as f64 / sample_rate;
         // phase = integral(f(t) dt) from 0 to t
@@ -97,15 +100,11 @@ fn test_eq_sweep_loopback_verification() {
     }
 
     // 4. Generate Expected Signal (Reference) using autoeq-iir
-    let mut reference_filter = Biquad::new(
-        BiquadFilterType::Peak,
-        eq_freq,
-        sample_rate,
-        eq_q,
-        eq_gain
-    );
-    
-    let expected_signal: Vec<f32> = source_signal.iter()
+    let mut reference_filter =
+        Biquad::new(BiquadFilterType::Peak, eq_freq, sample_rate, eq_q, eq_gain);
+
+    let expected_signal: Vec<f32> = source_signal
+        .iter()
         .map(|&s| reference_filter.process(s) as f32)
         .collect();
 
@@ -113,23 +112,21 @@ fn test_eq_sweep_loopback_verification() {
     let mut config = EngineConfig::default();
     config.output_device = Some(out_device.name().unwrap());
     config.output_channels = 2;
-    
+
     // EQ Plugin Configuration
-    config.plugins = vec![
-        PluginConfig::new(
-            "eq",
-            json!({
-                "filters": [
-                    {
-                        "filter_type": "Peak",
-                        "frequency": eq_freq,
-                        "q": eq_q,
-                        "gain_db": eq_gain
-                    }
-                ]
-            }),
-        ),
-    ];
+    config.plugins = vec![PluginConfig::new(
+        "eq",
+        json!({
+            "filters": [
+                {
+                    "filter_type": "Peak",
+                    "frequency": eq_freq,
+                    "q": eq_q,
+                    "gain_db": eq_gain
+                }
+            ]
+        }),
+    )];
 
     let mut engine = match AudioEngine::new(config) {
         Ok(e) => e,
@@ -148,7 +145,7 @@ fn test_eq_sweep_loopback_verification() {
     };
     let temp_file = tempfile::Builder::new().suffix(".wav").tempfile().unwrap();
     let mut writer = hound::WavWriter::create(temp_file.path(), spec).unwrap();
-    
+
     // Scale by 0.5 to match source generation (source was sine amplitude 1.0, but let's be consistent)
     // Actually, source_signal is already amplitude 1.0.
     // If we write full scale i16, we might clip +6dB EQ.
@@ -165,15 +162,19 @@ fn test_eq_sweep_loopback_verification() {
     let capture_clone = captured_samples.clone();
     let channels = in_config.channels() as usize;
 
-    let stream = in_device.build_input_stream(
-        &in_config.into(),
-        move |data: &[f32], _: &_| {
-            let mut buffer = capture_clone.lock().unwrap();
-            buffer.extend_from_slice(data);
-        },
-        move |err| { eprintln!("Capture error: {}", err); },
-        None
-    ).expect("Failed to build input stream");
+    let stream = in_device
+        .build_input_stream(
+            &in_config.into(),
+            move |data: &[f32], _: &_| {
+                let mut buffer = capture_clone.lock().unwrap();
+                buffer.extend_from_slice(data);
+            },
+            move |err| {
+                eprintln!("Capture error: {}", err);
+            },
+            None,
+        )
+        .expect("Failed to build input stream");
 
     stream.play().expect("Failed to start capture");
 
@@ -186,7 +187,7 @@ fn test_eq_sweep_loopback_verification() {
 
     // Wait for playback + buffer
     std::thread::sleep(Duration::from_millis(500)); // pre-roll
-    std::thread::sleep(Duration::from_secs_f64(duration_secs + 0.5)); 
+    std::thread::sleep(Duration::from_secs_f64(duration_secs + 0.5));
 
     drop(stream);
 
@@ -199,31 +200,32 @@ fn test_eq_sweep_loopback_verification() {
     }
 
     // De-interleave channel 0 (Left)
-    let captured_ch0: Vec<f32> = raw_capture.iter()
-        .step_by(channels)
-        .cloned()
-        .collect();
+    let captured_ch0: Vec<f32> = raw_capture.iter().step_by(channels).cloned().collect();
 
     // 10. Align Signals (Cross-Correlation)
     // We expect the captured signal to match 'expected_signal * 0.5'
     // (because we scaled by 0.5 when writing WAV)
-    
+
     let search_window = sample_rate as usize; // 1 second
     if captured_ch0.len() < search_window {
-        panic!("Captured too short ({} samples), expected > {}", captured_ch0.len(), search_window);
+        panic!(
+            "Captured too short ({} samples), expected > {}",
+            captured_ch0.len(),
+            search_window
+        );
     }
 
     let mut best_offset = 0;
     let mut max_corr = 0.0;
     let ref_snippet_len = 2000;
     let ref_snippet = &expected_signal[0..ref_snippet_len];
-    
+
     // Scan for best alignment
     let max_search = captured_ch0.len().min(search_window) - ref_snippet_len;
     for offset in 0..max_search {
         let mut corr = 0.0;
         // Optimization: stride for speed, then fine tune? No, simple loop is fast enough for 48k
-        for j in (0..ref_snippet_len).step_by(4) { 
+        for j in (0..ref_snippet_len).step_by(4) {
             corr += captured_ch0[offset + j] * ref_snippet[j];
         }
         if corr.abs() > max_corr {
@@ -231,8 +233,12 @@ fn test_eq_sweep_loopback_verification() {
             best_offset = offset;
         }
     }
-    
-    println!("Detected latency: {} samples ({:.2} ms)", best_offset, best_offset as f64 / sample_rate * 1000.0);
+
+    println!(
+        "Detected latency: {} samples ({:.2} ms)",
+        best_offset,
+        best_offset as f64 / sample_rate * 1000.0
+    );
 
     // 11. Compare Aligned Signals
     let comparison_len = (expected_signal.len() - 2000).min(captured_ch0.len() - best_offset);
@@ -242,7 +248,7 @@ fn test_eq_sweep_loopback_verification() {
     for i in 0..comparison_len {
         let rec = captured_ch0[best_offset + i];
         let expected = expected_signal[i] * 0.5; // Apply scaling
-        
+
         let diff = rec - expected;
         error_sum += diff * diff;
         signal_energy += expected * expected;
@@ -255,16 +261,20 @@ fn test_eq_sweep_loopback_verification() {
     } else {
         1.0 // Should not happen if signal played
     };
-    
+
     println!("MSE: {:.8}, NMSE: {:.8}", mse, nmse);
 
     // 12. Assertions
     // Ensure signal was actually recorded (energy > silence)
     assert!(signal_energy > 0.001, "Recorded signal silent?");
-    
+
     // Check error metric
     // NMSE < 0.01 (1%) is acceptable for loopback with potential resampling/dithering
-    assert!(nmse < 0.05, "EQ Verification Failed! Signal mismatch too high (NMSE: {:.6})", nmse);
-    
+    assert!(
+        nmse < 0.05,
+        "EQ Verification Failed! Signal mismatch too high (NMSE: {:.6})",
+        nmse
+    );
+
     println!("Test PASSED: EQ Output matches Reference Model.");
 }

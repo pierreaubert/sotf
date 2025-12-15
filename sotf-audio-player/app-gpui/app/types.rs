@@ -465,20 +465,20 @@ impl RecordingSignalType {
 /// Speaker configuration presets
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpeakerConfiguration {
-    Stereo,         // 2.0
-    Stereo21,       // 2.1
-    Surround50,     // 5.0
-    Surround51,     // 5.1
-    Surround71,     // 7.1
-    Surround91,     // 9.1
-    Atmos512,       // 5.1.2
-    Atmos514,       // 5.1.4
-    Atmos712,       // 7.1.2
-    Atmos714,       // 7.1.4
-    Atmos912,       // 9.1.2
-    Atmos914,       // 9.1.4
-    Atmos916,       // 9.1.6
-    Custom,         // User-defined
+    Stereo,     // 2.0
+    Stereo21,   // 2.1
+    Surround50, // 5.0
+    Surround51, // 5.1
+    Surround71, // 7.1
+    Surround91, // 9.1
+    Atmos512,   // 5.1.2
+    Atmos514,   // 5.1.4
+    Atmos712,   // 7.1.2
+    Atmos714,   // 7.1.4
+    Atmos912,   // 9.1.2
+    Atmos914,   // 9.1.4
+    Atmos916,   // 9.1.6
+    Custom,     // User-defined
 }
 
 impl SpeakerConfiguration {
@@ -548,14 +548,30 @@ impl SpeakerConfiguration {
             SpeakerConfiguration::Surround50 => vec!["L", "R", "C", "SL", "SR"],
             SpeakerConfiguration::Surround51 => vec!["L", "R", "C", "LFE", "SL", "SR"],
             SpeakerConfiguration::Surround71 => vec!["L", "R", "C", "LFE", "SL", "SR", "BL", "BR"],
-            SpeakerConfiguration::Surround91 => vec!["L", "R", "C", "LFE", "SL", "SR", "BL", "BR", "WL", "WR"],
+            SpeakerConfiguration::Surround91 => {
+                vec!["L", "R", "C", "LFE", "SL", "SR", "BL", "BR", "WL", "WR"]
+            }
             SpeakerConfiguration::Atmos512 => vec!["L", "R", "C", "LFE", "SL", "SR", "TFL", "TFR"],
-            SpeakerConfiguration::Atmos514 => vec!["L", "R", "C", "LFE", "SL", "SR", "TFL", "TFR", "TBL", "TBR"],
-            SpeakerConfiguration::Atmos712 => vec!["L", "R", "C", "LFE", "SL", "SR", "BL", "BR", "TFL", "TFR"],
-            SpeakerConfiguration::Atmos714 => vec!["L", "R", "C", "LFE", "SL", "SR", "BL", "BR", "TFL", "TFR", "TBL", "TBR"],
-            SpeakerConfiguration::Atmos912 => vec!["L", "R", "C", "LFE", "SL", "SR", "BL", "BR", "WL", "WR", "TFL", "TFR"],
-            SpeakerConfiguration::Atmos914 => vec!["L", "R", "C", "LFE", "SL", "SR", "BL", "BR", "WL", "WR", "TFL", "TFR", "TBL", "TBR"],
-            SpeakerConfiguration::Atmos916 => vec!["L", "R", "C", "LFE", "SL", "SR", "BL", "BR", "WL", "WR", "TFL", "TFR", "TML", "TMR", "TBL", "TBR"],
+            SpeakerConfiguration::Atmos514 => {
+                vec!["L", "R", "C", "LFE", "SL", "SR", "TFL", "TFR", "TBL", "TBR"]
+            }
+            SpeakerConfiguration::Atmos712 => {
+                vec!["L", "R", "C", "LFE", "SL", "SR", "BL", "BR", "TFL", "TFR"]
+            }
+            SpeakerConfiguration::Atmos714 => vec![
+                "L", "R", "C", "LFE", "SL", "SR", "BL", "BR", "TFL", "TFR", "TBL", "TBR",
+            ],
+            SpeakerConfiguration::Atmos912 => vec![
+                "L", "R", "C", "LFE", "SL", "SR", "BL", "BR", "WL", "WR", "TFL", "TFR",
+            ],
+            SpeakerConfiguration::Atmos914 => vec![
+                "L", "R", "C", "LFE", "SL", "SR", "BL", "BR", "WL", "WR", "TFL", "TFR", "TBL",
+                "TBR",
+            ],
+            SpeakerConfiguration::Atmos916 => vec![
+                "L", "R", "C", "LFE", "SL", "SR", "BL", "BR", "WL", "WR", "TFL", "TFR", "TML",
+                "TMR", "TBL", "TBR",
+            ],
             SpeakerConfiguration::Custom => vec!["L", "R"],
         }
     }
@@ -621,7 +637,10 @@ impl CalibrationData {
         if frequencies.is_empty() {
             None
         } else {
-            Some(Self { frequencies, spl_db })
+            Some(Self {
+                frequencies,
+                spl_db,
+            })
         }
     }
 
@@ -715,7 +734,7 @@ impl Default for RecordingState {
             duration_dropdown_open: false,
             channel_name_dropdown_open: None,
             config_accordion_expanded: vec!["playback".into(), "output_dir".into()], // Playback and output directory sections open by default
-            plot_selected_channel: None, // All channels
+            plot_selected_channel: None,                                             // All channels
             plot_smoothing: PlotSmoothing::None,
             plot_channel_dropdown_open: false,
             plot_smoothing_dropdown_open: false,
@@ -1115,14 +1134,14 @@ pub struct RoomEqOptimizerConfig {
 impl Default for RoomEqOptimizerConfig {
     fn default() -> Self {
         Self {
-            algorithm: RoomEqAlgorithm::Cobyla,
-            num_filters: 10,
+            algorithm: RoomEqAlgorithm::DifferentialEvolution,
+            num_filters: 5,
             min_q: 0.5,
-            max_q: 10.0,
+            max_q: 6.0,
             min_db: -12.0,
-            max_db: 12.0,
+            max_db: 3.0,
             min_freq: 20.0,
-            max_freq: 20000.0,
+            max_freq: 16000.0,
             max_iter: 10000,
         }
     }
@@ -1398,7 +1417,10 @@ impl RoomEqState {
         if self.channel_results.is_empty() {
             0.0
         } else {
-            self.channel_results.iter().map(|r| r.pre_score).sum::<f64>()
+            self.channel_results
+                .iter()
+                .map(|r| r.pre_score)
+                .sum::<f64>()
                 / self.channel_results.len() as f64
         }
     }
@@ -1408,7 +1430,10 @@ impl RoomEqState {
         if self.channel_results.is_empty() {
             0.0
         } else {
-            self.channel_results.iter().map(|r| r.post_score).sum::<f64>()
+            self.channel_results
+                .iter()
+                .map(|r| r.post_score)
+                .sum::<f64>()
                 / self.channel_results.len() as f64
         }
     }
@@ -1623,11 +1648,7 @@ impl Default for HeadphoneEqState {
             dropdowns: HeadphoneEqDropdowns::default(),
             status_message: String::new(),
             error_message: None,
-            expanded_sections: vec![
-                "measurement".into(),
-                "target".into(),
-                "eq-design".into(),
-            ],
+            expanded_sections: vec!["measurement".into(), "target".into(), "eq-design".into()],
         }
     }
 }

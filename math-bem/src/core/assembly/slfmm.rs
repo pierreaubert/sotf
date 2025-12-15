@@ -22,9 +22,9 @@ use num_complex::Complex64;
 
 use crate::core::parallel::{parallel_enumerate_filter_map, parallel_flat_map, parallel_map};
 
-use math_wave::special::spherical_hankel_first_kind;
 use crate::core::integration::{regular_integration, singular_integration, unit_sphere_quadrature};
 use crate::core::types::{BoundaryCondition, Cluster, Element, PhysicsParams};
+use math_wave::special::spherical_hankel_first_kind;
 
 /// Result of SLFMM assembly
 #[derive(Clone)]

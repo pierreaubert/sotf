@@ -11,7 +11,7 @@
 //!   sotf-bliss-scan <file>       # Analyze a single file
 
 use clap::Parser;
-use sotf_audio_player::bliss::{analyze_file, BlissScanManager, BlissScanMessage};
+use sotf_audio_player::bliss::{BlissScanManager, BlissScanMessage, analyze_file};
 use sotf_audio_player::config;
 use sotf_audio_player::database::MusicDatabase;
 use std::path::{Path, PathBuf};
@@ -21,8 +21,10 @@ use std::time::Instant;
 #[derive(Parser, Debug)]
 #[command(name = "sotf-bliss-scan")]
 #[command(about = "Compute bliss audio analysis values for music similarity")]
-#[command(long_about = "Analyzes audio files to extract features like tempo, spectral characteristics, \
-                        and loudness that can be used for finding similar tracks.")]
+#[command(
+    long_about = "Analyzes audio files to extract features like tempo, spectral characteristics, \
+                        and loudness that can be used for finding similar tracks."
+)]
 struct Args {
     /// Single file to analyze (prints analysis to stdout)
     #[arg(value_name = "FILE")]
@@ -83,9 +85,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Found {} tracks to analyze", tracks.len());
 
     // Determine number of worker threads
-    let num_threads = args
-        .jobs
-        .unwrap_or_else(|| num_cpus::get().clamp(1, 4));
+    let num_threads = args.jobs.unwrap_or_else(|| num_cpus::get().clamp(1, 4));
     println!("Using {} worker threads", num_threads);
 
     // Start scanning
@@ -105,11 +105,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if progress - last_progress >= 1.0 || manager.processed == manager.total {
             print!(
                 "\rProgress: {}/{} ({:.1}%) - {} succeeded, {} failed",
-                manager.processed,
-                manager.total,
-                progress,
-                manager.succeeded,
-                manager.failed
+                manager.processed, manager.total, progress, manager.succeeded, manager.failed
             );
             std::io::Write::flush(&mut std::io::stdout())?;
             last_progress = progress;
@@ -200,7 +196,10 @@ fn analyze_single_file(path: &Path, verbose: bool) -> Result<(), Box<dyn std::er
     println!("\n  Analysis took: {:.2}s", elapsed.as_secs_f64());
 
     if verbose {
-        println!("\n  Full feature vector ({} features):", analysis.features.len());
+        println!(
+            "\n  Full feature vector ({} features):",
+            analysis.features.len()
+        );
         for (i, f) in analysis.features.iter().enumerate() {
             println!("    [{:2}] {:.6}", i, f);
         }

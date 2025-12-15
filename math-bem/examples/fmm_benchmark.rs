@@ -9,8 +9,8 @@ fn main() {
     use bem::core::assembly::tbem::build_tbem_system_scaled;
     use bem::core::incident::IncidentField;
     use bem::core::mesh::generators::generate_icosphere_mesh;
-    use bem::core::solver::{CgsConfig, solve_cgs};
     use bem::core::solver::direct::lu_solve;
+    use bem::core::solver::{CgsConfig, solve_cgs};
     use bem::core::types::{BoundaryCondition, Cluster, PhysicsParams};
     use ndarray::{Array1, Array2};
     use num_complex::Complex64;
@@ -108,11 +108,11 @@ fn main() {
 
         // SLFMM solve using CGS (matrix-free)
         let start = Instant::now();
-        
+
         // Wrap FMM system in operator
         use bem::core::solver::SlfmmOperator;
         let op = SlfmmOperator::new(slfmm_system.clone());
-        
+
         let config = CgsConfig {
             tolerance: 1e-8,
             max_iterations: 1000,
@@ -124,11 +124,7 @@ fn main() {
         // Compare solutions
         let diff: Array1<Complex64> = &tbem_x - &slfmm_solution.x;
         let diff_norm: f64 = diff.iter().map(|d| d.norm_sqr()).sum::<f64>().sqrt();
-        let tbem_norm: f64 = tbem_x
-            .iter()
-            .map(|x| x.norm_sqr())
-            .sum::<f64>()
-            .sqrt();
+        let tbem_norm: f64 = tbem_x.iter().map(|x| x.norm_sqr()).sum::<f64>().sqrt();
         let rel_error = diff_norm / tbem_norm.max(1e-15);
 
         println!(
@@ -186,11 +182,11 @@ fn main() {
     let clusters = vec![cluster];
 
     let slfmm_system = build_slfmm_system(&elements, &mesh.nodes, &clusters, &physics, 8, 16, 10);
-    
+
     // Wrap FMM system in operator
     use bem::core::solver::SlfmmOperator;
     let op = SlfmmOperator::new(slfmm_system.clone());
-    
+
     let config = CgsConfig {
         tolerance: 1e-10,
         max_iterations: 1000,

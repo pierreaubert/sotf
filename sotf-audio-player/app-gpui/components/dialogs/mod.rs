@@ -582,7 +582,6 @@ impl PlayerView {
                     .muted(true),
             )
     }
-
 }
 
 fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str)> {

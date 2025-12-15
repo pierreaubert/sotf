@@ -1704,9 +1704,9 @@ impl App {
                 } => {
                     match param_idx {
                         0 => *low_freq = (*low_freq + delta * 10.0).clamp(20.0, 500.0), // Adjust low_freq
-                        1 => *low_gain = (*low_gain + delta).clamp(-20.0, 20.0),        // Adjust low_gain
+                        1 => *low_gain = (*low_gain + delta).clamp(-20.0, 20.0), // Adjust low_gain
                         2 => *high_freq = (*high_freq + delta * 100.0).clamp(2000.0, 20000.0), // Adjust high_freq
-                        3 => *high_gain = (*high_gain + delta).clamp(-20.0, 20.0),      // Adjust high_gain
+                        3 => *high_gain = (*high_gain + delta).clamp(-20.0, 20.0), // Adjust high_gain
                         _ => return false,
                     }
                     true

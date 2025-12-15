@@ -5,14 +5,13 @@ use crate::plugins::common::param_index_to_engine_param;
 // Re-export modules for backward compatibility with crate::ui::components, etc.
 pub use crate::components;
 pub use crate::plugins;
-pub use crate::screens;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{CollapseDirection, PaneDivider, PaneDividerTheme};
 use std::time::Duration;
 
 // Re-export all actions for backward compatibility
-pub use crate::actions::*;
+pub use crate::app::actions::*;
 use crate::plugins::actions::{
     ResetPluginParam, SelectPluginParam, StartKnobDrag, UpdatePluginParam,
 };
@@ -1923,9 +1922,7 @@ impl Render for PlayerView {
                                 Screen::Recording => {
                                     self.render_recording_screen(cx).into_any_element()
                                 }
-                                Screen::RoomEq => {
-                                    self.render_room_eq_screen(cx).into_any_element()
-                                }
+                                Screen::RoomEq => self.render_room_eq_screen(cx).into_any_element(),
                                 Screen::HeadphoneEq => {
                                     self.render_headphone_eq_screen(cx).into_any_element()
                                 }
@@ -1954,9 +1951,7 @@ impl Render for PlayerView {
                                 Screen::Recording => {
                                     self.render_recording_screen(cx).into_any_element()
                                 }
-                                Screen::RoomEq => {
-                                    self.render_room_eq_screen(cx).into_any_element()
-                                }
+                                Screen::RoomEq => self.render_room_eq_screen(cx).into_any_element(),
                                 Screen::HeadphoneEq => {
                                     self.render_headphone_eq_screen(cx).into_any_element()
                                 }

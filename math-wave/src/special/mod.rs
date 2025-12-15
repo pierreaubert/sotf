@@ -12,10 +12,10 @@
 //! - Spherical harmonic expansions
 //! - FMM translation operators
 
-pub mod spherical;
 pub mod helmholtz;
 mod legendre;
+pub mod spherical;
 
-pub use spherical::*;
 pub use helmholtz::*;
 pub use legendre::*;
+pub use spherical::*;

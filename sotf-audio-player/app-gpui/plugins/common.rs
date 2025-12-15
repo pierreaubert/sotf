@@ -44,7 +44,10 @@ pub fn param_index_to_engine_param(
             6 => Some(("mix".to_string(), format!("{}", mix))),
             7 => Some(("auto_makeup".to_string(), auto_makeup.to_string())),
             8 => Some(("link_channels".to_string(), link_channels.to_string())),
-            9 => Some(("sidechain_hpf_hz".to_string(), format!("{}", sidechain_hpf_hz))),
+            9 => Some((
+                "sidechain_hpf_hz".to_string(),
+                format!("{}", sidechain_hpf_hz),
+            )),
             _ => None,
         },
         PluginSettings::Upmixer {
@@ -66,9 +69,18 @@ pub fn param_index_to_engine_param(
         } => match param_idx {
             // param 0 = speaker_config: requires Structural (changes channel count)
             0 => None,
-            1 => Some(("gain_front_direct".to_string(), format!("{}", gain_front_direct))),
-            2 => Some(("gain_front_ambient".to_string(), format!("{}", gain_front_ambient))),
-            3 => Some(("gain_rear_ambient".to_string(), format!("{}", gain_rear_ambient))),
+            1 => Some((
+                "gain_front_direct".to_string(),
+                format!("{}", gain_front_direct),
+            )),
+            2 => Some((
+                "gain_front_ambient".to_string(),
+                format!("{}", gain_front_ambient),
+            )),
+            3 => Some((
+                "gain_rear_ambient".to_string(),
+                format!("{}", gain_rear_ambient),
+            )),
             4 => Some(("lfe_cutoff_hz".to_string(), format!("{}", lfe_cutoff_hz))),
             5 => Some(("stereo_width".to_string(), format!("{}", stereo_width))),
             6 => Some(("bandpass_hz".to_string(), format!("{}", bandpass_hz))),
@@ -78,11 +90,17 @@ pub fn param_index_to_engine_param(
                 "enable_subharmonic_synth".to_string(),
                 enable_subharmonic_synth.to_string(),
             )),
-            10 => Some(("subharmonic_gain".to_string(), format!("{}", subharmonic_gain))),
+            10 => Some((
+                "subharmonic_gain".to_string(),
+                format!("{}", subharmonic_gain),
+            )),
             11 => Some(("enable_hr_direct".to_string(), enable_hr_direct.to_string())),
             12 => Some(("hr_sharpen".to_string(), format!("{}", hr_sharpen))),
             13 => Some(("safety_cap_db".to_string(), format!("{}", safety_cap_db))),
-            14 => Some(("decorrelation_mode".to_string(), format!("{}", decorrelation_mode))),
+            14 => Some((
+                "decorrelation_mode".to_string(),
+                format!("{}", decorrelation_mode),
+            )),
             _ => None,
         },
         PluginSettings::Convolution { mix, gain_db, .. } => match param_idx {

@@ -6,7 +6,7 @@ use crate::app::types::{CalibrationData, ChannelMapping, RecordingState, Speaker
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_px::{line, ScaleType};
+use gpui_px::{ScaleType, line};
 use gpui_ui_kit::{
     Accordion, AccordionItem, AccordionMode, Badge, BadgeVariant, Button, ButtonSize,
     ButtonVariant, Card, HStack, Input, InputSize, NumberInput, NumberInputSize, Select,
@@ -116,7 +116,11 @@ impl PlayerView {
                 state.app.theme.clone(),
                 state.app.recording_state.playback_config.num_channels,
                 state.app.recording_state.playback_config.sample_rate,
-                state.app.recording_state.playback_config.speaker_configuration,
+                state
+                    .app
+                    .recording_state
+                    .playback_config
+                    .speaker_configuration,
             )
         };
         let view = cx.entity().clone();
@@ -129,7 +133,9 @@ impl PlayerView {
         );
 
         // Sample rate dropdown row
-        let sample_rate_row = self.render_playback_sample_rate_dropdown(cx).into_any_element();
+        let sample_rate_row = self
+            .render_playback_sample_rate_dropdown(cx)
+            .into_any_element();
 
         // Speaker configuration dropdown row
         let speaker_config_row = self.render_speaker_config_dropdown(cx).into_any_element();
@@ -180,7 +186,9 @@ impl PlayerView {
                         .color(theme.text_secondary),
                 )
                 .child(Badge::new(format!("{}", num_channels)).variant(BadgeVariant::Info))
-                .child(Badge::new(format!("{} kHz", sample_rate / 1000)).variant(BadgeVariant::Info))
+                .child(
+                    Badge::new(format!("{} kHz", sample_rate / 1000)).variant(BadgeVariant::Info),
+                )
                 .into_any_element()
         };
 
@@ -218,7 +226,9 @@ impl PlayerView {
         );
 
         // Sample rate dropdown row
-        let sample_rate_row = self.render_recording_sample_rate_dropdown(cx).into_any_element();
+        let sample_rate_row = self
+            .render_recording_sample_rate_dropdown(cx)
+            .into_any_element();
 
         // Info badges
         let badges = HStack::new()
@@ -406,9 +416,12 @@ impl PlayerView {
                                     move |_, cx| {
                                         view.update(cx, |this, cx| {
                                             this.state.update(cx, |state, _| {
-                                                state.app.recording_state.recording_base_directory =
+                                                state
+                                                    .app
+                                                    .recording_state
+                                                    .recording_base_directory = None;
+                                                state.app.recording_state.recording_directory =
                                                     None;
-                                                state.app.recording_state.recording_directory = None;
                                             });
                                             cx.notify();
                                         });
@@ -418,22 +431,16 @@ impl PlayerView {
                     }),
             )
             .child(
-                Text::new(
-                    "A timestamped subdirectory will be created for each recording session.",
-                )
-                .size(TextSize::Xs)
-                .color(theme.text_muted),
+                Text::new("A timestamped subdirectory will be created for each recording session.")
+                    .size(TextSize::Xs)
+                    .color(theme.text_muted),
             )
             .when(!has_directory, |stack| {
                 stack.child(
                     HStack::new()
                         .spacing(StackSpacing::Sm)
                         .align(StackAlign::Center)
-                        .child(
-                            Text::new("⚠")
-                                .size(TextSize::Sm)
-                                .color(theme.warning),
-                        )
+                        .child(Text::new("⚠").size(TextSize::Sm).color(theme.warning))
                         .child(
                             Text::new("You must select an output directory before recording.")
                                 .size(TextSize::Sm)
@@ -491,7 +498,11 @@ impl PlayerView {
                 state.app.theme.clone(),
                 state.app.recording_state.playback_config.num_channels,
                 state.app.recording_state.playback_config.sample_rate,
-                state.app.recording_state.playback_config.speaker_configuration,
+                state
+                    .app
+                    .recording_state
+                    .playback_config
+                    .speaker_configuration,
             )
         };
         let view = cx.entity().clone();
@@ -515,7 +526,9 @@ impl PlayerView {
         );
 
         // Sample rate dropdown row
-        let sample_rate_row = self.render_playback_sample_rate_dropdown(cx).into_any_element();
+        let sample_rate_row = self
+            .render_playback_sample_rate_dropdown(cx)
+            .into_any_element();
 
         // Speaker configuration dropdown row
         let speaker_config_row = self.render_speaker_config_dropdown(cx).into_any_element();
@@ -566,7 +579,9 @@ impl PlayerView {
                         .color(theme.text_secondary),
                 )
                 .child(Badge::new(format!("{}", num_channels)).variant(BadgeVariant::Info))
-                .child(Badge::new(format!("{} kHz", sample_rate / 1000)).variant(BadgeVariant::Info))
+                .child(
+                    Badge::new(format!("{} kHz", sample_rate / 1000)).variant(BadgeVariant::Info),
+                )
                 .into_any_element()
         };
 
@@ -650,8 +665,11 @@ impl PlayerView {
                                         config.sample_rate;
                                 }
                                 // Update available sample rates from device
-                                state.app.recording_state.playback_config.available_sample_rates =
-                                    device.available_sample_rates.clone();
+                                state
+                                    .app
+                                    .recording_state
+                                    .playback_config
+                                    .available_sample_rates = device.available_sample_rates.clone();
                             }
                             state.app.recording_state.playback_device_dropdown_open = false;
                         });
@@ -703,7 +721,10 @@ impl PlayerView {
                             move |is_open, _window, cx| {
                                 view.update(cx, |this, cx| {
                                     this.state.update(cx, |state, _| {
-                                        state.app.recording_state.playback_sample_rate_dropdown_open = is_open;
+                                        state
+                                            .app
+                                            .recording_state
+                                            .playback_sample_rate_dropdown_open = is_open;
                                     });
                                     cx.notify();
                                 });
@@ -715,9 +736,13 @@ impl PlayerView {
                                 view.update(cx, |this, cx| {
                                     this.state.update(cx, |state, _| {
                                         if let Ok(rate) = value.parse::<u32>() {
-                                            state.app.recording_state.playback_config.sample_rate = rate;
+                                            state.app.recording_state.playback_config.sample_rate =
+                                                rate;
                                         }
-                                        state.app.recording_state.playback_sample_rate_dropdown_open = false;
+                                        state
+                                            .app
+                                            .recording_state
+                                            .playback_sample_rate_dropdown_open = false;
                                     });
                                     cx.notify();
                                 });
@@ -739,7 +764,10 @@ impl PlayerView {
             .map(|config| SelectOption::new(config.as_str(), config.as_str()))
             .collect();
 
-        let selected_value = recording_state.playback_config.speaker_configuration.as_str();
+        let selected_value = recording_state
+            .playback_config
+            .speaker_configuration
+            .as_str();
 
         HStack::new()
             .spacing(StackSpacing::Md)
@@ -761,7 +789,8 @@ impl PlayerView {
                             move |is_open, _window, cx| {
                                 view.update(cx, |this, cx| {
                                     this.state.update(cx, |state, _| {
-                                        state.app.recording_state.speaker_config_dropdown_open = is_open;
+                                        state.app.recording_state.speaker_config_dropdown_open =
+                                            is_open;
                                     });
                                     cx.notify();
                                 });
@@ -779,26 +808,37 @@ impl PlayerView {
                                             .copied()
                                             .unwrap_or(SpeakerConfiguration::Custom);
 
-                                        state.app.recording_state.playback_config.speaker_configuration = new_config;
+                                        state
+                                            .app
+                                            .recording_state
+                                            .playback_config
+                                            .speaker_configuration = new_config;
 
                                         // Update channel count and mappings based on configuration
                                         if new_config != SpeakerConfiguration::Custom {
-                                            state.app.recording_state.playback_config.num_channels =
-                                                new_config.channel_count();
+                                            state
+                                                .app
+                                                .recording_state
+                                                .playback_config
+                                                .num_channels = new_config.channel_count();
                                             // Set default channel names for the configuration
                                             let channel_names = new_config.default_channel_names();
-                                            state.app.recording_state.playback_config.channel_mappings =
-                                                channel_names
-                                                    .iter()
-                                                    .enumerate()
-                                                    .map(|(i, name)| ChannelMapping {
-                                                        interface_channel: i + 1, // 1-indexed for display
-                                                        group_name: name.to_string(),
-                                                    })
-                                                    .collect();
+                                            state
+                                                .app
+                                                .recording_state
+                                                .playback_config
+                                                .channel_mappings = channel_names
+                                                .iter()
+                                                .enumerate()
+                                                .map(|(i, name)| ChannelMapping {
+                                                    interface_channel: i + 1, // 1-indexed for display
+                                                    group_name: name.to_string(),
+                                                })
+                                                .collect();
                                         }
 
-                                        state.app.recording_state.speaker_config_dropdown_open = false;
+                                        state.app.recording_state.speaker_config_dropdown_open =
+                                            false;
                                     });
                                     cx.notify();
                                 });
@@ -834,8 +874,7 @@ impl PlayerView {
                     let interface_ch = *interface_channel;
 
                     // Render the dropdown for this channel
-                    let group_dropdown =
-                        self.render_channel_group_dropdown(cx, idx, group_name);
+                    let group_dropdown = self.render_channel_group_dropdown(cx, idx, group_name);
 
                     HStack::new()
                         .spacing(StackSpacing::Md)
@@ -994,7 +1033,9 @@ impl PlayerView {
         );
 
         // Sample rate dropdown row
-        let sample_rate_row = self.render_recording_sample_rate_dropdown(cx).into_any_element();
+        let sample_rate_row = self
+            .render_recording_sample_rate_dropdown(cx)
+            .into_any_element();
 
         // Info badges
         let badges = HStack::new()
@@ -1116,8 +1157,11 @@ impl PlayerView {
                                         config.sample_rate;
                                 }
                                 // Update available sample rates from device
-                                state.app.recording_state.recording_config.available_sample_rates =
-                                    device.available_sample_rates.clone();
+                                state
+                                    .app
+                                    .recording_state
+                                    .recording_config
+                                    .available_sample_rates = device.available_sample_rates.clone();
                             }
                             state.app.recording_state.recording_device_dropdown_open = false;
                         });
@@ -1169,7 +1213,10 @@ impl PlayerView {
                             move |is_open, _window, cx| {
                                 view.update(cx, |this, cx| {
                                     this.state.update(cx, |state, _| {
-                                        state.app.recording_state.recording_sample_rate_dropdown_open = is_open;
+                                        state
+                                            .app
+                                            .recording_state
+                                            .recording_sample_rate_dropdown_open = is_open;
                                     });
                                     cx.notify();
                                 });
@@ -1181,9 +1228,16 @@ impl PlayerView {
                                 view.update(cx, |this, cx| {
                                     this.state.update(cx, |state, _| {
                                         if let Ok(rate) = value.parse::<u32>() {
-                                            state.app.recording_state.recording_config.sample_rate = rate;
+                                            state
+                                                .app
+                                                .recording_state
+                                                .recording_config
+                                                .sample_rate = rate;
                                         }
-                                        state.app.recording_state.recording_sample_rate_dropdown_open = false;
+                                        state
+                                            .app
+                                            .recording_state
+                                            .recording_sample_rate_dropdown_open = false;
                                     });
                                     cx.notify();
                                 });

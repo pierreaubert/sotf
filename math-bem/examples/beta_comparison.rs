@@ -72,9 +72,9 @@ fn main() {
                 rhs[i] = p_inc[i] + beta * dpdn_inc[i];
             }
 
-        let solution_x = lu_solve(&system.matrix, &rhs).expect("Linear solver failed");
+            let solution_x = lu_solve(&system.matrix, &rhs).expect("Linear solver failed");
 
-        let avg_p: f64 = solution_x.iter().map(|p| p.norm()).sum::<f64>() / n as f64;
+            let avg_p: f64 = solution_x.iter().map(|p| p.norm()).sum::<f64>() / n as f64;
             let error = 100.0 * (avg_p - mie_avg).abs() / mie_avg;
 
             let marker = if error < 20.0 {

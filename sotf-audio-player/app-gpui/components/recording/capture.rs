@@ -440,7 +440,7 @@ impl PlayerView {
     /// Start recording a single channel
     fn start_recording_channel(&mut self, channel_idx: usize, cx: &mut Context<Self>) {
         use sotf_audio_player::signal_recorder::{
-            generate_signal, prepare_signal, write_temp_wav, SignalParams, SignalType,
+            SignalParams, SignalType, generate_signal, prepare_signal, write_temp_wav,
         };
 
         // Get recording parameters from state
@@ -548,7 +548,9 @@ impl PlayerView {
                 end_freq: 20000.0,
                 amp: amplitude,
             },
-            SignalType::WhiteNoise | SignalType::PinkNoise => SignalParams::Noise { amp: amplitude },
+            SignalType::WhiteNoise | SignalType::PinkNoise => {
+                SignalParams::Noise { amp: amplitude }
+            }
             _ => SignalParams::Sweep {
                 start_freq: 20.0,
                 end_freq: 20000.0,
@@ -607,7 +609,13 @@ impl PlayerView {
         // Use channel name for descriptive filenames (sanitize for filesystem)
         let safe_channel_name: String = channel_name
             .chars()
-            .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+            .map(|c| {
+                if c.is_alphanumeric() || c == '_' || c == '-' {
+                    c
+                } else {
+                    '_'
+                }
+            })
             .collect();
         let recorded_wav_path = recording_dir.join(format!("{}.wav", safe_channel_name));
         let csv_path = recording_dir.join(format!("{}.csv", safe_channel_name));
@@ -651,100 +659,107 @@ impl PlayerView {
             );
 
             // Parse results and update state
-            let (should_auto_continue, next_channel_idx) = state_entity.update(&mut cx.clone(), |state, _| {
-                let should_continue = match result {
-                    Ok(()) => {
-                        // Analyze the recorded WAV file using the new library function
-                        use sotf_audio::signal_analysis::{
-                            analyze_wav_file, write_wav_analysis_csv, WavAnalysisConfig,
-                        };
+            let (should_auto_continue, next_channel_idx) = state_entity
+                .update(&mut cx.clone(), |state, _| {
+                    let should_continue = match result {
+                        Ok(()) => {
+                            // Analyze the recorded WAV file using the new library function
+                            use sotf_audio::signal_analysis::{
+                                WavAnalysisConfig, analyze_wav_file, write_wav_analysis_csv,
+                            };
 
-                        // Use log sweep config since we're recording sweep measurements
-                        let config = WavAnalysisConfig::for_log_sweep();
+                            // Use log sweep config since we're recording sweep measurements
+                            let config = WavAnalysisConfig::for_log_sweep();
 
-                        match analyze_wav_file(&recorded_wav_path, &config) {
-                            Ok(analysis_result) => {
-                                // Write the CSV file
-                                if let Err(e) = write_wav_analysis_csv(&analysis_result, &csv_path) {
-                                    log::error!("Failed to write CSV: {}", e);
+                            match analyze_wav_file(&recorded_wav_path, &config) {
+                                Ok(analysis_result) => {
+                                    // Write the CSV file
+                                    if let Err(e) =
+                                        write_wav_analysis_csv(&analysis_result, &csv_path)
+                                    {
+                                        log::error!("Failed to write CSV: {}", e);
+                                    }
+
+                                    if let Some(recording) = state
+                                        .app
+                                        .recording_state
+                                        .channel_recordings
+                                        .get_mut(channel_idx)
+                                    {
+                                        recording.state = ChannelRecordingState::Done;
+                                        recording.result = Some(RecordingResult {
+                                            channel: channel_idx,
+                                            wav_path: Some(
+                                                recorded_wav_path.to_string_lossy().to_string(),
+                                            ),
+                                            csv_path: Some(csv_path.to_string_lossy().to_string()),
+                                            frequencies: analysis_result.frequencies,
+                                            magnitude_db: analysis_result.magnitude_db,
+                                            phase_deg: analysis_result.phase_deg,
+                                        });
+                                    }
+                                    state.app.recording_state.status_message =
+                                        format!("Channel {} recording complete", channel_name);
+
+                                    // Check if we should auto-record the next channel
+                                    state.app.recording_state.auto_record_remaining
                                 }
-
-                                if let Some(recording) = state
-                                    .app
-                                    .recording_state
-                                    .channel_recordings
-                                    .get_mut(channel_idx)
-                                {
-                                    recording.state = ChannelRecordingState::Done;
-                                    recording.result = Some(RecordingResult {
-                                        channel: channel_idx,
-                                        wav_path: Some(recorded_wav_path.to_string_lossy().to_string()),
-                                        csv_path: Some(csv_path.to_string_lossy().to_string()),
-                                        frequencies: analysis_result.frequencies,
-                                        magnitude_db: analysis_result.magnitude_db,
-                                        phase_deg: analysis_result.phase_deg,
-                                    });
+                                Err(e) => {
+                                    log::error!("Failed to analyze recording: {}", e);
+                                    if let Some(recording) = state
+                                        .app
+                                        .recording_state
+                                        .channel_recordings
+                                        .get_mut(channel_idx)
+                                    {
+                                        recording.state = ChannelRecordingState::Error;
+                                    }
+                                    state.app.recording_state.status_message =
+                                        format!("Analysis error: {}", e);
+                                    false
                                 }
-                                state.app.recording_state.status_message =
-                                    format!("Channel {} recording complete", channel_name);
-
-                                // Check if we should auto-record the next channel
-                                state.app.recording_state.auto_record_remaining
-                            }
-                            Err(e) => {
-                                log::error!("Failed to analyze recording: {}", e);
-                                if let Some(recording) = state
-                                    .app
-                                    .recording_state
-                                    .channel_recordings
-                                    .get_mut(channel_idx)
-                                {
-                                    recording.state = ChannelRecordingState::Error;
-                                }
-                                state.app.recording_state.status_message =
-                                    format!("Analysis error: {}", e);
-                                false
                             }
                         }
-                    }
-                    Err(e) => {
-                        log::error!("Recording failed: {}", e);
-                        if let Some(recording) = state
+                        Err(e) => {
+                            log::error!("Recording failed: {}", e);
+                            if let Some(recording) = state
+                                .app
+                                .recording_state
+                                .channel_recordings
+                                .get_mut(channel_idx)
+                            {
+                                recording.state = ChannelRecordingState::Error;
+                            }
+                            state.app.recording_state.status_message =
+                                format!("Recording error: {}", e);
+
+                            // Stop auto-recording on error
+                            state.app.recording_state.auto_record_remaining = false;
+                            false
+                        }
+                    };
+
+                    state.app.recording_state.current_recording_channel = None;
+                    state.app.recording_state.recording_progress = 1.0;
+
+                    // Find next channel to record if in auto-record mode
+                    let next_channel_idx = if should_continue {
+                        state
                             .app
                             .recording_state
                             .channel_recordings
-                            .get_mut(channel_idx)
-                        {
-                            recording.state = ChannelRecordingState::Error;
-                        }
-                        state.app.recording_state.status_message =
-                            format!("Recording error: {}", e);
+                            .iter()
+                            .enumerate()
+                            .find(|(_, r)| r.state == ChannelRecordingState::Empty)
+                            .map(|(idx, _)| idx)
+                    } else {
+                        None
+                    };
 
-                        // Stop auto-recording on error
-                        state.app.recording_state.auto_record_remaining = false;
-                        false
-                    }
-                };
-
-                state.app.recording_state.current_recording_channel = None;
-                state.app.recording_state.recording_progress = 1.0;
-
-                // Find next channel to record if in auto-record mode
-                let next_channel_idx = if should_continue {
-                    state
-                        .app
-                        .recording_state
-                        .channel_recordings
-                        .iter()
-                        .enumerate()
-                        .find(|(_, r)| r.state == ChannelRecordingState::Empty)
-                        .map(|(idx, _)| idx)
-                } else {
-                    None
-                };
-
-                (should_continue, next_channel_idx)
-            }).ok().unwrap_or((false, None));
+                    (should_continue, next_channel_idx)
+                })
+                .ok()
+                .unwrap_or((false, None));
 
             // If we should continue auto-recording, start the next channel
             if should_auto_continue {
@@ -840,7 +855,11 @@ impl PlayerView {
                 playback_device_id: rec_state.playback_config.device_id.clone(),
                 playback_sample_rate: rec_state.playback_config.sample_rate,
                 playback_channels: rec_state.playback_config.num_channels,
-                speaker_configuration: rec_state.playback_config.speaker_configuration.as_str().to_string(),
+                speaker_configuration: rec_state
+                    .playback_config
+                    .speaker_configuration
+                    .as_str()
+                    .to_string(),
                 channel_names: rec_state
                     .playback_config
                     .channel_mappings
@@ -914,8 +933,7 @@ impl PlayerView {
                 if let Err(e) = std::fs::write(&json_path, json) {
                     log::error!("Failed to write recordings file: {}", e);
                     self.state.update(cx, |state, _| {
-                        state.app.recording_state.status_message =
-                            format!("Failed to save: {}", e);
+                        state.app.recording_state.status_message = format!("Failed to save: {}", e);
                     });
                 } else {
                     log::info!("Recordings saved to {:?}", json_path);
@@ -976,16 +994,24 @@ impl PlayerView {
                                         .map(|(idx, cm)| {
                                             // Convert relative paths in result to absolute paths
                                             let mut result = cm.measurement;
-                                            if let (Some(dir), Some(wav)) = (&file_dir, &result.wav_path) {
+                                            if let (Some(dir), Some(wav)) =
+                                                (&file_dir, &result.wav_path)
+                                            {
                                                 let abs_path = dir.join(wav);
                                                 if abs_path.exists() {
-                                                    result.wav_path = Some(abs_path.to_string_lossy().to_string());
+                                                    result.wav_path = Some(
+                                                        abs_path.to_string_lossy().to_string(),
+                                                    );
                                                 }
                                             }
-                                            if let (Some(dir), Some(csv)) = (&file_dir, &result.csv_path) {
+                                            if let (Some(dir), Some(csv)) =
+                                                (&file_dir, &result.csv_path)
+                                            {
                                                 let abs_path = dir.join(csv);
                                                 if abs_path.exists() {
-                                                    result.csv_path = Some(abs_path.to_string_lossy().to_string());
+                                                    result.csv_path = Some(
+                                                        abs_path.to_string_lossy().to_string(),
+                                                    );
                                                 }
                                             }
 
@@ -1006,10 +1032,11 @@ impl PlayerView {
                                             Some(dir.to_string_lossy().to_string());
                                     }
 
-                                    state.app.recording_state.status_message =
-                                        format!("Loaded {} channels from {}",
-                                            state.app.recording_state.channel_recordings.len(),
-                                            file_path.display());
+                                    state.app.recording_state.status_message = format!(
+                                        "Loaded {} channels from {}",
+                                        state.app.recording_state.channel_recordings.len(),
+                                        file_path.display()
+                                    );
                                 });
                             }
                             Err(e) => {

@@ -20,9 +20,9 @@
 use ndarray::{Array1, Array2};
 use num_complex::Complex64;
 
-use math_wave::special::spherical_hankel_first_kind;
 use crate::core::integration::{regular_integration, singular_integration, unit_sphere_quadrature};
 use crate::core::types::{Cluster, ClusterLevel, Element, PhysicsParams};
+use math_wave::special::spherical_hankel_first_kind;
 
 /// Result of MLFMM assembly
 pub struct MlfmmSystem {

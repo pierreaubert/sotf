@@ -709,27 +709,25 @@ impl App {
                     low_gain,
                     high_freq,
                     high_gain,
-                } => {
-                    match param_idx {
-                        0 => {
-                            *low_freq = value.clamp(20.0, 500.0);
-                            update_needed = true;
-                        }
-                        1 => {
-                            *low_gain = value.clamp(-20.0, 20.0);
-                            update_needed = true;
-                        }
-                        2 => {
-                            *high_freq = value.clamp(2000.0, 20000.0);
-                            update_needed = true;
-                        }
-                        3 => {
-                            *high_gain = value.clamp(-20.0, 20.0);
-                            update_needed = true;
-                        }
-                        _ => {}
+                } => match param_idx {
+                    0 => {
+                        *low_freq = value.clamp(20.0, 500.0);
+                        update_needed = true;
                     }
-                }
+                    1 => {
+                        *low_gain = value.clamp(-20.0, 20.0);
+                        update_needed = true;
+                    }
+                    2 => {
+                        *high_freq = value.clamp(2000.0, 20000.0);
+                        update_needed = true;
+                    }
+                    3 => {
+                        *high_gain = value.clamp(-20.0, 20.0);
+                        update_needed = true;
+                    }
+                    _ => {}
+                },
                 _ => {}
             }
         }

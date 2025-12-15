@@ -204,12 +204,30 @@ impl InPlacePlugin for LimiterPlugin {
 
     fn parameters(&self) -> Vec<Parameter> {
         vec![
-            Parameter::new_float("threshold", "Threshold", THRESHOLD_DEFAULT, THRESHOLD_MIN, THRESHOLD_MAX)
-                .with_description("Maximum output level (dB)"),
-            Parameter::new_float("release", "Release", RELEASE_DEFAULT, RELEASE_MIN, RELEASE_MAX)
-                .with_description("Release time (ms)"),
-            Parameter::new_float("lookahead", "Lookahead", LOOKAHEAD_DEFAULT, LOOKAHEAD_MIN, LOOKAHEAD_MAX)
-                .with_description("Lookahead time for predictive limiting (ms)"),
+            Parameter::new_float(
+                "threshold",
+                "Threshold",
+                THRESHOLD_DEFAULT,
+                THRESHOLD_MIN,
+                THRESHOLD_MAX,
+            )
+            .with_description("Maximum output level (dB)"),
+            Parameter::new_float(
+                "release",
+                "Release",
+                RELEASE_DEFAULT,
+                RELEASE_MIN,
+                RELEASE_MAX,
+            )
+            .with_description("Release time (ms)"),
+            Parameter::new_float(
+                "lookahead",
+                "Lookahead",
+                LOOKAHEAD_DEFAULT,
+                LOOKAHEAD_MIN,
+                LOOKAHEAD_MAX,
+            )
+            .with_description("Lookahead time for predictive limiting (ms)"),
             Parameter::new_bool("soft", "Soft", SOFT_DEFAULT)
                 .with_description("Enable soft limiting with saturation curve (more musical)"),
             Parameter::new_float("mix", "Mix", MIX_DEFAULT, MIX_MIN, MIX_MAX)

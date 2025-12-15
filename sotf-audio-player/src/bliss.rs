@@ -218,11 +218,13 @@ fn resample_to_bliss_rate(
     // chunk_size should be a power of 2 for FFT efficiency
     let chunk_size = 1024;
 
-    let mut resampler = FftFixedInOut::<f32>::new(source_rate as usize, target_rate as usize, chunk_size, 1)
-        .map_err(|e| BlissError::DecodingError(format!("Failed to create resampler: {}", e)))?;
+    let mut resampler =
+        FftFixedInOut::<f32>::new(source_rate as usize, target_rate as usize, chunk_size, 1)
+            .map_err(|e| BlissError::DecodingError(format!("Failed to create resampler: {}", e)))?;
 
     let output_frames_per_chunk = (chunk_size as f64 * resample_ratio).ceil() as usize;
-    let estimated_output_len = ((samples.len() as f64 * resample_ratio) as usize) + output_frames_per_chunk;
+    let estimated_output_len =
+        ((samples.len() as f64 * resample_ratio) as usize) + output_frames_per_chunk;
     let mut output = Vec::with_capacity(estimated_output_len);
 
     // Process in chunks
@@ -464,8 +466,7 @@ impl BlissScanManager {
         }
 
         // Get database path
-        let db_path =
-            MusicDatabase::default_path().ok_or("Could not determine database path")?;
+        let db_path = MusicDatabase::default_path().ok_or("Could not determine database path")?;
 
         // Get tracks that need analysis
         let db = MusicDatabase::open(&db_path)?;
@@ -482,7 +483,10 @@ impl BlissScanManager {
         // Start the scan
         self.start(db_path, tracks);
 
-        Ok(format!("Analyzing {} tracks for bliss audio features...", total))
+        Ok(format!(
+            "Analyzing {} tracks for bliss audio features...",
+            total
+        ))
     }
 
     /// Start a bliss scan for the given tracks

@@ -125,11 +125,11 @@ fn analyze_system(
         println!("    rhs[{}] = {:.4} + {:.4}i", i, r.re, r.im);
     }
 
-        // Solve
-        let solution_x = lu_solve(&system.matrix, &total_rhs).expect("Solver failed");
+    // Solve
+    let solution_x = lu_solve(&system.matrix, &total_rhs).expect("Solver failed");
 
-        // Verify solution
-        let ax = system.matrix.dot(&solution_x);
+    // Verify solution
+    let ax = system.matrix.dot(&solution_x);
 
     println!("\n  Solution (first 3):");
     for i in 0..3.min(n) {

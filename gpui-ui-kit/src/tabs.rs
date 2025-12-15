@@ -386,12 +386,10 @@ impl Tabs {
                     if let Some(ref handler) = on_change {
                         let idx = index;
                         let handler = handler.clone();
-                        tab_el = tab_el.on_mouse_down(
-                            MouseButton::Left,
-                            move |_event, window, cx| {
+                        tab_el =
+                            tab_el.on_mouse_down(MouseButton::Left, move |_event, window, cx| {
                                 handler(idx, window, cx);
-                            },
-                        );
+                            });
                     }
                 }
 
@@ -419,12 +417,8 @@ impl Tabs {
 
                 // Number/badge below title
                 if let Some(badge) = badge {
-                    right_col = right_col.child(
-                        div()
-                            .text_sm()
-                            .font_weight(FontWeight::BOLD)
-                            .child(badge),
-                    );
+                    right_col =
+                        right_col.child(div().text_sm().font_weight(FontWeight::BOLD).child(badge));
                 }
 
                 tab_el = tab_el.child(right_col);
@@ -481,12 +475,10 @@ impl Tabs {
                     if let Some(ref handler) = on_change {
                         let idx = index;
                         let handler = handler.clone();
-                        tab_el = tab_el.on_mouse_down(
-                            MouseButton::Left,
-                            move |_event, window, cx| {
+                        tab_el =
+                            tab_el.on_mouse_down(MouseButton::Left, move |_event, window, cx| {
                                 handler(idx, window, cx);
-                            },
-                        );
+                            });
                     }
                 }
 

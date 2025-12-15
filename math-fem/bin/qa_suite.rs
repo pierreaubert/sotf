@@ -11,15 +11,16 @@ use fem::assembly::HelmholtzProblem;
 use fem::basis::PolynomialDegree;
 use fem::boundary::{DirichletBC, apply_dirichlet};
 use fem::mesh::{annular_mesh_triangles, spherical_shell_mesh_tetrahedra};
-use solvers::iterative::{
-    gmres, bicgstab, cgs, gmres_preconditioned, gmres_pipelined, GmresConfig, BiCgstabConfig, CgsConfig
-};
-use solvers::preconditioners::{IluPreconditioner, IluColoringPreconditioner};
-use solvers::sparse::CsrMatrix;
-use solvers::traits::LinearOperator;
 use ndarray::Array1;
 use num_complex::Complex64;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
+use solvers::iterative::{
+    BiCgstabConfig, CgsConfig, GmresConfig, bicgstab, cgs, gmres, gmres_pipelined,
+    gmres_preconditioned,
+};
+use solvers::preconditioners::{IluColoringPreconditioner, IluPreconditioner};
+use solvers::sparse::CsrMatrix;
+use solvers::traits::LinearOperator;
 use spec_math::Bessel;
 use std::f64::consts::PI;
 use std::path::Path;
@@ -67,13 +68,11 @@ fn main() -> anyhow::Result<()> {
 
     let mut results = Vec::new();
 
-    let solvers = [
-        SolverType::Gmres,
-    ];
+    let solvers = [SolverType::Gmres];
 
     // 1. Cylinder Scattering Test (2D)
     println!("\nRunning Cylinder Scattering Tests (Convergence Study)...");
-    
+
     // Define k values to test: low, medium, high frequencies
     let k_values = [0.5, 1.0, 2.0, 3.0];
 
@@ -98,7 +97,9 @@ fn main() -> anyhow::Result<()> {
                     3.0 => *mesh_name == "Coarse" || *mesh_name == "Medium" || *mesh_name == "Fine",
                     _ => false,
                 };
-                if skip { continue; }
+                if skip {
+                    continue;
+                }
 
                 results.push(run_cylinder_scattering_test(
                     &format!("Cylinder Scattering (k={:.1})", k_val),
@@ -114,7 +115,7 @@ fn main() -> anyhow::Result<()> {
 
     // 2. Sphere Scattering Test (3D)
     println!("\nRunning Sphere Scattering Tests (3D)...");
-    
+
     // Testing 3D Sphere Scattering with k=1.0 (k=2.0 disabled due to high error/pollution)
     let sphere_cases = [
         (1.0, 1, 4, "Subdiv 1 (Coarse)"),
@@ -146,7 +147,12 @@ fn main() -> anyhow::Result<()> {
     let mut failed = false;
     for res in &results {
         if !res.passed {
-            eprintln!("TEST FAILED: {} - {} (Error: {:.2}%)", res.test_name, res.mesh_info, res.l2_error * 100.0);
+            eprintln!(
+                "TEST FAILED: {} - {} (Error: {:.2}%)",
+                res.test_name,
+                res.mesh_info,
+                res.l2_error * 100.0
+            );
             failed = true;
         }
     }
@@ -167,7 +173,10 @@ fn run_sphere_scattering_test(
     layers: usize,
     mesh_name: &str,
 ) -> anyhow::Result<ValidationResult> {
-    println!("  Executing: {} [{}] with {} mesh...", name, solver_type, mesh_name);
+    println!(
+        "  Executing: {} [{}] with {} mesh...",
+        name, solver_type, mesh_name
+    );
     let start_time = Instant::now();
 
     let sphere_radius = 1.0;
@@ -175,34 +184,38 @@ fn run_sphere_scattering_test(
 
     // Mesh
     let mesh = spherical_shell_mesh_tetrahedra(
-        0.0, 0.0, 0.0, 
-        sphere_radius, outer_radius, 
-        subdivisions, layers
+        0.0,
+        0.0,
+        0.0,
+        sphere_radius,
+        outer_radius,
+        subdivisions,
+        layers,
     );
-    
+
     let num_terms = (k * sphere_radius + 10.0) as usize;
     let coeffs = compute_rigid_sphere_coefficients(k * sphere_radius, num_terms);
-    
+
     // Analytical Solution
     let exact_u = move |x: f64, y: f64, z: f64| {
-        let r = (x*x + y*y + z*z).sqrt();
+        let r = (x * x + y * y + z * z).sqrt();
         let kr = k * r;
         let cos_theta = z / r;
-        
+
         let mut total = Complex64::new(0.0, 0.0);
-        
+
         for (n, coeff) in coeffs.iter().enumerate() {
             let n_f64 = n as f64;
             let prefactor = 2.0 * n_f64 + 1.0;
             let i_pow = Complex64::new((n_f64 * PI / 2.0).cos(), (n_f64 * PI / 2.0).sin());
-            
+
             let j_vals = math_wave::special::spherical_bessel_j(n as usize + 1, kr);
             let y_vals = math_wave::special::spherical_bessel_y(n as usize + 1, kr);
             let jn = j_vals[n as usize];
             let yn = y_vals[n as usize];
             let hn = Complex64::new(jn, yn);
             let pn = math_wave::special::legendre_p(n as usize, cos_theta);
-            
+
             total += prefactor * i_pow * (jn - coeff * hn) * pn;
         }
         total
@@ -215,48 +228,54 @@ fn run_sphere_scattering_test(
     let bc_outer = DirichletBC::new(2, exact_u.clone());
     apply_dirichlet(&mut problem, &mesh, &[bc_outer]);
 
-        let matrix = to_csr_matrix(&problem);
-        let precond = Some(IluPreconditioner::from_csr(&matrix));
-        let op = CsrOperator::new(matrix);
-        let rhs = Array1::from_vec(problem.rhs.clone());
-        let b_norm = rhs.iter().map(|x| x.norm_sqr()).sum::<f64>().sqrt();
-    
-        let config = GmresConfig {
-            max_iterations: 2000,
-            restart: 100,
-            tolerance: 1e-12,
-            print_interval: 0,
-        };
-    
-        let sol = gmres_preconditioned(&op, precond.as_ref().unwrap(), &rhs, &config);
-        if !sol.converged { eprintln!("GMRES failed to converge for {}", mesh_name); }
-        let solution_vec = sol.x;
-        let x_norm = solution_vec.iter().map(|x| x.norm_sqr()).sum::<f64>().sqrt();
-    
-        let duration = start_time.elapsed().as_millis() as u64;
-        let error = l2_error(&mesh, &solution_vec, exact_u);
-    
-        // Thresholds for 3D (Relaxed for QA passing)
-        let threshold = match (mesh_name, k) {
-            (_, 1.0) => 0.50, // Expect < 50% error for k=1
-            _ => 1.0,
-        };
-    
-        let passed = error < threshold;
-    
-        Ok(ValidationResult {
-            test_name: name.to_string(),
-            solver: solver_type.to_string(),
-            mesh_info: format!("{} ({} tets)", mesh_name, mesh.num_elements()),
-            duration_ms: duration,
-            l2_error: error,
-            iterations: sol.iterations,
-            residual: sol.residual,
-            b_norm,
-            x_norm,
-            passed,
-        })
+    let matrix = to_csr_matrix(&problem);
+    let precond = Some(IluPreconditioner::from_csr(&matrix));
+    let op = CsrOperator::new(matrix);
+    let rhs = Array1::from_vec(problem.rhs.clone());
+    let b_norm = rhs.iter().map(|x| x.norm_sqr()).sum::<f64>().sqrt();
+
+    let config = GmresConfig {
+        max_iterations: 2000,
+        restart: 100,
+        tolerance: 1e-12,
+        print_interval: 0,
+    };
+
+    let sol = gmres_preconditioned(&op, precond.as_ref().unwrap(), &rhs, &config);
+    if !sol.converged {
+        eprintln!("GMRES failed to converge for {}", mesh_name);
     }
+    let solution_vec = sol.x;
+    let x_norm = solution_vec
+        .iter()
+        .map(|x| x.norm_sqr())
+        .sum::<f64>()
+        .sqrt();
+
+    let duration = start_time.elapsed().as_millis() as u64;
+    let error = l2_error(&mesh, &solution_vec, exact_u);
+
+    // Thresholds for 3D (Relaxed for QA passing)
+    let threshold = match (mesh_name, k) {
+        (_, 1.0) => 0.50, // Expect < 50% error for k=1
+        _ => 1.0,
+    };
+
+    let passed = error < threshold;
+
+    Ok(ValidationResult {
+        test_name: name.to_string(),
+        solver: solver_type.to_string(),
+        mesh_info: format!("{} ({} tets)", mesh_name, mesh.num_elements()),
+        duration_ms: duration,
+        l2_error: error,
+        iterations: sol.iterations,
+        residual: sol.residual,
+        b_norm,
+        x_norm,
+        passed,
+    })
+}
 // Copy helper from math-wave to avoid direct dependency if private
 // But we can use public API if available.
 // `compute_rigid_sphere_coefficients` is private in `solutions_3d.rs`.
@@ -266,7 +285,7 @@ fn compute_rigid_sphere_coefficients(ka: f64, num_terms: usize) -> Vec<Complex64
     let mut coefficients = Vec::with_capacity(num_terms);
     for n in 0..num_terms {
         let n_f64 = n as f64;
-        
+
         // Compute jn(ka) and yn(ka)
         let j_n_vals = math_wave::special::spherical_bessel_j(n as usize + 1, ka);
         let y_n_vals = math_wave::special::spherical_bessel_y(n as usize + 1, ka);
@@ -274,28 +293,27 @@ fn compute_rigid_sphere_coefficients(ka: f64, num_terms: usize) -> Vec<Complex64
         let yn = y_n_vals[n as usize];
 
         // Compute j_{n-1}(ka) and y_{n-1}(ka)
-        let jn_minus_1 = if n > 0 { 
-            math_wave::special::spherical_bessel_j(n as usize, ka)[(n - 1) as usize] 
-        } else { 
-            ka.cos() / ka 
+        let jn_minus_1 = if n > 0 {
+            math_wave::special::spherical_bessel_j(n as usize, ka)[(n - 1) as usize]
+        } else {
+            ka.cos() / ka
         };
-        let yn_minus_1 = if n > 0 { 
-            math_wave::special::spherical_bessel_y(n as usize, ka)[(n - 1) as usize] 
-        } else { 
-            -ka.sin() / ka 
+        let yn_minus_1 = if n > 0 {
+            math_wave::special::spherical_bessel_y(n as usize, ka)[(n - 1) as usize]
+        } else {
+            -ka.sin() / ka
         };
-        
+
         // j_n'(x) = j_{n-1}(x) - (n+1)/x * j_n(x)
         let jn_prime = jn_minus_1 - (n_f64 + 1.0) / ka * jn;
         // y_n'(x) = y_{n-1}(x) - (n+1)/x * y_n(x)
         let yn_prime = yn_minus_1 - (n_f64 + 1.0) / ka * yn;
-        
+
         let hn_prime = Complex64::new(jn_prime, yn_prime);
         coefficients.push(Complex64::new(jn_prime, 0.0) / hn_prime);
     }
     coefficients
 }
-
 
 fn run_cylinder_scattering_test(
     name: &str,
@@ -305,7 +323,10 @@ fn run_cylinder_scattering_test(
     n_angular: usize,
     mesh_name: &str,
 ) -> anyhow::Result<ValidationResult> {
-    println!("  Executing: {} [{}] with {} mesh...", name, solver_type, mesh_name);
+    println!(
+        "  Executing: {} [{}] with {} mesh...",
+        name, solver_type, mesh_name
+    );
     let start_time = Instant::now();
 
     let cylinder_radius = 1.0;
@@ -345,13 +366,15 @@ fn run_cylinder_scattering_test(
                 tolerance: 1e-10,
                 print_interval: 0,
             };
-            
+
             // For the largest mesh (Super Fine 3), use Pipelined GMRES with Parallel ILU
             if mesh_name == "Super Fine 3" {
                 // println!("    Using Pipelined GMRES with Parallel ILU...");
                 let precond = IluColoringPreconditioner::from_csr(&matrix);
                 let sol = gmres_pipelined(&op, &precond, &rhs, None, &config);
-                if !sol.converged { eprintln!("Pipelined GMRES failed to converge"); }
+                if !sol.converged {
+                    eprintln!("Pipelined GMRES failed to converge");
+                }
                 (sol.x, sol.iterations, sol.residual)
             } else {
                 // Standard GMRES with ILU for smaller meshes
@@ -368,87 +391,118 @@ fn run_cylinder_scattering_test(
                     gmres(&op, &rhs, &config)
                 };
 
-                if !sol.converged { eprintln!("GMRES failed to converge"); }
+                if !sol.converged {
+                    eprintln!("GMRES failed to converge");
+                }
                 (sol.x, sol.iterations, sol.residual)
             }
         }
         SolverType::Bicgstab => {
-             let config = BiCgstabConfig {
+            let config = BiCgstabConfig {
                 max_iterations: 10000,
                 tolerance: 1e-10,
                 print_interval: 0,
             };
             let sol = bicgstab(&op, &rhs, &config);
-            if !sol.converged { eprintln!("BiCGStab failed to converge"); }
+            if !sol.converged {
+                eprintln!("BiCGStab failed to converge");
+            }
             (sol.x, sol.iterations, sol.residual)
         }
         SolverType::Cgs => {
-             let config = CgsConfig {
+            let config = CgsConfig {
                 max_iterations: 10000,
                 tolerance: 1e-10,
                 print_interval: 0,
             };
             let sol = cgs(&op, &rhs, &config);
-            if !sol.converged { eprintln!("CGS failed to converge"); }
+            if !sol.converged {
+                eprintln!("CGS failed to converge");
+            }
             (sol.x, sol.iterations, sol.residual)
         }
     };
 
     let duration = start_time.elapsed().as_millis() as u64;
-    let x_norm = solution_vec.iter().map(|x| x.norm_sqr()).sum::<f64>().sqrt();
+    let x_norm = solution_vec
+        .iter()
+        .map(|x| x.norm_sqr())
+        .sum::<f64>()
+        .sqrt();
 
     // Error Calculation
     let error = l2_error(&mesh, &solution_vec, exact_u);
-    
+
     // Pass if error is "reasonable" for the mesh size and k value
     let threshold = match (mesh_name, k) {
         ("Coarse", 0.5) => 0.01, // k=0.5 is very easy, expect <1% on Coarse
-        ("Coarse", _) => 0.50, // Other k values are harder, expect <50% on Coarse
+        ("Coarse", _) => 0.50,   // Other k values are harder, expect <50% on Coarse
 
         ("Medium", 0.5) => 0.005, // k=0.5 very good on Medium
-        ("Medium", 1.0) => 0.10, // k=1.0 needs better resolution
-        ("Medium", _) => 0.25, // k=2.0, k=3.0 harder, expect <25% on Medium
+        ("Medium", 1.0) => 0.10,  // k=1.0 needs better resolution
+        ("Medium", _) => 0.25,    // k=2.0, k=3.0 harder, expect <25% on Medium
 
         ("Fine", 0.5) => 0.001, // k=0.5 should be almost exact
-        ("Fine", 1.0) => 0.02, // k=1.0 good on Fine
-        ("Fine", k_val) => if k_val < 2.5 { 0.05 } else { 0.10 }, // k=2.0, k=3.0
+        ("Fine", 1.0) => 0.02,  // k=1.0 good on Fine
+        ("Fine", k_val) => {
+            if k_val < 2.5 {
+                0.05
+            } else {
+                0.10
+            }
+        } // k=2.0, k=3.0
 
-                        ("Super Fine 1", 0.5) => 0.0005,
+        ("Super Fine 1", 0.5) => 0.0005,
 
-                        ("Super Fine 1", 1.0) => 0.005,
+        ("Super Fine 1", 1.0) => 0.005,
 
-                        ("Super Fine 1", k_val) => if k_val < 2.5 { 0.05 } else { 0.80 }, // k=2.0 threshold 0.05
+        ("Super Fine 1", k_val) => {
+            if k_val < 2.5 {
+                0.05
+            } else {
+                0.80
+            }
+        } // k=2.0 threshold 0.05
 
-                                                                                          // k=3.0 threshold 0.80
+        // k=3.0 threshold 0.80
+        ("Super Fine 2", 0.5) => 0.0001,
 
-        
+        ("Super Fine 2", 1.0) => 0.001,
 
-                ("Super Fine 2", 0.5) => 0.0001,
+        ("Super Fine 2", k_val) => {
+            if k_val < 2.5 {
+                0.015
+            } else {
+                0.10
+            }
+        } // k=2.0 threshold adjusted to 0.015
 
-                ("Super Fine 2", 1.0) => 0.001,
+        // k=3.0 threshold adjusted to 0.10
+        ("Super Fine 3", 0.5) => 0.00005,
 
-                ("Super Fine 2", k_val) => if k_val < 2.5 { 0.015 } else { 0.10 }, // k=2.0 threshold adjusted to 0.015
+        ("Super Fine 3", 1.0) => 0.0005,
 
-                                                                                   // k=3.0 threshold adjusted to 0.10
+        ("Super Fine 3", k_val) => {
+            if k_val < 2.5 {
+                0.006
+            } else {
+                0.02
+            }
+        } // k=2.0 threshold adjusted to 0.006
 
-        
-
-                ("Super Fine 3", 0.5) => 0.00005,
-
-                ("Super Fine 3", 1.0) => 0.0005,
-
-                ("Super Fine 3", k_val) => if k_val < 2.5 { 0.006 } else { 0.02 }, // k=2.0 threshold adjusted to 0.006
-
-                                                                                   // k=3.0 threshold adjusted to 0.02
-
-                _ => 1.0, // Default for unmatched or very high k
+        // k=3.0 threshold adjusted to 0.02
+        _ => 1.0, // Default for unmatched or very high k
     };
-    
+
     let passed = error < threshold;
 
     Ok(ValidationResult {
         test_name: name.to_string(),
-        solver: if mesh_name == "Super Fine 3" { "P-GMRES+ILU(Par)".to_string() } else { solver_type.to_string() },
+        solver: if mesh_name == "Super Fine 3" {
+            "P-GMRES+ILU(Par)".to_string()
+        } else {
+            solver_type.to_string()
+        },
         mesh_info: format!("{} ({}x{})", mesh_name, n_radial, n_angular),
         duration_ms: duration,
         l2_error: error,
@@ -464,16 +518,31 @@ fn run_cylinder_scattering_test(
 
 fn print_summary(results: &[ValidationResult]) {
     println!("\nQA Summary (Convergence Study):");
-    println!("{:<30} | {:<35} | {:<10} | {:<5} | {:<10} | {:<10} | {:<10} | {:<10} | {:<10}", 
-             "Test Name", "Mesh", "L2 Error%", "Iters", "Resid", "|b|", "|x|", "Time(ms)", "Status");
-    println!("{:-<30}-|-{:-<35}-|-{:-<10}-|-{:-<5}-|-{:-<10}-|-{:-<10}-|-{:-<10}-|-{:-<10}-|-{:-<10}", "", "", "", "", "", "", "", "", "");
-    
+    println!(
+        "{:<30} | {:<35} | {:<10} | {:<5} | {:<10} | {:<10} | {:<10} | {:<10} | {:<10}",
+        "Test Name", "Mesh", "L2 Error%", "Iters", "Resid", "|b|", "|x|", "Time(ms)", "Status"
+    );
+    println!(
+        "{:-<30}-|-{:-<35}-|-{:-<10}-|-{:-<5}-|-{:-<10}-|-{:-<10}-|-{:-<10}-|-{:-<10}-|-{:-<10}",
+        "", "", "", "", "", "", "", "", ""
+    );
+
     for res in results {
         let l2_err = res.l2_error * 100.0;
         let status = if res.passed { "PASS" } else { "FAIL" };
-        
-        println!("{:<30} | {:<35} | {:6.2}%    | {:<5} | {:<.2e} | {:<.2e} | {:<.2e} | {:<10} | {}", 
-                 res.test_name, res.mesh_info, l2_err, res.iterations, res.residual, res.b_norm, res.x_norm, res.duration_ms, status);
+
+        println!(
+            "{:<30} | {:<35} | {:6.2}%    | {:<5} | {:<.2e} | {:<.2e} | {:<.2e} | {:<10} | {}",
+            res.test_name,
+            res.mesh_info,
+            l2_err,
+            res.iterations,
+            res.residual,
+            res.b_norm,
+            res.x_norm,
+            res.duration_ms,
+            status
+        );
     }
 }
 

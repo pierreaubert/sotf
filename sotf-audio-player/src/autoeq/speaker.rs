@@ -268,8 +268,7 @@ fn load_measurement(input: &MeasurementInput) -> Result<autoeq::Curve, String> {
             measurement,
             curve_name,
         } => {
-            let (curve, _) =
-                load_spinorama_measurement(speaker, version, measurement, curve_name)?;
+            let (curve, _) = load_spinorama_measurement(speaker, version, measurement, curve_name)?;
             Ok(curve)
         }
         MeasurementInput::Curve(curve) => Ok(curve.clone()),
@@ -309,16 +308,15 @@ fn load_spinorama_measurement(
     curve_name: &str,
 ) -> Result<(autoeq::Curve, Option<HashMap<String, autoeq::Curve>>), String> {
     // Create a new runtime for blocking API call
-    let rt = tokio::runtime::Runtime::new()
-        .map_err(|e| format!("Failed to create runtime: {}", e))?;
+    let rt =
+        tokio::runtime::Runtime::new().map_err(|e| format!("Failed to create runtime: {}", e))?;
 
     rt.block_on(async {
         // Handle Estimated In-Room Response specially - calculate from CEA2034
         if measurement == "Estimated In-Room Response" {
-            let plot_data =
-                autoeq::read::fetch_measurement_plot_data(speaker, version, "CEA2034")
-                    .await
-                    .map_err(|e| format!("API error: {}", e))?;
+            let plot_data = autoeq::read::fetch_measurement_plot_data(speaker, version, "CEA2034")
+                .await
+                .map_err(|e| format!("API error: {}", e))?;
 
             let curves = autoeq::read::extract_cea2034_curves_original(&plot_data, "CEA2034")
                 .map_err(|e| format!("Spin data error: {}", e))?;
@@ -335,9 +333,8 @@ fn load_spinorama_measurement(
                     .await
                     .map_err(|e| format!("API error: {}", e))?;
 
-            let curve =
-                autoeq::read::extract_curve_by_name(&plot_data, measurement, curve_name)
-                    .map_err(|e| format!("Curve extraction error: {}", e))?;
+            let curve = autoeq::read::extract_curve_by_name(&plot_data, measurement, curve_name)
+                .map_err(|e| format!("Curve extraction error: {}", e))?;
 
             // Extract spin data if CEA2034
             let spin_data = if measurement == "CEA2034" {
@@ -372,43 +369,46 @@ fn create_interval_callback(
 ) -> Box<dyn FnMut(&autoeq::de::DEIntermediate) -> CallbackAction + Send> {
     let mut last_reported_iter = 0usize;
 
-    Box::new(move |intermediate: &autoeq::de::DEIntermediate| -> CallbackAction {
-        // Check if we should report
-        if intermediate.iter == 0 || intermediate.iter.saturating_sub(last_reported_iter) >= interval
-        {
-            last_reported_iter = intermediate.iter;
+    Box::new(
+        move |intermediate: &autoeq::de::DEIntermediate| -> CallbackAction {
+            // Check if we should report
+            if intermediate.iter == 0
+                || intermediate.iter.saturating_sub(last_reported_iter) >= interval
+            {
+                last_reported_iter = intermediate.iter;
 
-            // Decode current params to biquads if requested
-            let current_biquads = if include_biquads {
-                decode_params_to_biquads(&intermediate.x.to_vec(), sample_rate, peq_model)
-            } else {
-                Vec::new()
-            };
-
-            // Compute filter response if requested
-            let current_filter_response =
-                if include_filter_response && !current_biquads.is_empty() {
-                    compute_filter_response(&frequencies, &current_biquads)
+                // Decode current params to biquads if requested
+                let current_biquads = if include_biquads {
+                    decode_params_to_biquads(&intermediate.x.to_vec(), sample_rate, peq_model)
                 } else {
                     Vec::new()
                 };
 
-            let progress = SpeakerOptimizationProgress {
-                iteration: intermediate.iter,
-                loss: intermediate.fun,
-                convergence: intermediate.convergence,
-                current_params: intermediate.x.to_vec(),
-                current_biquads,
-                current_filter_response,
-                stage,
-                max_iterations,
-            };
+                // Compute filter response if requested
+                let current_filter_response =
+                    if include_filter_response && !current_biquads.is_empty() {
+                        compute_filter_response(&frequencies, &current_biquads)
+                    } else {
+                        Vec::new()
+                    };
 
-            user_callback(&progress)
-        } else {
-            CallbackAction::Continue
-        }
-    })
+                let progress = SpeakerOptimizationProgress {
+                    iteration: intermediate.iter,
+                    loss: intermediate.fun,
+                    convergence: intermediate.convergence,
+                    current_params: intermediate.x.to_vec(),
+                    current_biquads,
+                    current_filter_response,
+                    stage,
+                    max_iterations,
+                };
+
+                user_callback(&progress)
+            } else {
+                CallbackAction::Continue
+            }
+        },
+    )
 }
 
 /// Decode optimizer parameters to biquad filters
@@ -566,12 +566,9 @@ fn optimize_single_driver(
         };
 
     // Run optimization
-    let filter_params = autoeq::workflow::perform_optimization_with_callback(
-        &args,
-        &objective_data,
-        de_callback,
-    )
-    .map_err(|e| format!("Optimization failed: {}", e))?;
+    let filter_params =
+        autoeq::workflow::perform_optimization_with_callback(&args, &objective_data, de_callback)
+            .map_err(|e| format!("Optimization failed: {}", e))?;
 
     // Convert to biquads
     let peq = autoeq::x2peq::x2peq(&filter_params, args.sample_rate, args.peq_model);
@@ -619,11 +616,7 @@ fn optimize_multidriver(
     let driver_measurements: Vec<autoeq::loss::DriverMeasurement> = driver_curves
         .iter()
         .map(|c| {
-            autoeq::loss::DriverMeasurement::new(
-                c.freq.clone(),
-                c.spl.clone(),
-                c.phase.clone(),
-            )
+            autoeq::loss::DriverMeasurement::new(c.freq.clone(), c.spl.clone(), c.phase.clone())
         })
         .collect();
 
@@ -743,11 +736,7 @@ fn optimize_multisub(
     let driver_measurements: Vec<autoeq::loss::DriverMeasurement> = sub_curves
         .iter()
         .map(|c| {
-            autoeq::loss::DriverMeasurement::new(
-                c.freq.clone(),
-                c.spl.clone(),
-                c.phase.clone(),
-            )
+            autoeq::loss::DriverMeasurement::new(c.freq.clone(), c.spl.clone(), c.phase.clone())
         })
         .collect();
 
@@ -1071,12 +1060,7 @@ fn compute_result_curves(
 
         (er, sp, er_di, sp_di)
     } else {
-        (
-            vec![0.0; n],
-            vec![0.0; n],
-            vec![0.0; n],
-            vec![0.0; n],
-        )
+        (vec![0.0; n], vec![0.0; n], vec![0.0; n], vec![0.0; n])
     };
 
     ResultCurves {
@@ -1250,8 +1234,13 @@ fn optimize_single_driver_full(
 
     // Compute result curves
     let frequencies: Vec<f64> = standard_freq.iter().copied().collect();
-    let curves =
-        compute_result_curves(&frequencies, &input_normalized, &target_curve, &biquads, &spin_data);
+    let curves = compute_result_curves(
+        &frequencies,
+        &input_normalized,
+        &target_curve,
+        &biquads,
+        &spin_data,
+    );
 
     Ok(SpeakerOptimizationResult {
         biquads,
@@ -1354,8 +1343,12 @@ fn optimize_multisub_full(
     }
 
     // Run multi-sub optimization
-    let result =
-        optimize_multisub(sub_curves, &config.params, &config.callback_config, callback)?;
+    let result = optimize_multisub(
+        sub_curves,
+        &config.params,
+        &config.callback_config,
+        callback,
+    )?;
 
     // Compute result curves
     let frequencies: Vec<f64> = result.combined_curve.freq.iter().copied().collect();

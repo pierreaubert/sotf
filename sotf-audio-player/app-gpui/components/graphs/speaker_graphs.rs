@@ -1,4 +1,3 @@
-use crate::components::autoeq::SpeakerOptimizationResult;
 use crate::components::graphs::common::{
     colors, render_compact_legend, render_plot_with_title, rgba_to_u32, theme_to_chart_theme,
 };
@@ -7,6 +6,7 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_px::{ScaleType, line};
+use sotf_audio_player::autoeq::SpeakerOptimizationResult;
 
 impl PlayerView {
     /// Render Spinorama speaker optimization result graphs
@@ -339,7 +339,11 @@ fn render_speaker_optimization_loss_plot(
         .iter()
         .map(|&(i, _)| i as f64)
         .collect();
-    let losses: Vec<f64> = result.optimization_history.iter().map(|&(_, loss)| loss).collect();
+    let losses: Vec<f64> = result
+        .optimization_history
+        .iter()
+        .map(|&(_, loss)| loss)
+        .collect();
 
     let legend_items = vec![("Loss".to_string(), colors::deviation(theme))];
 

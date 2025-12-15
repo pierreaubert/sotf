@@ -116,8 +116,6 @@ pub fn apply_neumann(
     }
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -3,7 +3,7 @@
 //! Provides functionality for calculating room corrections using multiple measurements
 //! and room mode analysis.
 
-use autoeq_roomsim::{calculate_modal_pressure, Point3D};
+use autoeq_roomsim::{Point3D, calculate_modal_pressure};
 use num_complex::Complex64;
 use std::f64::consts::PI;
 

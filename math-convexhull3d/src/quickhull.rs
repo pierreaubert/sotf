@@ -183,9 +183,7 @@ pub fn quickhull_3d(vertices: &[Vertex]) -> Result<ConvexHull3D> {
     }
 
     // Collect unprocessed points
-    let unprocessed_points: Vec<usize> = (0..vertices.len())
-        .filter(|&i| !in_simplex[i])
-        .collect();
+    let unprocessed_points: Vec<usize> = (0..vertices.len()).filter(|&i| !in_simplex[i]).collect();
 
     // Initial point assignment - use parallel if enough points
     if unprocessed_points.len() >= PARALLEL_THRESHOLD {
@@ -346,9 +344,8 @@ pub fn quickhull_3d(vertices: &[Vertex]) -> Result<ConvexHull3D> {
 fn assign_points_parallel(hull_faces: &mut [HullFace], vertices: &[Vertex], points: &[usize]) {
     // For each point, find which face (if any) it's visible from
     // Use atomic counter to track assigned points per face
-    let face_assignments: Vec<AtomicUsize> = (0..hull_faces.len())
-        .map(|_| AtomicUsize::new(0))
-        .collect();
+    let face_assignments: Vec<AtomicUsize> =
+        (0..hull_faces.len()).map(|_| AtomicUsize::new(0)).collect();
 
     // Parallel: find face index for each point
     let assignments: Vec<Option<usize>> = points

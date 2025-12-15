@@ -134,6 +134,9 @@ actions!(
         ToggleTheme,
         SetThemeDark,
         SetThemeLight,
+        SetThemeMidnight,
+        SetThemeForest,
+        SetThemeBlackAndWhite,
         SetLanguageEnglish,
         SetLanguageFrench,
         SetLanguageGerman,
@@ -233,6 +236,27 @@ impl MiniApp {
                 cx.on_action::<SetThemeLight>(|_action, cx| {
                     cx.update_global::<ThemeState, _>(|state, _cx| {
                         state.set_variant(ThemeVariant::Light);
+                    });
+                    cx.refresh_windows();
+                });
+
+                cx.on_action::<SetThemeMidnight>(|_action, cx| {
+                    cx.update_global::<ThemeState, _>(|state, _cx| {
+                        state.set_variant(ThemeVariant::Midnight);
+                    });
+                    cx.refresh_windows();
+                });
+
+                cx.on_action::<SetThemeForest>(|_action, cx| {
+                    cx.update_global::<ThemeState, _>(|state, _cx| {
+                        state.set_variant(ThemeVariant::Forest);
+                    });
+                    cx.refresh_windows();
+                });
+
+                cx.on_action::<SetThemeBlackAndWhite>(|_action, cx| {
+                    cx.update_global::<ThemeState, _>(|state, _cx| {
+                        state.set_variant(ThemeVariant::BlackAndWhite);
                     });
                     cx.refresh_windows();
                 });
@@ -390,6 +414,9 @@ impl MiniApp {
                     items: vec![
                         MenuItem::action("Dark", SetThemeDark),
                         MenuItem::action("Light", SetThemeLight),
+                        MenuItem::action("Midnight", SetThemeMidnight),
+                        MenuItem::action("Forest", SetThemeForest),
+                        MenuItem::action("Black & White", SetThemeBlackAndWhite),
                         MenuItem::separator(),
                         MenuItem::action("Toggle Theme  Cmd+T", ToggleTheme),
                     ],

@@ -473,7 +473,10 @@ mod tests {
     fn test_crossover_type_conversion() {
         let ct = CrossoverType::LR24;
         assert_eq!(ct.to_plugin_string(), "LR24");
-        assert_eq!("lr24".parse::<CrossoverType>().ok(), Some(CrossoverType::LR24));
+        assert_eq!(
+            "lr24".parse::<CrossoverType>().ok(),
+            Some(CrossoverType::LR24)
+        );
     }
 
     #[test]

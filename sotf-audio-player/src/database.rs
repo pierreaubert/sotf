@@ -1083,8 +1083,10 @@ impl MusicDatabase {
                         .is_ok();
 
                     if !has_bliss_analyzed_at {
-                        db.conn
-                            .execute("ALTER TABLE tracks ADD COLUMN bliss_analyzed_at INTEGER", [])?;
+                        db.conn.execute(
+                            "ALTER TABLE tracks ADD COLUMN bliss_analyzed_at INTEGER",
+                            [],
+                        )?;
                         log::info!("Added bliss_analyzed_at column to tracks table");
                     }
 
@@ -1669,7 +1671,10 @@ impl MusicDatabase {
     }
 
     /// Get bliss analysis for a track by path
-    pub fn get_bliss_analysis(&self, path: &Path) -> SqlResult<Option<crate::bliss::BlissAnalysis>> {
+    pub fn get_bliss_analysis(
+        &self,
+        path: &Path,
+    ) -> SqlResult<Option<crate::bliss::BlissAnalysis>> {
         let path_str = path.to_string_lossy();
         let mut stmt = self.conn.prepare(
             "SELECT bliss_features FROM tracks WHERE path = ?1 AND bliss_features IS NOT NULL",

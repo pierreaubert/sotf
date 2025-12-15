@@ -201,7 +201,8 @@ fn main() {
     let incident_rhs_floored =
         incident.compute_rhs_with_beta(&centers, &normals, &physics, beta_floored);
     let total_rhs_floored = &system_floored.rhs + &incident_rhs_floored;
-    let solution_floored = lu_solve(&system_floored.matrix, &total_rhs_floored).expect("Solver failed");
+    let solution_floored =
+        lu_solve(&system_floored.matrix, &total_rhs_floored).expect("Solver failed");
 
     // Analytical
     let theta_degrees: Vec<f64> = (0..=18).map(|i| i as f64 * 10.0).collect();

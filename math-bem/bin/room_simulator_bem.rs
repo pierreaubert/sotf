@@ -636,11 +636,8 @@ fn run_fmm_batched(
             println!("  Solving with batched GMRES+ILU...");
         }
 
-        let solution_result = gmres_solve_fmm_batched_with_ilu(
-            &fmm_system,
-            &fmm_system.rhs,
-            &gmres_config,
-        );
+        let solution_result =
+            gmres_solve_fmm_batched_with_ilu(&fmm_system, &fmm_system.rhs, &gmres_config);
 
         if verbose {
             println!(

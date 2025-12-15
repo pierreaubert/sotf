@@ -284,8 +284,12 @@ impl Code {
     pub fn build_with_theme(self, theme: &Theme) -> Div {
         // Code uses a slightly different color from accent
         let code_text = match theme.variant {
-            crate::theme::ThemeVariant::Dark => rgb(0xe06c75),
             crate::theme::ThemeVariant::Light => rgb(0xc7254e),
+            // Dark, Midnight, Forest, BlackAndWhite all use dark-style colors
+            crate::theme::ThemeVariant::Dark
+            | crate::theme::ThemeVariant::Midnight
+            | crate::theme::ThemeVariant::Forest
+            | crate::theme::ThemeVariant::BlackAndWhite => rgb(0xe06c75),
         };
 
         if self.inline {

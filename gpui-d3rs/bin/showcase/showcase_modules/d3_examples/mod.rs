@@ -8,16 +8,16 @@
 //! Source examples from: https://observablehq.com/@d3
 
 pub mod choropleth;
-pub mod histogram;
-pub mod horizon;
-pub mod revenue;
-pub mod versor;
 pub mod faithful_data;
 pub mod flare_data;
+pub mod histogram;
+pub mod horizon;
 pub mod kernel_density_estimation;
 pub mod path_utils;
+pub mod revenue;
 pub mod stacked_grouped_bars;
 pub mod treemap;
+pub mod versor;
 pub mod volcano_contours;
 pub mod volcano_data;
 

@@ -5,12 +5,12 @@
 
 use crate::app::types::{PlotSmoothing, RecordingResult};
 use crate::ui::PlayerView;
-use d3rs::axis::{render_axis, AxisConfig, DefaultAxisTheme};
+use d3rs::axis::{AxisConfig, DefaultAxisTheme, render_axis};
 use d3rs::color::D3Color;
-use d3rs::grid::{render_grid, GridConfig};
+use d3rs::grid::{GridConfig, render_grid};
 use d3rs::prelude::LogScale;
 use d3rs::scale::LinearScale;
-use d3rs::shape::{render_line, LineConfig, LinePoint};
+use d3rs::shape::{LineConfig, LinePoint, render_line};
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
@@ -30,7 +30,10 @@ const CHANNEL_COLORS: [u32; 6] = [
 
 impl PlayerView {
     /// Render the evaluating step UI with frequency response graphs
-    pub(crate) fn render_recording_evaluating_step(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_recording_evaluating_step(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
 
@@ -120,42 +123,49 @@ impl PlayerView {
                                 .color(theme.text_secondary),
                         )
                         .child(
-                            div()
-                                .w(px(160.0))
-                                .child(
-                                    Select::new("plot_channel_select")
-                                        .options(channel_options)
-                                        .selected(selected_channel_value)
-                                        .is_open(channel_dropdown_open)
-                                        .on_toggle({
-                                            let view = view.clone();
-                                            move |open, _, cx| {
-                                                view.update(cx, |this, cx| {
-                                                    this.state.update(cx, |state, _| {
-                                                        state.app.recording_state.plot_channel_dropdown_open = open;
-                                                    });
-                                                    cx.notify();
+                            div().w(px(160.0)).child(
+                                Select::new("plot_channel_select")
+                                    .options(channel_options)
+                                    .selected(selected_channel_value)
+                                    .is_open(channel_dropdown_open)
+                                    .on_toggle({
+                                        let view = view.clone();
+                                        move |open, _, cx| {
+                                            view.update(cx, |this, cx| {
+                                                this.state.update(cx, |state, _| {
+                                                    state
+                                                        .app
+                                                        .recording_state
+                                                        .plot_channel_dropdown_open = open;
                                                 });
-                                            }
-                                        })
-                                        .on_change({
-                                            let view = view.clone();
-                                            move |value, _, cx| {
-                                                view.update(cx, |this, cx| {
-                                                    this.state.update(cx, |state, _| {
-                                                        state.app.recording_state.plot_selected_channel =
-                                                            if value.as_ref() == "all" {
-                                                                None
-                                                            } else {
-                                                                value.parse().ok()
-                                                            };
-                                                        state.app.recording_state.plot_channel_dropdown_open = false;
-                                                    });
-                                                    cx.notify();
+                                                cx.notify();
+                                            });
+                                        }
+                                    })
+                                    .on_change({
+                                        let view = view.clone();
+                                        move |value, _, cx| {
+                                            view.update(cx, |this, cx| {
+                                                this.state.update(cx, |state, _| {
+                                                    state
+                                                        .app
+                                                        .recording_state
+                                                        .plot_selected_channel =
+                                                        if value.as_ref() == "all" {
+                                                            None
+                                                        } else {
+                                                            value.parse().ok()
+                                                        };
+                                                    state
+                                                        .app
+                                                        .recording_state
+                                                        .plot_channel_dropdown_open = false;
                                                 });
-                                            }
-                                        }),
-                                ),
+                                                cx.notify();
+                                            });
+                                        }
+                                    }),
+                            ),
                         ),
                 )
                 .child(
@@ -168,50 +178,58 @@ impl PlayerView {
                                 .color(theme.text_secondary),
                         )
                         .child(
-                            div()
-                                .w(px(140.0))
-                                .child(
-                                    Select::new("plot_smoothing_select")
-                                        .options(smoothing_options)
-                                        .selected(selected_smoothing_value)
-                                        .is_open(smoothing_dropdown_open)
-                                        .on_toggle({
-                                            let view = view.clone();
-                                            move |open, _, cx| {
-                                                view.update(cx, |this, cx| {
-                                                    this.state.update(cx, |state, _| {
-                                                        state.app.recording_state.plot_smoothing_dropdown_open = open;
-                                                    });
-                                                    cx.notify();
+                            div().w(px(140.0)).child(
+                                Select::new("plot_smoothing_select")
+                                    .options(smoothing_options)
+                                    .selected(selected_smoothing_value)
+                                    .is_open(smoothing_dropdown_open)
+                                    .on_toggle({
+                                        let view = view.clone();
+                                        move |open, _, cx| {
+                                            view.update(cx, |this, cx| {
+                                                this.state.update(cx, |state, _| {
+                                                    state
+                                                        .app
+                                                        .recording_state
+                                                        .plot_smoothing_dropdown_open = open;
                                                 });
-                                            }
-                                        })
-                                        .on_change({
-                                            let view = view.clone();
-                                            move |value, _, cx| {
-                                                view.update(cx, |this, cx| {
-                                                    this.state.update(cx, |state, _| {
-                                                        state.app.recording_state.plot_smoothing = match value.as_ref() {
+                                                cx.notify();
+                                            });
+                                        }
+                                    })
+                                    .on_change({
+                                        let view = view.clone();
+                                        move |value, _, cx| {
+                                            view.update(cx, |this, cx| {
+                                                this.state.update(cx, |state, _| {
+                                                    state.app.recording_state.plot_smoothing =
+                                                        match value.as_ref() {
                                                             "1" => PlotSmoothing::Octave1,
                                                             "3" => PlotSmoothing::Octave3,
                                                             "6" => PlotSmoothing::Octave6,
                                                             "24" => PlotSmoothing::Octave24,
                                                             _ => PlotSmoothing::None,
                                                         };
-                                                        state.app.recording_state.plot_smoothing_dropdown_open = false;
-                                                    });
-                                                    cx.notify();
+                                                    state
+                                                        .app
+                                                        .recording_state
+                                                        .plot_smoothing_dropdown_open = false;
                                                 });
-                                            }
-                                        }),
-                                ),
+                                                cx.notify();
+                                            });
+                                        }
+                                    }),
+                            ),
                         ),
                 ),
         )
     }
 
     /// Get filtered results based on selected channel
-    fn get_filtered_results(&self, cx: &mut Context<Self>) -> Vec<(String, usize, RecordingResult)> {
+    fn get_filtered_results(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> Vec<(String, usize, RecordingResult)> {
         let state = self.state.read(cx);
         let recording_state = &state.app.recording_state;
         let selected_channel = recording_state.plot_selected_channel;
@@ -226,17 +244,15 @@ impl PlayerView {
                         return None;
                     }
                 }
-                r.result.as_ref().map(|res| (r.channel_name.clone(), idx, res.clone()))
+                r.result
+                    .as_ref()
+                    .map(|res| (r.channel_name.clone(), idx, res.clone()))
             })
             .collect()
     }
 
     /// Apply octave smoothing to frequency data
-    fn apply_smoothing(
-        frequencies: &[f32],
-        values: &[f32],
-        smoothing: PlotSmoothing,
-    ) -> Vec<f32> {
+    fn apply_smoothing(frequencies: &[f32], values: &[f32], smoothing: PlotSmoothing) -> Vec<f32> {
         let octave_fraction = match smoothing.octave_fraction() {
             Some(f) => f,
             None => return values.to_vec(), // No smoothing
@@ -431,7 +447,11 @@ impl PlayerView {
         let normalization_offset = if let Some((_, _, first_result)) = results.first() {
             let mut sum = 0.0_f32;
             let mut count = 0;
-            for (&freq, &mag) in first_result.frequencies.iter().zip(first_result.magnitude_db.iter()) {
+            for (&freq, &mag) in first_result
+                .frequencies
+                .iter()
+                .zip(first_result.magnitude_db.iter())
+            {
                 if freq >= 100.0 && freq <= 10000.0 {
                     sum += mag;
                     count += 1;
@@ -464,17 +484,34 @@ impl PlayerView {
                 (min.min(v), max.max(v))
             });
 
-        let y_min = if min_db.is_finite() { min_db - 5.0 } else { -30.0 };
-        let y_max = if max_db.is_finite() { max_db + 5.0 } else { 10.0 };
+        let y_min = if min_db.is_finite() {
+            min_db - 5.0
+        } else {
+            -30.0
+        };
+        let y_max = if max_db.is_finite() {
+            max_db + 5.0
+        } else {
+            10.0
+        };
 
         let y_scale = LinearScale::new()
             .domain(y_min as f64, y_max as f64)
             .range(plot_height as f64, 0.0);
 
-        let freq_ticks: Vec<f64> = vec![20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0];
+        let freq_ticks: Vec<f64> = vec![
+            20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0,
+        ];
         let mag_range = (y_max - y_min) as i32;
-        let mag_step = if mag_range > 40 { 10 } else if mag_range > 20 { 5 } else { 2 };
-        let mag_ticks: Vec<f64> = ((y_min as i32 / mag_step * mag_step)..=(y_max as i32 / mag_step * mag_step + mag_step))
+        let mag_step = if mag_range > 40 {
+            10
+        } else if mag_range > 20 {
+            5
+        } else {
+            2
+        };
+        let mag_ticks: Vec<f64> = ((y_min as i32 / mag_step * mag_step)
+            ..=(y_max as i32 / mag_step * mag_step + mag_step))
             .step_by(mag_step as usize)
             .map(|v| v as f64)
             .collect();
@@ -488,7 +525,10 @@ impl PlayerView {
                     .iter()
                     .zip(mags.iter())
                     .filter(|&(&f, _)| f >= 20.0 && f <= 20000.0)
-                    .map(|(&f, &m)| LinePoint { x: f as f64, y: m as f64 })
+                    .map(|(&f, &m)| LinePoint {
+                        x: f as f64,
+                        y: m as f64,
+                    })
                     .collect();
                 let line_config = LineConfig::new().stroke_color(color).stroke_width(2.0);
                 render_line(&x_scale, &y_scale, &points, &line_config).into_any_element()
@@ -505,7 +545,11 @@ impl PlayerView {
                     .items_center()
                     .gap_1()
                     .child(div().w(px(12.0)).h(px(3.0)).bg(color.to_rgba()))
-                    .child(Text::new(name.clone()).size(TextSize::Xs).color(theme.text_secondary))
+                    .child(
+                        Text::new(name.clone())
+                            .size(TextSize::Xs)
+                            .color(theme.text_secondary),
+                    )
                     .into_any_element()
             })
             .collect();
@@ -610,7 +654,8 @@ impl PlayerView {
         let processed_results: Vec<(String, usize, Vec<f32>, Vec<f32>)> = results
             .iter()
             .map(|(name, idx, result)| {
-                let smoothed = Self::apply_smoothing(&result.frequencies, &result.phase_deg, smoothing);
+                let smoothed =
+                    Self::apply_smoothing(&result.frequencies, &result.phase_deg, smoothing);
                 (name.clone(), *idx, result.frequencies.clone(), smoothed)
             })
             .collect();
@@ -620,7 +665,9 @@ impl PlayerView {
             .domain(-180.0, 180.0)
             .range(plot_height as f64, 0.0);
 
-        let freq_ticks: Vec<f64> = vec![20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0];
+        let freq_ticks: Vec<f64> = vec![
+            20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0,
+        ];
         let phase_ticks: Vec<f64> = vec![-180.0, -90.0, 0.0, 90.0, 180.0];
 
         let line_elements: Vec<_> = processed_results
@@ -631,7 +678,10 @@ impl PlayerView {
                     .iter()
                     .zip(phases.iter())
                     .filter(|&(&f, _)| f >= 20.0 && f <= 20000.0)
-                    .map(|(&f, &p)| LinePoint { x: f as f64, y: p as f64 })
+                    .map(|(&f, &p)| LinePoint {
+                        x: f as f64,
+                        y: p as f64,
+                    })
                     .collect();
                 let line_config = LineConfig::new().stroke_color(color).stroke_width(2.0);
                 render_line(&x_scale, &y_scale, &points, &line_config).into_any_element()
@@ -647,7 +697,11 @@ impl PlayerView {
                     .items_center()
                     .gap_1()
                     .child(div().w(px(12.0)).h(px(3.0)).bg(color.to_rgba()))
-                    .child(Text::new(name.clone()).size(TextSize::Xs).color(theme.text_secondary))
+                    .child(
+                        Text::new(name.clone())
+                            .size(TextSize::Xs)
+                            .color(theme.text_secondary),
+                    )
                     .into_any_element()
             })
             .collect();
@@ -811,17 +865,34 @@ impl PlayerView {
                 (min.min(v), max.max(v))
             });
 
-        let y_min = if min_gd.is_finite() { (min_gd - 5.0).max(-50.0) } else { -20.0 };
-        let y_max = if max_gd.is_finite() { (max_gd + 5.0).min(50.0) } else { 20.0 };
+        let y_min = if min_gd.is_finite() {
+            (min_gd - 5.0).max(-50.0)
+        } else {
+            -20.0
+        };
+        let y_max = if max_gd.is_finite() {
+            (max_gd + 5.0).min(50.0)
+        } else {
+            20.0
+        };
 
         let y_scale = LinearScale::new()
             .domain(y_min as f64, y_max as f64)
             .range(plot_height as f64, 0.0);
 
-        let freq_ticks: Vec<f64> = vec![20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0];
+        let freq_ticks: Vec<f64> = vec![
+            20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0,
+        ];
         let gd_range = (y_max - y_min) as i32;
-        let gd_step = if gd_range > 40 { 10 } else if gd_range > 20 { 5 } else { 2 };
-        let gd_ticks: Vec<f64> = ((y_min as i32 / gd_step * gd_step)..=(y_max as i32 / gd_step * gd_step + gd_step))
+        let gd_step = if gd_range > 40 {
+            10
+        } else if gd_range > 20 {
+            5
+        } else {
+            2
+        };
+        let gd_ticks: Vec<f64> = ((y_min as i32 / gd_step * gd_step)
+            ..=(y_max as i32 / gd_step * gd_step + gd_step))
             .step_by(gd_step as usize)
             .map(|v| v as f64)
             .collect();
@@ -834,7 +905,10 @@ impl PlayerView {
                     .iter()
                     .zip(gd.iter())
                     .filter(|&(&f, &g)| f >= 20.0 && f <= 20000.0 && g.is_finite())
-                    .map(|(&f, &g)| LinePoint { x: f as f64, y: g as f64 })
+                    .map(|(&f, &g)| LinePoint {
+                        x: f as f64,
+                        y: g as f64,
+                    })
                     .collect();
                 let line_config = LineConfig::new().stroke_color(color).stroke_width(2.0);
                 render_line(&x_scale, &y_scale, &points, &line_config).into_any_element()
@@ -850,7 +924,11 @@ impl PlayerView {
                     .items_center()
                     .gap_1()
                     .child(div().w(px(12.0)).h(px(3.0)).bg(color.to_rgba()))
-                    .child(Text::new(name.clone()).size(TextSize::Xs).color(theme.text_secondary))
+                    .child(
+                        Text::new(name.clone())
+                            .size(TextSize::Xs)
+                            .color(theme.text_secondary),
+                    )
                     .into_any_element()
             })
             .collect();
@@ -1027,7 +1105,10 @@ impl PlayerView {
                     .iter()
                     .zip(impulse.iter())
                     .filter(|&(&t, _)| t >= 0.0 && t <= 10.0)
-                    .map(|(&t, &a)| LinePoint { x: t as f64, y: a as f64 })
+                    .map(|(&t, &a)| LinePoint {
+                        x: t as f64,
+                        y: a as f64,
+                    })
                     .collect();
                 let line_config = LineConfig::new().stroke_color(color).stroke_width(1.5);
                 render_line(&x_scale, &y_scale, &points, &line_config).into_any_element()
@@ -1043,7 +1124,11 @@ impl PlayerView {
                     .items_center()
                     .gap_1()
                     .child(div().w(px(12.0)).h(px(3.0)).bg(color.to_rgba()))
-                    .child(Text::new(name.clone()).size(TextSize::Xs).color(theme.text_secondary))
+                    .child(
+                        Text::new(name.clone())
+                            .size(TextSize::Xs)
+                            .color(theme.text_secondary),
+                    )
                     .into_any_element()
             })
             .collect();
@@ -1173,11 +1258,13 @@ impl PlayerView {
                                     })
                                     .size(TextSize::Sm)
                                     .weight(TextWeight::Semibold)
-                                    .color(if recorded_count == total_count {
-                                        theme.success
-                                    } else {
-                                        theme.warning
-                                    }),
+                                    .color(
+                                        if recorded_count == total_count {
+                                            theme.success
+                                        } else {
+                                            theme.warning
+                                        },
+                                    ),
                                 ),
                         ),
                 )
@@ -1193,12 +1280,20 @@ impl PlayerView {
                                 .child(
                                     Text::new(if has_result { "+" } else { "-" })
                                         .size(TextSize::Sm)
-                                        .color(if has_result { theme.success } else { theme.text_muted }),
+                                        .color(if has_result {
+                                            theme.success
+                                        } else {
+                                            theme.text_muted
+                                        }),
                                 )
                                 .child(
                                     Text::new(rec.channel_name.clone())
                                         .size(TextSize::Sm)
-                                        .color(if has_result { theme.text_primary } else { theme.text_muted }),
+                                        .color(if has_result {
+                                            theme.text_primary
+                                        } else {
+                                            theme.text_muted
+                                        }),
                                 )
                                 .into_any_element()
                         })

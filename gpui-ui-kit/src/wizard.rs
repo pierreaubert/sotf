@@ -328,19 +328,13 @@ impl Wizard {
     }
 
     /// Set back button handler
-    pub fn on_back(
-        mut self,
-        handler: impl Fn(usize, &mut Window, &mut App) + 'static,
-    ) -> Self {
+    pub fn on_back(mut self, handler: impl Fn(usize, &mut Window, &mut App) + 'static) -> Self {
         self.on_back = Some(Box::new(handler));
         self
     }
 
     /// Set next button handler
-    pub fn on_next(
-        mut self,
-        handler: impl Fn(usize, &mut Window, &mut App) + 'static,
-    ) -> Self {
+    pub fn on_next(mut self, handler: impl Fn(usize, &mut Window, &mut App) + 'static) -> Self {
         self.on_next = Some(Box::new(handler));
         self
     }
@@ -350,16 +344,22 @@ impl Wizard {
         let mut container = div().flex().items_center().gap_2();
 
         for (index, step) in self.steps.iter().enumerate() {
-            let status = self.step_statuses.get(index).copied().unwrap_or(StepStatus::NotVisited);
+            let status = self
+                .step_statuses
+                .get(index)
+                .copied()
+                .unwrap_or(StepStatus::NotVisited);
             let is_current = index == self.current_step;
 
             // Determine colors based on status
             let (bg_color, text_color, border_color) = match status {
                 StepStatus::NotVisited => (theme.step_bg, theme.label_text, theme.step_border),
                 StepStatus::Active => (theme.step_active_bg, theme.step_text, theme.step_active_bg),
-                StepStatus::Completed => {
-                    (theme.step_completed_bg, theme.step_text, theme.step_completed_bg)
-                }
+                StepStatus::Completed => (
+                    theme.step_completed_bg,
+                    theme.step_text,
+                    theme.step_completed_bg,
+                ),
                 StepStatus::Error => (theme.step_error_bg, theme.step_text, theme.step_error_bg),
                 StepStatus::Skipped => (theme.step_bg, theme.label_text, theme.step_border),
             };
@@ -447,16 +447,13 @@ impl Wizard {
         let is_first_step = self.current_step == 0;
         let is_last_step = self.current_step >= self.steps.len().saturating_sub(1);
 
-        let back_label = self
-            .back_label
-            .clone()
-            .unwrap_or_else(|| {
-                if is_first_step {
-                    "Close".into()
-                } else {
-                    "Back".into()
-                }
-            });
+        let back_label = self.back_label.clone().unwrap_or_else(|| {
+            if is_first_step {
+                "Close".into()
+            } else {
+                "Back".into()
+            }
+        });
 
         let next_label = if is_last_step {
             self.finish_label.clone().unwrap_or_else(|| "Finish".into())
@@ -658,15 +655,21 @@ impl WizardHeader {
         let mut container = div().flex().items_center().gap_2();
 
         for (index, step) in self.steps.iter().enumerate() {
-            let status = self.step_statuses.get(index).copied().unwrap_or(StepStatus::NotVisited);
+            let status = self
+                .step_statuses
+                .get(index)
+                .copied()
+                .unwrap_or(StepStatus::NotVisited);
             let is_current = index == self.current_step;
 
             let (bg_color, text_color, border_color) = match status {
                 StepStatus::NotVisited => (theme.step_bg, theme.label_text, theme.step_border),
                 StepStatus::Active => (theme.step_active_bg, theme.step_text, theme.step_active_bg),
-                StepStatus::Completed => {
-                    (theme.step_completed_bg, theme.step_text, theme.step_completed_bg)
-                }
+                StepStatus::Completed => (
+                    theme.step_completed_bg,
+                    theme.step_text,
+                    theme.step_completed_bg,
+                ),
                 StepStatus::Error => (theme.step_error_bg, theme.step_text, theme.step_error_bg),
                 StepStatus::Skipped => (theme.step_bg, theme.label_text, theme.step_border),
             };
@@ -898,19 +901,13 @@ impl WizardNavigation {
     }
 
     /// Set back handler
-    pub fn on_back(
-        mut self,
-        handler: impl Fn(usize, &mut Window, &mut App) + 'static,
-    ) -> Self {
+    pub fn on_back(mut self, handler: impl Fn(usize, &mut Window, &mut App) + 'static) -> Self {
         self.on_back = Some(Box::new(handler));
         self
     }
 
     /// Set next handler
-    pub fn on_next(
-        mut self,
-        handler: impl Fn(usize, &mut Window, &mut App) + 'static,
-    ) -> Self {
+    pub fn on_next(mut self, handler: impl Fn(usize, &mut Window, &mut App) + 'static) -> Self {
         self.on_next = Some(Box::new(handler));
         self
     }

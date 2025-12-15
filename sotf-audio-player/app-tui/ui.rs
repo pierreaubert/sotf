@@ -2393,22 +2393,10 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             high_freq,
             high_gain,
         } => vec![
-            (
-                "Low Freq".to_string(),
-                format!("{:.0} Hz", low_freq),
-            ),
-            (
-                "Low Gain".to_string(),
-                format!("{:.1} dB", low_gain),
-            ),
-            (
-                "High Freq".to_string(),
-                format!("{:.0} Hz", high_freq),
-            ),
-            (
-                "High Gain".to_string(),
-                format!("{:.1} dB", high_gain),
-            ),
+            ("Low Freq".to_string(), format!("{:.0} Hz", low_freq)),
+            ("Low Gain".to_string(), format!("{:.1} dB", low_gain)),
+            ("High Freq".to_string(), format!("{:.0} Hz", high_freq)),
+            ("High Gain".to_string(), format!("{:.1} dB", high_gain)),
         ],
         PluginSettings::EQ { filters } => {
             let mut params = Vec::new();

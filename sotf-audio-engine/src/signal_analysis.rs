@@ -8,7 +8,7 @@
 //! - Standalone WAV buffer analysis (wav2csv functionality)
 
 use hound::WavReader;
-use rustfft::{num_complex::Complex, FftPlanner};
+use rustfft::{FftPlanner, num_complex::Complex};
 use std::f32::consts::PI;
 use std::io::Write;
 use std::path::Path;
@@ -417,7 +417,10 @@ pub fn analyze_wav_buffer(
 ///
 /// # Returns
 /// Analysis result with frequency, magnitude, and phase data
-pub fn analyze_wav_file(path: &Path, config: &WavAnalysisConfig) -> Result<WavAnalysisOutput, String> {
+pub fn analyze_wav_file(
+    path: &Path,
+    config: &WavAnalysisConfig,
+) -> Result<WavAnalysisOutput, String> {
     let (samples, sample_rate) = load_wav_mono_with_rate(path)?;
     analyze_wav_buffer(&samples, sample_rate, config)
 }
@@ -517,18 +520,27 @@ fn compute_welch_spectrum_internal(
     let mut planner = FftPlanner::new();
     let fft = planner.plan_fft_forward(fft_size);
 
+    let mut windowed = vec![0.0_f32; fft_size];
+    let mut buffer = vec![Complex::new(0.0, 0.0); fft_size];
+
     for window_idx in 0..num_windows {
         let start = window_idx * hop_size;
         let end = (start + fft_size).min(signal.len());
         let window_len = end - start;
 
-        let mut windowed = vec![0.0_f32; fft_size];
+        // Apply window
         for i in 0..window_len {
             windowed[i] = signal[start + i] * hann_window[i];
         }
+        // Zero-pad the rest if necessary
+        for i in window_len..fft_size {
+            windowed[i] = 0.0;
+        }
 
-        let mut buffer: Vec<Complex<f32>> =
-            windowed.iter().map(|&x| Complex::new(x, 0.0)).collect();
+        // Convert to complex
+        for (i, &val) in windowed.iter().enumerate() {
+            buffer[i] = Complex::new(val, 0.0);
+        }
 
         fft.process(&mut buffer);
 
@@ -783,7 +795,7 @@ pub fn analyze_recording(
     );
 
     // Estimate lag using cross-correlation
-    let lag = estimate_lag(reference, recorded);
+    let lag = estimate_lag(reference, recorded)?;
 
     log::info!(
         "[FFT Analysis] Estimated lag: {} samples ({:.2} ms)",
@@ -901,7 +913,12 @@ pub fn analyze_recording(
 
             // Compute transfer function: H(f) = recorded / reference
             // This gives the system response (for loopback, should be ~1.0 or 0 dB)
-            let transfer_function = rec_spectrum[k] / ref_spectrum[k];
+            let ref_mag_sq = ref_spectrum[k].norm_sqr();
+            let transfer_function = if ref_mag_sq > 1e-20 {
+                rec_spectrum[k] / ref_spectrum[k]
+            } else {
+                Complex::new(0.0, 0.0)
+            };
             let magnitude = transfer_function.norm();
 
             // Phase from cross-spectrum (signals are already time-aligned)
@@ -1058,14 +1075,14 @@ pub fn write_analysis_csv(
 ///
 /// # Returns
 /// Estimated lag in samples (negative means recorded leads)
-fn estimate_lag(reference: &[f32], recorded: &[f32]) -> isize {
+fn estimate_lag(reference: &[f32], recorded: &[f32]) -> Result<isize, String> {
     let len = reference.len().min(recorded.len());
 
     // Zero-pad to avoid circular correlation artifacts
     let fft_size = next_power_of_two(len * 2);
 
-    let ref_fft = compute_fft_padded(reference, fft_size).unwrap();
-    let rec_fft = compute_fft_padded(recorded, fft_size).unwrap();
+    let ref_fft = compute_fft_padded(reference, fft_size)?;
+    let rec_fft = compute_fft_padded(recorded, fft_size)?;
 
     // Cross-correlation in frequency domain: conj(X) * Y
     let mut cross_corr_fft: Vec<Complex<f32>> = ref_fft
@@ -1093,11 +1110,11 @@ fn estimate_lag(reference: &[f32], recorded: &[f32]) -> isize {
 
     // Convert index to lag (handle wrap-around)
 
-    if max_idx <= fft_size / 2 {
+    Ok(if max_idx <= fft_size / 2 {
         max_idx as isize
     } else {
         max_idx as isize - fft_size as isize
-    }
+    })
 }
 
 /// Compute FFT of a signal with Hann windowing
@@ -1381,7 +1398,7 @@ mod tests {
         let reference = &reference[..min_len];
 
         // Estimate lag using cross-correlation
-        let lag = estimate_lag(reference, recorded);
+        let lag = estimate_lag(reference, recorded)?;
 
         log::info!(
             "[FFT Analysis] Estimated lag: {} samples ({:.2} ms)",
@@ -1467,7 +1484,7 @@ mod tests {
     fn test_estimate_lag_zero() {
         // Identical signals should have zero lag
         let signal = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-        let lag = estimate_lag(&signal, &signal);
+        let lag = estimate_lag(&signal, &signal).unwrap();
         assert_eq!(lag, 0);
     }
 
@@ -1476,7 +1493,7 @@ mod tests {
         // Reference leads recorded (recorded is delayed)
         let reference = vec![1.0, 2.0, 3.0, 4.0, 5.0, 0.0, 0.0];
         let recorded = vec![0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0];
-        let lag = estimate_lag(&reference, &recorded);
+        let lag = estimate_lag(&reference, &recorded).unwrap();
         assert_eq!(lag, 2);
     }
 
@@ -1538,7 +1555,7 @@ mod tests {
         // When signals are truly identical (like in the bug case),
         // lag should be exactly zero
         let signal = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-        let lag = estimate_lag(&signal, &signal);
+        let lag = estimate_lag(&signal, &signal).unwrap();
         assert_eq!(lag, 0, "Identical signals should have zero lag");
     }
 

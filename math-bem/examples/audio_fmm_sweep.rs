@@ -35,10 +35,10 @@ fn main() {
     use bem::core::assembly::tbem::build_tbem_system_scaled;
     use bem::core::incident::IncidentField;
     use bem::core::mesh::generators::generate_icosphere_mesh;
-    use bem::core::solver::{CgsConfig, solve_cgs, solve_with_ilu};
-    use bem::core::solver::direct::lu_solve;
     use bem::core::solver::IluPreconditioner;
     use bem::core::solver::Preconditioner;
+    use bem::core::solver::direct::lu_solve;
+    use bem::core::solver::{CgsConfig, solve_cgs, solve_with_ilu};
     use bem::core::types::{BoundaryCondition, PhysicsParams};
     use ndarray::{Array1, Array2};
     use num_complex::Complex64;
@@ -130,7 +130,7 @@ fn main() {
         let direct_err = 100.0 * (direct_avg - mie_avg).abs() / mie_avg;
 
         // === CGS with ILU preconditioner ===
-        
+
         // CGS solver config - enable progress output for first frequency only
         let print_interval = if ka == ka_values[0] { 100 } else { 0 };
         let cgs_config = CgsConfig {

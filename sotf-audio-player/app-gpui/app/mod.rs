@@ -7,16 +7,28 @@
 //! - Plugin editing: ui/components/host/plugin_editing.rs
 //! - Level meters: ui/components/plugins/level_meters.rs
 
+pub mod actions;
 mod autocomplete;
+pub mod config;
+pub mod i18n;
+pub mod keybindings;
 pub mod library;
 pub mod navigation;
 pub mod queue;
 pub mod state;
+pub mod theme;
 pub mod types;
+
+pub use i18n::{Language, Translations};
+pub use keybindings::{
+    DocumentedKeybinding, KeybindingCategory, KeymapPreset, get_documented_keybindings,
+    get_keybindings,
+};
+pub use state::{App, AppState};
+pub use theme::{Theme, ThemeId};
 
 // Re-export everything publicly
 pub use crate::plugins::get_param_count;
-pub use state::{App, AppState};
 pub use types::{
     ActiveMenu, ChannelFilter, ChannelGroup, ChannelInfo, ContextMenuState, ContextMenuType,
     InputMode, LayoutMode, LibrarySortOrder, QueueItem, Screen, SettingsTab, ToastMessage,

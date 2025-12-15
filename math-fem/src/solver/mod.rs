@@ -1092,12 +1092,8 @@ pub fn solve_csr_with_guess(
         SolverType::GmresSchwarz => solve_gmres_schwarz_with_guess(csr, rhs, x0, config),
         SolverType::GmresAmg => solve_gmres_amg_with_guess(csr, rhs, x0, config),
         SolverType::GmresPipelined => solve_gmres_pipelined_with_guess(csr, rhs, x0, config),
-        SolverType::GmresPipelinedIlu => {
-            solve_gmres_pipelined_ilu_with_guess(csr, rhs, x0, config)
-        }
-        SolverType::GmresPipelinedAmg => {
-            solve_gmres_pipelined_amg_with_guess(csr, rhs, x0, config)
-        }
+        SolverType::GmresPipelinedIlu => solve_gmres_pipelined_ilu_with_guess(csr, rhs, x0, config),
+        SolverType::GmresPipelinedAmg => solve_gmres_pipelined_amg_with_guess(csr, rhs, x0, config),
     }
 }
 

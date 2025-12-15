@@ -190,12 +190,14 @@ impl ColorPickerView {
                         }),
                     )
                     // Mouse move while pressed - drag to change value
-                    .on_mouse_move(cx.listener(move |this, event: &MouseMoveEvent, _window, cx| {
-                        if event.pressed_button == Some(MouseButton::Left) {
-                            let new_val = calc_value(event.position.x.into());
-                            Self::apply_slider_value(this, mode, label, new_val, cx);
-                        }
-                    }))
+                    .on_mouse_move(
+                        cx.listener(move |this, event: &MouseMoveEvent, _window, cx| {
+                            if event.pressed_button == Some(MouseButton::Left) {
+                                let new_val = calc_value(event.position.x.into());
+                                Self::apply_slider_value(this, mode, label, new_val, cx);
+                            }
+                        }),
+                    )
                     // Double-click to reset
                     .on_click(cx.listener(move |this, event: &ClickEvent, _window, cx| {
                         if event.click_count() == 2 {
@@ -228,9 +230,9 @@ impl ColorPickerView {
                     )),
             )
             .child(
-                div()
-                    .w(px(50.0))
-                    .child(Text::new(SharedString::from(format!("{:.0}", value))).size(TextSize::Sm)),
+                div().w(px(50.0)).child(
+                    Text::new(SharedString::from(format!("{:.0}", value))).size(TextSize::Sm),
+                ),
             )
             .build()
     }
@@ -293,9 +295,11 @@ impl Render for ColorPickerView {
                         .variant(ButtonVariant::Ghost)
                         .size(ButtonSize::Sm)
                         .build()
-                        .on_click(cx.listener(|this, _: &ClickEvent, _window, cx| {
-                            this.toggle_mode(cx);
-                        })),
+                        .on_click(cx.listener(
+                            |this, _: &ClickEvent, _window, cx| {
+                                this.toggle_mode(cx);
+                            },
+                        )),
                     )
                     .build(),
             )

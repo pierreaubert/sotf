@@ -5,9 +5,7 @@ use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{
-    HStack, LoadingDots, Menu, MenuItem, StackSpacing, menu_bar_button,
-};
+use gpui_ui_kit::{HStack, LoadingDots, Menu, MenuItem, StackSpacing, menu_bar_button};
 
 impl PlayerView {
     /// Render the application menu bar with dropdown menus
@@ -64,8 +62,7 @@ impl PlayerView {
                         el.child(LoadingDots::new().color(theme.accent))
                             .child(format!(
                                 "{}: {} files",
-                                translations.library_scanning,
-                                scan_progress_tracks
+                                translations.library_scanning, scan_progress_tracks
                             ))
                     }),
             )

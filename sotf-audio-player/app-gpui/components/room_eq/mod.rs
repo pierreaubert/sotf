@@ -133,7 +133,8 @@ impl PlayerView {
                                     }
                                     _ => {
                                         // Go back to previous step
-                                        if let Some(prev) = state.app.room_eq_state.step.previous() {
+                                        if let Some(prev) = state.app.room_eq_state.step.previous()
+                                        {
                                             state.app.room_eq_state.step = prev;
                                         }
                                     }
@@ -301,7 +302,7 @@ impl PlayerView {
                             )
                             .child(
                                 Button::new("load_from_file", "Browse...")
-                                    .variant(ButtonVariant::Secondary)
+                                    .variant(ButtonVariant::Primary)
                                     .build()
                                     .on_mouse_up(
                                         MouseButton::Left,
@@ -550,16 +551,12 @@ impl PlayerView {
                                     )
                                     .when(is_running, |stack| {
                                         stack.child(
-                                            Text::new("●")
-                                                .size(TextSize::Sm)
-                                                .color(theme.info),
+                                            Text::new("●").size(TextSize::Sm).color(theme.info),
                                         )
                                     })
                                     .when(is_completed, |stack| {
                                         stack.child(
-                                            Text::new("✓")
-                                                .size(TextSize::Sm)
-                                                .color(theme.success),
+                                            Text::new("✓").size(TextSize::Sm).color(theme.success),
                                         )
                                     }),
                             )
@@ -571,12 +568,13 @@ impl PlayerView {
                                     .bg(theme.background_secondary)
                                     .rounded_md()
                                     .overflow_hidden()
-                                    .child(
-                                        div()
-                                            .w(relative(progress))
-                                            .h_full()
-                                            .bg(if is_completed { theme.success } else { theme.info }),
-                                    ),
+                                    .child(div().w(relative(progress)).h_full().bg(
+                                        if is_completed {
+                                            theme.success
+                                        } else {
+                                            theme.info
+                                        },
+                                    )),
                             )
                             .child(
                                 Text::new(status_msg.clone())
@@ -584,16 +582,23 @@ impl PlayerView {
                                     .color(theme.text_secondary),
                             )
                             .child(
-                                Button::new("start_optimization", if is_running { "Optimizing..." } else { "Start Optimization" })
-                                    .variant(ButtonVariant::Primary)
-                                    .disabled(is_running)
-                                    .build()
-                                    .on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(|view, _, _, cx| {
-                                            view.start_room_eq_optimization(cx);
-                                        }),
-                                    ),
+                                Button::new(
+                                    "start_optimization",
+                                    if is_running {
+                                        "Optimizing..."
+                                    } else {
+                                        "Start Optimization"
+                                    },
+                                )
+                                .variant(ButtonVariant::Primary)
+                                .disabled(is_running)
+                                .build()
+                                .on_mouse_up(
+                                    MouseButton::Left,
+                                    cx.listener(|view, _, _, cx| {
+                                        view.start_room_eq_optimization(cx);
+                                    }),
+                                ),
                             ),
                     ),
             )
@@ -620,20 +625,27 @@ impl PlayerView {
             .child(
                 Card::new()
                     .header(Text::new("Score Summary").weight(TextWeight::Semibold))
-                    .content(VStack::new().spacing(StackSpacing::Sm).child(
-                        HStack::new()
-                            .spacing(StackSpacing::Lg)
-                            .child(Text::new(format!("Before: {:.2}", pre_score)))
-                            .child(Text::new(format!("After: {:.2}", post_score)))
-                            .child(
-                                Text::new(format!("Improvement: {:.2}", pre_score - post_score))
-                                    .color(if post_score < pre_score {
-                                        theme.success
-                                    } else {
-                                        theme.error
-                                    }),
-                            ),
-                    )),
+                    .content(
+                        VStack::new().spacing(StackSpacing::Sm).child(
+                            HStack::new()
+                                .spacing(StackSpacing::Lg)
+                                .child(Text::new(format!("Before: {:.2}", pre_score)))
+                                .child(Text::new(format!("After: {:.2}", post_score)))
+                                .child(
+                                    Text::new(format!(
+                                        "Improvement: {:.2}",
+                                        pre_score - post_score
+                                    ))
+                                    .color(
+                                        if post_score < pre_score {
+                                            theme.success
+                                        } else {
+                                            theme.error
+                                        },
+                                    ),
+                                ),
+                        ),
+                    ),
             )
             .child(
                 Card::new()
@@ -645,6 +657,11 @@ impl PlayerView {
     fn render_room_eq_export(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
+        let has_eq_in_rack = state
+            .app
+            .plugin_chain
+            .find_plugin_index(&sotf_audio_player::PluginType::EQ)
+            .is_some();
 
         VStack::new()
             .spacing(StackSpacing::Lg)
@@ -657,6 +674,32 @@ impl PlayerView {
                 Text::new("Export the DSP chain or apply directly to the player.")
                     .size(TextSize::Sm)
                     .color(theme.text_secondary),
+            )
+            .child(
+                Card::new()
+                    .header(Text::new("Backup Current Rack").weight(TextWeight::Semibold))
+                    .content(
+                        VStack::new()
+                            .spacing(StackSpacing::Md)
+                            .child(
+                                Text::new(
+                                    "Save a copy of your current plugin rack before applying changes.",
+                                )
+                                .size(TextSize::Sm)
+                                .color(theme.text_secondary),
+                            )
+                            .child(
+                                Button::new("backup_rack", "Save Rack Backup...")
+                                    .variant(ButtonVariant::Secondary)
+                                    .build()
+                                    .on_mouse_up(
+                                        MouseButton::Left,
+                                        cx.listener(|view, _, _, cx| {
+                                            view.save_rack_backup(cx);
+                                        }),
+                                    ),
+                            ),
+                    ),
             )
             .child(
                 Card::new()
@@ -674,6 +717,23 @@ impl PlayerView {
                                             view.export_room_eq_json(cx);
                                         }),
                                     ),
+                            ),
+                    ),
+            )
+            .child(
+                Card::new()
+                    .header(Text::new("Apply to Player").weight(TextWeight::Semibold))
+                    .content(
+                        VStack::new()
+                            .spacing(StackSpacing::Md)
+                            .child(
+                                Text::new(if has_eq_in_rack {
+                                    "An EQ plugin exists in your rack. It will be updated with the new filters."
+                                } else {
+                                    "No EQ plugin in rack. A new EQ will be added before any monitoring plugins."
+                                })
+                                .size(TextSize::Sm)
+                                .color(theme.text_secondary),
                             )
                             .child(
                                 Button::new("apply_to_player", "Apply to Player")
@@ -711,9 +771,11 @@ impl PlayerView {
 
         VStack::new()
             .spacing(StackSpacing::Lg)
-            .children(channel_results.iter().map(|result| {
-                render_channel_result_card(result, &theme)
-            }))
+            .children(
+                channel_results
+                    .iter()
+                    .map(|result| render_channel_result_card(result, &theme)),
+            )
             .into_any_element()
     }
 
@@ -742,9 +804,7 @@ impl PlayerView {
         let rows: Vec<_> = speaker_configs
             .iter()
             .enumerate()
-            .map(|(idx, config)| {
-                render_channel_config_row(idx, config, &theme, &view)
-            })
+            .map(|(idx, config)| render_channel_config_row(idx, config, &theme, &view))
             .collect();
 
         VStack::new()
@@ -968,96 +1028,164 @@ impl PlayerView {
     }
 
     fn start_room_eq_optimization(&mut self, cx: &mut Context<Self>) {
-        use crate::app::types::{ChannelOptResult, EqFilterConfig, OptimizationStatus};
-        use sotf_audio_player::room_eq::{
-            ChannelConfig, ChannelMeasurements, Curve, Measurement, OptimizerConfig,
-            RoomEqOptimizer,
+        use crate::app::types::{
+            ChannelOptResult, EqFilterConfig, OptimizationStatus, SpeakerConfigType,
         };
-        use std::collections::HashMap;
-        use std::sync::Arc;
+        use sotf_audio_player::room_eq::{
+            CallbackAction, CallbackConfig, MeasurementInput, OptimizationParams,
+            SpeakerOptimizationConfig, SpeakerOptimizationProgress,
+            run_speaker_optimization_with_callback,
+        };
+        use std::sync::{Arc, Mutex};
 
-        log::info!("Starting room EQ optimization");
+        log::info!("Starting room EQ optimization with new speaker optimization");
 
-        // Collect data from state
-        let (channels, configs, optimizer_config) = {
+        // Collect configurations from state
+        let (channel_configs, _optimizer_params) = {
             let state = self.state.read(cx);
             let room_eq = &state.app.room_eq_state;
 
-            // Build channel measurements map
-            let mut channels: HashMap<String, ChannelMeasurements> = HashMap::new();
-            for meas in &room_eq.channel_measurements {
-                // Convert f32 frequencies/magnitudes to f64 curves
-                let curve = Curve::new(
-                    ndarray::Array1::from_vec(
-                        meas.measurement.frequencies.iter().map(|&f| f as f64).collect(),
-                    ),
-                    ndarray::Array1::from_vec(
-                        meas.measurement.magnitude_db.iter().map(|&db| db as f64).collect(),
-                    ),
-                );
-                let measurement = Measurement::new(&meas.channel_name, curve);
-
-                if meas.is_group && !meas.group_drivers.is_empty() {
-                    // Multi-driver
-                    let driver_measurements: Vec<Measurement> = meas
-                        .group_drivers
+            // Build speaker optimization configs for each channel
+            let configs: Vec<(String, SpeakerOptimizationConfig, SpeakerConfigType)> = room_eq
+                .channel_measurements
+                .iter()
+                .zip(room_eq.speaker_configs.iter())
+                .map(|(meas, speaker_cfg)| {
+                    // Convert measurement data to autoeq::Curve
+                    let frequencies: Vec<f64> = meas
+                        .measurement
+                        .frequencies
                         .iter()
-                        .enumerate()
-                        .map(|(i, driver)| {
-                            let driver_curve = Curve::new(
-                                ndarray::Array1::from_vec(
-                                    driver.frequencies.iter().map(|&f| f as f64).collect(),
-                                ),
-                                ndarray::Array1::from_vec(
-                                    driver.magnitude_db.iter().map(|&db| db as f64).collect(),
-                                ),
-                            );
-                            Measurement::new(format!("driver_{}", i + 1), driver_curve)
-                        })
+                        .map(|&f| f as f64)
                         .collect();
-                    channels.insert(
-                        meas.channel_name.clone(),
-                        ChannelMeasurements::multi_driver(&meas.channel_name, driver_measurements),
-                    );
-                } else {
-                    // Single driver
-                    channels.insert(
-                        meas.channel_name.clone(),
-                        ChannelMeasurements::single(&meas.channel_name, measurement),
-                    );
-                }
-            }
+                    let magnitude_db: Vec<f64> = meas
+                        .measurement
+                        .magnitude_db
+                        .iter()
+                        .map(|&db| db as f64)
+                        .collect();
 
-            // Build channel configs map
-            let mut configs: HashMap<String, ChannelConfig> = HashMap::new();
-            for cfg in &room_eq.speaker_configs {
-                configs.insert(
-                    cfg.channel_name.clone(),
-                    ChannelConfig {
-                        name: cfg.channel_name.clone(),
-                        config_type: cfg.config_type.into(),
-                        crossover_type: Some(cfg.crossover_type.into()),
-                        driver_names: Vec::new(),
+                    let main_curve = autoeq::Curve {
+                        freq: ndarray::Array1::from_vec(frequencies),
+                        spl: ndarray::Array1::from_vec(magnitude_db),
+                        phase: None,
+                    };
+
+                    // Build driver curves for multi-driver config
+                    let driver_measurements: Vec<MeasurementInput> =
+                        if meas.is_group && !meas.group_drivers.is_empty() {
+                            meas.group_drivers
+                                .iter()
+                                .map(|driver| {
+                                    let freq: Vec<f64> =
+                                        driver.frequencies.iter().map(|&f| f as f64).collect();
+                                    let spl: Vec<f64> =
+                                        driver.magnitude_db.iter().map(|&db| db as f64).collect();
+                                    MeasurementInput::Curve(autoeq::Curve {
+                                        freq: ndarray::Array1::from_vec(freq),
+                                        spl: ndarray::Array1::from_vec(spl),
+                                        phase: None,
+                                    })
+                                })
+                                .collect()
+                        } else {
+                            Vec::new()
+                        };
+
+                    let config_type = if meas.is_group && !meas.group_drivers.is_empty() {
+                        sotf_audio_player::room_eq::SpeakerConfigType::MultiDriver
+                    } else {
+                        sotf_audio_player::room_eq::SpeakerConfigType::Single
+                    };
+
+                    let crossover_type = match speaker_cfg.crossover_type {
+                        crate::app::types::CrossoverType::Butterworth12 => {
+                            sotf_audio_player::room_eq::CrossoverType::Butterworth12
+                        }
+                        crate::app::types::CrossoverType::Butterworth24 => {
+                            sotf_audio_player::room_eq::CrossoverType::LR24
+                        } // Fallback to LR24
+                        crate::app::types::CrossoverType::LR12 => {
+                            sotf_audio_player::room_eq::CrossoverType::LR12
+                        }
+                        crate::app::types::CrossoverType::LR24 => {
+                            sotf_audio_player::room_eq::CrossoverType::LR24
+                        }
+                        crate::app::types::CrossoverType::LR48 => {
+                            sotf_audio_player::room_eq::CrossoverType::LR48
+                        }
+                    };
+
+                    let speaker_config = SpeakerOptimizationConfig {
+                        config_type,
+                        main_measurement: Some(MeasurementInput::Curve(main_curve)),
+                        driver_measurements,
+                        crossover_type: Some(crossover_type),
                         crossover_freq_hints: Vec::new(),
-                    },
-                );
-            }
+                        params: OptimizationParams {
+                            num_filters: room_eq.optimizer_config.num_filters,
+                            sample_rate: 48000,
+                            min_db: room_eq.optimizer_config.min_db,
+                            max_db: room_eq.optimizer_config.max_db,
+                            min_q: room_eq.optimizer_config.min_q,
+                            max_q: room_eq.optimizer_config.max_q,
+                            min_freq: room_eq.optimizer_config.min_freq,
+                            max_freq: room_eq.optimizer_config.max_freq,
+                            algo: match room_eq.optimizer_config.algorithm {
+                                crate::app::types::RoomEqAlgorithm::Cobyla => {
+                                    "nlopt:cobyla".to_string()
+                                }
+                                crate::app::types::RoomEqAlgorithm::DifferentialEvolution => {
+                                    "autoeq:de".to_string()
+                                }
+                                crate::app::types::RoomEqAlgorithm::NelderMead => {
+                                    "nlopt:neldermead".to_string()
+                                }
+                            },
+                            maxeval: room_eq.optimizer_config.max_iter,
+                            loss: "speaker-flat".to_string(),
+                            ..OptimizationParams::speaker_defaults()
+                        },
+                        callback_config: Some(CallbackConfig {
+                            interval: 25, // Report every 25 iterations
+                            include_biquads: true,
+                            include_filter_response: true,
+                        }),
+                        target: None,
+                    };
 
-            // Optimizer config
-            let opt_cfg = OptimizerConfig {
-                algorithm: room_eq.optimizer_config.algorithm.into(),
+                    (
+                        meas.channel_name.clone(),
+                        speaker_config,
+                        speaker_cfg.config_type,
+                    )
+                })
+                .collect();
+
+            let opt_params = OptimizationParams {
                 num_filters: room_eq.optimizer_config.num_filters,
-                min_q: room_eq.optimizer_config.min_q,
-                max_q: room_eq.optimizer_config.max_q,
+                sample_rate: 48000,
                 min_db: room_eq.optimizer_config.min_db,
                 max_db: room_eq.optimizer_config.max_db,
+                min_q: room_eq.optimizer_config.min_q,
+                max_q: room_eq.optimizer_config.max_q,
                 min_freq: room_eq.optimizer_config.min_freq,
                 max_freq: room_eq.optimizer_config.max_freq,
-                max_iter: room_eq.optimizer_config.max_iter,
-                sample_rate: 48000.0, // Default sample rate
+                algo: match room_eq.optimizer_config.algorithm {
+                    crate::app::types::RoomEqAlgorithm::Cobyla => "nlopt:cobyla".to_string(),
+                    crate::app::types::RoomEqAlgorithm::DifferentialEvolution => {
+                        "autoeq:de".to_string()
+                    }
+                    crate::app::types::RoomEqAlgorithm::NelderMead => {
+                        "nlopt:neldermead".to_string()
+                    }
+                },
+                maxeval: room_eq.optimizer_config.max_iter,
+                loss: "speaker-flat".to_string(),
+                ..OptimizationParams::speaker_defaults()
             };
 
-            (channels, configs, opt_cfg)
+            (configs, opt_params)
         };
 
         // Update state to running
@@ -1068,168 +1196,242 @@ impl PlayerView {
             state.app.room_eq_state.overall_progress = 0.0;
         });
 
-        if channels.is_empty() {
+        if channel_configs.is_empty() {
             log::warn!("No channels to optimize");
             self.state.update(cx, |state, _cx| {
                 state.app.room_eq_state.optimization_status = OptimizationStatus::Failed;
-                state.app.room_eq_state.error_message =
-                    Some("No channels to optimize".to_string());
+                state.app.room_eq_state.error_message = Some("No channels to optimize".to_string());
             });
             return;
         }
 
-        // Create the optimizer
-        let optimizer = Arc::new(RoomEqOptimizer::new(optimizer_config));
-
-        // Clone state for the async task
+        let total_channels = channel_configs.len();
         let state_clone = self.state.clone();
-        let state_for_progress = self.state.clone();
-        let crossover_types: HashMap<String, _> = configs
-            .iter()
-            .map(|(k, v)| (k.clone(), v.crossover_type.unwrap_or_default()))
-            .collect();
 
-        // Create progress channel
-        let (progress_tx, mut progress_rx) =
-            tokio::sync::mpsc::channel::<sotf_audio_player::room_eq::OptimizationProgress>(100);
-
-        // Spawn a task to listen to progress updates
+        // Spawn the optimization task
         cx.spawn(async move |_, cx| {
-            while let Some(progress) = progress_rx.recv().await {
-                let _ = state_for_progress.update(&mut cx.clone(), |state, cx| {
-                    state.app.room_eq_state.overall_progress = progress.overall_progress;
-                    state.app.room_eq_state.status_message = progress.message.clone();
-                    cx.notify(); // Trigger UI update
+            let mut all_results: Vec<ChannelOptResult> = Vec::new();
+            let mut total_pre_score = 0.0;
+            let mut total_post_score = 0.0;
+
+            for (channel_idx, (channel_name, config, _ui_config_type)) in
+                channel_configs.into_iter().enumerate()
+            {
+                // Update status for current channel
+                let channel_name_for_status = channel_name.clone();
+                let _ = state_clone.update(&mut cx.clone(), |state, cx| {
+                    state.app.room_eq_state.current_channel = Some(channel_name_for_status.clone());
+                    state.app.room_eq_state.status_message = format!(
+                        "Optimizing {} ({}/{})",
+                        channel_name_for_status,
+                        channel_idx + 1,
+                        total_channels
+                    );
+                    cx.notify();
                 });
-            }
-        })
-        .detach();
 
-        // Spawn the optimization task with progress channel
-        cx.spawn(async move |_, cx| {
-            // Run the optimization with progress updates
-            let result = optimizer
-                .optimize_all_channels(channels, configs, Some(progress_tx))
+                // Create progress tracking for this channel
+                let channel_idx_f = channel_idx as f32;
+                let total_channels_f = total_channels as f32;
+                let channel_name_cb = channel_name.clone();
+
+                // Create callback that updates UI with real-time progress
+                let callback: sotf_audio_player::room_eq::SpeakerOptimizationCallback =
+                    Box::new(move |progress: &SpeakerOptimizationProgress| {
+                        let iteration = progress.iteration;
+                        let loss = progress.loss;
+                        let max_iter = progress.max_iterations;
+                        let stage = progress.stage;
+                        let num_biquads = progress.current_biquads.len();
+
+                        // Calculate overall progress
+                        let channel_progress = if max_iter > 0 {
+                            iteration as f32 / max_iter as f32
+                        } else {
+                            0.0
+                        };
+                        let _overall = (channel_idx_f + channel_progress) / total_channels_f;
+
+                        let stage_str = match stage {
+                            sotf_audio_player::room_eq::OptimizationStage::Crossover => "crossover",
+                            sotf_audio_player::room_eq::OptimizationStage::Eq => "EQ",
+                            sotf_audio_player::room_eq::OptimizationStage::Refinement => {
+                                "refinement"
+                            }
+                        };
+
+                        // Update UI state (note: this is sync context, so we can't use async update)
+                        // The callback runs in a blocking thread, so we log progress instead
+                        log::debug!(
+                            "Channel {}: iter {}/{} ({}) loss={:.4} filters={}",
+                            channel_name_cb,
+                            iteration,
+                            max_iter,
+                            stage_str,
+                            loss,
+                            num_biquads
+                        );
+
+                        CallbackAction::Continue
+                    });
+
+                // Run optimization in blocking task (optimization is CPU-bound)
+                let config_clone = config.clone();
+                let result = smol::unblock(move || {
+                    run_speaker_optimization_with_callback(&config_clone, Some(callback))
+                })
                 .await;
 
-            // Process result
-            match result {
-                Ok(results) => {
-                    // Generate DSP output
-                    let dsp_output = optimizer.generate_dsp_output(&results, &crossover_types);
+                match result {
+                    Ok(speaker_result) => {
+                        log::info!(
+                            "Channel {} optimized: {:.4} -> {:.4}",
+                            channel_name,
+                            speaker_result.initial_loss,
+                            speaker_result.final_loss
+                        );
 
-                    // Convert results to UI format
-                    let channel_results: Vec<ChannelOptResult> = results
-                        .into_iter()
-                        .map(|(name, r)| ChannelOptResult {
-                            channel_name: name,
-                            pre_score: r.pre_score,
-                            post_score: r.post_score,
-                            eq_filters: r
-                                .eq_filters
+                        total_pre_score += speaker_result.initial_loss;
+                        total_post_score += speaker_result.final_loss;
+
+                        // Convert to UI result format
+                        let channel_result = ChannelOptResult {
+                            channel_name: channel_name.clone(),
+                            pre_score: speaker_result.initial_loss,
+                            post_score: speaker_result.final_loss,
+                            eq_filters: speaker_result
+                                .biquads
                                 .iter()
-                                .map(|f| EqFilterConfig {
-                                    filter_type: f.filter_type.clone(),
-                                    frequency: f.frequency,
-                                    q: f.q,
-                                    gain_db: f.gain_db,
+                                .map(|b| EqFilterConfig {
+                                    filter_type: format!("{:?}", b.filter_type),
+                                    frequency: b.freq,
+                                    q: b.q,
+                                    gain_db: b.db_gain,
                                 })
                                 .collect(),
-                            crossover_freqs: r.crossover_freqs,
-                            driver_gains: r.driver_gains,
-                            original_response: r.original_response.map(|c| {
-                                c.freq
+                            crossover_freqs: speaker_result.crossover_freqs.clone(),
+                            driver_gains: speaker_result.driver_gains.clone(),
+                            original_response: Some(
+                                speaker_result
+                                    .frequencies
                                     .iter()
-                                    .zip(c.spl.iter())
+                                    .zip(speaker_result.input_curve.iter())
                                     .map(|(&f, &db)| (f, db))
-                                    .collect()
-                            }),
-                            corrected_response: r.corrected_response.map(|c| {
-                                c.freq
-                                    .iter()
-                                    .zip(c.spl.iter())
-                                    .map(|(&f, &db)| (f, db))
-                                    .collect()
-                            }),
-                        })
-                        .collect();
-
-                    // Update state with results
-                    let _ = state_clone.update(&mut cx.clone(), |state, _| {
-                        state.app.room_eq_state.optimization_status =
-                            OptimizationStatus::Completed;
-                        state.app.room_eq_state.status_message =
-                            "Optimization complete!".to_string();
-                        state.app.room_eq_state.channel_results = channel_results;
-                        state.app.room_eq_state.overall_progress = 1.0;
-                        state.app.room_eq_state.dsp_output =
-                            Some(crate::app::types::DspChainOutput {
-                                channels: dsp_output
-                                    .channels
-                                    .into_iter()
-                                    .map(|(k, v)| {
-                                        (
-                                            k,
-                                            crate::app::types::ChannelDspChain {
-                                                channel: v.channel,
-                                                plugins: v
-                                                    .plugins
-                                                    .iter()
-                                                    .map(|p| {
-                                                        crate::app::types::DspPluginConfig {
-                                                            plugin_type: p.plugin_type.clone(),
-                                                            parameters: p.parameters.clone(),
-                                                        }
-                                                    })
-                                                    .collect(),
-                                                drivers: v.drivers.map(|d| {
-                                                    d.into_iter()
-                                                        .map(|dr| {
-                                                            crate::app::types::DriverDspChain {
-                                                                name: dr.name,
-                                                                index: dr.index,
-                                                                plugins: dr
-                                                                    .plugins
-                                                                    .iter()
-                                                                    .map(|p| {
-                                                                        crate::app::types::DspPluginConfig {
-                                                                            plugin_type: p.plugin_type.clone(),
-                                                                            parameters: p.parameters.clone(),
-                                                                        }
-                                                                    })
-                                                                    .collect(),
-                                                            }
-                                                        })
-                                                        .collect()
-                                                }),
-                                            },
-                                        )
-                                    })
                                     .collect(),
-                                metadata: dsp_output.metadata.map(|m| {
-                                    crate::app::types::DspChainMetadata {
-                                        pre_score: m.pre_score,
-                                        post_score: m.post_score,
-                                        algorithm: m.algorithm,
-                                        iterations: m.iterations,
-                                        timestamp: m.timestamp,
-                                    }
-                                }),
-                            });
-                        // Advance to review step
-                        state.app.room_eq_state.step = crate::app::types::RoomEqStep::Review;
-                    });
+                            ),
+                            corrected_response: Some(
+                                speaker_result
+                                    .frequencies
+                                    .iter()
+                                    .zip(speaker_result.corrected_curve.iter())
+                                    .map(|(&f, &db)| (f, db))
+                                    .collect(),
+                            ),
+                        };
 
-                    log::info!("Room EQ optimization completed successfully");
-                }
-                Err(e) => {
-                    log::error!("Room EQ optimization failed: {}", e);
-                    let _ = state_clone.update(&mut cx.clone(), |state, _| {
-                        state.app.room_eq_state.optimization_status = OptimizationStatus::Failed;
-                        state.app.room_eq_state.error_message = Some(e);
-                    });
+                        all_results.push(channel_result);
+
+                        // Update progress
+                        let progress = (channel_idx + 1) as f32 / total_channels as f32;
+                        let _ = state_clone.update(&mut cx.clone(), |state, cx| {
+                            state.app.room_eq_state.overall_progress = progress;
+                            state.app.room_eq_state.status_message = format!(
+                                "Completed {} ({}/{})",
+                                channel_name,
+                                channel_idx + 1,
+                                total_channels
+                            );
+                            cx.notify();
+                        });
+                    }
+                    Err(e) => {
+                        log::error!("Channel {} optimization failed: {}", channel_name, e);
+                        let _ = state_clone.update(&mut cx.clone(), |state, _| {
+                            state.app.room_eq_state.optimization_status =
+                                OptimizationStatus::Failed;
+                            state.app.room_eq_state.error_message =
+                                Some(format!("Task error for {}: {}", channel_name, e));
+                        });
+                        return;
+                    }
                 }
             }
+
+            // All channels completed - update final state
+            let avg_pre = if !all_results.is_empty() {
+                total_pre_score / all_results.len() as f64
+            } else {
+                0.0
+            };
+            let avg_post = if !all_results.is_empty() {
+                total_post_score / all_results.len() as f64
+            } else {
+                0.0
+            };
+
+            log::info!(
+                "Room EQ optimization completed: avg score {:.4} -> {:.4}",
+                avg_pre,
+                avg_post
+            );
+
+            let _ = state_clone.update(&mut cx.clone(), |state, _| {
+                state.app.room_eq_state.optimization_status = OptimizationStatus::Completed;
+                state.app.room_eq_state.status_message = format!(
+                    "Optimization complete! Score: {:.2} -> {:.2}",
+                    avg_pre, avg_post
+                );
+                state.app.room_eq_state.channel_results = all_results;
+                state.app.room_eq_state.overall_progress = 1.0;
+                state.app.room_eq_state.current_channel = None;
+
+                // Build DSP output from results
+                let mut dsp_channels = std::collections::HashMap::new();
+                for result in &state.app.room_eq_state.channel_results {
+                    let eq_params = serde_json::json!({
+                        "filters": result.eq_filters.iter().map(|f| {
+                            serde_json::json!({
+                                "filter_type": f.filter_type.to_lowercase(),
+                                "frequency": f.frequency,
+                                "q": f.q,
+                                "gain_db": f.gain_db
+                            })
+                        }).collect::<Vec<_>>()
+                    });
+
+                    dsp_channels.insert(
+                        result.channel_name.clone(),
+                        crate::app::types::ChannelDspChain {
+                            channel: result.channel_name.clone(),
+                            plugins: vec![crate::app::types::DspPluginConfig {
+                                plugin_type: "EQ".to_string(),
+                                parameters: eq_params,
+                            }],
+                            drivers: None,
+                        },
+                    );
+                }
+
+                state.app.room_eq_state.dsp_output = Some(crate::app::types::DspChainOutput {
+                    channels: dsp_channels,
+                    metadata: Some(crate::app::types::DspChainMetadata {
+                        pre_score: avg_pre,
+                        post_score: avg_post,
+                        algorithm: state
+                            .app
+                            .room_eq_state
+                            .optimizer_config
+                            .algorithm
+                            .as_str()
+                            .to_string(),
+                        iterations: state.app.room_eq_state.optimizer_config.max_iter,
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                    }),
+                });
+
+                // Advance to review step
+                state.app.room_eq_state.step = crate::app::types::RoomEqStep::Review;
+            });
         })
         .detach();
     }
@@ -1296,8 +1498,58 @@ impl PlayerView {
         .detach();
     }
 
+    fn save_rack_backup(&mut self, cx: &mut Context<Self>) {
+        // Get the current plugin chain
+        let plugin_chain = {
+            let state = self.state.read(cx);
+            state.app.plugin_chain.clone()
+        };
+
+        let state_entity = self.state.clone();
+
+        cx.spawn(async move |_, cx| {
+            // Generate default filename with timestamp
+            let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+            let default_name = format!("rack_backup_{}.json", timestamp);
+
+            // Open save file dialog
+            let file = rfd::AsyncFileDialog::new()
+                .add_filter("JSON", &["json"])
+                .set_title("Save Rack Backup")
+                .set_file_name(&default_name)
+                .save_file()
+                .await;
+
+            if let Some(file) = file {
+                let file_path = file.path().to_path_buf();
+
+                match plugin_chain.save_to_file(file_path.to_str().unwrap_or("backup.json")) {
+                    Ok(()) => {
+                        log::info!("Saved rack backup to {:?}", file_path);
+                        let _ = state_entity.update(cx, |state, _| {
+                            state.app.room_eq_state.status_message =
+                                format!("Backup saved to {}", file_path.display());
+                            state.app.toast_message = Some(crate::app::ToastMessage::success(
+                                "Rack backup saved",
+                            ));
+                        });
+                    }
+                    Err(e) => {
+                        log::error!("Failed to save rack backup: {}", e);
+                        let _ = state_entity.update(cx, |state, _| {
+                            state.app.room_eq_state.error_message =
+                                Some(format!("Failed to save backup: {}", e));
+                        });
+                    }
+                }
+            }
+        })
+        .detach();
+    }
+
     fn apply_room_eq_to_player(&mut self, cx: &mut Context<Self>) {
-        use sotf_audio::PluginConfig;
+        use autoeq_iir::BiquadFilterType;
+        use sotf_audio_player::{EQFilter, PluginSettings, PluginType};
 
         // Get the DSP output from state
         let dsp_output = {
@@ -1314,50 +1566,95 @@ impl PlayerView {
             return;
         };
 
-        // Convert DSP output to PluginConfigs
-        let mut plugins: Vec<PluginConfig> = Vec::new();
-
-        // For each channel, extract the plugins
-        for (channel_name, channel_dsp) in dsp_output.channels.iter() {
-            log::info!("Applying room EQ for channel: {}", channel_name);
-
-            // Add channel plugins (EQ filters)
+        // Collect all EQ filters from the optimization results
+        let mut eq_filters: Vec<EQFilter> = Vec::new();
+        for (_channel_name, channel_dsp) in dsp_output.channels.iter() {
             for plugin in &channel_dsp.plugins {
-                let config = PluginConfig {
-                    plugin_type: plugin.plugin_type.clone(),
-                    parameters: plugin.parameters.clone(),
-                };
-                plugins.push(config);
-            }
+                if plugin.plugin_type == "EQ" {
+                    // Extract filters from the parameters
+                    if let Some(filters) = plugin.parameters.get("filters").and_then(|f| f.as_array())
+                    {
+                        for filter in filters {
+                            let filter_type_str = filter
+                                .get("filter_type")
+                                .and_then(|t| t.as_str())
+                                .unwrap_or("peak");
+                            let filter_type = match filter_type_str.to_lowercase().as_str() {
+                                "peak" | "pk" => BiquadFilterType::Peak,
+                                "lowshelf" | "ls" => BiquadFilterType::Lowshelf,
+                                "highshelf" | "hs" => BiquadFilterType::Highshelf,
+                                "lowpass" | "lp" => BiquadFilterType::Lowpass,
+                                "highpass" | "hp" => BiquadFilterType::Highpass,
+                                "notch" => BiquadFilterType::Notch,
+                                _ => BiquadFilterType::Peak,
+                            };
+                            let frequency = filter
+                                .get("frequency")
+                                .and_then(|f| f.as_f64())
+                                .unwrap_or(1000.0);
+                            let q = filter.get("q").and_then(|q| q.as_f64()).unwrap_or(1.0);
+                            let gain_db = filter
+                                .get("gain_db")
+                                .and_then(|g| g.as_f64())
+                                .unwrap_or(0.0);
 
-            // Add driver plugins if multi-driver
-            if let Some(ref drivers) = channel_dsp.drivers {
-                for driver_dsp in drivers {
-                    for plugin in &driver_dsp.plugins {
-                        let config = PluginConfig {
-                            plugin_type: plugin.plugin_type.clone(),
-                            parameters: plugin.parameters.clone(),
-                        };
-                        plugins.push(config);
+                            eq_filters.push(EQFilter::new(filter_type, frequency, q, gain_db));
+                        }
                     }
                 }
             }
         }
 
-        log::info!("Applied {} plugins from room EQ", plugins.len());
+        if eq_filters.is_empty() {
+            log::warn!("No EQ filters found in optimization results");
+            self.state.update(cx, |state, _| {
+                state.app.room_eq_state.error_message =
+                    Some("No EQ filters found in optimization results".to_string());
+            });
+            return;
+        }
 
-        // Update state with applied plugins and show success message
+        log::info!("Applying {} EQ filters from room EQ", eq_filters.len());
+
+        // Update the plugin chain
         self.state.update(cx, |state, _| {
-            // Store the plugins for the audio engine to use
-            state.app.room_eq_applied_plugins = Some(plugins);
-            state.app.room_eq_state.status_message =
-                "Room EQ applied to player!".to_string();
+            let plugin_chain = &mut state.app.plugin_chain;
+
+            // Check if there's an existing EQ plugin
+            if let Some(eq_idx) = plugin_chain.find_plugin_index(&PluginType::EQ) {
+                // Update existing EQ plugin
+                if let Some(eq_plugin) = plugin_chain.get_plugin_mut(eq_idx) {
+                    eq_plugin.settings = PluginSettings::EQ {
+                        filters: eq_filters.clone(),
+                    };
+                    log::info!("Updated existing EQ plugin at index {}", eq_idx);
+                }
+            } else {
+                // No EQ plugin exists, add one before monitoring plugins
+                let insert_idx = plugin_chain.find_processing_insert_index();
+                plugin_chain.insert_plugin(insert_idx, &PluginType::EQ);
+
+                // Configure the newly inserted plugin
+                if let Some(eq_plugin) = plugin_chain.get_plugin_mut(insert_idx) {
+                    eq_plugin.settings = PluginSettings::EQ {
+                        filters: eq_filters.clone(),
+                    };
+                }
+                log::info!("Inserted new EQ plugin at index {}", insert_idx);
+            }
+
+            // Mark that plugin chain was modified and needs sync
+            state.app.plugin_chain_modified = true;
+            state.app.pending_plugin_update =
+                Some(crate::app::types::PluginUpdateType::Structural);
+            state.app.room_eq_state.status_message = "Room EQ applied to player!".to_string();
             state.app.toast_message = Some(crate::app::ToastMessage::success(
                 "Room EQ applied successfully",
             ));
         });
-    }
 
+        cx.notify();
+    }
 }
 
 // === Free functions for channel configuration UI ===
@@ -1387,13 +1684,11 @@ fn render_channel_config_row(
         .border_color(theme.border)
         // Channel name
         .child(
-            div()
-                .w(px(80.0))
-                .child(
-                    Text::new(channel_name)
-                        .weight(TextWeight::Bold)
-                        .color(theme.text_primary),
-                ),
+            div().w(px(80.0)).child(
+                Text::new(channel_name)
+                    .weight(TextWeight::Bold)
+                    .color(theme.text_primary),
+            ),
         )
         // Speaker type toggle
         .child(
@@ -1401,7 +1696,11 @@ fn render_channel_config_row(
                 .flex()
                 .gap_2()
                 .items_center()
-                .child(Text::new("Type:").size(TextSize::Sm).color(theme.text_secondary))
+                .child(
+                    Text::new("Type:")
+                        .size(TextSize::Sm)
+                        .color(theme.text_secondary),
+                )
                 .child(
                     Button::new(SharedString::from(format!("single-{}", idx)), "Single")
                         .variant(if !is_multi {
@@ -1427,31 +1726,28 @@ fn render_channel_config_row(
                         }),
                 )
                 .child(
-                    Button::new(
-                        SharedString::from(format!("multi-{}", idx)),
-                        "Multi-Driver",
-                    )
-                    .variant(if is_multi {
-                        ButtonVariant::Primary
-                    } else {
-                        ButtonVariant::Secondary
-                    })
-                    .size(ButtonSize::Sm)
-                    .on_click({
-                        let view = view.clone();
-                        move |_, cx| {
-                            view.update(cx, |this, cx| {
-                                this.state.update(cx, |state, _| {
-                                    if let Some(cfg) =
-                                        state.app.room_eq_state.speaker_configs.get_mut(idx)
-                                    {
-                                        cfg.config_type = SpeakerConfigType::MultiDriver;
-                                    }
+                    Button::new(SharedString::from(format!("multi-{}", idx)), "Multi-Driver")
+                        .variant(if is_multi {
+                            ButtonVariant::Primary
+                        } else {
+                            ButtonVariant::Secondary
+                        })
+                        .size(ButtonSize::Sm)
+                        .on_click({
+                            let view = view.clone();
+                            move |_, cx| {
+                                view.update(cx, |this, cx| {
+                                    this.state.update(cx, |state, _| {
+                                        if let Some(cfg) =
+                                            state.app.room_eq_state.speaker_configs.get_mut(idx)
+                                        {
+                                            cfg.config_type = SpeakerConfigType::MultiDriver;
+                                        }
+                                    });
+                                    cx.notify();
                                 });
-                                cx.notify();
-                            });
-                        }
-                    }),
+                            }
+                        }),
                 ),
         )
         // Crossover type selector (only shown for multi-driver)
@@ -1494,11 +1790,7 @@ fn render_crossover_dropdown(
         move |_, cx| {
             view.update(cx, |this, cx| {
                 this.state.update(cx, |state, _| {
-                    if let Some(cfg) = state
-                        .app
-                        .room_eq_state
-                        .speaker_configs
-                        .get_mut(channel_idx)
+                    if let Some(cfg) = state.app.room_eq_state.speaker_configs.get_mut(channel_idx)
                     {
                         // Find current index and cycle to next
                         let current_idx = crossover_types
@@ -1526,7 +1818,8 @@ fn render_channel_result_card(
 
     let channel_name = result.channel_name.clone();
     let score_improvement = result.pre_score - result.post_score;
-    let has_response_data = result.original_response.is_some() && result.corrected_response.is_some();
+    let has_response_data =
+        result.original_response.is_some() && result.corrected_response.is_some();
 
     div()
         .flex()

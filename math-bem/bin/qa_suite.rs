@@ -1,10 +1,10 @@
 //! QA Suite for Math-BEM
-//! 
+//!
 //! Comprehensive validation suite for BEM solvers.
 //! Validates:
 //! 1. Rigid Sphere Scattering (Rayleigh, Mie, Geometric regimes)
 //! 2. Pulsating Sphere Radiation (Monopole)
-//! 
+//!
 //! Usage:
 //!     cargo run --bin qa-suite --release
 
@@ -13,8 +13,8 @@ use bem::core::assembly::tbem::build_tbem_system_with_beta;
 use bem::core::incident::IncidentField;
 use bem::core::mesh::generators::generate_icosphere_mesh;
 use bem::core::solver::{
-    direct::lu_solve, gmres_solve_tbem_with_ilu, solve_bicgstab, solve_cgs,
-    BiCgstabConfig, CgsConfig, DenseOperator, GmresConfig,
+    BiCgstabConfig, CgsConfig, DenseOperator, GmresConfig, direct::lu_solve,
+    gmres_solve_tbem_with_ilu, solve_bicgstab, solve_cgs,
 };
 use bem::core::types::{BoundaryCondition, PhysicsParams};
 use bem::testing::ValidationResult;
@@ -42,7 +42,6 @@ impl std::fmt::Display for SolverType {
     }
 }
 
-
 fn main() -> anyhow::Result<()> {
     // Initialize logging
     env_logger::init();
@@ -64,7 +63,7 @@ fn main() -> anyhow::Result<()> {
 
     // 1. Rigid Sphere Scattering Tests
     println!("\nRunning Rigid Sphere Scattering Tests...");
-    
+
     // Rayleigh regime (ka = 0.2)
     for solver in &solvers {
         results.push(run_scattering_test(
@@ -129,13 +128,17 @@ fn main() -> anyhow::Result<()> {
         // Rayleigh (low freq) should be very accurate with the fix
         // Resonance regimes (Mie/Geometric) are harder for constant elements
         let tolerance = if res.parameters.dimensionless_param >= 1.0 {
-            0.30 
+            0.30
         } else {
-            0.05 
+            0.05
         };
 
         if !res.passed(tolerance) {
-            eprintln!("TEST FAILED: {} (Error: {:.2}%)", res.test_name, res.errors.l2_relative * 100.0);
+            eprintln!(
+                "TEST FAILED: {} (Error: {:.2}%)",
+                res.test_name,
+                res.errors.l2_relative * 100.0
+            );
             failed = true;
         }
     }
@@ -167,7 +170,7 @@ fn run_scattering_test(
     // Use finer mesh for Mie/Geometric to improve accuracy
     let subdivisions = if ka >= 1.0 { 3 } else { 2 };
     let mesh = generate_icosphere_mesh(radius, subdivisions);
-    
+
     // Setup Problem: Rigid Sphere (v=0)
     let mut elements = mesh.elements.clone();
     for (i, elem) in elements.iter_mut().enumerate() {
@@ -178,10 +181,10 @@ fn run_scattering_test(
     // Solve
     let (beta, _scale) = physics.burton_miller_beta_adaptive(radius);
     let system = build_tbem_system_with_beta(&elements, &mesh.nodes, &physics, beta);
-    
+
     // Incident Field (Plane Wave +z)
     let incident = IncidentField::plane_wave_z();
-    
+
     // Compute RHS
     let n_elem = elements.len();
     let mut centers = ndarray::Array2::zeros((n_elem, 3));
@@ -192,16 +195,14 @@ fn run_scattering_test(
             normals[[i, j]] = elem.normal[j];
         }
     }
-    
+
     let rhs = incident.compute_rhs_with_beta(&centers, &normals, &physics, beta);
-    
+
     // Total RHS (v=0 implies system.rhs is 0)
     let total_rhs = &system.rhs + &rhs;
-    
+
     let p_bem = match solver_type {
-        SolverType::Lu => {
-            lu_solve(&system.matrix, &total_rhs).map_err(|e| anyhow::anyhow!(e))?
-        }
+        SolverType::Lu => lu_solve(&system.matrix, &total_rhs).map_err(|e| anyhow::anyhow!(e))?,
         SolverType::Gmres => {
             let config = GmresConfig {
                 max_iterations: 1000,
@@ -223,20 +224,20 @@ fn run_scattering_test(
             };
             let op = DenseOperator::new(system.matrix.clone());
             let solution = solve_bicgstab(&op, &total_rhs, &config);
-             if !solution.converged {
+            if !solution.converged {
                 eprintln!("BiCGStab failed to converge");
             }
             solution.x
         }
         SolverType::Cgs => {
-             let config = CgsConfig {
+            let config = CgsConfig {
                 max_iterations: 1000,
                 tolerance: 1e-6,
                 print_interval: 0,
             };
             let op = DenseOperator::new(system.matrix.clone());
             let solution = solve_cgs(&op, &total_rhs, &config);
-             if !solution.converged {
+            if !solution.converged {
                 eprintln!("CGS failed to converge");
             }
             solution.x
@@ -246,32 +247,30 @@ fn run_scattering_test(
     // Analytical Solution (Surface Pressure)
     let mut p_analytical = Vec::with_capacity(n_elem);
     let mut positions = Vec::with_capacity(n_elem);
-    
+
     for i in 0..n_elem {
         let center = &elements[i].center;
-        positions.push(Point { x: center[0], y: center[1], z: center[2] });
-        
+        positions.push(Point {
+            x: center[0],
+            y: center[1],
+            z: center[2],
+        });
+
         // Theta angle from z-axis
-        let r = (center[0]*center[0] + center[1]*center[1] + center[2]*center[2]).sqrt();
+        let r = (center[0] * center[0] + center[1] * center[1] + center[2] * center[2]).sqrt();
         let theta = (center[2] / r).acos();
-        
+
         // Evaluate Mie series
         let mie = sphere_scattering_3d(k, radius, 50, vec![r], vec![theta]);
         p_analytical.push(mie.pressure[0]);
     }
 
-    let mut analytical_sol = AnalyticalSolution::new(
-        name,
-        3,
-        positions,
-        p_analytical,
-        k,
-        freq,
-    );
-    analytical_sol.metadata = serde_json::json!({ "ka": ka, "radius": radius, "solver": solver_type.to_string() });
+    let mut analytical_sol = AnalyticalSolution::new(name, 3, positions, p_analytical, k, freq);
+    analytical_sol.metadata =
+        serde_json::json!({ "ka": ka, "radius": radius, "solver": solver_type.to_string() });
 
     let duration = start_time.elapsed().as_millis() as u64;
-    
+
     Ok(ValidationResult::new(
         name,
         &analytical_sol,
@@ -297,7 +296,7 @@ fn run_pulsating_sphere_test(
     let physics = PhysicsParams::new(freq, c, rho, false);
 
     let mesh = generate_icosphere_mesh(radius, 2);
-    
+
     // Setup Problem: Pulsating Sphere (v = 1.0 m/s outwards)
     let v0 = Complex64::new(1.0, 0.0);
     let mut elements = mesh.elements.clone();
@@ -309,12 +308,10 @@ fn run_pulsating_sphere_test(
     let beta = physics.burton_miller_beta();
     // Use build_tbem_system_with_beta directly for radiation as row sum correction applies to rigid scattering logic
     let system = build_tbem_system_with_beta(&elements, &mesh.nodes, &physics, beta);
-    
+
     // No incident field, only BC excitation (which is in system.rhs)
     let p_bem = match solver_type {
-        SolverType::Lu => {
-            lu_solve(&system.matrix, &system.rhs).map_err(|e| anyhow::anyhow!(e))?
-        }
+        SolverType::Lu => lu_solve(&system.matrix, &system.rhs).map_err(|e| anyhow::anyhow!(e))?,
         SolverType::Gmres => {
             let config = GmresConfig {
                 max_iterations: 1000,
@@ -336,20 +333,20 @@ fn run_pulsating_sphere_test(
             };
             let op = DenseOperator::new(system.matrix.clone());
             let solution = solve_bicgstab(&op, &system.rhs, &config);
-             if !solution.converged {
+            if !solution.converged {
                 eprintln!("BiCGStab failed to converge");
             }
             solution.x
         }
         SolverType::Cgs => {
-             let config = CgsConfig {
+            let config = CgsConfig {
                 max_iterations: 1000,
                 tolerance: 1e-6,
                 print_interval: 0,
             };
             let op = DenseOperator::new(system.matrix.clone());
             let solution = solve_cgs(&op, &system.rhs, &config);
-             if !solution.converged {
+            if !solution.converged {
                 eprintln!("CGS failed to converge");
             }
             solution.x
@@ -364,25 +361,23 @@ fn run_pulsating_sphere_test(
     let n_elem = elements.len();
     let mut p_analytical = Vec::with_capacity(n_elem);
     let mut positions = Vec::with_capacity(n_elem);
-    
+
     for i in 0..n_elem {
         let center = &elements[i].center;
-        positions.push(Point { x: center[0], y: center[1], z: center[2] });
+        positions.push(Point {
+            x: center[0],
+            y: center[1],
+            z: center[2],
+        });
         p_analytical.push(p_surf_analytical); // Constant on surface
     }
 
-    let mut analytical_sol = AnalyticalSolution::new(
-        name,
-        3,
-        positions,
-        p_analytical,
-        k,
-        freq,
-    );
-    analytical_sol.metadata = serde_json::json!({ "ka": ka, "radius": radius, "solver": solver_type.to_string() });
+    let mut analytical_sol = AnalyticalSolution::new(name, 3, positions, p_analytical, k, freq);
+    analytical_sol.metadata =
+        serde_json::json!({ "ka": ka, "radius": radius, "solver": solver_type.to_string() });
 
     let duration = start_time.elapsed().as_millis() as u64;
-    
+
     Ok(ValidationResult::new(
         name,
         &analytical_sol,
@@ -394,17 +389,31 @@ fn run_pulsating_sphere_test(
 
 fn print_summary(results: &[ValidationResult]) {
     println!("\nQA Summary:");
-    println!("{:<35} | {:<10} | {:<10} | {:<10}", "Test Name", "L2 Error%", "Max Err%", "Status");
+    println!(
+        "{:<35} | {:<10} | {:<10} | {:<10}",
+        "Test Name", "L2 Error%", "Max Err%", "Status"
+    );
     println!("{:-<35}-|-{:-<10}-|-{:-<10}-|-{:-<10}", "", "", "", "");
-    
+
     for res in results {
         let l2_err = res.errors.l2_relative * 100.0;
         let max_err = res.errors.max_relative * 100.0;
-        
-        let tolerance = if res.parameters.dimensionless_param > 4.0 { 0.15 } else { 0.05 };
-        let status = if res.passed(tolerance) { "PASS" } else { "FAIL" };
-        
-        println!("{:<35} | {:6.2}%    | {:6.2}%    | {}", res.test_name, l2_err, max_err, status);
+
+        let tolerance = if res.parameters.dimensionless_param > 4.0 {
+            0.15
+        } else {
+            0.05
+        };
+        let status = if res.passed(tolerance) {
+            "PASS"
+        } else {
+            "FAIL"
+        };
+
+        println!(
+            "{:<35} | {:6.2}%    | {:6.2}%    | {}",
+            res.test_name, l2_err, max_err, status
+        );
     }
 }
 

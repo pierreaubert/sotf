@@ -2,7 +2,7 @@ use anyhow::anyhow;
 use gpui::*;
 use rust_embed::RustEmbed;
 use sotf_audio_player::Player;
-use sotf_audio_player_gpui::actions::*;
+use sotf_audio_player_gpui::app::actions::*;
 use sotf_audio_player_gpui::app::{App, AppState};
 use sotf_audio_player_gpui::config::Config;
 use sotf_audio_player_gpui::keybindings::{KeymapPreset, get_keybindings};

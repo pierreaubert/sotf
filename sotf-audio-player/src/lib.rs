@@ -1,4 +1,5 @@
 #![allow(clippy::collapsible_if)]
+pub mod autoeq;
 /// Shared business logic for SOTF audio players (TUI, GPUI, etc.)
 ///
 /// This crate provides:
@@ -19,13 +20,13 @@ pub mod library_scanner;
 pub mod player;
 pub mod plugins;
 pub mod replay_gain_scanner;
-pub mod autoeq;
 // Backward compatibility alias
 pub use autoeq as room_eq;
 pub mod security;
 pub mod waveform_scanner;
 
 // Re-export commonly used types
+pub use bliss::{BlissAnalysis, BlissScanManager, BlissScanMessage, BlissScanner};
 pub use config::AppConfig;
 pub use database::MusicDatabase;
 pub use library::{
@@ -37,7 +38,6 @@ pub use plugins::{EQFilter, Plugin, PluginChain, PluginSettings, PluginType};
 pub use replay_gain_scanner::{ReplayGainScanManager, ReplayGainScanner, ScanMessage};
 pub use sotf_audio::replaygain::ReplayGainInfo;
 pub use waveform_scanner::{WaveformScanManager, WaveformScanMessage, WaveformScanner};
-pub use bliss::{BlissAnalysis, BlissScanManager, BlissScanMessage, BlissScanner};
 
 // Re-export measurement functionality
 pub use sotf_audio::signal_recorder;

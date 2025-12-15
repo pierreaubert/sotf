@@ -112,9 +112,11 @@ pub fn build_tbem_system_with_beta(
         let r = element.center.dot(&element.center).sqrt();
         avg_radius += r;
     }
-    if n_calc > 0 { avg_radius /= n_calc as f64; }
+    if n_calc > 0 {
+        avg_radius /= n_calc as f64;
+    }
     let ka = physics.wave_number * avg_radius;
-    
+
     // Switch between formulations based on frequency
     // Low freq (ka < 0.5): Use Modified formulation (+K) for stability
     // High freq (ka >= 0.5): Use Standard formulation (-K) for accuracy
@@ -363,14 +365,16 @@ pub fn build_tbem_system_parallel(
     // Calculate approximate ka based on mesh bounding box
     let mut avg_radius = 0.0;
     // We can't access elements[i] easily before loop? Yes we can.
-    let n_calc = elements.len().min(100); 
+    let n_calc = elements.len().min(100);
     for i in 0..n_calc {
         let r = elements[i].center.dot(&elements[i].center).sqrt();
         avg_radius += r;
     }
-    if n_calc > 0 { avg_radius /= n_calc as f64; }
+    if n_calc > 0 {
+        avg_radius /= n_calc as f64;
+    }
     let ka = physics.wave_number * avg_radius;
-    
+
     // Switch between formulations based on frequency
     let dg_dn_sign = if ka < 0.5 { 1.0 } else { -1.0 };
 

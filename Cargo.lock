@@ -3659,7 +3659,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-d3rs"
-version = "0.1.13"
+version = "0.1.14"
 dependencies = [
  "approx",
  "autoeq",
@@ -3684,7 +3684,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-px"
-version = "0.1.13"
+version = "0.1.14"
 dependencies = [
  "gpui",
  "gpui-d3rs",
@@ -7738,6 +7738,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "rtrb"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ad8388ea1a9e0ea807e442e8263a699e7edcb320ecbcd21b4fa8ff859acce3ba"
+
+[[package]]
 name = "rubato"
 version = "0.16.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8611,6 +8617,7 @@ dependencies = [
  "rand 0.9.2",
  "ratatui",
  "realfft",
+ "rtrb",
  "rubato",
  "rusqlite",
  "rustfft",

@@ -78,6 +78,7 @@ hound = { workspace = true }
 rubato = { workspace = true }
 id3 = { workspace = true }
 metaflac = { workspace = true }
+rtrb = "0.3.2"
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = { workspace = true }

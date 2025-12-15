@@ -35,13 +35,7 @@ fn calculate_response_at_freq(filters: &[EQFilter], freq: f64) -> f64 {
     filters
         .iter()
         .map(|f| {
-            let biquad = Biquad::new(
-                f.filter_type,
-                f.frequency,
-                SAMPLE_RATE,
-                f.q,
-                f.gain_db,
-            );
+            let biquad = Biquad::new(f.filter_type, f.frequency, SAMPLE_RATE, f.q, f.gain_db);
             biquad.log_result(freq)
         })
         .sum()
@@ -175,7 +169,9 @@ pub fn render_eq_plugin(
     theme: &Theme,
 ) -> impl IntoElement {
     // Clamp selected band to valid range
-    let selected_band_idx = state.selected_band_idx.min(state.filters.len().saturating_sub(1));
+    let selected_band_idx = state
+        .selected_band_idx
+        .min(state.filters.len().saturating_sub(1));
     let num_bands = state.filters.len();
 
     // Determine layout mode based on available width
@@ -303,12 +299,7 @@ pub fn render_eq_plugin(
                             .flex()
                             .flex_col()
                             .gap_1()
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(theme.text_muted)
-                                    .child("Type")
-                            )
+                            .child(div().text_xs().text_color(theme.text_muted).child("Type"))
                             .child(render_filter_type_selector(
                                 entity.clone(),
                                 plugin_idx,
@@ -317,7 +308,7 @@ pub fn render_eq_plugin(
                                 base_param_idx + 3,
                                 None,
                                 theme,
-                            ))
+                            )),
                     )
                     // Knobs row
                     .child(
@@ -366,8 +357,8 @@ pub fn render_eq_plugin(
                                 state.is_editing,
                                 None,
                                 theme,
-                            ))
-                    )
+                            )),
+                    ),
             )
         });
 

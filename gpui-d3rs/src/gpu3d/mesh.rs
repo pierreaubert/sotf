@@ -327,7 +327,11 @@ mod tests {
         // Horizontal lines: y_count rows * (x_count - 1) segments = 3 * 2 = 6 segments = 12 indices
         // Vertical lines: (y_count - 1) rows * x_count columns = 2 * 3 = 6 segments = 12 indices
         // Total: 24 indices
-        assert_eq!(indices.len(), 24, "3x3 grid should have 24 wireframe indices");
+        assert_eq!(
+            indices.len(),
+            24,
+            "3x3 grid should have 24 wireframe indices"
+        );
 
         // Verify some specific line segments
         // First horizontal line (y=0): 0-1, 1-2
@@ -520,8 +524,14 @@ mod tests {
 
         // sqrt(5000) ≈ 70.7 -> 70
         // 5000 / 70 = 71 (with remainder!)
-        assert_ne!(inferred_x, x_count, "Sqrt inference should be wrong for non-square");
-        assert_ne!(inferred_y, y_count, "Sqrt inference should be wrong for non-square");
+        assert_ne!(
+            inferred_x, x_count,
+            "Sqrt inference should be wrong for non-square"
+        );
+        assert_ne!(
+            inferred_y, y_count,
+            "Sqrt inference should be wrong for non-square"
+        );
 
         // The inferred values don't even multiply back to the original count!
         assert_ne!(
@@ -587,7 +597,8 @@ mod tests {
     fn test_mesh_dimensions_audio_typical() {
         // Typical audio data: many frequency points (x), fewer angle points (y)
         // e.g., 100 frequency bins x 37 angles (-180 to 180 in 10° steps)
-        let data = SurfaceData::from_function((20.0, 20000.0), (-180.0, 180.0), 100, 37, |_, _| 0.0);
+        let data =
+            SurfaceData::from_function((20.0, 20000.0), (-180.0, 180.0), 100, 37, |_, _| 0.0);
         let mesh = SurfaceMesh::from_data(&data, SurfacePlotType::Cartesian);
 
         assert_eq!(mesh.x_count, 100);

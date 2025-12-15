@@ -1,4 +1,3 @@
-use crate::components::autoeq::HeadphoneOptimizationResult;
 use crate::components::graphs::common::{
     band_color, colors, format_frequency, render_compact_legend, render_plot_with_title,
     rgba_to_u32, theme_to_chart_theme,
@@ -8,6 +7,7 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_px::{ScaleType, line};
+use sotf_audio_player::autoeq::HeadphoneOptimizationResult;
 
 impl PlayerView {
     /// Render the optimization result graphs in a 2x2 grid
@@ -120,13 +120,7 @@ fn render_filter_response_plot(
     for (i, curve) in result.individual_filter_responses.iter().enumerate() {
         let label = format!("F{}", i + 1);
         let color = band_color(i, theme);
-        chart_builder = chart_builder.add_series(
-            curve,
-            Some(label),
-            rgba_to_u32(color),
-            1.5,
-            1.0,
-        );
+        chart_builder = chart_builder.add_series(curve, Some(label), rgba_to_u32(color), 1.5, 1.0);
     }
 
     let chart = chart_builder.build();
@@ -269,7 +263,11 @@ fn render_optimization_loss_plot(
         .iter()
         .map(|&(i, _)| i as f64)
         .collect();
-    let losses: Vec<f64> = result.optimization_history.iter().map(|&(_, loss)| loss).collect();
+    let losses: Vec<f64> = result
+        .optimization_history
+        .iter()
+        .map(|&(_, loss)| loss)
+        .collect();
 
     let legend_items = vec![("Loss".to_string(), colors::deviation(theme))];
 

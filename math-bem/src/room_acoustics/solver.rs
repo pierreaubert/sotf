@@ -436,7 +436,7 @@ pub fn solve_bem_system(
     // We can use DenseOperator from core::solver
     use crate::core::solver::DenseOperator;
     let op = DenseOperator::new(matrix);
-    
+
     let solution = solve_gmres(&op, &rhs, &config);
 
     Ok(solution.x)
@@ -754,8 +754,7 @@ pub fn calculate_field_pressure_bem_parallel(
 use crate::core::assembly::slfmm::{SlfmmSystem, build_slfmm_system};
 use crate::core::mesh::octree::Octree;
 use crate::core::solver::{
-    GmresConfig, GmresSolution, SlfmmOperator,
-    gmres_solve_with_ilu_operator,
+    GmresConfig, GmresSolution, SlfmmOperator, gmres_solve_with_ilu_operator,
 };
 use crate::core::types::{
     BoundaryCondition, Cluster, Element, ElementProperty, ElementType, PhysicsParams,
@@ -1012,12 +1011,8 @@ pub fn solve_bem_fmm_gmres_ilu(
 
     // Solve with FMM-accelerated GMRES + ILU preconditioning
     println!("  Solving with FMM + GMRES + ILU...");
-    let result = gmres_solve_with_ilu_operator(
-        &fmm_operator,
-        &nearfield_matrix,
-        &rhs,
-        &gmres_config,
-    );
+    let result =
+        gmres_solve_with_ilu_operator(&fmm_operator, &nearfield_matrix, &rhs, &gmres_config);
 
     if result.converged {
         println!(
@@ -1134,12 +1129,8 @@ pub fn solve_bem_fmm_gmres_ilu_with_result(
 
     // Solve with FMM-accelerated GMRES + ILU preconditioning
     println!("  Solving with FMM + GMRES + ILU...");
-    let result = gmres_solve_with_ilu_operator(
-        &fmm_operator,
-        &nearfield_matrix,
-        &rhs,
-        &gmres_config,
-    );
+    let result =
+        gmres_solve_with_ilu_operator(&fmm_operator, &nearfield_matrix, &rhs, &gmres_config);
 
     if result.converged {
         println!(

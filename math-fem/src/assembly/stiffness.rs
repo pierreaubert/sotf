@@ -271,22 +271,22 @@ fn compute_element_stiffness(
 pub fn assemble_stiffness(mesh: &Mesh, degree: PolynomialDegree) -> StiffnessMatrix {
     #[cfg(feature = "parallel")]
     {
-/*
-        println!(
-            "  [DEBUG] Using PARALLEL stiffness assembly ({} elements)",
-            mesh.num_elements()
-    );
-*/
+        /*
+                println!(
+                    "  [DEBUG] Using PARALLEL stiffness assembly ({} elements)",
+                    mesh.num_elements()
+            );
+        */
         assemble_stiffness_parallel(mesh, degree)
     }
     #[cfg(not(feature = "parallel"))]
     {
-/*
-        println!(
-            "  [DEBUG] Using SEQUENTIAL stiffness assembly ({} elements)",
-            mesh.num_elements()
-    );
-*/
+        /*
+                println!(
+                    "  [DEBUG] Using SEQUENTIAL stiffness assembly ({} elements)",
+                    mesh.num_elements()
+            );
+        */
         assemble_stiffness_sequential(mesh, degree)
     }
 }

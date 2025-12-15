@@ -41,8 +41,6 @@ pub mod format;
 pub mod hierarchy;
 pub mod interpolate;
 pub mod scale;
-#[cfg(test)]
-mod tests_golden;
 pub mod time;
 pub mod zoom;
 

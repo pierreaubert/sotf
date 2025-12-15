@@ -55,7 +55,6 @@ pub struct GraphConfig {
     pub show_response_curve: bool,
 }
 
-
 impl Default for GraphConfig {
     fn default() -> Self {
         Self {

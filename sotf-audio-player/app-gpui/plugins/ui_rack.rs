@@ -279,7 +279,7 @@ impl PlayerView {
                                     .child(format!("{} plugins", plugin_count)),
                             ),
                     )
-                    .child(self.render_add_plugin_buttons(cx))
+                    .child(self.render_add_plugin_buttons(cx)),
             )
             // Plugin modules strip
             .child(
@@ -296,7 +296,6 @@ impl PlayerView {
                     // Plugin modules - inline creation with drag-and-drop
                     .children(modules_info.into_iter().map(
                         |(idx, color, icon, name, enabled, is_selected, plugin_type)| {
-
                             let theme_c = theme.clone();
                             let drag_info = PluginDragInfo {
                                 source_index: idx,
@@ -377,105 +376,130 @@ impl PlayerView {
                                                 },
                                             ),
                                         )
-                                // Top bar with color
-                                .child(div().h(px(4.0)).w_full().bg(color).rounded_t_md())
-                                // Remove button (X) - visible on group hover
-                                .child(
-                                    div()
-                                        .absolute()
-                                        .top(px(2.0))
-                                        .right(px(2.0))
-                                        .w(px(16.0))
-                                        .h(px(16.0))
-                                        .rounded_full()
-                                        .bg(theme_c.error)
-                                        .flex()
-                                        .items_center()
-                                        .justify_center()
-                                        .text_xs()
-                                        .text_color(rgb(0xffffff))
-                                        .cursor_pointer()
-                                        .opacity(0.0)
-                                        .group_hover("plugin-module", |s| s.opacity(1.0))
-                                        .hover(|s| s.bg(theme_c.error))
-                                        .on_mouse_up(
-                                            MouseButton::Left,
-                                            cx.listener(move |view, _e: &MouseUpEvent, _, cx| {
-                                                cx.stop_propagation();
-                                                view.state.update(cx, |state, _cx| {
-                                                     state.app.plugin_chain.remove_plugin(idx);
-                                                     // Update selection if needed
-                                                     if state.app.selected_plugin_index >= state.app.plugin_chain.len() && state.app.plugin_chain.len() > 0 {
-                                                         state.app.selected_plugin_index = state.app.plugin_chain.len() - 1;
-                                                     }
-                                                     state.app.pending_plugin_update =
+                                        // Top bar with color
+                                        .child(div().h(px(4.0)).w_full().bg(color).rounded_t_md())
+                                        // Remove button (X) - visible on group hover
+                                        .child(
+                                            div()
+                                                .absolute()
+                                                .top(px(2.0))
+                                                .right(px(2.0))
+                                                .w(px(16.0))
+                                                .h(px(16.0))
+                                                .rounded_full()
+                                                .bg(theme_c.error)
+                                                .flex()
+                                                .items_center()
+                                                .justify_center()
+                                                .text_xs()
+                                                .text_color(rgb(0xffffff))
+                                                .cursor_pointer()
+                                                .opacity(0.0)
+                                                .group_hover("plugin-module", |s| s.opacity(1.0))
+                                                .hover(|s| s.bg(theme_c.error))
+                                                .on_mouse_up(
+                                                    MouseButton::Left,
+                                                    cx.listener(
+                                                        move |view, _e: &MouseUpEvent, _, cx| {
+                                                            cx.stop_propagation();
+                                                            view.state.update(cx, |state, _cx| {
+                                                                state
+                                                                    .app
+                                                                    .plugin_chain
+                                                                    .remove_plugin(idx);
+                                                                // Update selection if needed
+                                                                if state.app.selected_plugin_index
+                                                                    >= state.app.plugin_chain.len()
+                                                                    && state.app.plugin_chain.len()
+                                                                        > 0
+                                                                {
+                                                                    state
+                                                                        .app
+                                                                        .selected_plugin_index =
+                                                                        state
+                                                                            .app
+                                                                            .plugin_chain
+                                                                            .len()
+                                                                            - 1;
+                                                                }
+                                                                state.app.pending_plugin_update =
                                                          Some(PluginUpdateType::Structural);
-                                                     state.app.update_level_meter_groups(); // Reconfigure metering
-                                                });
-                                                cx.notify();
-                                            }),
+                                                                state
+                                                                    .app
+                                                                    .update_level_meter_groups(); // Reconfigure metering
+                                                            });
+                                                            cx.notify();
+                                                        },
+                                                    ),
+                                                )
+                                                .child("×"),
                                         )
-                                        .child("×")
-                                )
-                                // Power indicator (top left)
-                                .child(
-                                    div()
-                                        .absolute()
-                                        .top(px(8.0))
-                                        .left(px(4.0))
-                                        .w(px(12.0))
-                                        .h(px(12.0))
-                                        .rounded_full()
-                                        .flex()
-                                        .items_center()
-                                        .justify_center()
-                                        .cursor_pointer()
-                                        .on_mouse_up(
-                                            MouseButton::Left,
-                                            cx.listener(move |view, _e: &MouseUpEvent, _, cx| {
-                                                cx.stop_propagation();
-                                                view.state.update(cx, |state, _cx| {
-                                                    state.app.plugin_chain.toggle_plugin(idx);
-                                                    state.app.pending_plugin_update =
+                                        // Power indicator (top left)
+                                        .child(
+                                            div()
+                                                .absolute()
+                                                .top(px(8.0))
+                                                .left(px(4.0))
+                                                .w(px(12.0))
+                                                .h(px(12.0))
+                                                .rounded_full()
+                                                .flex()
+                                                .items_center()
+                                                .justify_center()
+                                                .cursor_pointer()
+                                                .on_mouse_up(
+                                                    MouseButton::Left,
+                                                    cx.listener(
+                                                        move |view, _e: &MouseUpEvent, _, cx| {
+                                                            cx.stop_propagation();
+                                                            view.state.update(cx, |state, _cx| {
+                                                                state
+                                                                    .app
+                                                                    .plugin_chain
+                                                                    .toggle_plugin(idx);
+                                                                state.app.pending_plugin_update =
                                                         Some(PluginUpdateType::Structural);
-                                                    state.app.update_level_meter_groups(); // Reconfigure metering
-                                                });
-                                                cx.notify();
-                                            })
+                                                                state
+                                                                    .app
+                                                                    .update_level_meter_groups(); // Reconfigure metering
+                                                            });
+                                                            cx.notify();
+                                                        },
+                                                    ),
+                                                )
+                                                .bg(if enabled {
+                                                    theme_c.success
+                                                } else {
+                                                    theme_c.error
+                                                })
+                                                .text_size(px(8.0))
+                                                .text_color(rgb(0xffffff))
+                                                .child(if enabled { "●" } else { "○" }),
                                         )
-                                        .bg(if enabled {
-                                            theme_c.success
-                                        } else {
-                                            theme_c.error
-                                        })
-                                        .text_size(px(8.0))
-                                        .text_color(rgb(0xffffff))
-                                        .child(if enabled { "●" } else { "○" }),
-                                )
-                                // Icon
-                                .child(
-                                    div()
-                                        .flex_1()
-                                        .flex()
-                                        .items_center()
-                                        .justify_center()
-                                        .text_xl()
-                                        .text_color(color)
-                                        .child(icon),
-                                )
-                                // Name
-                                .child(
-                                    div()
-                                        .px_2()
-                                        .pb_2()
-                                        .text_xs()
-                                        .text_color(theme_c.text_primary)
-                                        .font_weight(FontWeight::MEDIUM)
-                                        .text_align(TextAlign::Center)
-                                        .overflow_hidden()
-                                        .text_ellipsis()
-                                        .child(short_name(&plugin_type)),
-                                )
+                                        // Icon
+                                        .child(
+                                            div()
+                                                .flex_1()
+                                                .flex()
+                                                .items_center()
+                                                .justify_center()
+                                                .text_xl()
+                                                .text_color(color)
+                                                .child(icon),
+                                        )
+                                        // Name
+                                        .child(
+                                            div()
+                                                .px_2()
+                                                .pb_2()
+                                                .text_xs()
+                                                .text_color(theme_c.text_primary)
+                                                .font_weight(FontWeight::MEDIUM)
+                                                .text_align(TextAlign::Center)
+                                                .overflow_hidden()
+                                                .text_ellipsis()
+                                                .child(short_name(&plugin_type)),
+                                        ),
                                 )
                                 // Connection line after
                                 .child(div().w(px(20.0)).h(px(2.0)).bg(if enabled {
@@ -485,10 +509,8 @@ impl PlayerView {
                                 }))
                         },
                     ))
-
                     // Output Meter removed from rack strip (moved to detail panel)
                     // Empty state
-
                     .when(is_empty, |d| {
                         d.child(
                             div()
@@ -793,38 +815,37 @@ impl PlayerView {
                         .py_3()
                         .bg(theme.background_secondary)
                         .border_b_1()
-                        .border_color(theme.border)
-/* row with infos but not useful
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap_3()
-                                // Color indicator
-                                .child(div().w(px(4.0)).h(px(24.0)).rounded_full().bg(color))
-                                .child(
-                                    div()
-                                        .flex()
-                                        .flex_col()
-                                        .child(
-                                            div()
-                                                .text_lg()
-                                                .font_weight(FontWeight::BOLD)
-                                                .text_color(theme.text_primary)
-                                                .child(plugin_name),
-                                        )
-                                        .child(div().text_xs().text_color(theme.text_muted).child(
-                                            format!(
-                                                "[{}] {} - Slot {} - {}",
-                                                selected_idx + 1,
-                                                short_name(&plugin_type),
-                                                selected_idx + 1,
-                                                if plugin_enabled { "Active" } else { "Bypassed" }
-                                            ),
-                                        )),
-                                ),
-                        ),
-*/
+                        .border_color(theme.border), /* row with infos but not useful
+                                                                             .child(
+                                                                                 div()
+                                                                                     .flex()
+                                                                                     .items_center()
+                                                                                     .gap_3()
+                                                                                     // Color indicator
+                                                                                     .child(div().w(px(4.0)).h(px(24.0)).rounded_full().bg(color))
+                                                                                     .child(
+                                                                                         div()
+                                                                                             .flex()
+                                                                                             .flex_col()
+                                                                                             .child(
+                                                                                                 div()
+                                                                                                     .text_lg()
+                                                                                                     .font_weight(FontWeight::BOLD)
+                                                                                                     .text_color(theme.text_primary)
+                                                                                                     .child(plugin_name),
+                                                                                             )
+                                                                                             .child(div().text_xs().text_color(theme.text_muted).child(
+                                                                                                 format!(
+                                                                                                     "[{}] {} - Slot {} - {}",
+                                                                                                     selected_idx + 1,
+                                                                                                     short_name(&plugin_type),
+                                                                                                     selected_idx + 1,
+                                                                                                     if plugin_enabled { "Active" } else { "Bypassed" }
+                                                                                                 ),
+                                                                                             )),
+                                                                                     ),
+                                                                             ),
+                                                     */
                 )
                 .child(
                     div()

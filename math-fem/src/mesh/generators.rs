@@ -366,11 +366,11 @@ pub fn spherical_shell_mesh_tetrahedra(
     n_layers: usize,
 ) -> Mesh {
     let mut mesh = Mesh::new(3);
-    
+
     // 1. Generate unit icosphere surface (nodes and triangles)
     let (base_nodes, base_tris) = generate_icosphere(subdivisions);
     let num_surface_nodes = base_nodes.len();
-    
+
     // 2. Create nodes for all layers
     let dr = (outer_radius - inner_radius) / n_layers as f64;
     for l in 0..=n_layers {
@@ -383,29 +383,29 @@ pub fn spherical_shell_mesh_tetrahedra(
             ));
         }
     }
-    
+
     // 3. Create elements connecting layers
     for l in 0..n_layers {
         let offset_lower = l * num_surface_nodes;
         let offset_upper = (l + 1) * num_surface_nodes;
-        
+
         for tri in &base_tris {
             let u0 = offset_lower + tri[0];
             let u1 = offset_lower + tri[1];
             let u2 = offset_lower + tri[2];
-            
+
             let v0 = offset_upper + tri[0];
             let v1 = offset_upper + tri[1];
             let v2 = offset_upper + tri[2];
-            
+
             // Split prism (u0,u1,u2)-(v0,v1,v2) into 3 tetrahedra
             // We use a consistent split based on sorting the base indices
             split_prism_consistent(&mut mesh, [u0, u1, u2], [v0, v1, v2]);
         }
     }
-    
+
     mesh.detect_boundaries();
-    
+
     // Set BCs
     let tol = inner_radius * 0.01;
     mesh.set_boundary_condition(BoundaryType::Dirichlet, 1, |pts| {
@@ -416,7 +416,7 @@ pub fn spherical_shell_mesh_tetrahedra(
         // Outer
         pts[0].distance(&Point::new_3d(center_x, center_y, center_z)) > outer_radius - tol
     });
-    
+
     mesh
 }
 
@@ -425,11 +425,11 @@ fn split_prism_consistent(mesh: &mut Mesh, lower: [usize; 3], upper: [usize; 3])
     // Sort base indices to define a local canonical order
     let mut perm = [0, 1, 2];
     perm.sort_by_key(|&i| lower[i]);
-    
+
     let p0 = perm[0];
     let p1 = perm[1];
     let p2 = perm[2];
-    
+
     // Canonical vertices
     let v0 = lower[p0];
     let v1 = lower[p1];
@@ -437,7 +437,7 @@ fn split_prism_consistent(mesh: &mut Mesh, lower: [usize; 3], upper: [usize; 3])
     let v3 = upper[p0];
     let v4 = upper[p1];
     let v5 = upper[p2];
-    
+
     // Standard split for 0<1<2
     // T1: 0-1-2-5 (base tri + top-max)
     mesh.add_element(ElementType::Tetrahedron, vec![v0, v1, v2, v5]);
@@ -452,43 +452,70 @@ fn generate_icosphere(subdivisions: usize) -> (Vec<Point>, Vec<[usize; 3]>) {
     // Basic Icosahedron
     let t = (1.0 + 5.0f64.sqrt()) / 2.0;
     let mut nodes = vec![
-        Point::new_3d(-1.0,  t, 0.0), Point::new_3d( 1.0,  t, 0.0), Point::new_3d(-1.0, -t, 0.0), Point::new_3d( 1.0, -t, 0.0),
-        Point::new_3d( 0.0, -1.0,  t), Point::new_3d( 0.0,  1.0,  t), Point::new_3d( 0.0, -1.0, -t), Point::new_3d( 0.0,  1.0, -t),
-        Point::new_3d( t, 0.0, -1.0), Point::new_3d( t, 0.0,  1.0), Point::new_3d(-t, 0.0, -1.0), Point::new_3d(-t, 0.0,  1.0),
+        Point::new_3d(-1.0, t, 0.0),
+        Point::new_3d(1.0, t, 0.0),
+        Point::new_3d(-1.0, -t, 0.0),
+        Point::new_3d(1.0, -t, 0.0),
+        Point::new_3d(0.0, -1.0, t),
+        Point::new_3d(0.0, 1.0, t),
+        Point::new_3d(0.0, -1.0, -t),
+        Point::new_3d(0.0, 1.0, -t),
+        Point::new_3d(t, 0.0, -1.0),
+        Point::new_3d(t, 0.0, 1.0),
+        Point::new_3d(-t, 0.0, -1.0),
+        Point::new_3d(-t, 0.0, 1.0),
     ];
-    
+
     // Normalize
     for p in &mut nodes {
-        let len = (p.x*p.x + p.y*p.y + p.z*p.z).sqrt();
-        p.x /= len; p.y /= len; p.z /= len;
+        let len = (p.x * p.x + p.y * p.y + p.z * p.z).sqrt();
+        p.x /= len;
+        p.y /= len;
+        p.z /= len;
     }
-    
+
     let mut tris = vec![
-        [0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11],
-        [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8],
-        [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9],
-        [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1],
+        [0, 11, 5],
+        [0, 5, 1],
+        [0, 1, 7],
+        [0, 7, 10],
+        [0, 10, 11],
+        [1, 5, 9],
+        [5, 11, 4],
+        [11, 10, 2],
+        [10, 7, 6],
+        [7, 1, 8],
+        [3, 9, 4],
+        [3, 4, 2],
+        [3, 2, 6],
+        [3, 6, 8],
+        [3, 8, 9],
+        [4, 9, 5],
+        [2, 4, 11],
+        [6, 2, 10],
+        [8, 6, 7],
+        [9, 8, 1],
     ];
-    
+
     // Subdivide
     for _ in 0..subdivisions {
         let mut new_tris = Vec::new();
         let mut mid_cache = HashMap::new();
-        
+
         for tri in tris {
             let v0 = tri[0];
             let v1 = tri[1];
             let v2 = tri[2];
-            
+
             // Get midpoints (and add to nodes if new)
             // Note: can't use closure easily with mutable borrows, using helper function pattern
-            // But we need to define helper inside or outside. 
+            // But we need to define helper inside or outside.
             // Since this is a standalone function, we can put logic in loop.
-            
+
             let a = get_middle_point(v0, v1, &mut nodes, &mut mid_cache);
             let b = get_middle_point(v1, v2, &mut nodes, &mut mid_cache);
             let c = get_middle_point(v2, v0, &mut nodes, &mut mid_cache);
-            
+
             new_tris.push([v0, a, c]);
             new_tris.push([v1, b, a]);
             new_tris.push([v2, c, b]);
@@ -496,21 +523,21 @@ fn generate_icosphere(subdivisions: usize) -> (Vec<Point>, Vec<[usize; 3]>) {
         }
         tris = new_tris;
     }
-    
+
     (nodes, tris)
 }
 
 fn get_middle_point(
-    p1: usize, 
-    p2: usize, 
-    nodes: &mut Vec<Point>, 
-    cache: &mut HashMap<(usize, usize), usize>
+    p1: usize,
+    p2: usize,
+    nodes: &mut Vec<Point>,
+    cache: &mut HashMap<(usize, usize), usize>,
 ) -> usize {
     let key = if p1 < p2 { (p1, p2) } else { (p2, p1) };
     if let Some(&idx) = cache.get(&key) {
         return idx;
     }
-    
+
     let pt1 = nodes[p1];
     let pt2 = nodes[p2];
     let mut middle = Point::new_3d(
@@ -518,10 +545,12 @@ fn get_middle_point(
         (pt1.y + pt2.y) / 2.0,
         (pt1.z + pt2.z) / 2.0,
     );
-    
-    let len = (middle.x*middle.x + middle.y*middle.y + middle.z*middle.z).sqrt();
-    middle.x /= len; middle.y /= len; middle.z /= len;
-    
+
+    let len = (middle.x * middle.x + middle.y * middle.y + middle.z * middle.z).sqrt();
+    middle.x /= len;
+    middle.y /= len;
+    middle.z /= len;
+
     let idx = nodes.len();
     nodes.push(middle);
     cache.insert(key, idx);
@@ -616,7 +645,7 @@ mod tests {
         // Should have 8 boundary edges (2 per side of square)
         assert_eq!(mesh.boundaries.len(), 8);
     }
-    
+
     #[test]
     fn test_spherical_shell_mesh() {
         // Icosphere subdiv 0 = 12 nodes, 20 tris
@@ -624,11 +653,11 @@ mod tests {
         // Total nodes = 12 * 3 = 36 nodes
         // Total elems = 2 layers * 20 tris * 3 tets = 120 tets
         let mesh = spherical_shell_mesh_tetrahedra(0.0, 0.0, 0.0, 1.0, 2.0, 0, 2);
-        
+
         assert_eq!(mesh.num_nodes(), 36);
         assert_eq!(mesh.num_elements(), 120);
         assert_eq!(mesh.dimension, 3);
-        
+
         // Check boundaries
         // Outer + Inner = 20 + 20 = 40 boundary faces
         assert_eq!(mesh.boundaries.len(), 40);

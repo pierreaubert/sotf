@@ -374,10 +374,10 @@ impl Element for Surface3DElement {
                             (0.0, font_size * 0.8)
                         };
 
-                        let screen_x =
-                            label_screen.x + f32::from(bounds.origin.x) + offset_x - text_width / 2.0;
-                        let screen_y =
-                            label_screen.y + f32::from(bounds.origin.y) + offset_y - font_size / 2.0;
+                        let screen_x = label_screen.x + f32::from(bounds.origin.x) + offset_x
+                            - text_width / 2.0;
+                        let screen_y = label_screen.y + f32::from(bounds.origin.y) + offset_y
+                            - font_size / 2.0;
 
                         paint_vector_text_at(
                             window,
@@ -470,7 +470,7 @@ impl Element for Surface3DElement {
             let angle_ticks = self.data.y_ticks.clone().unwrap_or_else(|| {
                 let min_angle = self.data.y_min;
                 let max_angle = self.data.y_max;
-                let step = 30.0;  // 30° major ticks to match grid
+                let step = 30.0; // 30° major ticks to match grid
                 let start = (min_angle / step).ceil() * step;
                 let mut ticks = Vec::new();
                 let mut angle = start;
@@ -610,10 +610,10 @@ impl Element for Surface3DElement {
                             (0.0, font_size * 0.8)
                         };
 
-                        let screen_x =
-                            label_screen.x + f32::from(bounds.origin.x) + offset_x - text_width / 2.0;
-                        let screen_y =
-                            label_screen.y + f32::from(bounds.origin.y) + offset_y - font_size / 2.0;
+                        let screen_x = label_screen.x + f32::from(bounds.origin.x) + offset_x
+                            - text_width / 2.0;
+                        let screen_y = label_screen.y + f32::from(bounds.origin.y) + offset_y
+                            - font_size / 2.0;
 
                         paint_vector_text_at(
                             window,

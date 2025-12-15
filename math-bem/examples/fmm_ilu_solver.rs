@@ -34,10 +34,10 @@ fn main() {
     use bem::core::assembly::tbem::build_tbem_system_scaled;
     use bem::core::incident::IncidentField;
     use bem::core::mesh::generators::generate_icosphere_mesh;
-    use bem::core::solver::{CgsConfig, solve_cgs, solve_with_ilu};
-    use bem::core::solver::direct::lu_solve;
     use bem::core::solver::IluPreconditioner;
     use bem::core::solver::Preconditioner;
+    use bem::core::solver::direct::lu_solve;
+    use bem::core::solver::{CgsConfig, solve_cgs, solve_with_ilu};
     use bem::core::types::{BoundaryCondition, PhysicsParams};
     use ndarray::{Array1, Array2};
     use num_complex::Complex64;
@@ -127,7 +127,7 @@ fn main() {
 
         // For dense TBEM, use very low threshold (or 0 for full LU)
         // Note: solve_with_ilu uses ILU(0) from math-solvers
-        
+
         let cgs_config = CgsConfig {
             max_iterations: 200,
             tolerance: 1e-6,

@@ -24,17 +24,21 @@ impl AlertVariant {
     fn colors(&self, theme: &Theme) -> (Rgba, Rgba, Rgba) {
         // Returns (background, border, icon_color)
         match theme.variant {
-            ThemeVariant::Dark => match self {
-                AlertVariant::Info => (rgb(0x1a2a3a), theme.info, theme.info),
-                AlertVariant::Success => (rgb(0x1a3a1a), theme.success, theme.success),
-                AlertVariant::Warning => (rgb(0x3a3a1a), theme.warning, theme.warning),
-                AlertVariant::Error => (rgb(0x3a1a1a), theme.error, theme.error),
-            },
             ThemeVariant::Light => match self {
                 AlertVariant::Info => (rgb(0xe0f2fe), theme.info, theme.info),
                 AlertVariant::Success => (rgb(0xdcfce7), theme.success, theme.success),
                 AlertVariant::Warning => (rgb(0xfef3c7), theme.warning, theme.warning),
                 AlertVariant::Error => (rgb(0xfee2e2), theme.error, theme.error),
+            },
+            // Dark, Midnight, Forest, BlackAndWhite all use dark-style backgrounds
+            ThemeVariant::Dark
+            | ThemeVariant::Midnight
+            | ThemeVariant::Forest
+            | ThemeVariant::BlackAndWhite => match self {
+                AlertVariant::Info => (rgb(0x1a2a3a), theme.info, theme.info),
+                AlertVariant::Success => (rgb(0x1a3a1a), theme.success, theme.success),
+                AlertVariant::Warning => (rgb(0x3a3a1a), theme.warning, theme.warning),
+                AlertVariant::Error => (rgb(0x3a1a1a), theme.error, theme.error),
             },
         }
     }

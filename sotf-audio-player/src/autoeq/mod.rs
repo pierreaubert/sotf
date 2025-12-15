@@ -49,32 +49,37 @@ pub mod speaker;
 pub mod spinorama;
 
 // Re-export room EQ types and functions
-pub use optimizer::{run_optimization_task, RoomEqOptimizer};
+pub use optimizer::{RoomEqOptimizer, run_optimization_task};
 pub use output::{load_dsp_chain, save_dsp_chain};
 pub use types::{
-    Algorithm, ChannelConfig, ChannelDspChain, ChannelMeasurements, ChannelOptimizationResult,
-    ChannelOptStatus, CrossoverType, Curve, DspChainOutput, DspPluginConfig, DriverDspChain,
-    EqFilterResult, Measurement, OptimizationMetadata, OptimizationProgress, OptimizerConfig,
-    SpeakerConfigType,
+    Algorithm, ChannelConfig, ChannelDspChain, ChannelMeasurements, ChannelOptStatus,
+    ChannelOptimizationResult, CrossoverType, Curve, DriverDspChain, DspChainOutput,
+    DspPluginConfig, EqFilterResult, Measurement, OptimizationMetadata, OptimizationProgress,
+    OptimizerConfig, SpeakerConfigType,
 };
 
 // Re-export params types
 pub use params::{
-    get_export_extension, OptimizationParams, ParamLimits, ALGORITHM_OPTIONS, CURVE_NAME_OPTIONS,
-    DE_STRATEGY_OPTIONS, EQ_EXPORT_FORMAT_OPTIONS, HEADPHONE_LOSS_OPTIONS, LOCAL_ALGO_OPTIONS,
-    PEQ_MODEL_OPTIONS, SPEAKER_LOSS_OPTIONS,
+    ALGORITHM_OPTIONS, CURVE_NAME_OPTIONS, DE_STRATEGY_OPTIONS, EQ_EXPORT_FORMAT_OPTIONS,
+    HEADPHONE_LOSS_OPTIONS, LOCAL_ALGO_OPTIONS, OptimizationParams, PEQ_MODEL_OPTIONS, ParamLimits,
+    SPEAKER_LOSS_OPTIONS, get_export_extension,
 };
 
 // Re-export headphone types
 pub use headphone::{
-    load_target_curve, parse_csv_curve, run_headphone_optimization, target_curves,
-    HeadphoneOptimizationResult,
+    HeadphoneOptimizationResult, load_target_curve, parse_csv_curve, run_headphone_optimization,
+    target_curves,
 };
 
 // Re-export speaker types
-pub use speaker::{run_speaker_optimization, SpeakerOptimizationResult};
+pub use speaker::{
+    CallbackAction, CallbackConfig, MeasurementInput, OptimizationStage, SpeakerConfigTypeExt,
+    SpeakerOptimizationCallback, SpeakerOptimizationConfig, SpeakerOptimizationConfigExt,
+    SpeakerOptimizationProgress, SpeakerOptimizationResult, run_speaker_optimization,
+    run_speaker_optimization_extended, run_speaker_optimization_with_callback,
+};
 
 // Re-export spinorama types
 pub use spinorama::{
-    calculate_room_correction, MeasurementCurve, RoomCorrectionInput, RoomMeasurement,
+    MeasurementCurve, RoomCorrectionInput, RoomMeasurement, calculate_room_correction,
 };

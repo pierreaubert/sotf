@@ -6,7 +6,7 @@
 //! 3. Listen - Preview and apply EQ to playback
 //! 4. Save - Export format selection and save
 
-use crate::app::types::HeadphoneEqStep;
+use crate::app::types::{HeadphoneEqStep, PluginUpdateType};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -29,6 +29,36 @@ impl PlayerView {
     // Headphone EQ Wizard Screen
     // ========================================================================
 
+    /// Clear the headphone EQ from the playback chain
+    pub fn clear_headphone_eq_from_playback(&mut self, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            // Find and remove EQ plugins
+            let plugins = state.app.plugin_chain.plugins();
+            let eq_indices: Vec<_> = plugins
+                .iter()
+                .enumerate()
+                .filter_map(|(i, p)| {
+                    if matches!(p.plugin_type(), sotf_audio_player::PluginType::EQ) {
+                        Some(i)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            // Remove in reverse order to maintain correct indices
+            for idx in eq_indices.into_iter().rev() {
+                state.app.plugin_chain.remove_plugin(idx);
+            }
+
+            state.app.pending_plugin_update = Some(PluginUpdateType::Structural);
+            state.app.toast_message = Some(crate::app::ToastMessage::success(
+                "Cleared EQ from playback",
+            ));
+        });
+        cx.notify();
+    }
+
     /// Main Headphone EQ screen entry point (wizard)
     pub(crate) fn render_headphone_eq_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
@@ -37,10 +67,9 @@ impl PlayerView {
 
         // Content for current step
         let content = match current_step {
-            HeadphoneEqStep::MeasurementTarget => {
-                self.render_headphone_eq_measurement_target(cx)
-                    .into_any_element()
-            }
+            HeadphoneEqStep::MeasurementTarget => self
+                .render_headphone_eq_measurement_target(cx)
+                .into_any_element(),
             HeadphoneEqStep::Optimization => {
                 self.render_headphone_eq_optimization(cx).into_any_element()
             }
@@ -72,7 +101,10 @@ impl PlayerView {
 
         // Helper function to build step indicator
         let build_step_indicator =
-            |step: HeadphoneEqStep, label: &'static str, number: u8, theme: &crate::theme::Theme| {
+            |step: HeadphoneEqStep,
+             label: &'static str,
+             number: u8,
+             theme: &crate::theme::Theme| {
                 let is_active = current_step == step;
                 let is_past = current_step.index() > step.index();
 
@@ -272,15 +304,9 @@ impl PlayerView {
         let theme = state.app.theme.clone();
         let headphone_eq = &state.app.headphone_eq_state;
 
-        let measurement_path = headphone_eq
-            .measurement_path
-            .clone()
-            .unwrap_or_default();
+        let measurement_path = headphone_eq.measurement_path.clone().unwrap_or_default();
         let target_preset = headphone_eq.target_preset.clone();
-        let custom_target_path = headphone_eq
-            .custom_target_path
-            .clone()
-            .unwrap_or_default();
+        let custom_target_path = headphone_eq.custom_target_path.clone().unwrap_or_default();
 
         VStack::new()
             .spacing(StackSpacing::Lg)
@@ -612,8 +638,7 @@ impl PlayerView {
                                                             .app
                                                             .headphone_eq_state
                                                             .optimizer_config
-                                                            .loss =
-                                                            "headphone-score".to_string();
+                                                            .loss = "headphone-score".to_string();
                                                     });
                                                     cx.notify();
                                                 }),
@@ -946,7 +971,7 @@ impl PlayerView {
                                             .spacing(StackSpacing::Sm)
                                             .wrap(true)
                                             .children(
-                                                crate::autoeq::EQ_EXPORT_FORMAT_OPTIONS.iter().map(
+                                                sotf_audio_player::autoeq::EQ_EXPORT_FORMAT_OPTIONS.iter().map(
                                                     |(value, label, _ext)| {
                                                         let is_selected = export_format == *value;
                                                         let value = value.to_string();

@@ -76,8 +76,12 @@ fn main() -> Result<()> {
     }
 
     // Unwrap required args (safe because of required_unless_present)
-    let config_path = args.config.ok_or_else(|| anyhow!("Config file is required"))?;
-    let output_path = args.output.ok_or_else(|| anyhow!("Output file is required"))?;
+    let config_path = args
+        .config
+        .ok_or_else(|| anyhow!("Config file is required"))?;
+    let output_path = args
+        .output
+        .ok_or_else(|| anyhow!("Output file is required"))?;
 
     run(args.sample_rate, config_path, output_path)
 }

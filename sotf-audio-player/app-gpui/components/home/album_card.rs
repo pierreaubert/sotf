@@ -3,8 +3,8 @@
 //! A reusable RenderOnce component for displaying album information.
 //! Used in both grid and list views.
 
+use crate::components::icons::{Icon, IconName};
 use crate::theme::Theme;
-use crate::ui::components::icon::{Icon, IconName};
 use gpui::prelude::*;
 use gpui::*;
 

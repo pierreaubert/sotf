@@ -40,8 +40,8 @@ use crate::core::assembly::tbem::build_tbem_system_with_beta;
 use crate::core::incident::IncidentField;
 use crate::core::mesh::generators::{generate_icosphere_mesh, generate_sphere_mesh};
 use crate::core::postprocess::pressure::{FieldPoint, compute_total_field};
-use solvers::direct::lu_solve;
 use crate::core::types::{BoundaryCondition, Element, Mesh, PhysicsParams};
+use solvers::direct::lu_solve;
 
 /// Solver method for the linear system
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

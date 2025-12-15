@@ -15,7 +15,7 @@ use crate::i18n::{Language, Translations};
 use crate::keybindings::KeymapPreset;
 use crate::theme::{Theme, ThemeId};
 
-use super::types::{
+use crate::app::types::{
     ActiveMenu, ChannelFilter, ChannelGroup, ContextMenuState, HeadphoneEqState, InputMode,
     LayoutMode, LibrarySortOrder, MeasureState, OptimizationUiState, QueueItem, RecordingState,
     RoomEqState, Screen, ToastMessage,
@@ -34,16 +34,16 @@ pub struct App {
     // UI state
     pub search_query: String,
     pub directory_input: String,
-    pub plugin_file_input: String,    // For save/load plugin chain
-    pub apo_file_input: String,       // For loading APO EQ files
-    pub sofa_file_input: String,      // For loading SOFA HRTF files
+    pub plugin_file_input: String, // For save/load plugin chain
+    pub apo_file_input: String,    // For loading APO EQ files
+    pub sofa_file_input: String,   // For loading SOFA HRTF files
 
     // Speaker Optimization State
     pub speaker_model: String, // Selected speaker model name (e.g. "KEF LS50 Meta")
-    pub speaker_params: crate::optimization_params::OptimizationParams,
+    pub speaker_params: sotf_audio_player::autoeq::OptimizationParams,
     pub speaker_optimization_running: bool,
     pub speaker_optimization_progress: Vec<(usize, f64)>,
-    pub speaker_optimization_result: Option<crate::autoeq::speaker_eq::SpeakerOptimizationResult>,
+    pub speaker_optimization_result: Option<sotf_audio_player::autoeq::SpeakerOptimizationResult>,
     pub speaker_export_format: String,
     pub speaker_opt_ui: OptimizationUiState, // UI state (dropdowns)
 
@@ -74,10 +74,10 @@ pub struct App {
     pub plugin_chain: PluginChain,
     pub plugin_chain_modified: bool, // Track if plugins changed since last save
     /// Pending plugin update to sync to audio engine (None = no update needed)
-    pub pending_plugin_update: Option<super::types::PluginUpdateType>,
+    pub pending_plugin_update: Option<crate::app::types::PluginUpdateType>,
     pub editing_plugin_index: Option<usize>,
     pub plugin_param_selection: usize, // Which parameter is selected in edit mode
-    pub selected_eq_band: usize, // Currently selected EQ band for display (0-indexed)
+    pub selected_eq_band: usize,       // Currently selected EQ band for display (0-indexed)
 
     // Playback state
     pub is_playing: bool,
@@ -254,7 +254,7 @@ impl App {
 
             // Speaker State Init
             speaker_model: String::new(),
-            speaker_params: crate::optimization_params::OptimizationParams::speaker_defaults(),
+            speaker_params: sotf_audio_player::autoeq::OptimizationParams::speaker_defaults(),
             speaker_optimization_running: false,
             speaker_optimization_progress: Vec::new(),
             speaker_optimization_result: None,
@@ -470,7 +470,7 @@ impl App {
             match self.plugin_chain.load_from_file(&preset_name) {
                 Ok(_) => {
                     self.pending_plugin_update =
-                        Some(super::types::PluginUpdateType::Structural);
+                        Some(crate::app::types::PluginUpdateType::Structural);
                     log::info!("Restored plugin preset: {}", preset_name);
                 }
                 Err(e) => {

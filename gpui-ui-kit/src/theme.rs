@@ -12,12 +12,24 @@ pub enum ThemeVariant {
     Dark,
     /// Light theme
     Light,
+    /// Midnight theme (deep blue)
+    Midnight,
+    /// Forest theme (green tones)
+    Forest,
+    /// Black & White theme (monochrome high contrast)
+    BlackAndWhite,
 }
 
 impl ThemeVariant {
     /// Get all available variants
     pub fn all() -> &'static [ThemeVariant] {
-        &[ThemeVariant::Dark, ThemeVariant::Light]
+        &[
+            ThemeVariant::Dark,
+            ThemeVariant::Light,
+            ThemeVariant::Midnight,
+            ThemeVariant::Forest,
+            ThemeVariant::BlackAndWhite,
+        ]
     }
 
     /// Get display name
@@ -25,6 +37,9 @@ impl ThemeVariant {
         match self {
             ThemeVariant::Dark => "Dark",
             ThemeVariant::Light => "Light",
+            ThemeVariant::Midnight => "Midnight",
+            ThemeVariant::Forest => "Forest",
+            ThemeVariant::BlackAndWhite => "Black & White",
         }
     }
 
@@ -32,7 +47,10 @@ impl ThemeVariant {
     pub fn toggle(&self) -> Self {
         match self {
             ThemeVariant::Dark => ThemeVariant::Light,
-            ThemeVariant::Light => ThemeVariant::Dark,
+            ThemeVariant::Light => ThemeVariant::Midnight,
+            ThemeVariant::Midnight => ThemeVariant::Forest,
+            ThemeVariant::Forest => ThemeVariant::BlackAndWhite,
+            ThemeVariant::BlackAndWhite => ThemeVariant::Dark,
         }
     }
 }
@@ -143,11 +161,98 @@ impl Theme {
         }
     }
 
+    /// Create a midnight theme (deep blue)
+    pub fn midnight() -> Self {
+        Self {
+            variant: ThemeVariant::Midnight,
+            // Backgrounds
+            background: rgb(0x0d1117),
+            surface: rgb(0x21262d),
+            surface_hover: rgb(0x30363d),
+            muted: rgb(0x161b22),
+            // Text
+            text_primary: rgb(0xc9d1d9),
+            text_secondary: rgb(0x8b949e),
+            text_muted: rgb(0x6e7681),
+            // Accent
+            accent: rgb(0x58a6ff),
+            accent_hover: rgb(0x79b8ff),
+            accent_muted: rgba(0x1f6feb33),
+            // Semantic
+            success: rgb(0x3fb950),
+            warning: rgb(0xd29922),
+            error: rgb(0xf85149),
+            info: rgb(0x58a6ff),
+            // Border
+            border: rgb(0x30363d),
+            border_hover: rgb(0x484f58),
+        }
+    }
+
+    /// Create a forest theme (green tones)
+    pub fn forest() -> Self {
+        Self {
+            variant: ThemeVariant::Forest,
+            // Backgrounds
+            background: rgb(0x1a2418),
+            surface: rgb(0x2a3627),
+            surface_hover: rgb(0x3a4a35),
+            muted: rgb(0x222d1f),
+            // Text
+            text_primary: rgb(0xd4e4d1),
+            text_secondary: rgb(0xa8c4a2),
+            text_muted: rgb(0x7a9a73),
+            // Accent
+            accent: rgb(0x6abf69),
+            accent_hover: rgb(0x7dd07c),
+            accent_muted: rgba(0x3d5a3a33),
+            // Semantic
+            success: rgb(0x6abf69),
+            warning: rgb(0xe0c062),
+            error: rgb(0xd96c6c),
+            info: rgb(0x6cb2d9),
+            // Border
+            border: rgb(0x3a4a35),
+            border_hover: rgb(0x556b50),
+        }
+    }
+
+    /// Create a black & white theme (monochrome high contrast)
+    pub fn black_and_white() -> Self {
+        Self {
+            variant: ThemeVariant::BlackAndWhite,
+            // Backgrounds
+            background: rgb(0x000000),
+            surface: rgb(0x141414),
+            surface_hover: rgb(0x222222),
+            muted: rgb(0x0a0a0a),
+            // Text
+            text_primary: rgb(0xffffff),
+            text_secondary: rgb(0x888888),
+            text_muted: rgb(0x555555),
+            // Accent (black background with white border for buttons)
+            accent: rgb(0x000000),
+            accent_hover: rgb(0x222222),
+            accent_muted: rgba(0x33333333),
+            // Semantic (grayscale for B&W theme)
+            success: rgb(0xaaaaaa),
+            warning: rgb(0x888888),
+            error: rgb(0x666666),
+            info: rgb(0x999999),
+            // Border (white for high contrast)
+            border: rgb(0xffffff),
+            border_hover: rgb(0xcccccc),
+        }
+    }
+
     /// Get theme for variant
     pub fn for_variant(variant: ThemeVariant) -> Self {
         match variant {
             ThemeVariant::Dark => Self::dark(),
             ThemeVariant::Light => Self::light(),
+            ThemeVariant::Midnight => Self::midnight(),
+            ThemeVariant::Forest => Self::forest(),
+            ThemeVariant::BlackAndWhite => Self::black_and_white(),
         }
     }
 }

@@ -144,13 +144,21 @@ pub fn build_multidriver_channel_dsp_chain(
         // Add highpass crossover from previous driver (if not first driver)
         if i > 0 && i - 1 < xover_freqs.len() {
             let crossover_freq = xover_freqs[i - 1];
-            driver_plugins.push(create_crossover_plugin(crossover_type, crossover_freq, "high"));
+            driver_plugins.push(create_crossover_plugin(
+                crossover_type,
+                crossover_freq,
+                "high",
+            ));
         }
 
         // Add lowpass crossover to next driver (if not last driver)
         if i < n_drivers - 1 && i < xover_freqs.len() {
             let crossover_freq = xover_freqs[i];
-            driver_plugins.push(create_crossover_plugin(crossover_type, crossover_freq, "low"));
+            driver_plugins.push(create_crossover_plugin(
+                crossover_type,
+                crossover_freq,
+                "low",
+            ));
         }
 
         driver_chains.push(DriverDspChain {

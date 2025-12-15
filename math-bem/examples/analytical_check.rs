@@ -106,9 +106,7 @@ fn main() {
         "\nIf matrix was just 0.5*I, solution would be: 2 * RHS ≈ {:.4}",
         2.0 * avg_rhs
     );
-    println!(
-        "With corrected BIE formulation (0.5 - K), BEM should match expected values."
-    );
+    println!("With corrected BIE formulation (0.5 - K), BEM should match expected values.");
 }
 
 #[cfg(not(feature = "pure-rust"))]

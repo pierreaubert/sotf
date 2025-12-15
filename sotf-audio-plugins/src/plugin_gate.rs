@@ -269,22 +269,40 @@ impl InPlacePlugin for GatePlugin {
 
     fn parameters(&self) -> Vec<Parameter> {
         vec![
-            Parameter::new_float("threshold", "Threshold", THRESHOLD_DEFAULT, THRESHOLD_MIN, THRESHOLD_MAX)
-                .with_description("Level below which gate closes (dB)"),
+            Parameter::new_float(
+                "threshold",
+                "Threshold",
+                THRESHOLD_DEFAULT,
+                THRESHOLD_MIN,
+                THRESHOLD_MAX,
+            )
+            .with_description("Level below which gate closes (dB)"),
             Parameter::new_float("ratio", "Ratio", RATIO_DEFAULT, RATIO_MIN, RATIO_MAX)
                 .with_description("Gate depth ratio (higher = more attenuation)"),
             Parameter::new_float("attack", "Attack", ATTACK_DEFAULT, ATTACK_MIN, ATTACK_MAX)
                 .with_description("Time to open gate (ms)"),
             Parameter::new_float("hold", "Hold", HOLD_DEFAULT, HOLD_MIN, HOLD_MAX)
                 .with_description("Time to keep gate open after signal drops (ms)"),
-            Parameter::new_float("release", "Release", RELEASE_DEFAULT, RELEASE_MIN, RELEASE_MAX)
-                .with_description("Time to close gate (ms)"),
+            Parameter::new_float(
+                "release",
+                "Release",
+                RELEASE_DEFAULT,
+                RELEASE_MIN,
+                RELEASE_MAX,
+            )
+            .with_description("Time to close gate (ms)"),
             Parameter::new_float("mix", "Mix", MIX_DEFAULT, MIX_MIN, MIX_MAX)
                 .with_description("Dry/wet mix (0 = dry, 1 = gated)"),
             Parameter::new_bool("link_channels", "Link Channels", LINK_CHANNELS_DEFAULT)
                 .with_description("Use linked sidechain for all channels"),
-            Parameter::new_float("sidechain_hpf_hz", "Sidechain HPF", SIDECHAIN_HPF_HZ_DEFAULT, SIDECHAIN_HPF_HZ_MIN, SIDECHAIN_HPF_HZ_MAX)
-                .with_description("High-pass filter frequency for sidechain (Hz)"),
+            Parameter::new_float(
+                "sidechain_hpf_hz",
+                "Sidechain HPF",
+                SIDECHAIN_HPF_HZ_DEFAULT,
+                SIDECHAIN_HPF_HZ_MIN,
+                SIDECHAIN_HPF_HZ_MAX,
+            )
+            .with_description("High-pass filter frequency for sidechain (Hz)"),
         ]
     }
 

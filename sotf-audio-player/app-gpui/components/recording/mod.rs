@@ -31,7 +31,9 @@ impl PlayerView {
         let step_content = match current_step {
             RecordingStep::Config => self.render_recording_config_step(cx).into_any_element(),
             RecordingStep::Capture => self.render_recording_capture_step(cx).into_any_element(),
-            RecordingStep::Evaluating => self.render_recording_evaluating_step(cx).into_any_element(),
+            RecordingStep::Evaluating => {
+                self.render_recording_evaluating_step(cx).into_any_element()
+            }
             RecordingStep::Saving => self.render_recording_saving_step(cx).into_any_element(),
         };
 
@@ -122,11 +124,10 @@ impl PlayerView {
         // Helper to build connector line between steps
         let build_connector = |from_step: RecordingStep, theme: &crate::theme::Theme| {
             let is_past = step_index(from_step) < step_index(current_step);
-            div().w(px(24.0)).h(px(2.0)).bg(if is_past {
-                theme.success
-            } else {
-                theme.border
-            })
+            div()
+                .w(px(24.0))
+                .h(px(2.0))
+                .bg(if is_past { theme.success } else { theme.border })
         };
 
         div()
@@ -234,7 +235,8 @@ impl PlayerView {
                                             state.app.recording_state.step = RecordingStep::Capture;
                                         }
                                         RecordingStep::Saving => {
-                                            state.app.recording_state.step = RecordingStep::Evaluating;
+                                            state.app.recording_state.step =
+                                                RecordingStep::Evaluating;
                                         }
                                     }
                                 });
@@ -260,7 +262,8 @@ impl PlayerView {
                                             state.app.recording_state.step = RecordingStep::Capture;
                                         }
                                         RecordingStep::Capture => {
-                                            state.app.recording_state.step = RecordingStep::Evaluating;
+                                            state.app.recording_state.step =
+                                                RecordingStep::Evaluating;
                                         }
                                         RecordingStep::Evaluating => {
                                             state.app.recording_state.step = RecordingStep::Saving;

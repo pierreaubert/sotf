@@ -1,6 +1,4 @@
-use crate::components::graphs::common::{
-    band_color, rgba_to_u32, theme_to_chart_theme,
-};
+use crate::components::graphs::common::{band_color, rgba_to_u32, theme_to_chart_theme};
 use crate::theme::Theme;
 use autoeq_iir::Biquad;
 use d3rs::scale::{LogScale, Scale};

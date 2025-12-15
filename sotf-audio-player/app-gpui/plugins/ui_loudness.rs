@@ -168,6 +168,6 @@ pub fn render_loudness_monitor_plugin(
                 .rounded_xl()
                 .bg(theme.background_secondary)
                 .border_1()
-                .border_color(theme.border)
+                .border_color(theme.border),
         )
 }

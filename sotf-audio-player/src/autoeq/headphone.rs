@@ -80,8 +80,7 @@ pub fn run_headphone_optimization(
     let standard_freq = autoeq::read::create_log_frequency_grid(200, 20.0, 20000.0);
 
     // Normalize and interpolate curves
-    let input_curve_norm =
-        autoeq::normalize_and_interpolate_response(&standard_freq, &input_curve);
+    let input_curve_norm = autoeq::normalize_and_interpolate_response(&standard_freq, &input_curve);
     let target_curve_norm =
         autoeq::normalize_and_interpolate_response(&standard_freq, &target_curve);
 

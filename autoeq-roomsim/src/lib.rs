@@ -31,9 +31,7 @@ mod bem_solver;
 mod scattering_objects;
 
 // Re-export BEM types for external use
-pub use bem_solver::{
-    BemAssemblyMethod, BemConfig, BemResult, BemSolverMethod, FmmConfig,
-};
+pub use bem_solver::{BemAssemblyMethod, BemConfig, BemResult, BemSolverMethod, FmmConfig};
 pub use scattering_objects::{BoxObject, CylinderObject, ScatteringObjectConfig, SphereObject};
 
 // ============================================================================

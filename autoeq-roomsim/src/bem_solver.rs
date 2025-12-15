@@ -121,8 +121,6 @@ pub enum BemSolverMethod {
     GmresHierarchical,
 }
 
-
-
 /// FMM configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FmmConfig {
@@ -1102,7 +1100,7 @@ mod tests {
         let config = BemConfig {
             elements_per_wavelength: 2.0, // Reduced from 8.0 for speed/memory in tests
             max_elements: 30000,          // Increased limit
-            use_adaptive_mesh: false,     // Disable internal adaptive refinement to respect our low density
+            use_adaptive_mesh: false, // Disable internal adaptive refinement to respect our low density
             ..BemConfig::default()
         };
         let frequencies = vec![50.0, 100.0, 200.0, 500.0, 1000.0];

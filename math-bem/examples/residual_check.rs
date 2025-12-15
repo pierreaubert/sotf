@@ -59,10 +59,10 @@ fn main() {
     }
 
     // Solve
-        let solution_x = lu_solve(&system.matrix, &rhs).expect("Solver failed");
+    let solution_x = lu_solve(&system.matrix, &rhs).expect("Solver failed");
 
-        // Verify residual
-        let ax = system.matrix.dot(&solution_x);
+    // Verify residual
+    let ax = system.matrix.dot(&solution_x);
 
     // Compute residual Ap - b
     let mut residual = Array1::<Complex64>::zeros(n);

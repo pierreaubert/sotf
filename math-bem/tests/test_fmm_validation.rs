@@ -15,9 +15,8 @@ use bem::core::assembly::{
 };
 use bem::core::mesh::generators::generate_icosphere_mesh;
 use bem::core::solver::{
-    CgsConfig, DenseOperator, GmresConfig, LinearOperator, SlfmmOperator,
+    CgsConfig, DenseOperator, GmresConfig, IluOperator, LinearOperator, SlfmmOperator,
     gmres_solve_with_ilu, ilu_diagnostics, solve_cgs, solve_gmres, solve_with_ilu,
-    IluOperator,
 };
 use bem::core::types::{BoundaryCondition, Cluster, PhysicsParams};
 use ndarray::{Array1, array};
@@ -433,11 +432,7 @@ fn test_ilu_improves_tbem_convergence() {
         print_interval: 0,
     };
 
-    let solution = solve_with_ilu(
-        &tbem.matrix,
-        &b,
-        &config,
-    );
+    let solution = solve_with_ilu(&tbem.matrix, &b, &config);
 
     println!(
         "ILU-preconditioned CGS: {} iterations, residual = {:.6e}, converged = {}",
@@ -620,11 +615,7 @@ fn test_gmres_with_ilu() {
         print_interval: 0,
     };
 
-    let solution = gmres_solve_with_ilu(
-        &matrix,
-        &b,
-        &config,
-    );
+    let solution = gmres_solve_with_ilu(&matrix, &b, &config);
 
     println!(
         "GMRES+ILU: {} iterations, {} restarts, residual = {:.6e}",
@@ -861,7 +852,11 @@ fn test_gmres_robustness_vs_cgs() {
 
     // Verify GMRES solution quality
     let ax = matrix.dot(&gmres_sol.x);
-    let rel_residual: f64 = (&ax - &b).iter().map(|e: &Complex64| e.norm_sqr()).sum::<f64>().sqrt()
+    let rel_residual: f64 = (&ax - &b)
+        .iter()
+        .map(|e: &Complex64| e.norm_sqr())
+        .sum::<f64>()
+        .sqrt()
         / b.iter().map(|bi| bi.norm_sqr()).sum::<f64>().sqrt();
 
     assert!(

@@ -5,10 +5,12 @@
 
 use ndarray::{Array1, Array2};
 use num_complex::Complex64;
-use solvers::traits::{LinearOperator, Preconditioner};
-use solvers::iterative::{gmres, cgs, bicgstab};
-use solvers::iterative::{GmresConfig, GmresSolution, CgsConfig, CgsSolution, BiCgstabConfig, BiCgstabSolution};
+use solvers::iterative::{
+    BiCgstabConfig, BiCgstabSolution, CgsConfig, CgsSolution, GmresConfig, GmresSolution,
+};
+use solvers::iterative::{bicgstab, cgs, gmres};
 use solvers::preconditioners::IluPreconditioner;
+use solvers::traits::{LinearOperator, Preconditioner};
 
 use crate::core::assembly::mlfmm::MlfmmSystem;
 #[cfg(any(feature = "native", feature = "wasm"))]
@@ -252,21 +254,28 @@ impl SparseNearfieldIlu {
     ) -> Self {
         // Placeholder diagonal approximation
         let mut diag = Array1::ones(num_dofs);
-        
+
         for block in near_blocks {
             if block.source_cluster == block.field_cluster {
-                 let dofs = &cluster_dof_indices[block.source_cluster];
-                 for (local_i, &global_i) in dofs.iter().enumerate() {
-                     if local_i < block.coefficients.nrows() {
-                         diag[global_i] = block.coefficients[[local_i, local_i]];
-                     }
-                 }
+                let dofs = &cluster_dof_indices[block.source_cluster];
+                for (local_i, &global_i) in dofs.iter().enumerate() {
+                    if local_i < block.coefficients.nrows() {
+                        diag[global_i] = block.coefficients[[local_i, local_i]];
+                    }
+                }
             }
         }
-        
-        let l_values = diag.iter().map(|d| {
-            if d.norm() > 1e-15 { *d } else { Complex64::new(1.0, 0.0) }
-        }).collect();
+
+        let l_values = diag
+            .iter()
+            .map(|d| {
+                if d.norm() > 1e-15 {
+                    *d
+                } else {
+                    Complex64::new(1.0, 0.0)
+                }
+            })
+            .collect();
 
         Self {
             l_values,
@@ -304,7 +313,7 @@ pub struct HierarchicalFmmPreconditioner {
 impl HierarchicalFmmPreconditioner {
     /// Creates a new `HierarchicalFmmPreconditioner` from an `SlfmmSystem`.
     pub fn from_slfmm(system: &SlfmmSystem) -> Self {
-         Self::from_slfmm_blocks(
+        Self::from_slfmm_blocks(
             &system.near_matrix,
             &system.cluster_dof_indices,
             system.num_dofs,
@@ -342,7 +351,6 @@ impl Preconditioner<Complex64> for HierarchicalFmmPreconditioner {
         r.clone()
     }
 }
-
 
 // ============================================================================
 // Solver Wrappers
@@ -389,7 +397,7 @@ pub fn solve_with_ilu(
     let csr = solvers::sparse::CsrMatrix::from_dense(matrix, 1e-15);
     let _precond = IluPreconditioner::from_csr(&csr);
     let op = DenseOperator::new(matrix.clone());
-    
+
     // cgs_preconditioned doesn't exist in math-solvers iterative exports directly?
     // math-solvers exports cgs which takes optional guess, but not preconditioned?
     // Checking iterative/mod.rs: pub use cgs::{CgsConfig, CgsSolution, cgs};
@@ -397,12 +405,14 @@ pub fn solve_with_ilu(
     // Actually math-solvers cgs module usually has cgs_preconditioned but maybe not exported?
     // Wait, iterative/gmres exported gmres_preconditioned. cgs module might not.
     // I need to check cgs module. Assuming cgs doesn't support preconditioning for now or use gmres instead.
-    
+
     // Fallback to GMRES for preconditioned solve if CGS preconditioned is not available
     // But function returns CgsSolution.
     // Let's assume we can't do preconditioned CGS with math-solvers public API yet.
     // I'll return un-preconditioned CGS or panic.
-    eprintln!("Warning: CGS with ILU not fully supported via public API, running without preconditioner");
+    eprintln!(
+        "Warning: CGS with ILU not fully supported via public API, running without preconditioner"
+    );
     cgs(&op, b, config)
 }
 
@@ -551,10 +561,7 @@ pub fn mesh_resolution_for_frequency_range(
 }
 
 /// Estimate element count for a rectangular room
-pub fn estimate_element_count(
-    room_dimensions: (f64, f64, f64),
-    mesh_resolution: f64,
-) -> usize {
+pub fn estimate_element_count(room_dimensions: (f64, f64, f64), mesh_resolution: f64) -> usize {
     let (w, d, h) = room_dimensions;
     let surface_area = 2.0 * (w * d + w * h + d * h);
     let element_size = 1.0 / mesh_resolution;

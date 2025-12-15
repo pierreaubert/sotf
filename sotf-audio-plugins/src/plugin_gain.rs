@@ -118,7 +118,14 @@ impl InPlacePlugin for GainPlugin {
 
     fn parameters(&self) -> Vec<Parameter> {
         vec![
-            Parameter::new_float("gain_db", "Gain (dB)", GAIN_DB_DEFAULT, GAIN_DB_MIN, GAIN_DB_MAX).with_description(
+            Parameter::new_float(
+                "gain_db",
+                "Gain (dB)",
+                GAIN_DB_DEFAULT,
+                GAIN_DB_MIN,
+                GAIN_DB_MAX,
+            )
+            .with_description(
                 "Gain in decibels. 0dB = unity gain, negative = attenuation, positive = boost",
             ),
         ]

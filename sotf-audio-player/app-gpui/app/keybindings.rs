@@ -6,7 +6,7 @@
 //! - Emacs: Emacs-style navigation (C-n, C-p, etc.)
 //! - VSCode: VSCode-style shortcuts
 
-use crate::actions;
+use crate::app::actions;
 use gpui::*;
 use serde::{Deserialize, Serialize};
 

@@ -80,13 +80,11 @@ impl AccordionDebug {
 
     /// Sample content for accordion items
     fn sample_content(text: impl Into<SharedString>, theme: &Theme) -> impl IntoElement {
-        div()
-            .p_4()
-            .child(
-                Text::new(text)
-                    .size(TextSize::Sm)
-                    .color(theme.text_secondary),
-            )
+        div().p_4().child(
+            Text::new(text)
+                .size(TextSize::Sm)
+                .color(theme.text_secondary),
+        )
     }
 }
 

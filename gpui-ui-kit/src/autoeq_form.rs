@@ -982,8 +982,7 @@ impl RenderOnce for AutoEqForm {
 
                 if let Some(ref handler) = on_strategy_toggle_rc {
                     let h = handler.clone();
-                    strategy_select =
-                        strategy_select.on_toggle(move |open, w, cx| h(open, w, cx));
+                    strategy_select = strategy_select.on_toggle(move |open, w, cx| h(open, w, cx));
                 }
 
                 if let Some(ref handler) = on_strategy_change_rc {

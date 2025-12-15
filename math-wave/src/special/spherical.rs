@@ -42,7 +42,7 @@ use num_complex::Complex64;
 /// let j = spherical_bessel_j(5, 1.0);
 /// // j[0] = sin(1)/1 ≈ 0.8414709848
 /// ```
-/// 
+///
 /// let j = spherical_bessel_j(5, 1.0);
 /// // j[0] = sin(1)/1 ≈ 0.8414709848
 /// ```

@@ -293,8 +293,14 @@ impl Plugin for LoudnessCompensationPlugin {
                 LOW_FREQ_MAX,
             )
             .with_description("Frequency for bass boost (Hz)"),
-            Parameter::new_float("low_gain", "Low-shelf Gain", self.low_gain, LOW_GAIN_MIN, LOW_GAIN_MAX)
-                .with_description("Bass boost amount (dB)"),
+            Parameter::new_float(
+                "low_gain",
+                "Low-shelf Gain",
+                self.low_gain,
+                LOW_GAIN_MIN,
+                LOW_GAIN_MAX,
+            )
+            .with_description("Bass boost amount (dB)"),
             Parameter::new_float(
                 "high_freq",
                 "High-shelf Frequency",
@@ -303,8 +309,14 @@ impl Plugin for LoudnessCompensationPlugin {
                 HIGH_FREQ_MAX,
             )
             .with_description("Frequency for treble boost (Hz)"),
-            Parameter::new_float("high_gain", "High-shelf Gain", self.high_gain, HIGH_GAIN_MIN, HIGH_GAIN_MAX)
-                .with_description("Treble boost amount (dB)"),
+            Parameter::new_float(
+                "high_gain",
+                "High-shelf Gain",
+                self.high_gain,
+                HIGH_GAIN_MIN,
+                HIGH_GAIN_MAX,
+            )
+            .with_description("Treble boost amount (dB)"),
         ]
     }
 

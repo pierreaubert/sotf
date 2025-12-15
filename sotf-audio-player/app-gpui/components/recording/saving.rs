@@ -75,32 +75,32 @@ impl PlayerView {
                                 .color(theme.text_secondary),
                         )
                         .child(
-                            div()
-                                .w(px(300.0))
-                                .child(
-                                    Input::new("save_name_input")
-                                        .value(save_name.clone())
-                                        .edit_text(save_name)
-                                        .placeholder("Enter recording name")
-                                        .editing(true)
-                                        .on_text_change({
-                                            let view = view.clone();
-                                            move |value, _, cx| {
-                                                view.update(cx, |this, cx| {
-                                                    this.state.update(cx, |state, _| {
-                                                        state.app.recording_state.save_name = value;
-                                                    });
-                                                    cx.notify();
+                            div().w(px(300.0)).child(
+                                Input::new("save_name_input")
+                                    .value(save_name.clone())
+                                    .edit_text(save_name)
+                                    .placeholder("Enter recording name")
+                                    .editing(true)
+                                    .on_text_change({
+                                        let view = view.clone();
+                                        move |value, _, cx| {
+                                            view.update(cx, |this, cx| {
+                                                this.state.update(cx, |state, _| {
+                                                    state.app.recording_state.save_name = value;
                                                 });
-                                            }
-                                        }),
-                                ),
+                                                cx.notify();
+                                            });
+                                        }
+                                    }),
+                            ),
                         ),
                 )
                 .child(
-                    Text::new("This name will be used for the subdirectory containing your recordings.")
-                        .size(TextSize::Xs)
-                        .color(theme.text_muted),
+                    Text::new(
+                        "This name will be used for the subdirectory containing your recordings.",
+                    )
+                    .size(TextSize::Xs)
+                    .color(theme.text_muted),
                 ),
         )
     }
@@ -113,9 +113,7 @@ impl PlayerView {
         let view = cx.entity().clone();
 
         let base_dir = recording_state.recording_base_directory.clone();
-        let base_dir_display = base_dir
-            .clone()
-            .unwrap_or_else(|| "Not set".to_string());
+        let base_dir_display = base_dir.clone().unwrap_or_else(|| "Not set".to_string());
 
         let save_name = &recording_state.save_name;
         let full_path = if base_dir.is_some() {
@@ -170,8 +168,12 @@ impl PlayerView {
                                         move |_, cx| {
                                             view.update(cx, |this, cx| {
                                                 this.state.update(cx, |state, _| {
-                                                    state.app.recording_state.recording_base_directory = None;
-                                                    state.app.recording_state.recording_directory = None;
+                                                    state
+                                                        .app
+                                                        .recording_state
+                                                        .recording_base_directory = None;
+                                                    state.app.recording_state.recording_directory =
+                                                        None;
                                                 });
                                                 cx.notify();
                                             });
@@ -241,11 +243,7 @@ impl PlayerView {
                             HStack::new()
                                 .spacing(StackSpacing::Sm)
                                 .align(StackAlign::Center)
-                                .child(
-                                    Text::new("+")
-                                        .size(TextSize::Sm)
-                                        .color(theme.success),
-                                )
+                                .child(Text::new("+").size(TextSize::Sm).color(theme.success))
                                 .child(
                                     Text::new(format!("{}.json", safe_save_name))
                                         .size(TextSize::Sm)
@@ -285,14 +283,20 @@ impl PlayerView {
                                                     .color(theme.success),
                                             )
                                             .child(
-                                                Text::new(format!("{}_{}.wav", safe_save_name, safe_channel_name))
-                                                    .size(TextSize::Sm)
-                                                    .color(theme.text_primary),
+                                                Text::new(format!(
+                                                    "{}_{}.wav",
+                                                    safe_save_name, safe_channel_name
+                                                ))
+                                                .size(TextSize::Sm)
+                                                .color(theme.text_primary),
                                             )
                                             .child(
-                                                Text::new(format!("- {} recording", rec.channel_name))
-                                                    .size(TextSize::Sm)
-                                                    .color(theme.text_muted),
+                                                Text::new(format!(
+                                                    "- {} recording",
+                                                    rec.channel_name
+                                                ))
+                                                .size(TextSize::Sm)
+                                                .color(theme.text_muted),
                                             )
                                             .into_any_element(),
                                         HStack::new()
@@ -304,9 +308,12 @@ impl PlayerView {
                                                     .color(theme.success),
                                             )
                                             .child(
-                                                Text::new(format!("{}_{}.csv", safe_save_name, safe_channel_name))
-                                                    .size(TextSize::Sm)
-                                                    .color(theme.text_primary),
+                                                Text::new(format!(
+                                                    "{}_{}.csv",
+                                                    safe_save_name, safe_channel_name
+                                                ))
+                                                .size(TextSize::Sm)
+                                                .color(theme.text_primary),
                                             )
                                             .child(
                                                 Text::new(format!(
@@ -395,11 +402,7 @@ impl PlayerView {
                     } else {
                         "No save directory selected. Go back to setup to select a directory."
                     };
-                    stack.child(
-                        Text::new(reason)
-                            .size(TextSize::Sm)
-                            .color(theme.warning),
-                    )
+                    stack.child(Text::new(reason).size(TextSize::Sm).color(theme.warning))
                 }),
         )
     }

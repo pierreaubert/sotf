@@ -226,11 +226,7 @@ impl WizardDebug {
                 "Check the processed output and make any necessary adjustments.",
                 "🔍",
             ),
-            4 => (
-                "Export",
-                "Choose your export format and destination.",
-                "💾",
-            ),
+            4 => ("Export", "Choose your export format and destination.", "💾"),
             _ => ("Unknown Step", "Something went wrong.", "❓"),
         };
 
@@ -244,21 +240,9 @@ impl WizardDebug {
             .bg(theme.background)
             .rounded_lg()
             .min_h(px(200.0))
-            .child(
-                div()
-                    .text_3xl()
-                    .child(icon),
-            )
-            .child(
-                Text::new(title)
-                    .weight(TextWeight::Bold)
-                    .size(TextSize::Xl),
-            )
-            .child(
-                Text::new(description)
-                    .muted(true)
-                    .size(TextSize::Md),
-            )
+            .child(div().text_3xl().child(icon))
+            .child(Text::new(title).weight(TextWeight::Bold).size(TextSize::Xl))
+            .child(Text::new(description).muted(true).size(TextSize::Md))
             .child(
                 Text::new(format!("Step {} of 5", step + 1))
                     .size(TextSize::Sm)

@@ -12,9 +12,11 @@ use d3rs::axis::{render_axis, AxisConfig, DefaultAxisTheme};
 use d3rs::brush::{BrushSelection, BrushState};
 use d3rs::color::D3Color;
 use d3rs::contour::ContourGenerator;
+use d3rs::gpu2d::{
+    render_contour, render_contour_bands, render_heatmap, ContourConfig, HeatmapData,
+};
 use d3rs::grid::{render_grid, GridConfig};
 use d3rs::prelude::{LinearScale, LogScale};
-use d3rs::gpu2d::{render_contour, render_contour_bands, render_heatmap, ContourConfig, HeatmapData};
 // Radial shape functions could be used in future - currently using canvas-based custom rendering
 // use d3rs::shape::radial::{polar_grid_circles, polar_grid_rays, radial_line, RadialLineConfig, RadialPoint};
 use d3rs::gpu3d::{

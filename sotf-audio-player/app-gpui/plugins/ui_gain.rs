@@ -76,6 +76,6 @@ pub fn render_gain_plugin(
                             Some('g'),
                             theme,
                         )),
-                )
+                ),
         )
 }

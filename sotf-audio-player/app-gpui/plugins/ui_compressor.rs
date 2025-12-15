@@ -5,7 +5,9 @@
 //! - Gain reduction meter
 //! - Rotary knob controls with keyboard shortcuts
 
-use super::common::{render_edit_hints, render_knob, render_section_header, render_toggle, render_transfer_curve};
+use super::common::{
+    render_edit_hints, render_knob, render_section_header, render_toggle, render_transfer_curve,
+};
 use super::level_meters::render_gr_meter;
 use crate::app::AppState;
 use crate::theme::Theme;
@@ -89,7 +91,7 @@ pub fn render_compressor_plugin(
                                     state.selected_param,
                                     state.is_editing,
                                     theme,
-                                ))
+                                )),
                         )
                         .child(render_transfer_curve(
                             state.threshold_db,
@@ -103,7 +105,7 @@ pub fn render_compressor_plugin(
                             div()
                                 .w_full()
                                 .child(render_gr_meter(simulated_gr, -30.0, theme)),
-                        )
+                        ),
                 )
                 // Parameters section with knobs
                 .child(
@@ -165,7 +167,7 @@ pub fn render_compressor_plugin(
                                     state.is_editing,
                                     Some('a'),
                                     theme,
-                                ))
+                                )),
                         )
                         // Row 2: Release, Knee, Makeup
                         .child(
@@ -214,29 +216,23 @@ pub fn render_compressor_plugin(
                                     state.is_editing,
                                     Some('m'),
                                     theme,
-                                ))
+                                )),
                         )
                         // Row 3: Mix (centered)
-                        .child(
-                            div()
-                                .flex()
-                                .gap_4()
-                                .justify_center()
-                                .child(render_knob(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "Mix",
-                                    state.mix,
-                                    MIX_MIN as f64,
-                                    MIX_MAX as f64,
-                                    "%",
-                                    6,
-                                    state.selected_param,
-                                    state.is_editing,
-                                    Some('x'),
-                                    theme,
-                                ))
-                        )
+                        .child(div().flex().gap_4().justify_center().child(render_knob(
+                            entity.clone(),
+                            plugin_idx,
+                            "Mix",
+                            state.mix,
+                            MIX_MIN as f64,
+                            MIX_MAX as f64,
+                            "%",
+                            6,
+                            state.selected_param,
+                            state.is_editing,
+                            Some('x'),
+                            theme,
+                        )))
                         // Sidechain HPF display
                         .child(
                             div()
@@ -251,17 +247,17 @@ pub fn render_compressor_plugin(
                                     div()
                                         .text_xs()
                                         .text_color(theme.text_muted)
-                                        .child("Sidechain HPF")
+                                        .child("Sidechain HPF"),
                                 )
                                 .child(
                                     div()
                                         .text_sm()
                                         .font_weight(FontWeight::BOLD)
                                         .text_color(theme.text_primary)
-                                        .child(format!("{:.0} Hz", state.sidechain_hpf_hz))
-                                )
-                        )
-                )
+                                        .child(format!("{:.0} Hz", state.sidechain_hpf_hz)),
+                                ),
+                        ),
+                ),
         )
         .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
 }

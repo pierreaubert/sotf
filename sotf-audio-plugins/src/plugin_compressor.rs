@@ -336,26 +336,50 @@ impl InPlacePlugin for CompressorPlugin {
 
     fn parameters(&self) -> Vec<Parameter> {
         vec![
-            Parameter::new_float("threshold", "Threshold", THRESHOLD_DEFAULT, THRESHOLD_MIN, THRESHOLD_MAX)
-                .with_description("Level above which compression starts (dB)"),
+            Parameter::new_float(
+                "threshold",
+                "Threshold",
+                THRESHOLD_DEFAULT,
+                THRESHOLD_MIN,
+                THRESHOLD_MAX,
+            )
+            .with_description("Level above which compression starts (dB)"),
             Parameter::new_float("ratio", "Ratio", RATIO_DEFAULT, RATIO_MIN, RATIO_MAX)
                 .with_description("Compression ratio (1:1 to 20:1)"),
             Parameter::new_float("attack", "Attack", ATTACK_DEFAULT, ATTACK_MIN, ATTACK_MAX)
                 .with_description("Attack time (ms)"),
-            Parameter::new_float("release", "Release", RELEASE_DEFAULT, RELEASE_MIN, RELEASE_MAX)
-                .with_description("Release time (ms)"),
+            Parameter::new_float(
+                "release",
+                "Release",
+                RELEASE_DEFAULT,
+                RELEASE_MIN,
+                RELEASE_MAX,
+            )
+            .with_description("Release time (ms)"),
             Parameter::new_float("knee", "Knee", KNEE_DEFAULT, KNEE_MIN, KNEE_MAX)
                 .with_description("Soft knee width (dB)"),
-            Parameter::new_float("makeup_gain", "Makeup Gain", MAKEUP_GAIN_DEFAULT, MAKEUP_GAIN_MIN, MAKEUP_GAIN_MAX)
-                .with_description("Output gain compensation (dB)"),
+            Parameter::new_float(
+                "makeup_gain",
+                "Makeup Gain",
+                MAKEUP_GAIN_DEFAULT,
+                MAKEUP_GAIN_MIN,
+                MAKEUP_GAIN_MAX,
+            )
+            .with_description("Output gain compensation (dB)"),
             Parameter::new_float("mix", "Mix", MIX_DEFAULT, MIX_MIN, MIX_MAX)
                 .with_description("Dry/wet mix (0 = dry, 1 = compressed)"),
             Parameter::new_bool("auto_makeup", "Auto Makeup", AUTO_MAKEUP_DEFAULT)
                 .with_description("Automatically compensate for gain reduction"),
             Parameter::new_bool("link_channels", "Link Channels", LINK_CHANNELS_DEFAULT)
                 .with_description("Use linked sidechain for all channels"),
-            Parameter::new_float("sidechain_hpf_hz", "Sidechain HPF", SIDECHAIN_HPF_HZ_DEFAULT, SIDECHAIN_HPF_HZ_MIN, SIDECHAIN_HPF_HZ_MAX)
-                .with_description("High-pass filter frequency for sidechain (Hz)"),
+            Parameter::new_float(
+                "sidechain_hpf_hz",
+                "Sidechain HPF",
+                SIDECHAIN_HPF_HZ_DEFAULT,
+                SIDECHAIN_HPF_HZ_MIN,
+                SIDECHAIN_HPF_HZ_MAX,
+            )
+            .with_description("High-pass filter frequency for sidechain (Hz)"),
         ]
     }
 
