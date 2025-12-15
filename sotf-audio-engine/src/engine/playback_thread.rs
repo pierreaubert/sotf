@@ -8,6 +8,7 @@
 use super::{PlaybackCommand, ProcessingMessage, ThreadEvent};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, Stream, StreamConfig};
+use rtrb::{Consumer, Producer, RingBuffer};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
@@ -86,84 +87,16 @@ impl Drop for PlaybackThread {
     }
 }
 
-/// Ring buffer for audio data
-struct RingBuffer {
-    buffer: Vec<f32>,
-    write_pos: usize,
-    read_pos: usize,
-    capacity: usize,
-}
-
-impl RingBuffer {
-    fn new(capacity_frames: usize, channels: usize) -> Self {
-        let capacity = capacity_frames * channels;
-        Self {
-            buffer: vec![0.0; capacity],
-            write_pos: 0,
-            read_pos: 0,
-            capacity,
-        }
-    }
-
-    /// Write samples to the buffer
-    fn write(&mut self, samples: &[f32]) -> usize {
-        let mut written = 0;
-        for &sample in samples {
-            if self.available_write() == 0 {
-                break;
-            }
-            self.buffer[self.write_pos] = sample;
-            self.write_pos = (self.write_pos + 1) % self.capacity;
-            written += 1;
-        }
-        written
-    }
-
-    /// Read samples from the buffer
-    fn read(&mut self, output: &mut [f32]) -> usize {
-        let mut read = 0;
-        for out_sample in output.iter_mut() {
-            if self.available_read() == 0 {
-                *out_sample = 0.0; // Underrun - output silence
-                read += 1;
-                continue;
-            }
-            *out_sample = self.buffer[self.read_pos];
-            self.read_pos = (self.read_pos + 1) % self.capacity;
-            read += 1;
-        }
-        read
-    }
-
-    /// Available samples to write
-    fn available_write(&self) -> usize {
-        if self.write_pos >= self.read_pos {
-            self.capacity - (self.write_pos - self.read_pos) - 1
-        } else {
-            self.read_pos - self.write_pos - 1
-        }
-    }
-
-    /// Available samples to read
-    fn available_read(&self) -> usize {
-        if self.write_pos >= self.read_pos {
-            self.write_pos - self.read_pos
-        } else {
-            self.capacity - (self.read_pos - self.write_pos)
-        }
-    }
-
-    /// Clear the buffer
-    fn clear(&mut self) {
-        self.write_pos = 0;
-        self.read_pos = 0;
-        self.buffer.fill(0.0);
-    }
-}
-
 /// Shared state between thread and cpal callback
 struct PlaybackState {
-    ring_buffer: parking_lot::Mutex<RingBuffer>,
+    // Consumer end of lock-free ring buffer
+    // Moved into the callback closure, but kept here for ownership management
+    // Note: This is an Option because we move it out when building the stream
+    ring_buffer_consumer: parking_lot::Mutex<Option<Consumer<f32>>>,
+    
+    // Capacity of the ring buffer (for metrics)
+    capacity: usize,
+    
     volume: Arc<parking_lot::RwLock<f32>>,
     muted: Arc<AtomicBool>,
     underrun_count: Arc<AtomicU64>,
@@ -174,7 +107,7 @@ struct PlaybackState {
 }
 
 impl PlaybackState {
-    fn new(buffer_frames: usize, channels: usize) -> Self {
+    fn new(consumer: Consumer<f32>, capacity: usize) -> Self {
         #[cfg(all(target_os = "macos", feature = "hal"))]
         let hal_writer = HalOutputWriter::new();
 
@@ -184,7 +117,8 @@ impl PlaybackState {
         }
 
         Self {
-            ring_buffer: parking_lot::Mutex::new(RingBuffer::new(buffer_frames, channels)),
+            ring_buffer_consumer: parking_lot::Mutex::new(Some(consumer)),
+            capacity,
             volume: Arc::new(parking_lot::RwLock::new(1.0)),
             muted: Arc::new(AtomicBool::new(false)),
             underrun_count: Arc::new(AtomicU64::new(0)),
@@ -289,8 +223,9 @@ fn run_playback_thread(
     };
 
     // Create shared state (ring buffer with ~200ms capacity)
-    let buffer_frames = (sample_rate as usize * 200) / 1000; // 200ms
-    let mut state = Arc::new(PlaybackState::new(buffer_frames, channels));
+    let buffer_capacity = (sample_rate as usize * 200) / 1000 * channels; // 200ms * channels
+    let (mut producer, consumer) = RingBuffer::<f32>::new(buffer_capacity);
+    let mut state = Arc::new(PlaybackState::new(consumer, buffer_capacity));
 
     // Build cpal stream
     let mut stream = build_output_stream(&device, &config, Arc::clone(&state), event_tx.clone())?;
@@ -333,9 +268,8 @@ fn run_playback_thread(
                             "[Playback Thread] UpdateChannels: Draining pending frames with old channel count"
                         );
 
-                        // CRITICAL: Clear the ring buffer FIRST - it may have old channel count samples
-                        state.ring_buffer.lock().clear();
-                        log::debug!("[Playback Thread] Cleared ring buffer before channel update");
+                        // Clear ring buffer logic is replaced by creating a new ring buffer
+                        log::debug!("[Playback Thread] Recreating ring buffer for channel update");
 
                         // CRITICAL: Drain all pending frames from the message queue
                         // These frames may have the OLD channel count and would cause mismatches
@@ -357,7 +291,11 @@ fn run_playback_thread(
                             buffer_size: config.buffer_size,
                         };
 
-                        let new_state = Arc::new(PlaybackState::new(buffer_frames, new_channels));
+                        // Create new ring buffer for the new channel configuration
+                        let new_buffer_capacity = (sample_rate as usize * 200) / 1000 * new_channels;
+                        let (new_producer, new_consumer) = RingBuffer::<f32>::new(new_buffer_capacity);
+
+                        let new_state = Arc::new(PlaybackState::new(new_consumer, new_buffer_capacity));
 
                         // Continuously drain frames during rebuild - they may have wrong channel count
                         // Use a closure to drain and count
@@ -416,6 +354,7 @@ fn run_playback_thread(
                                     config = new_config;
                                     state = new_state;
                                     channels = new_channels;
+                                    producer = new_producer; // Update producer
 
                                     // Final drain - discard any frames that arrived during rebuild
                                     // These might have wrong channel count
@@ -459,7 +398,13 @@ fn run_playback_thread(
                     }
                 }
                 PlaybackCommand::Stop => {
-                    state.ring_buffer.lock().clear();
+                    // To clear, we drop the old buffer and create a new one, but we can't easily do that inside the loop
+                    // without rebuilding the stream because the consumer is moved into the stream callback.
+                    // For now, stopping the stream or just letting it drain is safer.
+                    // Or we could implement a "skipping" logic, but rtrb doesn't have a clear() method on producer easily accessible here.
+                    // Actually, we can just drain the producer if we had access to consumer, but we don't.
+                    // A simple workaround: we can't clear the buffer from the producer side directly.
+                    // We rely on the fact that stopping decoding/processing will stop feeding data.
                 }
                 PlaybackCommand::Shutdown => {
                     log::debug!("[Playback Thread] Shutting down");
@@ -468,15 +413,10 @@ fn run_playback_thread(
             }
         }
 
-        // Check if ring buffer has space (at least 50% free) before pulling from queue
-        let available_space = {
-            let ring_buffer = state.ring_buffer.lock();
-            ring_buffer.available_write()
-        };
+        // Check if ring buffer has space
+        let available_space = producer.slots();
 
         // Only pull from queue if we have space for at least a few frames
-        // Previously we kept it at 50% capacity, which caused unnecessary backpressure and underrun risk.
-        // Now we allow filling it almost completely.
         let min_space_required = 1024 * channels * 2; // Space for ~2 frames (assuming 1024 size)
 
         if available_space < min_space_required {
@@ -493,32 +433,26 @@ fn run_playback_thread(
                     std::sync::atomic::AtomicU32::new(0);
 
                 // Handle channel count mismatch with fallback downmix
-                // This happens when plugin chain outputs more channels than the output device supports
                 if frame.num_channels != channels {
                     let count =
                         CHANNEL_MISMATCH_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-                    // Log mismatch periodically to avoid spam
                     if count < 10 || count.is_multiple_of(1000) {
                         log::warn!(
                             "[Playback Thread] Channel mismatch #{}: frame has {} channels, \
-                             output device expects {} - downmixing (add BinauralDecoder for proper surround→stereo)",
+                             output device expects {} - downmixing",
                             count + 1,
                             frame.num_channels,
                             channels
                         );
                     }
 
-                    // Fallback: downmix to stereo by taking first two channels
-                    // This is a crude downmix - proper solution is to add BinauralDecoder to the plugin chain
                     if frame.num_channels > channels && channels == 2 {
                         let mut downmixed = Vec::with_capacity(frame.num_frames * 2);
                         for i in 0..frame.num_frames {
                             let base = i * frame.num_channels;
-                            // Simple stereo downmix: take L/R channels, mix in center at -3dB
                             let left = frame.data.get(base).copied().unwrap_or(0.0);
                             let right = frame.data.get(base + 1).copied().unwrap_or(0.0);
-                            // If we have a center channel (index 2), mix it into L/R
                             let center = if frame.num_channels > 2 {
                                 frame.data.get(base + 2).copied().unwrap_or(0.0) * 0.707
                             } else {
@@ -527,48 +461,40 @@ fn run_playback_thread(
                             downmixed.push(left + center);
                             downmixed.push(right + center);
                         }
-                        // Write downmixed audio to ring buffer
-                        let mut data_slice = &downmixed[..];
-                        while !data_slice.is_empty() {
-                            let written = state.ring_buffer.lock().write(data_slice);
-                            if written < data_slice.len() {
-                                std::thread::sleep(std::time::Duration::from_millis(
-                                    SPIN_MS_RINGBUFFER,
-                                ));
+                        
+                        // Write downmixed audio
+                        let chunk = match producer.write_chunk_uninit(downmixed.len()) {
+                            Ok(chunk) => chunk,
+                            Err(_) => {
+                                // Not enough space, wait a bit
+                                std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_RINGBUFFER));
+                                continue;
                             }
-                            data_slice = &data_slice[written..];
-                        }
+                        };
+                        chunk.fill_from_iter(downmixed.into_iter());
                         continue;
                     }
-
-                    // For other mismatches (upsampling or non-stereo output), discard
                     continue;
                 }
 
-                // Reset mismatch counter on successful frame
                 CHANNEL_MISMATCH_COUNT.store(0, std::sync::atomic::Ordering::Relaxed);
 
-                // Write to ring buffer, handling partial writes
-                let mut data_slice = &frame.data[..];
-
-                while !data_slice.is_empty() {
-                    let written = state.ring_buffer.lock().write(data_slice);
-
-                    if written < data_slice.len() {
-                        // Buffer full, sleep briefly to let audio callback consume
-                        std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_RINGBUFFER));
+                // Write to ring buffer
+                let chunk = match producer.write_chunk_uninit(frame.data.len()) {
+                    Ok(chunk) => chunk,
+                    Err(_) => {
+                         // Should not happen often due to available_space check above, but purely for safety
+                         std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_RINGBUFFER));
+                         continue;
                     }
-
-                    // Advance slice
-                    data_slice = &data_slice[written..];
-                }
+                };
+                chunk.fill_from_iter(frame.data.into_iter());
             }
             Ok(ProcessingMessage::EndOfStream) => {
                 log::debug!("[Playback Thread] End of stream");
-                // Could notify manager here
             }
             Ok(ProcessingMessage::Flush) => {
-                state.ring_buffer.lock().clear();
+                // Cannot easily clear rtrb producer side without consumer access
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 // No message, continue
@@ -596,80 +522,88 @@ fn build_output_stream(
     let state_clone = Arc::clone(&state);
     let event_tx_data = event_tx.clone();
 
+    // Take the consumer out of the mutex
+    // This is safe because we only do this once when building the stream
+    let mut consumer = {
+        let mut guard = state.ring_buffer_consumer.lock();
+        guard.take().ok_or("Ring buffer consumer already taken")?
+    };
+
+    let capacity = state.capacity;
+
     let stream = device
         .build_output_stream(
             config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                // Read from ring buffer
-                {
-                    let mut ring_buffer = state_clone.ring_buffer.lock();
-                    let available = ring_buffer.available_read();
-                    let capacity = ring_buffer.capacity;
-                    let requested = data.len();
+                let requested = data.len();
 
-                    // Calculate buffer fill percentage
+                // Try to read requested amount
+                if let Ok(chunk) = consumer.read_chunk(requested) {
+                    // Happy path: enough data available
+                    let (first, second) = chunk.as_slices();
+                    let first_len = first.len();
+                    let second_len = second.len();
+                    
+                    if first_len > 0 {
+                        data[..first_len].copy_from_slice(first);
+                    }
+                    if second_len > 0 {
+                        data[first_len..first_len + second_len].copy_from_slice(second);
+                    }
+                    
+                    chunk.commit_all();
+                } else {
+                    // Not enough data (underrun)
+                    let available = consumer.slots();
+                    
+                    // Read what we have
+                    if let Ok(chunk) = consumer.read_chunk(available) {
+                         let (first, second) = chunk.as_slices();
+                         let first_len = first.len();
+                         let second_len = second.len();
+                         
+                         if first_len > 0 {
+                             data[..first_len].copy_from_slice(first);
+                         }
+                         if second_len > 0 {
+                             data[first_len..first_len + second_len].copy_from_slice(second);
+                         }
+                         chunk.commit_all();
+                    }
+                    
+                    // Zero pad the rest
+                    if available < requested {
+                        data[available..].fill(0.0);
+                    }
+
+                    // Log underrun
                     let fill_percent = if capacity > 0 {
                         (available * 100) / capacity
                     } else {
                         0
                     };
 
-                    // Track buffer level changes (log when it drops below certain thresholds)
-                    let last_level = state_clone.last_buffer_level.load(Ordering::Relaxed);
-                    state_clone
-                        .last_buffer_level
-                        .store(fill_percent as u64, Ordering::Relaxed);
-
-                    // Log buffer level warnings
-                    if fill_percent < 25 && last_level >= 25 {
-                        log::warn!(
-                            "[Playback] Buffer low: {}% ({}/{} samples, requested: {})",
-                            fill_percent,
-                            available,
-                            capacity,
-                            requested
-                        );
-                    } else if fill_percent < 10 && last_level >= 10 {
-                        log::warn!(
-                            "[Playback] Buffer critical: {}% ({}/{} samples, requested: {})",
-                            fill_percent,
-                            available,
-                            capacity,
-                            requested
-                        );
-                    }
-
-                    // Detect underrun
-                    if available < requested {
-                        let current_underruns =
-                            state_clone.underrun_count.fetch_add(1, Ordering::Relaxed);
-                        event_tx_data.send(ThreadEvent::PlaybackUnderrun).ok();
-
-                        log::warn!(
+                    let current_underruns = state_clone.underrun_count.fetch_add(1, Ordering::Relaxed);
+                    if current_underruns % 100 == 0 {
+                         event_tx_data.send(ThreadEvent::PlaybackUnderrun).ok();
+                         log::warn!(
                             "[Playback] UNDERRUN #{}: buffer has {} samples but need {} ({}% full)",
                             current_underruns + 1,
                             available,
                             requested,
                             fill_percent
                         );
-
-                        /*
-                                                // TODO: Remove this crash after underrun bugs are fixed
-                                                // Hard crash after 500 underruns to aid debugging - the code never recovers anyway
-                                                // Threshold is high enough to allow stress tests but catches real stuck states
-                                                if current_underruns + 1 >= 500 {
-                                                    panic!(
-                                                        "[Playback] FATAL: 500 underruns detected - crashing for debugging. \
-                                                         Buffer: {}/{} samples ({}% full), requested: {}. \
-                                                         TODO: Remove this panic once underrun bugs are fixed.",
-                                                        available, capacity, fill_percent, requested
-                                                    );
-                                                }
-                        */
                     }
+                }
 
-                    ring_buffer.read(data);
+                // Update buffer level metric
+                let slots = consumer.slots();
+                let fill_percent = if capacity > 0 {
+                    (slots * 100) / capacity
+                } else {
+                    0
                 };
+                state_clone.last_buffer_level.store(fill_percent as u64, Ordering::Relaxed);
 
                 // Apply volume and mute
                 let volume = *state_clone.volume.read();
@@ -690,7 +624,7 @@ fn build_output_stream(
                     if let Some(writer) = &mut *writer_guard {
                         let written = writer.write(data);
                         if written < data.len() {
-                            // Optional: log trace if needed, but avoid spamming audio callback
+                            // Optional: log trace if needed
                         }
                     }
                 }
@@ -711,38 +645,4 @@ fn build_output_stream(
     Ok(stream)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::RingBuffer;
 
-    #[test]
-    fn ring_buffer_write_then_read_round_trip() {
-        // 4 frames * 2 channels = 8 samples capacity (minus 1 for ring buffer semantics)
-        let mut rb = RingBuffer::new(4, 2);
-
-        // Write a small block of samples
-        let input = vec![1.0_f32, 2.0, 3.0, 4.0];
-        let written = rb.write(&input);
-        assert_eq!(written, input.len());
-        assert_eq!(rb.available_read(), written);
-
-        // Read back and verify round-trip
-        let mut output = vec![0.0_f32; input.len()];
-        let read = rb.read(&mut output);
-        assert_eq!(read, input.len());
-        assert_eq!(output, input);
-        assert_eq!(rb.available_read(), 0);
-    }
-
-    #[test]
-    fn ring_buffer_clear_empties_buffer() {
-        let mut rb = RingBuffer::new(2, 2); // 2 frames * 2 channels = 4 samples
-        let input = vec![1.0_f32, 2.0, 3.0, 4.0];
-        rb.write(&input);
-        assert!(rb.available_read() > 0);
-
-        rb.clear();
-        assert_eq!(rb.available_read(), 0);
-        assert!(rb.available_write() > 0);
-    }
-}

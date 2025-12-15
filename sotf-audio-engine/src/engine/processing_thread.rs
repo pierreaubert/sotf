@@ -182,35 +182,20 @@ fn run_processing_thread(
         // Check for commands (non-blocking)
         if let Ok(command) = command_rx.try_recv() {
             match command {
-                ProcessingCommand::UpdatePlugins(configs) => {
+                ProcessingCommand::UpdateHost(new_host) => {
+                    let output_channels = new_host.output_channels();
                     log::trace!(
-                        "[Processing Thread] UpdatePlugins: Received command with {} configs",
-                        configs.len()
+                        "[Processing Thread] UpdateHost: Plugin host updated, output_channels={}",
+                        output_channels
                     );
 
-                    // Create new plugin host
-                    match build_plugin_host(&configs, sample_rate, channels) {
-                        Ok(new_host) => {
-                            let output_channels = new_host.output_channels();
-                            log::trace!(
-                                "[Processing Thread] UpdatePlugins: Plugin host built successfully, output_channels={}",
-                                output_channels
-                            );
+                    // Swap host
+                    state.host = new_host;
+                    state.channels = output_channels;
 
-                            // Simple swap - updates handled by ManagerThread pausing/resuming if needed
-                            // But here we just swap the host for next process call
-                            state.host = new_host;
-                            state.channels = output_channels;
-
-                            response_tx
-                                .send(ProcessingResponse::PluginChainUpdated { output_channels })
-                                .ok();
-                        }
-                        Err(e) => {
-                            log::debug!("[Processing Thread] Failed to build plugin chain: {}", e);
-                            response_tx.send(ProcessingResponse::Error(e)).ok();
-                        }
-                    }
+                    response_tx
+                        .send(ProcessingResponse::PluginChainUpdated { output_channels })
+                        .ok();
                 }
                 ProcessingCommand::SetParameter {
                     plugin_index,
@@ -350,7 +335,7 @@ fn run_processing_thread(
 // ============================================================================
 
 /// Build a plugin host from configs
-fn build_plugin_host(
+pub fn build_plugin_host(
     configs: &[PluginConfig],
     sample_rate: u32,
     channels: usize,

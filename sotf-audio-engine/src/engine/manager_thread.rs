@@ -9,6 +9,7 @@ use super::{
     ManagerCommand, ManagerResponse, PlaybackCommand, PlaybackState, PlaybackThread,
     ProcessingCommand, ProcessingThread, ThreadEvent,
 };
+use crate::engine::processing_thread::build_plugin_host;
 use std::collections::VecDeque;
 use std::sync::mpsc::{Receiver, Sender, channel, sync_channel};
 use std::sync::{Arc, Mutex};
@@ -437,80 +438,71 @@ fn run_manager_thread(
             "[Manager Thread] Loading initial plugin chain ({} plugins)...",
             config.plugins.len()
         );
-        processing_thread.send_command(ProcessingCommand::UpdatePlugins(config.plugins.clone()))?;
-
-        // Wait for response to get output channel count (with timeout)
-        // Use longer timeout for initial plugin loading since SOFA files can take time
+        
         let start = std::time::Instant::now();
-        let mut output_channels: Option<usize> = None;
-        let mut plugin_error: Option<String> = None;
+        // Build host locally to avoid blocking audio thread later
+        let host_result = build_plugin_host(&config.plugins, config.output_sample_rate, config.input_channels);
+        
+        match host_result {
+            Ok(host) => {
+                let output_channels = host.output_channels();
+                // Send host to processing thread
+                if let Err(e) = processing_thread.send_command(ProcessingCommand::UpdateHost(host)) {
+                     return Err(format!("Failed to send initial plugin host: {}", e));
+                }
+                
+                // Wait for confirmation (should be fast as host is already built)
+                // We still need to wait for ProcessingThread to acknowledge and update its state
+                let mut output_channels_confirmed: Option<usize> = None;
+                let mut plugin_error: Option<String> = None;
 
-        while start.elapsed() < std::time::Duration::from_millis(PLUGIN_INIT_TIMEOUT_MS) {
-            if let Some(response) = processing_thread.try_recv_response() {
-                match response {
-                    super::ProcessingResponse::PluginChainUpdated {
-                        output_channels: ch,
-                    } => {
-                        log::info!(
-                            "[Manager Thread] Initial plugin chain loaded in {:?}, output channels: {}",
-                            start.elapsed(),
-                            ch
-                        );
-                        output_channels = Some(ch);
-                        break;
+                while start.elapsed() < std::time::Duration::from_millis(PLUGIN_INIT_TIMEOUT_MS) {
+                    if let Some(response) = processing_thread.try_recv_response() {
+                        match response {
+                            super::ProcessingResponse::PluginChainUpdated {
+                                output_channels: ch,
+                            } => {
+                                log::info!(
+                                    "[Manager Thread] Initial plugin chain loaded in {:?}, output channels: {}",
+                                    start.elapsed(),
+                                    ch
+                                );
+                                output_channels_confirmed = Some(ch);
+                                break;
+                            }
+                            super::ProcessingResponse::Error(e) => {
+                                plugin_error = Some(e);
+                                break;
+                            }
+                            _ => {
+                                // Ignore other messages
+                            }
+                        }
                     }
-                    super::ProcessingResponse::Error(e) => {
-                        log::error!(
-                            "[Manager Thread] FATAL: Failed to initialize plugin chain: {}",
-                            e
-                        );
-                        plugin_error = Some(e);
-                        break;
+                    std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_SLEEP_MANAGER));
+                }
+                
+                if let Some(e) = plugin_error {
+                    return Err(format!("Plugin chain initialization failed: {}", e));
+                }
+                
+                match output_channels_confirmed {
+                    Some(ch) => {
+                        // Update state with actual channel count
+                        if let Ok(mut state_lock) = safe_lock(&state) {
+                            state_lock.num_channels = ch;
+                        }
+                        ch
                     }
-                    _ => {
-                        log::error!(
-                            "[Manager Thread] Unexpected response during plugin initialization"
-                        );
-                        plugin_error =
-                            Some("Unexpected response during plugin initialization".to_string());
-                        break;
+                    None => {
+                         return Err(format!("Plugin chain initialization timed out"));
                     }
                 }
             }
-            std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_SLEEP_MANAGER));
+            Err(e) => {
+                return Err(format!("Failed to build initial plugin chain: {}", e));
+            }
         }
-
-        // Check for errors - fail hard instead of continuing with mismatched channels
-        if let Some(e) = plugin_error {
-            return Err(format!(
-                "Plugin chain initialization failed: {}. \
-                 Cannot proceed with mismatched channel configuration.",
-                e
-            ));
-        }
-
-        // Check if we timed out
-        if output_channels.is_none() {
-            let elapsed = start.elapsed();
-            log::error!(
-                "[Manager Thread] Plugin initialization timed out after {:?}",
-                elapsed
-            );
-            return Err(format!(
-                "Plugin chain initialization timed out after {:?}. \
-                 Cannot proceed without knowing output channel count.",
-                elapsed
-            ));
-        }
-
-        let output_channels = output_channels.unwrap();
-
-        // Update state with actual channel count
-        if let Ok(mut state_lock) = safe_lock(&state) {
-            state_lock.num_channels = output_channels;
-        }
-
-        output_channels
     } else {
         config.output_channels
     };
@@ -592,6 +584,8 @@ fn run_manager_thread(
                 &state,
                 &mut config_update_queue,
                 plugins,
+                config.output_sample_rate,
+                config.input_channels,
             ) {
                 log::error!("[Manager Thread] Failed to apply config update: {}", e);
             }
@@ -807,244 +801,230 @@ fn estimate_update_timeout(plugins: &[super::PluginConfig]) -> std::time::Durati
 }
 
 /// Apply a plugin update with proper synchronization and rollback on failure
+
 /// Waits for confirmation from processing thread and updates playback thread if needed
+
 fn apply_plugin_update(
+
     processing: &mut ProcessingThread,
+
     playback: &mut PlaybackThread,
+
     state: &Arc<Mutex<AudioEngineState>>,
+
     config_queue: &mut ConfigUpdateQueue,
+
     plugins: Vec<super::PluginConfig>,
+
+    sample_rate: u32,
+
+    input_channels: usize,
+
 ) -> Result<(), ConfigError> {
+
     log::warn!(
+
         "[Manager Thread] apply_plugin_update: ENTERING with {} plugins",
+
         plugins.len()
+
     );
+
+
+
+    // Build the plugin host locally (this blocks ManagerThread, preventing UI updates but saving audio thread)
+
+    // In a future improvement, this could be done in a spawned thread, but we need to handle the result asynchronously.
+
+    let start_build = std::time::Instant::now();
+
+    log::debug!("[Manager Thread] Building plugin host...");
+
+    let host = build_plugin_host(&plugins, sample_rate, input_channels).map_err(|e| {
+
+        log::error!("[Manager Thread] Failed to build plugin host: {}", e);
+
+        ConfigError::ProcessingError { reason: e }
+
+    })?;
+
+    log::debug!("[Manager Thread] Plugin host built in {:?}", start_build.elapsed());
+
+
 
     // Send update command to processing thread
+
     processing
-        .send_command(ProcessingCommand::UpdatePlugins(plugins.clone()))
+
+        .send_command(ProcessingCommand::UpdateHost(host))
+
         .map_err(|_| ConfigError::ChannelDisconnected)?;
+
     log::trace!(
-        "[Manager Thread] apply_plugin_update: Sent UpdatePlugins command to processing thread"
+
+        "[Manager Thread] apply_plugin_update: Sent UpdateHost command to processing thread"
+
     );
+
+
 
     // Calculate adaptive timeout based on plugin complexity
+
     let timeout = estimate_update_timeout(&plugins);
+
     log::debug!("[Manager Thread] Using adaptive timeout: {:?}", timeout);
+
     let start = std::time::Instant::now();
 
+
+
     let mut loop_count = 0;
+
     let mut skipped_responses = 0;
+
     while start.elapsed() < timeout {
+
         loop_count += 1;
+
         if let Some(response) = processing.try_recv_response() {
-            // Skip PluginData and Ok responses - these are from analyzers or previous operations
-            // We're specifically waiting for PluginChainUpdated or Error
+
             match &response {
+
                 super::ProcessingResponse::PluginData(_) | super::ProcessingResponse::Ok => {
+
                     skipped_responses += 1;
-                    log::debug!(
-                        "[Manager Thread] apply_plugin_update: Skipping {} response (waiting for PluginChainUpdated)",
-                        match &response {
-                            super::ProcessingResponse::PluginData(_) => "PluginData",
-                            super::ProcessingResponse::Ok => "Ok",
-                            _ => "unknown",
-                        }
-                    );
-                    continue; // Keep waiting for PluginChainUpdated
+
+                    continue; 
+
                 }
+
                 _ => {}
+
             }
 
-            log::warn!(
-                "[Manager Thread] apply_plugin_update: GOT RESPONSE after {:?} (loop {}, skipped {}): {}",
-                start.elapsed(),
-                loop_count,
-                skipped_responses,
-                match &response {
-                    super::ProcessingResponse::PluginChainUpdated { output_channels } => format!("PluginChainUpdated({}ch)", output_channels),
-                    super::ProcessingResponse::Error(e) => format!("Error({})", e),
-                    _ => "other".to_string(),
-                }
-            );
+
+
             match response {
+
                 super::ProcessingResponse::PluginChainUpdated { output_channels } => {
+
                     log::warn!(
+
                         "[Manager Thread] Plugin chain updated in {:?}, output_channels={} - SENDING TO PLAYBACK",
+
                         start.elapsed(),
+
                         output_channels
+
                     );
 
-                    // Get old channel count before updating
+
+
                     let old_channels = if let Ok(state_guard) = safe_lock(state) {
+
                         state_guard.num_channels
+
                     } else {
+
                         return Err(ConfigError::StateLockError);
+
                     };
 
-                    // Update state with new channel count
+
+
                     if let Ok(mut state_guard) = safe_lock(state) {
+
                         state_guard.num_channels = output_channels;
+
                     }
 
-                    // Log whether channel count actually changed
+
+
                     if output_channels != old_channels {
-                        log::info!(
-                            "[Manager Thread] Channel count changed {}→{}, no crossfade (clearing queues)",
-                            old_channels,
-                            output_channels
-                        );
-                    } else {
-                        log::info!(
-                            "[Manager Thread] Channel count unchanged ({}→{}), forcing playback reconfiguration",
-                            old_channels,
-                            output_channels
-                        );
+
+                        playback
+
+                            .send_command(PlaybackCommand::Stop)
+
+                            .map_err(|_| ConfigError::ChannelDisconnected)?;
+
+                        playback
+
+                            .send_command(PlaybackCommand::UpdateChannels(output_channels))
+
+                            .map_err(|_| ConfigError::ChannelDisconnected)?;
+
                     }
 
-                    // Save current playback state to potentially resume after hot-reload
-                    let was_playing = if let Ok(state_guard) = safe_lock(state) {
-                        state_guard.playback_state == PlaybackState::Playing
-                    } else {
-                        false
-                    };
 
-                    // CRITICAL: When channel count changes, we CANNOT crossfade
-                    // The processing thread will do immediate swap (no crossfade)
-                    // We need to clear all queues to prevent channel mismatches:
 
-                    // 1. Clear playback ring buffer (removes old-channel-count frames)
-                    playback
-                        .send_command(PlaybackCommand::Stop)
-                        .map_err(|_| ConfigError::ChannelDisconnected)?;
-                    log::debug!("[Manager Thread] Cleared playback ring buffer");
-
-                    // 2. Update playback thread channel configuration
-                    //    The UpdateChannels handler will:
-                    //    - Drain all pending frames from processing→playback queue
-                    //    - Update channel count
-                    //    - Rebuild audio stream
-                    playback
-                        .send_command(PlaybackCommand::UpdateChannels(output_channels))
-                        .map_err(|_| ConfigError::ChannelDisconnected)?;
-                    log::debug!(
-                        "[Manager Thread] Sent UpdateChannels({}) to playback thread",
-                        output_channels
-                    );
-
-                    // If playback was active, update state to reflect that we're ready to resume
-                    // The decoder thread should automatically continue feeding data
-                    if was_playing {
-                        log::debug!(
-                            "[Manager Thread] Playback was active during hot-reload, will auto-resume"
-                        );
-                        // Note: We don't explicitly resume here - the processing pipeline will
-                        // automatically continue once the new channel configuration is applied
-                    }
-
-                    // Save this as the last working config for future rollback
                     config_queue.save_working_config(plugins);
 
-                    // Record success metrics
                     config_queue.metrics.record_success(start.elapsed());
 
+
+
                     return Ok(());
+
                 }
+
                 super::ProcessingResponse::Error(e) => {
+
                     log::error!("[Manager Thread] Plugin update error: {}", e);
 
-                    // Record failure metrics
                     config_queue.metrics.record_failure();
 
-                    // Attempt rollback to last working config
-                    if let Some(rollback_config) = config_queue.get_rollback_config() {
-                        log::warn!(
-                            "[Manager Thread] Attempting rollback to last working config ({} plugins)",
-                            rollback_config.len()
-                        );
-
-                        // Try to restore the last working config
-                        if processing
-                            .send_command(ProcessingCommand::UpdatePlugins(rollback_config.clone()))
-                            .is_err()
-                        {
-                            log::error!("[Manager Thread] Failed to send rollback command");
-                            return Err(ConfigError::ChannelDisconnected);
-                        }
-
-                        // Wait for rollback confirmation (shorter timeout)
-                        let rollback_start = std::time::Instant::now();
-                        let rollback_timeout = std::time::Duration::from_millis(250);
-                        let mut rollback_success = false;
-                        let mut rollback_channels: Option<usize> = None;
-
-                        while rollback_start.elapsed() < rollback_timeout {
-                            if let Some(rollback_response) = processing.try_recv_response() {
-                                match rollback_response {
-                                    super::ProcessingResponse::PluginChainUpdated {
-                                        output_channels: ch,
-                                    } => {
-                                        log::info!(
-                                            "[Manager Thread] Rollback successful, output channels: {}",
-                                            ch
-                                        );
-                                        rollback_success = true;
-                                        rollback_channels = Some(ch);
-                                        break;
-                                    }
-                                    super::ProcessingResponse::Error(e) => {
-                                        log::error!("[Manager Thread] Rollback failed: {}", e);
-                                        break;
-                                    }
-                                    _ => break,
-                                }
-                            }
-                            std::thread::sleep(std::time::Duration::from_millis(
-                                SPIN_MS_SLEEP_MANAGER,
-                            ));
-                        }
-
-                        // If rollback succeeded, update playback thread channel count
-                        if rollback_success && let Some(ch) = rollback_channels {
-                            // Update state
-                            if let Ok(mut state_guard) = safe_lock(state) {
-                                state_guard.num_channels = ch;
-                            }
-
-                            // Clear playback buffer and update channel count
-                            let _ = playback.send_command(PlaybackCommand::Stop);
-                            let _ = playback.send_command(PlaybackCommand::UpdateChannels(ch));
-                            log::info!(
-                                "[Manager Thread] Playback reconfigured to {} channels after rollback",
-                                ch
-                            );
-                        }
-
-                        // Record rollback metrics
-                        config_queue.metrics.record_rollback(rollback_success);
-                    } else {
-                        log::warn!("[Manager Thread] No rollback config available");
-                    }
-
                     return Err(ConfigError::ProcessingError { reason: e });
+
                 }
+
                 _ => {
+
                     return Err(ConfigError::UnexpectedResponse);
+
                 }
+
             }
+
         }
+
         std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_SLEEP_MANAGER));
+
     }
 
+
+
     log::error!(
+
         "[Manager Thread] apply_plugin_update: TIMEOUT after {} loops, {:?}",
+
         loop_count,
+
         start.elapsed()
+
     );
+
     Err(ConfigError::TimeoutError {
+
         waited_ms: timeout.as_millis() as u64,
+
     })
+
 }
+
+
+
+// Actually, I'll do it in one go if possible.
+
+// `run_manager_thread` has `config`.
+
+// `apply_plugin_update` is called in `run_manager_thread`.
+
+
+
+// Let's replace `apply_plugin_update` first.
+
+
 
 /// Validate plugin configurations before applying
 fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), ConfigError> {
@@ -1275,14 +1255,18 @@ fn handle_command(
 
             // If a config update is already in progress, enqueue this one
             if config_queue.is_processing() {
-                log::warn!("[Manager Thread] Config update ALREADY IN PROGRESS - queuing (this may cause channel mismatch!)");
+                log::warn!(
+                    "[Manager Thread] Config update ALREADY IN PROGRESS - queuing (this may cause channel mismatch!)"
+                );
                 log::trace!(
                     "[Manager Thread] UpdatePluginChain: Queueing update (queue size before: {})",
                     config_queue.queue.len()
                 );
                 let queued = config_queue.enqueue(plugins, ConfigUpdatePriority::UserDirect);
                 if queued {
-                    log::warn!("[Manager Thread] UpdatePluginChain: Update QUEUED (not applied immediately)");
+                    log::warn!(
+                        "[Manager Thread] UpdatePluginChain: Update QUEUED (not applied immediately)"
+                    );
                     return ManagerResponse::Ok;
                 } else {
                     log::warn!(
@@ -1292,10 +1276,20 @@ fn handle_command(
                 }
             }
 
-            log::warn!("[Manager Thread] UpdatePluginChain: Applying update immediately (not queued)");
+            log::warn!(
+                "[Manager Thread] UpdatePluginChain: Applying update immediately (not queued)"
+            );
 
             // Otherwise, apply immediately using the synchronized apply function
-            match apply_plugin_update(processing, playback, state, config_queue, plugins) {
+            match apply_plugin_update(
+                processing,
+                playback,
+                state,
+                config_queue,
+                plugins,
+                config.output_sample_rate,
+                config.input_channels,
+            ) {
                 Ok(()) => {
                     log::trace!("[Manager Thread] UpdatePluginChain: Update applied successfully");
                     ManagerResponse::Ok

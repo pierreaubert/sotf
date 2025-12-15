@@ -3,6 +3,7 @@
 // ============================================================================
 
 use serde::{Deserialize, Serialize};
+use sotf_plugins::PluginHost;
 use std::any::Any;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -108,10 +109,10 @@ pub enum DecoderCommand {
 }
 
 /// Commands for the processing thread
-#[derive(Clone, Debug)]
 pub enum ProcessingCommand {
     /// Update the plugin chain (hot reload)
-    UpdatePlugins(Vec<PluginConfig>),
+    /// Receives a fully constructed PluginHost to avoid blocking audio thread
+    UpdateHost(PluginHost),
     /// Set a plugin parameter
     SetParameter {
         plugin_index: usize,
@@ -126,6 +127,28 @@ pub enum ProcessingCommand {
     Stop,
     /// Shutdown the thread
     Shutdown,
+}
+
+impl std::fmt::Debug for ProcessingCommand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UpdateHost(_) => f.debug_tuple("UpdateHost").field(&"...").finish(),
+            Self::SetParameter {
+                plugin_index,
+                param_id,
+                value,
+            } => f
+                .debug_struct("SetParameter")
+                .field("plugin_index", plugin_index)
+                .field("param_id", param_id)
+                .field("value", value)
+                .finish(),
+            Self::Bypass(bypass) => f.debug_tuple("Bypass").field(bypass).finish(),
+            Self::GetPluginData(index) => f.debug_tuple("GetPluginData").field(index).finish(),
+            Self::Stop => write!(f, "Stop"),
+            Self::Shutdown => write!(f, "Shutdown"),
+        }
+    }
 }
 
 /// Response from processing thread
