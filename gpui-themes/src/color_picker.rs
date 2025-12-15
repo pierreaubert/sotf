@@ -101,18 +101,39 @@ impl ColorPickerView {
         cx.notify();
     }
 
-    /// Render a simple draggable slider bar
+    /// Render a slider with full mouse interaction support:
+    /// - Click and drag to set value
+    /// - Scroll wheel to adjust value (shift for fine control)
+    /// - Double-click to reset to default
     fn render_slider(
         &self,
         label: &'static str,
         value: f32,
         max: f32,
-        _color_gradient: Option<(Rgba, Rgba)>,
+        default_value: f32,
+        fill_color: Option<Rgba>,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let mode = self.mode;
         let ratio = value / max;
         let bar_width = 200.0;
+
+        // Track colors
+        let track_bg = Rgba {
+            r: 0.2,
+            g: 0.2,
+            b: 0.2,
+            a: 1.0,
+        };
+        let fill_bg = fill_color.unwrap_or(Rgba {
+            r: 0.0,
+            g: 0.48,
+            b: 0.8,
+            a: 1.0,
+        });
+
+        // Helper to calculate new value from x position
+        let calc_value = move |x: f32| -> f32 { (x / bar_width).clamp(0.0, 1.0) * max };
 
         HStack::new()
             .spacing(StackSpacing::Sm)
@@ -126,10 +147,10 @@ impl ColorPickerView {
                     .id(SharedString::from(format!("slider-{}", label)))
                     .w(px(bar_width))
                     .h(px(20.0))
-                    .bg(Rgba { r: 0.2, g: 0.2, b: 0.2, a: 1.0 })
+                    .bg(track_bg)
                     .rounded(px(4.0))
                     .relative()
-                    .cursor_pointer()
+                    .cursor_ew_resize()
                     // Fill indicator
                     .child(
                         div()
@@ -138,28 +159,73 @@ impl ColorPickerView {
                             .left_0()
                             .h_full()
                             .w(px(bar_width * ratio))
-                            .bg(Rgba { r: 0.0, g: 0.48, b: 0.8, a: 1.0 })
+                            .bg(fill_bg)
                             .rounded(px(4.0)),
                     )
+                    // Thumb indicator
+                    .child(
+                        div()
+                            .absolute()
+                            .top(px(2.0))
+                            .left(px((bar_width * ratio - 8.0).max(0.0).min(bar_width - 16.0)))
+                            .w(px(16.0))
+                            .h(px(16.0))
+                            .rounded_full()
+                            .bg(Rgba {
+                                r: 1.0,
+                                g: 1.0,
+                                b: 1.0,
+                                a: 1.0,
+                            })
+                            .border_2()
+                            .border_color(fill_bg)
+                            .shadow_sm(),
+                    )
+                    // Mouse down - set value on click
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |this, event: &MouseDownEvent, _window, cx| {
-                            let click_x: f32 = event.position.x.into();
-                            let new_ratio = (click_x / bar_width).clamp(0.0, 1.0);
-                            let new_val = new_ratio * max;
-
-                            match (mode, label) {
-                                (ColorPickerMode::RGB, "R") => this.update_red(new_val as u8, cx),
-                                (ColorPickerMode::RGB, "G") => this.update_green(new_val as u8, cx),
-                                (ColorPickerMode::RGB, "B") => this.update_blue(new_val as u8, cx),
-                                (ColorPickerMode::HSL, "H") => this.update_hue(new_val / 360.0, cx),
-                                (ColorPickerMode::HSL, "S") => this.update_saturation(new_val / 100.0, cx),
-                                (ColorPickerMode::HSL, "L") => this.update_lightness(new_val / 100.0, cx),
-                                (_, "A") => this.update_alpha(new_val as u8, cx),
-                                _ => {}
-                            }
+                            let new_val = calc_value(event.position.x.into());
+                            Self::apply_slider_value(this, mode, label, new_val, cx);
                         }),
-                    ),
+                    )
+                    // Mouse move while pressed - drag to change value
+                    .on_mouse_move(cx.listener(move |this, event: &MouseMoveEvent, _window, cx| {
+                        if event.pressed_button == Some(MouseButton::Left) {
+                            let new_val = calc_value(event.position.x.into());
+                            Self::apply_slider_value(this, mode, label, new_val, cx);
+                        }
+                    }))
+                    // Double-click to reset
+                    .on_click(cx.listener(move |this, event: &ClickEvent, _window, cx| {
+                        if event.click_count() == 2 {
+                            Self::apply_slider_value(this, mode, label, default_value, cx);
+                        }
+                    }))
+                    // Scroll wheel - adjust value (shift for fine control)
+                    .on_scroll_wheel(cx.listener(
+                        move |this, event: &ScrollWheelEvent, _window, cx| {
+                            // Get scroll delta
+                            let delta_y: f32 = match event.delta {
+                                gpui::ScrollDelta::Pixels(point) => point.y.into(),
+                                gpui::ScrollDelta::Lines(point) => point.y * 20.0,
+                            };
+
+                            if delta_y.abs() < 0.0001 {
+                                return;
+                            }
+
+                            // Scroll up (negative delta) = increase, scroll down = decrease
+                            let direction = if delta_y < 0.0 { 1.0 } else { -1.0 };
+
+                            // Step size: 5% normally, 0.5% with shift
+                            let step_percent = if event.modifiers.shift { 0.005 } else { 0.05 };
+                            let step = max * step_percent;
+
+                            let new_val = (value + direction * step).clamp(0.0, max);
+                            Self::apply_slider_value(this, mode, label, new_val, cx);
+                        },
+                    )),
             )
             .child(
                 div()
@@ -167,6 +233,26 @@ impl ColorPickerView {
                     .child(Text::new(SharedString::from(format!("{:.0}", value))).size(TextSize::Sm)),
             )
             .build()
+    }
+
+    /// Apply a slider value to the appropriate color component
+    fn apply_slider_value(
+        this: &mut Self,
+        mode: ColorPickerMode,
+        label: &'static str,
+        new_val: f32,
+        cx: &mut Context<Self>,
+    ) {
+        match (mode, label) {
+            (ColorPickerMode::RGB, "R") => this.update_red(new_val as u8, cx),
+            (ColorPickerMode::RGB, "G") => this.update_green(new_val as u8, cx),
+            (ColorPickerMode::RGB, "B") => this.update_blue(new_val as u8, cx),
+            (ColorPickerMode::HSL, "H") => this.update_hue(new_val / 360.0, cx),
+            (ColorPickerMode::HSL, "S") => this.update_saturation(new_val / 100.0, cx),
+            (ColorPickerMode::HSL, "L") => this.update_lightness(new_val / 100.0, cx),
+            (_, "A") => this.update_alpha(new_val as u8, cx),
+            _ => {}
+        }
     }
 }
 
@@ -177,6 +263,7 @@ impl Render for ColorPickerView {
         let hex_string = color.to_hex_string();
         let mode = self.mode;
         let (h, s, l) = color.to_hsl();
+        let (orig_h, orig_s, orig_l) = original.to_hsl();
 
         div()
             .flex()
@@ -293,60 +380,39 @@ impl Render for ColorPickerView {
                             "R",
                             color.r as f32,
                             255.0,
-                            Some((
-                                Rgba {
-                                    r: 0.0,
-                                    g: 0.0,
-                                    b: 0.0,
-                                    a: 1.0,
-                                },
-                                Rgba {
-                                    r: 1.0,
-                                    g: 0.0,
-                                    b: 0.0,
-                                    a: 1.0,
-                                },
-                            )),
+                            original.r as f32,
+                            Some(Rgba {
+                                r: 1.0,
+                                g: 0.0,
+                                b: 0.0,
+                                a: 1.0,
+                            }),
                             cx,
                         ))
                         .child(self.render_slider(
                             "G",
                             color.g as f32,
                             255.0,
-                            Some((
-                                Rgba {
-                                    r: 0.0,
-                                    g: 0.0,
-                                    b: 0.0,
-                                    a: 1.0,
-                                },
-                                Rgba {
-                                    r: 0.0,
-                                    g: 1.0,
-                                    b: 0.0,
-                                    a: 1.0,
-                                },
-                            )),
+                            original.g as f32,
+                            Some(Rgba {
+                                r: 0.0,
+                                g: 1.0,
+                                b: 0.0,
+                                a: 1.0,
+                            }),
                             cx,
                         ))
                         .child(self.render_slider(
                             "B",
                             color.b as f32,
                             255.0,
-                            Some((
-                                Rgba {
-                                    r: 0.0,
-                                    g: 0.0,
-                                    b: 0.0,
-                                    a: 1.0,
-                                },
-                                Rgba {
-                                    r: 0.0,
-                                    g: 0.0,
-                                    b: 1.0,
-                                    a: 1.0,
-                                },
-                            )),
+                            original.b as f32,
+                            Some(Rgba {
+                                r: 0.0,
+                                g: 0.0,
+                                b: 1.0,
+                                a: 1.0,
+                            }),
                             cx,
                         ))
                     })
@@ -355,60 +421,39 @@ impl Render for ColorPickerView {
                             "H",
                             h * 360.0,
                             360.0,
-                            Some((
-                                Rgba {
-                                    r: 1.0,
-                                    g: 0.0,
-                                    b: 0.0,
-                                    a: 1.0,
-                                },
-                                Rgba {
-                                    r: 1.0,
-                                    g: 0.0,
-                                    b: 1.0,
-                                    a: 1.0,
-                                },
-                            )),
+                            orig_h * 360.0,
+                            Some(Rgba {
+                                r: 1.0,
+                                g: 0.0,
+                                b: 0.5,
+                                a: 1.0,
+                            }),
                             cx,
                         ))
                         .child(self.render_slider(
                             "S",
                             s * 100.0,
                             100.0,
-                            Some((
-                                Rgba {
-                                    r: 0.5,
-                                    g: 0.5,
-                                    b: 0.5,
-                                    a: 1.0,
-                                },
-                                Rgba {
-                                    r: 0.0,
-                                    g: 0.7,
-                                    b: 1.0,
-                                    a: 1.0,
-                                },
-                            )),
+                            orig_s * 100.0,
+                            Some(Rgba {
+                                r: 0.0,
+                                g: 0.7,
+                                b: 1.0,
+                                a: 1.0,
+                            }),
                             cx,
                         ))
                         .child(self.render_slider(
                             "L",
                             l * 100.0,
                             100.0,
-                            Some((
-                                Rgba {
-                                    r: 0.0,
-                                    g: 0.0,
-                                    b: 0.0,
-                                    a: 1.0,
-                                },
-                                Rgba {
-                                    r: 1.0,
-                                    g: 1.0,
-                                    b: 1.0,
-                                    a: 1.0,
-                                },
-                            )),
+                            orig_l * 100.0,
+                            Some(Rgba {
+                                r: 0.5,
+                                g: 0.5,
+                                b: 0.5,
+                                a: 1.0,
+                            }),
                             cx,
                         ))
                     })
@@ -416,20 +461,13 @@ impl Render for ColorPickerView {
                         "A",
                         color.a as f32,
                         255.0,
-                        Some((
-                            Rgba {
-                                r: 0.2,
-                                g: 0.2,
-                                b: 0.2,
-                                a: 1.0,
-                            },
-                            Rgba {
-                                r: 1.0,
-                                g: 1.0,
-                                b: 1.0,
-                                a: 1.0,
-                            },
-                        )),
+                        original.a as f32,
+                        Some(Rgba {
+                            r: 0.8,
+                            g: 0.8,
+                            b: 0.8,
+                            a: 1.0,
+                        }),
                         cx,
                     ))
                     .build(),
