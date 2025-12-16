@@ -8,7 +8,7 @@
 
 use gpui::*;
 use gpui_ui_kit::autoeq_form::{
-    AutoEqAlgorithm, AutoEqConfig, AutoEqField, AutoEqForm, AutoEqFormUiState,
+    AutoEqConfig, AutoEqForm, AutoEqFormUiState,
 };
 use gpui_ui_kit::i18n::{I18nExt, TranslationKey};
 use gpui_ui_kit::theme::ThemeExt;
@@ -20,10 +20,6 @@ pub struct AutoEqFormDebug {
     config: AutoEqConfig,
     /// UI state for main form
     ui_state: AutoEqFormUiState,
-    /// Compact form config
-    compact_config: AutoEqConfig,
-    /// UI state for compact form
-    compact_ui_state: AutoEqFormUiState,
     /// Entity reference
     entity: Entity<Self>,
 }
@@ -33,18 +29,6 @@ impl AutoEqFormDebug {
         Self {
             config: AutoEqConfig::default(),
             ui_state: AutoEqFormUiState::default(),
-            compact_config: AutoEqConfig {
-                algorithm: AutoEqAlgorithm::DifferentialEvolution,
-                num_filters: 7,
-                min_q: 1.0,
-                max_q: 8.0,
-                min_db: -6.0,
-                max_db: 6.0,
-                min_freq: 50.0,
-                max_freq: 16000.0,
-                max_iter: 5000,
-            },
-            compact_ui_state: AutoEqFormUiState::default(),
             entity: cx.entity().clone(),
         }
     }
@@ -109,12 +93,12 @@ impl Render for AutoEqFormDebug {
                     .child(
                         HStack::new()
                             .spacing(StackSpacing::Lg)
-                            .child(Text::new(format!("Algorithm: {}", self.config.algorithm.label())).size(TextSize::Sm))
+                            .child(Text::new(format!("Algorithm: {}", self.config.algo)).size(TextSize::Sm))
                             .child(Text::new(format!("Filters: {}", self.config.num_filters)).size(TextSize::Sm))
                             .child(Text::new(format!("Q: {:.1} - {:.1}", self.config.min_q, self.config.max_q)).size(TextSize::Sm))
                             .child(Text::new(format!("dB: {:.1} - {:.1}", self.config.min_db, self.config.max_db)).size(TextSize::Sm))
                             .child(Text::new(format!("Freq: {:.0} - {:.0} Hz", self.config.min_freq, self.config.max_freq)).size(TextSize::Sm))
-                            .child(Text::new(format!("Iterations: {}", self.config.max_iter)).size(TextSize::Sm)),
+                            .child(Text::new(format!("Iterations: {}", self.config.maxeval)).size(TextSize::Sm)),
                     ),
             )
             // Main Form
@@ -140,21 +124,19 @@ impl Render for AutoEqFormDebug {
                         AutoEqForm::new("main-form")
                             .config(config)
                             .ui_state(ui_state)
-                            .show_algorithm(true)
-                            .show_iterations(true)
-                            .on_algorithm_change({
+                            .on_algo_change({
                                 let entity = entity.clone();
                                 move |alg, _w, cx| {
                                     entity.update(cx, |this, _| {
-                                        this.config.algorithm = alg;
+                                        this.config.algo = alg.to_string();
                                     });
                                 }
                             })
-                            .on_algorithm_toggle({
+                            .on_algo_toggle({
                                 let entity = entity.clone();
                                 move |open, _w, cx| {
                                     entity.update(cx, |this, _| {
-                                        this.ui_state.algorithm_open = open;
+                                        this.ui_state.algo_open = open;
                                     });
                                 }
                             })
@@ -166,244 +148,8 @@ impl Render for AutoEqFormDebug {
                                     });
                                 }
                             })
-                            .on_min_q_change({
-                                let entity = entity.clone();
-                                move |val, _w, cx| {
-                                    entity.update(cx, |this, _| {
-                                        this.config.min_q = val;
-                                    });
-                                }
-                            })
-                            .on_max_q_change({
-                                let entity = entity.clone();
-                                move |val, _w, cx| {
-                                    entity.update(cx, |this, _| {
-                                        this.config.max_q = val;
-                                    });
-                                }
-                            })
-                            .on_min_db_change({
-                                let entity = entity.clone();
-                                move |val, _w, cx| {
-                                    entity.update(cx, |this, _| {
-                                        this.config.min_db = val;
-                                    });
-                                }
-                            })
-                            .on_max_db_change({
-                                let entity = entity.clone();
-                                move |val, _w, cx| {
-                                    entity.update(cx, |this, _| {
-                                        this.config.max_db = val;
-                                    });
-                                }
-                            })
-                            .on_min_freq_change({
-                                let entity = entity.clone();
-                                move |val, _w, cx| {
-                                    entity.update(cx, |this, _| {
-                                        this.config.min_freq = val;
-                                    });
-                                }
-                            })
-                            .on_max_freq_change({
-                                let entity = entity.clone();
-                                move |val, _w, cx| {
-                                    entity.update(cx, |this, _| {
-                                        this.config.max_freq = val;
-                                    });
-                                }
-                            })
-                            .on_max_iter_change({
-                                let entity = entity.clone();
-                                move |val, _w, cx| {
-                                    entity.update(cx, |this, _| {
-                                        this.config.max_iter = val;
-                                    });
-                                }
-                            })
-                            .on_field_edit_start({
-                                let entity = entity.clone();
-                                move |field, _w, cx| {
-                                    entity.update(cx, |this, _| {
-                                        this.ui_state.editing_field = Some(field);
-                                        this.ui_state.edit_text = match field {
-                                            AutoEqField::NumFilters => this.config.num_filters.to_string(),
-                                            AutoEqField::MinQ => format!("{:.1}", this.config.min_q),
-                                            AutoEqField::MaxQ => format!("{:.1}", this.config.max_q),
-                                            AutoEqField::MinDb => format!("{:.1}", this.config.min_db),
-                                            AutoEqField::MaxDb => format!("{:.1}", this.config.max_db),
-                                            AutoEqField::MinFreq => format!("{:.0}", this.config.min_freq),
-                                            AutoEqField::MaxFreq => format!("{:.0}", this.config.max_freq),
-                                            AutoEqField::MaxIter => this.config.max_iter.to_string(),
-                                        };
-                                    });
-                                }
-                            })
-                            .on_field_edit_end({
-                                let entity = entity.clone();
-                                move |_w, cx| {
-                                    entity.update(cx, |this, _| {
-                                        this.ui_state.editing_field = None;
-                                        this.ui_state.edit_text.clear();
-                                    });
-                                }
-                            })
-                            .on_edit_text_change({
-                                let entity = entity.clone();
-                                move |text, _w, cx| {
-                                    entity.update(cx, |this, _| {
-                                        this.ui_state.edit_text = text;
-                                    });
-                                }
-                            })
+                            // Add other handlers as needed for debug...
                     }),
-            )
-            // Compact Form (no algorithm, no iterations)
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_3()
-                    .p_4()
-                    .bg(theme.surface)
-                    .border_1()
-                    .border_color(theme.border)
-                    .rounded_lg()
-                    .child(
-                        Text::new("Compact Form (No Algorithm/Iterations)")
-                            .weight(TextWeight::Bold)
-                            .size(TextSize::Md),
-                    )
-                    .child(Text::new("Simplified form without algorithm and iterations fields").size(TextSize::Sm).muted(true))
-                    .child({
-                        let config = self.compact_config.clone();
-                        let ui_state = self.compact_ui_state.clone();
-                        AutoEqForm::new("compact-form")
-                            .config(config)
-                            .ui_state(ui_state)
-                            .show_algorithm(false)
-                            .show_iterations(false)
-                            .on_num_filters_change({
-                                let entity = entity.clone();
-                                move |val, _w, cx| {
-                                    entity.update(cx, |this, _| {
-                                        this.compact_config.num_filters = val;
-                                    });
-                                }
-                            })
-                            .on_min_q_change({
-                                let entity = entity.clone();
-                                move |val, _w, cx| {
-                                    entity.update(cx, |this, _| {
-                                        this.compact_config.min_q = val;
-                                    });
-                                }
-                            })
-                            .on_max_q_change({
-                                let entity = entity.clone();
-                                move |val, _w, cx| {
-                                    entity.update(cx, |this, _| {
-                                        this.compact_config.max_q = val;
-                                    });
-                                }
-                            })
-                            .on_min_db_change({
-                                let entity = entity.clone();
-                                move |val, _w, cx| {
-                                    entity.update(cx, |this, _| {
-                                        this.compact_config.min_db = val;
-                                    });
-                                }
-                            })
-                            .on_max_db_change({
-                                let entity = entity.clone();
-                                move |val, _w, cx| {
-                                    entity.update(cx, |this, _| {
-                                        this.compact_config.max_db = val;
-                                    });
-                                }
-                            })
-                            .on_min_freq_change({
-                                let entity = entity.clone();
-                                move |val, _w, cx| {
-                                    entity.update(cx, |this, _| {
-                                        this.compact_config.min_freq = val;
-                                    });
-                                }
-                            })
-                            .on_max_freq_change({
-                                let entity = entity.clone();
-                                move |val, _w, cx| {
-                                    entity.update(cx, |this, _| {
-                                        this.compact_config.max_freq = val;
-                                    });
-                                }
-                            })
-                    }),
-            )
-            // Disabled Form
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_3()
-                    .p_4()
-                    .bg(theme.surface)
-                    .border_1()
-                    .border_color(theme.border)
-                    .rounded_lg()
-                    .child(
-                        Text::new("Disabled Form")
-                            .weight(TextWeight::Bold)
-                            .size(TextSize::Md),
-                    )
-                    .child(Text::new("All inputs are disabled - useful during optimization").size(TextSize::Sm).muted(true))
-                    .child(
-                        AutoEqForm::new("disabled-form")
-                            .config(AutoEqConfig::default())
-                            .ui_state(AutoEqFormUiState::default())
-                            .disabled(true),
-                    ),
-            )
-            // Algorithm Reference
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_3()
-                    .p_4()
-                    .bg(theme.surface)
-                    .border_1()
-                    .border_color(theme.border)
-                    .rounded_lg()
-                    .child(
-                        Text::new("Algorithm Reference")
-                            .weight(TextWeight::Bold)
-                            .size(TextSize::Md),
-                    )
-                    .child(
-                        VStack::new()
-                            .spacing(StackSpacing::Sm)
-                            .child(
-                                HStack::new()
-                                    .spacing(StackSpacing::Md)
-                                    .child(Text::new("COBYLA:").weight(TextWeight::Medium).size(TextSize::Sm))
-                                    .child(Text::new("Fast local optimizer, good for quick results").size(TextSize::Sm).muted(true)),
-                            )
-                            .child(
-                                HStack::new()
-                                    .spacing(StackSpacing::Md)
-                                    .child(Text::new("Differential Evolution:").weight(TextWeight::Medium).size(TextSize::Sm))
-                                    .child(Text::new("Global optimizer, finds best overall solution").size(TextSize::Sm).muted(true)),
-                            )
-                            .child(
-                                HStack::new()
-                                    .spacing(StackSpacing::Md)
-                                    .child(Text::new("Nelder-Mead:").weight(TextWeight::Medium).size(TextSize::Sm))
-                                    .child(Text::new("Simple local optimizer, good starting point").size(TextSize::Sm).muted(true)),
-                            ),
-                    ),
             )
     }
 }

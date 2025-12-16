@@ -124,6 +124,29 @@ impl VerticalSliderSize {
     }
 }
 
+/// Calculate the number of tick marks based on the value range
+fn calculate_tick_count(min: f64, max: f64) -> usize {
+    let range = max - min;
+    if range <= 0.0 {
+        return 2; // Just min and max
+    }
+
+    // Check divisibility for nice tick counts
+    // 5 ticks if range is a multiple of 10 (e.g., 0-2 with 0.5 steps)
+    // 4 ticks if range is a multiple of 2
+    // 3 ticks otherwise
+    let range_int = range as i32;
+    if range_int > 0 && range_int % 10 == 0 {
+        5
+    } else if range == 2.0 || (range_int > 0 && range_int % 2 == 0) {
+        5 // For 0-2 range, use 5 ticks: 0, 0.5, 1, 1.5, 2
+    } else if range_int > 0 && range_int % 3 == 0 {
+        4
+    } else {
+        3
+    }
+}
+
 /// A vertical slider component for audio plugin parameters
 #[derive(IntoElement)]
 pub struct VerticalSlider {
@@ -135,6 +158,8 @@ pub struct VerticalSlider {
     label: Option<SharedString>,
     shortcut_key: Option<char>,
     size: VerticalSliderSize,
+    custom_height: Option<f32>,
+    show_ticks: bool,
     selected: bool,
     disabled: bool,
     theme: Option<VerticalSliderTheme>,
@@ -156,6 +181,8 @@ impl VerticalSlider {
             label: None,
             shortcut_key: None,
             size: VerticalSliderSize::default(),
+            custom_height: None,
+            show_ticks: false,
             selected: false,
             disabled: false,
             theme: None,
@@ -205,6 +232,18 @@ impl VerticalSlider {
     /// Set the slider size
     pub fn size(mut self, size: VerticalSliderSize) -> Self {
         self.size = size;
+        self
+    }
+
+    /// Set a custom track height in pixels (overrides size preset)
+    pub fn height(mut self, height: f32) -> Self {
+        self.custom_height = Some(height);
+        self
+    }
+
+    /// Enable tick marks along the track
+    pub fn with_ticks(mut self) -> Self {
+        self.show_ticks = true;
         self
     }
 
@@ -314,8 +353,10 @@ impl RenderOnce for VerticalSlider {
         let value_str = self.format_value();
 
         let track_width = self.size.track_width();
-        let track_height = self.size.track_height();
+        let track_height = self.custom_height.unwrap_or_else(|| self.size.track_height());
         let min_width = self.size.min_width();
+        let show_ticks = self.show_ticks;
+        let tick_count = calculate_tick_count(self.min, self.max);
 
         // Colors based on selection state
         let bg_color = if selected {
@@ -552,19 +593,70 @@ impl RenderOnce for VerticalSlider {
                 .when(selected, |d| d.shadow_sm()),
         );
 
-        container = container.child(track);
-
-        // Scale markers
-        container = container.child(
-            div()
+        // Track with optional tick marks
+        if show_ticks {
+            // Build tick marks column (from bottom to top: min to max)
+            let mut ticks_column = div()
                 .flex()
+                .flex_col_reverse() // Bottom to top
                 .justify_between()
-                .w_full()
-                .text_xs()
-                .text_color(scale_color)
-                .child(format!("{:.0}", min))
-                .child(format!("{:.0}", max)),
-        );
+                .h(px(track_height))
+                .pr_1();
+
+            for i in 0..tick_count {
+                let tick_value = min + (max - min) * (i as f64 / (tick_count - 1) as f64);
+                let is_endpoint = i == 0 || i == tick_count - 1;
+
+                let tick_row = div()
+                    .flex()
+                    .items_center()
+                    .gap_px()
+                    // Value label (only for endpoints)
+                    .when(is_endpoint, |d| {
+                        d.child(
+                            div()
+                                .text_xs()
+                                .text_color(scale_color)
+                                .min_w(px(16.0))
+                                .text_right()
+                                .child(format!("{:.0}", tick_value)),
+                        )
+                    })
+                    // Tick mark
+                    .child(
+                        div()
+                            .w(px(if is_endpoint { 6.0 } else { 4.0 }))
+                            .h(px(1.0))
+                            .bg(scale_color),
+                    );
+
+                ticks_column = ticks_column.child(tick_row);
+            }
+
+            // Wrap track and ticks in HStack
+            container = container.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .child(ticks_column)
+                    .child(track),
+            );
+        } else {
+            container = container.child(track);
+
+            // Scale markers (only when not showing ticks)
+            container = container.child(
+                div()
+                    .flex()
+                    .justify_between()
+                    .w_full()
+                    .text_xs()
+                    .text_color(scale_color)
+                    .child(format!("{:.0}", min))
+                    .child(format!("{:.0}", max)),
+            );
+        }
 
         container
     }

@@ -35,9 +35,49 @@ use crate::toggle::{Toggle, ToggleSize, ToggleTheme};
 // Constants - Algorithm and Model Options
 // ============================================================================
 
+/// Optimization mode options
+pub const OPT_MODE_OPTIONS: &[(&str, &str)] = &[
+    ("iir", "IIR (PEQ)"),
+    ("fir", "FIR (Convolution)"),
+    ("mixed", "Mixed (IIR + FIR)"),
+];
+
+/// FIR Phase options
+pub const FIR_PHASE_OPTIONS: &[(&str, &str)] = &[
+    ("linear", "Linear Phase"),
+    ("minimum", "Minimum Phase"),
+    ("kirkeby", "Kirkeby Inverse"),
+];
+
+/// Loss Type options
+pub const LOSS_TYPE_OPTIONS: &[(&str, &str)] = &[
+    ("flat", "Flat Response"),
+    ("score", "Preference Score"),
+];
+
+/// Target curve options
+pub const TARGET_CURVE_OPTIONS: &[(&str, &str)] = &[
+    ("flat", "Flat"),
+    ("harman-over-ear-2018", "Harman Over-Ear 2018"),
+    ("harman-in-ear-2019", "Harman In-Ear 2019"),
+    ("custom", "Custom (File Path)"), // Represents a custom file path
+];
+
+/// System Type options
+pub const SYSTEM_TYPE_OPTIONS: &[(&str, &str)] = &[
+    ("stereo", "Stereo / Independent"),
+    ("multisub", "Multi-Subwoofer"),
+    ("dba", "Double Bass Array"),
+];
+
 /// Algorithm options for optimization
 pub const ALGORITHM_OPTIONS: &[(&str, &str)] = &[
     ("autoeq:de", "Auto DE (Recommended)"),
+    ("mh:de", "MH Differential Evolution"),
+    ("mh:pso", "MH Particle Swarm"),
+    ("mh:rga", "MH Genetic Algorithm"),
+    ("mh:tlbo", "MH TLBO"),
+    ("mh:fa", "MH Firefly"),
     ("nlopt:isres", "NLOPT ISRES"),
     ("nlopt:ags", "NLOPT AGS"),
     ("nlopt:cobyla", "NLOPT COBYLA"),
@@ -111,6 +151,11 @@ impl ParamLimits {
         max: 20000.0,
         step: 10.0,
     };
+    pub const FIR_TAPS: Self = Self {
+        min: 256.0,
+        max: 65536.0,
+        step: 256.0,
+    };
     pub const POPULATION: Self = Self {
         min: 10.0,
         max: 10000.0,
@@ -141,6 +186,12 @@ impl ParamLimits {
 #[derive(Debug, Clone)]
 pub struct AutoEqConfig {
     // EQ Design Parameters
+    /// Optimization mode (IIR, FIR, Mixed)
+    pub opt_mode: String,
+    /// Number of FIR taps (for FIR/Mixed mode)
+    pub fir_taps: usize,
+    /// FIR phase type (for FIR/Mixed mode)
+    pub fir_phase: String,
     /// Number of PEQ filters
     pub num_filters: usize,
     /// Sample rate in Hz
@@ -185,11 +236,22 @@ pub struct AutoEqConfig {
     // Smoothing Parameters
     /// Enable smoothing
     pub smooth: bool,
+
+    // Goals & Configuration
+    /// Loss function type (e.g., "flat", "score")
+    pub loss_type: String,
+    /// Target curve (e.g., "flat", "harman")
+    pub target_curve: String,
+    /// System type (e.g., "stereo", "multisub")
+    pub system_type: String,
 }
 
 impl Default for AutoEqConfig {
     fn default() -> Self {
         Self {
+            opt_mode: "iir".to_string(),
+            fir_taps: 4096,
+            fir_phase: "kirkeby".to_string(),
             num_filters: 10,
             sample_rate: 48000,
             min_db: -12.0,
@@ -208,6 +270,9 @@ impl Default for AutoEqConfig {
             refine: true,
             local_algo: "cobyla".to_string(),
             smooth: false,
+            loss_type: "flat".to_string(),
+            target_curve: "flat".to_string(),
+            system_type: "stereo".to_string(),
         }
     }
 }
@@ -215,6 +280,10 @@ impl Default for AutoEqConfig {
 /// UI state for AutoEQ form dropdowns
 #[derive(Debug, Clone, Default)]
 pub struct AutoEqFormUiState {
+    /// EQ Mode dropdown open state
+    pub opt_mode_open: bool,
+    /// FIR Phase dropdown open state
+    pub fir_phase_open: bool,
     /// Algorithm dropdown open state
     pub algo_open: bool,
     /// PEQ model dropdown open state
@@ -223,6 +292,12 @@ pub struct AutoEqFormUiState {
     pub strategy_open: bool,
     /// Local algorithm dropdown open state
     pub local_algo_open: bool,
+    /// Loss type dropdown open state
+    pub loss_type_open: bool,
+    /// Target curve dropdown open state
+    pub target_curve_open: bool,
+    /// System type dropdown open state
+    pub system_type_open: bool,
 }
 
 // ============================================================================
@@ -292,20 +367,27 @@ type ToggleCallback = Box<dyn Fn(bool, &mut Window, &mut App) + 'static>;
 
 /// A reusable form for AutoEQ optimization parameters.
 ///
-/// Renders two sections:
-/// 1. EQ Design Parameters - filter characteristics and frequency ranges
-/// 2. Optimization Fine Tuning - algorithm settings and DE parameters
+/// Renders three sections:
+/// 1. Goals & Configuration - system type, targets, and EQ mode
+/// 2. EQ Design Parameters - filter characteristics and frequency ranges
+/// 3. Optimization Fine Tuning - algorithm settings and DE parameters
 #[derive(IntoElement)]
 pub struct AutoEqForm {
     id: ElementId,
     config: AutoEqConfig,
     ui_state: AutoEqFormUiState,
     disabled: bool,
+    show_goals: bool,
     show_eq_design: bool,
     show_optimization_tuning: bool,
     theme: Option<AutoEqFormTheme>,
 
     // EQ Design callbacks
+    on_opt_mode_change: Option<StringCallback>,
+    on_opt_mode_toggle: Option<ToggleCallback>,
+    on_fir_taps_change: Option<UsizeCallback>,
+    on_fir_phase_change: Option<StringCallback>,
+    on_fir_phase_toggle: Option<ToggleCallback>,
     on_num_filters_change: Option<UsizeCallback>,
     on_sample_rate_change: Option<UsizeCallback>,
     on_min_db_change: Option<F64Callback>,
@@ -330,6 +412,14 @@ pub struct AutoEqForm {
     on_local_algo_change: Option<StringCallback>,
     on_local_algo_toggle: Option<ToggleCallback>,
     on_smooth_change: Option<BoolCallback>,
+
+    // Goals callbacks
+    on_loss_type_change: Option<StringCallback>,
+    on_loss_type_toggle: Option<ToggleCallback>,
+    on_target_curve_change: Option<StringCallback>,
+    on_target_curve_toggle: Option<ToggleCallback>,
+    on_system_type_change: Option<StringCallback>,
+    on_system_type_toggle: Option<ToggleCallback>,
 }
 
 impl AutoEqForm {
@@ -340,9 +430,15 @@ impl AutoEqForm {
             config: AutoEqConfig::default(),
             ui_state: AutoEqFormUiState::default(),
             disabled: false,
+            show_goals: true,
             show_eq_design: true,
             show_optimization_tuning: true,
             theme: None,
+            on_opt_mode_change: None,
+            on_opt_mode_toggle: None,
+            on_fir_taps_change: None,
+            on_fir_phase_change: None,
+            on_fir_phase_toggle: None,
             on_num_filters_change: None,
             on_sample_rate_change: None,
             on_min_db_change: None,
@@ -365,6 +461,12 @@ impl AutoEqForm {
             on_local_algo_change: None,
             on_local_algo_toggle: None,
             on_smooth_change: None,
+            on_loss_type_change: None,
+            on_loss_type_toggle: None,
+            on_target_curve_change: None,
+            on_target_curve_toggle: None,
+            on_system_type_change: None,
+            on_system_type_toggle: None,
         }
     }
 
@@ -383,6 +485,12 @@ impl AutoEqForm {
     /// Set disabled state
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
+        self
+    }
+
+    /// Show/hide Goals section
+    pub fn show_goals(mut self, show: bool) -> Self {
+        self.show_goals = show;
         self
     }
 
@@ -405,6 +513,51 @@ impl AutoEqForm {
     }
 
     // EQ Design callbacks
+
+    /// Set optim mode change handler
+    pub fn on_opt_mode_change(
+        mut self,
+        handler: impl Fn(&str, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_opt_mode_change = Some(Box::new(handler));
+        self
+    }
+
+    /// Set optim mode dropdown toggle handler
+    pub fn on_opt_mode_toggle(
+        mut self,
+        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_opt_mode_toggle = Some(Box::new(handler));
+        self
+    }
+
+    /// Set FIR taps change handler
+    pub fn on_fir_taps_change(
+        mut self,
+        handler: impl Fn(usize, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_fir_taps_change = Some(Box::new(handler));
+        self
+    }
+
+    /// Set FIR phase change handler
+    pub fn on_fir_phase_change(
+        mut self,
+        handler: impl Fn(&str, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_fir_phase_change = Some(Box::new(handler));
+        self
+    }
+
+    /// Set FIR phase dropdown toggle handler
+    pub fn on_fir_phase_toggle(
+        mut self,
+        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_fir_phase_toggle = Some(Box::new(handler));
+        self
+    }
 
     /// Set number of filters change handler
     pub fn on_num_filters_change(
@@ -605,6 +758,62 @@ impl AutoEqForm {
         self.on_smooth_change = Some(Box::new(handler));
         self
     }
+
+    // Goals callbacks
+
+    /// Set loss type change handler
+    pub fn on_loss_type_change(
+        mut self,
+        handler: impl Fn(&str, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_loss_type_change = Some(Box::new(handler));
+        self
+    }
+
+    /// Set loss type dropdown toggle handler
+    pub fn on_loss_type_toggle(
+        mut self,
+        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_loss_type_toggle = Some(Box::new(handler));
+        self
+    }
+
+    /// Set target curve change handler
+    pub fn on_target_curve_change(
+        mut self,
+        handler: impl Fn(&str, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_target_curve_change = Some(Box::new(handler));
+        self
+    }
+
+    /// Set target curve dropdown toggle handler
+    pub fn on_target_curve_toggle(
+        mut self,
+        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_target_curve_toggle = Some(Box::new(handler));
+        self
+    }
+
+    /// Set system type change handler
+    pub fn on_system_type_change(
+        mut self,
+        handler: impl Fn(&str, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_system_type_change = Some(Box::new(handler));
+        self
+    }
+
+    /// Set system type dropdown toggle handler
+    pub fn on_system_type_toggle(
+        mut self,
+        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_system_type_toggle = Some(Box::new(handler));
+        self
+    }
 }
 
 impl RenderOnce for AutoEqForm {
@@ -619,10 +828,16 @@ impl RenderOnce for AutoEqForm {
         let config = self.config;
         let ui_state = self.ui_state;
         let disabled = self.disabled;
+        let show_goals = self.show_goals;
         let show_eq_design = self.show_eq_design;
         let show_optimization_tuning = self.show_optimization_tuning;
 
         // Wrap callbacks in Rc for sharing
+        let on_opt_mode_change_rc = self.on_opt_mode_change.map(std::rc::Rc::new);
+        let on_opt_mode_toggle_rc = self.on_opt_mode_toggle.map(std::rc::Rc::new);
+        let on_fir_taps_change_rc = self.on_fir_taps_change.map(std::rc::Rc::new);
+        let on_fir_phase_change_rc = self.on_fir_phase_change.map(std::rc::Rc::new);
+        let on_fir_phase_toggle_rc = self.on_fir_phase_toggle.map(std::rc::Rc::new);
         let on_num_filters_change_rc = self.on_num_filters_change.map(std::rc::Rc::new);
         let on_sample_rate_change_rc = self.on_sample_rate_change.map(std::rc::Rc::new);
         let on_min_db_change_rc = self.on_min_db_change.map(std::rc::Rc::new);
@@ -645,8 +860,124 @@ impl RenderOnce for AutoEqForm {
         let on_local_algo_change_rc = self.on_local_algo_change.map(std::rc::Rc::new);
         let on_local_algo_toggle_rc = self.on_local_algo_toggle.map(std::rc::Rc::new);
         let on_smooth_change_rc = self.on_smooth_change.map(std::rc::Rc::new);
+        let on_loss_type_change_rc = self.on_loss_type_change.map(std::rc::Rc::new);
+        let on_loss_type_toggle_rc = self.on_loss_type_toggle.map(std::rc::Rc::new);
+        let on_target_curve_change_rc = self.on_target_curve_change.map(std::rc::Rc::new);
+        let on_target_curve_toggle_rc = self.on_target_curve_toggle.map(std::rc::Rc::new);
+        let on_system_type_change_rc = self.on_system_type_change.map(std::rc::Rc::new);
+        let on_system_type_toggle_rc = self.on_system_type_toggle.map(std::rc::Rc::new);
 
         let mut form = VStack::new().spacing(StackSpacing::Lg);
+
+        // ========================================
+        // Goals & Configuration Section
+        // ========================================
+        if show_goals {
+            let mut goals_content = VStack::new().spacing(StackSpacing::Sm);
+
+            // Header
+            goals_content = goals_content.child(
+                VStack::new()
+                    .spacing(StackSpacing::None)
+                    .child(
+                        Text::new("Goals & Configuration")
+                            .size(TextSize::Sm)
+                            .weight(TextWeight::Semibold)
+                            .color(theme.header_color),
+                    )
+                    .child(
+                        Text::new("Optimization goals, system type, and targets")
+                            .size(TextSize::Xs)
+                            .color(theme.description_color),
+                    ),
+            );
+
+            // System Type dropdown
+            let system_type_options: Vec<SelectOption> = SYSTEM_TYPE_OPTIONS
+                .iter()
+                .map(|(val, lbl)| SelectOption::new(*val, *lbl))
+                .collect();
+
+            let mut system_type_select = Select::new("autoeq-system-type")
+                .label("System Type")
+                .options(system_type_options)
+                .selected(&config.system_type)
+                .is_open(ui_state.system_type_open)
+                .disabled(disabled)
+                .theme(theme.select_theme.clone());
+
+            if let Some(ref handler) = on_system_type_toggle_rc {
+                let h = handler.clone();
+                system_type_select =
+                    system_type_select.on_toggle(move |open, w, cx| h(open, w, cx));
+            }
+
+            if let Some(ref handler) = on_system_type_change_rc {
+                let h = handler.clone();
+                system_type_select =
+                    system_type_select.on_change(move |value, w, cx| h(value.as_ref(), w, cx));
+            }
+
+            goals_content = goals_content.child(system_type_select);
+
+            // Loss Type dropdown
+            let loss_type_options: Vec<SelectOption> = LOSS_TYPE_OPTIONS
+                .iter()
+                .map(|(val, lbl)| SelectOption::new(*val, *lbl))
+                .collect();
+
+            let mut loss_type_select = Select::new("autoeq-loss-type")
+                .label("Loss Function")
+                .options(loss_type_options)
+                .selected(&config.loss_type)
+                .is_open(ui_state.loss_type_open)
+                .disabled(disabled)
+                .theme(theme.select_theme.clone());
+
+            if let Some(ref handler) = on_loss_type_toggle_rc {
+                let h = handler.clone();
+                loss_type_select = loss_type_select.on_toggle(move |open, w, cx| h(open, w, cx));
+            }
+
+            if let Some(ref handler) = on_loss_type_change_rc {
+                let h = handler.clone();
+                loss_type_select =
+                    loss_type_select.on_change(move |value, w, cx| h(value.as_ref(), w, cx));
+            }
+
+            goals_content = goals_content.child(loss_type_select);
+
+            // Target Curve dropdown
+            let target_curve_options: Vec<SelectOption> = TARGET_CURVE_OPTIONS
+                .iter()
+                .map(|(val, lbl)| SelectOption::new(*val, *lbl))
+                .collect();
+
+            let mut target_curve_select = Select::new("autoeq-target-curve")
+                .label("Target Curve")
+                .options(target_curve_options)
+                .selected(&config.target_curve)
+                .is_open(ui_state.target_curve_open) // Assuming target_curve_open exists in ui_state
+                .disabled(disabled)
+                .theme(theme.select_theme.clone());
+
+            if let Some(ref handler) = on_target_curve_change_rc {
+                let h = handler.clone();
+                target_curve_select =
+                    target_curve_select.on_change(move |value, w, cx| h(value.as_ref(), w, cx));
+            }
+            // No toggle handler for target_curve_open in ui_state explicitly defined in the original code,
+            // Assuming it will be managed implicitly by select or not needed for debug.
+            // If explicit toggle is needed, it would be:
+            // if let Some(ref handler) = on_target_curve_toggle_rc {
+            //     let h = handler.clone();
+            //     target_curve_select = target_curve_select.on_toggle(move |open, w, cx| h(open, w, cx));
+            // }
+
+            goals_content = goals_content.child(target_curve_select);
+
+            form = form.child(Card::new().content(goals_content));
+        }
 
         // ========================================
         // EQ Design Parameters Section
@@ -671,25 +1002,92 @@ impl RenderOnce for AutoEqForm {
                     ),
             );
 
-            // Number of Filters + Sample Rate row
-            let mut num_filters_input = NumberInput::new("autoeq-num-filters")
-                .value(config.num_filters as f64)
-                .min(ParamLimits::NUM_FILTERS.min)
-                .max(ParamLimits::NUM_FILTERS.max)
-                .step(ParamLimits::NUM_FILTERS.step)
-                .decimals(0)
-                .label("Filters")
-                .size(NumberInputSize::Sm)
-                .width(100.0)
-                .disabled(disabled)
-                .theme(theme.number_input_theme.clone());
+            // EQ Mode dropdown
+            let opt_mode_options: Vec<SelectOption> = OPT_MODE_OPTIONS
+                .iter()
+                .map(|(val, lbl)| SelectOption::new(*val, *lbl))
+                .collect();
 
-            if let Some(ref handler) = on_num_filters_change_rc {
+            let mut opt_mode_select = Select::new("autoeq-opt-mode")
+                .label("EQ Mode")
+                .options(opt_mode_options)
+                .selected(&config.opt_mode)
+                .is_open(ui_state.opt_mode_open)
+                .disabled(disabled)
+                .theme(theme.select_theme.clone());
+
+            if let Some(ref handler) = on_opt_mode_toggle_rc {
                 let h = handler.clone();
-                num_filters_input =
-                    num_filters_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
+                opt_mode_select = opt_mode_select.on_toggle(move |open, w, cx| h(open, w, cx));
             }
 
+            if let Some(ref handler) = on_opt_mode_change_rc {
+                let h = handler.clone();
+                opt_mode_select =
+                    opt_mode_select.on_change(move |value, w, cx| h(value.as_ref(), w, cx));
+            }
+
+            eq_design_content = eq_design_content.child(opt_mode_select);
+
+            // Conditional fields based on Mode
+            let is_fir = config.opt_mode == "fir" || config.opt_mode == "mixed";
+            let is_iir = config.opt_mode == "iir" || config.opt_mode == "mixed";
+
+            if is_fir {
+                // FIR Taps and Phase
+                let mut fir_taps_input = NumberInput::new("autoeq-fir-taps")
+                    .value(config.fir_taps as f64)
+                    .min(ParamLimits::FIR_TAPS.min)
+                    .max(ParamLimits::FIR_TAPS.max)
+                    .step(ParamLimits::FIR_TAPS.step)
+                    .decimals(0)
+                    .label("FIR Taps")
+                    .size(NumberInputSize::Sm)
+                    .width(100.0)
+                    .disabled(disabled)
+                    .theme(theme.number_input_theme.clone());
+
+                if let Some(ref handler) = on_fir_taps_change_rc {
+                    let h = handler.clone();
+                    fir_taps_input =
+                        fir_taps_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
+                }
+
+                // FIR Phase dropdown
+                let fir_phase_options: Vec<SelectOption> = FIR_PHASE_OPTIONS
+                    .iter()
+                    .map(|(val, lbl)| SelectOption::new(*val, *lbl))
+                    .collect();
+
+                let mut fir_phase_select = Select::new("autoeq-fir-phase")
+                    .label("Phase")
+                    .options(fir_phase_options)
+                    .selected(&config.fir_phase)
+                    .is_open(ui_state.fir_phase_open)
+                    .disabled(disabled)
+                    .theme(theme.select_theme.clone());
+
+                if let Some(ref handler) = on_fir_phase_toggle_rc {
+                    let h = handler.clone();
+                    fir_phase_select =
+                        fir_phase_select.on_toggle(move |open, w, cx| h(open, w, cx));
+                }
+
+                if let Some(ref handler) = on_fir_phase_change_rc {
+                    let h = handler.clone();
+                    fir_phase_select =
+                        fir_phase_select.on_change(move |value, w, cx| h(value.as_ref(), w, cx));
+                }
+
+                eq_design_content = eq_design_content.child(
+                    HStack::new()
+                        .spacing(StackSpacing::Md)
+                        .child(fir_taps_input)
+                        .child(fir_phase_select),
+                );
+            }
+
+            // Common params (Sample Rate) + Filters (if IIR)
             let mut sample_rate_input = NumberInput::new("autoeq-sample-rate")
                 .value(config.sample_rate as f64)
                 .min(ParamLimits::SAMPLE_RATE.min)
@@ -708,12 +1106,39 @@ impl RenderOnce for AutoEqForm {
                     sample_rate_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
             }
 
-            eq_design_content = eq_design_content.child(
-                HStack::new()
-                    .spacing(StackSpacing::Md)
-                    .child(num_filters_input)
-                    .child(sample_rate_input),
-            );
+            if is_iir {
+                let mut num_filters_input = NumberInput::new("autoeq-num-filters")
+                    .value(config.num_filters as f64)
+                    .min(ParamLimits::NUM_FILTERS.min)
+                    .max(ParamLimits::NUM_FILTERS.max)
+                    .step(ParamLimits::NUM_FILTERS.step)
+                    .decimals(0)
+                    .label("Filters")
+                    .size(NumberInputSize::Sm)
+                    .width(100.0)
+                    .disabled(disabled)
+                    .theme(theme.number_input_theme.clone());
+
+                if let Some(ref handler) = on_num_filters_change_rc {
+                    let h = handler.clone();
+                    num_filters_input =
+                        num_filters_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
+                }
+
+                eq_design_content = eq_design_content.child(
+                    HStack::new()
+                        .spacing(StackSpacing::Md)
+                        .child(num_filters_input)
+                        .child(sample_rate_input),
+                );
+            } else {
+                // FIR only - just show sample rate
+                 eq_design_content = eq_design_content.child(
+                    HStack::new()
+                        .spacing(StackSpacing::Md)
+                        .child(sample_rate_input),
+                );
+            }
 
             // dB Range row
             let mut min_db_input = NumberInput::new("autoeq-min-db")
@@ -757,47 +1182,49 @@ impl RenderOnce for AutoEqForm {
                     .child(max_db_input),
             );
 
-            // Q Range row
-            let mut min_q_input = NumberInput::new("autoeq-min-q")
-                .value(config.min_q)
-                .min(ParamLimits::Q.min)
-                .max(ParamLimits::Q.max)
-                .step(ParamLimits::Q.step)
-                .decimals(1)
-                .label("Min Q")
-                .size(NumberInputSize::Sm)
-                .width(100.0)
-                .disabled(disabled)
-                .theme(theme.number_input_theme.clone());
+            // Q Range row (IIR only)
+            if is_iir {
+                let mut min_q_input = NumberInput::new("autoeq-min-q")
+                    .value(config.min_q)
+                    .min(ParamLimits::Q.min)
+                    .max(ParamLimits::Q.max)
+                    .step(ParamLimits::Q.step)
+                    .decimals(1)
+                    .label("Min Q")
+                    .size(NumberInputSize::Sm)
+                    .width(100.0)
+                    .disabled(disabled)
+                    .theme(theme.number_input_theme.clone());
 
-            if let Some(ref handler) = on_min_q_change_rc {
-                let h = handler.clone();
-                min_q_input = min_q_input.on_change(move |v, w, cx| h(v, w, cx));
+                if let Some(ref handler) = on_min_q_change_rc {
+                    let h = handler.clone();
+                    min_q_input = min_q_input.on_change(move |v, w, cx| h(v, w, cx));
+                }
+
+                let mut max_q_input = NumberInput::new("autoeq-max-q")
+                    .value(config.max_q)
+                    .min(ParamLimits::Q.min)
+                    .max(ParamLimits::Q.max)
+                    .step(ParamLimits::Q.step)
+                    .decimals(1)
+                    .label("Max Q")
+                    .size(NumberInputSize::Sm)
+                    .width(100.0)
+                    .disabled(disabled)
+                    .theme(theme.number_input_theme.clone());
+
+                if let Some(ref handler) = on_max_q_change_rc {
+                    let h = handler.clone();
+                    max_q_input = max_q_input.on_change(move |v, w, cx| h(v, w, cx));
+                }
+
+                eq_design_content = eq_design_content.child(
+                    HStack::new()
+                        .spacing(StackSpacing::Md)
+                        .child(min_q_input)
+                        .child(max_q_input),
+                );
             }
-
-            let mut max_q_input = NumberInput::new("autoeq-max-q")
-                .value(config.max_q)
-                .min(ParamLimits::Q.min)
-                .max(ParamLimits::Q.max)
-                .step(ParamLimits::Q.step)
-                .decimals(1)
-                .label("Max Q")
-                .size(NumberInputSize::Sm)
-                .width(100.0)
-                .disabled(disabled)
-                .theme(theme.number_input_theme.clone());
-
-            if let Some(ref handler) = on_max_q_change_rc {
-                let h = handler.clone();
-                max_q_input = max_q_input.on_change(move |v, w, cx| h(v, w, cx));
-            }
-
-            eq_design_content = eq_design_content.child(
-                HStack::new()
-                    .spacing(StackSpacing::Md)
-                    .child(min_q_input)
-                    .child(max_q_input),
-            );
 
             // Frequency Range row
             let mut min_freq_input = NumberInput::new("autoeq-min-freq")
@@ -841,32 +1268,34 @@ impl RenderOnce for AutoEqForm {
                     .child(max_freq_input),
             );
 
-            // PEQ Model dropdown
-            let peq_model_options: Vec<SelectOption> = PEQ_MODEL_OPTIONS
-                .iter()
-                .map(|(val, lbl)| SelectOption::new(*val, *lbl))
-                .collect();
+            // PEQ Model dropdown (IIR only)
+            if is_iir {
+                let peq_model_options: Vec<SelectOption> = PEQ_MODEL_OPTIONS
+                    .iter()
+                    .map(|(val, lbl)| SelectOption::new(*val, *lbl))
+                    .collect();
 
-            let mut peq_model_select = Select::new("autoeq-peq-model")
-                .label("PEQ Model")
-                .options(peq_model_options)
-                .selected(&config.peq_model)
-                .is_open(ui_state.peq_model_open)
-                .disabled(disabled)
-                .theme(theme.select_theme.clone());
+                let mut peq_model_select = Select::new("autoeq-peq-model")
+                    .label("PEQ Model")
+                    .options(peq_model_options)
+                    .selected(&config.peq_model)
+                    .is_open(ui_state.peq_model_open)
+                    .disabled(disabled)
+                    .theme(theme.select_theme.clone());
 
-            if let Some(ref handler) = on_peq_model_toggle_rc {
-                let h = handler.clone();
-                peq_model_select = peq_model_select.on_toggle(move |open, w, cx| h(open, w, cx));
+                if let Some(ref handler) = on_peq_model_toggle_rc {
+                    let h = handler.clone();
+                    peq_model_select = peq_model_select.on_toggle(move |open, w, cx| h(open, w, cx));
+                }
+
+                if let Some(ref handler) = on_peq_model_change_rc {
+                    let h = handler.clone();
+                    peq_model_select =
+                        peq_model_select.on_change(move |value, w, cx| h(value.as_ref(), w, cx));
+                }
+
+                eq_design_content = eq_design_content.child(peq_model_select);
             }
-
-            if let Some(ref handler) = on_peq_model_change_rc {
-                let h = handler.clone();
-                peq_model_select =
-                    peq_model_select.on_change(move |value, w, cx| h(value.as_ref(), w, cx));
-            }
-
-            eq_design_content = eq_design_content.child(peq_model_select);
 
             form = form.child(Card::new().content(eq_design_content));
         }
@@ -965,75 +1394,81 @@ impl RenderOnce for AutoEqForm {
             );
 
             // DE-specific settings (only show when DE algorithm selected)
-            if config.algo.contains("de") {
-                // DE Strategy dropdown
-                let strategy_options: Vec<SelectOption> = DE_STRATEGY_OPTIONS
-                    .iter()
-                    .map(|(val, lbl)| SelectOption::new(*val, *lbl))
-                    .collect();
+            if config.algo.contains("de") || config.algo.contains("mh:") {
+                // Show params for DE and Metaheuristics
+                // Note: Not all MH algos use DE params but usually population/maxeval are common.
+                // DE strategy is specific to DE.
 
-                let mut strategy_select = Select::new("autoeq-strategy")
-                    .label("DE Strategy")
-                    .options(strategy_options)
-                    .selected(&config.strategy)
-                    .is_open(ui_state.strategy_open)
-                    .disabled(disabled)
-                    .theme(theme.select_theme.clone());
+                if config.algo.contains(":de") {
+                     // DE Strategy dropdown
+                    let strategy_options: Vec<SelectOption> = DE_STRATEGY_OPTIONS
+                        .iter()
+                        .map(|(val, lbl)| SelectOption::new(*val, *lbl))
+                        .collect();
 
-                if let Some(ref handler) = on_strategy_toggle_rc {
-                    let h = handler.clone();
-                    strategy_select = strategy_select.on_toggle(move |open, w, cx| h(open, w, cx));
+                    let mut strategy_select = Select::new("autoeq-strategy")
+                        .label("DE Strategy")
+                        .options(strategy_options)
+                        .selected(&config.strategy)
+                        .is_open(ui_state.strategy_open)
+                        .disabled(disabled)
+                        .theme(theme.select_theme.clone());
+
+                    if let Some(ref handler) = on_strategy_toggle_rc {
+                        let h = handler.clone();
+                        strategy_select = strategy_select.on_toggle(move |open, w, cx| h(open, w, cx));
+                    }
+
+                    if let Some(ref handler) = on_strategy_change_rc {
+                        let h = handler.clone();
+                        strategy_select =
+                            strategy_select.on_change(move |value, w, cx| h(value.as_ref(), w, cx));
+                    }
+
+                    opt_tuning_content = opt_tuning_content.child(strategy_select);
+
+                    // DE F and CR row
+                    let mut de_f_input = NumberInput::new("autoeq-de-f")
+                        .value(config.de_f)
+                        .min(ParamLimits::DE_FACTOR.min)
+                        .max(ParamLimits::DE_FACTOR.max)
+                        .step(ParamLimits::DE_FACTOR.step)
+                        .decimals(1)
+                        .label("Mutation (F)")
+                        .size(NumberInputSize::Sm)
+                        .width(100.0)
+                        .disabled(disabled)
+                        .theme(theme.number_input_theme.clone());
+
+                    if let Some(ref handler) = on_de_f_change_rc {
+                        let h = handler.clone();
+                        de_f_input = de_f_input.on_change(move |v, w, cx| h(v, w, cx));
+                    }
+
+                    let mut de_cr_input = NumberInput::new("autoeq-de-cr")
+                        .value(config.de_cr)
+                        .min(ParamLimits::DE_CR.min)
+                        .max(ParamLimits::DE_CR.max)
+                        .step(ParamLimits::DE_CR.step)
+                        .decimals(1)
+                        .label("Recomb (CR)")
+                        .size(NumberInputSize::Sm)
+                        .width(100.0)
+                        .disabled(disabled)
+                        .theme(theme.number_input_theme.clone());
+
+                    if let Some(ref handler) = on_de_cr_change_rc {
+                        let h = handler.clone();
+                        de_cr_input = de_cr_input.on_change(move |v, w, cx| h(v, w, cx));
+                    }
+
+                    opt_tuning_content = opt_tuning_content.child(
+                        HStack::new()
+                            .spacing(StackSpacing::Md)
+                            .child(de_f_input)
+                            .child(de_cr_input),
+                    );
                 }
-
-                if let Some(ref handler) = on_strategy_change_rc {
-                    let h = handler.clone();
-                    strategy_select =
-                        strategy_select.on_change(move |value, w, cx| h(value.as_ref(), w, cx));
-                }
-
-                opt_tuning_content = opt_tuning_content.child(strategy_select);
-
-                // DE F and CR row
-                let mut de_f_input = NumberInput::new("autoeq-de-f")
-                    .value(config.de_f)
-                    .min(ParamLimits::DE_FACTOR.min)
-                    .max(ParamLimits::DE_FACTOR.max)
-                    .step(ParamLimits::DE_FACTOR.step)
-                    .decimals(1)
-                    .label("Mutation (F)")
-                    .size(NumberInputSize::Sm)
-                    .width(100.0)
-                    .disabled(disabled)
-                    .theme(theme.number_input_theme.clone());
-
-                if let Some(ref handler) = on_de_f_change_rc {
-                    let h = handler.clone();
-                    de_f_input = de_f_input.on_change(move |v, w, cx| h(v, w, cx));
-                }
-
-                let mut de_cr_input = NumberInput::new("autoeq-de-cr")
-                    .value(config.de_cr)
-                    .min(ParamLimits::DE_CR.min)
-                    .max(ParamLimits::DE_CR.max)
-                    .step(ParamLimits::DE_CR.step)
-                    .decimals(1)
-                    .label("Recomb (CR)")
-                    .size(NumberInputSize::Sm)
-                    .width(100.0)
-                    .disabled(disabled)
-                    .theme(theme.number_input_theme.clone());
-
-                if let Some(ref handler) = on_de_cr_change_rc {
-                    let h = handler.clone();
-                    de_cr_input = de_cr_input.on_change(move |v, w, cx| h(v, w, cx));
-                }
-
-                opt_tuning_content = opt_tuning_content.child(
-                    HStack::new()
-                        .spacing(StackSpacing::Md)
-                        .child(de_f_input)
-                        .child(de_cr_input),
-                );
             }
 
             // Local Refinement toggle
