@@ -3,11 +3,12 @@
 //! Professional compressor visualization with:
 //! - Transfer curve display
 //! - Gain reduction meter
-//! - Rotary knob controls with keyboard shortcuts
+//! - Vertical sliders for main dynamics controls
+//! - Rotary knobs for secondary parameters
 
 use super::common::{
     render_edit_hints, render_knob, render_section_header, render_toggle, render_transfer_curve,
-    ParamSectionStyle,
+    render_vertical_slider, ParamSectionStyle,
 };
 use super::level_meters::render_gr_meter;
 use crate::app::AppState;
@@ -32,6 +33,14 @@ pub struct CompressorRenderState {
     pub selected_param: usize,
 }
 
+// Sidechain HPF UI range (40-160Hz as per user request)
+const SIDECHAIN_HPF_UI_MIN: f64 = 40.0;
+const SIDECHAIN_HPF_UI_MAX: f64 = 160.0;
+
+// Fixed height for all columns to ensure consistent layout
+// Height sized to fit OUTPUT column with two stacked knobs
+const COLUMN_HEIGHT: f32 = 380.0;
+
 /// Render the Compressor plugin
 pub fn render_compressor_plugin(
     entity: Entity<AppState>,
@@ -50,76 +59,27 @@ pub fn render_compressor_plugin(
         .flex()
         .flex_col()
         .gap_4()
-        // Main section - Knobs and Transfer Curve side by side
+        // Main section - Four columns side by side, all same height
         .child(
             div()
                 .flex()
                 .gap_4()
                 .items_start()
-                // Transfer curve and options
+                // Column 1: Vertical sliders for main dynamics controls
                 .child(
                     div()
                         .flex()
                         .flex_col()
                         .gap_3()
-                        .items_center()
+                        .h(px(COLUMN_HEIGHT))
                         .param_section_style_lg(theme)
-                        // Toggles above the graph
+                        .child(render_section_header("DYNAMICS", theme))
                         .child(
                             div()
                                 .flex()
-                                .gap_3()
-                                .child(render_toggle(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "Auto Makeup",
-                                    state.auto_makeup,
-                                    7, // param index for auto_makeup
-                                    state.selected_param,
-                                    state.is_editing,
-                                    theme,
-                                ))
-                                .child(render_toggle(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "Link Channels",
-                                    state.link_channels,
-                                    8, // param index for link_channels
-                                    state.selected_param,
-                                    state.is_editing,
-                                    theme,
-                                )),
-                        )
-                        .child(render_transfer_curve(
-                            state.threshold_db,
-                            state.ratio,
-                            state.knee_db,
-                            false,
-                            theme,
-                        ))
-                        // Gain reduction meter
-                        .child(
-                            div()
-                                .w_full()
-                                .child(render_gr_meter(simulated_gr, -30.0, theme)),
-                        ),
-                )
-                // Parameters section with knobs
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_2()
-                        .flex_1()
-                        .param_section_style_lg(theme)
-                        .child(render_section_header("DYNAMICS CONTROL", theme))
-                        // Row 1: Threshold, Ratio, Attack
-                        .child(
-                            div()
-                                .flex()
-                                .gap_4()
-                                .justify_center()
-                                .child(render_knob(
+                                .flex_1()
+                                .gap_2()
+                                .child(render_vertical_slider(
                                     entity.clone(),
                                     plugin_idx,
                                     "Threshold",
@@ -133,7 +93,7 @@ pub fn render_compressor_plugin(
                                     Some('t'),
                                     theme,
                                 ))
-                                .child(render_knob(
+                                .child(render_vertical_slider(
                                     entity.clone(),
                                     plugin_idx,
                                     "Ratio",
@@ -147,7 +107,7 @@ pub fn render_compressor_plugin(
                                     Some('r'),
                                     theme,
                                 ))
-                                .child(render_knob(
+                                .child(render_vertical_slider(
                                     entity.clone(),
                                     plugin_idx,
                                     "Attack",
@@ -160,15 +120,8 @@ pub fn render_compressor_plugin(
                                     state.is_editing,
                                     Some('a'),
                                     theme,
-                                )),
-                        )
-                        // Row 2: Release, Knee, Makeup
-                        .child(
-                            div()
-                                .flex()
-                                .gap_4()
-                                .justify_center()
-                                .child(render_knob(
+                                ))
+                                .child(render_vertical_slider(
                                     entity.clone(),
                                     plugin_idx,
                                     "Release",
@@ -182,7 +135,7 @@ pub fn render_compressor_plugin(
                                     Some('e'),
                                     theme,
                                 ))
-                                .child(render_knob(
+                                .child(render_vertical_slider(
                                     entity.clone(),
                                     plugin_idx,
                                     "Knee",
@@ -195,7 +148,52 @@ pub fn render_compressor_plugin(
                                     state.is_editing,
                                     Some('k'),
                                     theme,
+                                )),
+                        ),
+                )
+                // Column 2: Link channels, Auto makeup, Makeup knob
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_3()
+                        .h(px(COLUMN_HEIGHT))
+                        .param_section_style_lg(theme)
+                        .child(render_section_header("GAIN", theme))
+                        // Toggles
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_2()
+                                .child(render_toggle(
+                                    entity.clone(),
+                                    plugin_idx,
+                                    "Link Channels",
+                                    state.link_channels,
+                                    8, // param index for link_channels
+                                    state.selected_param,
+                                    state.is_editing,
+                                    theme,
                                 ))
+                                .child(render_toggle(
+                                    entity.clone(),
+                                    plugin_idx,
+                                    "Auto Makeup",
+                                    state.auto_makeup,
+                                    7, // param index for auto_makeup
+                                    state.selected_param,
+                                    state.is_editing,
+                                    theme,
+                                )),
+                        )
+                        // Makeup gain knob
+                        .child(
+                            div()
+                                .flex()
+                                .flex_1()
+                                .items_center()
+                                .justify_center()
                                 .child(render_knob(
                                     entity.clone(),
                                     plugin_idx,
@@ -210,45 +208,99 @@ pub fn render_compressor_plugin(
                                     Some('m'),
                                     theme,
                                 )),
+                        ),
+                )
+                // Column 3: Mix and Sidechain HPF knobs
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_3()
+                        .h(px(COLUMN_HEIGHT))
+                        .param_section_style_lg(theme)
+                        .child(render_section_header("OUTPUT", theme))
+                        // Mix knob
+                        .child(
+                            div()
+                                .flex()
+                                .flex_1()
+                                .items_center()
+                                .justify_center()
+                                .child(render_knob(
+                                    entity.clone(),
+                                    plugin_idx,
+                                    "Mix",
+                                    state.mix * 100.0, // Convert 0-1 to 0-100%
+                                    MIX_MIN as f64 * 100.0,
+                                    MIX_MAX as f64 * 100.0,
+                                    "%",
+                                    6,
+                                    state.selected_param,
+                                    state.is_editing,
+                                    Some('x'),
+                                    theme,
+                                )),
                         )
-                        // Row 3: Mix (centered)
-                        .child(div().flex().gap_4().justify_center().child(render_knob(
-                            entity.clone(),
-                            plugin_idx,
-                            "Mix",
-                            state.mix,
-                            MIX_MIN as f64,
-                            MIX_MAX as f64,
-                            "%",
-                            6,
-                            state.selected_param,
-                            state.is_editing,
-                            Some('x'),
-                            theme,
-                        )))
-                        // Sidechain HPF display
+                        // Sidechain HPF knob (40-160Hz)
+                        .child(
+                            div()
+                                .flex()
+                                .flex_1()
+                                .items_center()
+                                .justify_center()
+                                .child(render_knob(
+                                    entity.clone(),
+                                    plugin_idx,
+                                    "SC HPF",
+                                    state.sidechain_hpf_hz,
+                                    SIDECHAIN_HPF_UI_MIN,
+                                    SIDECHAIN_HPF_UI_MAX,
+                                    "Hz",
+                                    9,
+                                    state.selected_param,
+                                    state.is_editing,
+                                    Some('s'),
+                                    theme,
+                                )),
+                        ),
+                )
+                // Column 4: Transfer curve (top) and Gain reduction meter (bottom)
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_3()
+                        .h(px(COLUMN_HEIGHT))
+                        .param_section_style_lg(theme)
+                        .child(render_section_header("METER", theme))
+                        // Transfer curve
+                        .child(
+                            div()
+                                .flex()
+                                .justify_center()
+                                .child(render_transfer_curve(
+                                    state.threshold_db,
+                                    state.ratio,
+                                    state.knee_db,
+                                    false,
+                                    theme,
+                                )),
+                        )
+                        // Gain reduction meter
                         .child(
                             div()
                                 .flex()
                                 .flex_col()
-                                .items_center()
+                                .flex_1()
                                 .gap_1()
-                                .p_2()
-                                .rounded_lg()
-                                .bg(theme.background)
                                 .child(
                                     div()
                                         .text_xs()
-                                        .text_color(theme.text_muted)
-                                        .child("Sidechain HPF"),
+                                        .font_weight(FontWeight::SEMIBOLD)
+                                        .text_color(theme.text_secondary)
+                                        .child("Gain Reduction"),
                                 )
-                                .child(
-                                    div()
-                                        .text_sm()
-                                        .font_weight(FontWeight::BOLD)
-                                        .text_color(theme.text_primary)
-                                        .child(format!("{:.0} Hz", state.sidechain_hpf_hz)),
-                                ),
+                                .child(render_gr_meter(simulated_gr, -30.0, theme)),
                         ),
                 ),
         )
