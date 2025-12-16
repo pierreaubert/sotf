@@ -15,7 +15,7 @@ path = "src/lib.rs"
 
 [dependencies]
 # Core numerical computing
-ndarray = { version = "0.17", features = ["serde"] }
+ndarray = { workspace = true }
 num-complex = { workspace = true, features = ["serde"] }
 num-traits = { workspace = true }
 
@@ -26,8 +26,8 @@ ndarray-linalg = { workspace = true, optional = true }
 rayon = { workspace = true, optional = true }
 
 # WASM-specific dependencies
-wasm-bindgen = { version = "0.2", optional = true }
-wasm-bindgen-rayon = { version = "1.2", optional = true }
+wasm-bindgen = { workspace = true, optional = true }
+wasm-bindgen-rayon = { workspace = true, optional = true }
 
 # Error handling
 thiserror = { workspace = true }
@@ -39,7 +39,7 @@ serde = { workspace = true }
 log = { workspace = true }
 
 [dev-dependencies]
-approx = "0.5"
+approx = { workspace = true }
 rand = { workspace = true }
 
 [features]

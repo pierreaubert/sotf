@@ -15,7 +15,7 @@ path = "src/lib.rs"
 
 [dependencies]
 # Core numerical computing
-ndarray = { version = "0.17", features = ["serde"] }
+ndarray = { workspace = true, features = ["serde"] }
 num-complex = { workspace = true, features = ["serde"] }
 
 # Error handling
@@ -35,7 +35,7 @@ clap = { workspace = true, optional = true }
 log = { workspace = true }
 
 [dev-dependencies]
-approx = "0.5"
+approx = { workspace = true }
 
 [features]
 default = []

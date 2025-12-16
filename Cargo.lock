@@ -635,13 +635,13 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "autoeq"
-version = "0.2.251"
+version = "0.2.252"
 dependencies = [
  "accelerate-src",
  "anyhow",
  "autoeq-cea2034",
  "autoeq-de",
- "autoeq-env 0.2.4",
+ "autoeq-env",
  "autoeq-iir",
  "blas-src",
  "build_html",
@@ -662,6 +662,7 @@ dependencies = [
  "plotly_static",
  "rand 0.9.2",
  "rand_chacha 0.9.0",
+ "rayon",
  "reqwest 0.12.24",
  "rustfft",
  "schemars 0.8.22",
@@ -688,7 +689,7 @@ name = "autoeq-de"
 version = "0.2.52"
 dependencies = [
  "accelerate-src",
- "autoeq-env 0.2.4",
+ "autoeq-env",
  "autoeq-testfunctions",
  "blas-src",
  "clap",
@@ -705,16 +706,6 @@ dependencies = [
  "serde_json",
  "signal-hook-tokio",
  "tempfile",
- "thiserror 2.0.17",
-]
-
-[[package]]
-name = "autoeq-env"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0b90ae42366fa62d278a44ebba74a0ffc6e71c73704a94cda4dfb5b652dbfaa"
-dependencies = [
- "chrono",
  "thiserror 2.0.17",
 ]
 
@@ -758,7 +749,7 @@ dependencies = [
 name = "autoeq-testfunctions"
 version = "0.2.37"
 dependencies = [
- "autoeq-env 0.2.4",
+ "autoeq-env",
  "clap",
  "ndarray 0.17.1",
  "plotly",
@@ -1745,7 +1736,7 @@ checksum = "6245d59a3e82a7fc217c5828a6692dbc6dfb63a0c8c90495621f7b9d79704a0e"
 name = "convexhull3d"
 version = "0.5.4"
 dependencies = [
- "autoeq-env 0.2.4",
+ "autoeq-env",
  "log",
  "ndarray 0.16.1",
  "rand 0.9.2",
@@ -3705,7 +3696,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-ui-kit"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "gpui",
  "gpui_macros",
@@ -5257,7 +5248,7 @@ version = "0.1.6"
 dependencies = [
  "anyhow",
  "approx",
- "autoeq-env 0.2.3",
+ "autoeq-env",
  "chrono",
  "clap",
  "criterion",
@@ -8593,7 +8584,7 @@ checksum = "19f58d7b0190c7f12df7e8be6b79767a0836059159811b869d5ab55721fe14d0"
 name = "sotf-audio-engine"
 version = "0.5.4"
 dependencies = [
- "autoeq-env 0.2.4",
+ "autoeq-env",
  "autoeq-iir",
  "chrono",
  "clap",
@@ -8711,7 +8702,7 @@ dependencies = [
 name = "sotf-audio-plugins"
 version = "0.5.4"
 dependencies = [
- "autoeq-env 0.2.4",
+ "autoeq-env",
  "autoeq-iir",
  "chrono",
  "clap",
@@ -8841,7 +8832,7 @@ dependencies = [
  "log",
  "nalgebra 0.33.2",
  "nalgebra-sparse",
- "ndarray 0.16.1",
+ "ndarray 0.17.1",
  "netcdf",
  "num-complex",
  "opencv",

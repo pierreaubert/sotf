@@ -18,10 +18,10 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 plotly = { workspace = true }
-autoeq-testfunctions = { path = "../math-testfunctions", version="0.2" }
-autoeq-env = { path = "../autoeq-env", version="0.2" }
+autoeq-testfunctions = { workspace = true }
+autoeq-env = { workspace = true }
 nlopt = { workspace = true, optional = true }
-plotly_static = { version = "0.1", features = ["chromedriver", "webdriver_download"], optional = true }
+plotly_static = { workspace = true, optional = true }
 
 [features]
 default = ["nlopt"]
@@ -29,7 +29,7 @@ nlopt = ["dep:nlopt"]
 plotly_static = ["dep:plotly_static"]
 
 [dev-dependencies]
-tempfile = "3.23"
+tempfile = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # blas folklore

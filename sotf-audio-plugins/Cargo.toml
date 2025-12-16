@@ -25,14 +25,14 @@ chrono = { workspace = true }
 libc = { workspace = true }
 parking_lot = { workspace = true }
 rustfft = { workspace = true }
-realfft = "3.5"
-log = "0.4"
-env_logger = "0.11"
-directories = "5.0"
-rusqlite = { version = "0.32", features = ["bundled"] }
-walkdir = "2"
-autoeq-env = { path = "../autoeq-env" }
-autoeq-iir = { path = "../math-iir" }
+realfft = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+directories = { workspace = true }
+rusqlite = { workspace = true, features = ["bundled"] }
+walkdir = { workspace = true }
+autoeq-env = { workspace = true }
+autoeq-iir = { workspace = true }
 rand = { workspace = true }
 rayon = { workspace = true }
 
@@ -56,7 +56,7 @@ id3 = { workspace = true }
 metaflac = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-sotf_hal = { path = "../sotf-macos-hal", optional = true }
+sotf_hal = { workspace = true, optional = true }
 
 [features]
 default = ["hal"]
@@ -68,7 +68,7 @@ signal-hook = { workspace = true }
 
 [dev-dependencies]
 rand = { workspace = true }
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { workspace = true, features = ["html_reports"] }
 
 [[bin]]
 name = "plugin-fuzzer"

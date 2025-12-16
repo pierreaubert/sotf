@@ -115,11 +115,12 @@ smol = "2.0"
 strsim = "0.11"
 tempfile = "3.23"
 thiserror = "2.0.17"
+criterion = "0.5"
 which = "8"
 walkdir = "2"
 
 # Optimization and math
-ndarray = { version = "0.17", features = ["rayon", "blas", "serde"] }
+ndarray = { version = "0.17", default-features = false, features = ["rayon", "blas", "serde"] }
 ndarray-linalg = { version = "0.18" }
 rand = "0.9.2"
 num-complex = "0.4"
@@ -134,12 +135,36 @@ rustfft = "6.4"
 realfft = "3.5"
 special = "0.11"  # Bessel, Hankel, Legendre functions
 spec_math = "0.1.6"
-autoeq = { path = "autoeq" }
+autoeq = { path = "autoeq", version = "0.2" }
+autoeq-cea2034 = { path = "autoeq-cea2034", version = "0.2" }
+autoeq-de = { path = "math-de", version = "0.2" }
+autoeq-env = { path = "autoeq-env", version = "0.2" }
+autoeq-iir = { path = "math-iir", version = "0.2" }
+autoeq-roomsim = { path = "autoeq-roomsim", version = "0.1" }
+autoeq-testfunctions = { path = "math-testfunctions", version = "0.2" }
+gpui-au = { path = "gpui-au", version = "0.5" }
+gpui-d3rs = { path = "gpui-d3rs", version = "0.1" }
+gpui-px = { path = "gpui-px", version = "0.1" }
+gpui-themes = { path = "gpui-themes", version = "0.1" }
+gpui-ui-kit = { path = "gpui-ui-kit", version = "0.1" }
+math-bem = { path = "math-bem", version = "0.1" }
+math-convexhull3d = { path = "math-convexhull3d", version = "0.5" }
+convexhull3d = { path = "math-convexhull3d", version = "0.5" }
+math-fem = { path = "math-fem", version = "0.1" }
+math-solvers = { path = "math-solvers", version = "0.1", default-features = false }
+math-wave = { path = "math-wave", version = "0.1" }
+math-xem-common = { path = "math-xem-common", version = "0.1" }
+sotf-audio-engine = { path = "sotf-audio-engine", version = "0.5", default-features = false }
+sotf-audio-midi = { path = "sotf-audio-midi", version = "0.5" }
+sotf-audio-player = { path = "sotf-audio-player", version = "0.5" }
+sotf-audio-plugins = { path = "sotf-audio-plugins", version = "0.5", default-features = false }
+sotf-head-scanner = { path = "sotf-head-scanner", version = "0.1" }
+sotf-macos-hal = { path = "sotf-macos-hal", version = "0.2" }
+sotf_hal = { path = "sotf-macos-hal", version = "0.2" }
 
 # Plotting and visualization
 plotly = { version = "0.13.5" }
-# plotly_static will be specified per-crate as needed
-# patched currently locally see down the patch section
+plotly_static = { version = "0.1" }
 webdriver-downloader = "0.16.0"
 build_html = "2.7.0"
 
@@ -166,6 +191,9 @@ symphonia-codec-vorbis = "0.5"
 symphonia-format-riff = "0.5"
 symphonia-format-ogg = "0.5"
 symphonia-format-isomp4 = "0.5"
+rtrb = "0.3.2"
+rb = "0.4"
+midir = "0.10"
 
 # TUI framework
 ratatui = "0.29"
@@ -174,6 +202,45 @@ crossterm = "0.28"
 # GPUI framework, using HEAD (macros with _)
 gpui = { version="*", git = "https://github.com/zed-industries/zed.git" }
 gpui_macros = { version="*", git = "https://github.com/zed-industries/zed.git" }
+
+# System and low-level
+objc = "0.2"
+cocoa = "0.26"
+dirs = "5.0"
+sysinfo = "0.37"
+memory-stats = "1.2"
+crossbeam = "0.8"
+
+# Graphics and Math (for head scanner and d3rs)
+nalgebra = { version = "0.33", features = ["serde-serialize"] }
+nalgebra-sparse = "0.10"
+parry3d = "0.17"
+bytemuck = "1.14"
+opencv = { version = "0.97", default-features = false, features = ["videoio", "imgproc", "calib3d", "features2d", "highgui", "objdetect"] }
+image = { version = "0.25", default-features = false }
+imageproc = "0.25"
+ort = { version = "2.0.0-rc.10", default-features = false, features = ["download-binaries", "coreml"] }
+kiddo = "4.2"
+delaunator = "1.0"
+indicatif = "0.17"
+wgpu = "23"
+glam = "0.29"
+pollster = "0.4"
+fontdue = "0.9"
+
+# Web/WASM
+wasm-bindgen = "0.2"
+wasm-bindgen-rayon = "1.2"
+wasm-bindgen-test = "0.3"
+
+# Build dependencies
+cbindgen = "0.29"
+
+# Utilities
+approx = "0.5"
+proptest = "1.9"
+unicode-normalization = "0.1"
+toml = "0.8"
 
 [patch.crates-io]
 webdriver-downloader = { version = "0.16.4", git = "https://github.com/pierreaubert/webdriver-downloader" }

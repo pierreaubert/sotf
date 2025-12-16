@@ -20,15 +20,15 @@ required-features = ["cli", "native"]
 
 [dependencies]
 # Common types shared with BEM
-math-xem-common = { path = "../math-xem-common", version = "0.1" }
+math-xem-common = { workspace = true }
 
 # Solver infrastructure
-math-solvers = { path = "../math-solvers", version = "0.1" }
-math-wave = { path = "../math-wave" }
+math-solvers = { workspace = true }
+math-wave = { workspace = true }
 spec_math = { workspace = true }
 
 # Core numerical computing
-ndarray = { version = "0.17", features = ["serde"] }
+ndarray = { workspace = true }
 num-complex = { workspace = true, features = ["serde"] }
 num-traits = { workspace = true }
 
@@ -56,9 +56,9 @@ serde_json = { workspace = true }
 chrono = { workspace = true }
 
 [dev-dependencies]
-approx = "0.5"
+approx = { workspace = true }
 rand = { workspace = true }
-criterion = "0.5"
+criterion = { workspace = true }
 
 [[bin]]
 name = "qa-suite"
