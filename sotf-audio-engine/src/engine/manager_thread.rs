@@ -126,13 +126,6 @@ impl ConfigUpdateMetrics {
         self.rejected_updates += 1;
     }
 
-    fn record_rollback(&mut self, success: bool) {
-        self.rollback_attempts += 1;
-        if success {
-            self.successful_rollbacks += 1;
-        }
-    }
-
     fn update_queue_depth(&mut self, depth: usize) {
         self.max_queue_depth = self.max_queue_depth.max(depth);
     }
@@ -194,11 +187,6 @@ impl ConfigUpdateQueue {
     /// Save a working config for rollback
     fn save_working_config(&mut self, plugins: Vec<super::PluginConfig>) {
         self.last_working_config = Some(plugins);
-    }
-
-    /// Get the last working config for rollback
-    fn get_rollback_config(&self) -> Option<&Vec<super::PluginConfig>> {
-        self.last_working_config.as_ref()
     }
 
     /// Add a config update to the queue with priority-based management
@@ -445,7 +433,7 @@ fn run_manager_thread(
         
         match host_result {
             Ok(host) => {
-                let output_channels = host.output_channels();
+                let _output_channels = host.output_channels();
                 // Send host to processing thread
                 if let Err(e) = processing_thread.send_command(ProcessingCommand::UpdateHost(host)) {
                      return Err(format!("Failed to send initial plugin host: {}", e));
@@ -880,7 +868,7 @@ fn apply_plugin_update(
 
     let mut loop_count = 0;
 
-    let mut skipped_responses = 0;
+    let mut _skipped_responses = 0;
 
     while start.elapsed() < timeout {
 
@@ -892,7 +880,7 @@ fn apply_plugin_update(
 
                 super::ProcessingResponse::PluginData(_) | super::ProcessingResponse::Ok => {
 
-                    skipped_responses += 1;
+                    _skipped_responses += 1;
 
                     continue; 
 

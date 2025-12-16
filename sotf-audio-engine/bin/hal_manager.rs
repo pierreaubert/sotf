@@ -107,19 +107,6 @@ impl HalManager {
         self.initialize(500, 48000, 2)
     }
 
-    /// Check if HAL is initialized
-    pub fn is_initialized(&self) -> bool {
-        #[cfg(target_os = "macos")]
-        {
-            self.initialized
-        }
-
-        #[cfg(not(target_os = "macos"))]
-        {
-            false
-        }
-    }
-
     /// Shutdown the HAL driver
     ///
     /// This should be called explicitly before the daemon exits.
@@ -144,33 +131,6 @@ impl HalManager {
 // NOTE: Drop implementation intentionally omitted
 // Shutdown must be called explicitly to avoid race conditions
 // when Arc<Mutex<HalManager>> is cloned into multiple threads
-
-/// Helper function to create default HAL plugin configuration
-///
-/// Returns a plugin chain with HAL input and output:
-/// - HalInputPlugin: Reads audio from macOS apps
-/// - HalOutputPlugin: Writes processed audio back (loopback)
-#[cfg(target_os = "macos")]
-pub fn create_hal_plugin_chain(channels: usize) -> Vec<sotf_audio::PluginConfig> {
-    use sotf_audio::PluginConfig;
-
-    vec![
-        // Input from HAL
-        PluginConfig::new(
-            "hal_input",
-            serde_json::json!({
-                "channels": channels
-            }),
-        ),
-        // Output to HAL (loopback)
-        PluginConfig::new(
-            "hal_output",
-            serde_json::json!({
-                "channels": channels
-            }),
-        ),
-    ]
-}
 
 /// Get HAL driver status information
 pub fn get_hal_status() -> HalStatus {
