@@ -3,7 +3,7 @@
 //! A button that displays only an icon, with optional tooltip.
 //! Supports both text/emoji icons and custom child elements (like SVG icons).
 
-use crate::theme::{Theme, ThemeExt};
+use crate::theme::{glow_shadow, Theme, ThemeExt};
 use gpui::prelude::*;
 use gpui::*;
 
@@ -312,7 +312,7 @@ impl IconButton {
         if self.disabled {
             el = el.opacity(0.5).cursor_not_allowed();
         } else {
-            el = el.hover(|s| s.bg(bg_hover));
+            el = el.hover(move |style| style.bg(bg_hover).shadow(glow_shadow(bg_hover)));
 
             if let Some(handler) = self.on_click {
                 el = el.on_mouse_up(MouseButton::Left, move |_event, window, cx| {

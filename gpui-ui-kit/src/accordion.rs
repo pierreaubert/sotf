@@ -2,7 +2,7 @@
 //!
 //! Collapsible content sections with support for both vertical and horizontal orientations.
 
-use crate::theme::{Theme, ThemeExt};
+use crate::theme::{glow_shadow, Theme, ThemeExt};
 use gpui::prelude::*;
 use gpui::*;
 
@@ -172,7 +172,8 @@ impl Accordion {
 
     /// Build into element with theme
     pub fn build_with_theme(self, theme: &AccordionTheme) -> Div {
-        let theme = self.theme.clone().unwrap_or_else(|| theme.clone());
+        // Use self.theme if provided, otherwise clone the passed theme
+        let theme = self.theme.unwrap_or_else(|| theme.clone());
 
         // Handle Side layout separately since it needs different structure
         let is_side = matches!(self.orientation, AccordionOrientation::Side);
@@ -238,7 +239,7 @@ impl Accordion {
                 header = header.opacity(0.5).cursor_not_allowed();
             } else {
                 let hover_bg = theme.header_hover_bg;
-                header = header.hover(move |s| s.bg(hover_bg));
+                header = header.hover(move |style| style.bg(hover_bg).shadow(glow_shadow(hover_bg)));
 
                 // Click handler
                 if let Some(handler) = on_change.clone() {
@@ -349,7 +350,7 @@ impl Accordion {
                 header = header.opacity(0.5).cursor_not_allowed();
             } else {
                 let hover_bg = theme.header_hover_bg;
-                header = header.hover(move |s| s.bg(hover_bg));
+                header = header.hover(move |style| style.bg(hover_bg).shadow(glow_shadow(hover_bg)));
 
                 // Click handler
                 if let Some(handler) = on_change.clone() {

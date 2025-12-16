@@ -2,7 +2,7 @@
 //!
 //! Provides a complete menu system for application navigation and context menus.
 
-use crate::theme::{Theme, ThemeExt};
+use crate::theme::{glow_shadow, Theme, ThemeExt};
 use gpui::prelude::*;
 use gpui::*;
 
@@ -220,6 +220,9 @@ impl Menu {
         let min_width = self.min_width;
         let theme = self.theme.as_ref().unwrap_or(menu_theme);
 
+        // Use Rc pattern instead of unsafe pointer for on_select handler
+        let on_select_rc = self.on_select.map(|f| std::rc::Rc::new(f));
+
         let mut menu = div()
             .id("menu-container")
             .min_w(min_width)
@@ -244,9 +247,6 @@ impl Menu {
                 let is_checkbox = item.is_checkbox;
                 let checked = item.checked;
                 let is_danger = item.is_danger;
-
-                let on_select: Option<*const dyn Fn(&SharedString, &mut Window, &mut App)> =
-                    self.on_select.as_ref().map(|f| f.as_ref() as *const _);
 
                 let mut row = div()
                     .id(SharedString::from(format!("menu-item-{}", item_id)))
@@ -273,14 +273,19 @@ impl Menu {
                     row = row
                         .text_color(text_color)
                         .cursor_pointer()
-                        .hover(move |s| s.bg(hover_bg).text_color(text_hover));
+                        .hover(move |style| {
+                            style
+                                .bg(hover_bg)
+                                .text_color(text_hover)
+                                .shadow(glow_shadow(hover_bg))
+                        });
 
-                    if let Some(handler_ptr) = on_select {
+                    if let Some(ref handler) = on_select_rc {
+                        let handler = handler.clone();
                         let id = item_id.clone();
-                        row =
-                            row.on_mouse_up(MouseButton::Left, move |_event, window, cx| unsafe {
-                                (*handler_ptr)(&id, window, cx);
-                            });
+                        row = row.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
+                            handler(&id, window, cx);
+                        });
                     }
                 }
 
@@ -425,14 +430,15 @@ impl MenuBar {
 
     /// Build into element with theme
     pub fn build_with_theme(self, theme: &MenuTheme) -> Div {
+        // Use Rc pattern instead of unsafe pointer for on_menu_toggle handler
+        let on_toggle_rc = self.on_menu_toggle.map(|f| std::rc::Rc::new(f));
+
         let mut bar = div().flex().items_center().gap_1();
 
         for item in &self.items {
             let is_open = self.active_menu.as_ref() == Some(&item.id);
             let menu_id = item.id.clone();
             let label = item.label.clone();
-            let on_toggle: Option<*const dyn Fn(Option<&SharedString>, &mut Window, &mut App)> =
-                self.on_menu_toggle.as_ref().map(|f| f.as_ref() as *const _);
 
             let mut button = div()
                 .id(SharedString::from(format!("menubar-{}", menu_id)))
@@ -449,17 +455,20 @@ impl MenuBar {
                     .text_color(theme.text_hover);
             } else {
                 let hover_bg = theme.hover_bg;
-                button = button.text_color(theme.text).hover(move |s| s.bg(hover_bg));
+                button = button
+                    .text_color(theme.text)
+                    .hover(move |style| style.bg(hover_bg).shadow(glow_shadow(hover_bg)));
             }
 
-            if let Some(handler_ptr) = on_toggle {
+            if let Some(ref handler) = on_toggle_rc {
+                let handler = handler.clone();
                 let id = menu_id.clone();
                 let currently_open = is_open;
-                button = button.on_mouse_up(MouseButton::Left, move |_event, window, cx| unsafe {
+                button = button.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
                     if currently_open {
-                        (*handler_ptr)(None, window, cx);
+                        handler(None, window, cx);
                     } else {
-                        (*handler_ptr)(Some(&id), window, cx);
+                        handler(Some(&id), window, cx);
                     }
                 });
             }
@@ -514,7 +523,9 @@ pub fn menu_bar_button(
             .text_color(theme.text_hover);
     } else {
         let hover_bg = theme.hover_bg;
-        button = button.text_color(theme.text).hover(move |s| s.bg(hover_bg));
+        button = button
+            .text_color(theme.text)
+            .hover(move |style| style.bg(hover_bg).shadow(glow_shadow(hover_bg)));
     }
 
     button.child(label)

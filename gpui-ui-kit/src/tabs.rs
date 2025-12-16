@@ -2,7 +2,7 @@
 //!
 //! Provides a horizontal tab bar with content panels and theming support.
 
-use crate::theme::{Theme, ThemeExt};
+use crate::theme::{glow_shadow, Theme, ThemeExt};
 use gpui::prelude::*;
 use gpui::*;
 
@@ -375,7 +375,12 @@ impl Tabs {
                         .bg(theme.selected_bg)
                         .rounded_lg()
                         .text_color(theme.text_unselected)
-                        .hover(move |s| s.bg(hover_bg).text_color(hover_text));
+                        .hover(move |style| {
+                            style
+                                .bg(hover_bg)
+                                .text_color(hover_text)
+                                .shadow(glow_shadow(hover_bg))
+                        });
                 }
 
                 if disabled {
@@ -444,9 +449,14 @@ impl Tabs {
                         } else {
                             let hover_bg = theme.hover_bg;
                             let hover_text = theme.text_hover;
-                            tab_el = tab_el
-                                .text_color(theme.text_unselected)
-                                .hover(move |s| s.bg(hover_bg).text_color(hover_text));
+                            tab_el = tab_el.text_color(theme.text_unselected).hover(
+                                move |style| {
+                                    style
+                                        .bg(hover_bg)
+                                        .text_color(hover_text)
+                                        .shadow(glow_shadow(hover_bg))
+                                },
+                            );
                         }
                     }
                     TabVariant::Pills => {
@@ -461,7 +471,12 @@ impl Tabs {
                             tab_el = tab_el
                                 .rounded_md()
                                 .text_color(theme.text_unselected)
-                                .hover(move |s| s.bg(hover_bg).text_color(hover_text));
+                                .hover(move |style| {
+                                    style
+                                        .bg(hover_bg)
+                                        .text_color(hover_text)
+                                        .shadow(glow_shadow(hover_bg))
+                                });
                         }
                     }
                     TabVariant::Underline | TabVariant::VerticalCard => unreachable!(),

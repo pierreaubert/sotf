@@ -18,7 +18,7 @@
 //!     })
 //! ```
 
-use crate::theme::{Theme, ThemeExt};
+use crate::theme::{glow_shadow, Theme, ThemeExt};
 use gpui::prelude::*;
 use gpui::*;
 
@@ -226,7 +226,7 @@ impl ButtonSet {
             };
 
             let mut button = div()
-                .id(SharedString::from(format!("buttonset-{}", idx)))
+                .id(("buttonset", idx))
                 .flex_1() // Equal width for all buttons
                 .flex()
                 .items_center()
@@ -273,7 +273,8 @@ impl ButtonSet {
                 // Hover effect (only for non-selected buttons)
                 if !is_selected {
                     let hover_bg = theme.bg_hover;
-                    button = button.hover(move |s| s.bg(hover_bg));
+                    button =
+                        button.hover(move |style| style.bg(hover_bg).shadow(glow_shadow(hover_bg)));
                 }
 
                 // Click handler
@@ -287,7 +288,7 @@ impl ButtonSet {
 
             // Add icon if present
             if let Some(icon) = option.icon {
-                button = button.child(div().child(icon));
+                button = button.child(icon);
             }
 
             // Add label

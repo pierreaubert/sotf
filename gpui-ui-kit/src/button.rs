@@ -2,7 +2,7 @@
 //!
 //! Provides a flexible button component with different visual styles.
 
-use crate::theme::ThemeExt;
+use crate::theme::{glow_shadow, ThemeExt};
 use gpui::prelude::*;
 use gpui::*;
 
@@ -152,13 +152,14 @@ impl Button {
         self
     }
 
-    /// Build the button into a Stateful<Div> that can have additional handlers added
-    /// Use this when you need to add a cx.listener() handler
-    pub fn build(self) -> Stateful<Div> {
-        let theme = self.theme.unwrap_or_default();
-
-        // Handle selected state for Primary variant
-        let (bg, bg_hover, text_color, border_color) = if self.selected {
+    /// Compute colors based on variant and selected state
+    /// Returns (bg, bg_hover, text_color, border_color)
+    fn compute_colors(
+        variant: ButtonVariant,
+        selected: bool,
+        theme: &ButtonTheme,
+    ) -> (Rgba, Rgba, Rgba, Rgba) {
+        if selected {
             (
                 theme.accent,
                 theme.accent_hover,
@@ -166,7 +167,7 @@ impl Button {
                 theme.accent,
             )
         } else {
-            match self.variant {
+            match variant {
                 ButtonVariant::Primary => (
                     theme.accent,
                     theme.accent_hover,
@@ -195,7 +196,15 @@ impl Button {
                     theme.border,
                 ),
             }
-        };
+        }
+    }
+
+    /// Build the button into a Stateful<Div> that can have additional handlers added
+    /// Use this when you need to add a cx.listener() handler
+    pub fn build(self) -> Stateful<Div> {
+        let theme = self.theme.unwrap_or_default();
+        let (bg, bg_hover, text_color, border_color) =
+            Self::compute_colors(self.variant, self.selected, &theme);
 
         let (px_val, py_val) = match self.size {
             ButtonSize::Xs => (px(6.0), px(2.0)),
@@ -239,7 +248,7 @@ impl Button {
 
         // Add icon left
         if let Some(icon) = self.icon_left {
-            el = el.child(div().child(icon));
+            el = el.child(icon);
         }
 
         // Add label
@@ -247,7 +256,7 @@ impl Button {
 
         // Add icon right
         if let Some(icon) = self.icon_right {
-            el = el.child(div().child(icon));
+            el = el.child(icon);
         }
 
         el
@@ -257,46 +266,8 @@ impl Button {
 impl RenderOnce for Button {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = self.theme.unwrap_or_else(|| ButtonTheme::from(&cx.theme()));
-
-        // Handle selected state for Primary variant
-        let (bg, bg_hover, text_color, border_color) = if self.selected {
-            (
-                theme.accent,
-                theme.accent_hover,
-                theme.text_primary,
-                theme.accent,
-            )
-        } else {
-            match self.variant {
-                ButtonVariant::Primary => (
-                    theme.accent,
-                    theme.accent_hover,
-                    theme.text_primary,
-                    theme.accent,
-                ),
-                ButtonVariant::Secondary => (
-                    theme.surface,
-                    theme.surface_hover,
-                    theme.text_secondary,
-                    theme.surface,
-                ),
-                ButtonVariant::Destructive => {
-                    (theme.error, rgb(0xe64545), theme.text_primary, theme.error)
-                }
-                ButtonVariant::Ghost => (
-                    rgba(0x00000000),
-                    theme.surface_hover,
-                    theme.text_secondary,
-                    rgba(0x00000000),
-                ),
-                ButtonVariant::Outline => (
-                    rgba(0x00000000),
-                    theme.surface,
-                    theme.text_secondary,
-                    theme.border,
-                ),
-            }
-        };
+        let (bg, bg_hover, text_color, border_color) =
+            Self::compute_colors(self.variant, self.selected, &theme);
 
         let (px_val, py_val) = match self.size {
             ButtonSize::Xs => (px(6.0), px(2.0)),
@@ -336,8 +307,7 @@ impl RenderOnce for Button {
         if self.disabled {
             el = el.opacity(0.5).cursor_not_allowed();
         } else {
-            el = el.hover(|style| style.bg(bg_hover));
-
+            el = el.hover(move |style| style.bg(bg_hover).shadow(glow_shadow(bg_hover)));
             if let Some(handler) = self.on_click {
                 el = el.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
                     handler(window, cx);
@@ -347,7 +317,7 @@ impl RenderOnce for Button {
 
         // Add icon left
         if let Some(icon) = self.icon_left {
-            el = el.child(div().child(icon));
+            el = el.child(icon);
         }
 
         // Add label
@@ -355,7 +325,7 @@ impl RenderOnce for Button {
 
         // Add icon right
         if let Some(icon) = self.icon_right {
-            el = el.child(div().child(icon));
+            el = el.child(icon);
         }
 
         el

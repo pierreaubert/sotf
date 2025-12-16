@@ -436,7 +436,7 @@ impl Select {
                 let option_value = option.value.clone();
 
                 let mut option_el = div()
-                    .id(SharedString::from(format!("select-option-{}", idx)))
+                    .id(("select-option", idx))
                     .px_3()
                     .py(px(6.0))
                     .cursor_pointer();
