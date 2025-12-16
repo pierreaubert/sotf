@@ -2,13 +2,13 @@
 
 use super::actions::OpenSofaFile;
 use super::common::{
-    render_edit_hints, render_param_row, render_section_header, render_toggle, ParamSectionStyle,
+    render_edit_hints, render_knob, render_param_row, render_section_header, render_toggle,
+    ParamSectionStyle,
 };
 use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::Potentiometer;
 use sotf_audio_player::param_specs::binaural::*;
 
 /// State for rendering the Binaural Decoder plugin
@@ -292,84 +292,35 @@ pub fn render_binaural_plugin(
                         .flex()
                         .gap_4()
                         .mt_2()
-                        .justify_center() // Center the knobs
-                        // Externalization Knob
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .items_center()
-                                .gap_1()
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .text_color(theme.text_secondary)
-                                        .child("Externalization"),
-                                )
-                                .child({
-                                    let entity = entity.clone();
-                                    Potentiometer::new(3)
-                                        .value(state.externalization)
-                                        .min(EXTERNALIZATION_MIN as f64)
-                                        .max(EXTERNALIZATION_MAX as f64)
-                                        .unit("%".to_string())
-                                        .label("Ext".to_string()) // compact label
-                                        .selected(state.selected_param == 3 && state.is_editing)
-                                        .on_change(move |v, _, cx| {
-                                            entity.update(cx, |state, _| {
-                                                state.app.set_plugin_param(plugin_idx, 3, v);
-                                            });
-                                        })
-                                        .theme(theme.to_potentiometer_theme())
-                                })
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .font_weight(FontWeight::BOLD)
-                                        .text_color(theme.text_primary)
-                                        .child(format!("{:.0}%", state.externalization * 100.0)),
-                                ),
-                        )
-                        // Near Field Knob
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .items_center()
-                                .gap_1()
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .text_color(theme.text_secondary)
-                                        .child("Near Field"),
-                                )
-                                .child({
-                                    let entity = entity.clone();
-                                    Potentiometer::new(4)
-                                        .value(state.near_field_strength)
-                                        .min(NEAR_FIELD_STRENGTH_MIN as f64)
-                                        .max(NEAR_FIELD_STRENGTH_MAX as f64)
-                                        .unit("%".to_string())
-                                        .label("Near".to_string())
-                                        .selected(state.selected_param == 4 && state.is_editing)
-                                        .on_change(move |v, _, cx| {
-                                            entity.update(cx, |state, _| {
-                                                state.app.set_plugin_param(plugin_idx, 4, v);
-                                            });
-                                        })
-                                        .theme(theme.to_potentiometer_theme())
-                                })
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .font_weight(FontWeight::BOLD)
-                                        .text_color(theme.text_primary)
-                                        .child(format!(
-                                            "{:.0}%",
-                                            state.near_field_strength * 100.0
-                                        )),
-                                ),
-                        ),
+                        .justify_center()
+                        .child(render_knob(
+                            entity.clone(),
+                            plugin_idx,
+                            "Externalization",
+                            state.externalization,
+                            EXTERNALIZATION_MIN as f64,
+                            EXTERNALIZATION_MAX as f64,
+                            "%",
+                            3,
+                            state.selected_param,
+                            state.is_editing,
+                            None,
+                            theme,
+                        ))
+                        .child(render_knob(
+                            entity.clone(),
+                            plugin_idx,
+                            "Near Field",
+                            state.near_field_strength,
+                            NEAR_FIELD_STRENGTH_MIN as f64,
+                            NEAR_FIELD_STRENGTH_MAX as f64,
+                            "%",
+                            4,
+                            state.selected_param,
+                            state.is_editing,
+                            None,
+                            theme,
+                        )),
                 ),
         )
         // Hint for loading SOFA file
