@@ -153,6 +153,12 @@ pub trait InPlacePlugin: Send {
     fn latency_samples(&self) -> usize {
         0
     }
+
+    /// Get data from the plugin (if it's an analyzer or exposes internal state)
+    /// Returns `None` by default for plugins that don't expose data.
+    fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
+        None
+    }
 }
 
 /// Adapter to convert InPlacePlugin to Plugin
@@ -212,5 +218,9 @@ impl<T: InPlacePlugin> Plugin for InPlacePluginAdapter<T> {
 
     fn latency_samples(&self) -> usize {
         self.plugin.latency_samples()
+    }
+
+    fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
+        self.plugin.get_data()
     }
 }

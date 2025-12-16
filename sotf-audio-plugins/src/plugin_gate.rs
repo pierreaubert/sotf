@@ -21,6 +21,9 @@ use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use serde::{Deserialize, Serialize};
 use std::f32::consts::PI;
 
+use std::any::Any;
+use std::sync::Arc;
+
 // ============================================================================
 // Configuration
 // ============================================================================
@@ -55,6 +58,18 @@ fn default_link_channels() -> bool {
 
 fn default_sidechain_hpf_hz() -> f32 {
     SIDECHAIN_HPF_HZ_DEFAULT
+}
+
+/// Data exposed by the gate for monitoring
+#[derive(Debug, Clone)]
+pub struct GateData {
+    /// Current input level in dB (one per channel)
+    pub input_levels_db: Vec<f32>,
+    /// Current gate status (true = open, false = closed)
+    pub is_open: bool,
+    /// Current attenuation in dB (positive value, e.g., 60.0 means -60dB gain)
+    /// This is the envelope value, so it reflects attack/release smoothing
+    pub attenuation_db: Vec<f32>,
 }
 
 /// Configuration parameters for GatePlugin
@@ -479,6 +494,24 @@ impl InPlacePlugin for GatePlugin {
 
     fn latency_samples(&self) -> usize {
         0
+    }
+
+    fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
+        // We don't store input levels persistently in the struct yet,
+        // so for now we'll just report the attenuation envelope.
+        // In a future update, we should track input levels for the UI too.
+        
+        // Gate is considered "open" if any channel has 0dB attenuation
+        let is_open = self.envelope.iter().any(|&atten| atten < 0.1);
+
+        // Placeholder for input levels (would need to track these in process_in_place)
+        let input_levels_db = vec![-100.0; self.channels];
+
+        Some(Arc::new(GateData {
+            input_levels_db,
+            is_open,
+            attenuation_db: self.envelope.clone(),
+        }))
     }
 }
 

@@ -1387,6 +1387,47 @@ impl PlayerView {
         }
     }
 
+    fn handle_spinorama_speaker_search_input(
+        &mut self,
+        event: &KeyDownEvent,
+        cx: &mut Context<Self>,
+    ) {
+        // Handle text input for spinorama speaker search mode
+        match event.keystroke.key.as_str() {
+            "backspace" => {
+                self.state.update(cx, |state, _cx| {
+                    state.app.spinorama_eq_state.speaker_search.pop();
+                    state.app.spinorama_eq_state.update_suggestions();
+                });
+                cx.notify();
+            }
+            "escape" => {
+                // Exit search mode
+                self.state.update(cx, |state, _cx| {
+                    state.app.input_mode = crate::app::InputMode::Normal;
+                });
+                cx.notify();
+            }
+            "enter" => {
+                // Exit search mode, keep current search results
+                self.state.update(cx, |state, _cx| {
+                    state.app.input_mode = crate::app::InputMode::Normal;
+                });
+                cx.notify();
+            }
+            _ => {
+                // Add character to search query
+                if let Some(text) = event.keystroke.key_char.as_ref() {
+                    self.state.update(cx, |state, _cx| {
+                        state.app.spinorama_eq_state.speaker_search.push_str(text);
+                        state.app.spinorama_eq_state.update_suggestions();
+                    });
+                    cx.notify();
+                }
+            }
+        }
+    }
+
     fn handle_save_plugins_input(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
         // Handle text input for save plugins mode
         match event.keystroke.key.as_str() {
@@ -1882,6 +1923,10 @@ impl Render for PlayerView {
                     }
                     crate::app::InputMode::EditingParam => {
                         // Stepper-based editing doesn't need keyboard input
+                    }
+                    crate::app::InputMode::SpinoramaSpeakerSearch => {
+                        cx.stop_propagation();
+                        view.handle_spinorama_speaker_search_input(event, cx);
                     }
                     crate::app::InputMode::Normal => {
                         // Handle screen-specific shortcuts in Normal mode

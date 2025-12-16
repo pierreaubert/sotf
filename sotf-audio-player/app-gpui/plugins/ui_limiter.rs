@@ -115,28 +115,23 @@ pub fn render_limiter_plugin(
                         .h(px(COLUMN_HEIGHT))
                         .param_section_style_lg(theme)
                         .child(render_section_header("OUTPUT", theme))
-                        // Mix knob
-                        .child(
-                            div()
-                                .flex()
-                                .flex_1()
-                                .items_center()
-                                .justify_center()
-                                .child(render_knob(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "Mix",
-                                    state.mix * 100.0,
-                                    MIX_MIN as f64 * 100.0,
-                                    MIX_MAX as f64 * 100.0,
-                                    "%",
-                                    2,
-                                    state.selected_param,
-                                    state.is_editing,
-                                    Some('m'),
-                                    theme,
-                                )),
-                        )
+                        // Spacer
+                        .child(div().flex_1())
+                        // Mix knob (direct child, no wrapper)
+                        .child(render_knob(
+                            entity.clone(),
+                            plugin_idx,
+                            "Mix",
+                            state.mix * 100.0,
+                            MIX_MIN as f64 * 100.0,
+                            MIX_MAX as f64 * 100.0,
+                            "%",
+                            2,
+                            state.selected_param,
+                            state.is_editing,
+                            Some('m'),
+                            theme,
+                        ))
                         // Large ceiling display
                         .child(
                             div()

@@ -22,6 +22,9 @@ use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use serde::{Deserialize, Serialize};
 use std::f32::consts::PI;
 
+use std::any::Any;
+use std::sync::Arc;
+
 // ============================================================================
 // Configuration
 // ============================================================================
@@ -64,6 +67,14 @@ pub fn default_link_channels() -> bool {
 
 pub fn default_sidechain_hpf_hz() -> f32 {
     SIDECHAIN_HPF_HZ_DEFAULT
+}
+
+/// Data exposed by the compressor for monitoring
+#[derive(Debug, Clone)]
+pub struct CompressorData {
+    /// Current gain reduction in dB (positive value, e.g., 6.0 means -6dB gain)
+    /// One value per channel
+    pub gain_reduction_db: Vec<f32>,
 }
 
 /// Configuration parameters for CompressorPlugin
@@ -531,6 +542,13 @@ impl InPlacePlugin for CompressorPlugin {
 
     fn latency_samples(&self) -> usize {
         0
+    }
+
+    fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
+        // Expose current gain reduction envelope
+        Some(Arc::new(CompressorData {
+            gain_reduction_db: self.envelope.clone(),
+        }))
     }
 }
 

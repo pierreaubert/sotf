@@ -16,9 +16,10 @@ use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
 use sotf_audio_player::param_specs::compressor::*;
+use sotf_plugins::CompressorData;
 
 /// State for rendering the Compressor plugin
-pub struct CompressorRenderState {
+pub struct CompressorRenderState<'a> {
     pub threshold_db: f64,
     pub ratio: f64,
     pub attack_ms: f64,
@@ -31,6 +32,7 @@ pub struct CompressorRenderState {
     pub sidechain_hpf_hz: f64,
     pub is_editing: bool,
     pub selected_param: usize,
+    pub data: Option<&'a CompressorData>,
 }
 
 // Sidechain HPF UI range (40-160Hz as per user request)
@@ -48,12 +50,20 @@ pub fn render_compressor_plugin(
     state: CompressorRenderState,
     theme: &Theme,
 ) -> impl IntoElement {
-    // Simulated gain reduction (in real implementation, this would come from the audio engine)
-    let simulated_gr = if state.threshold_db < -10.0 {
-        (state.threshold_db + 10.0) * 0.5
+    // Get max gain reduction from all channels
+    let gr_db = if let Some(data) = state.data {
+        // Find maximum reduction (since GR is positive dB value, we want the max)
+        data.gain_reduction_db
+            .iter()
+            .cloned()
+            .fold(0.0_f32, f32::max) as f64
     } else {
         0.0
     };
+
+    // Since gain_reduction_db is stored as the attenuation amount (e.g. 6.0 for -6dB),
+    // we want to display it as a negative value for the meter
+    let meter_value = -gr_db;
 
     div()
         .flex()
@@ -187,28 +197,23 @@ pub fn render_compressor_plugin(
                                     theme,
                                 )),
                         )
-                        // Makeup gain knob
-                        .child(
-                            div()
-                                .flex()
-                                .flex_1()
-                                .items_center()
-                                .justify_center()
-                                .child(render_knob(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "Makeup",
-                                    state.makeup_gain_db,
-                                    MAKEUP_GAIN_MIN as f64,
-                                    MAKEUP_GAIN_MAX as f64,
-                                    "dB",
-                                    5,
-                                    state.selected_param,
-                                    state.is_editing,
-                                    Some('m'),
-                                    theme,
-                                )),
-                        ),
+                        // Spacer to push knob down
+                        .child(div().flex_1())
+                        // Makeup gain knob (direct child, no wrapper)
+                        .child(render_knob(
+                            entity.clone(),
+                            plugin_idx,
+                            "Makeup",
+                            state.makeup_gain_db,
+                            MAKEUP_GAIN_MIN as f64,
+                            MAKEUP_GAIN_MAX as f64,
+                            "dB",
+                            5,
+                            state.selected_param,
+                            state.is_editing,
+                            Some('m'),
+                            theme,
+                        )),
                 )
                 // Column 3: Mix and Sidechain HPF knobs
                 .child(
@@ -219,50 +224,38 @@ pub fn render_compressor_plugin(
                         .h(px(COLUMN_HEIGHT))
                         .param_section_style_lg(theme)
                         .child(render_section_header("OUTPUT", theme))
-                        // Mix knob
-                        .child(
-                            div()
-                                .flex()
-                                .flex_1()
-                                .items_center()
-                                .justify_center()
-                                .child(render_knob(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "Mix",
-                                    state.mix * 100.0, // Convert 0-1 to 0-100%
-                                    MIX_MIN as f64 * 100.0,
-                                    MIX_MAX as f64 * 100.0,
-                                    "%",
-                                    6,
-                                    state.selected_param,
-                                    state.is_editing,
-                                    Some('x'),
-                                    theme,
-                                )),
-                        )
-                        // Sidechain HPF knob (40-160Hz)
-                        .child(
-                            div()
-                                .flex()
-                                .flex_1()
-                                .items_center()
-                                .justify_center()
-                                .child(render_knob(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "SC HPF",
-                                    state.sidechain_hpf_hz,
-                                    SIDECHAIN_HPF_UI_MIN,
-                                    SIDECHAIN_HPF_UI_MAX,
-                                    "Hz",
-                                    9,
-                                    state.selected_param,
-                                    state.is_editing,
-                                    Some('s'),
-                                    theme,
-                                )),
-                        ),
+                        // Spacer to push knobs down
+                        .child(div().flex_1())
+                        // Mix knob (direct child)
+                        .child(render_knob(
+                            entity.clone(),
+                            plugin_idx,
+                            "Mix",
+                            state.mix * 100.0, // Convert 0-1 to 0-100%
+                            MIX_MIN as f64 * 100.0,
+                            MIX_MAX as f64 * 100.0,
+                            "%",
+                            6,
+                            state.selected_param,
+                            state.is_editing,
+                            Some('x'),
+                            theme,
+                        ))
+                        // SC HPF knob (direct child)
+                        .child(render_knob(
+                            entity.clone(),
+                            plugin_idx,
+                            "SC HPF",
+                            state.sidechain_hpf_hz,
+                            SIDECHAIN_HPF_UI_MIN,
+                            SIDECHAIN_HPF_UI_MAX,
+                            "Hz",
+                            9,
+                            state.selected_param,
+                            state.is_editing,
+                            Some('s'),
+                            theme,
+                        )),
                 )
                 // Column 4: Transfer curve (top) and Gain reduction meter (bottom)
                 .child(
@@ -300,7 +293,7 @@ pub fn render_compressor_plugin(
                                         .text_color(theme.text_secondary)
                                         .child("Gain Reduction"),
                                 )
-                                .child(render_gr_meter(simulated_gr, -30.0, theme)),
+                                .child(render_gr_meter(meter_value, -30.0, theme)),
                         ),
                 ),
         )

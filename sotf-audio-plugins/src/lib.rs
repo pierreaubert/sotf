@@ -59,13 +59,13 @@ pub use plugin_binaural::{
     BinauralDecoderParams, BinauralDecoderPlugin, RoomModel, binaural_default_enable_optimization,
 };
 pub use plugin_channel_mute_solo::{ChannelMuteSoloParams, ChannelMuteSoloPlugin, ChannelState};
-pub use plugin_compressor::{CompressorPlugin, CompressorPluginParams};
+pub use plugin_compressor::{CompressorData, CompressorPlugin, CompressorPluginParams};
 pub use plugin_convolution::{ConvolutionPlugin, ConvolutionPluginParams};
 pub use plugin_crossover::{CrossoverPlugin, CrossoverPluginParams};
 pub use plugin_delay::{DelayPlugin, DelayPluginParams};
 pub use plugin_eq::{BiquadFilterConfig, EqPlugin, EqPluginParams};
 pub use plugin_gain::{GainPlugin, GainPluginParams};
-pub use plugin_gate::{GatePlugin, GatePluginParams};
+pub use plugin_gate::{GateData, GatePlugin, GatePluginParams};
 pub use plugin_limiter::{LimiterPlugin, LimiterPluginParams};
 pub use plugin_loudness_compensation::{
     LoudnessCompensationPlugin, LoudnessCompensationPluginParams,

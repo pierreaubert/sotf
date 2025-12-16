@@ -6,7 +6,8 @@
 //! - Gain reduction meter
 
 use super::common::{
-    render_knob, render_section_header, render_toggle, render_vertical_slider, ParamSectionStyle,
+    render_knob, render_section_header, render_toggle_button, render_vertical_slider,
+    ParamSectionStyle,
 };
 use super::level_meters::render_gr_meter;
 use crate::app::AppState;
@@ -14,9 +15,10 @@ use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
 use sotf_audio_player::param_specs::gate::*;
+use sotf_plugins::GateData;
 
 /// State for rendering the Gate plugin
-pub struct GateRenderState {
+pub struct GateRenderState<'a> {
     pub threshold_db: f64,
     pub ratio: f64,
     pub attack_ms: f64,
@@ -26,6 +28,7 @@ pub struct GateRenderState {
     pub sidechain_hpf_hz: f64,
     pub is_editing: bool,
     pub selected_param: usize,
+    pub data: Option<&'a GateData>,
 }
 
 // Sidechain HPF UI range (40-160Hz)
@@ -43,26 +46,34 @@ pub fn render_gate_plugin(
     state: GateRenderState,
     theme: &Theme,
 ) -> impl IntoElement {
-    // Simulated values (in real implementation, these would come from the audio engine)
-    let simulated_input_db = -30.0; // Simulated input level
-    let gate_open = simulated_input_db > state.threshold_db;
-    let simulated_gr = if gate_open {
-        0.0
+    // Get metering data
+    let (input_db, is_open, attenuation_db) = if let Some(data) = state.data {
+        let max_input = data
+            .input_levels_db
+            .iter()
+            .cloned()
+            .fold(-100.0_f32, f32::max) as f64;
+        let max_attenuation = data
+            .attenuation_db
+            .iter()
+            .cloned()
+            .fold(0.0_f32, f32::max) as f64;
+        (max_input, data.is_open, max_attenuation)
     } else {
-        (state.threshold_db - simulated_input_db).min(0.0) * state.ratio
+        (-100.0, false, 0.0)
     };
 
     // Normalize threshold for visual display (-80 to 0 dB range)
     let threshold_normalized = ((state.threshold_db + 80.0) / 80.0).clamp(0.0, 1.0) as f32;
-    let input_normalized = ((simulated_input_db + 80.0) / 80.0).clamp(0.0, 1.0) as f32;
+    let input_normalized = ((input_db + 80.0) / 80.0).clamp(0.0, 1.0) as f32;
 
     // Cache theme colors
-    let gate_color = if gate_open {
+    let gate_color = if is_open {
         theme.success
     } else {
         theme.error
     };
-    let gate_glow = if gate_open {
+    let gate_glow = if is_open {
         Theme::opacity_20pct(theme.success)
     } else {
         Theme::opacity_20pct(theme.error)
@@ -150,77 +161,88 @@ pub fn render_gate_plugin(
                                 )),
                         ),
                 )
-                // Column 2: Mix, Link Channels, Sidechain HPF
+                // Column 2: OUTPUT header with Link Channels on right, then knobs at bottom
                 .child(
                     div()
                         .flex()
                         .flex_col()
-                        .gap_3()
                         .h(px(COLUMN_HEIGHT))
                         .param_section_style_lg(theme)
-                        .child(render_section_header("OUTPUT", theme))
-                        // Link channels toggle
-                        .child(render_toggle(
-                            entity.clone(),
-                            plugin_idx,
-                            "Link Channels",
-                            state.link_channels,
-                            5,
-                            state.selected_param,
-                            state.is_editing,
-                            theme,
-                        ))
-                        // Mix knob
+                        // Header row with OUTPUT and Link Channels
                         .child(
                             div()
                                 .flex()
-                                .flex_1()
+                                .justify_between()
                                 .items_center()
-                                .justify_center()
-                                .child(render_knob(
+                                .w_full()
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .font_weight(FontWeight::SEMIBOLD)
+                                        .text_color(theme.text_secondary)
+                                        .child("OUTPUT"),
+                                )
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(theme.text_muted)
+                                        .child("Link Ch."),
+                                ),
+                        )
+                        // Toggle button below header
+                        .child(
+                            div()
+                                .flex()
+                                .justify_end()
+                                .mt_1()
+                                .child(render_toggle_button(
                                     entity.clone(),
                                     plugin_idx,
-                                    "Mix",
-                                    state.mix * 100.0,
-                                    MIX_MIN as f64 * 100.0,
-                                    MIX_MAX as f64 * 100.0,
-                                    "%",
-                                    4,
+                                    state.link_channels,
+                                    5,
                                     state.selected_param,
                                     state.is_editing,
-                                    Some('m'),
                                     theme,
                                 )),
                         )
-                        // Sidechain HPF knob (40-160Hz)
-                        .child(
-                            div()
-                                .flex()
-                                .flex_1()
-                                .items_center()
-                                .justify_center()
-                                .child(render_knob(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "SC HPF",
-                                    state.sidechain_hpf_hz,
-                                    SIDECHAIN_HPF_UI_MIN,
-                                    SIDECHAIN_HPF_UI_MAX,
-                                    "Hz",
-                                    6,
-                                    state.selected_param,
-                                    state.is_editing,
-                                    Some('s'),
-                                    theme,
-                                )),
-                        ),
+                        // Spacer to push knobs to bottom
+                        .child(div().flex_1())
+                        // Mix knob (direct child)
+                        .child(render_knob(
+                            entity.clone(),
+                            plugin_idx,
+                            "Mix",
+                            state.mix * 100.0,
+                            MIX_MIN as f64 * 100.0,
+                            MIX_MAX as f64 * 100.0,
+                            "%",
+                            4,
+                            state.selected_param,
+                            state.is_editing,
+                            Some('m'),
+                            theme,
+                        ))
+                        // SC HPF knob (direct child)
+                        .child(render_knob(
+                            entity.clone(),
+                            plugin_idx,
+                            "SC HPF",
+                            state.sidechain_hpf_hz,
+                            SIDECHAIN_HPF_UI_MIN,
+                            SIDECHAIN_HPF_UI_MAX,
+                            "Hz",
+                            6,
+                            state.selected_param,
+                            state.is_editing,
+                            Some('s'),
+                            theme,
+                        )),
                 )
-                // Column 3: Gate status, Input level meter, GR meter
+                // Column 3: Gate status, Input level meter, GR meter (spaced out)
                 .child(
                     div()
                         .flex()
                         .flex_col()
-                        .gap_2()
                         .h(px(COLUMN_HEIGHT))
                         .param_section_style_lg(theme)
                         .child(render_section_header("METER", theme))
@@ -229,6 +251,7 @@ pub fn render_gate_plugin(
                             div()
                                 .flex()
                                 .justify_center()
+                                .mt_2()
                                 .child(
                                     div()
                                         .w(px(60.0))
@@ -245,10 +268,12 @@ pub fn render_gate_plugin(
                                                 .text_xs()
                                                 .font_weight(FontWeight::BOLD)
                                                 .text_color(gate_color)
-                                                .child(if gate_open { "OPEN" } else { "CLOSED" }),
+                                                .child(if is_open { "OPEN" } else { "CLOSED" }),
                                         ),
                                 ),
                         )
+                        // Spacer
+                        .child(div().flex_1())
                         // Input level meter with threshold marker
                         .child(
                             div()
@@ -300,21 +325,10 @@ pub fn render_gate_plugin(
                                         .child("0 dB"),
                                 ),
                         )
-                        // Gain reduction meter
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .flex_1()
-                                .gap_1()
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .text_color(theme.text_muted)
-                                        .child("Gain Reduction"),
-                                )
-                                .child(render_gr_meter(simulated_gr, -40.0, theme)),
-                        ),
+                        // Spacer
+                        .child(div().h(px(16.0)))
+                        // Gain reduction meter (no label, aligned at bottom)
+                        .child(render_gr_meter(-attenuation_db, -40.0, theme)),
                 ),
         )
         .when(state.is_editing, |d| {

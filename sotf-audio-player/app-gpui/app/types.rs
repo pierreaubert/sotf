@@ -51,6 +51,7 @@ pub enum InputMode {
     KeyboardShortcuts,
     About,
     EditingParam,
+    SpinoramaSpeakerSearch,
 }
 
 /// Active menu dropdown (if any)
@@ -1979,6 +1980,8 @@ pub struct SpinoramaEqState {
     pub dropdowns: SpinoramaEqDropdowns,
     /// Expanded accordion sections
     pub expanded_sections: Vec<gpui::SharedString>,
+    /// Timestamp when speakers were last fetched (for cache invalidation)
+    pub speakers_cached_at: Option<std::time::Instant>,
 }
 
 impl Default for SpinoramaEqState {
@@ -2006,6 +2009,7 @@ impl Default for SpinoramaEqState {
             loading_speakers: false,
             dropdowns: SpinoramaEqDropdowns::default(),
             expanded_sections: vec!["speaker".into(), "options".into()],
+            speakers_cached_at: None,
         }
     }
 }
@@ -2050,5 +2054,16 @@ impl SpinoramaEqState {
         }
         // Limit to reasonable number for UI
         self.speaker_suggestions.truncate(50);
+    }
+
+    /// Check if speakers cache needs to be refreshed (older than 1 hour or not loaded)
+    pub fn needs_speaker_refresh(&self) -> bool {
+        if self.available_speakers.is_empty() {
+            return true;
+        }
+        match self.speakers_cached_at {
+            Some(cached_at) => cached_at.elapsed() > std::time::Duration::from_secs(3600),
+            None => true,
+        }
     }
 }

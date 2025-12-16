@@ -279,6 +279,36 @@ pub fn render_toggle(
         })
 }
 
+/// Render a toggle button without label (just the switch)
+/// Uses Entity<AppState> for direct state updates
+pub fn render_toggle_button(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    enabled: bool,
+    idx: usize,
+    selected_param: usize,
+    is_editing: bool,
+    theme: &Theme,
+) -> impl IntoElement {
+    let is_selected = selected_param == idx && is_editing;
+
+    Toggle::new(("toggle-btn", plugin_idx * 1000 + idx))
+        .checked(enabled)
+        .style(ToggleStyle::Segmented)
+        .selected(is_selected)
+        .theme(theme.to_toggle_theme())
+        .on_change({
+            let entity = entity.clone();
+            move |new_value, _, cx| {
+                entity.update(cx, |state, _| {
+                    state
+                        .app
+                        .set_plugin_param(plugin_idx, idx, if new_value { 1.0 } else { 0.0 });
+                });
+            }
+        })
+}
+
 /// Render a value with unit and color coding
 pub fn render_colored_value(
     value: f64,

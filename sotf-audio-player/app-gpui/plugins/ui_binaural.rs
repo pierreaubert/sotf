@@ -323,19 +323,5 @@ pub fn render_binaural_plugin(
                         )),
                 ),
         )
-        // Hint for loading SOFA file
-        .when(!has_sofa, |d| {
-            d.child(
-                div()
-                    .p_3()
-                    .rounded_lg()
-                    .bg(Theme::opacity_20pct(theme.warning))
-                    .border_1()
-                    .border_color(theme.warning)
-                    .text_sm()
-                    .text_color(theme.warning)
-                    .child("Press 'f' in edit mode to load a SOFA HRTF file"),
-            )
-        })
         .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
 }

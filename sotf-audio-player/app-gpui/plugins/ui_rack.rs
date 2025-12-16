@@ -972,7 +972,10 @@ impl PlayerView {
                                     &theme,
                                     self.state.read(cx).app.upmixer_config_open,
                                     self.state.read(cx).app.selected_eq_band,
+                                    // Pass loudness_info for backward compatibility
                                     self.state.read(cx).app.loudness_info.clone(),
+                                    // Per-plugin real-time data not yet implemented
+                                    None,
                                 )),
                         )
                         // Divider between main zone and output meter (only if multichannel)

@@ -70,6 +70,7 @@ pub fn render_plugin_content(
     config_open: bool,
     selected_band_idx: usize,
     loudness: Option<sotf_audio_player::LoudnessData>,
+    plugin_data: Option<std::sync::Arc<dyn std::any::Any + Send + Sync>>,
 ) -> AnyElement {
     match settings {
         PluginSettings::EQ { filters } => {
@@ -125,6 +126,7 @@ pub fn render_plugin_content(
                 sidechain_hpf_hz: *sidechain_hpf_hz,
                 is_editing,
                 selected_param,
+                data: plugin_data.as_ref().and_then(|d| d.downcast_ref()),
             },
             theme,
         )
@@ -167,6 +169,7 @@ pub fn render_plugin_content(
                 sidechain_hpf_hz: *sidechain_hpf_hz,
                 is_editing,
                 selected_param,
+                data: plugin_data.as_ref().and_then(|d| d.downcast_ref()),
             },
             theme,
         )
@@ -289,6 +292,7 @@ pub fn render_plugin_content(
                 smoothing: *smoothing,
                 is_editing,
                 selected_param,
+                data: plugin_data.as_ref().and_then(|d| d.downcast_ref()),
             },
             theme,
         )

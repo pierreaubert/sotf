@@ -728,6 +728,184 @@ impl App {
                     }
                     _ => {}
                 },
+                PluginSettings::Compressor {
+                    threshold_db,
+                    ratio,
+                    attack_ms,
+                    release_ms,
+                    knee_db,
+                    makeup_gain_db,
+                    mix,
+                    auto_makeup,
+                    link_channels,
+                    sidechain_hpf_hz,
+                } => match param_idx {
+                    0 => {
+                        *threshold_db = value.clamp(-60.0, 0.0);
+                        update_needed = true;
+                    }
+                    1 => {
+                        *ratio = value.clamp(1.0, 20.0);
+                        update_needed = true;
+                    }
+                    2 => {
+                        *attack_ms = value.clamp(0.1, 200.0);
+                        update_needed = true;
+                    }
+                    3 => {
+                        *release_ms = value.clamp(10.0, 2000.0);
+                        update_needed = true;
+                    }
+                    4 => {
+                        *knee_db = value.clamp(0.0, 24.0);
+                        update_needed = true;
+                    }
+                    5 => {
+                        *makeup_gain_db = value.clamp(-12.0, 24.0);
+                        update_needed = true;
+                    }
+                    6 => {
+                        *mix = (value / 100.0).clamp(0.0, 1.0); // Convert from 0-100% to 0-1
+                        update_needed = true;
+                    }
+                    7 => {
+                        *auto_makeup = value > 0.5;
+                        update_needed = true;
+                    }
+                    8 => {
+                        *link_channels = value > 0.5;
+                        update_needed = true;
+                    }
+                    9 => {
+                        *sidechain_hpf_hz = value.clamp(20.0, 500.0);
+                        update_needed = true;
+                    }
+                    _ => {}
+                },
+                PluginSettings::Limiter {
+                    threshold_db,
+                    release_ms,
+                    mix,
+                } => match param_idx {
+                    0 => {
+                        *threshold_db = value.clamp(-30.0, 0.0);
+                        update_needed = true;
+                    }
+                    1 => {
+                        *release_ms = value.clamp(10.0, 1000.0);
+                        update_needed = true;
+                    }
+                    2 => {
+                        *mix = (value / 100.0).clamp(0.0, 1.0); // Convert from 0-100% to 0-1
+                        update_needed = true;
+                    }
+                    _ => {}
+                },
+                PluginSettings::Gate {
+                    threshold_db,
+                    ratio,
+                    attack_ms,
+                    release_ms,
+                    mix,
+                    link_channels,
+                    sidechain_hpf_hz,
+                } => match param_idx {
+                    0 => {
+                        *threshold_db = value.clamp(-80.0, 0.0);
+                        update_needed = true;
+                    }
+                    1 => {
+                        *ratio = value.clamp(1.0, 100.0);
+                        update_needed = true;
+                    }
+                    2 => {
+                        *attack_ms = value.clamp(0.01, 50.0);
+                        update_needed = true;
+                    }
+                    3 => {
+                        *release_ms = value.clamp(1.0, 1000.0);
+                        update_needed = true;
+                    }
+                    4 => {
+                        *mix = (value / 100.0).clamp(0.0, 1.0); // Convert from 0-100% to 0-1
+                        update_needed = true;
+                    }
+                    5 => {
+                        *link_channels = value > 0.5;
+                        update_needed = true;
+                    }
+                    6 => {
+                        *sidechain_hpf_hz = value.clamp(20.0, 500.0);
+                        update_needed = true;
+                    }
+                    _ => {}
+                },
+                PluginSettings::BinauralDecoder {
+                    enable_optimization,
+                    externalization,
+                    near_field_strength,
+                    ..
+                } => match param_idx {
+                    2 => {
+                        *enable_optimization = value > 0.5;
+                        update_needed = true;
+                    }
+                    3 => {
+                        *externalization = value.clamp(0.0, 1.0);
+                        update_needed = true;
+                    }
+                    4 => {
+                        *near_field_strength = value.clamp(0.0, 1.0);
+                        update_needed = true;
+                    }
+                    _ => {}
+                },
+                PluginSettings::Convolution {
+                    mix,
+                    gain_db,
+                    ..
+                } => match param_idx {
+                    1 => {
+                        *mix = value.clamp(0.0, 1.0);
+                        update_needed = true;
+                    }
+                    2 => {
+                        *gain_db = value.clamp(-20.0, 20.0);
+                        update_needed = true;
+                    }
+                    _ => {}
+                },
+                PluginSettings::SpectrumAnalyzer {
+                    num_bins,
+                    min_freq,
+                    max_freq,
+                    smoothing,
+                } => match param_idx {
+                    0 => {
+                        *num_bins = (value as usize).clamp(10, 256);
+                        update_needed = true;
+                    }
+                    1 => {
+                        *min_freq = (value as f32).clamp(20.0, 20000.0);
+                        update_needed = true;
+                    }
+                    2 => {
+                        *max_freq = (value as f32).clamp(20.0, 20000.0);
+                        update_needed = true;
+                    }
+                    3 => {
+                        *smoothing = (value as f32).clamp(0.0, 1.0);
+                        update_needed = true;
+                    }
+                    _ => {}
+                },
+                PluginSettings::ChannelMuteSolo { enabled, .. } => match param_idx {
+                    0 => {
+                        *enabled = value > 0.5;
+                        update_needed = true;
+                    }
+                    _ => {}
+                },
                 _ => {}
             }
         }

@@ -63,7 +63,28 @@ impl PlayerView {
     }
 
     /// Main Spinorama EQ screen entry point (wizard)
-    pub(crate) fn render_spinorama_eq_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_spinorama_eq_screen(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        // Check if we need to auto-fetch speakers before reading state
+        let needs_fetch = {
+            let state = self.state.read(cx);
+            state.app.spinorama_eq_state.needs_speaker_refresh()
+                && !state.app.spinorama_eq_state.loading_speakers
+        };
+
+        if needs_fetch {
+            // Set loading flag immediately to prevent duplicate fetches
+            self.state.update(cx, |state, _| {
+                state.app.spinorama_eq_state.loading_speakers = true;
+            });
+            // Schedule fetch
+            cx.spawn(async move |view, cx| {
+                let _ = view.update(cx, |view, cx| {
+                    view.fetch_spinorama_speakers(cx);
+                });
+            })
+            .detach();
+        }
+
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
         let current_step = state.app.spinorama_eq_state.step;
@@ -304,6 +325,8 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
         let spinorama = &state.app.spinorama_eq_state;
+        let is_searching =
+            state.app.input_mode == crate::app::InputMode::SpinoramaSpeakerSearch;
 
         let search_query = spinorama.speaker_search.clone();
         let selected_speaker = spinorama.selected_speaker.clone();
@@ -337,30 +360,53 @@ impl PlayerView {
                             )
                             .child({
                                 let state = self.state.clone();
-                                Input::new("speaker-search")
-                                    .placeholder("e.g., KEF R3, JBL 306P...")
-                                    .value(SharedString::from(search_query.clone()))
-                                    .edit_text(SharedString::from(search_query.clone()))
-                                    .size(InputSize::Md)
-                                    .bg_color(theme.surface)
-                                    .text_color(theme.text_primary)
-                                    .placeholder_color(theme.text_muted)
-                                    .border_color(theme.border)
-                                    .editing(true)
-                                    .on_text_change(move |text, _window, cx| {
-                                        state.update(cx, |state, _| {
-                                            state.app.spinorama_eq_state.speaker_search = text;
-                                            state.app.spinorama_eq_state.update_suggestions();
+                                let state_for_click = self.state.clone();
+                                let accent = theme.accent;
+                                let border = theme.border;
+                                // Wrap Input in a clickable container for reliable focus handling
+                                div()
+                                    .w_full()
+                                    .id("speaker-search-container")
+                                    .cursor_text()
+                                    .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                                        state_for_click.update(cx, |state, cx| {
+                                            state.app.input_mode =
+                                                crate::app::InputMode::SpinoramaSpeakerSearch;
+                                            cx.notify();
                                         });
                                     })
+                                    .child(
+                                        Input::new("speaker-search")
+                                            .placeholder("Click here to search speakers...")
+                                            .value(SharedString::from(search_query.clone()))
+                                            .edit_text(SharedString::from(search_query.clone()))
+                                            .size(InputSize::Md)
+                                            .bg_color(theme.surface)
+                                            .text_color(theme.text_primary)
+                                            .placeholder_color(theme.text_muted)
+                                            .border_color(if is_searching { accent } else { border })
+                                            .editing(is_searching)
+                                            .on_text_change(move |text, _window, cx| {
+                                                state.update(cx, |state, _| {
+                                                    state
+                                                        .app
+                                                        .spinorama_eq_state
+                                                        .speaker_search = text;
+                                                    state
+                                                        .app
+                                                        .spinorama_eq_state
+                                                        .update_suggestions();
+                                                });
+                                            }),
+                                    )
                             })
                             .child(
                                 HStack::new()
                                     .spacing(StackSpacing::Sm)
                                     .child(
-                                        Button::new("fetch-speakers", "Fetch Speaker List")
+                                        Button::new("refresh-speakers", "⟳ Refresh")
                                             .variant(ButtonVariant::Secondary)
-                                            .size(ButtonSize::Md)
+                                            .size(ButtonSize::Sm)
                                             .disabled(is_loading)
                                             .build()
                                             .on_mouse_up(
@@ -373,6 +419,13 @@ impl PlayerView {
                                     .when(is_loading, |hstack| {
                                         hstack.child(
                                             Text::new("Loading...")
+                                                .size(TextSize::Sm)
+                                                .color(theme.text_muted),
+                                        )
+                                    })
+                                    .when(!is_loading && !spinorama.available_speakers.is_empty(), |hstack| {
+                                        hstack.child(
+                                            Text::new(format!("{} speakers", spinorama.available_speakers.len()))
                                                 .size(TextSize::Sm)
                                                 .color(theme.text_muted),
                                         )
@@ -401,10 +454,17 @@ impl PlayerView {
                             .gap_1()
                             .max_h(px(300.0))
                             .overflow_y_scroll()
-                            .when(suggestions.is_empty(), |d| {
+                            .when(suggestions.is_empty() && is_loading, |d| {
+                                d.child(
+                                    Text::new("Loading speakers from spinorama.org...")
+                                        .size(TextSize::Sm)
+                                        .color(theme.text_muted),
+                                )
+                            })
+                            .when(suggestions.is_empty() && !is_loading, |d| {
                                 d.child(
                                     Text::new(if search_query.is_empty() {
-                                        "Click 'Fetch Speaker List' to load available speakers."
+                                        "No speakers loaded. Click Refresh to load."
                                     } else {
                                         "No matching speakers found."
                                     })
@@ -1106,35 +1166,62 @@ impl PlayerView {
 
     fn fetch_spinorama_speakers(&mut self, cx: &mut Context<Self>) {
         log::info!("Fetching spinorama speakers from API...");
+        // Note: loading_speakers is set to true before spawning to prevent duplicate fetches
         self.state.update(cx, |state, _cx| {
             state.app.spinorama_eq_state.loading_speakers = true;
             state.app.spinorama_eq_state.error_message = None;
         });
         cx.notify();
 
+        // Use a global mutex to share results between threads (like optimization does)
+        static SPEAKERS_RESULT: std::sync::Mutex<Option<Result<Vec<String>, String>>> =
+            std::sync::Mutex::new(None);
+
+        // Clear any previous result
+        *SPEAKERS_RESULT.lock().unwrap() = None;
+
+        // Spawn a background thread with its own tokio runtime for the HTTP request
+        std::thread::spawn(|| {
+            let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+            let result = rt.block_on(async { autoeq::fetch_available_speakers().await });
+
+            let mapped_result = result.map_err(|e| e.to_string());
+            *SPEAKERS_RESULT.lock().unwrap() = Some(mapped_result);
+        });
+
+        // Poll for results from GPUI's async context
         let state_entity = self.state.clone();
         cx.spawn(async move |_, cx| {
-            // Fetch from spinorama.org API
-            let result = autoeq::fetch_available_speakers().await;
+            loop {
+                smol::Timer::after(std::time::Duration::from_millis(100)).await;
 
-            match result {
-                Ok(speakers) => {
-                    log::info!("Fetched {} speakers from spinorama.org", speakers.len());
-                    let _ = state_entity.update(cx, |state, cx| {
-                        state.app.spinorama_eq_state.available_speakers = speakers;
-                        state.app.spinorama_eq_state.loading_speakers = false;
-                        state.app.spinorama_eq_state.update_suggestions();
-                        cx.notify();
-                    });
-                }
-                Err(e) => {
-                    log::error!("Failed to fetch speakers: {}", e);
-                    let _ = state_entity.update(cx, |state, cx| {
-                        state.app.spinorama_eq_state.loading_speakers = false;
-                        state.app.spinorama_eq_state.error_message =
-                            Some(format!("Failed to fetch speakers: {}", e));
-                        cx.notify();
-                    });
+                // Check if result is ready
+                let result = SPEAKERS_RESULT.lock().unwrap().take();
+
+                if let Some(result) = result {
+                    match result {
+                        Ok(speakers) => {
+                            log::info!("Fetched {} speakers from spinorama.org", speakers.len());
+                            let _ = state_entity.update(cx, |state, cx| {
+                                state.app.spinorama_eq_state.available_speakers = speakers;
+                                state.app.spinorama_eq_state.loading_speakers = false;
+                                state.app.spinorama_eq_state.speakers_cached_at =
+                                    Some(std::time::Instant::now());
+                                state.app.spinorama_eq_state.update_suggestions();
+                                cx.notify();
+                            });
+                        }
+                        Err(e) => {
+                            log::error!("Failed to fetch speakers: {}", e);
+                            let _ = state_entity.update(cx, |state, cx| {
+                                state.app.spinorama_eq_state.loading_speakers = false;
+                                state.app.spinorama_eq_state.error_message =
+                                    Some(format!("Failed to fetch speakers: {}", e));
+                                cx.notify();
+                            });
+                        }
+                    }
+                    break;
                 }
             }
         })

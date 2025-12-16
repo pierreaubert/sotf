@@ -300,17 +300,90 @@ impl MeterData {
 }
 
 // ============================================================================
+// Axis Components
+// ============================================================================
+
+/// Render horizontal frequency axis (logarithmic scale, 20Hz - 20kHz)
+fn render_frequency_axis(theme: &Theme) -> impl IntoElement {
+    // Logarithmic frequency labels
+    let freq_labels = [
+        ("20", 0.0),
+        ("50", 0.132),  // log10(50/20) / log10(20000/20) = 0.132
+        ("100", 0.233), // log10(100/20) / log10(20000/20) = 0.233
+        ("200", 0.333),
+        ("500", 0.465),
+        ("1k", 0.566),
+        ("2k", 0.666),
+        ("5k", 0.799),
+        ("10k", 0.899),
+        ("20k", 1.0),
+    ];
+
+    div()
+        .w_full()
+        .h(px(20.0))
+        .relative()
+        .children(freq_labels.iter().map(|(label, pos)| {
+            div()
+                .absolute()
+                .left(relative(*pos as f32))
+                .top_0()
+                .text_xs()
+                .text_color(theme.text_muted)
+                .child(
+                    div()
+                        .ml(px(-12.0)) // Center the label
+                        .child(*label),
+                )
+        }))
+}
+
+/// Render vertical dB axis (-60dB to 0dB)
+fn render_db_axis(theme: &Theme) -> impl IntoElement {
+    let db_labels = [
+        ("0", 0.0),
+        ("-20", 0.333),
+        ("-40", 0.666),
+        ("-60", 1.0),
+    ];
+
+    div()
+        .w(px(32.0))
+        .h_full()
+        .flex()
+        .flex_col()
+        .relative()
+        .children(db_labels.iter().map(|(label, pos)| {
+            div()
+                .absolute()
+                .top(relative(*pos as f32))
+                .right_0()
+                .text_xs()
+                .text_color(theme.text_muted)
+                .pr_1()
+                .child(
+                    div()
+                        .mt(px(-6.0)) // Center vertically
+                        .child(*label),
+                )
+        }))
+}
+
+// ============================================================================
 // Plugin UI
 // ============================================================================
 
+use sotf_plugins::SpectrumData;
+
 /// State for rendering the Spectrum Analyzer plugin
-pub struct SpectrumRenderState {
+pub struct SpectrumRenderState<'a> {
     pub num_bins: usize,
     pub min_freq: f32,
     pub max_freq: f32,
     pub smoothing: f32,
     pub is_editing: bool,
     pub selected_param: usize,
+    pub data: Option<&'a SpectrumData>,
 }
 
 /// Render the Spectrum Analyzer plugin
@@ -320,24 +393,11 @@ pub fn render_spectrum_analyzer_plugin(
     state: SpectrumRenderState,
     theme: &Theme,
 ) -> impl IntoElement {
-    // Generate simulated spectrum bars for the plugin card view
-    let bar_count = 32;
-    let bars: Vec<f32> = (0..bar_count)
-        .map(|i| {
-            // Simulated frequency response curve
-            let t = i as f32 / bar_count as f32;
-            let peak = 0.5;
-            let spread = 0.3;
-            let value = (-(t - peak).powi(2) / (2.0 * spread * spread)).exp();
-            value * 0.8 + 0.1
-        })
-        .collect();
-
     div()
         .flex()
         .flex_col()
         .gap_4()
-        // Spectrum display section
+        // Spectrum display section with axes
         .child(
             div()
                 .flex()
@@ -345,29 +405,53 @@ pub fn render_spectrum_analyzer_plugin(
                 .gap_2()
                 .param_section_style_lg(theme)
                 .child(render_section_header("SPECTRUM ANALYZER", theme))
+                // Main spectrum area with dB axis
                 .child(
                     div()
-                        .h(px(240.0))
-                        .w_full()
-                        .bg(theme.surface)
-                        .rounded_lg()
-                        .border_1()
-                        .border_color(theme.border)
                         .flex()
-                        .items_end()
-                        .gap_px()
-                        .p_2()
-                        .children(bars.into_iter().enumerate().map(|(i, height)| {
-                            let t = i as f32 / bar_count as f32;
-                            let color = if t < 0.3 {
-                                theme.meter_normal
-                            } else if t < 0.7 {
-                                theme.meter_warning
-                            } else {
-                                theme.meter_clip
-                            };
-                            div().flex_1().h(relative(height)).bg(color).rounded_t_sm()
-                        })),
+                        .gap_1()
+                        // dB axis (vertical, left side)
+                        .child(render_db_axis(theme))
+                        // Spectrum bars
+                        .child(
+                            div()
+                                .flex_1()
+                                .h(px(200.0))
+                                .bg(theme.surface)
+                                .rounded_lg()
+                                .border_1()
+                                .border_color(theme.border)
+                                .flex()
+                                .items_end()
+                                .gap_px()
+                                .p_2()
+                                .child(if let Some(data) = state.data {
+                                    // Use real spectrum data
+                                    let magnitudes: Arc<[f32]> = data.magnitudes.clone().into();
+                                    SpectrumElement::new(magnitudes)
+                                        .height(px(200.0))
+                                        .frequency_range(state.min_freq, state.max_freq)
+                                        .smoothing(state.smoothing)
+                                        .into_any_element()
+                                } else {
+                                    // Fallback if no data available
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .size_full()
+                                        .text_color(theme.text_muted)
+                                        .child("No signal")
+                                        .into_any_element()
+                                }),
+                        ),
+                )
+                // Frequency axis (horizontal, below spectrum)
+                .child(
+                    div()
+                        .flex()
+                        .child(div().w(px(32.0))) // Spacer to align with dB axis
+                        .child(render_frequency_axis(theme)),
                 ),
         )
         // Controls
@@ -451,24 +535,32 @@ impl PlayerView {
                 .flex()
                 .flex_col()
                 .size_full()
-                // GPU-accelerated spectrum visualization
-                .child(
-                    SpectrumElement::new(magnitudes)
-                        .height(px(256.0))
-                        .frequency_range(20.0, 20000.0)
-                        .smoothing(0.3),
-                )
-                // Frequency labels
+                // Main spectrum area with axes
                 .child(
                     div()
-                        .mt_2()
                         .flex()
-                        .justify_between()
-                        .text_xs()
-                        .text_color(theme.text_muted)
-                        .child("20 Hz")
-                        .child("1 kHz")
-                        .child("20 kHz"),
+                        .flex_1()
+                        .gap_1()
+                        // dB axis (vertical, left side)
+                        .child(render_db_axis(&theme))
+                        // GPU-accelerated spectrum visualization
+                        .child(
+                            div()
+                                .flex_1()
+                                .child(
+                                    SpectrumElement::new(magnitudes)
+                                        .height(px(256.0))
+                                        .frequency_range(20.0, 20000.0)
+                                        .smoothing(0.3),
+                                ),
+                        ),
+                )
+                // Frequency axis (horizontal, below spectrum)
+                .child(
+                    div()
+                        .flex()
+                        .child(div().w(px(32.0))) // Spacer to align with dB axis
+                        .child(render_frequency_axis(&theme)),
                 )
         } else {
             div()
