@@ -44,6 +44,7 @@ blas-src = { workspace = true }
 # Optional features
 nlopt = { workspace = true, optional = true }
 plotly_static = { version = "0.1", features = ["chromedriver", "webdriver_download"], optional = true }
+rayon.workspace = true
 
 [features]
 default = ["nlopt"]

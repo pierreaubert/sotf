@@ -41,7 +41,7 @@ pub fn optimize_multisub(
         config.min_freq,
         config.max_freq,
         sample_rate,
-        "nlopt:cobyla", // default algo
+        &config.algorithm,
         config.max_iter,
         config.min_db,
         config.max_db,

@@ -24,16 +24,15 @@ pub fn crossover_type_to_string(ct: &CrossoverType) -> &'static str {
     }
 }
 
+use super::types::OptimizerConfig;
+
 /// Optimize crossover for a group of driver measurements using autoeq's workflow
 ///
 /// # Arguments
 /// * `drivers` - Vector of driver measurements (will be sorted by frequency)
 /// * `crossover_type` - Type of crossover to use
 /// * `sample_rate` - Sample rate for filter design
-/// * `min_freq` - Minimum frequency for evaluation
-/// * `max_freq` - Maximum frequency for evaluation
-/// * `min_db` - Minimum gain bound in dB
-/// * `max_db` - Maximum gain bound in dB
+/// * `config` - Optimizer configuration
 ///
 /// # Returns
 /// * Tuple of (optimal_gains, optimal_delays, optimal_crossover_freqs, combined_curve)
@@ -42,10 +41,7 @@ pub fn optimize_crossover(
     drivers: Vec<Curve>,
     crossover_type: CrossoverType,
     sample_rate: f64,
-    min_freq: f64,
-    max_freq: f64,
-    min_db: f64,
-    max_db: f64,
+    config: &OptimizerConfig,
 ) -> Result<(Vec<f64>, Vec<f64>, Vec<f64>, Curve), Box<dyn Error>> {
     // Convert Curve to DriverMeasurement
     let driver_measurements: Vec<DriverMeasurement> = drivers
@@ -68,13 +64,13 @@ pub fn optimize_crossover(
     // Call library workflow to perform optimization
     let result = autoeq::workflow::optimize_drivers_crossover(
         drivers_data.clone(),
-        min_freq,
-        max_freq,
+        config.min_freq,
+        config.max_freq,
         sample_rate,
-        "nlopt:cobyla",
-        5000,
-        min_db,
-        max_db,
+        &config.algorithm,
+        config.max_iter,
+        config.min_db,
+        config.max_db,
     )?;
 
     // Compute the combined response

@@ -217,7 +217,7 @@ fn default_fir_taps() -> usize {
     4096
 }
 fn default_fir_phase() -> String {
-    "minimum".to_string()
+    "kirkeby".to_string()
 }
 fn default_num_filters() -> usize {
     10

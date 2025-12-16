@@ -18,6 +18,7 @@
 use anyhow::{Context, Result, anyhow};
 use clap::Parser;
 use log::{debug, info, warn};
+use rayon::prelude::*;
 use schemars::schema_for;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -105,18 +106,29 @@ fn run(sample_rate: f64, config_path: PathBuf, output_path: PathBuf) -> Result<(
     let mut pre_scores = Vec::new();
     let mut post_scores = Vec::new();
 
-    for (channel_name, speaker_config) in &room_config.speakers {
-        info!("Processing channel: {}", channel_name);
+    // Process in parallel
+    let results: Vec<Result<(String, ChannelDspChain, f64, f64)>> = room_config
+        .speakers
+        .par_iter()
+        .map(|(channel_name, speaker_config)| {
+            info!("Processing channel: {}", channel_name);
 
-        let (chain, pre_score, post_score) = process_speaker(
-            channel_name,
-            speaker_config,
-            &room_config,
-            sample_rate,
-            output_dir,
-        )?;
+            let (chain, pre_score, post_score) = process_speaker(
+                channel_name,
+                speaker_config,
+                &room_config,
+                sample_rate,
+                output_dir,
+            )?;
 
-        channel_chains.insert(channel_name.to_string(), chain);
+            Ok((channel_name.clone(), chain, pre_score, post_score))
+        })
+        .collect();
+
+    // Collect results
+    for res in results {
+        let (channel_name, chain, pre_score, post_score) = res?;
+        channel_chains.insert(channel_name, chain);
         pre_scores.push(pre_score);
         post_scores.push(post_score);
     }
@@ -476,10 +488,7 @@ fn process_speaker_group(
         driver_curves,
         crossover_type,
         sample_rate,
-        room_config.optimizer.min_freq,
-        room_config.optimizer.max_freq,
-        room_config.optimizer.min_db,
-        room_config.optimizer.max_db,
+        &room_config.optimizer,
     )
     .map_err(|e| anyhow!("Crossover optimization failed: {}", e))?;
 
