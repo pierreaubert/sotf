@@ -347,7 +347,7 @@ pub fn render_spectrum_analyzer_plugin(
                 .child(render_section_header("SPECTRUM ANALYZER", theme))
                 .child(
                     div()
-                        .h(px(120.0))
+                        .h(px(240.0))
                         .w_full()
                         .bg(theme.surface)
                         .rounded_lg()
@@ -375,6 +375,7 @@ pub fn render_spectrum_analyzer_plugin(
             div()
                 .flex()
                 .gap_4()
+                .justify_center()
                 .child(render_knob(
                     entity.clone(),
                     plugin_idx,

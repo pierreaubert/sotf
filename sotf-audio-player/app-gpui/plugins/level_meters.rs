@@ -846,11 +846,28 @@ impl PlayerView {
                             .relative()
                             .flex_1()
                             .w(px(24.0))
+                            .overflow_hidden()
                             .children(ticks.into_iter().map(move |db| {
                                 let pos = db_to_position(db as f64);
+                                // Use top positioning: top = (1 - pos), then offset by half line height
+                                let top_fraction = 1.0 - pos;
+
+                                // Adjust label offset for edge labels to keep them visible:
+                                // - Top label (0 dB): move label down
+                                // - Bottom label (-60 dB): move label up
+                                // - Other labels: no additional offset
+                                let label_offset = if db == 0 {
+                                    px(6.0) // Top: move label down
+                                } else if db == -60 {
+                                    px(-6.0) // Bottom: move label up
+                                } else {
+                                    px(0.0) // No additional offset
+                                };
+
                                 let label = div()
                                     .text_size(px(9.0))
                                     .text_color(theme.text_muted)
+                                    .mt(label_offset)
                                     .child(format!("{}", db));
 
                                 let tick = div().w(px(4.0)).h(px(1.0)).bg(theme.border);
@@ -859,17 +876,21 @@ impl PlayerView {
                                     .absolute()
                                     .left_0()
                                     .right_0()
-                                    .bottom(gpui::Length::Definite(gpui::DefiniteLength::Fraction(
-                                        pos,
+                                    .top(gpui::Length::Definite(gpui::DefiniteLength::Fraction(
+                                        top_fraction,
                                     )))
+                                    // Offset by half line height (~6px for 9px text) to center tick on position
+                                    .mt(px(-6.0))
                                     .flex()
                                     .items_center()
                                     .justify_between();
 
                                 if align_right {
-                                    container.child(label).child(tick)
-                                } else {
+                                    // Legend on right: tick → label (tick points toward meter on left)
                                     container.child(tick).child(label)
+                                } else {
+                                    // Legend on left: label → tick (tick points toward meter on right)
+                                    container.child(label).child(tick)
                                 }
                             })),
                     )

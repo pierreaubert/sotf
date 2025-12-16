@@ -45,90 +45,98 @@ pub fn render_loudness_compensation_plugin(
                         .child("Boosts bass and treble at low listening volumes to compensate for the ear's reduced sensitivity at those frequencies."),
                 ),
         )
-        // Low Shelf section
+        // Low Shelf and High Shelf sections side by side
         .child(
             div()
                 .flex()
-                .flex_col()
-                .gap_2()
-                .param_section_style(theme)
-                .child(render_section_header("LOW SHELF", theme))
+                .gap_4()
+                // Low Shelf section
                 .child(
                     div()
                         .flex()
-                        .gap_4()
-                        .justify_center()
-                        .child(render_knob(
-                            entity.clone(),
-                            plugin_idx,
-                            "Frequency",
-                            state.low_freq,
-                            LOW_FREQ_MIN as f64,
-                            LOW_FREQ_MAX as f64,
-                            "Hz",
-                            0,
-                            state.selected_param,
-                            state.is_editing,
-                            None,
-                            theme,
-                        ))
-                        .child(render_knob(
-                            entity.clone(),
-                            plugin_idx,
-                            "Gain",
-                            state.low_gain,
-                            LOW_GAIN_MIN as f64,
-                            LOW_GAIN_MAX as f64,
-                            "dB",
-                            1,
-                            state.selected_param,
-                            state.is_editing,
-                            None,
-                            theme,
-                        )),
-                ),
-        )
-        // High Shelf section
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .param_section_style(theme)
-                .child(render_section_header("HIGH SHELF", theme))
+                        .flex_col()
+                        .flex_1()
+                        .gap_2()
+                        .param_section_style(theme)
+                        .child(render_section_header("LOW SHELF", theme))
+                        .child(
+                            div()
+                                .flex()
+                                .gap_4()
+                                .justify_center()
+                                .child(render_knob(
+                                    entity.clone(),
+                                    plugin_idx,
+                                    "Frequency",
+                                    state.low_freq,
+                                    LOW_FREQ_MIN as f64,
+                                    LOW_FREQ_MAX as f64,
+                                    "Hz",
+                                    0,
+                                    state.selected_param,
+                                    state.is_editing,
+                                    None,
+                                    theme,
+                                ))
+                                .child(render_knob(
+                                    entity.clone(),
+                                    plugin_idx,
+                                    "Gain",
+                                    state.low_gain,
+                                    LOW_GAIN_MIN as f64,
+                                    LOW_GAIN_MAX as f64,
+                                    "dB",
+                                    1,
+                                    state.selected_param,
+                                    state.is_editing,
+                                    None,
+                                    theme,
+                                )),
+                        ),
+                )
+                // High Shelf section
                 .child(
                     div()
                         .flex()
-                        .gap_4()
-                        .justify_center()
-                        .child(render_knob(
-                            entity.clone(),
-                            plugin_idx,
-                            "Frequency",
-                            state.high_freq,
-                            HIGH_FREQ_MIN as f64,
-                            HIGH_FREQ_MAX as f64,
-                            "Hz",
-                            2,
-                            state.selected_param,
-                            state.is_editing,
-                            None,
-                            theme,
-                        ))
-                        .child(render_knob(
-                            entity.clone(),
-                            plugin_idx,
-                            "Gain",
-                            state.high_gain,
-                            HIGH_GAIN_MIN as f64,
-                            HIGH_GAIN_MAX as f64,
-                            "dB",
-                            3,
-                            state.selected_param,
-                            state.is_editing,
-                            None,
-                            theme,
-                        )),
+                        .flex_col()
+                        .flex_1()
+                        .gap_2()
+                        .param_section_style(theme)
+                        .child(render_section_header("HIGH SHELF", theme))
+                        .child(
+                            div()
+                                .flex()
+                                .gap_4()
+                                .justify_center()
+                                .child(render_knob(
+                                    entity.clone(),
+                                    plugin_idx,
+                                    "Frequency",
+                                    state.high_freq,
+                                    HIGH_FREQ_MIN as f64,
+                                    HIGH_FREQ_MAX as f64,
+                                    "Hz",
+                                    2,
+                                    state.selected_param,
+                                    state.is_editing,
+                                    None,
+                                    theme,
+                                ))
+                                .child(render_knob(
+                                    entity.clone(),
+                                    plugin_idx,
+                                    "Gain",
+                                    state.high_gain,
+                                    HIGH_GAIN_MIN as f64,
+                                    HIGH_GAIN_MAX as f64,
+                                    "dB",
+                                    3,
+                                    state.selected_param,
+                                    state.is_editing,
+                                    None,
+                                    theme,
+                                )),
+                        ),
                 ),
         )
         .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
