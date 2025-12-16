@@ -3,7 +3,7 @@
 //! A vertical slider with:
 //! - Selection highlighting for plugin parameter editing
 //! - Drag support with vertical mouse movement
-//! - Scroll wheel adjustment
+//! - Scroll wheel adjustment (Shift for fine control)
 //! - Double-click to reset to default
 //! - Keyboard navigation when selected:
 //!   - Arrow Up/Right: increase value by 5%
@@ -13,10 +13,16 @@
 //!   - Escape: reset to default
 //! - Value display with units
 //! - Keyboard shortcut hints
+//! - Linear or logarithmic scale
 
+use crate::scale::Scale;
 use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::*;
 use gpui::*;
+
+/// Scale type for vertical slider value mapping
+/// Re-exported from scale module for API consistency
+pub type VerticalSliderScale = Scale;
 
 /// Theme colors for vertical slider styling
 #[derive(Debug, Clone)]
@@ -124,26 +130,263 @@ impl VerticalSliderSize {
     }
 }
 
-/// Calculate the number of tick marks based on the value range
-fn calculate_tick_count(min: f64, max: f64) -> usize {
-    let range = max - min;
-    if range <= 0.0 {
-        return 2; // Just min and max
+/// Information about a tick mark
+#[derive(Debug, Clone)]
+struct TickMark {
+    /// The actual value at this tick
+    value: f64,
+    /// Normalized position (0.0 = bottom/min, 1.0 = top/max)
+    normalized_pos: f64,
+    /// Whether this is a major tick (gets a label)
+    is_major: bool,
+    /// Optional label text
+    label: Option<String>,
+}
+
+/// Format a value with abbreviated suffix (1k, 10k, etc.)
+fn format_value_abbrev(value: f64) -> String {
+    let abs_value = value.abs();
+    let sign = if value < 0.0 { "-" } else { "" };
+
+    if abs_value >= 10000.0 {
+        // 10000 -> 10k, 20000 -> 20k
+        format!("{}{}k", sign, (abs_value / 1000.0).round() as i32)
+    } else if abs_value >= 1000.0 {
+        // 1000 -> 1k, 2500 -> 2.5k
+        let k_value = abs_value / 1000.0;
+        if (k_value.round() - k_value).abs() < 0.01 {
+            format!("{}{}k", sign, k_value.round() as i32)
+        } else {
+            format!("{}{:.1}k", sign, k_value)
+        }
+    } else if abs_value >= 100.0 {
+        format!("{}{}", sign, abs_value.round() as i32)
+    } else if abs_value >= 10.0 {
+        format!("{}{}", sign, abs_value.round() as i32)
+    } else if abs_value >= 1.0 {
+        // Show one decimal if needed
+        if (abs_value.round() - abs_value).abs() < 0.01 {
+            format!("{}{}", sign, abs_value.round() as i32)
+        } else {
+            format!("{}{:.1}", sign, abs_value)
+        }
+    } else if abs_value >= 0.1 {
+        format!("{}{:.1}", sign, abs_value)
+    } else if abs_value > 0.0 {
+        format!("{}{:.2}", sign, abs_value)
+    } else {
+        "0".to_string()
+    }
+}
+
+/// Find a nice step size for linear scale
+fn find_nice_step(range: f64, target_ticks: usize) -> f64 {
+    if range <= 0.0 || target_ticks < 2 {
+        return range;
     }
 
-    // Check divisibility for nice tick counts
-    // 5 ticks if range is a multiple of 10 (e.g., 0-2 with 0.5 steps)
-    // 4 ticks if range is a multiple of 2
-    // 3 ticks otherwise
-    let range_int = range as i32;
-    if range_int > 0 && range_int % 10 == 0 {
-        5
-    } else if range == 2.0 || (range_int > 0 && range_int % 2 == 0) {
-        5 // For 0-2 range, use 5 ticks: 0, 0.5, 1, 1.5, 2
-    } else if range_int > 0 && range_int % 3 == 0 {
-        4
+    let rough_step = range / (target_ticks - 1) as f64;
+    let magnitude = 10_f64.powf(rough_step.log10().floor());
+
+    // Try nice multiples: 1, 2, 2.5, 5, 10
+    let normalized = rough_step / magnitude;
+    let nice_normalized = if normalized <= 1.0 {
+        1.0
+    } else if normalized <= 2.0 {
+        2.0
+    } else if normalized <= 2.5 {
+        2.5
+    } else if normalized <= 5.0 {
+        5.0
     } else {
-        3
+        10.0
+    };
+
+    nice_normalized * magnitude
+}
+
+/// Calculate tick marks for linear scale
+fn calculate_linear_ticks(min: f64, max: f64, track_height: f32) -> Vec<TickMark> {
+    let range = max - min;
+    if range <= 0.0 {
+        return vec![
+            TickMark {
+                value: min,
+                normalized_pos: 0.0,
+                is_major: true,
+                label: Some(format_value_abbrev(min)),
+            },
+            TickMark {
+                value: max,
+                normalized_pos: 1.0,
+                is_major: true,
+                label: Some(format_value_abbrev(max)),
+            },
+        ];
+    }
+
+    // Determine target labeled tick count based on height
+    // Minimum 2 labels (min/max), up to 6 for very tall sliders
+    let target_labels = ((track_height / 40.0) as usize).clamp(2, 6);
+
+    // Find nice step for labels
+    let label_step = find_nice_step(range, target_labels);
+
+    // Minor ticks: more frequent, about twice as many
+    let minor_step = label_step / 2.0;
+
+    let mut ticks = Vec::new();
+
+    // Always add min as major tick with label
+    ticks.push(TickMark {
+        value: min,
+        normalized_pos: 0.0,
+        is_major: true,
+        label: Some(format_value_abbrev(min)),
+    });
+
+    // Add intermediate ticks
+    let first_label_tick = (min / label_step).ceil() * label_step;
+    let first_minor_tick = (min / minor_step).ceil() * minor_step;
+
+    // Collect all tick positions
+    let mut tick_value = first_minor_tick;
+    while tick_value < max - minor_step * 0.1 {
+        if (tick_value - min).abs() > minor_step * 0.1 {
+            let normalized = (tick_value - min) / range;
+
+            // Check if this is a label tick (on label_step boundary)
+            let is_label_tick = ((tick_value - first_label_tick) / label_step).round().abs() * label_step
+                + first_label_tick;
+            let is_labeled = (tick_value - is_label_tick).abs() < label_step * 0.01;
+
+            ticks.push(TickMark {
+                value: tick_value,
+                normalized_pos: normalized,
+                is_major: is_labeled,
+                label: if is_labeled { Some(format_value_abbrev(tick_value)) } else { None },
+            });
+        }
+        tick_value += minor_step;
+    }
+
+    // Always add max as major tick with label
+    ticks.push(TickMark {
+        value: max,
+        normalized_pos: 1.0,
+        is_major: true,
+        label: Some(format_value_abbrev(max)),
+    });
+
+    ticks
+}
+
+/// Calculate tick marks for logarithmic scale
+fn calculate_log_ticks(min: f64, max: f64, track_height: f32) -> Vec<TickMark> {
+    let min = min.max(1e-10);
+    let max = max.max(min + 1e-10);
+
+    let log_min = min.ln();
+    let log_max = max.ln();
+    let log_range = log_max - log_min;
+
+    if log_range <= 0.0 {
+        return vec![
+            TickMark {
+                value: min,
+                normalized_pos: 0.0,
+                is_major: true,
+                label: Some(format_value_abbrev(min)),
+            },
+            TickMark {
+                value: max,
+                normalized_pos: 1.0,
+                is_major: true,
+                label: Some(format_value_abbrev(max)),
+            },
+        ];
+    }
+
+    let mut ticks = Vec::new();
+
+    // Always add min as major tick with label
+    ticks.push(TickMark {
+        value: min,
+        normalized_pos: 0.0,
+        is_major: true,
+        label: Some(format_value_abbrev(min)),
+    });
+
+    // Calculate decade range
+    let min_decade = min.log10().floor() as i32;
+    let max_decade = max.log10().ceil() as i32;
+    let num_decades = (max_decade - min_decade) as usize;
+
+    // Determine how many labels we can fit based on height
+    // About one label per 35-40 pixels, minimum 2
+    let max_labels = ((track_height / 35.0) as usize).clamp(2, 8);
+
+    // Decide which decade markers get labels
+    // If few decades, label all of them; otherwise label every Nth
+    let label_every_n = if num_decades <= max_labels { 1 } else { (num_decades / max_labels).max(1) };
+
+    // Determine detail level based on height
+    let include_sub_decades = track_height >= 80.0;
+
+    // Add decade markers and sub-decade markers
+    let mut decade_index = 0;
+    for decade in min_decade..=max_decade {
+        let decade_value = 10_f64.powi(decade);
+
+        // Main decade marker (1, 10, 100, 1k, 10k, etc.)
+        if decade_value > min * 1.05 && decade_value < max * 0.95 {
+            let normalized = (decade_value.ln() - log_min) / log_range;
+            let should_label = decade_index % label_every_n == 0;
+            ticks.push(TickMark {
+                value: decade_value,
+                normalized_pos: normalized,
+                is_major: should_label,
+                label: if should_label { Some(format_value_abbrev(decade_value)) } else { None },
+            });
+            decade_index += 1;
+        }
+
+        // Sub-decade markers (2, 5) if we have enough space
+        if include_sub_decades {
+            for multiplier in [2.0, 5.0] {
+                let sub_value = decade_value * multiplier;
+                if sub_value > min * 1.05 && sub_value < max * 0.95 {
+                    let normalized = (sub_value.ln() - log_min) / log_range;
+                    ticks.push(TickMark {
+                        value: sub_value,
+                        normalized_pos: normalized,
+                        is_major: false,
+                        label: None,
+                    });
+                }
+            }
+        }
+    }
+
+    // Always add max as major tick with label
+    ticks.push(TickMark {
+        value: max,
+        normalized_pos: 1.0,
+        is_major: true,
+        label: Some(format_value_abbrev(max)),
+    });
+
+    // Sort by normalized position
+    ticks.sort_by(|a, b| a.normalized_pos.partial_cmp(&b.normalized_pos).unwrap());
+
+    ticks
+}
+
+/// Calculate tick marks based on scale type
+fn calculate_ticks(min: f64, max: f64, scale: Scale, track_height: f32) -> Vec<TickMark> {
+    match scale {
+        Scale::Linear => calculate_linear_ticks(min, max, track_height),
+        Scale::Logarithmic => calculate_log_ticks(min, max, track_height),
     }
 }
 
@@ -158,6 +401,7 @@ pub struct VerticalSlider {
     label: Option<SharedString>,
     shortcut_key: Option<char>,
     size: VerticalSliderSize,
+    scale: Scale,
     custom_height: Option<f32>,
     show_ticks: bool,
     selected: bool,
@@ -181,6 +425,7 @@ impl VerticalSlider {
             label: None,
             shortcut_key: None,
             size: VerticalSliderSize::default(),
+            scale: Scale::default(),
             custom_height: None,
             show_ticks: false,
             selected: false,
@@ -193,9 +438,16 @@ impl VerticalSlider {
         }
     }
 
+    /// Convert a value to normalized position [0, 1] based on scale type
+    fn value_to_normalized(&self, value: f64) -> f64 {
+        self.scale.value_to_normalized(value, self.min, self.max)
+    }
+
     /// Set the current value
+    /// Note: The value is stored as-is and clamped at render time
+    /// after min/max are known
     pub fn value(mut self, value: f64) -> Self {
-        self.value = value.clamp(self.min, self.max);
+        self.value = value;
         self
     }
 
@@ -232,6 +484,17 @@ impl VerticalSlider {
     /// Set the slider size
     pub fn size(mut self, size: VerticalSliderSize) -> Self {
         self.size = size;
+        self
+    }
+
+    /// Set the value scale type (linear or logarithmic)
+    ///
+    /// Use `Logarithmic` for frequency parameters (e.g., 20Hz to 20kHz)
+    /// where equal visual distances should represent equal ratios.
+    ///
+    /// Note: For logarithmic scale, min must be > 0.
+    pub fn scale(mut self, scale: Scale) -> Self {
+        self.scale = scale;
         self
     }
 
@@ -334,7 +597,10 @@ impl VerticalSlider {
 }
 
 impl RenderOnce for VerticalSlider {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(mut self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        // Clamp value to min/max range now that both are set
+        self.value = self.value.clamp(self.min, self.max);
+
         let global_theme = cx.theme();
         let theme = self
             .theme
@@ -343,11 +609,8 @@ impl RenderOnce for VerticalSlider {
         let selected = self.selected;
         let disabled = self.disabled;
 
-        let normalized = if self.max > self.min {
-            ((self.value - self.min) / (self.max - self.min)).clamp(0.0, 1.0) as f32
-        } else {
-            0.0
-        };
+        // Use scale-aware normalization for slider position
+        let normalized = self.value_to_normalized(self.value) as f32;
 
         let formatted_label = self.format_label();
         let value_str = self.format_value();
@@ -356,7 +619,9 @@ impl RenderOnce for VerticalSlider {
         let track_height = self.custom_height.unwrap_or_else(|| self.size.track_height());
         let min_width = self.size.min_width();
         let show_ticks = self.show_ticks;
-        let tick_count = calculate_tick_count(self.min, self.max);
+
+        // Calculate ticks based on scale type and available height
+        let ticks = calculate_ticks(self.min, self.max, self.scale, track_height);
 
         // Colors based on selection state
         let bg_color = if selected {
@@ -402,6 +667,7 @@ impl RenderOnce for VerticalSlider {
         let value = self.value;
         let min = self.min;
         let max = self.max;
+        let scale = self.scale;
 
         let mut container = div()
             .id(self.id)
@@ -453,12 +719,12 @@ impl RenderOnce for VerticalSlider {
                     on_drag_start(event.position.y.into(), value, window, cx);
                 });
             } else if let Some(ref handler_rc) = on_change_rc {
-                // If no drag handler, use click to step value
+                // If no drag handler, use click to step value (scale-aware)
                 let handler_click = handler_rc.clone();
                 container =
                     container.on_mouse_down(MouseButton::Left, move |_event, window, cx| {
-                        let step = (max - min) * 0.1;
-                        let new_value = (value + step).clamp(min, max);
+                        // Use scale-aware stepping (10% in normalized space)
+                        let new_value = scale.step_value(value, min, max, 1.0, 0.1);
                         handler_click(new_value, window, cx);
                     });
             }
@@ -473,15 +739,35 @@ impl RenderOnce for VerticalSlider {
                 });
             }
 
-            // Scroll wheel - adjust value
+            // Scroll wheel - adjust value (Shift for fine control)
             if let Some(ref handler_rc) = on_change_rc {
                 let handler_scroll = handler_rc.clone();
                 container = container.on_scroll_wheel(move |event, window, cx| {
-                    let delta = event.delta.pixel_delta(px(20.0)).y;
-                    let should_negate = delta > px(0.0);
-                    let step = (max - min) * 0.05;
-                    let change = if should_negate { -step } else { step };
-                    let new_value = (value + change).clamp(min, max);
+                    // Get scroll delta (works for both pixel and line deltas)
+                    // On macOS, shift+scroll converts vertical to horizontal, so check both axes
+                    let (delta_x, delta_y): (f32, f32) = match event.delta {
+                        gpui::ScrollDelta::Pixels(point) => (point.x.into(), point.y.into()),
+                        gpui::ScrollDelta::Lines(point) => (point.x, point.y),
+                    };
+
+                    // Use Y delta primarily, but fall back to X delta (for shift+scroll on macOS)
+                    let delta = if delta_y.abs() > 0.0001 {
+                        delta_y
+                    } else if delta_x.abs() > 0.0001 {
+                        delta_x
+                    } else {
+                        return; // No meaningful scroll movement
+                    };
+
+                    // Scroll up/left (negative delta) = increase value
+                    // Scroll down/right (positive delta) = decrease value
+                    let direction = if delta < 0.0 { 1.0 } else { -1.0 };
+
+                    // Check for shift key for fine-grained control
+                    let step_size = if event.modifiers.shift { 0.005 } else { 0.05 };
+
+                    // Use scale-aware stepping
+                    let new_value = scale.step_value(value, min, max, direction, step_size);
                     handler_scroll(new_value, window, cx);
                 });
             }
@@ -492,17 +778,15 @@ impl RenderOnce for VerticalSlider {
                     let handler_key = handler_rc.clone();
                     let reset_key = on_reset_rc.clone();
                     container = container.on_key_down(move |event, window, cx| {
-                        let step = (max - min) * 0.05;
-
                         match event.keystroke.key.as_str() {
-                            // Arrow Up or Right - increase value
+                            // Arrow Up or Right - increase value (scale-aware)
                             "up" | "right" => {
-                                let new_value = (value + step).clamp(min, max);
+                                let new_value = scale.step_value(value, min, max, 1.0, 0.05);
                                 handler_key(new_value, window, cx);
                             }
-                            // Arrow Down or Left - decrease value
+                            // Arrow Down or Left - decrease value (scale-aware)
                             "down" | "left" => {
-                                let new_value = (value - step).clamp(min, max);
+                                let new_value = scale.step_value(value, min, max, -1.0, 0.05);
                                 handler_key(new_value, window, cx);
                             }
                             // Home - set to minimum
@@ -595,57 +879,108 @@ impl RenderOnce for VerticalSlider {
 
         // Track with optional tick marks
         if show_ticks {
-            // Build tick marks column (from bottom to top: min to max)
-            let mut ticks_column = div()
-                .flex()
-                .flex_col_reverse() // Bottom to top
-                .justify_between()
+            // Calculate label width for alignment (find widest label)
+            let label_width = ticks
+                .iter()
+                .filter_map(|t| t.label.as_ref())
+                .map(|l| l.len())
+                .max()
+                .unwrap_or(2) as f32
+                * 7.0; // Approximate character width
+
+            let tick_mark_width = 6.0_f32; // Major tick width
+            let label_tick_gap = 3.0_f32; // Gap between label and tick
+            let label_height = 12.0_f32; // Approximate label height for centering
+
+            // Build tick marks container with absolute positioning
+            // Height matches track exactly for proper alignment
+            let mut ticks_container = div()
+                .relative()
                 .h(px(track_height))
-                .pr_1();
+                .w(px(label_width + label_tick_gap + tick_mark_width));
 
-            for i in 0..tick_count {
-                let tick_value = min + (max - min) * (i as f64 / (tick_count - 1) as f64);
-                let is_endpoint = i == 0 || i == tick_count - 1;
+            for tick in &ticks {
+                let pos = tick.normalized_pos as f32;
+                let tick_width = if tick.is_major { 6.0 } else { 3.0 };
 
-                let tick_row = div()
+                // Calculate pixel position from top (inverted: 0=bottom, 1=top)
+                // pos=0 should be at bottom (top = track_height - label_height/2)
+                // pos=1 should be at top (top = -label_height/2)
+                let top_pos = (1.0 - pos) * track_height - label_height / 2.0;
+
+                // Create a tick row positioned from top, centered vertically
+                let tick_element = div()
+                    .absolute()
+                    .top(px(top_pos))
+                    .right_0()
+                    .h(px(label_height))
                     .flex()
                     .items_center()
-                    .gap_px()
-                    // Value label (only for endpoints)
-                    .when(is_endpoint, |d| {
+                    .gap(px(label_tick_gap))
+                    // Add label for major ticks
+                    .when(tick.label.is_some(), |d| {
                         d.child(
                             div()
                                 .text_xs()
                                 .text_color(scale_color)
-                                .min_w(px(16.0))
+                                .min_w(px(label_width))
                                 .text_right()
-                                .child(format!("{:.0}", tick_value)),
+                                .child(tick.label.clone().unwrap_or_default()),
                         )
                     })
                     // Tick mark
                     .child(
                         div()
-                            .w(px(if is_endpoint { 6.0 } else { 4.0 }))
+                            .w(px(tick_width))
                             .h(px(1.0))
                             .bg(scale_color),
                     );
 
-                ticks_column = ticks_column.child(tick_row);
+                ticks_container = ticks_container.child(tick_element);
             }
 
-            // Wrap track and ticks in HStack
+            // Build right-side tick marks (no labels, just tick marks)
+            let mut ticks_right = div()
+                .relative()
+                .h(px(track_height))
+                .w(px(tick_mark_width));
+
+            for tick in &ticks {
+                let pos = tick.normalized_pos as f32;
+                let tick_width = if tick.is_major { 6.0 } else { 3.0 };
+                let top_pos = (1.0 - pos) * track_height - label_height / 2.0;
+
+                let tick_element = div()
+                    .absolute()
+                    .top(px(top_pos))
+                    .left_0()
+                    .h(px(label_height))
+                    .flex()
+                    .items_center()
+                    .child(
+                        div()
+                            .w(px(tick_width))
+                            .h(px(1.0))
+                            .bg(scale_color),
+                    );
+
+                ticks_right = ticks_right.child(tick_element);
+            }
+
+            // Wrap track and ticks in HStack (left ticks - track - right ticks)
             container = container.child(
                 div()
                     .flex()
                     .items_center()
-                    .gap_1()
-                    .child(ticks_column)
-                    .child(track),
+                    .gap(px(2.0))
+                    .child(ticks_container)
+                    .child(track)
+                    .child(ticks_right),
             );
         } else {
             container = container.child(track);
 
-            // Scale markers (only when not showing ticks)
+            // Scale markers (only when not showing ticks) - use abbreviated format
             container = container.child(
                 div()
                     .flex()
@@ -653,8 +988,8 @@ impl RenderOnce for VerticalSlider {
                     .w_full()
                     .text_xs()
                     .text_color(scale_color)
-                    .child(format!("{:.0}", min))
-                    .child(format!("{:.0}", max)),
+                    .child(format_value_abbrev(min))
+                    .child(format_value_abbrev(max)),
             );
         }
 

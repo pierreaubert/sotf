@@ -21,6 +21,9 @@ pub mod menu;
 pub mod tabs;
 pub mod toast;
 
+// Shared utilities
+pub mod scale;
+
 // Form components
 pub mod autoeq_form;
 pub mod checkbox;
@@ -93,7 +96,7 @@ pub use potentiometer::{Potentiometer, PotentiometerScale, PotentiometerSize, Po
 pub use select::{Select, SelectOption, SelectSize, SelectTheme};
 pub use slider::{Slider, SliderSize, SliderTheme};
 pub use toggle::{Toggle, ToggleSize, ToggleStyle, ToggleTheme};
-pub use vertical_slider::{VerticalSlider, VerticalSliderSize, VerticalSliderTheme};
+pub use vertical_slider::{VerticalSlider, VerticalSliderScale, VerticalSliderSize, VerticalSliderTheme};
 pub use volume_knob::VolumeKnob;
 
 // Data display
