@@ -196,8 +196,10 @@ impl PlayerView {
                     });
                 }),
             )
-            // Plugin Rack Strip (top)
-            .child(self.render_plugin_rack(cx))
+            // Plugin Rack Strip (top) - only show if not collapsed
+            .when(!self.state.read(cx).app.rack_detail_collapsed, |d| {
+                d.child(self.render_plugin_rack(cx))
+            })
             // Horizontal divider between rack and detail panel
             .child({
                 let divider_theme = PaneDividerTheme {
@@ -208,10 +210,18 @@ impl PlayerView {
                     foreground_hover: theme.text_secondary,
                     border: theme.border,
                 };
+                let state = self.state.clone();
+                let is_collapsed = self.state.read(cx).app.rack_detail_collapsed;
                 PaneDivider::horizontal("rack-detail-divider", CollapseDirection::Up)
                     .label("Signal Chain")
                     .theme(divider_theme)
                     .thickness(px(4.0))
+                    .collapsed(is_collapsed)
+                    .on_toggle(move |collapsed, _window, cx| {
+                        state.update(cx, |s, _| {
+                            s.app.rack_detail_collapsed = collapsed;
+                        });
+                    })
             })
             // Parameter Panel (bottom, fills remaining space)
             .child(self.render_plugin_detail_panel(cx))
@@ -667,22 +677,41 @@ impl PlayerView {
         let ticks = [0, -6, -12, -18, -24, -30, -40, -50, -60];
         let theme = theme.clone();
 
+        // Outer container matches render_gradient_meter structure
         div()
             .flex()
             .flex_col()
+            .flex_1()
             .h_full()
             .p(px(2.0))
-            // Ticks area
+            // Ticks area (matches meter_bar flex_1)
             .child(
                 div()
                     .relative()
                     .flex_1()
                     .w(px(24.0))
+                    .overflow_hidden()
                     .children(ticks.into_iter().map(move |db| {
                         let pos = db_to_position(db as f64);
+                        // Use top positioning: top = (1 - pos), then offset by half line height
+                        let top_fraction = 1.0 - pos;
+
+                        // Adjust label offset for edge labels to keep them visible:
+                        // - Top label (0 dB): move label down
+                        // - Bottom label (-60 dB): move label up
+                        // - Other labels: no additional offset
+                        let label_offset = if db == 0 {
+                            px(6.0) // Top: move label down
+                        } else if db == -60 {
+                            px(-6.0) // Bottom: move label up
+                        } else {
+                            px(0.0) // No additional offset
+                        };
+
                         let label = div()
                             .text_size(px(9.0))
                             .text_color(theme.text_muted)
+                            .mt(label_offset)
                             .child(format!("{}", db));
 
                         let tick = div().w(px(4.0)).h(px(1.0)).bg(theme.border);
@@ -691,15 +720,21 @@ impl PlayerView {
                             .absolute()
                             .left_0()
                             .right_0()
-                            .bottom(gpui::Length::Definite(gpui::DefiniteLength::Fraction(pos)))
+                            .top(gpui::Length::Definite(gpui::DefiniteLength::Fraction(
+                                top_fraction,
+                            )))
+                            // Offset by half line height (~6px for 9px text) to center tick on position
+                            .mt(px(-6.0))
                             .flex()
                             .items_center()
                             .justify_between();
 
                         if align_right {
-                            container.child(label).child(tick)
-                        } else {
+                            // Legend on right: tick → label (tick points toward meter on left)
                             container.child(tick).child(label)
+                        } else {
+                            // Legend on left: label → tick (tick points toward meter on right)
+                            container.child(label).child(tick)
                         }
                     })),
             )
@@ -895,18 +930,31 @@ impl PlayerView {
                         border: theme.border,
                     };
 
+                    let input_collapsed = state.app.input_meter_collapsed;
+                    let output_collapsed = state.app.output_meter_collapsed;
+                    let state_for_input = self.state.clone();
+                    let state_for_output = self.state.clone();
+
                     div()
                         .flex_1()
                         .flex()
                         .min_h(px(0.0)) // Allow shrinking
                         // Left: Input Meter (legend on right side, facing center)
-                        .child(self.render_side_meter(cx, 2, "IN", false))
+                        .when(!input_collapsed, |d| {
+                            d.child(self.render_side_meter(cx, 2, "IN", false))
+                        })
                         // Divider between input meter and main zone
                         .child(
                             PaneDivider::vertical("input-meter-divider", CollapseDirection::Left)
                                 .label("IN")
                                 .theme(divider_theme.clone())
-                                .thickness(px(4.0)),
+                                .thickness(px(4.0))
+                                .collapsed(input_collapsed)
+                                .on_toggle(move |collapsed, _window, cx| {
+                                    state_for_input.update(cx, |s, _| {
+                                        s.app.input_meter_collapsed = collapsed;
+                                    });
+                                }),
                         )
                         // Center: Plugin Content
                         .child(
@@ -933,11 +981,19 @@ impl PlayerView {
                                 PaneDivider::vertical("output-meter-divider", CollapseDirection::Right)
                                     .label("OUT")
                                     .theme(divider_theme.clone())
-                                    .thickness(px(4.0)),
+                                    .thickness(px(4.0))
+                                    .collapsed(output_collapsed)
+                                    .on_toggle(move |collapsed, _window, cx| {
+                                        state_for_output.update(cx, |s, _| {
+                                            s.app.output_meter_collapsed = collapsed;
+                                        });
+                                    }),
                             )
                         })
                         // Right: Output Meter
-                        .child(self.render_side_meter(cx, output_channels, "OUT", true))
+                        .when(!output_collapsed, |d| {
+                            d.child(self.render_side_meter(cx, output_channels, "OUT", true))
+                        })
                 })
             })
             .when(!has_plugin, |d| {
