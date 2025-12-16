@@ -8,9 +8,11 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui::{InteractiveElement, Styled};
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, CollapseDirection, HStack, PaneDivider, PaneDividerTheme,
-    StackSpacing, Text, TextSize, TextWeight, VStack,
+    CollapseDirection, PaneDivider, PaneDividerTheme, StackSpacing, Text, TextSize, TextWeight,
+    VStack,
 };
+
+use crate::app::types::MeterDisplayMode;
 use sotf_audio_player::Track;
 
 use crate::ui::PlayerView;
@@ -25,6 +27,7 @@ impl PlayerView {
         let queue_list_ratio = state.app.queue_list_ratio;
         let meters_ratio = state.app.meters_panel_ratio;
         let lufs_ratio = state.app.lufs_panel_ratio;
+        let meter_display_mode = state.app.meter_display_mode;
 
         let queue_collapsed = queue_list_ratio < 0.05;
         let meters_collapsed = meters_ratio < 0.05;
@@ -34,7 +37,6 @@ impl PlayerView {
             .size_full()
             // Left panel: Queue list
             .when(!queue_collapsed, |d| {
-                let button_theme = theme.to_button_theme();
                 d.child(
                     div()
                         .flex()
@@ -45,39 +47,17 @@ impl PlayerView {
                         .border_r_1()
                         .border_color(theme.border)
                         .child(
-                            HStack::new()
-                                .spacing(StackSpacing::Md)
-                                .child(
-                                    Text::new(format!(
-                                        "{} ({} {})",
-                                        translations.queue_title,
-                                        state.app.queue.len(),
-                                        translations.queue_albums
-                                    ))
-                                    .size(TextSize::Lg)
-                                    .weight(TextWeight::Bold)
-                                    .color(theme.text_primary),
-                                )
-                                .child(
-                                    Button::new("clear-queue-btn", translations.queue_clear)
-                                        .variant(ButtonVariant::Ghost)
-                                        .size(ButtonSize::Xs)
-                                        .theme(button_theme)
-                                        .build()
-                                        .on_mouse_up(
-                                            MouseButton::Left,
-                                            cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                                                view.state.update(cx, |state, _cx| {
-                                                    state.app.clear_queue();
-                                                });
-                                                cx.notify();
-                                            }),
-                                        ),
-                                )
-                                .build()
-                                .mb_2()
-                                .flex_1()
-                                .justify_between(),
+                            Text::new(format!(
+                                "{} ({} {})",
+                                translations.queue_title,
+                                state.app.queue.len(),
+                                translations.queue_albums
+                            ))
+                            .size(TextSize::Lg)
+                            .weight(TextWeight::Bold)
+                            .color(theme.text_primary)
+                            .build()
+                            .mb_2(),
                         )
                         .child(
                             div()
@@ -258,42 +238,108 @@ impl PlayerView {
                         }
                     })
             })
-            // Right panels: LUFS and Level meters as separate columns
+            // Right panel: LUFS or Level meters (toggle to switch)
             .when(!meters_collapsed, |d| {
-                let divider_theme = PaneDividerTheme {
-                    background: theme.background,
-                    background_hover: theme.surface_hover,
-                    background_collapsed: theme.surface,
-                    foreground: theme.text_muted,
-                    foreground_hover: theme.text_secondary,
-                    border: theme.border,
-                };
+                let state_entity = self.state.clone();
+
                 d.child(
                     div()
-                        .w(relative(lufs_ratio))
+                        .w(relative(meters_ratio + lufs_ratio))
                         .flex()
                         .flex_col()
                         .h_full()
-                        .child(self.render_lufs_panel(cx)),
-                )
-                .child({
-                    let state = self.state.clone();
-                    PaneDivider::vertical("lufs-meters-divider", CollapseDirection::Right)
-                        .theme(divider_theme)
-                        .on_drag_start(move |_pos, _window, cx| {
-                            state.update(cx, |state, _| {
-                                state.app.is_dragging_lufs_divider = true;
-                                state.app.divider_click_start = Some(std::time::Instant::now());
-                            });
-                        })
-                })
-                .child(
-                    div()
-                        .w(relative(meters_ratio))
-                        .flex()
-                        .flex_col()
-                        .h_full()
-                        .child(self.render_meters_panel(cx)),
+                        // Toggle header
+                        .child(
+                            div()
+                                .flex()
+                                .justify_center()
+                                .p_2()
+                                .border_b_1()
+                                .border_color(theme.border)
+                                .child(
+                                    div()
+                                        .flex()
+                                        .rounded_md()
+                                        .bg(theme.background)
+                                        .border_1()
+                                        .border_color(theme.border)
+                                        .overflow_hidden()
+                                        // LUFS button
+                                        .child(
+                                            div()
+                                                .id("meter-toggle-lufs")
+                                                .px_3()
+                                                .py_1()
+                                                .text_xs()
+                                                .font_weight(FontWeight::MEDIUM)
+                                                .cursor_pointer()
+                                                .when(meter_display_mode == MeterDisplayMode::Lufs, |d| {
+                                                    d.bg(theme.accent).text_color(theme.text_on_accent)
+                                                })
+                                                .when(meter_display_mode != MeterDisplayMode::Lufs, |d| {
+                                                    d.text_color(theme.text_secondary)
+                                                        .hover(|s| s.bg(theme.surface_hover))
+                                                })
+                                                .on_mouse_up(
+                                                    MouseButton::Left,
+                                                    cx.listener({
+                                                        let state = state_entity.clone();
+                                                        move |_view, _: &MouseUpEvent, _window, cx| {
+                                                            state.update(cx, |state, _| {
+                                                                state.app.meter_display_mode =
+                                                                    MeterDisplayMode::Lufs;
+                                                            });
+                                                            cx.notify();
+                                                        }
+                                                    }),
+                                                )
+                                                .child("LUFS"),
+                                        )
+                                        // Levels button
+                                        .child(
+                                            div()
+                                                .id("meter-toggle-levels")
+                                                .px_3()
+                                                .py_1()
+                                                .text_xs()
+                                                .font_weight(FontWeight::MEDIUM)
+                                                .cursor_pointer()
+                                                .when(meter_display_mode == MeterDisplayMode::Levels, |d| {
+                                                    d.bg(theme.accent).text_color(theme.text_on_accent)
+                                                })
+                                                .when(meter_display_mode != MeterDisplayMode::Levels, |d| {
+                                                    d.text_color(theme.text_secondary)
+                                                        .hover(|s| s.bg(theme.surface_hover))
+                                                })
+                                                .on_mouse_up(
+                                                    MouseButton::Left,
+                                                    cx.listener({
+                                                        let state = state_entity.clone();
+                                                        move |_view, _: &MouseUpEvent, _window, cx| {
+                                                            state.update(cx, |state, _| {
+                                                                state.app.meter_display_mode =
+                                                                    MeterDisplayMode::Levels;
+                                                            });
+                                                            cx.notify();
+                                                        }
+                                                    }),
+                                                )
+                                                .child("Meters"),
+                                        ),
+                                ),
+                        )
+                        // Show selected meter panel
+                        .child(
+                            div()
+                                .flex_1()
+                                .overflow_hidden()
+                                .when(meter_display_mode == MeterDisplayMode::Lufs, |d| {
+                                    d.child(self.render_lufs_panel(cx))
+                                })
+                                .when(meter_display_mode == MeterDisplayMode::Levels, |d| {
+                                    d.child(self.render_meters_panel(cx))
+                                }),
+                        ),
                 )
             })
     }

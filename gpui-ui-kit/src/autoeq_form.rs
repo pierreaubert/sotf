@@ -966,13 +966,11 @@ impl RenderOnce for AutoEqForm {
                 target_curve_select =
                     target_curve_select.on_change(move |value, w, cx| h(value.as_ref(), w, cx));
             }
-            // No toggle handler for target_curve_open in ui_state explicitly defined in the original code,
-            // Assuming it will be managed implicitly by select or not needed for debug.
-            // If explicit toggle is needed, it would be:
-            // if let Some(ref handler) = on_target_curve_toggle_rc {
-            //     let h = handler.clone();
-            //     target_curve_select = target_curve_select.on_toggle(move |open, w, cx| h(open, w, cx));
-            // }
+
+            if let Some(ref handler) = on_target_curve_toggle_rc {
+                let h = handler.clone();
+                target_curve_select = target_curve_select.on_toggle(move |open, w, cx| h(open, w, cx));
+            }
 
             goals_content = goals_content.child(target_curve_select);
 

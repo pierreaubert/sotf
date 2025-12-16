@@ -33,6 +33,13 @@ impl PlayerView {
         // Register plugin interactions
         // Register plugin interactions - moved to render
 
+        // Observe state changes to trigger re-renders when state is updated
+        // from callbacks (like Select toggles in AutoEqForm)
+        cx.observe(&state, |_, _, cx| {
+            cx.notify();
+        })
+        .detach();
+
         // Set up periodic update timer for playback position and loudness
         cx.spawn(async move |this: WeakEntity<Self>, cx| {
             loop {
@@ -1948,7 +1955,7 @@ impl Render for PlayerView {
                                     self.render_headphone_eq_screen(cx).into_any_element()
                                 }
                                 Screen::Spinorama => {
-                                    self.render_spinorama_settings_content(cx).into_any_element()
+                                    self.render_spinorama_eq_screen(cx).into_any_element()
                                 }
                                 Screen::PluginGraph => {
                                     self.render_plugin_graph_screen(cx).into_any_element()
@@ -1984,7 +1991,7 @@ impl Render for PlayerView {
                                     self.render_headphone_eq_screen(cx).into_any_element()
                                 }
                                 Screen::Spinorama => {
-                                    self.render_spinorama_settings_content(cx).into_any_element()
+                                    self.render_spinorama_eq_screen(cx).into_any_element()
                                 }
                                 Screen::PluginGraph => {
                                     self.render_plugin_graph_screen(cx).into_any_element()

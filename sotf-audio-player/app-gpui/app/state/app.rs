@@ -18,8 +18,9 @@ use crate::theme::{Theme, ThemeId};
 
 use crate::app::types::{
     ActiveMenu, ChannelFilter, ChannelGroup, ContextMenuState, HeadphoneEqState, InputMode,
-    LayoutMode, LibrarySortOrder, LibraryStats, MeasureState, OptimizationUiState, PluginViewMode,
-    QueueItem, RecordingState, RoomEqState, Screen, ToastMessage,
+    LayoutMode, LibrarySortOrder, LibraryStats, MeasureState, MeterDisplayMode,
+    OptimizationUiState, PluginViewMode, QueueItem, RecordingState, RoomEqState, Screen,
+    SpinoramaEqState, ToastMessage,
 };
 
 #[derive(Debug)]
@@ -134,6 +135,9 @@ pub struct App {
     // Headphone EQ screen state
     pub headphone_eq_state: HeadphoneEqState,
 
+    // Spinorama EQ screen state
+    pub spinorama_eq_state: SpinoramaEqState,
+
     // Flags
     pub should_quit: bool,
     pub needs_rescan: bool,
@@ -172,6 +176,7 @@ pub struct App {
     pub meters_panel_ratio: f32, // Width ratio for level meters panel in Queue screen
     pub lufs_panel_ratio: f32,  // Width ratio for LUFS panel in Queue screen (4-col mode)
     pub lufs_visible: bool,     // Whether LUFS panel is visible (when separated from meters)
+    pub meter_display_mode: MeterDisplayMode, // Which meter to show (LUFS or Levels)
     pub is_dragging_queue_divider: bool,
     pub is_dragging_queue_list_divider: bool,
     pub is_dragging_meters_divider: bool,
@@ -233,6 +238,11 @@ pub struct App {
 
     // Plugin UI states
     pub upmixer_config_open: bool,
+
+    // Rack panel collapse states
+    pub rack_detail_collapsed: bool,   // Horizontal divider between rack and detail
+    pub input_meter_collapsed: bool,   // Left meter panel
+    pub output_meter_collapsed: bool,  // Right meter panel
 }
 
 /// GPUI-compatible state wrapper
@@ -329,6 +339,7 @@ impl App {
             room_eq_state: RoomEqState::default(),
             room_eq_applied_plugins: None,
             headphone_eq_state: HeadphoneEqState::default(),
+            spinorama_eq_state: SpinoramaEqState::default(),
             should_quit: false,
             needs_rescan: false,
             scan_in_progress: false,
@@ -350,6 +361,7 @@ impl App {
             meters_panel_ratio: 0.25,
             lufs_panel_ratio: 0.25,
             lufs_visible: true,
+            meter_display_mode: MeterDisplayMode::default(),
             is_dragging_queue_divider: false,
             is_dragging_queue_list_divider: false,
             is_dragging_meters_divider: false,
@@ -381,6 +393,9 @@ impl App {
             replay_gain_preamp: 0.0,
             pending_studio_close: false,
             upmixer_config_open: false,
+            rack_detail_collapsed: false,
+            input_meter_collapsed: false,
+            output_meter_collapsed: false,
         };
 
         // Initialize default stereo meter layout so meters are visible before audio starts

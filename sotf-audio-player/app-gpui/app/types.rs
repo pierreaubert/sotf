@@ -69,6 +69,14 @@ pub enum LayoutMode {
     Expanded, // Above 800px - split Library/Queue view
 }
 
+/// Meter display mode for Queue screen
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MeterDisplayMode {
+    #[default]
+    Lufs,   // Show LUFS loudness meters
+    Levels, // Show level meters
+}
+
 /// Settings screen tabs
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsTab {
@@ -1714,5 +1722,333 @@ impl HeadphoneEqState {
         self.progress_history.clear();
         self.result = None;
         self.error_message = None;
+    }
+}
+
+// ============================================================================
+// Spinorama EQ Screen Types
+// ============================================================================
+
+/// Spinorama EQ workflow step
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SpinoramaStep {
+    /// Step 1: Select speaker from spinorama.org
+    #[default]
+    SelectSpeaker,
+    /// Step 2: Configure optimizer parameters
+    Configure,
+    /// Step 3: Run optimization
+    Optimize,
+    /// Step 4: Review and apply results
+    Review,
+}
+
+impl SpinoramaStep {
+    /// Get all steps in order
+    pub fn all() -> &'static [SpinoramaStep] {
+        &[
+            SpinoramaStep::SelectSpeaker,
+            SpinoramaStep::Configure,
+            SpinoramaStep::Optimize,
+            SpinoramaStep::Review,
+        ]
+    }
+
+    /// Get step index (0-based)
+    pub fn index(&self) -> usize {
+        match self {
+            SpinoramaStep::SelectSpeaker => 0,
+            SpinoramaStep::Configure => 1,
+            SpinoramaStep::Optimize => 2,
+            SpinoramaStep::Review => 3,
+        }
+    }
+
+    /// Get step label
+    pub fn label(&self) -> &'static str {
+        match self {
+            SpinoramaStep::SelectSpeaker => "Select",
+            SpinoramaStep::Configure => "Configure",
+            SpinoramaStep::Optimize => "Optimize",
+            SpinoramaStep::Review => "Review",
+        }
+    }
+
+    /// Get next step
+    pub fn next(&self) -> Option<SpinoramaStep> {
+        match self {
+            SpinoramaStep::SelectSpeaker => Some(SpinoramaStep::Configure),
+            SpinoramaStep::Configure => Some(SpinoramaStep::Optimize),
+            SpinoramaStep::Optimize => Some(SpinoramaStep::Review),
+            SpinoramaStep::Review => None,
+        }
+    }
+
+    /// Get previous step
+    pub fn previous(&self) -> Option<SpinoramaStep> {
+        match self {
+            SpinoramaStep::SelectSpeaker => None,
+            SpinoramaStep::Configure => Some(SpinoramaStep::SelectSpeaker),
+            SpinoramaStep::Optimize => Some(SpinoramaStep::Configure),
+            SpinoramaStep::Review => Some(SpinoramaStep::Optimize),
+        }
+    }
+}
+
+/// Optimization mode for Spinorama EQ
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum SpinoramaOptimizationMode {
+    /// Flatten the Estimated In-Room Response (PIR) curve
+    #[default]
+    FlatOnPir,
+    /// Optimize Harman/Olive speaker preference score
+    SpeakerScore,
+}
+
+impl SpinoramaOptimizationMode {
+    pub fn all() -> &'static [SpinoramaOptimizationMode] {
+        &[
+            SpinoramaOptimizationMode::FlatOnPir,
+            SpinoramaOptimizationMode::SpeakerScore,
+        ]
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SpinoramaOptimizationMode::FlatOnPir => "Flat on PIR",
+            SpinoramaOptimizationMode::SpeakerScore => "Speaker Score",
+        }
+    }
+
+    pub fn description(&self) -> &'static str {
+        match self {
+            SpinoramaOptimizationMode::FlatOnPir => {
+                "Flatten the Estimated In-Room Response curve"
+            }
+            SpinoramaOptimizationMode::SpeakerScore => {
+                "Optimize for Harman/Olive speaker preference score"
+            }
+        }
+    }
+
+    pub fn to_loss_string(&self) -> &'static str {
+        match self {
+            SpinoramaOptimizationMode::FlatOnPir => "speaker-flat",
+            SpinoramaOptimizationMode::SpeakerScore => "speaker-score",
+        }
+    }
+}
+
+/// Optimizer configuration for Spinorama EQ
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpinoramaOptimizerConfig {
+    /// Optimization target mode
+    pub mode: SpinoramaOptimizationMode,
+    /// Optimization algorithm
+    pub algorithm: RoomEqAlgorithm,
+    /// Number of PEQ filters
+    pub num_filters: usize,
+    /// Minimum Q factor
+    pub min_q: f64,
+    /// Maximum Q factor
+    pub max_q: f64,
+    /// Minimum gain in dB
+    pub min_db: f64,
+    /// Maximum gain in dB
+    pub max_db: f64,
+    /// Minimum frequency in Hz
+    pub min_freq: f64,
+    /// Maximum frequency in Hz
+    pub max_freq: f64,
+    /// Maximum number of iterations
+    pub max_iter: usize,
+}
+
+impl Default for SpinoramaOptimizerConfig {
+    fn default() -> Self {
+        Self {
+            mode: SpinoramaOptimizationMode::FlatOnPir,
+            algorithm: RoomEqAlgorithm::Cobyla,
+            num_filters: 10,
+            min_q: 0.5,
+            max_q: 10.0,
+            min_db: -12.0,
+            max_db: 12.0,
+            min_freq: 20.0,
+            max_freq: 20000.0,
+            max_iter: 10000,
+        }
+    }
+}
+
+/// Result of Spinorama EQ optimization
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpinoramaEqResult {
+    /// Optimized biquad filters
+    pub biquads: Vec<SpinoramaBiquad>,
+    /// Pre-optimization score
+    pub pre_score: f64,
+    /// Post-optimization score
+    pub post_score: f64,
+    /// Original frequency response (for plotting)
+    pub original_response: Option<Vec<(f64, f64)>>,
+    /// Corrected frequency response (for plotting)
+    pub corrected_response: Option<Vec<(f64, f64)>>,
+    /// Target curve (for plotting)
+    pub target_response: Option<Vec<(f64, f64)>>,
+}
+
+/// Biquad filter for Spinorama EQ
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpinoramaBiquad {
+    pub filter_type: String,
+    pub freq: f64,
+    pub q: f64,
+    pub db_gain: f64,
+}
+
+/// UI state for Spinorama EQ dropdowns
+#[derive(Debug, Clone, Default)]
+pub struct SpinoramaEqDropdowns {
+    pub version_open: bool,
+    pub measurement_open: bool,
+    pub curve_open: bool,
+    pub mode_open: bool,
+    pub algorithm_open: bool,
+    pub export_format_open: bool,
+    /// AutoEQ form editing state
+    pub autoeq_editing_field: Option<AutoEqField>,
+    /// AutoEQ form edit text
+    pub autoeq_edit_text: String,
+}
+
+/// Complete Spinorama EQ screen state
+#[derive(Debug, Clone)]
+pub struct SpinoramaEqState {
+    /// Current step in the workflow
+    pub step: SpinoramaStep,
+
+    // === Step 1: Speaker Selection ===
+    /// Search input text
+    pub speaker_search: String,
+    /// List of available speakers from API
+    pub available_speakers: Vec<String>,
+    /// Filtered suggestions based on search
+    pub speaker_suggestions: Vec<String>,
+    /// Selected speaker name (e.g., "KEF R3")
+    pub selected_speaker: Option<String>,
+    /// Selected version (e.g., "asr", "erin", "princeton")
+    pub selected_version: String,
+    /// Selected measurement type (e.g., "CEA2034")
+    pub selected_measurement: String,
+    /// Selected curve (e.g., "Estimated In-Room Response")
+    pub selected_curve: String,
+    /// Available versions for selected speaker
+    pub available_versions: Vec<String>,
+    /// Available measurements for selected speaker/version
+    pub available_measurements: Vec<String>,
+    /// Available curves for selected measurement
+    pub available_curves: Vec<String>,
+
+    // === Step 2: Configuration ===
+    /// Optimizer configuration
+    pub optimizer_config: SpinoramaOptimizerConfig,
+
+    // === Step 3: Optimization ===
+    /// Current optimization status
+    pub optimization_status: OptimizationStatus,
+    /// Progress (0.0 - 1.0)
+    pub progress: f32,
+    /// Progress history for loss curve (iteration, loss)
+    pub progress_history: Vec<(usize, f64)>,
+    /// Status message during optimization
+    pub status_message: String,
+    /// Error message if optimization failed
+    pub error_message: Option<String>,
+
+    // === Step 4: Results ===
+    /// Optimization result
+    pub result: Option<SpinoramaEqResult>,
+    /// Export format selection
+    pub export_format: String,
+
+    // === UI State ===
+    /// Loading indicator for API calls
+    pub loading_speakers: bool,
+    /// Dropdown states
+    pub dropdowns: SpinoramaEqDropdowns,
+    /// Expanded accordion sections
+    pub expanded_sections: Vec<gpui::SharedString>,
+}
+
+impl Default for SpinoramaEqState {
+    fn default() -> Self {
+        Self {
+            step: SpinoramaStep::SelectSpeaker,
+            speaker_search: String::new(),
+            available_speakers: Vec::new(),
+            speaker_suggestions: Vec::new(),
+            selected_speaker: None,
+            selected_version: "asr".to_string(),
+            selected_measurement: "CEA2034".to_string(),
+            selected_curve: "Estimated In-Room Response".to_string(),
+            available_versions: Vec::new(),
+            available_measurements: Vec::new(),
+            available_curves: Vec::new(),
+            optimizer_config: SpinoramaOptimizerConfig::default(),
+            optimization_status: OptimizationStatus::Idle,
+            progress: 0.0,
+            progress_history: Vec::new(),
+            status_message: String::new(),
+            error_message: None,
+            result: None,
+            export_format: "json".to_string(),
+            loading_speakers: false,
+            dropdowns: SpinoramaEqDropdowns::default(),
+            expanded_sections: vec!["speaker".into(), "options".into()],
+        }
+    }
+}
+
+impl SpinoramaEqState {
+    /// Check if we can proceed from the current step
+    pub fn can_advance(&self) -> bool {
+        match self.step {
+            SpinoramaStep::SelectSpeaker => self.selected_speaker.is_some(),
+            SpinoramaStep::Configure => true,
+            SpinoramaStep::Optimize => self.optimization_status == OptimizationStatus::Completed,
+            SpinoramaStep::Review => self.result.is_some(),
+        }
+    }
+
+    /// Check if optimization is running
+    pub fn is_optimizing(&self) -> bool {
+        self.optimization_status == OptimizationStatus::Running
+    }
+
+    /// Reset optimization state
+    pub fn reset_optimization(&mut self) {
+        self.optimization_status = OptimizationStatus::Idle;
+        self.progress = 0.0;
+        self.progress_history.clear();
+        self.result = None;
+        self.error_message = None;
+    }
+
+    /// Update speaker suggestions based on search query
+    pub fn update_suggestions(&mut self) {
+        let query = self.speaker_search.to_lowercase();
+        if query.is_empty() {
+            self.speaker_suggestions = self.available_speakers.clone();
+        } else {
+            self.speaker_suggestions = self
+                .available_speakers
+                .iter()
+                .filter(|s| s.to_lowercase().contains(&query))
+                .cloned()
+                .collect();
+        }
+        // Limit to reasonable number for UI
+        self.speaker_suggestions.truncate(50);
     }
 }
