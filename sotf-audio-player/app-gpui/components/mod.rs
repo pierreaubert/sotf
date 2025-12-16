@@ -10,7 +10,6 @@ pub mod recording;
 mod room_eq;
 mod settings;
 mod speaker_diy;
-mod speaker_eq;
 
 // Level meter and spectrum types are now in crate::plugins module
 pub use crate::plugins::{
@@ -21,7 +20,7 @@ pub use crate::plugins::{
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{HStack, StackSpacing};
+use gpui_ui_kit::{HStack, StackJustify, StackSpacing};
 
 impl PlayerView {
     pub(crate) fn render_settings_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -41,14 +40,6 @@ impl PlayerView {
             crate::app::SettingsTab::AudioDevice => self
                 .render_audio_device_settings_content(cx)
                 .into_any_element(),
-            crate::app::SettingsTab::Plugins => self.render_plugins_screen(cx).into_any_element(),
-            crate::app::SettingsTab::RoomEQ => self.render_room_eq_screen(cx).into_any_element(),
-            crate::app::SettingsTab::Headphone => {
-                self.render_headphone_eq_screen(cx).into_any_element()
-            }
-            crate::app::SettingsTab::Spinorama => self
-                .render_spinorama_settings_content(cx)
-                .into_any_element(),
         };
 
         // Tabs are now custom-rendered to avoid context issues
@@ -63,14 +54,13 @@ impl PlayerView {
                 // Tab Header
                 div()
                     .w_full()
-                    .border_b_1()
-                    .border_color(theme.border)
                     .bg(theme.surface)
                     .px_4()
                     .pt_2()
                     .child(
                         HStack::new()
                             .spacing(StackSpacing::Sm)
+                            .justify(StackJustify::Center)
                             .child({
                                 // Custom tab rendering to avoid context issues
                                 let state_entity = self.state.clone();
@@ -86,22 +76,6 @@ impl PlayerView {
                                     (
                                         translations.settings_tab_audio_device,
                                         crate::app::SettingsTab::AudioDevice,
-                                    ),
-                                    (
-                                        translations.settings_tab_plugins,
-                                        crate::app::SettingsTab::Plugins,
-                                    ),
-                                    (
-                                        translations.settings_tab_room_eq,
-                                        crate::app::SettingsTab::RoomEQ,
-                                    ),
-                                    (
-                                        translations.settings_tab_headphone,
-                                        crate::app::SettingsTab::Headphone,
-                                    ),
-                                    (
-                                        translations.settings_tab_spinorama,
-                                        crate::app::SettingsTab::Spinorama,
                                     ),
                                 ];
 
@@ -164,28 +138,6 @@ impl PlayerView {
                                 }
 
                                 tabs_container
-                            })
-                            // Recording navigation button
-                            .child({
-                                let theme = theme.clone();
-                                div()
-                                    .px_3()
-                                    .py_2()
-                                    .cursor_pointer()
-                                    .text_color(theme.text_secondary)
-                                    .hover(|s| s.text_color(theme.text_primary))
-                                    .on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                            view.state.update(cx, |state, _cx| {
-                                                state.app.last_screen = state.app.current_screen;
-                                                state.app.current_screen =
-                                                    crate::app::Screen::Recording;
-                                            });
-                                            cx.notify();
-                                        }),
-                                    )
-                                    .child(format!("→ {}", translations.settings_tab_recording))
                             }),
                     ),
             )

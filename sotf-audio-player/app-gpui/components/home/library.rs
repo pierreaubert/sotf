@@ -12,6 +12,12 @@ use std::sync::Arc;
 
 impl PlayerView {
     pub(crate) fn render_library_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        // Ensure library stats are computed (cached - only recomputes when invalidated)
+        self.state.update(cx, |state, _| {
+            let _ = state.app.get_library_stats();
+        });
+
+        // Now read all values including cached stats
         let (
             albums_count,
             artists_count,
@@ -24,92 +30,31 @@ impl PlayerView {
             filter_menu_open,
             theme,
             translations,
-            (min_year, max_year, genres_count, stereo_count, multichannel_count),
+            min_year,
+            max_year,
+            genres_count,
+            stereo_count,
+            multichannel_count,
         ) = {
             let state = self.state.read(cx);
-            let translations = state.app.translations.clone();
-
-            // Count unique artists, tracks, and composers
-            let mut artists: std::collections::HashSet<String> = std::collections::HashSet::new();
-            let mut composers: std::collections::HashSet<String> = std::collections::HashSet::new();
-            let mut total_tracks = 0usize;
-
-            for album in &state.app.library.albums {
-                for track in &album.tracks {
-                    total_tracks += 1;
-                    if let Some(artist) = &track.artist {
-                        if !artist.is_empty() {
-                            artists.insert(artist.to_lowercase());
-                        }
-                    }
-                    if let Some(composer) = &track.composer {
-                        if !composer.is_empty() {
-                            composers.insert(composer.to_lowercase());
-                        }
-                    }
-                }
-            }
-
+            let stats = &state.app.library_stats;
             (
                 state.app.library.albums.len(),
-                artists.len(),
-                total_tracks,
-                composers.len(),
+                stats.artists_count,
+                stats.total_tracks,
+                stats.composers_count,
                 state.app.search_query.clone(),
                 state.app.input_mode,
                 state.app.library_sort_order,
                 state.app.channel_filter,
                 state.app.filter_menu_open,
                 state.app.theme.clone(),
-                translations,
-                // New stats
-                {
-                    let mut min_year = 9999;
-                    let mut max_year = 0;
-                    let mut genres: std::collections::HashSet<String> =
-                        std::collections::HashSet::new();
-                    let mut stereo_count = 0;
-                    let mut multichannel_count = 0;
-
-                    for album in &state.app.library.albums {
-                        if let Some(y) = album.year {
-                            if y > 0 {
-                                if y < min_year {
-                                    min_year = y;
-                                }
-                                if y > max_year {
-                                    max_year = y;
-                                }
-                            }
-                        }
-
-                        if let Some(channels) = album.uniform_channel_count() {
-                            if channels == 2 {
-                                stereo_count += 1;
-                            } else if channels > 2 {
-                                multichannel_count += 1;
-                            }
-                        }
-
-                        for track in &album.tracks {
-                            if let Some(genre) = &track.genre {
-                                if !genre.is_empty() {
-                                    genres.insert(genre.to_lowercase());
-                                }
-                            }
-                        }
-                    }
-                    if min_year == 9999 {
-                        min_year = 0;
-                    }
-                    (
-                        min_year,
-                        max_year,
-                        genres.len(),
-                        stereo_count,
-                        multichannel_count,
-                    )
-                },
+                state.app.translations.clone(),
+                stats.min_year,
+                stats.max_year,
+                stats.genres_count,
+                stats.stereo_count,
+                stats.multichannel_count,
             )
         };
 
@@ -388,10 +333,11 @@ impl PlayerView {
             .track_scroll(&self.grid_scroll_handle)
             .children(albums.iter().enumerate().map(|(idx, album)| {
                 let is_selected = selected_album_index == idx;
-                let theme = theme.clone();
+                // Avoid cloning theme per album - AlbumCard takes ownership but we can clone once
+                let card_theme = theme.clone();
 
                 div()
-                    .id(SharedString::from(format!("album-card-wrapper-{}", idx)))
+                    .id(("album-wrapper", idx))
                     .on_mouse_up(
                         MouseButton::Left,
                         cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
@@ -417,7 +363,7 @@ impl PlayerView {
                         }),
                     )
                     .child(
-                        AlbumCard::new(Arc::new((*album).clone()), idx, is_selected, theme.clone())
+                        AlbumCard::new(Arc::new(album.clone()), idx, is_selected, card_theme)
                             .mode(AlbumCardMode::Grid),
                     )
             }))

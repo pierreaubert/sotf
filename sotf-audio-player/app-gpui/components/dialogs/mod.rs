@@ -19,9 +19,12 @@ impl PlayerView {
             Screen::Queue => "Queue",
             Screen::Spectrum => "Spectrum",
             Screen::Settings => "Settings",
+            Screen::Studio => "Studio",
             Screen::Recording => "Recording",
             Screen::RoomEq => "Room EQ",
             Screen::HeadphoneEq => "Headphone EQ",
+            Screen::Spinorama => "Spinorama",
+            Screen::PluginGraph => "Plugin Graph",
         };
 
         // Get keybindings for current screen
@@ -617,6 +620,14 @@ fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str
         ],
         Screen::Spectrum => vec![("Space", "Play/Pause"), ("N", "Next track")],
         Screen::Settings => vec![("T", "Cycle theme"), ("Alt-L", "Cycle language")],
+        Screen::Studio => vec![
+            ("E/U/G/L/O/B", "Add plugins"),
+            ("Enter/e", "Edit plugin"),
+            ("D/Delete", "Delete plugin"),
+            ("Space", "Toggle on/off"),
+            ("Shift-U/N", "Move up/down"),
+            ("Shift-S/l", "Save/Load preset"),
+        ],
         Screen::Recording => vec![
             ("Back/Close", "Navigate between steps"),
             ("Next/Finish", "Proceed to next step or finish"),
@@ -628,6 +639,16 @@ fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str
         Screen::HeadphoneEq => vec![
             ("Back/Close", "Navigate between steps"),
             ("Next/Finish", "Proceed to next step or finish"),
+        ],
+        Screen::Spinorama => vec![
+            ("Back/Close", "Navigate between steps"),
+            ("Next/Finish", "Proceed to next step or finish"),
+        ],
+        Screen::PluginGraph => vec![
+            ("Click+Drag", "Move nodes"),
+            ("Drag port", "Create connection"),
+            ("Delete", "Remove selected"),
+            ("Space", "Toggle selected plugin"),
         ],
     }
 }

@@ -100,10 +100,11 @@ impl PlayerView {
     /// Render navigation buttons (Close/Back and Next/Finish)
     fn render_room_eq_nav_buttons(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
+        let theme = state.app.theme.clone();
         let current_step = state.app.room_eq_state.step;
         let can_go_next = self.room_eq_can_advance(cx);
         let is_busy = state.app.room_eq_state.is_optimizing();
-        let view = cx.entity().clone();
+        let _view = cx.entity().clone();
 
         let back_label = match current_step {
             RoomEqStep::LoadData => "Close",
@@ -120,6 +121,7 @@ impl PlayerView {
                 Button::new("back", back_label)
                     .variant(ButtonVariant::Secondary)
                     .size(ButtonSize::Md)
+                    .theme(theme.to_button_theme())
                     .disabled(is_busy)
                     .build()
                     .on_mouse_up(
@@ -146,8 +148,9 @@ impl PlayerView {
             )
             .child(
                 Button::new("next", next_label)
-                    .variant(ButtonVariant::Primary)
+                    .variant(ButtonVariant::Secondary)
                     .size(ButtonSize::Md)
+                    .theme(theme.to_button_theme())
                     .disabled(!can_go_next || is_busy)
                     .build()
                     .on_mouse_up(
@@ -278,7 +281,8 @@ impl PlayerView {
                             )
                             .child(
                                 Button::new("load_from_recording", "Load from Recording")
-                                    .variant(ButtonVariant::Primary)
+                                    .variant(ButtonVariant::Secondary)
+                                    .theme(theme.to_button_theme())
                                     .build()
                                     .on_mouse_up(
                                         MouseButton::Left,
@@ -302,7 +306,8 @@ impl PlayerView {
                             )
                             .child(
                                 Button::new("load_from_file", "Browse...")
-                                    .variant(ButtonVariant::Primary)
+                                    .variant(ButtonVariant::Secondary)
+                                    .theme(theme.to_button_theme())
                                     .build()
                                     .on_mouse_up(
                                         MouseButton::Left,
@@ -389,14 +394,16 @@ impl PlayerView {
             refine: false,
             local_algo: "cobyla".to_string(),
             smooth: false,
+            ..Default::default()
         };
 
         // Build AutoEqFormUiState from our dropdowns
         let autoeq_ui_state = AutoEqFormUiState {
             algo_open: room_eq.dropdowns.algorithm_open,
-            peq_model_open: false,
+            peq_model_open: room_eq.dropdowns.peq_model_open,
             strategy_open: false,
             local_algo_open: false,
+            ..Default::default()
         };
 
         // Build the AutoEQ form with handlers
@@ -422,6 +429,24 @@ impl PlayerView {
                 move |open, _window, cx| {
                     state.update(cx, |state, _cx| {
                         state.app.room_eq_state.dropdowns.algorithm_open = open;
+                    });
+                }
+            })
+            .on_peq_model_change({
+                let state = self.state.clone();
+                move |_model, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        // PEQ model is stored in autoeq_config.peq_model which is read-only display
+                        // The actual model selection doesn't need to be stored separately
+                        state.app.room_eq_state.dropdowns.peq_model_open = false;
+                    });
+                }
+            })
+            .on_peq_model_toggle({
+                let state = self.state.clone();
+                move |open, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.room_eq_state.dropdowns.peq_model_open = open;
                     });
                 }
             })
@@ -590,7 +615,8 @@ impl PlayerView {
                                         "Start Optimization"
                                     },
                                 )
-                                .variant(ButtonVariant::Primary)
+                                .variant(ButtonVariant::Secondary)
+                                .theme(theme.to_button_theme())
                                 .disabled(is_running)
                                 .build()
                                 .on_mouse_up(
@@ -737,7 +763,8 @@ impl PlayerView {
                             )
                             .child(
                                 Button::new("apply_to_player", "Apply to Player")
-                                    .variant(ButtonVariant::Primary)
+                                    .variant(ButtonVariant::Secondary)
+                                    .theme(theme.to_button_theme())
                                     .build()
                                     .on_mouse_up(
                                         MouseButton::Left,
@@ -1036,7 +1063,6 @@ impl PlayerView {
             SpeakerOptimizationConfig, SpeakerOptimizationProgress,
             run_speaker_optimization_with_callback,
         };
-        use std::sync::{Arc, Mutex};
 
         log::info!("Starting room EQ optimization with new speaker optimization");
 
@@ -1709,6 +1735,7 @@ fn render_channel_config_row(
                             ButtonVariant::Secondary
                         })
                         .size(ButtonSize::Sm)
+                        .theme(theme.to_button_theme())
                         .on_click({
                             let view = view.clone();
                             move |_, cx| {
@@ -1733,6 +1760,7 @@ fn render_channel_config_row(
                             ButtonVariant::Secondary
                         })
                         .size(ButtonSize::Sm)
+                        .theme(theme.to_button_theme())
                         .on_click({
                             let view = view.clone();
                             move |_, cx| {

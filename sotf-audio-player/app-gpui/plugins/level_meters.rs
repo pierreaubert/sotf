@@ -624,7 +624,7 @@ pub fn render_lufs_with_true_peak(
         (-60.0, -60.0, -60.0, -60.0, -60.0, 0.5)
     };
 
-    let meter_theme = MeterTheme::default();
+    let meter_theme = MeterTheme::from_theme(theme);
 
     div()
         .flex()
@@ -833,40 +833,50 @@ impl PlayerView {
             .flex_col()
             .h_full()
             .p(px(2.0)) // Match meter group padding
-            // Ticks area (matches meters flex_1)
+            // Outer container (matches meters_row flex_1 h_full)
             .child(
                 div()
-                    .relative()
+                    .flex()
+                    .flex_col()
                     .flex_1()
-                    .w(px(24.0))
-                    .children(ticks.into_iter().map(move |db| {
-                        let pos = db_to_position(db as f64);
-                        let label = div()
-                            .text_size(px(9.0))
-                            .text_color(theme.text_muted)
-                            .child(format!("{}", db));
+                    .h_full()
+                    // Ticks area (matches meter_bar flex_1)
+                    .child(
+                        div()
+                            .relative()
+                            .flex_1()
+                            .w(px(24.0))
+                            .children(ticks.into_iter().map(move |db| {
+                                let pos = db_to_position(db as f64);
+                                let label = div()
+                                    .text_size(px(9.0))
+                                    .text_color(theme.text_muted)
+                                    .child(format!("{}", db));
 
-                        let tick = div().w(px(4.0)).h(px(1.0)).bg(theme.border);
+                                let tick = div().w(px(4.0)).h(px(1.0)).bg(theme.border);
 
-                        let container = div()
-                            .absolute()
-                            .left_0()
-                            .right_0()
-                            .bottom(gpui::Length::Definite(gpui::DefiniteLength::Fraction(pos)))
-                            .flex()
-                            .items_center()
-                            .justify_between();
+                                let container = div()
+                                    .absolute()
+                                    .left_0()
+                                    .right_0()
+                                    .bottom(gpui::Length::Definite(gpui::DefiniteLength::Fraction(
+                                        pos,
+                                    )))
+                                    .flex()
+                                    .items_center()
+                                    .justify_between();
 
-                        if align_right {
-                            container.child(label).child(tick)
-                        } else {
-                            container.child(tick).child(label)
-                        }
-                    })),
-            )
-            // Spacer for Channel Name (matches render_gradient_meter)
-            .child(
-                div().text_xs().mt_1().opacity(0.0).child("Name"), // Dummy text to match height
+                                if align_right {
+                                    container.child(label).child(tick)
+                                } else {
+                                    container.child(tick).child(label)
+                                }
+                            })),
+                    )
+                    // Spacer for Channel Name (matches render_gradient_meter channel name)
+                    .child(
+                        div().text_xs().mt_1().opacity(0.0).child("X"), // Dummy text to match height
+                    ),
             )
             // Spacer (matches MSD buttons height and margin)
             .child(
@@ -1001,10 +1011,7 @@ impl PlayerView {
     ) -> impl IntoElement {
         let theme_c = theme.clone();
         div()
-            .id(SharedString::from(format!(
-                "msd-{}-{}",
-                button_type, group_idx
-            )))
+            .id((button_type, group_idx))
             .px(px(2.0))
             .py(px(2.0))
             .rounded(px(2.0))

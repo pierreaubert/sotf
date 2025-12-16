@@ -90,6 +90,15 @@ fn common_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("shift-r", actions::SwitchToRoomEQ, None),
         KeyBinding::new("shift-h", actions::SwitchToHeadphoneEQ, None),
         KeyBinding::new("R", actions::SwitchToRecording, None),
+        // Screen navigation with Cmd + number (Show menu shortcuts)
+        KeyBinding::new("cmd-`", actions::SwitchToLibrary, None), // cmd-§ on macOS
+        KeyBinding::new("cmd-0", actions::SwitchToLibrary, None),
+        KeyBinding::new("cmd-1", actions::SwitchToStudio, None),
+        KeyBinding::new("cmd-2", actions::SwitchToPluginGraph, None),
+        KeyBinding::new("cmd-3", actions::SwitchToRecording, None),
+        KeyBinding::new("cmd-4", actions::SwitchToRoomEQ, None),
+        KeyBinding::new("cmd-5", actions::SwitchToHeadphoneEQ, None),
+        KeyBinding::new("cmd-6", actions::SwitchToSpinorma, None),
         // Menu bar actions (platform convention)
         KeyBinding::new("cmd-,", actions::OpenConfig, None),
         KeyBinding::new("cmd-q", actions::QuitApp, None),

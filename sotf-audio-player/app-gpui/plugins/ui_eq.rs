@@ -231,7 +231,7 @@ pub fn render_eq_plugin(
                 let surface_hover = theme.surface_hover;
 
                 let tab = div()
-                    .id(SharedString::from(format!("eq-band-{}", band_idx)))
+                    .id(("eq-band", band_idx))
                     .px_4()
                     .py_2()
                     .text_sm()

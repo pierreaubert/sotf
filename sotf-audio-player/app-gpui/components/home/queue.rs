@@ -140,7 +140,23 @@ impl PlayerView {
                                                 },
                                             ),
                                         )
-                                        .child(
+                                        .child({
+                                            // Truncate album title to 20 characters max
+                                            let album_title = item.album.title.clone();
+                                            let album_title_truncated = if album_title.chars().count() > 20 {
+                                                album_title.chars().take(20).collect::<String>() + "..."
+                                            } else {
+                                                album_title
+                                            };
+
+                                            // Truncate artist to 20 characters max
+                                            let artist = item.album.artist();
+                                            let artist_truncated = if artist.chars().count() > 20 {
+                                                artist.chars().take(20).collect::<String>() + "..."
+                                            } else {
+                                                artist
+                                            };
+
                                             div()
                                                 .flex()
                                                 .flex_col()
@@ -149,13 +165,13 @@ impl PlayerView {
                                                         .font_weight(FontWeight::SEMIBOLD)
                                                         .text_sm()
                                                         .text_color(if is_current { theme.text_on_accent } else { theme.text_primary })
-                                                        .child(item.album.title.clone()),
+                                                        .child(album_title_truncated),
                                                 )
                                                 .child(
                                                     div()
                                                         .text_xs()
                                                         .text_color(if is_current { theme.text_on_accent_muted } else { theme.text_muted })
-                                                        .child(item.album.artist()),
+                                                        .child(artist_truncated),
                                                 )
                                                 .child(
                                                     div()
@@ -166,8 +182,8 @@ impl PlayerView {
                                                             item.current_track_index + 1,
                                                             item.album.tracks.len()
                                                         )),
-                                                ),
-                                        )
+                                                )
+                                        })
                                 })),
                         ),
                 )
@@ -316,9 +332,23 @@ impl PlayerView {
             // Get channel count from current track
             let channels = current_track.and_then(|t| t.channels).unwrap_or(2);
 
-            let album_title = album.title.clone();
-            let artist = album.artist();
+            let album_title_raw = album.title.clone();
+            let artist_raw = album.artist();
             let art_path = album.album_art_path.clone();
+
+            // Truncate album title to 20 characters max
+            let album_title = if album_title_raw.chars().count() > 20 {
+                album_title_raw.chars().take(20).collect::<String>() + "..."
+            } else {
+                album_title_raw
+            };
+
+            // Truncate artist to 20 characters max
+            let artist = if artist_raw.chars().count() > 20 {
+                artist_raw.chars().take(20).collect::<String>() + "..."
+            } else {
+                artist_raw
+            };
 
             // Group tracks by disc number
             let mut disc_map: BTreeMap<u32, Vec<(usize, Track)>> = BTreeMap::new();
@@ -526,7 +556,15 @@ impl PlayerView {
 
             for (idx, track) in tracks.iter() {
                 let idx = *idx;
-                let title = track.title.clone().unwrap_or_else(|| "Unknown".to_string());
+                let title_raw = track.title.clone().unwrap_or_else(|| "Unknown".to_string());
+
+                // Truncate track title to 20 characters max
+                let title = if title_raw.chars().count() > 20 {
+                    title_raw.chars().take(20).collect::<String>() + "..."
+                } else {
+                    title_raw
+                };
+
                 let duration = track.duration_secs.unwrap_or(0);
                 let is_current = idx == current_track_idx;
                 let duration_str = format!("{}:{:02}", duration / 60, duration % 60);

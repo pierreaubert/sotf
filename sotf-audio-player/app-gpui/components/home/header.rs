@@ -36,8 +36,8 @@ impl PlayerView {
                         cx,
                     ))
                     .child(self.render_menu_button(
-                        translations.menu_view,
-                        ActiveMenu::View,
+                        translations.menu_show,
+                        ActiveMenu::Show,
                         active_menu,
                         theme.clone(),
                         cx,
@@ -101,8 +101,8 @@ impl PlayerView {
             .when(active_menu == ActiveMenu::File, |el| {
                 el.child(self.render_file_dropdown(theme.clone(), cx))
             })
-            .when(active_menu == ActiveMenu::View, |el| {
-                el.child(self.render_view_dropdown(theme.clone(), cx))
+            .when(active_menu == ActiveMenu::Show, |el| {
+                el.child(self.render_show_dropdown(theme.clone(), cx))
             })
             .when(active_menu == ActiveMenu::Help, |el| {
                 el.child(self.render_help_dropdown(theme.clone(), cx))
@@ -173,35 +173,35 @@ impl PlayerView {
     }
 
     /// Render View menu dropdown
-    fn render_view_dropdown(&self, theme: Theme, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_show_dropdown(&self, theme: Theme, cx: &mut Context<Self>) -> impl IntoElement {
         let app_state = self.state.read(cx);
-        let layout_mode = app_state.app.layout_mode;
         let translations = app_state.app.translations.clone();
         let _ = app_state;
 
         let state = self.state.clone();
 
-        let layout_label = format!(
-            "Layout: {}",
-            match layout_mode {
-                LayoutMode::Compact => "Compact",
-                LayoutMode::Expanded => "Expanded",
-            }
-        );
-
         Menu::new(vec![
-            MenuItem::new("library", translations.screen_library).with_shortcut("1"),
-            MenuItem::new("queue", translations.screen_queue).with_shortcut("2"),
+            MenuItem::new("studio", translations.screen_studio).with_shortcut("⌘1"),
+            MenuItem::new("recording", translations.screen_recording).with_shortcut("⌘2"),
+            MenuItem::new("roomeq", translations.screen_room_eq).with_shortcut("⌘3"),
+            MenuItem::new("headphoneeq", translations.screen_headphone_eq).with_shortcut("⌘4"),
+            MenuItem::new("spinorama", translations.screen_spinorama).with_shortcut("⌘5"),
             MenuItem::separator(),
-            MenuItem::new("settings", translations.screen_settings).with_shortcut("3"),
+            MenuItem::new("library", translations.screen_library).with_shortcut("⌘0"),
             MenuItem::separator(),
-            MenuItem::new("layout-info", layout_label).disabled(true),
+            MenuItem::new("queue", translations.screen_queue),
+            MenuItem::new("settings", translations.screen_settings),
         ])
         .theme(theme.to_menu_theme())
         .on_select(move |id, _window, cx| {
             state.update(cx, |state, _cx| {
                 state.app.active_menu = ActiveMenu::None;
                 match id.as_ref() {
+                    "studio" => state.app.current_screen = Screen::Studio,
+                    "recording" => state.app.current_screen = Screen::Recording,
+                    "roomeq" => state.app.current_screen = Screen::RoomEq,
+                    "headphoneeq" => state.app.current_screen = Screen::HeadphoneEq,
+                    "spinorama" => state.app.current_screen = Screen::Spinorama,
                     "library" => state.app.current_screen = Screen::Library,
                     "queue" => state.app.current_screen = Screen::Queue,
                     "settings" => state.app.current_screen = Screen::Settings,

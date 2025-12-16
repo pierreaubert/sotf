@@ -220,9 +220,26 @@ impl PlayerView {
     fn switch_to_plugins(&mut self, _: &SwitchToPlugins, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             state.app.current_screen = Screen::Settings;
-            state.app.active_settings_tab = crate::app::SettingsTab::Plugins;
+            state.app.active_settings_tab = crate::app::SettingsTab::AudioDevice;
         });
         cx.notify();
+    }
+
+    fn switch_to_studio(&mut self, _: &SwitchToStudio, _: &mut Window, cx: &mut Context<Self>) {
+        self.switch_screen(Screen::Studio, cx);
+    }
+
+    fn switch_to_plugin_graph(
+        &mut self,
+        _: &SwitchToPluginGraph,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.switch_screen(Screen::PluginGraph, cx);
+    }
+
+    fn switch_to_spinorma(&mut self, _: &SwitchToSpinorma, _: &mut Window, cx: &mut Context<Self>) {
+        self.switch_screen(Screen::Spinorama, cx);
     }
 
     fn switch_to_devices(&mut self, _: &SwitchToDevices, _: &mut Window, cx: &mut Context<Self>) {
@@ -1760,12 +1777,15 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::switch_to_library))
             .on_action(cx.listener(Self::switch_to_queue))
             .on_action(cx.listener(Self::switch_to_plugins))
+            .on_action(cx.listener(Self::switch_to_studio))
+            .on_action(cx.listener(Self::switch_to_plugin_graph))
             .on_action(cx.listener(Self::switch_to_devices))
             .on_action(cx.listener(Self::switch_to_directory_manager))
             .on_action(cx.listener(Self::switch_to_settings))
             .on_action(cx.listener(Self::switch_to_recording))
             .on_action(cx.listener(Self::switch_to_room_eq))
             .on_action(cx.listener(Self::switch_to_headphone_eq))
+            .on_action(cx.listener(Self::switch_to_spinorma))
             .on_action(cx.listener(Self::open_config))
             .on_action(cx.listener(Self::quit_app))
             .on_action(cx.listener(Self::cycle_theme))
@@ -1919,12 +1939,19 @@ impl Render for PlayerView {
                                 Screen::Settings => {
                                     self.render_settings_screen(cx).into_any_element()
                                 }
+                                Screen::Studio => self.render_plugins_screen(cx).into_any_element(),
                                 Screen::Recording => {
                                     self.render_recording_screen(cx).into_any_element()
                                 }
                                 Screen::RoomEq => self.render_room_eq_screen(cx).into_any_element(),
                                 Screen::HeadphoneEq => {
                                     self.render_headphone_eq_screen(cx).into_any_element()
+                                }
+                                Screen::Spinorama => {
+                                    self.render_spinorama_settings_content(cx).into_any_element()
+                                }
+                                Screen::PluginGraph => {
+                                    self.render_plugin_graph_screen(cx).into_any_element()
                                 }
                                 // Default: split Library/Queue view
                                 Screen::Library | Screen::Queue => {
@@ -1948,12 +1975,19 @@ impl Render for PlayerView {
                                 Screen::Settings => {
                                     self.render_settings_screen(cx).into_any_element()
                                 }
+                                Screen::Studio => self.render_plugins_screen(cx).into_any_element(),
                                 Screen::Recording => {
                                     self.render_recording_screen(cx).into_any_element()
                                 }
                                 Screen::RoomEq => self.render_room_eq_screen(cx).into_any_element(),
                                 Screen::HeadphoneEq => {
                                     self.render_headphone_eq_screen(cx).into_any_element()
+                                }
+                                Screen::Spinorama => {
+                                    self.render_spinorama_settings_content(cx).into_any_element()
+                                }
+                                Screen::PluginGraph => {
+                                    self.render_plugin_graph_screen(cx).into_any_element()
                                 }
                             }
                         }
@@ -1985,6 +2019,10 @@ impl Render for PlayerView {
             .child(self.render_toast(cx))
             .when(self.state.read(cx).app.context_menu.is_some(), |div| {
                 div.child(self.render_context_menu(cx))
+            })
+            // Studio menu overlay (click outside to close)
+            .when(self.state.read(cx).app.show_studio_menu, |div| {
+                div.child(self.render_studio_menu_overlay(cx))
             })
             // Device popup overlay (click outside to close)
             .when(self.state.read(cx).app.show_device_popup, |div| {

@@ -21,10 +21,13 @@ actions!(
         SwitchToLibrary,
         SwitchToQueue,
         SwitchToPlugins,
+        SwitchToStudio,
+        SwitchToPluginGraph,
         SwitchToRoomEQ,
         SwitchToSpectrum,
         SwitchToSettings,
         SwitchToRecording,
+        SwitchToSpinorma,
         OpenConfig, // Menu bar: open config (cmd-,)
         QuitApp,    // Menu bar: quit app (cmd-q)
         CycleTheme,

@@ -440,7 +440,7 @@ impl PlayerView {
     /// Start recording a single channel
     fn start_recording_channel(&mut self, channel_idx: usize, cx: &mut Context<Self>) {
         use sotf_audio_player::signal_recorder::{
-            SignalParams, SignalType, generate_signal, prepare_signal, write_temp_wav,
+            SignalParams, SignalType, generate_signal, write_temp_wav,
         };
 
         // Get recording parameters from state

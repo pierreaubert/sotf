@@ -5,7 +5,7 @@
 //! - Rotary knob controls
 //! - Gain reduction meter
 
-use super::common::{render_edit_hints, render_knob, render_section_header, render_toggle};
+use super::common::{render_knob, render_section_header, render_toggle, ParamSectionStyle};
 use super::level_meters::render_gr_meter;
 use crate::app::AppState;
 use crate::theme::Theme;
@@ -155,11 +155,7 @@ pub fn render_gate_plugin(
                                 .mt_4(),
                         )
                         .build()
-                        .rounded_xl()
-                        .bg(theme.background_secondary)
-                        .border_1()
-                        .border_color(theme.border)
-                        .p_4(),
+                        .param_section_style_lg(theme),
                 )
                 // Parameters section with knobs
                 .child(
@@ -286,11 +282,7 @@ pub fn render_gate_plugin(
                         )
                         .build()
                         .flex_1()
-                        .rounded_xl()
-                        .bg(theme.background_secondary)
-                        .border_1()
-                        .border_color(theme.border)
-                        .p_4(),
+                        .param_section_style_lg(theme),
                 ),
         )
         // Large threshold display
@@ -338,19 +330,12 @@ pub fn render_gate_plugin(
                 .build()
                 .justify_center()
                 .p_4()
-                .rounded_xl()
-                .bg(theme.background_secondary)
-                .border_1()
-                .border_color(theme.border),
+                .param_section_base(theme),
         )
         // Gain reduction meter
         .child(
             div()
-                .rounded_xl()
-                .bg(theme.background_secondary)
-                .border_1()
-                .border_color(theme.border)
-                .p_4()
+                .param_section_style_lg(theme)
                 .child(render_gr_meter(simulated_gr, -40.0, theme)),
         )
 }

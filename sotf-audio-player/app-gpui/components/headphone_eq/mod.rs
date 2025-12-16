@@ -488,14 +488,16 @@ impl PlayerView {
             refine: false,
             local_algo: "cobyla".to_string(),
             smooth: false,
+            ..Default::default()
         };
 
         // Build AutoEqFormUiState from our dropdowns
         let autoeq_ui_state = AutoEqFormUiState {
             algo_open: headphone_eq.dropdowns.algorithm_open,
-            peq_model_open: false,
+            peq_model_open: headphone_eq.dropdowns.peq_model_open,
             strategy_open: false,
             local_algo_open: false,
+            ..Default::default()
         };
 
         // Build the AutoEQ form with handlers
@@ -523,6 +525,22 @@ impl PlayerView {
                 move |open, _window, cx| {
                     state.update(cx, |state, _cx| {
                         state.app.headphone_eq_state.dropdowns.algorithm_open = open;
+                    });
+                }
+            })
+            .on_peq_model_change({
+                let state = self.state.clone();
+                move |_model, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.headphone_eq_state.dropdowns.peq_model_open = false;
+                    });
+                }
+            })
+            .on_peq_model_toggle({
+                let state = self.state.clone();
+                move |open, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.headphone_eq_state.dropdowns.peq_model_open = open;
                     });
                 }
             })

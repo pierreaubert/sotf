@@ -18,6 +18,7 @@ pub mod database;
 pub mod library;
 pub mod library_scanner;
 pub mod player;
+pub mod plugin_graph;
 pub mod plugins;
 pub mod replay_gain_scanner;
 // Backward compatibility alias
@@ -34,6 +35,10 @@ pub use library::{
 };
 pub use library_scanner::{LibraryScanMessage, LibraryScanner};
 pub use player::{PlaybackState, Player};
+pub use plugin_graph::{
+    ConnectionDrag, GraphConnection, GraphNodeId, GraphSelection, NodeDrag, NodePosition,
+    PluginGraph, PluginGraphNode, SpecialNode, SpecialNodeType,
+};
 pub use plugins::{EQFilter, Plugin, PluginChain, PluginSettings, PluginType};
 pub use replay_gain_scanner::{ReplayGainScanManager, ReplayGainScanner, ScanMessage};
 pub use sotf_audio::replaygain::ReplayGainInfo;

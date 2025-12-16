@@ -23,8 +23,13 @@ impl PlayerView {
                     .weight(TextWeight::Semibold),
             )
             .child(
-                // Grid layout with 2 columns
-                div().grid().grid_cols(2).gap_3().children(
+                // Grid layout with 2 equal-width columns
+                div()
+                    .grid()
+                    .grid_cols(2)
+                    .gap_3()
+                    .w_full()
+                    .children(
                     state
                         .app
                         .output_devices
@@ -50,6 +55,7 @@ impl PlayerView {
                             let brand_image = get_brand_image_path(&device_name);
 
                             div()
+                                .w_full()
                                 .p_3()
                                 .rounded_md()
                                 .cursor_pointer()

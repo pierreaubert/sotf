@@ -9,6 +9,7 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui::{MouseMoveEvent, MouseUpEvent};
+use gpui_ui_kit::{CollapseDirection, PaneDivider, PaneDividerTheme};
 use sotf_audio_player::PluginType;
 
 /// Drag information for plugin reordering
@@ -29,7 +30,6 @@ impl Render for PluginDragInfo {
             .flex()
             .flex_col()
             .rounded_lg()
-            .border_2()
             .border_color(self.color)
             .bg(Theme::opacity_20pct(Rgba {
                 r: 0.118,
@@ -198,6 +198,21 @@ impl PlayerView {
             )
             // Plugin Rack Strip (top)
             .child(self.render_plugin_rack(cx))
+            // Horizontal divider between rack and detail panel
+            .child({
+                let divider_theme = PaneDividerTheme {
+                    background: theme.background,
+                    background_hover: theme.surface_hover,
+                    background_collapsed: theme.surface,
+                    foreground: theme.text_muted,
+                    foreground_hover: theme.text_secondary,
+                    border: theme.border,
+                };
+                PaneDivider::horizontal("rack-detail-divider", CollapseDirection::Up)
+                    .label("Signal Chain")
+                    .theme(divider_theme)
+                    .thickness(px(4.0))
+            })
             // Parameter Panel (bottom, fills remaining space)
             .child(self.render_plugin_detail_panel(cx))
     }
@@ -250,7 +265,6 @@ impl PlayerView {
             .flex()
             .flex_col()
             .bg(theme.background_secondary)
-            .border_b_1()
             .border_color(theme.border)
             // Header
             .child(
@@ -316,7 +330,7 @@ impl PlayerView {
                                 // Plugin module box - draggable and droppable
                                 .child(
                                     div()
-                                        .id(SharedString::from(format!("plugin-module-{}", idx)))
+                                        .id(("plugin-module", idx))
                                         .group("plugin-module")
                                         .w(px(80.0))
                                         .h(px(90.0))
@@ -330,7 +344,7 @@ impl PlayerView {
                                             theme_c.border
                                         })
                                         .bg(theme_c.surface)
-                                        .when(!enabled, |d| d.opacity(0.5))
+                                        .when(!enabled, |d| d.opacity(0.6))
                                         .shadow_md()
                                         .cursor_grab()
                                         .hover(|s| s.border_color(color))
@@ -382,10 +396,10 @@ impl PlayerView {
                                         .child(
                                             div()
                                                 .absolute()
-                                                .top(px(2.0))
-                                                .right(px(2.0))
-                                                .w(px(16.0))
-                                                .h(px(16.0))
+                                                .top(px(8.0))
+                                                .right(px(4.0))
+                                                .w(px(12.0))
+                                                .h(px(12.0))
                                                 .rounded_full()
                                                 .bg(theme_c.error)
                                                 .flex()
@@ -722,7 +736,7 @@ impl PlayerView {
             .flex()
             .items_center()
             .gap_2()
-            .children(all_plugins.into_iter().filter_map(|(pt, _category)| {
+            .children(all_plugins.into_iter().enumerate().filter_map(|(i, (pt, _category))| {
                 // Check if plugin is already in chain for single-instance plugins
                 let state = self.state.read(cx);
                 let already_present = state
@@ -745,7 +759,7 @@ impl PlayerView {
 
                 Some(
                     div()
-                        .id(SharedString::from(format!("add-{}", name)))
+                        .id(("add-plugin", i))
                         .px_2()
                         .py_1()
                         .rounded_md()
@@ -800,10 +814,10 @@ impl PlayerView {
             .when(has_plugin, |d| {
                 let plugin = plugin_data.clone().unwrap();
                 let plugin_type = plugin.plugin_type().clone();
-                let plugin_name = plugin_type.name().to_string();
-                let color = plugin_color(&plugin_type, &theme);
+                let _plugin_name = plugin_type.name().to_string();
+                let _color = plugin_color(&plugin_type, &theme);
                 let is_editing = editing_idx.is_some();
-                let plugin_enabled = plugin.enabled;
+                let _plugin_enabled = plugin.enabled;
 
                 d.child(
                     // Plugin header bar
@@ -847,13 +861,53 @@ impl PlayerView {
                                                                              ),
                                                      */
                 )
-                .child(
+                .child({
+                    // Calculate output channels based on plugin chain for conditional divider
+                    let state = self.state.read(cx);
+                    let mut output_channels = 2;
+                    for p in state.app.plugin_chain.plugins() {
+                        if p.enabled {
+                            match p.plugin_type() {
+                                PluginType::Upmixer => {
+                                    if let sotf_audio_player::PluginSettings::Upmixer {
+                                        speaker_config,
+                                        ..
+                                    } = &p.settings
+                                    {
+                                        output_channels = speaker_config_to_channels(speaker_config);
+                                    } else {
+                                        output_channels = 6;
+                                    }
+                                }
+                                PluginType::BinauralDecoder => output_channels = 2,
+                                _ => {}
+                            }
+                        }
+                    }
+                    let has_multichannel = output_channels > 2;
+
+                    let divider_theme = PaneDividerTheme {
+                        background: theme.background,
+                        background_hover: theme.surface_hover,
+                        background_collapsed: theme.surface,
+                        foreground: theme.text_muted,
+                        foreground_hover: theme.text_secondary,
+                        border: theme.border,
+                    };
+
                     div()
                         .flex_1()
                         .flex()
                         .min_h(px(0.0)) // Allow shrinking
                         // Left: Input Meter (legend on right side, facing center)
                         .child(self.render_side_meter(cx, 2, "IN", false))
+                        // Divider between input meter and main zone
+                        .child(
+                            PaneDivider::vertical("input-meter-divider", CollapseDirection::Left)
+                                .label("IN")
+                                .theme(divider_theme.clone())
+                                .thickness(px(4.0)),
+                        )
                         // Center: Plugin Content
                         .child(
                             div()
@@ -873,35 +927,18 @@ impl PlayerView {
                                     self.state.read(cx).app.loudness_info.clone(),
                                 )),
                         )
+                        // Divider between main zone and output meter (only if multichannel)
+                        .when(has_multichannel, |d| {
+                            d.child(
+                                PaneDivider::vertical("output-meter-divider", CollapseDirection::Right)
+                                    .label("OUT")
+                                    .theme(divider_theme.clone())
+                                    .thickness(px(4.0)),
+                            )
+                        })
                         // Right: Output Meter
-                        .child({
-                            let state = self.state.read(cx);
-                            // Calculate output channels based on plugin chain
-                            let mut channels = 2;
-                            for p in state.app.plugin_chain.plugins() {
-                                if p.enabled {
-                                    match p.plugin_type() {
-                                        PluginType::Upmixer => {
-                                            // Get actual channel count from upmixer config
-                                            if let sotf_audio_player::PluginSettings::Upmixer {
-                                                speaker_config,
-                                                ..
-                                            } = &p.settings
-                                            {
-                                                channels =
-                                                    speaker_config_to_channels(speaker_config);
-                                            } else {
-                                                channels = 6; // Default to 5.1
-                                            }
-                                        }
-                                        PluginType::BinauralDecoder => channels = 2, // Stereo
-                                        _ => {}
-                                    }
-                                }
-                            }
-                            self.render_side_meter(cx, channels, "OUT", true)
-                        }),
-                )
+                        .child(self.render_side_meter(cx, output_channels, "OUT", true))
+                })
             })
             .when(!has_plugin, |d| {
                 d.child(

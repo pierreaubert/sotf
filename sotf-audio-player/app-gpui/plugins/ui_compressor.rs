@@ -7,6 +7,7 @@
 
 use super::common::{
     render_edit_hints, render_knob, render_section_header, render_toggle, render_transfer_curve,
+    ParamSectionStyle,
 };
 use super::level_meters::render_gr_meter;
 use crate::app::AppState;
@@ -62,11 +63,7 @@ pub fn render_compressor_plugin(
                         .flex_col()
                         .gap_3()
                         .items_center()
-                        .rounded_xl()
-                        .bg(theme.background_secondary)
-                        .border_1()
-                        .border_color(theme.border)
-                        .p_4()
+                        .param_section_style_lg(theme)
                         // Toggles above the graph
                         .child(
                             div()
@@ -114,11 +111,7 @@ pub fn render_compressor_plugin(
                         .flex_col()
                         .gap_2()
                         .flex_1()
-                        .rounded_xl()
-                        .bg(theme.background_secondary)
-                        .border_1()
-                        .border_color(theme.border)
-                        .p_4()
+                        .param_section_style_lg(theme)
                         .child(render_section_header("DYNAMICS CONTROL", theme))
                         // Row 1: Threshold, Ratio, Attack
                         .child(

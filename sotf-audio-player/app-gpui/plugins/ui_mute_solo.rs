@@ -1,6 +1,8 @@
 //! Channel Mute/Solo Plugin UI Component
 
-use super::common::{render_edit_hints, render_section_header, render_toggle};
+use super::common::{
+    render_edit_hints, render_section_header, render_toggle, ParamSectionStyle,
+};
 use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
@@ -43,11 +45,7 @@ pub fn render_mute_solo_plugin(
                 .flex()
                 .flex_col()
                 .gap_2()
-                .rounded_xl()
-                .bg(theme.background_secondary)
-                .border_1()
-                .border_color(theme.border)
-                .p_4()
+                .param_section_style_lg(theme)
                 .child(render_section_header("CHANNEL MIXER", theme))
                 // Channel strips
                 .child(div().flex().gap_3().justify_center().children(
@@ -171,11 +169,7 @@ pub fn render_mute_solo_plugin(
                     .items_center()
                     .justify_center()
                     .gap_2()
-                    .p_3()
-                    .rounded_xl()
-                    .bg(theme.background_secondary)
-                    .border_1()
-                    .border_color(theme.border)
+                    .param_section_style(theme)
                     .child(
                         div()
                             .w(px(12.0))
@@ -199,11 +193,7 @@ pub fn render_mute_solo_plugin(
                     .flex()
                     .flex_col()
                     .items_center()
-                    .p_3()
-                    .rounded_xl()
-                    .bg(theme.background_secondary)
-                    .border_1()
-                    .border_color(theme.border)
+                    .param_section_style(theme)
                     .child(div().text_xs().text_color(theme.text_muted).child("Muted"))
                     .child(
                         div()
@@ -221,11 +211,7 @@ pub fn render_mute_solo_plugin(
                     .flex()
                     .flex_col()
                     .items_center()
-                    .p_3()
-                    .rounded_xl()
-                    .bg(theme.background_secondary)
-                    .border_1()
-                    .border_color(theme.border)
+                    .param_section_style(theme)
                     .child(div().text_xs().text_color(theme.text_muted).child("Soloed"))
                     .child(
                         div()
@@ -245,11 +231,7 @@ pub fn render_mute_solo_plugin(
                 .flex()
                 .flex_col()
                 .gap_2()
-                .rounded_xl()
-                .bg(theme.background_secondary)
-                .border_1()
-                .border_color(theme.border)
-                .p_3()
+                .param_section_style(theme)
                 .child(render_section_header("PARAMETERS", theme))
                 .child(render_toggle(
                     entity.clone(),

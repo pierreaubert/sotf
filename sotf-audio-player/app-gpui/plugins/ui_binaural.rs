@@ -1,7 +1,9 @@
 //! Binaural Decoder Plugin UI Component
 
 use super::actions::OpenSofaFile;
-use super::common::{render_edit_hints, render_param_row, render_section_header, render_toggle};
+use super::common::{
+    render_edit_hints, render_param_row, render_section_header, render_toggle, ParamSectionStyle,
+};
 use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
@@ -39,11 +41,7 @@ pub fn render_binaural_plugin(
                 .flex()
                 .flex_col()
                 .gap_2()
-                .rounded_xl()
-                .bg(theme.background_secondary)
-                .border_1()
-                .border_color(theme.border)
-                .p_4()
+                .param_section_style_lg(theme)
                 .child(render_section_header("HRTF STATUS", theme))
                 // SOFA file status
                 .child(
@@ -212,11 +210,7 @@ pub fn render_binaural_plugin(
                 .flex()
                 .flex_col()
                 .gap_2()
-                .rounded_xl()
-                .bg(theme.background_secondary)
-                .border_1()
-                .border_color(theme.border)
-                .p_3()
+                .param_section_style(theme)
                 .child(render_section_header("PARAMETERS", theme))
                 // SOFA File with Load Button
                 .child(

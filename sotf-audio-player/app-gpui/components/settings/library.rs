@@ -65,8 +65,9 @@ impl PlayerView {
                     .child(div().text_sm().font_weight(FontWeight::BOLD).child("Managed Directories"))
                     .child(
                          Button::new("add-directory-btn", "Add Directory")
-                            .variant(ButtonVariant::Primary)
+                            .variant(ButtonVariant::Secondary)
                             .size(ButtonSize::Sm)
+                            .theme(theme.to_button_theme())
                             .build()
                             .on_mouse_up(
                                 MouseButton::Left,

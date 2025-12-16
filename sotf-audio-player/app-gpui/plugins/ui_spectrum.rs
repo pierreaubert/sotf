@@ -6,7 +6,7 @@ use std::sync::Arc;
 use gpui::prelude::*;
 use gpui::*;
 
-use super::common::{render_edit_hints, render_knob, render_section_header};
+use super::common::{render_edit_hints, render_knob, render_section_header, ParamSectionStyle};
 use crate::app::AppState;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
@@ -343,11 +343,7 @@ pub fn render_spectrum_analyzer_plugin(
                 .flex()
                 .flex_col()
                 .gap_2()
-                .rounded_xl()
-                .bg(theme.background_secondary)
-                .border_1()
-                .border_color(theme.border)
-                .p_4()
+                .param_section_style_lg(theme)
                 .child(render_section_header("SPECTRUM ANALYZER", theme))
                 .child(
                     div()

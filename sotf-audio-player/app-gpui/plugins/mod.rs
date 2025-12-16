@@ -5,10 +5,12 @@
 //!
 //! Also includes logic modules for plugin-related App methods:
 //! - `level_meters`: Level meter group management (mute/solo/dim)
+//! - `graph`: 2D canvas-based plugin graph view
 
 pub mod actions;
 pub mod common;
 pub mod editing;
+pub mod graph;
 pub mod level_meters;
 pub mod theme;
 pub mod ticks;
@@ -19,6 +21,7 @@ mod ui_convolution;
 mod ui_eq;
 mod ui_gain;
 mod ui_gate;
+mod ui_graph;
 mod ui_limiter;
 mod ui_loudness;
 mod ui_mute_solo;

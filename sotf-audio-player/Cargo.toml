@@ -45,6 +45,7 @@ walkdir = { workspace = true }
 rusqlite = { workspace = true }
 tokio = { workspace = true }
 parking_lot = { workspace = true }
+uuid = { version = "1.11", features = ["v4", "serde"] }
 
 # Image processing for album art thumbnails
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }

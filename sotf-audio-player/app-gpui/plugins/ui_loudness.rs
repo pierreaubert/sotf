@@ -1,6 +1,6 @@
 //! Loudness Plugin UI Components
 
-use super::common::{render_edit_hints, render_knob, render_section_header};
+use super::common::{render_edit_hints, render_knob, render_section_header, ParamSectionStyle};
 use super::level_meters::render_lufs_with_true_peak;
 use crate::app::AppState;
 use crate::theme::Theme;
@@ -36,11 +36,7 @@ pub fn render_loudness_compensation_plugin(
                 .flex()
                 .flex_col()
                 .gap_2()
-                .rounded_xl()
-                .bg(theme.background_secondary)
-                .border_1()
-                .border_color(theme.border)
-                .p_4()
+                .param_section_style_lg(theme)
                 .child(render_section_header("FLETCHER-MUNSON COMPENSATION", theme))
                 .child(
                     div()
@@ -55,11 +51,7 @@ pub fn render_loudness_compensation_plugin(
                 .flex()
                 .flex_col()
                 .gap_2()
-                .rounded_xl()
-                .bg(theme.background_secondary)
-                .border_1()
-                .border_color(theme.border)
-                .p_3()
+                .param_section_style(theme)
                 .child(render_section_header("LOW SHELF", theme))
                 .child(
                     div()
@@ -102,11 +94,7 @@ pub fn render_loudness_compensation_plugin(
                 .flex()
                 .flex_col()
                 .gap_2()
-                .rounded_xl()
-                .bg(theme.background_secondary)
-                .border_1()
-                .border_color(theme.border)
-                .p_3()
+                .param_section_style(theme)
                 .child(render_section_header("HIGH SHELF", theme))
                 .child(
                     div()
@@ -165,9 +153,6 @@ pub fn render_loudness_monitor_plugin(
                 .flex()
                 .flex_col()
                 .gap_2()
-                .rounded_xl()
-                .bg(theme.background_secondary)
-                .border_1()
-                .border_color(theme.border),
+                .param_section_base(theme),
         )
 }

@@ -151,10 +151,10 @@ impl AlbumCard {
             .gap_1()
             .text_xs()
             .text_color(theme.text_muted)
-            // Format (e.g., FLAC)
-            .when_some(format, |d, fmt| d.child(div().child(fmt)))
+            // Format (e.g., FLAC) - no wrapper div needed
+            .when_some(format, |d, fmt| d.child(fmt))
             // Sample rate info (e.g., 24/44.1k)
-            .when_some(sample_info, |d, info| d.child(div().child(info)))
+            .when_some(sample_info, |d, info| d.child(info))
             // Dynamic range with icon
             .when_some(dr, |d, dr_val| {
                 d.child(
@@ -171,7 +171,8 @@ impl AlbumCard {
                 )
             })
             // Track count
-            .child(format!("#{}", track_count))
+            .child("#")
+            .child(track_count.to_string())
     }
 
     fn render_grid(self) -> AnyElement {
@@ -179,7 +180,7 @@ impl AlbumCard {
         let card_width = 140.0;
         let theme = self.theme;
         let album = self.album;
-        let has_thumbnail = album.album_art_thumbnail.is_some();
+        // has_thumbnail no longer needed - we use direct pattern matching now
 
         // Metadata for grid view (smaller font)
         let format = Self::get_format(&album);
@@ -188,7 +189,7 @@ impl AlbumCard {
         let track_count = album.tracks.len();
 
         div()
-            .id(SharedString::from(format!("album-card-{}", self.index)))
+            .id(("album-card", self.index))
             .w(px(card_width))
             .rounded_lg()
             .cursor_pointer()
@@ -215,22 +216,18 @@ impl AlbumCard {
                             .flex()
                             .items_center()
                             .justify_center()
-                            .when(has_thumbnail, |d| {
-                                if let Some(ref thumbnail_bytes) = album.album_art_thumbnail {
-                                    d.child(
-                                        img(image_from_jpeg_bytes(thumbnail_bytes))
-                                            .w(px(thumbnail_size))
-                                            .h(px(thumbnail_size))
-                                            .object_fit(ObjectFit::Cover),
-                                    )
-                                } else {
-                                    d.child(
-                                        div().text_3xl().text_color(theme.text_muted).child("♪"),
-                                    )
-                                }
-                            })
-                            .when(!has_thumbnail, |d| {
-                                d.child(div().text_3xl().text_color(theme.text_muted).child("♪"))
+                            .child(if let Some(ref thumbnail_bytes) = album.album_art_thumbnail {
+                                img(image_from_jpeg_bytes(thumbnail_bytes))
+                                    .w(px(thumbnail_size))
+                                    .h(px(thumbnail_size))
+                                    .object_fit(ObjectFit::Cover)
+                                    .into_any_element()
+                            } else {
+                                div()
+                                    .text_3xl()
+                                    .text_color(theme.text_muted)
+                                    .child("♪")
+                                    .into_any_element()
                             }),
                     )
                     // Album title
@@ -257,7 +254,7 @@ impl AlbumCard {
                             .whitespace_nowrap()
                             .child(album.artist()),
                     )
-                    // Metadata line: FORMAT [DR icon]DR #count
+                    // Metadata line: FORMAT SAMPLE DR #count
                     .child(
                         div()
                             .flex()
@@ -265,11 +262,11 @@ impl AlbumCard {
                             .gap_1()
                             .text_size(px(9.0))
                             .text_color(theme.text_muted)
-                            // Format (e.g., FLAC)
-                            .when_some(format, |d, fmt| d.child(div().child(fmt)))
+                            // Format (e.g., FLAC) - pass string directly, no wrapper div
+                            .when_some(format, |d, fmt| d.child(fmt))
                             // Sample rate info (e.g., 24/44.1k)
-                            .when_some(sample_info, |d, info| d.child(div().child(info)))
-                            // Dynamic range with icon
+                            .when_some(sample_info, |d, info| d.child(info))
+                            // Dynamic range with icon - keep wrapper for flex layout
                             .when_some(dr, |d, dr_val| {
                                 d.child(
                                     div()
@@ -284,8 +281,9 @@ impl AlbumCard {
                                         .child(dr_val),
                                 )
                             })
-                            // Track count
-                            .child(format!("#{}", track_count)),
+                            // Track count - use static prefix
+                            .child("#")
+                            .child(track_count.to_string()),
                     ),
             )
             .into_any_element()
@@ -296,7 +294,7 @@ impl AlbumCard {
         let album = self.album;
 
         div()
-            .id(SharedString::from(format!("album-row-{}", self.index)))
+            .id(("album-row", self.index))
             .w_full()
             .p_3()
             .rounded_md()
@@ -335,7 +333,7 @@ impl AlbumCard {
         let album = self.album;
 
         div()
-            .id(SharedString::from(format!("album-compact-{}", self.index)))
+            .id(("album-compact", self.index))
             .w_full()
             .pl_8()
             .p_2()
@@ -366,7 +364,8 @@ impl AlbumCard {
                         div()
                             .text_xs()
                             .text_color(theme.text_secondary)
-                            .child(format!("#{}", album.tracks.len())),
+                            .child("#")
+                            .child(album.tracks.len().to_string()),
                     ),
             )
             .into_any_element()

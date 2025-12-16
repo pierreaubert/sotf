@@ -6,7 +6,8 @@ use std::sync::Arc;
 
 use sotf_audio::devices::AudioDevice;
 use sotf_audio_player::{
-    LoudnessData, MusicLibrary, Player, PluginChain, PluginType, SpectrumData,
+    ConnectionDrag, GraphSelection, LoudnessData, MusicLibrary, NodeDrag, Player, PluginChain,
+    PluginGraph, PluginType, SpectrumData,
 };
 
 use crate::app::SettingsTab;
@@ -17,13 +18,16 @@ use crate::theme::{Theme, ThemeId};
 
 use crate::app::types::{
     ActiveMenu, ChannelFilter, ChannelGroup, ContextMenuState, HeadphoneEqState, InputMode,
-    LayoutMode, LibrarySortOrder, MeasureState, OptimizationUiState, QueueItem, RecordingState,
-    RoomEqState, Screen, ToastMessage,
+    LayoutMode, LibrarySortOrder, LibraryStats, MeasureState, OptimizationUiState, PluginViewMode,
+    QueueItem, RecordingState, RoomEqState, Screen, ToastMessage,
 };
 
 #[derive(Debug)]
 pub struct App {
     pub library: MusicLibrary,
+    /// Cached library statistics (artists, tracks, genres, years, etc.)
+    /// Call invalidate_library_stats() when library changes, get_library_stats() to access
+    pub library_stats: LibraryStats,
     pub library_scanner: Option<sotf_audio_player::LibraryScanner>,
     pub queue: Vec<QueueItem>,
     pub expanded_queue_items: Vec<bool>, // Track which queue items are expanded
@@ -78,6 +82,13 @@ pub struct App {
     pub editing_plugin_index: Option<usize>,
     pub plugin_param_selection: usize, // Which parameter is selected in edit mode
     pub selected_eq_band: usize,       // Currently selected EQ band for display (0-indexed)
+
+    // Plugin graph system (alternative to linear plugin chain)
+    pub plugin_view_mode: PluginViewMode,
+    pub plugin_graph: Option<PluginGraph>,
+    pub graph_selection: GraphSelection,
+    pub graph_connection_drag: Option<ConnectionDrag>,
+    pub graph_node_drag: Option<NodeDrag>,
 
     // Playback state
     pub is_playing: bool,
@@ -173,6 +184,9 @@ pub struct App {
     // Device popup state
     pub show_device_popup: bool,
 
+    // Studio menu state
+    pub show_studio_menu: bool,
+
     // active settings tab
     pub active_settings_tab: SettingsTab,
 
@@ -240,6 +254,7 @@ impl App {
 
         let mut app = Self {
             library,
+            library_stats: LibraryStats::default(),
             library_scanner: None,
             queue: Vec::new(),
             expanded_queue_items: Vec::new(),
@@ -286,6 +301,11 @@ impl App {
             pending_plugin_update: None,
             editing_plugin_index: None,
             plugin_param_selection: 0,
+            plugin_view_mode: PluginViewMode::Rack,
+            plugin_graph: None,
+            graph_selection: GraphSelection::default(),
+            graph_connection_drag: None,
+            graph_node_drag: None,
             is_playing: false,
             current_queue_index: None,
             volume: 0.1, // Start at 10% volume
@@ -337,6 +357,7 @@ impl App {
             divider_click_start: None,
             scan_total_files: 0,
             show_device_popup: false,
+            show_studio_menu: false,
             active_settings_tab: SettingsTab::Library,
             filter_menu_open: false,
             is_dragging_volume: false,
@@ -373,6 +394,8 @@ impl App {
         self.library.load_from_database()?;
         // Update last scan times for directories from database
         self.update_directory_scan_times();
+        // Invalidate cached stats since library content changed
+        self.invalidate_library_stats();
         Ok(())
     }
 
@@ -571,5 +594,97 @@ impl App {
     /// Set a specific keymap preset
     pub fn set_keymap_preset(&mut self, preset: KeymapPreset) {
         self.keymap_preset = preset;
+    }
+
+    /// Invalidate cached library statistics. Call this when the library changes
+    /// (albums added/removed, tracks modified, etc.)
+    pub fn invalidate_library_stats(&mut self) {
+        self.library_stats.valid = false;
+    }
+
+    /// Get library statistics, computing them if not cached.
+    /// This is an O(n) operation when stats are invalid, but returns cached
+    /// values on subsequent calls until invalidate_library_stats() is called.
+    pub fn get_library_stats(&mut self) -> &LibraryStats {
+        if !self.library_stats.valid {
+            self.compute_library_stats();
+        }
+        &self.library_stats
+    }
+
+    /// Compute library statistics from scratch.
+    /// This is expensive - O(n) over all albums and tracks.
+    fn compute_library_stats(&mut self) {
+        use std::collections::HashSet;
+
+        let mut artists: HashSet<String> = HashSet::new();
+        let mut composers: HashSet<String> = HashSet::new();
+        let mut genres: HashSet<String> = HashSet::new();
+        let mut total_tracks = 0usize;
+        let mut min_year = i32::MAX;
+        let mut max_year = 0i32;
+        let mut stereo_count = 0usize;
+        let mut multichannel_count = 0usize;
+
+        for album in &self.library.albums {
+            // Count channels
+            if let Some(channels) = album.uniform_channel_count() {
+                if channels == 2 {
+                    stereo_count += 1;
+                } else if channels > 2 {
+                    multichannel_count += 1;
+                }
+            }
+
+            // Track year range
+            if let Some(y) = album.year {
+                let y = y as i32;
+                if y > 0 {
+                    if y < min_year {
+                        min_year = y;
+                    }
+                    if y > max_year {
+                        max_year = y;
+                    }
+                }
+            }
+
+            // Count artists, composers, genres, tracks
+            for track in &album.tracks {
+                total_tracks += 1;
+                if let Some(artist) = &track.artist {
+                    if !artist.is_empty() {
+                        artists.insert(artist.to_lowercase());
+                    }
+                }
+                if let Some(composer) = &track.composer {
+                    if !composer.is_empty() {
+                        composers.insert(composer.to_lowercase());
+                    }
+                }
+                if let Some(genre) = &track.genre {
+                    if !genre.is_empty() {
+                        genres.insert(genre.to_lowercase());
+                    }
+                }
+            }
+        }
+
+        // Handle case where no albums have years
+        if min_year == i32::MAX {
+            min_year = 0;
+        }
+
+        self.library_stats = LibraryStats {
+            artists_count: artists.len(),
+            composers_count: composers.len(),
+            total_tracks,
+            genres_count: genres.len(),
+            min_year,
+            max_year,
+            stereo_count,
+            multichannel_count,
+            valid: true,
+        };
     }
 }

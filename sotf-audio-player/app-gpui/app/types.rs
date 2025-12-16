@@ -14,15 +14,28 @@ pub enum Screen {
     Queue,
     Spectrum,
     Settings,
+    Studio,
     Recording,
     RoomEq,
     HeadphoneEq,
+    Spinorama,
+    PluginGraph,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReplayGainMode {
     Track,
     Album,
+}
+
+/// View mode for plugin management (Rack vs Graph)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PluginViewMode {
+    /// Traditional linear plugin chain view
+    #[default]
+    Rack,
+    /// 2D graph view with node connections
+    Graph,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,7 +58,7 @@ pub enum InputMode {
 pub enum ActiveMenu {
     None,
     File,
-    View,
+    Show,
     Help,
 }
 
@@ -62,10 +75,6 @@ pub enum SettingsTab {
     Library,
     Appearance,
     AudioDevice,
-    Plugins,
-    RoomEQ,
-    Headphone,
-    Spinorama,
 }
 
 /// Toast message type for color coding
@@ -132,6 +141,31 @@ impl ToastMessage {
 
 // Enums mapped from library
 pub use sotf_audio_player::library::{ChannelFilter, LibrarySortOrder};
+
+/// Cached library statistics to avoid recomputing on every render frame.
+/// These stats are expensive to compute (O(n) over all albums/tracks) and should
+/// only be invalidated when the library actually changes.
+#[derive(Debug, Clone, Default)]
+pub struct LibraryStats {
+    /// Number of unique artists (case-insensitive)
+    pub artists_count: usize,
+    /// Number of unique composers (case-insensitive)
+    pub composers_count: usize,
+    /// Total track count across all albums
+    pub total_tracks: usize,
+    /// Number of unique genres (case-insensitive)
+    pub genres_count: usize,
+    /// Minimum year across all albums (0 if none have year)
+    pub min_year: i32,
+    /// Maximum year across all albums (0 if none have year)
+    pub max_year: i32,
+    /// Number of stereo albums (2 channels)
+    pub stereo_count: usize,
+    /// Number of multichannel albums (>2 channels)
+    pub multichannel_count: usize,
+    /// Whether stats are valid (false = need recomputation)
+    pub valid: bool,
+}
 
 #[derive(Debug)]
 pub struct QueueItem {
@@ -1257,6 +1291,7 @@ pub struct DspChainMetadata {
 pub struct RoomEqDropdowns {
     pub data_source_open: bool,
     pub algorithm_open: bool,
+    pub peq_model_open: bool,
     pub crossover_type_open: bool,
     pub export_format_open: bool,
     /// AutoEQ form editing state
@@ -1556,6 +1591,7 @@ impl Default for HeadphoneEqOptimizerConfig {
 pub struct HeadphoneEqDropdowns {
     pub target_open: bool,
     pub algorithm_open: bool,
+    pub peq_model_open: bool,
     pub export_format_open: bool,
     /// AutoEQ form editing state
     pub autoeq_editing_field: Option<AutoEqField>,

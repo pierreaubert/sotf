@@ -5,8 +5,8 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    HStack, IconButton, IconButtonSize, IconButtonVariant, StackAlign, StackJustify, StackSpacing,
-    VStack, VolumeKnob,
+    HStack, IconButton, IconButtonSize, IconButtonVariant, Menu, MenuItem, StackAlign,
+    StackJustify, StackSpacing, VStack, VolumeKnob,
 };
 
 use std::cell::RefCell;
@@ -219,6 +219,7 @@ impl PlayerView {
                         .current_track()
                         .and_then(|t| t.title.clone())
                         .unwrap_or_else(|| "Unknown Track".to_string());
+
                     (
                         track_title,
                         item.album.title.clone(),
@@ -267,7 +268,28 @@ impl PlayerView {
                 }
             })
             // Track info
-            .child(
+            .child({
+                let title_text = if title.is_empty() {
+                    no_track_label.to_string()
+                } else {
+                    title.clone()
+                };
+                let title_len = title_text.chars().count();
+
+                // Truncate album name if too long (max 35 characters)
+                let album_text = if album_name.chars().count() > 35 {
+                    album_name.chars().take(35).collect::<String>() + "..."
+                } else {
+                    album_name.clone()
+                };
+
+                // Truncate artist name if too long (max 35 characters)
+                let artist_text = if artist.chars().count() > 35 {
+                    artist.chars().take(35).collect::<String>() + "..."
+                } else {
+                    artist.clone()
+                };
+
                 VStack::new()
                     .spacing(StackSpacing::Xs)
                     .align(StackAlign::Start)
@@ -278,13 +300,15 @@ impl PlayerView {
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(text_primary)
                             .overflow_hidden()
-                            .text_ellipsis()
-                            .whitespace_nowrap()
-                            .child(if title.is_empty() {
-                                no_track_label.to_string()
-                            } else {
-                                title
-                            }),
+                            // If title is longer than 40 characters, allow wrapping
+                            .when(title_len <= 40, |d| {
+                                d.text_ellipsis().whitespace_nowrap()
+                            })
+                            // If title is longer than 40 characters, wrap and justify
+                            .when(title_len > 40, |d| {
+                                d.text_align(gpui::TextAlign::Left)
+                            })
+                            .child(title_text),
                     )
                     // Album (9px equivalent)
                     .child(
@@ -294,7 +318,7 @@ impl PlayerView {
                             .overflow_hidden()
                             .text_ellipsis()
                             .whitespace_nowrap()
-                            .child(album_name),
+                            .child(album_text),
                     )
                     // Artist (9px equivalent)
                     .child(
@@ -304,9 +328,9 @@ impl PlayerView {
                             .overflow_hidden()
                             .text_ellipsis()
                             .whitespace_nowrap()
-                            .child(artist),
-                    ),
-            )
+                            .child(artist_text),
+                    )
+            })
             .build()
             .min_w(px(250.0))
             .max_w(px(350.0))
@@ -405,8 +429,11 @@ impl PlayerView {
                             .id("transport-seek-back-wrapper")
                             .on_click(cx.listener(|view, _event: &ClickEvent, _window, cx| {
                                 view.state.update(cx, |state, _cx| {
-                                    state.app.position_secs =
-                                        (state.app.position_secs - 30.0).max(0.0);
+                                    let new_position = (state.app.position_secs - 30.0).max(0.0);
+                                    state.app.position_secs = new_position;
+                                    if let Err(e) = state.player.lock().seek(new_position) {
+                                        log::error!("Failed to seek backward: {}", e);
+                                    }
                                 });
                                 cx.notify();
                             }))
@@ -456,8 +483,11 @@ impl PlayerView {
                             .on_click(cx.listener(|view, _event: &ClickEvent, _window, cx| {
                                 view.state.update(cx, |state, _cx| {
                                     let max = state.app.duration_secs;
-                                    state.app.position_secs =
-                                        (state.app.position_secs + 30.0).min(max);
+                                    let new_position = (state.app.position_secs + 30.0).min(max);
+                                    state.app.position_secs = new_position;
+                                    if let Err(e) = state.player.lock().seek(new_position) {
+                                        log::error!("Failed to seek forward: {}", e);
+                                    }
                                 });
                                 cx.notify();
                             }))
@@ -538,6 +568,9 @@ impl PlayerView {
                                                     let new_pos =
                                                         state.app.duration_secs * ratio as f64;
                                                     state.app.position_secs = new_pos;
+                                                    if let Err(e) = state.player.lock().seek(new_pos) {
+                                                        log::error!("Failed to seek from waveform: {}", e);
+                                                    }
                                                 });
                                                 cx.notify();
                                             }
@@ -592,12 +625,12 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let default_device_label = translations.playback_default_device;
-        let studio_label = translations.playback_studio;
         let (
             volume,
             muted,
             _show_device_popup, // Not used here anymore
             current_device,
+            current_screen,
             text_secondary,
             surface_hover,
             theme_clone,
@@ -620,10 +653,22 @@ impl PlayerView {
                 state.app.muted,
                 state.app.show_device_popup,
                 truncated_device,
+                state.app.current_screen,
                 theme.text_secondary,
                 theme.surface_hover,
                 theme.clone(),
             )
+        };
+
+        // Determine studio button label based on current screen
+        let studio_label = match current_screen {
+            crate::app::Screen::Studio => translations.screen_studio_rack,
+            crate::app::Screen::PluginGraph => translations.screen_studio_full,
+            crate::app::Screen::Recording => translations.screen_recording,
+            crate::app::Screen::RoomEq => translations.screen_room_eq,
+            crate::app::Screen::HeadphoneEq => translations.screen_headphone_eq,
+            crate::app::Screen::Spinorama => translations.screen_spinorama,
+            _ => translations.screen_studio_rack,
         };
 
         div()
@@ -647,34 +692,7 @@ impl PlayerView {
                             MouseButton::Left,
                             cx.listener(|view, _: &MouseUpEvent, _window, cx| {
                                 view.state.update(cx, |state, _cx| {
-                                    let is_plugins_open = state.app.current_screen
-                                        == crate::app::Screen::Settings
-                                        && state.app.active_settings_tab
-                                            == crate::app::SettingsTab::Plugins;
-
-                                    if is_plugins_open {
-                                        // Already open: Check if modified
-                                        if state.app.plugin_chain_modified {
-                                            // Propose to save (enter save mode)
-                                            state.app.input_mode =
-                                                crate::app::InputMode::SavePlugins;
-                                            state.app.pending_studio_close = true;
-                                        } else {
-                                            // Close: Go back to last screen
-                                            state.app.current_screen = state.app.last_screen;
-                                        }
-                                    } else {
-                                        // Open Studio logic
-                                        if state.app.current_screen != crate::app::Screen::Settings
-                                        {
-                                            state.app.last_screen = state.app.current_screen;
-                                            state.app.current_screen = crate::app::Screen::Settings;
-                                        }
-
-                                        // Open plugins tab
-                                        state.app.active_settings_tab =
-                                            crate::app::SettingsTab::Plugins;
-                                    }
+                                    state.app.show_studio_menu = !state.app.show_studio_menu;
                                 });
                                 cx.notify();
                             }),
@@ -744,6 +762,11 @@ impl PlayerView {
             })
             // Round volume button - always visible
             .child(self.render_volume_button(volume, muted, theme_clone, cx))
+            // Studio menu dropdown - shown when show_studio_menu is true
+            .when(
+                self.state.read(cx).app.show_studio_menu && show_studio_device,
+                |el| el.child(self.render_studio_menu(translations, cx)),
+            )
     }
 
     /// Render the device selection popup
@@ -864,6 +887,63 @@ impl PlayerView {
                 }),
             )
         })
+    }
+
+    /// Render the studio menu overlay (click outside to close)
+    pub(crate) fn render_studio_menu_overlay(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let show_menu = self.state.read(cx).app.show_studio_menu;
+
+        div().absolute().inset_0().when(show_menu, |el| {
+            el.on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|view, _: &MouseUpEvent, _window, cx| {
+                    view.state.update(cx, |state, _cx| {
+                        state.app.show_studio_menu = false;
+                    });
+                    cx.notify();
+                }),
+            )
+        })
+    }
+
+    /// Render the studio menu dropdown
+    fn render_studio_menu(
+        &self,
+        translations: &crate::i18n::Translations,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let theme = self.state.read(cx).app.theme.clone();
+        let state = self.state.clone();
+
+        Menu::new(vec![
+            MenuItem::new("library", translations.screen_library).with_shortcut("⌘0"),
+            MenuItem::new("studio", translations.screen_studio_rack).with_shortcut("⌘1"),
+            MenuItem::new("plugingraph", translations.screen_studio_full).with_shortcut("⌘2"),
+            MenuItem::new("recording", translations.screen_recording).with_shortcut("⌘3"),
+            MenuItem::new("roomeq", translations.screen_room_eq).with_shortcut("⌘4"),
+            MenuItem::new("headphoneeq", translations.screen_headphone_eq).with_shortcut("⌘5"),
+            MenuItem::new("spinorama", translations.screen_spinorama).with_shortcut("⌘6"),
+        ])
+        .theme(theme.to_menu_theme())
+        .on_select(move |id, _window, cx| {
+            state.update(cx, |state, _cx| {
+                state.app.show_studio_menu = false;
+                match id.as_ref() {
+                    "library" => state.app.current_screen = crate::app::Screen::Library,
+                    "studio" => state.app.current_screen = crate::app::Screen::Studio,
+                    "plugingraph" => state.app.current_screen = crate::app::Screen::PluginGraph,
+                    "recording" => state.app.current_screen = crate::app::Screen::Recording,
+                    "roomeq" => state.app.current_screen = crate::app::Screen::RoomEq,
+                    "headphoneeq" => state.app.current_screen = crate::app::Screen::HeadphoneEq,
+                    "spinorama" => state.app.current_screen = crate::app::Screen::Spinorama,
+                    _ => {}
+                }
+            });
+        })
+        .build_with_theme(&theme.to_menu_theme())
+        .absolute()
+        .bottom(px(100.0))
+        .right(px(180.0))
     }
 
     /// Render a round volume button with circular progress indicator

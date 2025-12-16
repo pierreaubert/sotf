@@ -1,6 +1,8 @@
 //! Convolution Plugin UI Component
 
-use super::common::{render_edit_hints, render_knob, render_param_row, render_section_header};
+use super::common::{
+    render_edit_hints, render_knob, render_param_row, render_section_header, ParamSectionStyle,
+};
 use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
@@ -36,11 +38,7 @@ pub fn render_convolution_plugin(
                 .flex()
                 .flex_col()
                 .gap_2()
-                .rounded_xl()
-                .bg(theme.background_secondary)
-                .border_1()
-                .border_color(theme.border)
-                .p_4()
+                .param_section_style_lg(theme)
                 .child(render_section_header("IMPULSE RESPONSE", theme))
                 // IR file status
                 .child(
@@ -119,11 +117,7 @@ pub fn render_convolution_plugin(
                 .flex()
                 .flex_col()
                 .gap_2()
-                .rounded_xl()
-                .bg(theme.background_secondary)
-                .border_1()
-                .border_color(theme.border)
-                .p_4()
+                .param_section_style_lg(theme)
                 .child(render_section_header("MIX CONTROL", theme))
                 .child(
                     div()
@@ -163,11 +157,7 @@ pub fn render_convolution_plugin(
                 .flex()
                 .flex_col()
                 .gap_2()
-                .rounded_xl()
-                .bg(theme.background_secondary)
-                .border_1()
-                .border_color(theme.border)
-                .p_3()
+                .param_section_style(theme)
                 .child(render_section_header("PARAMETERS", theme))
                 .child(render_param_row(
                     "IR File",

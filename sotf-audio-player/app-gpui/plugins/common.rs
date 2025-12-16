@@ -191,17 +191,41 @@ pub fn render_section_header(title: &str, theme: &Theme) -> impl IntoElement {
         .child(title.to_string())
 }
 
-/// Render a parameter section container
+/// Trait extension for applying parameter section styling to any Div
+pub trait ParamSectionStyle {
+    /// Apply base param section styling (rounded, background, border) without padding
+    fn param_section_base(self, theme: &Theme) -> Self;
+    /// Apply param section styling with standard p_3 padding
+    fn param_section_style(self, theme: &Theme) -> Self;
+    /// Apply param section styling with larger p_4 padding
+    fn param_section_style_lg(self, theme: &Theme) -> Self;
+}
+
+impl ParamSectionStyle for Div {
+    fn param_section_base(self, theme: &Theme) -> Self {
+        self.rounded_xl()
+            .bg(theme.background_secondary)
+            .border_1()
+            .border_color(theme.border)
+    }
+
+    fn param_section_style(self, theme: &Theme) -> Self {
+        self.param_section_base(theme).p_3()
+    }
+
+    fn param_section_style_lg(self, theme: &Theme) -> Self {
+        self.param_section_base(theme).p_4()
+    }
+}
+
+/// Create a new parameter section container with flex column layout
 pub fn render_param_section(theme: &Theme) -> Div {
-    div()
-        .flex()
-        .flex_col()
-        .gap_2()
-        .rounded_xl()
-        .bg(theme.background_secondary)
-        .border_1()
-        .border_color(theme.border)
-        .p_3()
+    div().flex().flex_col().gap_2().param_section_style(theme)
+}
+
+/// Create a new parameter section container with flex column layout and larger padding
+pub fn render_param_section_lg(theme: &Theme) -> Div {
+    div().flex().flex_col().gap_2().param_section_style_lg(theme)
 }
 
 /// Render keyboard hints for edit mode
@@ -344,6 +368,83 @@ pub fn render_vertical_slider(
         .max(max)
         .unit(unit.to_string())
         .label(label.to_string())
+        .selected(is_selected)
+        .theme(theme_to_vertical_slider_theme(theme))
+        .on_change({
+            let entity = entity.clone();
+            move |new_value, _, cx| {
+                entity.update(cx, |state, _| {
+                    state.app.set_plugin_param(plugin_idx, idx, new_value);
+                });
+            }
+        })
+        .on_drag_start({
+            let entity = entity.clone();
+            move |start_y, start_value, _, cx| {
+                entity.update(cx, |state, _| {
+                    state.app.is_dragging_knob = true;
+                    state.app.knob_drag_plugin_idx = plugin_idx;
+                    state.app.knob_drag_param_idx = idx;
+                    state.app.knob_drag_start_y = Some(start_y);
+                    state.app.knob_drag_start_value = start_value;
+                    state.app.knob_drag_min = min;
+                    state.app.knob_drag_max = max;
+                });
+            }
+        })
+        .on_select({
+            let entity = entity.clone();
+            move |_, cx| {
+                entity.update(cx, |state, _| {
+                    state.app.editing_plugin_index = Some(plugin_idx);
+                    state.app.plugin_param_selection = idx;
+                });
+            }
+        })
+        .on_reset({
+            let entity = entity.clone();
+            move |_, cx| {
+                entity.update(cx, |state, _| {
+                    state.app.reset_plugin_param(plugin_idx, idx);
+                });
+            }
+        });
+
+    if let Some(key) = shortcut_key {
+        slider = slider.shortcut_key(key);
+    }
+
+    slider
+}
+
+/// Render a vertical slider with tick marks, custom height, and enhanced visual feedback
+/// Uses Entity<AppState> for direct state updates
+#[allow(clippy::too_many_arguments)]
+pub fn render_vertical_slider_with_ticks(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    label: &str,
+    value: f64,
+    min: f64,
+    max: f64,
+    unit: &str,
+    idx: usize,
+    selected_param: usize,
+    is_editing: bool,
+    shortcut_key: Option<char>,
+    height: f32,
+    theme: &Theme,
+) -> impl IntoElement {
+    let is_selected = selected_param == idx && is_editing;
+
+    let mut slider = VerticalSlider::new(("slider-ticks", plugin_idx * 1000 + idx))
+        .value(value)
+        .min(min)
+        .max(max)
+        .unit(unit.to_string())
+        .label(label.to_string())
+        .height(height)
+        .with_ticks()
         .selected(is_selected)
         .theme(theme_to_vertical_slider_theme(theme))
         .on_change({
