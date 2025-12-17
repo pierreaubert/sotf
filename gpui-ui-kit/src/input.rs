@@ -350,7 +350,8 @@ impl RenderOnce for Input {
             .py(py)
             .rounded_md()
             .border_1()
-            .border_color(border_color);
+            .border_color(border_color)
+            .focusable(); // Make focusable for keyboard events
 
         // Apply variant styling
         match self.variant {
@@ -390,6 +391,74 @@ impl RenderOnce for Input {
         let on_edit_start_rc = self.on_edit_start.map(|h| std::rc::Rc::new(h));
         let on_edit_end_rc = self.on_edit_end.map(|h| std::rc::Rc::new(h));
         let on_text_change_rc = self.on_text_change.map(|h| std::rc::Rc::new(h));
+
+        // Add click handler to start editing
+        if !disabled && !readonly && !editing {
+            if let Some(ref handler_rc) = on_edit_start_rc {
+                let handler = handler_rc.clone();
+                input_wrapper = input_wrapper.on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                    handler(window, cx);
+                });
+            }
+        }
+
+        // Add keyboard event handling
+        if !disabled && !readonly {
+            let on_edit_end_key = on_edit_end_rc.clone();
+            let on_text_change_key = on_text_change_rc.clone();
+            let is_editing = editing;
+            let edit_text_for_key = edit_text_clone.clone();
+
+            input_wrapper = input_wrapper.on_key_down(move |event, window, cx| {
+                if is_editing {
+                    // Editing mode keyboard handling
+                    match event.keystroke.key.as_str() {
+                        "enter" => {
+                            // Confirm edit
+                            if let Some(ref handler) = on_edit_end_key {
+                                let text = edit_text_for_key
+                                    .as_ref()
+                                    .map(|s| s.to_string())
+                                    .unwrap_or_default();
+                                handler(Some(text), window, cx);
+                            }
+                        }
+                        "escape" => {
+                            // Cancel edit
+                            if let Some(ref handler) = on_edit_end_key {
+                                handler(None, window, cx);
+                            }
+                        }
+                        _ => {
+                            // Handle text input
+                            if let Some(ref handler) = on_text_change_key {
+                                let current = edit_text_for_key
+                                    .as_ref()
+                                    .map(|s| s.to_string())
+                                    .unwrap_or_default();
+
+                                // Handle backspace
+                                let new_text = if event.keystroke.key == "backspace" {
+                                    if current.is_empty() {
+                                        current
+                                    } else {
+                                        current[..current.len() - 1].to_string()
+                                    }
+                                } else if event.keystroke.key.len() == 1 {
+                                    // Single character - append
+                                    let ch = event.keystroke.key.chars().next().unwrap();
+                                    format!("{}{}", current, ch)
+                                } else {
+                                    current
+                                };
+
+                                handler(new_text, window, cx);
+                            }
+                        }
+                    }
+                }
+            });
+        }
 
         // Left icon
         if let Some(icon) = &self.icon_left {
@@ -442,76 +511,7 @@ impl RenderOnce for Input {
             InputSize::Lg => text_el,
         };
 
-        // Add click handler and keyboard event handling
-        if !disabled && !readonly {
-            text_el = text_el.cursor_text();
-
-            // Add click handler to start editing
-            if !editing {
-                if let Some(ref handler_rc) = on_edit_start_rc {
-                    let handler = handler_rc.clone();
-                    text_el = text_el.on_mouse_up(MouseButton::Left, move |_, window, cx| {
-                        handler(window, cx);
-                    });
-                }
-            }
-
-            // Add keyboard event handling
-            let on_edit_end_key = on_edit_end_rc.clone();
-            let on_text_change_key = on_text_change_rc.clone();
-            let is_editing = editing;
-            let edit_text_for_key = edit_text_clone.clone();
-
-            text_el = text_el.on_key_down(move |event, window, cx| {
-                if is_editing {
-                    // Editing mode keyboard handling
-                    match event.keystroke.key.as_str() {
-                        "enter" => {
-                            // Confirm edit
-                            if let Some(ref handler) = on_edit_end_key {
-                                let text = edit_text_for_key
-                                    .as_ref()
-                                    .map(|s| s.to_string())
-                                    .unwrap_or_default();
-                                handler(Some(text), window, cx);
-                            }
-                        }
-                        "escape" => {
-                            // Cancel edit
-                            if let Some(ref handler) = on_edit_end_key {
-                                handler(None, window, cx);
-                            }
-                        }
-                        _ => {
-                            // Handle text input
-                            if let Some(ref handler) = on_text_change_key {
-                                let current = edit_text_for_key
-                                    .as_ref()
-                                    .map(|s| s.to_string())
-                                    .unwrap_or_default();
-
-                                // Handle backspace
-                                let new_text = if event.keystroke.key == "backspace" {
-                                    if current.is_empty() {
-                                        current
-                                    } else {
-                                        current[..current.len() - 1].to_string()
-                                    }
-                                } else if event.keystroke.key.len() == 1 {
-                                    // Single character - append
-                                    let ch = event.keystroke.key.chars().next().unwrap();
-                                    format!("{}{}", current, ch)
-                                } else {
-                                    current
-                                };
-
-                                handler(new_text, window, cx);
-                            }
-                        }
-                    }
-                }
-            });
-        }
+        // Note: handlers moved to input_wrapper
 
         input_wrapper = input_wrapper.child(text_el);
 

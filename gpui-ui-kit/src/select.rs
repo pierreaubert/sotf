@@ -77,7 +77,7 @@ impl Default for SelectTheme {
 impl From<&Theme> for SelectTheme {
     fn from(theme: &Theme) -> Self {
         Self {
-            trigger_bg: theme.background,
+            trigger_bg: theme.surface,
             trigger_border: theme.border,
             trigger_border_hover: theme.accent,
             trigger_border_focused: theme.accent,
@@ -299,7 +299,8 @@ impl Select {
             .border_1()
             .border_color(border_color)
             .rounded_md()
-            .cursor_pointer();
+            .cursor_pointer()
+            .focusable();
 
         // Apply text size
         trigger = match self.size {

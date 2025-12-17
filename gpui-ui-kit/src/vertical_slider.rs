@@ -256,7 +256,8 @@ fn calculate_linear_ticks(min: f64, max: f64, track_height: f32) -> Vec<TickMark
             let normalized = (tick_value - min) / range;
 
             // Check if this is a label tick (on label_step boundary)
-            let is_label_tick = ((tick_value - first_label_tick) / label_step).round().abs() * label_step
+            let is_label_tick = ((tick_value - first_label_tick) / label_step).round().abs()
+                * label_step
                 + first_label_tick;
             let is_labeled = (tick_value - is_label_tick).abs() < label_step * 0.01;
 
@@ -264,7 +265,11 @@ fn calculate_linear_ticks(min: f64, max: f64, track_height: f32) -> Vec<TickMark
                 value: tick_value,
                 normalized_pos: normalized,
                 is_major: is_labeled,
-                label: if is_labeled { Some(format_value_abbrev(tick_value)) } else { None },
+                label: if is_labeled {
+                    Some(format_value_abbrev(tick_value))
+                } else {
+                    None
+                },
             });
         }
         tick_value += minor_step;
@@ -328,7 +333,11 @@ fn calculate_log_ticks(min: f64, max: f64, track_height: f32) -> Vec<TickMark> {
 
     // Decide which decade markers get labels
     // If few decades, label all of them; otherwise label every Nth
-    let label_every_n = if num_decades <= max_labels { 1 } else { (num_decades / max_labels).max(1) };
+    let label_every_n = if num_decades <= max_labels {
+        1
+    } else {
+        (num_decades / max_labels).max(1)
+    };
 
     // Determine detail level based on height
     let include_sub_decades = track_height >= 80.0;
@@ -346,7 +355,11 @@ fn calculate_log_ticks(min: f64, max: f64, track_height: f32) -> Vec<TickMark> {
                 value: decade_value,
                 normalized_pos: normalized,
                 is_major: should_label,
-                label: if should_label { Some(format_value_abbrev(decade_value)) } else { None },
+                label: if should_label {
+                    Some(format_value_abbrev(decade_value))
+                } else {
+                    None
+                },
             });
             decade_index += 1;
         }
@@ -616,7 +629,9 @@ impl RenderOnce for VerticalSlider {
         let value_str = self.format_value();
 
         let track_width = self.size.track_width();
-        let track_height = self.custom_height.unwrap_or_else(|| self.size.track_height());
+        let track_height = self
+            .custom_height
+            .unwrap_or_else(|| self.size.track_height());
         let min_width = self.size.min_width();
         let show_ticks = self.show_ticks;
 
@@ -929,21 +944,13 @@ impl RenderOnce for VerticalSlider {
                         )
                     })
                     // Tick mark
-                    .child(
-                        div()
-                            .w(px(tick_width))
-                            .h(px(1.0))
-                            .bg(scale_color),
-                    );
+                    .child(div().w(px(tick_width)).h(px(1.0)).bg(scale_color));
 
                 ticks_container = ticks_container.child(tick_element);
             }
 
             // Build right-side tick marks (no labels, just tick marks)
-            let mut ticks_right = div()
-                .relative()
-                .h(px(track_height))
-                .w(px(tick_mark_width));
+            let mut ticks_right = div().relative().h(px(track_height)).w(px(tick_mark_width));
 
             for tick in &ticks {
                 let pos = tick.normalized_pos as f32;
@@ -957,12 +964,7 @@ impl RenderOnce for VerticalSlider {
                     .h(px(label_height))
                     .flex()
                     .items_center()
-                    .child(
-                        div()
-                            .w(px(tick_width))
-                            .h(px(1.0))
-                            .bg(scale_color),
-                    );
+                    .child(div().w(px(tick_width)).h(px(1.0)).bg(scale_color));
 
                 ticks_right = ticks_right.child(tick_element);
             }
