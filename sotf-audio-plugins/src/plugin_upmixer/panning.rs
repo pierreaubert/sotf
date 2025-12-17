@@ -32,19 +32,19 @@ impl UpmixerPlugin {
                 let mut direct_gain = if is_front && !is_height {
                     self.gain_front_direct
                 } else {
-                    // Allow 20% direct bleed into surrounds for cohesion
-                    // But respect zero gains for silence
+                    // Configurable direct bleed into surrounds/heights for cohesion
                     if self.gain_front_direct == 0.0 && self.gain_rear_ambient == 0.0 {
                         0.0
                     } else {
-                        0.20
+                        self.surround_direct_bleed
                     }
                 };
 
                 let mut ambient_gain = if is_front && !is_height {
                     self.gain_front_ambient
                 } else {
-                    self.gain_rear_ambient
+                    // Configurable ambient gain boost for rears
+                    self.gain_rear_ambient * self.rear_ambient_boost
                 };
 
                 if is_front && !is_height && hr_mix_global > 0.0 {
@@ -65,8 +65,8 @@ impl UpmixerPlugin {
                 }
 
                 if is_height {
-                    // Allow 15% direct bleed into heights for "air"
-                    let height_direct_leak = 0.15;
+                    // Configurable direct bleed into heights for "air"
+                    let height_direct_leak = self.height_direct_leak;
 
                     for i in 0..spectrum_size {
                         // 1. Direct component
@@ -96,11 +96,12 @@ impl UpmixerPlugin {
                                 + ambient_decor_l * panning_gain_right
                         };
 
-                        // For rear height channels, add late reflections (10% of direct signal)
+                        // For rear height channels, add late reflections (configurable)
                         // This ensures rear heights have energy even with mono/coherent content
                         if !is_front {
                             let late_reflection =
-                                (self.direct_left[i] + self.direct_right[i]) * 0.10;
+                                (self.direct_left[i] + self.direct_right[i])
+                                    * self.rear_late_reflection;
                             ambient_component += late_reflection;
                         }
 

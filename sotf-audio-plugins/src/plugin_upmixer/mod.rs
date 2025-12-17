@@ -149,6 +149,50 @@ pub struct UpmixerPlugin {
     param_decorrelation_mode: ParameterId,
     decorrelation_mode: usize, // 0=Velvet, 1=LFO
 
+    // Sub-harmonic synthesis parameters
+    param_subharmonic_freq_hz: ParameterId,
+    subharmonic_freq_hz: f32,
+    param_subharmonic_attack_ms: ParameterId,
+    subharmonic_attack_ms: f32,
+    param_subharmonic_release_ms: ParameterId,
+    subharmonic_release_ms: f32,
+
+    // Decorrelation parameters
+    param_decorrelation_lfo_rate_hz: ParameterId,
+    decorrelation_lfo_rate_hz: f32,
+    param_velvet_noise_duration_ms: ParameterId,
+    velvet_noise_duration_ms: f32,
+    param_velvet_noise_density: ParameterId,
+    velvet_noise_density: f32,
+
+    // Height channel parameters
+    param_height_hf_cap_hz: ParameterId,
+    height_hf_cap_hz: f32,
+    param_height_transient_reduction: ParameterId,
+    height_transient_reduction: f32,
+    param_height_direct_leak: ParameterId,
+    height_direct_leak: f32,
+
+    // Surround routing parameters
+    param_surround_direct_bleed: ParameterId,
+    surround_direct_bleed: f32,
+    param_rear_ambient_boost: ParameterId,
+    rear_ambient_boost: f32,
+    param_rear_late_reflection: ParameterId,
+    rear_late_reflection: f32,
+
+    // Ambient/coherence parameters
+    param_ambient_boost: ParameterId,
+    ambient_boost: f32,
+
+    // Dialogue detection parameters
+    param_dialogue_weight: ParameterId,
+    dialogue_weight: f32,
+    param_voice_freq_min_hz: ParameterId,
+    voice_freq_min_hz: f32,
+    param_voice_freq_max_hz: ParameterId,
+    voice_freq_max_hz: f32,
+
     // Decorrelation
     decorrelation_filter_left: Vec<Complex<f32>>,
     decorrelation_filter_right: Vec<Complex<f32>>,
@@ -411,6 +455,50 @@ impl UpmixerPlugin {
             param_decorrelation_mode: ParameterId::from("decorrelation_mode"),
             decorrelation_mode: 0, // Default to Velvet Noise
 
+            // Sub-harmonic synthesis parameters
+            param_subharmonic_freq_hz: ParameterId::from("subharmonic_freq_hz"),
+            subharmonic_freq_hz: default_subharmonic_freq_hz(),
+            param_subharmonic_attack_ms: ParameterId::from("subharmonic_attack_ms"),
+            subharmonic_attack_ms: default_subharmonic_attack_ms(),
+            param_subharmonic_release_ms: ParameterId::from("subharmonic_release_ms"),
+            subharmonic_release_ms: default_subharmonic_release_ms(),
+
+            // Decorrelation parameters
+            param_decorrelation_lfo_rate_hz: ParameterId::from("decorrelation_lfo_rate_hz"),
+            decorrelation_lfo_rate_hz: default_decorrelation_lfo_rate_hz(),
+            param_velvet_noise_duration_ms: ParameterId::from("velvet_noise_duration_ms"),
+            velvet_noise_duration_ms: default_velvet_noise_duration_ms(),
+            param_velvet_noise_density: ParameterId::from("velvet_noise_density"),
+            velvet_noise_density: default_velvet_noise_density(),
+
+            // Height channel parameters
+            param_height_hf_cap_hz: ParameterId::from("height_hf_cap_hz"),
+            height_hf_cap_hz: default_height_hf_cap_hz(),
+            param_height_transient_reduction: ParameterId::from("height_transient_reduction"),
+            height_transient_reduction: default_height_transient_reduction(),
+            param_height_direct_leak: ParameterId::from("height_direct_leak"),
+            height_direct_leak: default_height_direct_leak(),
+
+            // Surround routing parameters
+            param_surround_direct_bleed: ParameterId::from("surround_direct_bleed"),
+            surround_direct_bleed: default_surround_direct_bleed(),
+            param_rear_ambient_boost: ParameterId::from("rear_ambient_boost"),
+            rear_ambient_boost: default_rear_ambient_boost(),
+            param_rear_late_reflection: ParameterId::from("rear_late_reflection"),
+            rear_late_reflection: default_rear_late_reflection(),
+
+            // Ambient/coherence parameters
+            param_ambient_boost: ParameterId::from("ambient_boost"),
+            ambient_boost: default_ambient_boost(),
+
+            // Dialogue detection parameters
+            param_dialogue_weight: ParameterId::from("dialogue_weight"),
+            dialogue_weight: default_dialogue_weight(),
+            param_voice_freq_min_hz: ParameterId::from("voice_freq_min_hz"),
+            voice_freq_min_hz: default_voice_freq_min_hz(),
+            param_voice_freq_max_hz: ParameterId::from("voice_freq_max_hz"),
+            voice_freq_max_hz: default_voice_freq_max_hz(),
+
             subharmonic_phase: 0.0,
             subharmonic_envelope: 0.0,
 
@@ -511,6 +599,35 @@ impl UpmixerPlugin {
         plugin.hr_sharpen = params.hr_sharpen.clamp(0.0, 1.0);
         plugin.safety_cap_db = params.safety_cap_db.max(0.0);
         plugin.decorrelation_mode = params.decorrelation_mode;
+
+        // Sub-harmonic synthesis parameters
+        plugin.subharmonic_freq_hz = params.subharmonic_freq_hz.clamp(20.0, 80.0);
+        plugin.subharmonic_attack_ms = params.subharmonic_attack_ms.clamp(1.0, 100.0);
+        plugin.subharmonic_release_ms = params.subharmonic_release_ms.clamp(10.0, 500.0);
+
+        // Decorrelation parameters
+        plugin.decorrelation_lfo_rate_hz = params.decorrelation_lfo_rate_hz.clamp(0.01, 1.0);
+        plugin.velvet_noise_duration_ms = params.velvet_noise_duration_ms.clamp(10.0, 100.0);
+        plugin.velvet_noise_density = params.velvet_noise_density.clamp(500.0, 5000.0);
+
+        // Height channel parameters
+        plugin.height_hf_cap_hz = params.height_hf_cap_hz.clamp(8000.0, 20000.0);
+        plugin.height_transient_reduction = params.height_transient_reduction.clamp(0.0, 1.0);
+        plugin.height_direct_leak = params.height_direct_leak.clamp(0.0, 0.5);
+
+        // Surround routing parameters
+        plugin.surround_direct_bleed = params.surround_direct_bleed.clamp(0.0, 1.0);
+        plugin.rear_ambient_boost = params.rear_ambient_boost.clamp(1.0, 3.0);
+        plugin.rear_late_reflection = params.rear_late_reflection.clamp(0.0, 0.5);
+
+        // Ambient/coherence parameters
+        plugin.ambient_boost = params.ambient_boost.clamp(0.5, 2.0);
+
+        // Dialogue detection parameters
+        plugin.dialogue_weight = params.dialogue_weight.clamp(0.0, 1.0);
+        plugin.voice_freq_min_hz = params.voice_freq_min_hz.clamp(200.0, 800.0);
+        plugin.voice_freq_max_hz = params.voice_freq_max_hz.clamp(2000.0, 5000.0);
+
         plugin
     }
 }
@@ -593,9 +710,9 @@ Use <1.0 for subtle ambience, >1.0 for a more enveloping surround field.",
             Parameter::new_float(
                 "height_gain",
                 "Height Gain",
-                HEIGHT_GAIN_DEFAULT,
-                HEIGHT_GAIN_MIN,
-                HEIGHT_GAIN_MAX,
+                GAIN_HEIGHT_DEFAULT,
+                GAIN_HEIGHT_MIN,
+                GAIN_HEIGHT_MAX,
             )
             .with_description(
                 "Gain for height/overhead channels (elevation > 0).
@@ -739,6 +856,204 @@ above unity, the block is scaled down to stay within the cap.",
 0 = Velvet Noise (Static, smooth, no artifacts) - Default
 1 = LFO Phase (Dynamic, subtle motion, may have metallic artifacts)",
             ),
+            // Sub-harmonic synthesis parameters
+            Parameter::new_float(
+                "subharmonic_freq_hz",
+                "Sub-Harmonic Frequency",
+                SUBHARMONIC_FREQ_HZ_DEFAULT,
+                SUBHARMONIC_FREQ_HZ_MIN,
+                SUBHARMONIC_FREQ_HZ_MAX,
+            )
+            .with_description(
+                "Sub-harmonic synthesis frequency in Hz.
+Range: 20-80 Hz, default 40 Hz.
+Lower values produce deeper rumble, higher values are more audible.",
+            ),
+            Parameter::new_float(
+                "subharmonic_attack_ms",
+                "Sub-Harmonic Attack",
+                SUBHARMONIC_ATTACK_MS_DEFAULT,
+                SUBHARMONIC_ATTACK_MS_MIN,
+                SUBHARMONIC_ATTACK_MS_MAX,
+            )
+            .with_description(
+                "Sub-harmonic envelope attack time in milliseconds.
+Range: 1-100 ms, default 10 ms.
+Faster attack follows LFE transients more closely.",
+            ),
+            Parameter::new_float(
+                "subharmonic_release_ms",
+                "Sub-Harmonic Release",
+                SUBHARMONIC_RELEASE_MS_DEFAULT,
+                SUBHARMONIC_RELEASE_MS_MIN,
+                SUBHARMONIC_RELEASE_MS_MAX,
+            )
+            .with_description(
+                "Sub-harmonic envelope release time in milliseconds.
+Range: 10-500 ms, default 50 ms.
+Longer release creates smoother decay.",
+            ),
+            // Decorrelation parameters
+            Parameter::new_float(
+                "decorrelation_lfo_rate_hz",
+                "Decorrelation LFO Rate",
+                DECORRELATION_LFO_RATE_HZ_DEFAULT,
+                DECORRELATION_LFO_RATE_HZ_MIN,
+                DECORRELATION_LFO_RATE_HZ_MAX,
+            )
+            .with_description(
+                "LFO rate for decorrelation phase modulation.
+Range: 0.01-1.0 Hz, default 0.15 Hz.
+Higher values add more motion but may cause artifacts.",
+            ),
+            Parameter::new_float(
+                "velvet_noise_duration_ms",
+                "Velvet Noise Duration",
+                VELVET_NOISE_DURATION_MS_DEFAULT,
+                VELVET_NOISE_DURATION_MS_MIN,
+                VELVET_NOISE_DURATION_MS_MAX,
+            )
+            .with_description(
+                "Velvet noise decorrelator duration in milliseconds.
+Range: 10-100 ms, default 30 ms.
+Longer duration creates smoother diffusion.",
+            ),
+            Parameter::new_float(
+                "velvet_noise_density",
+                "Velvet Noise Density",
+                VELVET_NOISE_DENSITY_DEFAULT,
+                VELVET_NOISE_DENSITY_MIN,
+                VELVET_NOISE_DENSITY_MAX,
+            )
+            .with_description(
+                "Velvet noise pulse density (pulses per second).
+Range: 500-5000, default 2000.
+Higher density creates denser, smoother decorrelation.",
+            ),
+            // Height channel parameters
+            Parameter::new_float(
+                "height_hf_cap_hz",
+                "Height HF Cap",
+                HEIGHT_HF_CAP_HZ_DEFAULT,
+                HEIGHT_HF_CAP_HZ_MIN,
+                HEIGHT_HF_CAP_HZ_MAX,
+            )
+            .with_description(
+                "High-frequency cap for height channels in Hz.
+Range: 8000-20000 Hz, default 16000 Hz.
+Limits extreme highs in overhead speakers.",
+            ),
+            Parameter::new_float(
+                "height_transient_reduction",
+                "Height Transient Reduction",
+                HEIGHT_TRANSIENT_REDUCTION_DEFAULT,
+                HEIGHT_TRANSIENT_REDUCTION_MIN,
+                HEIGHT_TRANSIENT_REDUCTION_MAX,
+            )
+            .with_description(
+                "Transient reduction for height channels.
+Range: 0.0-1.0, default 0.6.
+Reduces height channel level during transients for coherence.",
+            ),
+            Parameter::new_float(
+                "height_direct_leak",
+                "Height Direct Leak",
+                HEIGHT_DIRECT_LEAK_DEFAULT,
+                HEIGHT_DIRECT_LEAK_MIN,
+                HEIGHT_DIRECT_LEAK_MAX,
+            )
+            .with_description(
+                "Direct signal leak into height channels.
+Range: 0.0-0.5, default 0.15.
+Allows some direct sound into overheads for air and presence.",
+            ),
+            // Surround routing parameters
+            Parameter::new_float(
+                "surround_direct_bleed",
+                "Surround Direct Bleed",
+                SURROUND_DIRECT_BLEED_DEFAULT,
+                SURROUND_DIRECT_BLEED_MIN,
+                SURROUND_DIRECT_BLEED_MAX,
+            )
+            .with_description(
+                "Direct signal bleed into surround channels.
+Range: 0.0-1.0, default 0.50.
+Higher values create more cohesive surround image.",
+            ),
+            Parameter::new_float(
+                "rear_ambient_boost",
+                "Rear Ambient Boost",
+                REAR_AMBIENT_BOOST_DEFAULT,
+                REAR_AMBIENT_BOOST_MIN,
+                REAR_AMBIENT_BOOST_MAX,
+            )
+            .with_description(
+                "Ambient gain boost for rear channels.
+Range: 1.0-3.0x, default 1.5x.
+Increases envelopment from rear speakers.",
+            ),
+            Parameter::new_float(
+                "rear_late_reflection",
+                "Rear Late Reflection",
+                REAR_LATE_REFLECTION_DEFAULT,
+                REAR_LATE_REFLECTION_MIN,
+                REAR_LATE_REFLECTION_MAX,
+            )
+            .with_description(
+                "Late reflection level for rear height channels.
+Range: 0.0-0.5, default 0.10.
+Adds late reflections to rear heights for depth.",
+            ),
+            // Ambient parameters
+            Parameter::new_float(
+                "ambient_boost",
+                "Ambient Boost",
+                AMBIENT_BOOST_DEFAULT,
+                AMBIENT_BOOST_MIN,
+                AMBIENT_BOOST_MAX,
+            )
+            .with_description(
+                "Ambient gain boost factor.
+Range: 0.5-2.0x, default 1.2x.
+Multiplier applied to coherence-derived ambient gain.",
+            ),
+            // Dialogue detection parameters
+            Parameter::new_float(
+                "dialogue_weight",
+                "Dialogue Weight",
+                DIALOGUE_WEIGHT_DEFAULT,
+                DIALOGUE_WEIGHT_MIN,
+                DIALOGUE_WEIGHT_MAX,
+            )
+            .with_description(
+                "Maximum dialogue routing weight.
+Range: 0.0-1.0, default 0.4.
+Higher values route more detected dialogue to center.",
+            ),
+            Parameter::new_float(
+                "voice_freq_min_hz",
+                "Voice Freq Min",
+                VOICE_FREQ_MIN_HZ_DEFAULT,
+                VOICE_FREQ_MIN_HZ_MIN,
+                VOICE_FREQ_MIN_HZ_MAX,
+            )
+            .with_description(
+                "Voice detection frequency range minimum.
+Range: 200-800 Hz, default 500 Hz.
+Lower bound for dialogue detection analysis.",
+            ),
+            Parameter::new_float(
+                "voice_freq_max_hz",
+                "Voice Freq Max",
+                VOICE_FREQ_MAX_HZ_DEFAULT,
+                VOICE_FREQ_MAX_HZ_MIN,
+                VOICE_FREQ_MAX_HZ_MAX,
+            )
+            .with_description(
+                "Voice detection frequency range maximum.
+Range: 2000-5000 Hz, default 3000 Hz.
+Upper bound for dialogue detection analysis.",
+            ),
         ]
     }
 
@@ -871,6 +1186,106 @@ above unity, the block is scaled down to stay within the cap.",
             }
             return Err("Safety cap must be between 0.0 and 3.0 dB".to_string());
         }
+        // Sub-harmonic synthesis parameters
+        else if id == self.param_subharmonic_freq_hz
+            && let Some(val) = value.as_float()
+        {
+            self.subharmonic_freq_hz = val.clamp(20.0, 80.0);
+            return Ok(());
+        } else if id == self.param_subharmonic_attack_ms
+            && let Some(val) = value.as_float()
+        {
+            self.subharmonic_attack_ms = val.clamp(1.0, 100.0);
+            return Ok(());
+        } else if id == self.param_subharmonic_release_ms
+            && let Some(val) = value.as_float()
+        {
+            self.subharmonic_release_ms = val.clamp(10.0, 500.0);
+            return Ok(());
+        }
+        // Decorrelation parameters
+        else if id == self.param_decorrelation_lfo_rate_hz
+            && let Some(val) = value.as_float()
+        {
+            self.decorrelation_lfo_rate_hz = val.clamp(0.01, 1.0);
+            return Ok(());
+        } else if id == self.param_velvet_noise_duration_ms
+            && let Some(val) = value.as_float()
+        {
+            self.velvet_noise_duration_ms = val.clamp(10.0, 100.0);
+            // Regenerate velvet noise filters with new duration
+            if self.decorrelation_mode == 0 {
+                self.generate_velvet_noise_decorrelators();
+            }
+            return Ok(());
+        } else if id == self.param_velvet_noise_density
+            && let Some(val) = value.as_float()
+        {
+            self.velvet_noise_density = val.clamp(500.0, 5000.0);
+            // Regenerate velvet noise filters with new density
+            if self.decorrelation_mode == 0 {
+                self.generate_velvet_noise_decorrelators();
+            }
+            return Ok(());
+        }
+        // Height channel parameters
+        else if id == self.param_height_hf_cap_hz
+            && let Some(val) = value.as_float()
+        {
+            self.height_hf_cap_hz = val.clamp(8000.0, 20000.0);
+            return Ok(());
+        } else if id == self.param_height_transient_reduction
+            && let Some(val) = value.as_float()
+        {
+            self.height_transient_reduction = val.clamp(0.0, 1.0);
+            return Ok(());
+        } else if id == self.param_height_direct_leak
+            && let Some(val) = value.as_float()
+        {
+            self.height_direct_leak = val.clamp(0.0, 0.5);
+            return Ok(());
+        }
+        // Surround routing parameters
+        else if id == self.param_surround_direct_bleed
+            && let Some(val) = value.as_float()
+        {
+            self.surround_direct_bleed = val.clamp(0.0, 1.0);
+            return Ok(());
+        } else if id == self.param_rear_ambient_boost
+            && let Some(val) = value.as_float()
+        {
+            self.rear_ambient_boost = val.clamp(1.0, 3.0);
+            return Ok(());
+        } else if id == self.param_rear_late_reflection
+            && let Some(val) = value.as_float()
+        {
+            self.rear_late_reflection = val.clamp(0.0, 0.5);
+            return Ok(());
+        }
+        // Ambient parameters
+        else if id == self.param_ambient_boost
+            && let Some(val) = value.as_float()
+        {
+            self.ambient_boost = val.clamp(0.5, 2.0);
+            return Ok(());
+        }
+        // Dialogue detection parameters
+        else if id == self.param_dialogue_weight
+            && let Some(val) = value.as_float()
+        {
+            self.dialogue_weight = val.clamp(0.0, 1.0);
+            return Ok(());
+        } else if id == self.param_voice_freq_min_hz
+            && let Some(val) = value.as_float()
+        {
+            self.voice_freq_min_hz = val.clamp(200.0, 800.0);
+            return Ok(());
+        } else if id == self.param_voice_freq_max_hz
+            && let Some(val) = value.as_float()
+        {
+            self.voice_freq_max_hz = val.clamp(2000.0, 5000.0);
+            return Ok(());
+        }
         Err(format!("Unknown parameter: {}", id))
     }
 
@@ -918,6 +1333,50 @@ above unity, the block is scaled down to stay within the cap.",
             Some(ParameterValue::Float(self.hr_sharpen))
         } else if id == &self.param_safety_cap_db {
             Some(ParameterValue::Float(self.safety_cap_db))
+        }
+        // Sub-harmonic synthesis parameters
+        else if id == &self.param_subharmonic_freq_hz {
+            Some(ParameterValue::Float(self.subharmonic_freq_hz))
+        } else if id == &self.param_subharmonic_attack_ms {
+            Some(ParameterValue::Float(self.subharmonic_attack_ms))
+        } else if id == &self.param_subharmonic_release_ms {
+            Some(ParameterValue::Float(self.subharmonic_release_ms))
+        }
+        // Decorrelation parameters
+        else if id == &self.param_decorrelation_lfo_rate_hz {
+            Some(ParameterValue::Float(self.decorrelation_lfo_rate_hz))
+        } else if id == &self.param_velvet_noise_duration_ms {
+            Some(ParameterValue::Float(self.velvet_noise_duration_ms))
+        } else if id == &self.param_velvet_noise_density {
+            Some(ParameterValue::Float(self.velvet_noise_density))
+        }
+        // Height channel parameters
+        else if id == &self.param_height_hf_cap_hz {
+            Some(ParameterValue::Float(self.height_hf_cap_hz))
+        } else if id == &self.param_height_transient_reduction {
+            Some(ParameterValue::Float(self.height_transient_reduction))
+        } else if id == &self.param_height_direct_leak {
+            Some(ParameterValue::Float(self.height_direct_leak))
+        }
+        // Surround routing parameters
+        else if id == &self.param_surround_direct_bleed {
+            Some(ParameterValue::Float(self.surround_direct_bleed))
+        } else if id == &self.param_rear_ambient_boost {
+            Some(ParameterValue::Float(self.rear_ambient_boost))
+        } else if id == &self.param_rear_late_reflection {
+            Some(ParameterValue::Float(self.rear_late_reflection))
+        }
+        // Ambient parameters
+        else if id == &self.param_ambient_boost {
+            Some(ParameterValue::Float(self.ambient_boost))
+        }
+        // Dialogue detection parameters
+        else if id == &self.param_dialogue_weight {
+            Some(ParameterValue::Float(self.dialogue_weight))
+        } else if id == &self.param_voice_freq_min_hz {
+            Some(ParameterValue::Float(self.voice_freq_min_hz))
+        } else if id == &self.param_voice_freq_max_hz {
+            Some(ParameterValue::Float(self.voice_freq_max_hz))
         } else {
             None
         }

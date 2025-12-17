@@ -110,8 +110,8 @@ impl UpmixerPlugin {
         }
 
         let dt = self.hop_size as f32 / self.sample_rate as f32;
-        // Reduced from 0.7 Hz to 0.15 Hz to prevent audible warbling
-        let rate_hz = 0.15_f32;
+        // Use configurable LFO rate
+        let rate_hz = self.decorrelation_lfo_rate_hz;
         let two_pi = std::f32::consts::PI * 2.0;
         self.decor_lfo_phase += two_pi * rate_hz * dt;
         if self.decor_lfo_phase > two_pi {
@@ -170,14 +170,14 @@ impl UpmixerPlugin {
     /// of LFO-modulated phase shifters or the "metallic" sound of white noise.
     pub(super) fn generate_velvet_noise_decorrelators(&mut self) {
         // Generate two independent Velvet Noise sequences (Left and Right)
-        // 30ms duration (approx 1323 samples at 44.1k)
-        let duration_ms = 30.0;
+        // Use configurable duration (default 30ms)
+        let duration_ms = self.velvet_noise_duration_ms;
         let seq_len = ((duration_ms / 1000.0) * self.sample_rate as f32) as usize;
         // Limit to half FFT size to avoid wrap-around issues while maintaining length
         let seq_len = seq_len.min(self.fft_size / 2).max(128);
 
-        // Pulse density: 2000 pulses/sec
-        let pulses_per_sec = 2000.0;
+        // Use configurable pulse density (default 2000 pulses/sec)
+        let pulses_per_sec = self.velvet_noise_density;
         let grid_size = (self.sample_rate as f32 / pulses_per_sec).max(1.0) as usize;
 
         // Simple LCG for determinism

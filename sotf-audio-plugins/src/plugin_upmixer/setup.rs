@@ -4,7 +4,9 @@
 
 use super::UpmixerPlugin;
 use crate::plugin::{Plugin, PluginResult};
-use crate::speaker_config::{calculate_panning_gain, get_speaker_config};
+use crate::speaker_config::{
+    calculate_panning_gain, calculate_panning_gain_with_wraparound, get_speaker_config,
+};
 
 impl UpmixerPlugin {
     /// Change speaker configuration at runtime
@@ -41,6 +43,9 @@ impl UpmixerPlugin {
     pub(super) fn recalculate_panning_gains(&mut self) {
         const LEFT_AZIMUTH: f32 = 30.0;
         const RIGHT_AZIMUTH: f32 = -30.0;
+        // Attenuation for rear speakers receiving wrapped-around sources
+        // This maintains front-back separation while ensuring rear speakers get audio
+        const WRAP_ATTENUATION: f32 = 0.7;
 
         self.panning_gains_left.clear();
         self.panning_gains_right.clear();
@@ -50,10 +55,44 @@ impl UpmixerPlugin {
                 self.panning_gains_left.push(0.5);
                 self.panning_gains_right.push(0.5);
             } else {
-                let left_gain =
-                    calculate_panning_gain(LEFT_AZIMUTH, 0.0, speaker.azimuth, speaker.elevation);
-                let right_gain =
-                    calculate_panning_gain(RIGHT_AZIMUTH, 0.0, speaker.azimuth, speaker.elevation);
+                // Rear speakers (|azimuth| > 90°) need wrap-around panning
+                // because they're more than 90° from both L/R source positions
+                let is_rear = speaker.azimuth.abs() > 90.0;
+
+                let (left_gain, right_gain) = if is_rear {
+                    (
+                        calculate_panning_gain_with_wraparound(
+                            LEFT_AZIMUTH,
+                            0.0,
+                            speaker.azimuth,
+                            speaker.elevation,
+                            WRAP_ATTENUATION,
+                        ),
+                        calculate_panning_gain_with_wraparound(
+                            RIGHT_AZIMUTH,
+                            0.0,
+                            speaker.azimuth,
+                            speaker.elevation,
+                            WRAP_ATTENUATION,
+                        ),
+                    )
+                } else {
+                    (
+                        calculate_panning_gain(
+                            LEFT_AZIMUTH,
+                            0.0,
+                            speaker.azimuth,
+                            speaker.elevation,
+                        ),
+                        calculate_panning_gain(
+                            RIGHT_AZIMUTH,
+                            0.0,
+                            speaker.azimuth,
+                            speaker.elevation,
+                        ),
+                    )
+                };
+
                 self.panning_gains_left.push(left_gain);
                 self.panning_gains_right.push(right_gain);
             }

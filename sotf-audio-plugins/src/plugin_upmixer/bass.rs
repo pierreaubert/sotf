@@ -82,7 +82,7 @@ impl UpmixerPlugin {
 
     /// Apply sub-harmonic synthesis to LFE channel
     ///
-    /// Generates a 40Hz rumble tone modulated by the LFE envelope
+    /// Generates a configurable rumble tone modulated by the LFE envelope
     /// with smooth attack/release to prevent clicks and pops.
     pub(super) fn apply_subharmonic_synthesis(&mut self) {
         if !self.enable_subharmonic_synth {
@@ -91,14 +91,16 @@ impl UpmixerPlugin {
 
         if let Some(lfe_idx) = self.speaker_config.speakers.iter().position(|s| s.is_lfe) {
             // Generate subharmonics based on LFE amplitude
-            // We use a simple sine wave at 40Hz (typical rumble) modulated by the LFE envelope
-            let phase_inc = 2.0 * std::f32::consts::PI * 40.0 / self.sample_rate as f32;
+            // Use configurable frequency (default 40Hz rumble) modulated by the LFE envelope
+            let phase_inc =
+                2.0 * std::f32::consts::PI * self.subharmonic_freq_hz / self.sample_rate as f32;
 
             // Envelope smoothing parameters (time constants in samples)
-            // Attack: 10ms = 441 samples at 44.1kHz -> coefficient ≈ 1 - exp(-1/441) ≈ 0.00227
-            // Release: 50ms = 2205 samples at 44.1kHz -> coefficient ≈ 1 - exp(-1/2205) ≈ 0.000453
-            let attack_coeff = 1.0 - (-1.0 / (0.010 * self.sample_rate as f32)).exp();
-            let release_coeff = 1.0 - (-1.0 / (0.050 * self.sample_rate as f32)).exp();
+            // Convert attack/release times from ms to seconds for coefficient calculation
+            let attack_time_sec = self.subharmonic_attack_ms / 1000.0;
+            let release_time_sec = self.subharmonic_release_ms / 1000.0;
+            let attack_coeff = 1.0 - (-1.0 / (attack_time_sec * self.sample_rate as f32)).exp();
+            let release_coeff = 1.0 - (-1.0 / (release_time_sec * self.sample_rate as f32)).exp();
 
             for i in 0..self.fft_size {
                 // Use the time-domain LFE signal as the envelope

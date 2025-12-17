@@ -18,9 +18,9 @@ impl UpmixerPlugin {
         let spectrum_size = self.fft_size / 2 + 1;
         let freq_per_bin = self.sample_rate as f32 / self.fft_size as f32;
 
-        // Voice frequency range: 500-3000 Hz (covers fundamental + formants)
-        let voice_start_hz = 500.0;
-        let voice_end_hz = 3000.0;
+        // Voice frequency range: configurable (default 500-3000 Hz, covers fundamental + formants)
+        let voice_start_hz = self.voice_freq_min_hz;
+        let voice_end_hz = self.voice_freq_max_hz;
         let voice_start_bin = (voice_start_hz / freq_per_bin) as usize;
         let voice_end_bin = (voice_end_hz / freq_per_bin).min(spectrum_size as f32 - 1.0) as usize;
 

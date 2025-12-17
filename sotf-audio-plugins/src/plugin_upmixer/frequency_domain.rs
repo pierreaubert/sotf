@@ -6,10 +6,10 @@ use super::UpmixerPlugin;
 use crate::simd::compute_covariance_simd;
 use rustfft::num_complex::Complex;
 
-fn base_ambient_gain_from_coherence(coherence: f32) -> f32 {
+fn base_ambient_gain_from_coherence(coherence: f32, ambient_boost: f32) -> f32 {
     let coherence_clamped = coherence.clamp(0.0, 1.0);
     let ambient_base = (1.0 - coherence_clamped).max(0.0);
-    ambient_base.sqrt() * 1.2
+    ambient_base.sqrt() * ambient_boost
 }
 
 impl UpmixerPlugin {
@@ -190,15 +190,16 @@ impl UpmixerPlugin {
             if upmix_start < upmix_end {
                 // Perceptually-weighted ambient gain for better envelopment
                 // Base: sqrt(1 - coherence) for energy preservation
-                // Boost: 1.2x (20%) for enhanced spatial impression
+                // Boost: configurable ambient_boost (default 1.2x) for enhanced spatial impression
                 //
                 // Dialogue detection: redistribute energy from ambient to center
                 // while preserving total energy to avoid saturation
-                let base_ambient_gain = base_ambient_gain_from_coherence(coherence);
+                let base_ambient_gain =
+                    base_ambient_gain_from_coherence(coherence, self.ambient_boost);
 
                 // Energy redistribution for dialogue: shift energy to center while maintaining total
-                // dialogue_weight ranges from 0.0 (no dialogue) to 0.4 (strong dialogue)
-                let dialogue_weight = self.dialogue_probability * 0.4;
+                // dialogue_weight ranges from 0.0 (no dialogue) to configurable maximum
+                let dialogue_weight = self.dialogue_probability * self.dialogue_weight;
 
                 // Reduce ambient proportionally
                 let ambient_gain = base_ambient_gain * (1.0 - dialogue_weight);
@@ -240,7 +241,7 @@ impl UpmixerPlugin {
                     let nyquist = self.sample_rate as f32 / 2.0;
                     let freq = (i as f32 * self.sample_rate as f32) / self.fft_size as f32;
                     let hf_start = self.bandpass_hz.max(self.lfe_cutoff_hz);
-                    let hf_end = 16000.0_f32.min(nyquist); // Cap at 16kHz to avoid extreme highs
+                    let hf_end = self.height_hf_cap_hz.min(nyquist); // Configurable HF cap
 
                     let hf_ratio = if freq <= hf_start {
                         0.0
@@ -261,8 +262,10 @@ impl UpmixerPlugin {
                     let height_suitability = (freq_weight * 0.5 + diffuse * 0.5).min(1.0);
 
                     // Transient-adaptive reduction: keep transients coherent
-                    // During transients, reduce height channel emphasis
-                    let transient_reduction = 1.0 - (self.hr_transient_env * 0.6).min(0.6);
+                    // During transients, reduce height channel emphasis by configurable amount
+                    let transient_reduction =
+                        1.0 - (self.hr_transient_env * self.height_transient_reduction)
+                            .min(self.height_transient_reduction);
 
                     let height_mask = (height_suitability * transient_reduction).min(1.0);
 
@@ -307,8 +310,9 @@ mod tests {
     #[test]
     fn base_ambient_gain_is_finite_for_out_of_range_coherence() {
         let values = [-10.0_f32, -1.0, 0.0, 0.5, 0.999_999, 1.0, 1.000_001, 10.0];
+        let ambient_boost = 1.0; // default value
         for &c in &values {
-            let g = base_ambient_gain_from_coherence(c);
+            let g = base_ambient_gain_from_coherence(c, ambient_boost);
             assert!(
                 g.is_finite(),
                 "base_ambient_gain not finite for coherence={}",

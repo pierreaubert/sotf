@@ -187,9 +187,9 @@ pub mod upmixer {
     pub const GAIN_REAR_AMBIENT_MIN: f32 = 0.0;
     pub const GAIN_REAR_AMBIENT_MAX: f32 = 2.0;
 
-    pub const HEIGHT_GAIN_DEFAULT: f32 = 1.0;
-    pub const HEIGHT_GAIN_MIN: f32 = 0.0;
-    pub const HEIGHT_GAIN_MAX: f32 = 2.0;
+    pub const GAIN_HEIGHT_DEFAULT: f32 = 1.0;
+    pub const GAIN_HEIGHT_MIN: f32 = 0.0;
+    pub const GAIN_HEIGHT_MAX: f32 = 2.0;
 
     pub const LFE_GAIN_DEFAULT: f32 = 1.0;
     pub const LFE_GAIN_MIN: f32 = 0.0;
@@ -211,25 +211,95 @@ pub mod upmixer {
     pub const BANDPASS_HZ_MIN: f32 = 150.0;
     pub const BANDPASS_HZ_MAX: f32 = 350.0;
 
+    // Surround routing parameters
+    pub const SURROUND_DIRECT_BLEED_DEFAULT: f32 = 0.50;
+    pub const SURROUND_DIRECT_BLEED_MIN: f32 = 0.0;
+    pub const SURROUND_DIRECT_BLEED_MAX: f32 = 1.0;
+
+    pub const REAR_AMBIENT_BOOST_DEFAULT: f32 = 1.5;
+    pub const REAR_AMBIENT_BOOST_MIN: f32 = 1.0;
+    pub const REAR_AMBIENT_BOOST_MAX: f32 = 3.0;
+
+    pub const REAR_LATE_REFLECTION_DEFAULT: f32 = 0.10;
+    pub const REAR_LATE_REFLECTION_MIN: f32 = 0.0;
+    pub const REAR_LATE_REFLECTION_MAX: f32 = 0.5;
+
+    // Sub-harmonic synthesis parameters
     pub const ENABLE_SUBHARMONIC_SYNTH_DEFAULT: bool = false;
 
     pub const SUBHARMONIC_GAIN_DEFAULT: f32 = 0.5;
     pub const SUBHARMONIC_GAIN_MIN: f32 = 0.0;
     pub const SUBHARMONIC_GAIN_MAX: f32 = 1.0;
 
+    pub const SUBHARMONIC_FREQ_HZ_DEFAULT: f32 = 40.0;
+    pub const SUBHARMONIC_FREQ_HZ_MIN: f32 = 20.0;
+    pub const SUBHARMONIC_FREQ_HZ_MAX: f32 = 80.0;
+
+    pub const SUBHARMONIC_ATTACK_MS_DEFAULT: f32 = 10.0;
+    pub const SUBHARMONIC_ATTACK_MS_MIN: f32 = 1.0;
+    pub const SUBHARMONIC_ATTACK_MS_MAX: f32 = 100.0;
+
+    pub const SUBHARMONIC_RELEASE_MS_DEFAULT: f32 = 50.0;
+    pub const SUBHARMONIC_RELEASE_MS_MIN: f32 = 10.0;
+    pub const SUBHARMONIC_RELEASE_MS_MAX: f32 = 500.0;
+
+    // Decorrelation parameters
+    pub const DECORRELATION_MODE_DEFAULT: i32 = 0;
+    pub const DECORRELATION_MODE_MIN: i32 = 0;
+    pub const DECORRELATION_MODE_MAX: i32 = 1;
+
+    pub const DECORRELATION_LFO_RATE_HZ_DEFAULT: f32 = 0.15;
+    pub const DECORRELATION_LFO_RATE_HZ_MIN: f32 = 0.01;
+    pub const DECORRELATION_LFO_RATE_HZ_MAX: f32 = 1.0;
+
+    pub const VELVET_NOISE_DURATION_MS_DEFAULT: f32 = 30.0;
+    pub const VELVET_NOISE_DURATION_MS_MIN: f32 = 10.0;
+    pub const VELVET_NOISE_DURATION_MS_MAX: f32 = 100.0;
+
+    pub const VELVET_NOISE_DENSITY_DEFAULT: f32 = 2000.0;
+    pub const VELVET_NOISE_DENSITY_MIN: f32 = 500.0;
+    pub const VELVET_NOISE_DENSITY_MAX: f32 = 5000.0;
+
+    pub const SAFETY_CAP_DB_DEFAULT: f32 = 3.0;
+    pub const SAFETY_CAP_DB_MIN: f32 = 0.0;
+    pub const SAFETY_CAP_DB_MAX: f32 = 3.0;
+
+    // Height channel parameters
     pub const ENABLE_HR_DIRECT_DEFAULT: bool = true;
 
     pub const HR_SHARPEN_DEFAULT: f32 = 1.0;
     pub const HR_SHARPEN_MIN: f32 = 0.0;
     pub const HR_SHARPEN_MAX: f32 = 1.0;
 
-    pub const SAFETY_CAP_DB_DEFAULT: f32 = 3.0;
-    pub const SAFETY_CAP_DB_MIN: f32 = 0.0;
-    pub const SAFETY_CAP_DB_MAX: f32 = 3.0;
+    pub const HEIGHT_HF_CAP_HZ_DEFAULT: f32 = 16000.0;
+    pub const HEIGHT_HF_CAP_HZ_MIN: f32 = 8000.0;
+    pub const HEIGHT_HF_CAP_HZ_MAX: f32 = 20000.0;
 
-    pub const DECORRELATION_MODE_DEFAULT: i32 = 0;
-    pub const DECORRELATION_MODE_MIN: i32 = 0;
-    pub const DECORRELATION_MODE_MAX: i32 = 1;
+    pub const HEIGHT_TRANSIENT_REDUCTION_DEFAULT: f32 = 0.6;
+    pub const HEIGHT_TRANSIENT_REDUCTION_MIN: f32 = 0.0;
+    pub const HEIGHT_TRANSIENT_REDUCTION_MAX: f32 = 1.0;
+
+    pub const HEIGHT_DIRECT_LEAK_DEFAULT: f32 = 0.15;
+    pub const HEIGHT_DIRECT_LEAK_MIN: f32 = 0.0;
+    pub const HEIGHT_DIRECT_LEAK_MAX: f32 = 0.5;
+
+    // Ambient gain boost (sqrt(1-coherence) multiplier)
+    pub const AMBIENT_BOOST_DEFAULT: f32 = 1.2;
+    pub const AMBIENT_BOOST_MIN: f32 = 0.5;
+    pub const AMBIENT_BOOST_MAX: f32 = 2.0;
+
+    // Dialogue detection parameters
+    pub const DIALOGUE_WEIGHT_DEFAULT: f32 = 0.4;
+    pub const DIALOGUE_WEIGHT_MIN: f32 = 0.0;
+    pub const DIALOGUE_WEIGHT_MAX: f32 = 1.0;
+
+    pub const VOICE_FREQ_MIN_HZ_DEFAULT: f32 = 500.0;
+    pub const VOICE_FREQ_MIN_HZ_MIN: f32 = 200.0;
+    pub const VOICE_FREQ_MIN_HZ_MAX: f32 = 800.0;
+
+    pub const VOICE_FREQ_MAX_HZ_DEFAULT: f32 = 3000.0;
+    pub const VOICE_FREQ_MAX_HZ_MIN: f32 = 2000.0;
+    pub const VOICE_FREQ_MAX_HZ_MAX: f32 = 5000.0;
 }
 
 // ============================================================================

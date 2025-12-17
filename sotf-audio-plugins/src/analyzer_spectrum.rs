@@ -424,7 +424,8 @@ impl Plugin for SpectrumAnalyzerPlugin {
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
         let info = self.analyzer.get_spectrum();
         let data = Self::to_spectrum_data(&info);
-        Some(Arc::new(data))
+        // Explicitly type the Arc to ensure downcast works
+        Some(Arc::new(data) as Arc<dyn Any + Send + Sync>)
     }
 
     fn latency_samples(&self) -> usize {

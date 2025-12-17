@@ -11,125 +11,102 @@ use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Divider, HStack, Select, SelectOption, SelectSize, StackAlign, StackSpacing, Toggle,
-    ToggleStyle, VStack,
+    HStack, Select, SelectOption, SelectSize, StackAlign, StackSpacing, Toggle, ToggleStyle,
+    VStack,
 };
 use sotf_audio_player::param_specs::upmixer::*;
 
-/// Help text for upmixer parameters
-mod help_text {
-    pub const CONFIG: &str = "Output speaker configuration.\n2.0 = Stereo passthrough\n5.0/5.1 = Standard surround\n7.1 = Extended surround\nAtmos configs add height channels";
-    pub const SUBHARMONIC: &str = "Subharmonic Synthesizer adds low bass content\nby generating frequencies one octave below\nthe original signal. Useful for small speakers\nor adding punch to bass-light content.";
-    pub const HR_DIRECT: &str = "High Resolution Direct mode preserves\ntransient detail in the center channel\nby using a sharper extraction algorithm.\nMay increase CPU usage slightly.";
-    pub const DECORRELATION: &str = "Surround decorrelation method:\n• Velvet: Smooth, natural ambience\n• LFO: Modulated, wider spatial effect";
-}
-
-/// Render a config row with label, help icon, and control
-/// The help icon shows a popup with help text on hover
-fn render_config_row(
-    label: &str,
-    help_text: &'static str,
-    control: impl IntoElement,
-    theme: &Theme,
-) -> impl IntoElement {
-    let label_owned: SharedString = SharedString::from(label.to_string());
-    let label_id: SharedString = SharedString::from(format!("help-{}", label));
-    let help_text_owned: SharedString = help_text.into();
-
+/// Render a section header
+fn render_section_header(label: &str, theme: &Theme) -> impl IntoElement {
     div()
-        .flex()
-        .items_center()
-        .justify_between()
-        .w_full()
-        .py_1()
-        // Left side: Label + Help icon
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap_1()
-                // Label
-                .child(
-                    div()
-                        .text_xs()
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(theme.text_secondary)
-                        .child(label_owned),
-                )
-                // Help icon - shows help popup on hover
-                .child(
-                    div()
-                        .id(label_id)
-                        .relative()
-                        .group("help-icon")
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .w(px(14.0))
-                                .h(px(14.0))
-                                .rounded_full()
-                                .border_1()
-                                .border_color(theme.text_muted)
-                                .text_size(px(10.0))
-                                .text_color(theme.text_muted)
-                                .cursor_pointer()
-                                .hover(|s| {
-                                    s.bg(theme.accent)
-                                        .border_color(theme.accent)
-                                        .text_color(theme.text_on_accent)
-                                })
-                                .child("i"),
-                        )
-                        // Popup shown on hover (uses group_hover)
-                        .child(
-                            div()
-                                .occlude()
-                                .invisible()
-                                .group_hover("help-icon", |s| s.visible())
-                                .absolute()
-                                .left_full()
-                                .top(px(-8.0))
-                                .ml_2()
-                                .p_3()
-                                .w(px(280.0))
-                                .bg(theme.background)
-                                .border_1()
-                                .border_color(theme.border)
-                                .rounded_lg()
-                                .shadow_xl()
-                                .text_xs()
-                                .line_height(relative(1.5))
-                                .text_color(theme.text_primary)
-                                .child(help_text_owned),
-                        ),
-                ),
-        )
-        // Right side: Control
-        .child(control)
+        .text_xs()
+        .font_weight(FontWeight::BOLD)
+        .text_color(theme.text_muted)
+        .pb_1()
+        .child(label.to_string())
 }
 
 /// State for rendering the Upmixer plugin
 pub struct UpmixerRenderState<'a> {
     pub speaker_config: &'a str,
+    // Gains (vertical sliders)
     pub gain_front_direct: f64,
-    pub stereo_width: f64,
     pub gain_front_ambient: f64,
     pub gain_rear_ambient: f64,
-    pub lfe_cutoff_hz: f64,
-    pub bandpass_hz: f64,
     pub height_gain: f64,
+    pub stereo_width: f64,
+    pub center_spread: f64,
+    pub surround_direct_bleed: f64,
+    pub rear_late_reflection: f64,
+    // LFE parameters
+    pub lfe_cutoff_hz: f64,
     pub lfe_gain: f64,
+    pub bandpass_hz: f64,
+    // Sub-harmonic parameters
     pub enable_subharmonic_synth: bool,
     pub subharmonic_gain: f64,
+    pub subharmonic_freq_hz: f64,
+    pub subharmonic_attack_ms: f64,
+    pub subharmonic_release_ms: f64,
+    // Decorrelation parameters
+    pub decorrelation_mode: usize,
+    pub decorrelation_lfo_rate_hz: f64,
+    pub velvet_noise_duration_ms: f64,
+    pub velvet_noise_density: f64,
+    // Height parameters
     pub enable_hr_direct: bool,
     pub hr_sharpen: f64,
+    pub height_hf_cap_hz: f64,
+    pub height_transient_reduction: f64,
+    pub height_direct_leak: f64,
+    // Ambient parameters
+    pub ambient_boost: f64,
     pub safety_cap_db: f64,
-    pub decorrelation_mode: usize,
+    pub rear_ambient_boost: f64,
+    // Dialogue parameters
+    pub dialogue_weight: f64,
+    pub voice_freq_min_hz: f64,
+    pub voice_freq_max_hz: f64,
+    // UI state
     pub is_editing: bool,
     pub selected_param: usize,
     pub config_open: bool,
+}
+
+/// Parameter indices for set_plugin_param calls
+mod param_idx {
+    pub const SPEAKER_CONFIG: usize = 0;
+    pub const GAIN_FRONT_DIRECT: usize = 1;
+    pub const GAIN_FRONT_AMBIENT: usize = 2;
+    pub const GAIN_REAR_AMBIENT: usize = 3;
+    pub const HEIGHT_GAIN: usize = 4;
+    pub const LFE_GAIN: usize = 5;
+    pub const LFE_CUTOFF_HZ: usize = 6;
+    pub const STEREO_WIDTH: usize = 7;
+    pub const CENTER_SPREAD: usize = 8;
+    pub const BANDPASS_HZ: usize = 9;
+    pub const ENABLE_SUBHARMONIC_SYNTH: usize = 10;
+    pub const SUBHARMONIC_GAIN: usize = 11;
+    pub const ENABLE_HR_DIRECT: usize = 12;
+    pub const HR_SHARPEN: usize = 13;
+    pub const SAFETY_CAP_DB: usize = 14;
+    pub const DECORRELATION_MODE: usize = 15;
+    pub const SUBHARMONIC_FREQ_HZ: usize = 16;
+    pub const SUBHARMONIC_ATTACK_MS: usize = 17;
+    pub const SUBHARMONIC_RELEASE_MS: usize = 18;
+    pub const DECORRELATION_LFO_RATE_HZ: usize = 19;
+    pub const VELVET_NOISE_DURATION_MS: usize = 20;
+    pub const VELVET_NOISE_DENSITY: usize = 21;
+    pub const HEIGHT_HF_CAP_HZ: usize = 22;
+    pub const HEIGHT_TRANSIENT_REDUCTION: usize = 23;
+    pub const HEIGHT_DIRECT_LEAK: usize = 24;
+    pub const SURROUND_DIRECT_BLEED: usize = 25;
+    pub const REAR_AMBIENT_BOOST: usize = 26;
+    pub const REAR_LATE_REFLECTION: usize = 27;
+    pub const AMBIENT_BOOST: usize = 28;
+    pub const DIALOGUE_WEIGHT: usize = 29;
+    pub const VOICE_FREQ_MIN_HZ: usize = 30;
+    pub const VOICE_FREQ_MAX_HZ: usize = 31;
 }
 
 /// Render the upmixer plugin controls
@@ -140,369 +117,735 @@ pub fn render_upmixer_plugin(
     state: UpmixerRenderState,
     theme: &Theme,
 ) -> impl IntoElement {
-    // We need to own the string for the closure
     let speaker_config_owned = state.speaker_config.to_string();
     let config_open = state.config_open;
     let decorrelation_mode = state.decorrelation_mode;
 
-    // Main horizontal layout: Config column | Sliders | Knobs
-    HStack::new()
-        .spacing(StackSpacing::Md)
-        .align(StackAlign::Start)
-        // Left config column
+    // Main layout: 2 rows
+    VStack::new()
+        .spacing(StackSpacing::Sm)
+        // Top bar: Output config selector on the right
         .child(
-            VStack::new()
-                .spacing(StackSpacing::Xs)
-                .build()
-                .p_3()
-                .bg(theme.background_secondary)
-                .rounded_lg()
-                .border_1()
-                .border_color(theme.border)
-                // Config select
-                .child(render_config_row(
-                    "Config",
-                    help_text::CONFIG,
-                    div().w(px(100.0)).child(
-                        Select::new("config-select")
-                            .options(
-                                [
-                                    "2.0", "5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4",
-                                    "9.1.4", "9.1.6",
-                                ]
-                                .iter()
-                                .map(|c| SelectOption::new(c.to_string(), c.to_string()))
-                                .collect(),
-                            )
-                            .selected(speaker_config_owned.clone())
-                            .is_open(config_open)
-                            .size(SelectSize::Sm)
-                            .on_toggle({
-                                let entity = entity.clone();
-                                move |is_open, _window, cx| {
-                                    entity.update(cx, |state, _| {
-                                        state.app.upmixer_config_open = is_open;
-                                    });
-                                }
-                            })
-                            .on_change({
-                                let entity = entity.clone();
-                                move |value, _, cx| {
-                                    let configs = [
-                                        "2.0", "5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2",
-                                        "7.1.4", "9.1.4", "9.1.6",
-                                    ];
-                                    let idx = configs
-                                        .iter()
-                                        .position(|&c| c == value.as_ref())
-                                        .unwrap_or(0);
-                                    entity.update(cx, |state, _| {
-                                        state.app.set_plugin_param(plugin_idx, 0, idx as f64);
-                                        state.app.upmixer_config_open = false;
-                                        state.app.update_level_meter_groups();
-                                    });
-                                }
-                            }),
-                    ),
-                    theme,
-                ))
-                // Subharmonic toggle
-                .child(render_config_row(
-                    "SubHarm",
-                    help_text::SUBHARMONIC,
-                    Toggle::new(("subharm-toggle", plugin_idx))
-                        .checked(state.enable_subharmonic_synth)
-                        .label(if state.enable_subharmonic_synth {
-                            "On"
-                        } else {
-                            "Off"
-                        })
-                        .style(ToggleStyle::Segmented)
-                        .theme(theme.to_toggle_theme())
-                        .on_change({
-                            let entity = entity.clone();
-                            move |new_value, _, cx| {
-                                entity.update(cx, |state, _| {
-                                    state
-                                        .app
-                                        .set_plugin_param(plugin_idx, 9, if new_value { 1.0 } else { 0.0 });
-                                });
-                            }
-                        }),
-                    theme,
-                ))
-                // HR Direct toggle
-                .child(render_config_row(
-                    "HR Direct",
-                    help_text::HR_DIRECT,
-                    Toggle::new(("hr-direct-toggle", plugin_idx))
-                        .checked(state.enable_hr_direct)
-                        .label(if state.enable_hr_direct { "On" } else { "Off" })
-                        .style(ToggleStyle::Segmented)
-                        .theme(theme.to_toggle_theme())
-                        .on_change({
-                            let entity = entity.clone();
-                            move |new_value, _, cx| {
-                                entity.update(cx, |state, _| {
-                                    state
-                                        .app
-                                        .set_plugin_param(plugin_idx, 11, if new_value { 1.0 } else { 0.0 });
-                                });
-                            }
-                        }),
-                    theme,
-                ))
-                // Decorrelation mode toggle
-                .child(render_config_row(
-                    "Decorr",
-                    help_text::DECORRELATION,
-                    Toggle::new(("decorr-toggle", plugin_idx))
-                        .checked(decorrelation_mode == 1)
-                        .label(if decorrelation_mode == 1 {
-                            "LFO"
-                        } else {
-                            "Velvet"
-                        })
-                        .style(ToggleStyle::Segmented)
-                        .theme(theme.to_toggle_theme())
-                        .on_change({
-                            let entity = entity.clone();
-                            move |new_value, _, cx| {
-                                entity.update(cx, |state, _| {
-                                    state
-                                        .app
-                                        .set_plugin_param(plugin_idx, 14, if new_value { 1.0 } else { 0.0 });
-                                });
-                            }
-                        }),
-                    theme,
-                )),
-        )
-        // Separator
-        .child(
-            Divider::vertical()
-                .color(theme.border)
-                .build_simple()
-                .h(px(200.0)),
-        )
-        // Main controls section with vertical sliders for gains and knobs for other params
-        .child(
-            HStack::new()
-                .spacing(StackSpacing::Lg)
-                .align(StackAlign::Start)
-                .wrap(true)
-                // Gain sliders section - vertical sliders for all gain controls
-                // Height matches 2 rows of knobs (~200px)
+            div()
+                .flex()
+                .justify_end()
+                .w_full()
                 .child(
                     HStack::new()
                         .spacing(StackSpacing::Sm)
-                        // Mains (Front Direct)
-                        .child(render_vertical_slider_with_ticks(
-                            entity.clone(),
-                            plugin_idx,
-                            "Mains",
-                            state.gain_front_direct,
-                            GAIN_FRONT_DIRECT_MIN as f64,
-                            GAIN_FRONT_DIRECT_MAX as f64,
-                            "x",
-                            1, // gain_front_direct
-                            state.selected_param,
-                            state.is_editing,
-                            Some('m'),
-                            130.0,
-                            theme,
-                        ))
-                        // Center (Front Ambient)
-                        .child(render_vertical_slider_with_ticks(
-                            entity.clone(),
-                            plugin_idx,
-                            "Center",
-                            state.gain_front_ambient,
-                            GAIN_FRONT_AMBIENT_MIN as f64,
-                            GAIN_FRONT_AMBIENT_MAX as f64,
-                            "x",
-                            2, // gain_front_ambient
-                            state.selected_param,
-                            state.is_editing,
-                            Some('c'),
-                            130.0,
-                            theme,
-                        ))
-                        // LFE
-                        .child(render_vertical_slider_with_ticks(
-                            entity.clone(),
-                            plugin_idx,
-                            "LFE",
-                            state.lfe_gain,
-                            LFE_GAIN_MIN as f64,
-                            LFE_GAIN_MAX as f64,
-                            "x",
-                            8, // lfe_gain
-                            state.selected_param,
-                            state.is_editing,
-                            Some('l'),
-                            130.0,
-                            theme,
-                        ))
-                        // Surrounds
-                        .child(render_vertical_slider_with_ticks(
-                            entity.clone(),
-                            plugin_idx,
-                            "Surr",
-                            state.gain_rear_ambient,
-                            GAIN_REAR_AMBIENT_MIN as f64,
-                            GAIN_REAR_AMBIENT_MAX as f64,
-                            "x",
-                            3, // gain_rear_ambient
-                            state.selected_param,
-                            state.is_editing,
-                            Some('s'),
-                            130.0,
-                            theme,
-                        ))
-                        // Top (Height)
-                        .child(render_vertical_slider_with_ticks(
-                            entity.clone(),
-                            plugin_idx,
-                            "Top",
-                            state.height_gain,
-                            HEIGHT_GAIN_MIN as f64,
-                            HEIGHT_GAIN_MAX as f64,
-                            "x",
-                            7, // height_gain
-                            state.selected_param,
-                            state.is_editing,
-                            Some('t'),
-                            130.0,
-                            theme,
-                        ))
-                        // Width (Stereo Width)
-                        .child(render_vertical_slider_with_ticks(
-                            entity.clone(),
-                            plugin_idx,
-                            "Width",
-                            state.stereo_width,
-                            STEREO_WIDTH_MIN as f64,
-                            STEREO_WIDTH_MAX as f64,
-                            "",
-                            5, // stereo_width
-                            state.selected_param,
-                            state.is_editing,
-                            Some('w'),
-                            130.0,
-                            theme,
-                        ))
-                        .build()
-                        .p_2()
-                        .bg(theme.surface)
-                        .rounded_lg(),
-                )
-                // Separator
-                .child(
-                    Divider::vertical()
-                        .color(theme.border)
-                        .build_simple()
-                        .h(px(200.0)),
-                )
-                // Knobs in 2x2 grid layout
-                .child(
-                    VStack::new()
-                        .spacing(StackSpacing::Sm)
-                        // Top row: LFE Cut, Bandpass
+                        .align(StackAlign::Center)
                         .child(
-                            HStack::new()
-                                .spacing(StackSpacing::Sm)
-                                .child(render_knob(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "LFE Cut",
-                                    state.lfe_cutoff_hz,
-                                    LFE_CUTOFF_HZ_MIN as f64,
-                                    LFE_CUTOFF_HZ_MAX as f64,
-                                    "Hz",
-                                    4, // lfe_cutoff_hz
-                                    state.selected_param,
-                                    state.is_editing,
-                                    None,
-                                    theme,
-                                ))
-                                .child(render_knob(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "Bandpass",
-                                    state.bandpass_hz,
-                                    BANDPASS_HZ_MIN as f64,
-                                    BANDPASS_HZ_MAX as f64,
-                                    "Hz",
-                                    6, // bandpass_hz
-                                    state.selected_param,
-                                    state.is_editing,
-                                    None,
-                                    theme,
-                                ))
-                                .build(),
+                            div()
+                                .text_xs()
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .text_color(theme.text_secondary)
+                                .child("Output"),
                         )
-                        // Bottom row: Safety + conditional knobs
                         .child(
-                            HStack::new()
-                                .spacing(StackSpacing::Sm)
-                                .child(render_knob(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "Safety",
-                                    state.safety_cap_db,
-                                    SAFETY_CAP_DB_MIN as f64,
-                                    SAFETY_CAP_DB_MAX as f64,
-                                    "dB",
-                                    13, // safety_cap_db
-                                    state.selected_param,
-                                    state.is_editing,
-                                    None,
-                                    theme,
-                                ))
-                                // SubHarm gain (conditional)
-                                .when(state.enable_subharmonic_synth, |el| {
-                                    el.child(render_knob(
-                                        entity.clone(),
-                                        plugin_idx,
-                                        "SubGain",
-                                        state.subharmonic_gain,
-                                        SUBHARMONIC_GAIN_MIN as f64,
-                                        SUBHARMONIC_GAIN_MAX as f64,
-                                        "",
-                                        10, // subharmonic_gain
-                                        state.selected_param,
-                                        state.is_editing,
-                                        None,
-                                        theme,
-                                    ))
-                                })
-                                // HR Sharpen (conditional)
-                                .when(state.enable_hr_direct, |el| {
-                                    el.child(render_knob(
-                                        entity.clone(),
-                                        plugin_idx,
-                                        "Sharpen",
-                                        state.hr_sharpen,
-                                        HR_SHARPEN_MIN as f64,
-                                        HR_SHARPEN_MAX as f64,
-                                        "",
-                                        12, // hr_sharpen
-                                        state.selected_param,
-                                        state.is_editing,
-                                        None,
-                                        theme,
-                                    ))
-                                })
-                                .build(),
+                            div().w(px(80.0)).child(
+                                Select::new("config-select")
+                                    .options(
+                                        [
+                                            "2.0", "5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2",
+                                            "7.1.4", "9.1.4", "9.1.6",
+                                        ]
+                                        .iter()
+                                        .map(|c| SelectOption::new(c.to_string(), c.to_string()))
+                                        .collect(),
+                                    )
+                                    .selected(speaker_config_owned.clone())
+                                    .is_open(config_open)
+                                    .size(SelectSize::Sm)
+                                    .on_toggle({
+                                        let entity = entity.clone();
+                                        move |is_open, _window, cx| {
+                                            entity.update(cx, |state, _| {
+                                                state.app.upmixer_config_open = is_open;
+                                            });
+                                        }
+                                    })
+                                    .on_change({
+                                        let entity = entity.clone();
+                                        move |value, _, cx| {
+                                            let configs = [
+                                                "2.0", "5.0", "5.1", "7.1", "5.1.2", "5.1.4",
+                                                "7.1.2", "7.1.4", "9.1.4", "9.1.6",
+                                            ];
+                                            let idx = configs
+                                                .iter()
+                                                .position(|&c| c == value.as_ref())
+                                                .unwrap_or(0);
+                                            entity.update(cx, |state, _| {
+                                                state.app.set_plugin_param(
+                                                    plugin_idx,
+                                                    param_idx::SPEAKER_CONFIG,
+                                                    idx as f64,
+                                                );
+                                                state.app.upmixer_config_open = false;
+                                                state.app.update_level_meter_groups();
+                                            });
+                                        }
+                                    }),
+                            ),
                         )
                         .build(),
-                )
-                .build()
-                .p_2(),
+                ),
+        )
+        // Row 1: Crossovers, SubHarmonic, 8 Sliders
+        .child(
+            HStack::new()
+                .spacing(StackSpacing::Md)
+                .align(StackAlign::Start)
+                .child(render_crossovers_box(
+                    entity.clone(),
+                    plugin_idx,
+                    &state,
+                    theme,
+                ))
+                .child(render_subharmonic_box(
+                    entity.clone(),
+                    plugin_idx,
+                    &state,
+                    theme,
+                ))
+                .child(render_gains_row(entity.clone(), plugin_idx, &state, theme))
+                .build(),
+        )
+        // Row 2: Dialogue, Ambient, Height, Decorrelation
+        .child(
+            HStack::new()
+                .spacing(StackSpacing::Md)
+                .align(StackAlign::Start)
+                .child(render_dialogue_box(
+                    entity.clone(),
+                    plugin_idx,
+                    &state,
+                    theme,
+                ))
+                .child(render_ambient_box(
+                    entity.clone(),
+                    plugin_idx,
+                    &state,
+                    theme,
+                ))
+                .child(render_height_box(
+                    entity.clone(),
+                    plugin_idx,
+                    &state,
+                    theme,
+                ))
+                .child(render_decorrelation_box(
+                    entity.clone(),
+                    plugin_idx,
+                    &state,
+                    decorrelation_mode,
+                    theme,
+                ))
+                .build(),
         )
         .build()
         .p_3()
         .w_full()
         .h_full()
+}
+
+/// Crossovers box: LFE Cut, Bandpass Hz
+fn render_crossovers_box(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    state: &UpmixerRenderState,
+    theme: &Theme,
+) -> impl IntoElement {
+    VStack::new()
+        .spacing(StackSpacing::Xs)
+        .child(render_section_header("Crossovers", theme))
+        .child(render_knob(
+            entity.clone(),
+            plugin_idx,
+            "LFE Cut",
+            state.lfe_cutoff_hz,
+            LFE_CUTOFF_HZ_MIN as f64,
+            LFE_CUTOFF_HZ_MAX as f64,
+            "Hz",
+            param_idx::LFE_CUTOFF_HZ,
+            state.selected_param,
+            state.is_editing,
+            None,
+            theme,
+        ))
+        .child(render_knob(
+            entity.clone(),
+            plugin_idx,
+            "Bandpass",
+            state.bandpass_hz,
+            BANDPASS_HZ_MIN as f64,
+            BANDPASS_HZ_MAX as f64,
+            "Hz",
+            param_idx::BANDPASS_HZ,
+            state.selected_param,
+            state.is_editing,
+            None,
+            theme,
+        ))
+        .build()
+        .p_2()
+        .bg(theme.background_secondary)
+        .rounded_lg()
+        .border_1()
+        .border_color(theme.border)
+}
+
+/// SubHarmonic box: LFE Gain, toggle, and subharmonic params
+fn render_subharmonic_box(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    state: &UpmixerRenderState,
+    theme: &Theme,
+) -> impl IntoElement {
+    VStack::new()
+        .spacing(StackSpacing::Xs)
+        .child(render_section_header("SubHarmonic", theme))
+        .child(render_knob(
+            entity.clone(),
+            plugin_idx,
+            "LFE Gain",
+            state.lfe_gain,
+            LFE_GAIN_MIN as f64,
+            LFE_GAIN_MAX as f64,
+            "x",
+            param_idx::LFE_GAIN,
+            state.selected_param,
+            state.is_editing,
+            None,
+            theme,
+        ))
+        .child(
+            Toggle::new(("subharm-toggle", plugin_idx))
+                .checked(state.enable_subharmonic_synth)
+                .label(if state.enable_subharmonic_synth {
+                    "On"
+                } else {
+                    "Off"
+                })
+                .style(ToggleStyle::Segmented)
+                .theme(theme.to_toggle_theme())
+                .on_change({
+                    let entity = entity.clone();
+                    move |new_value, _, cx| {
+                        entity.update(cx, |state, _| {
+                            state.app.set_plugin_param(
+                                plugin_idx,
+                                param_idx::ENABLE_SUBHARMONIC_SYNTH,
+                                if new_value { 1.0 } else { 0.0 },
+                            );
+                        });
+                    }
+                }),
+        )
+        .when(state.enable_subharmonic_synth, |el| {
+            el.child(render_knob(
+                entity.clone(),
+                plugin_idx,
+                "SH Gain",
+                state.subharmonic_gain,
+                SUBHARMONIC_GAIN_MIN as f64,
+                SUBHARMONIC_GAIN_MAX as f64,
+                "",
+                param_idx::SUBHARMONIC_GAIN,
+                state.selected_param,
+                state.is_editing,
+                None,
+                theme,
+            ))
+            .child(render_knob(
+                entity.clone(),
+                plugin_idx,
+                "Attack",
+                state.subharmonic_attack_ms,
+                SUBHARMONIC_ATTACK_MS_MIN as f64,
+                SUBHARMONIC_ATTACK_MS_MAX as f64,
+                "ms",
+                param_idx::SUBHARMONIC_ATTACK_MS,
+                state.selected_param,
+                state.is_editing,
+                None,
+                theme,
+            ))
+            .child(render_knob(
+                entity.clone(),
+                plugin_idx,
+                "Release",
+                state.subharmonic_release_ms,
+                SUBHARMONIC_RELEASE_MS_MIN as f64,
+                SUBHARMONIC_RELEASE_MS_MAX as f64,
+                "ms",
+                param_idx::SUBHARMONIC_RELEASE_MS,
+                state.selected_param,
+                state.is_editing,
+                None,
+                theme,
+            ))
+            .child(render_knob(
+                entity.clone(),
+                plugin_idx,
+                "SH Freq",
+                state.subharmonic_freq_hz,
+                SUBHARMONIC_FREQ_HZ_MIN as f64,
+                SUBHARMONIC_FREQ_HZ_MAX as f64,
+                "Hz",
+                param_idx::SUBHARMONIC_FREQ_HZ,
+                state.selected_param,
+                state.is_editing,
+                None,
+                theme,
+            ))
+        })
+        .build()
+        .p_2()
+        .bg(theme.background_secondary)
+        .rounded_lg()
+        .border_1()
+        .border_color(theme.border)
+}
+
+/// Gains row: 8 vertical sliders in a single row
+fn render_gains_row(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    state: &UpmixerRenderState,
+    theme: &Theme,
+) -> impl IntoElement {
+    HStack::new()
+        .spacing(StackSpacing::Sm)
+        .child(render_vertical_slider_with_ticks(
+            entity.clone(),
+            plugin_idx,
+            "Mains",
+            state.gain_front_direct,
+            GAIN_FRONT_DIRECT_MIN as f64,
+            GAIN_FRONT_DIRECT_MAX as f64,
+            "x",
+            param_idx::GAIN_FRONT_DIRECT,
+            state.selected_param,
+            state.is_editing,
+            Some('m'),
+            130.0,
+            theme,
+        ))
+        .child(render_vertical_slider_with_ticks(
+            entity.clone(),
+            plugin_idx,
+            "Center",
+            state.gain_front_ambient,
+            GAIN_FRONT_AMBIENT_MIN as f64,
+            GAIN_FRONT_AMBIENT_MAX as f64,
+            "x",
+            param_idx::GAIN_FRONT_AMBIENT,
+            state.selected_param,
+            state.is_editing,
+            Some('c'),
+            130.0,
+            theme,
+        ))
+        .child(render_vertical_slider_with_ticks(
+            entity.clone(),
+            plugin_idx,
+            "Surr",
+            state.gain_rear_ambient,
+            GAIN_REAR_AMBIENT_MIN as f64,
+            GAIN_REAR_AMBIENT_MAX as f64,
+            "x",
+            param_idx::GAIN_REAR_AMBIENT,
+            state.selected_param,
+            state.is_editing,
+            Some('s'),
+            130.0,
+            theme,
+        ))
+        .child(render_vertical_slider_with_ticks(
+            entity.clone(),
+            plugin_idx,
+            "Top",
+            state.height_gain,
+            GAIN_HEIGHT_MIN as f64,
+            GAIN_HEIGHT_MAX as f64,
+            "x",
+            param_idx::HEIGHT_GAIN,
+            state.selected_param,
+            state.is_editing,
+            Some('t'),
+            130.0,
+            theme,
+        ))
+        .child(render_vertical_slider_with_ticks(
+            entity.clone(),
+            plugin_idx,
+            "Width",
+            state.stereo_width,
+            STEREO_WIDTH_MIN as f64,
+            STEREO_WIDTH_MAX as f64,
+            "",
+            param_idx::STEREO_WIDTH,
+            state.selected_param,
+            state.is_editing,
+            Some('w'),
+            130.0,
+            theme,
+        ))
+        .child(render_vertical_slider_with_ticks(
+            entity.clone(),
+            plugin_idx,
+            "Spread",
+            state.center_spread,
+            CENTER_SPREAD_MIN as f64,
+            CENTER_SPREAD_MAX as f64,
+            "",
+            param_idx::CENTER_SPREAD,
+            state.selected_param,
+            state.is_editing,
+            None,
+            130.0,
+            theme,
+        ))
+        .child(render_vertical_slider_with_ticks(
+            entity.clone(),
+            plugin_idx,
+            "Bleed",
+            state.surround_direct_bleed,
+            SURROUND_DIRECT_BLEED_MIN as f64,
+            SURROUND_DIRECT_BLEED_MAX as f64,
+            "",
+            param_idx::SURROUND_DIRECT_BLEED,
+            state.selected_param,
+            state.is_editing,
+            None,
+            130.0,
+            theme,
+        ))
+        .child(render_vertical_slider_with_ticks(
+            entity.clone(),
+            plugin_idx,
+            "Reflect",
+            state.rear_late_reflection,
+            REAR_LATE_REFLECTION_MIN as f64,
+            REAR_LATE_REFLECTION_MAX as f64,
+            "",
+            param_idx::REAR_LATE_REFLECTION,
+            state.selected_param,
+            state.is_editing,
+            None,
+            130.0,
+            theme,
+        ))
+        .build()
+        .p_2()
+        .bg(theme.surface)
+        .rounded_lg()
+}
+
+/// Dialogue box
+fn render_dialogue_box(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    state: &UpmixerRenderState,
+    theme: &Theme,
+) -> impl IntoElement {
+    VStack::new()
+        .spacing(StackSpacing::Xs)
+        .child(render_section_header("Dialogue", theme))
+        .child(render_knob(
+            entity.clone(),
+            plugin_idx,
+            "Weight",
+            state.dialogue_weight,
+            DIALOGUE_WEIGHT_MIN as f64,
+            DIALOGUE_WEIGHT_MAX as f64,
+            "",
+            param_idx::DIALOGUE_WEIGHT,
+            state.selected_param,
+            state.is_editing,
+            None,
+            theme,
+        ))
+        .child(render_knob(
+            entity.clone(),
+            plugin_idx,
+            "Voice Lo",
+            state.voice_freq_min_hz,
+            VOICE_FREQ_MIN_HZ_MIN as f64,
+            VOICE_FREQ_MIN_HZ_MAX as f64,
+            "Hz",
+            param_idx::VOICE_FREQ_MIN_HZ,
+            state.selected_param,
+            state.is_editing,
+            None,
+            theme,
+        ))
+        .child(render_knob(
+            entity.clone(),
+            plugin_idx,
+            "Voice Hi",
+            state.voice_freq_max_hz,
+            VOICE_FREQ_MAX_HZ_MIN as f64,
+            VOICE_FREQ_MAX_HZ_MAX as f64,
+            "Hz",
+            param_idx::VOICE_FREQ_MAX_HZ,
+            state.selected_param,
+            state.is_editing,
+            None,
+            theme,
+        ))
+        .build()
+        .p_2()
+        .bg(theme.background_secondary)
+        .rounded_lg()
+        .border_1()
+        .border_color(theme.border)
+}
+
+/// Ambient box
+fn render_ambient_box(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    state: &UpmixerRenderState,
+    theme: &Theme,
+) -> impl IntoElement {
+    VStack::new()
+        .spacing(StackSpacing::Xs)
+        .child(render_section_header("Ambient", theme))
+        .child(render_knob(
+            entity.clone(),
+            plugin_idx,
+            "Boost",
+            state.ambient_boost,
+            AMBIENT_BOOST_MIN as f64,
+            AMBIENT_BOOST_MAX as f64,
+            "x",
+            param_idx::AMBIENT_BOOST,
+            state.selected_param,
+            state.is_editing,
+            None,
+            theme,
+        ))
+        .child(render_knob(
+            entity.clone(),
+            plugin_idx,
+            "Rear Boost",
+            state.rear_ambient_boost,
+            REAR_AMBIENT_BOOST_MIN as f64,
+            REAR_AMBIENT_BOOST_MAX as f64,
+            "x",
+            param_idx::REAR_AMBIENT_BOOST,
+            state.selected_param,
+            state.is_editing,
+            None,
+            theme,
+        ))
+        .child(render_knob(
+            entity.clone(),
+            plugin_idx,
+            "Safety",
+            state.safety_cap_db,
+            SAFETY_CAP_DB_MIN as f64,
+            SAFETY_CAP_DB_MAX as f64,
+            "dB",
+            param_idx::SAFETY_CAP_DB,
+            state.selected_param,
+            state.is_editing,
+            None,
+            theme,
+        ))
+        .build()
+        .p_2()
+        .bg(theme.background_secondary)
+        .rounded_lg()
+        .border_1()
+        .border_color(theme.border)
+}
+
+/// Height box
+fn render_height_box(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    state: &UpmixerRenderState,
+    theme: &Theme,
+) -> impl IntoElement {
+    VStack::new()
+        .spacing(StackSpacing::Xs)
+        .child(render_section_header("Height", theme))
+        .child(
+            Toggle::new(("hr-direct-toggle", plugin_idx))
+                .checked(state.enable_hr_direct)
+                .label(if state.enable_hr_direct {
+                    "HR On"
+                } else {
+                    "HR Off"
+                })
+                .style(ToggleStyle::Segmented)
+                .theme(theme.to_toggle_theme())
+                .on_change({
+                    let entity = entity.clone();
+                    move |new_value, _, cx| {
+                        entity.update(cx, |state, _| {
+                            state.app.set_plugin_param(
+                                plugin_idx,
+                                param_idx::ENABLE_HR_DIRECT,
+                                if new_value { 1.0 } else { 0.0 },
+                            );
+                        });
+                    }
+                }),
+        )
+        .when(state.enable_hr_direct, |el| {
+            el.child(render_knob(
+                entity.clone(),
+                plugin_idx,
+                "Sharpen",
+                state.hr_sharpen,
+                HR_SHARPEN_MIN as f64,
+                HR_SHARPEN_MAX as f64,
+                "",
+                param_idx::HR_SHARPEN,
+                state.selected_param,
+                state.is_editing,
+                None,
+                theme,
+            ))
+        })
+        .child(render_knob(
+            entity.clone(),
+            plugin_idx,
+            "HF Cap",
+            state.height_hf_cap_hz,
+            HEIGHT_HF_CAP_HZ_MIN as f64,
+            HEIGHT_HF_CAP_HZ_MAX as f64,
+            "Hz",
+            param_idx::HEIGHT_HF_CAP_HZ,
+            state.selected_param,
+            state.is_editing,
+            None,
+            theme,
+        ))
+        .child(render_knob(
+            entity.clone(),
+            plugin_idx,
+            "Trans Red",
+            state.height_transient_reduction,
+            HEIGHT_TRANSIENT_REDUCTION_MIN as f64,
+            HEIGHT_TRANSIENT_REDUCTION_MAX as f64,
+            "",
+            param_idx::HEIGHT_TRANSIENT_REDUCTION,
+            state.selected_param,
+            state.is_editing,
+            None,
+            theme,
+        ))
+        .child(render_knob(
+            entity.clone(),
+            plugin_idx,
+            "Dir Leak",
+            state.height_direct_leak,
+            HEIGHT_DIRECT_LEAK_MIN as f64,
+            HEIGHT_DIRECT_LEAK_MAX as f64,
+            "",
+            param_idx::HEIGHT_DIRECT_LEAK,
+            state.selected_param,
+            state.is_editing,
+            None,
+            theme,
+        ))
+        .build()
+        .p_2()
+        .bg(theme.background_secondary)
+        .rounded_lg()
+        .border_1()
+        .border_color(theme.border)
+}
+
+/// Decorrelation box
+fn render_decorrelation_box(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    state: &UpmixerRenderState,
+    decorrelation_mode: usize,
+    theme: &Theme,
+) -> impl IntoElement {
+    VStack::new()
+        .spacing(StackSpacing::Xs)
+        .child(render_section_header("Decorrelation", theme))
+        .child(
+            Toggle::new(("decorr-toggle", plugin_idx))
+                .checked(decorrelation_mode == 1)
+                .label(if decorrelation_mode == 1 {
+                    "LFO"
+                } else {
+                    "Velvet"
+                })
+                .style(ToggleStyle::Segmented)
+                .theme(theme.to_toggle_theme())
+                .on_change({
+                    let entity = entity.clone();
+                    move |new_value, _, cx| {
+                        entity.update(cx, |state, _| {
+                            state.app.set_plugin_param(
+                                plugin_idx,
+                                param_idx::DECORRELATION_MODE,
+                                if new_value { 1.0 } else { 0.0 },
+                            );
+                        });
+                    }
+                }),
+        )
+        .when(decorrelation_mode == 1, |el| {
+            el.child(render_knob(
+                entity.clone(),
+                plugin_idx,
+                "LFO Rate",
+                state.decorrelation_lfo_rate_hz,
+                DECORRELATION_LFO_RATE_HZ_MIN as f64,
+                DECORRELATION_LFO_RATE_HZ_MAX as f64,
+                "Hz",
+                param_idx::DECORRELATION_LFO_RATE_HZ,
+                state.selected_param,
+                state.is_editing,
+                None,
+                theme,
+            ))
+        })
+        .when(decorrelation_mode == 0, |el| {
+            el.child(render_knob(
+                entity.clone(),
+                plugin_idx,
+                "Duration",
+                state.velvet_noise_duration_ms,
+                VELVET_NOISE_DURATION_MS_MIN as f64,
+                VELVET_NOISE_DURATION_MS_MAX as f64,
+                "ms",
+                param_idx::VELVET_NOISE_DURATION_MS,
+                state.selected_param,
+                state.is_editing,
+                None,
+                theme,
+            ))
+            .child(render_knob(
+                entity.clone(),
+                plugin_idx,
+                "Density",
+                state.velvet_noise_density,
+                VELVET_NOISE_DENSITY_MIN as f64,
+                VELVET_NOISE_DENSITY_MAX as f64,
+                "/s",
+                param_idx::VELVET_NOISE_DENSITY,
+                state.selected_param,
+                state.is_editing,
+                None,
+                theme,
+            ))
+        })
+        .build()
+        .p_2()
+        .bg(theme.background_secondary)
+        .rounded_lg()
+        .border_1()
+        .border_color(theme.border)
 }

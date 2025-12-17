@@ -107,7 +107,7 @@ fn test_upmixer_parameter_adjustment() {
 
     // Test parameter queries
     let params = plugin.parameters();
-    assert_eq!(params.len(), 16); // + hr_sharpen, safety_cap_db, decorrelation_mode
+    assert_eq!(params.len(), 32); // includes all upmixer parameters
 
     // Modify gains
     plugin
@@ -163,12 +163,12 @@ fn test_upmixer_parameter_adjustment() {
     plugin
         .set_parameter(
             ParameterId::from("safety_cap_db"),
-            ParameterValue::Float(6.0),
+            ParameterValue::Float(1.5),
         )
         .unwrap();
 
     let safety_cap_after = plugin.get_parameter(&ParameterId::from("safety_cap_db"));
-    assert_eq!(safety_cap_after, Some(ParameterValue::Float(6.0)));
+    assert_eq!(safety_cap_after, Some(ParameterValue::Float(1.5)));
 }
 
 #[test]

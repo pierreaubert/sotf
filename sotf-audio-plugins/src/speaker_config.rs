@@ -977,6 +977,62 @@ pub fn calculate_panning_gain(
     gain
 }
 
+/// Calculate panning gain with rear wrap-around for speakers beyond 90° from source
+///
+/// When a speaker is more than 90° away from the source position, the standard VBAP
+/// algorithm produces zero gain. This function treats such speakers as receiving
+/// a "phantom source" from the rear (source position + 180°), with an attenuation
+/// factor to maintain front-back separation.
+///
+/// This mimics how commercial upmixers create an enveloping soundfield by projecting
+/// stereo content to rear speakers.
+///
+/// # Arguments
+/// * `source_azimuth` - Source azimuth in degrees
+/// * `source_elevation` - Source elevation in degrees
+/// * `speaker_azimuth` - Speaker azimuth in degrees
+/// * `speaker_elevation` - Speaker elevation in degrees
+/// * `wrap_attenuation` - Attenuation factor for wrapped sources (0.0 to 1.0)
+///
+/// # Returns
+/// Gain value (0.0 to 1.0)
+pub fn calculate_panning_gain_with_wraparound(
+    source_azimuth: f32,
+    source_elevation: f32,
+    speaker_azimuth: f32,
+    speaker_elevation: f32,
+    wrap_attenuation: f32,
+) -> f32 {
+    // Try direct path first
+    let direct_gain = calculate_panning_gain(
+        source_azimuth,
+        source_elevation,
+        speaker_azimuth,
+        speaker_elevation,
+    );
+
+    // If direct gain is significant, use it
+    if direct_gain > 0.01 {
+        return direct_gain;
+    }
+
+    // Calculate wrapped source position (from rear)
+    let wrapped_azimuth = if source_azimuth > 0.0 {
+        source_azimuth - 180.0
+    } else {
+        source_azimuth + 180.0
+    };
+
+    let wrapped_gain = calculate_panning_gain(
+        wrapped_azimuth,
+        source_elevation,
+        speaker_azimuth,
+        speaker_elevation,
+    );
+
+    wrapped_gain * wrap_attenuation
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1086,5 +1142,113 @@ mod tests {
             "Height speaker should have >75% of floor speaker gain, got {:.1}%",
             ratio * 100.0
         );
+    }
+
+    #[test]
+    fn test_panning_gain_wraparound_back_left() {
+        // BL at 150° should get zero from standard panning (more than 90° from 30°)
+        let standard_gain = calculate_panning_gain(30.0, 0.0, 150.0, 0.0);
+        assert!(
+            standard_gain < 0.01,
+            "Standard panning should give ~0 for BL, got {}",
+            standard_gain
+        );
+
+        // With wraparound, BL should receive signal from wrapped source at -150°
+        // Wrapped source at -150° to speaker at 150° = 60° difference
+        // Expected: cosine_gain = cos(60°) = 0.5, with power 0.5: gain = 0.707
+        // Then multiplied by wrap_attenuation = 0.7: final ~0.495
+        let wrapped_gain = calculate_panning_gain_with_wraparound(30.0, 0.0, 150.0, 0.0, 0.7);
+        assert!(
+            wrapped_gain > 0.4 && wrapped_gain < 0.6,
+            "Wraparound should give ~0.495 for BL, got {}",
+            wrapped_gain
+        );
+    }
+
+    #[test]
+    fn test_panning_gain_wraparound_back_right() {
+        // BR at -150° should get zero from standard panning (more than 90° from -30°)
+        let standard_gain = calculate_panning_gain(-30.0, 0.0, -150.0, 0.0);
+        assert!(
+            standard_gain < 0.01,
+            "Standard panning should give ~0 for BR, got {}",
+            standard_gain
+        );
+
+        // With wraparound, BR should receive signal from wrapped source at 150°
+        // Wrapped source at 150° to speaker at -150° = 60° difference
+        let wrapped_gain = calculate_panning_gain_with_wraparound(-30.0, 0.0, -150.0, 0.0, 0.7);
+        assert!(
+            wrapped_gain > 0.4 && wrapped_gain < 0.6,
+            "Wraparound should give ~0.495 for BR, got {}",
+            wrapped_gain
+        );
+    }
+
+    #[test]
+    fn test_panning_gain_wraparound_front_unchanged() {
+        // Front speakers should use standard panning (no wraparound needed)
+        let standard_gain = calculate_panning_gain(30.0, 0.0, 30.0, 0.0);
+        let wrapped_gain = calculate_panning_gain_with_wraparound(30.0, 0.0, 30.0, 0.0, 0.7);
+
+        // Should be identical for front speakers
+        assert!(
+            (standard_gain - wrapped_gain).abs() < 0.001,
+            "Front speaker gains should match: standard={}, wrapped={}",
+            standard_gain,
+            wrapped_gain
+        );
+    }
+
+    #[test]
+    fn test_panning_gain_wraparound_7_1_config() {
+        // Test all speakers in 7.1 config get non-zero gains
+        let config = get_speaker_config("7.1").unwrap();
+        const LEFT_AZIMUTH: f32 = 30.0;
+        const RIGHT_AZIMUTH: f32 = -30.0;
+        const WRAP_ATTENUATION: f32 = 0.7;
+
+        for speaker in config.speakers.iter() {
+            if speaker.is_lfe {
+                continue; // LFE uses fixed 0.5 gains
+            }
+
+            let is_rear = speaker.azimuth.abs() > 90.0;
+            let (left_gain, right_gain) = if is_rear {
+                (
+                    calculate_panning_gain_with_wraparound(
+                        LEFT_AZIMUTH,
+                        0.0,
+                        speaker.azimuth,
+                        speaker.elevation,
+                        WRAP_ATTENUATION,
+                    ),
+                    calculate_panning_gain_with_wraparound(
+                        RIGHT_AZIMUTH,
+                        0.0,
+                        speaker.azimuth,
+                        speaker.elevation,
+                        WRAP_ATTENUATION,
+                    ),
+                )
+            } else {
+                (
+                    calculate_panning_gain(LEFT_AZIMUTH, 0.0, speaker.azimuth, speaker.elevation),
+                    calculate_panning_gain(RIGHT_AZIMUTH, 0.0, speaker.azimuth, speaker.elevation),
+                )
+            };
+
+            // At least one of left or right should have non-zero gain
+            let max_gain = left_gain.max(right_gain);
+            assert!(
+                max_gain > 0.1,
+                "Speaker {} ({}) should have non-zero gain, got L={:.3}, R={:.3}",
+                speaker.label,
+                speaker.azimuth,
+                left_gain,
+                right_gain
+            );
+        }
     }
 }

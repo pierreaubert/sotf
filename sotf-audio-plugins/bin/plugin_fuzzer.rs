@@ -706,6 +706,23 @@ impl PluginFuzzer for UpmixerFuzzer {
             hr_sharpen,
             safety_cap_db,
             decorrelation_mode,
+            // Use defaults for the new parameters
+            subharmonic_freq_hz: 40.0,
+            subharmonic_attack_ms: 10.0,
+            subharmonic_release_ms: 50.0,
+            decorrelation_lfo_rate_hz: 0.15,
+            velvet_noise_duration_ms: 30.0,
+            velvet_noise_density: 2000.0,
+            height_hf_cap_hz: 16000.0,
+            height_transient_reduction: 0.6,
+            height_direct_leak: 0.15,
+            surround_direct_bleed: 0.50,
+            rear_ambient_boost: 1.5,
+            rear_late_reflection: 0.10,
+            ambient_boost: 1.2,
+            dialogue_weight: 0.4,
+            voice_freq_min_hz: 500.0,
+            voice_freq_max_hz: 3000.0,
         };
 
         let desc = format!(

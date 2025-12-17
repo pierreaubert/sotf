@@ -500,7 +500,7 @@ impl InPlacePlugin for GatePlugin {
         // We don't store input levels persistently in the struct yet,
         // so for now we'll just report the attenuation envelope.
         // In a future update, we should track input levels for the UI too.
-        
+
         // Gate is considered "open" if any channel has 0dB attenuation
         let is_open = self.envelope.iter().any(|&atten| atten < 0.1);
 

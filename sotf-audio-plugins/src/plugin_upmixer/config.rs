@@ -60,6 +60,76 @@ pub fn default_safety_cap_db() -> f32 {
     3.0
 }
 
+// Sub-harmonic synthesis defaults
+pub fn default_subharmonic_freq_hz() -> f32 {
+    40.0
+}
+
+pub fn default_subharmonic_attack_ms() -> f32 {
+    10.0
+}
+
+pub fn default_subharmonic_release_ms() -> f32 {
+    50.0
+}
+
+// Decorrelation defaults
+pub fn default_decorrelation_lfo_rate_hz() -> f32 {
+    0.15
+}
+
+pub fn default_velvet_noise_duration_ms() -> f32 {
+    30.0
+}
+
+pub fn default_velvet_noise_density() -> f32 {
+    2000.0
+}
+
+// Height channel defaults
+pub fn default_height_hf_cap_hz() -> f32 {
+    16000.0
+}
+
+pub fn default_height_transient_reduction() -> f32 {
+    0.6
+}
+
+pub fn default_height_direct_leak() -> f32 {
+    0.15
+}
+
+// Surround routing defaults
+pub fn default_surround_direct_bleed() -> f32 {
+    0.50
+}
+
+pub fn default_rear_ambient_boost() -> f32 {
+    1.5
+}
+
+pub fn default_rear_late_reflection() -> f32 {
+    0.10
+}
+
+// Ambient gain boost (sqrt(1-coherence) multiplier)
+pub fn default_ambient_boost() -> f32 {
+    1.2
+}
+
+// Dialogue detection defaults
+pub fn default_dialogue_weight() -> f32 {
+    0.4
+}
+
+pub fn default_voice_freq_min_hz() -> f32 {
+    500.0
+}
+
+pub fn default_voice_freq_max_hz() -> f32 {
+    3000.0
+}
+
 /// Configuration parameters for UpmixerPlugin
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpmixerPluginParams {
@@ -116,4 +186,74 @@ pub struct UpmixerPluginParams {
 
     #[serde(default)]
     pub decorrelation_mode: usize,
+
+    // Sub-harmonic synthesis parameters
+    /// Sub-harmonic frequency in Hz (20-80 Hz, default 40 Hz)
+    #[serde(default = "default_subharmonic_freq_hz")]
+    pub subharmonic_freq_hz: f32,
+
+    /// Sub-harmonic attack time in ms (1-100 ms, default 10 ms)
+    #[serde(default = "default_subharmonic_attack_ms")]
+    pub subharmonic_attack_ms: f32,
+
+    /// Sub-harmonic release time in ms (10-500 ms, default 50 ms)
+    #[serde(default = "default_subharmonic_release_ms")]
+    pub subharmonic_release_ms: f32,
+
+    // Decorrelation parameters
+    /// LFO rate for decorrelation in Hz (0.01-1.0 Hz, default 0.15 Hz)
+    #[serde(default = "default_decorrelation_lfo_rate_hz")]
+    pub decorrelation_lfo_rate_hz: f32,
+
+    /// Velvet noise duration in ms (10-100 ms, default 30 ms)
+    #[serde(default = "default_velvet_noise_duration_ms")]
+    pub velvet_noise_duration_ms: f32,
+
+    /// Velvet noise pulse density (500-5000 pulses/sec, default 2000)
+    #[serde(default = "default_velvet_noise_density")]
+    pub velvet_noise_density: f32,
+
+    // Height channel parameters
+    /// Height channel high-frequency cap in Hz (8000-20000 Hz, default 16000 Hz)
+    #[serde(default = "default_height_hf_cap_hz")]
+    pub height_hf_cap_hz: f32,
+
+    /// Height channel transient reduction (0.0-1.0, default 0.6)
+    #[serde(default = "default_height_transient_reduction")]
+    pub height_transient_reduction: f32,
+
+    /// Direct signal leak into height channels (0.0-0.5, default 0.15)
+    #[serde(default = "default_height_direct_leak")]
+    pub height_direct_leak: f32,
+
+    // Surround routing parameters
+    /// Direct signal bleed into surround/height channels (0.0-1.0, default 0.50)
+    #[serde(default = "default_surround_direct_bleed")]
+    pub surround_direct_bleed: f32,
+
+    /// Rear ambient gain boost multiplier (1.0-3.0, default 1.5)
+    #[serde(default = "default_rear_ambient_boost")]
+    pub rear_ambient_boost: f32,
+
+    /// Rear height late reflection level (0.0-0.5, default 0.10)
+    #[serde(default = "default_rear_late_reflection")]
+    pub rear_late_reflection: f32,
+
+    // Ambient/coherence parameters
+    /// Ambient gain boost factor (0.5-2.0, default 1.2)
+    #[serde(default = "default_ambient_boost")]
+    pub ambient_boost: f32,
+
+    // Dialogue detection parameters
+    /// Dialogue weight for center routing (0.0-1.0, default 0.4)
+    #[serde(default = "default_dialogue_weight")]
+    pub dialogue_weight: f32,
+
+    /// Voice frequency range minimum in Hz (200-800 Hz, default 500 Hz)
+    #[serde(default = "default_voice_freq_min_hz")]
+    pub voice_freq_min_hz: f32,
+
+    /// Voice frequency range maximum in Hz (2000-5000 Hz, default 3000 Hz)
+    #[serde(default = "default_voice_freq_max_hz")]
+    pub voice_freq_max_hz: f32,
 }
