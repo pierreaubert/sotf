@@ -215,6 +215,9 @@ use sotf_plugins::{
     upmixer_default_subharmonic_gain,
 };
 
+// Import param_specs for new upmixer defaults
+use sotf_plugins::param_specs::upmixer as upmixer_specs;
+
 // Wrapper functions to convert f32 -> f64 for PluginSettings (which uses f64)
 fn default_upmixer_subharmonic_gain() -> f64 {
     upmixer_default_subharmonic_gain() as f64
@@ -226,6 +229,75 @@ fn default_upmixer_hr_sharpen() -> f64 {
 
 fn default_upmixer_safety_cap_db() -> f64 {
     upmixer_default_safety_cap_db() as f64
+}
+
+// New upmixer parameter defaults
+fn default_upmixer_center_spread() -> f64 {
+    upmixer_specs::CENTER_SPREAD_DEFAULT as f64
+}
+
+fn default_upmixer_surround_direct_bleed() -> f64 {
+    upmixer_specs::SURROUND_DIRECT_BLEED_DEFAULT as f64
+}
+
+fn default_upmixer_rear_late_reflection() -> f64 {
+    upmixer_specs::REAR_LATE_REFLECTION_DEFAULT as f64
+}
+
+fn default_upmixer_subharmonic_freq_hz() -> f64 {
+    upmixer_specs::SUBHARMONIC_FREQ_HZ_DEFAULT as f64
+}
+
+fn default_upmixer_subharmonic_attack_ms() -> f64 {
+    upmixer_specs::SUBHARMONIC_ATTACK_MS_DEFAULT as f64
+}
+
+fn default_upmixer_subharmonic_release_ms() -> f64 {
+    upmixer_specs::SUBHARMONIC_RELEASE_MS_DEFAULT as f64
+}
+
+fn default_upmixer_decorrelation_lfo_rate_hz() -> f64 {
+    upmixer_specs::DECORRELATION_LFO_RATE_HZ_DEFAULT as f64
+}
+
+fn default_upmixer_velvet_noise_duration_ms() -> f64 {
+    upmixer_specs::VELVET_NOISE_DURATION_MS_DEFAULT as f64
+}
+
+fn default_upmixer_velvet_noise_density() -> f64 {
+    upmixer_specs::VELVET_NOISE_DENSITY_DEFAULT as f64
+}
+
+fn default_upmixer_height_hf_cap_hz() -> f64 {
+    upmixer_specs::HEIGHT_HF_CAP_HZ_DEFAULT as f64
+}
+
+fn default_upmixer_height_transient_reduction() -> f64 {
+    upmixer_specs::HEIGHT_TRANSIENT_REDUCTION_DEFAULT as f64
+}
+
+fn default_upmixer_height_direct_leak() -> f64 {
+    upmixer_specs::HEIGHT_DIRECT_LEAK_DEFAULT as f64
+}
+
+fn default_upmixer_rear_ambient_boost() -> f64 {
+    upmixer_specs::REAR_AMBIENT_BOOST_DEFAULT as f64
+}
+
+fn default_upmixer_ambient_boost() -> f64 {
+    upmixer_specs::AMBIENT_BOOST_DEFAULT as f64
+}
+
+fn default_upmixer_dialogue_weight() -> f64 {
+    upmixer_specs::DIALOGUE_WEIGHT_DEFAULT as f64
+}
+
+fn default_upmixer_voice_freq_min_hz() -> f64 {
+    upmixer_specs::VOICE_FREQ_MIN_HZ_DEFAULT as f64
+}
+
+fn default_upmixer_voice_freq_max_hz() -> f64 {
+    upmixer_specs::VOICE_FREQ_MAX_HZ_DEFAULT as f64
 }
 
 fn default_compressor_link_channels() -> bool {
@@ -284,26 +356,67 @@ pub enum PluginSettings {
     },
     Upmixer {
         speaker_config: String,
+        // Gain parameters (vertical sliders)
         gain_front_direct: f64,
         gain_front_ambient: f64,
         gain_rear_ambient: f64,
-        lfe_cutoff_hz: f64,
-        stereo_width: f64,
-        bandpass_hz: f64,
         height_gain: f64,
+        stereo_width: f64,
+        #[serde(default = "default_upmixer_center_spread")]
+        center_spread: f64,
+        #[serde(default = "default_upmixer_surround_direct_bleed")]
+        surround_direct_bleed: f64,
+        #[serde(default = "default_upmixer_rear_late_reflection")]
+        rear_late_reflection: f64,
+        // LFE parameters
+        lfe_cutoff_hz: f64,
         lfe_gain: f64,
+        bandpass_hz: f64,
+        // Sub-harmonic parameters
         #[serde(default)] // false
         enable_subharmonic_synth: bool,
         #[serde(default = "default_upmixer_subharmonic_gain")]
         subharmonic_gain: f64,
+        #[serde(default = "default_upmixer_subharmonic_freq_hz")]
+        subharmonic_freq_hz: f64,
+        #[serde(default = "default_upmixer_subharmonic_attack_ms")]
+        subharmonic_attack_ms: f64,
+        #[serde(default = "default_upmixer_subharmonic_release_ms")]
+        subharmonic_release_ms: f64,
+        // Decorrelation parameters
+        #[serde(default)] // 0
+        decorrelation_mode: usize,
+        #[serde(default = "default_upmixer_decorrelation_lfo_rate_hz")]
+        decorrelation_lfo_rate_hz: f64,
+        #[serde(default = "default_upmixer_velvet_noise_duration_ms")]
+        velvet_noise_duration_ms: f64,
+        #[serde(default = "default_upmixer_velvet_noise_density")]
+        velvet_noise_density: f64,
+        // Height parameters
         #[serde(default)] // false
         enable_hr_direct: bool,
         #[serde(default = "default_upmixer_hr_sharpen")]
         hr_sharpen: f64,
+        #[serde(default = "default_upmixer_height_hf_cap_hz")]
+        height_hf_cap_hz: f64,
+        #[serde(default = "default_upmixer_height_transient_reduction")]
+        height_transient_reduction: f64,
+        #[serde(default = "default_upmixer_height_direct_leak")]
+        height_direct_leak: f64,
+        // Ambient parameters
+        #[serde(default = "default_upmixer_ambient_boost")]
+        ambient_boost: f64,
         #[serde(default = "default_upmixer_safety_cap_db")]
         safety_cap_db: f64,
-        #[serde(default)] // 0
-        decorrelation_mode: usize,
+        #[serde(default = "default_upmixer_rear_ambient_boost")]
+        rear_ambient_boost: f64,
+        // Dialogue parameters
+        #[serde(default = "default_upmixer_dialogue_weight")]
+        dialogue_weight: f64,
+        #[serde(default = "default_upmixer_voice_freq_min_hz")]
+        voice_freq_min_hz: f64,
+        #[serde(default = "default_upmixer_voice_freq_max_hz")]
+        voice_freq_max_hz: f64,
     },
     Compressor {
         threshold_db: f64,
@@ -428,17 +541,34 @@ impl PluginSettings {
                 gain_front_direct,
                 gain_front_ambient,
                 gain_rear_ambient,
-                lfe_cutoff_hz,
-                stereo_width,
-                bandpass_hz,
                 height_gain,
+                stereo_width,
+                center_spread,
+                surround_direct_bleed,
+                rear_late_reflection,
+                lfe_cutoff_hz,
                 lfe_gain,
+                bandpass_hz,
                 enable_subharmonic_synth,
                 subharmonic_gain,
+                subharmonic_freq_hz,
+                subharmonic_attack_ms,
+                subharmonic_release_ms,
+                decorrelation_mode,
+                decorrelation_lfo_rate_hz,
+                velvet_noise_duration_ms,
+                velvet_noise_density,
                 enable_hr_direct,
                 hr_sharpen,
+                height_hf_cap_hz,
+                height_transient_reduction,
+                height_direct_leak,
+                ambient_boost,
                 safety_cap_db,
-                decorrelation_mode,
+                rear_ambient_boost,
+                dialogue_weight,
+                voice_freq_min_hz,
+                voice_freq_max_hz,
             } => PluginConfig::new(
                 "upmixer",
                 json!({
@@ -446,17 +576,34 @@ impl PluginSettings {
                     "gain_front_direct": gain_front_direct,
                     "gain_front_ambient": gain_front_ambient,
                     "gain_rear_ambient": gain_rear_ambient,
-                    "lfe_cutoff_hz": lfe_cutoff_hz,
-                    "stereo_width": stereo_width,
-                    "bandpass_hz": bandpass_hz,
                     "height_gain": height_gain,
+                    "stereo_width": stereo_width,
+                    "center_spread": center_spread,
+                    "surround_direct_bleed": surround_direct_bleed,
+                    "rear_late_reflection": rear_late_reflection,
+                    "lfe_cutoff_hz": lfe_cutoff_hz,
                     "lfe_gain": lfe_gain,
+                    "bandpass_hz": bandpass_hz,
                     "enable_subharmonic_synth": enable_subharmonic_synth,
                     "subharmonic_gain": subharmonic_gain,
+                    "subharmonic_freq_hz": subharmonic_freq_hz,
+                    "subharmonic_attack_ms": subharmonic_attack_ms,
+                    "subharmonic_release_ms": subharmonic_release_ms,
+                    "decorrelation_mode": decorrelation_mode,
+                    "decorrelation_lfo_rate_hz": decorrelation_lfo_rate_hz,
+                    "velvet_noise_duration_ms": velvet_noise_duration_ms,
+                    "velvet_noise_density": velvet_noise_density,
                     "enable_hr_direct": enable_hr_direct,
                     "hr_sharpen": hr_sharpen,
+                    "height_hf_cap_hz": height_hf_cap_hz,
+                    "height_transient_reduction": height_transient_reduction,
+                    "height_direct_leak": height_direct_leak,
+                    "ambient_boost": ambient_boost,
                     "safety_cap_db": safety_cap_db,
-                    "decorrelation_mode": decorrelation_mode,
+                    "rear_ambient_boost": rear_ambient_boost,
+                    "dialogue_weight": dialogue_weight,
+                    "voice_freq_min_hz": voice_freq_min_hz,
+                    "voice_freq_max_hz": voice_freq_max_hz,
                 }),
             ),
             Self::Compressor {
@@ -608,20 +755,44 @@ impl PluginSettings {
             PluginType::Gain => Self::Gain { gain_db: 0.0 },
             PluginType::Upmixer => Self::Upmixer {
                 speaker_config: "5.1".to_string(),
-                gain_front_direct: 1.0,
-                gain_front_ambient: 0.5,
-                gain_rear_ambient: 1.0,
-                lfe_cutoff_hz: 120.0,
-                stereo_width: 0.5,
-                bandpass_hz: 250.0,
-                height_gain: 1.0,
-                lfe_gain: 1.0,
-                enable_subharmonic_synth: false,
-                subharmonic_gain: 0.5,
-                enable_hr_direct: false,
-                hr_sharpen: 1.0,
-                safety_cap_db: 3.0,
-                decorrelation_mode: 0,
+                // Gains
+                gain_front_direct: upmixer_specs::GAIN_FRONT_DIRECT_DEFAULT as f64,
+                gain_front_ambient: upmixer_specs::GAIN_FRONT_AMBIENT_DEFAULT as f64,
+                gain_rear_ambient: upmixer_specs::GAIN_REAR_AMBIENT_DEFAULT as f64,
+                height_gain: upmixer_specs::GAIN_HEIGHT_DEFAULT as f64,
+                stereo_width: upmixer_specs::STEREO_WIDTH_DEFAULT as f64,
+                center_spread: upmixer_specs::CENTER_SPREAD_DEFAULT as f64,
+                surround_direct_bleed: upmixer_specs::SURROUND_DIRECT_BLEED_DEFAULT as f64,
+                rear_late_reflection: upmixer_specs::REAR_LATE_REFLECTION_DEFAULT as f64,
+                // LFE
+                lfe_cutoff_hz: upmixer_specs::LFE_CUTOFF_HZ_DEFAULT as f64,
+                lfe_gain: upmixer_specs::LFE_GAIN_DEFAULT as f64,
+                bandpass_hz: upmixer_specs::BANDPASS_HZ_DEFAULT as f64,
+                // Sub-harmonic
+                enable_subharmonic_synth: upmixer_specs::ENABLE_SUBHARMONIC_SYNTH_DEFAULT,
+                subharmonic_gain: upmixer_specs::SUBHARMONIC_GAIN_DEFAULT as f64,
+                subharmonic_freq_hz: upmixer_specs::SUBHARMONIC_FREQ_HZ_DEFAULT as f64,
+                subharmonic_attack_ms: upmixer_specs::SUBHARMONIC_ATTACK_MS_DEFAULT as f64,
+                subharmonic_release_ms: upmixer_specs::SUBHARMONIC_RELEASE_MS_DEFAULT as f64,
+                // Decorrelation
+                decorrelation_mode: upmixer_specs::DECORRELATION_MODE_DEFAULT as usize,
+                decorrelation_lfo_rate_hz: upmixer_specs::DECORRELATION_LFO_RATE_HZ_DEFAULT as f64,
+                velvet_noise_duration_ms: upmixer_specs::VELVET_NOISE_DURATION_MS_DEFAULT as f64,
+                velvet_noise_density: upmixer_specs::VELVET_NOISE_DENSITY_DEFAULT as f64,
+                // Height
+                enable_hr_direct: upmixer_specs::ENABLE_HR_DIRECT_DEFAULT,
+                hr_sharpen: upmixer_specs::HR_SHARPEN_DEFAULT as f64,
+                height_hf_cap_hz: upmixer_specs::HEIGHT_HF_CAP_HZ_DEFAULT as f64,
+                height_transient_reduction: upmixer_specs::HEIGHT_TRANSIENT_REDUCTION_DEFAULT as f64,
+                height_direct_leak: upmixer_specs::HEIGHT_DIRECT_LEAK_DEFAULT as f64,
+                // Ambient
+                ambient_boost: upmixer_specs::AMBIENT_BOOST_DEFAULT as f64,
+                safety_cap_db: upmixer_specs::SAFETY_CAP_DB_DEFAULT as f64,
+                rear_ambient_boost: upmixer_specs::REAR_AMBIENT_BOOST_DEFAULT as f64,
+                // Dialogue
+                dialogue_weight: upmixer_specs::DIALOGUE_WEIGHT_DEFAULT as f64,
+                voice_freq_min_hz: upmixer_specs::VOICE_FREQ_MIN_HZ_DEFAULT as f64,
+                voice_freq_max_hz: upmixer_specs::VOICE_FREQ_MAX_HZ_DEFAULT as f64,
             },
             PluginType::Compressor => Self::Compressor {
                 threshold_db: -20.0,
@@ -787,7 +958,8 @@ impl PluginChain {
         let id = self.next_id;
         self.next_id += 1;
         let insert_idx = index.min(self.plugins.len());
-        self.plugins.insert(insert_idx, Plugin::new(id, plugin_type));
+        self.plugins
+            .insert(insert_idx, Plugin::new(id, plugin_type));
         id
     }
 
@@ -808,6 +980,55 @@ impl PluginChain {
         }
         // No monitoring plugins, insert at end
         self.plugins.len()
+    }
+
+    /// Map a UI plugin index (from self.plugins) to the index in the engine's processing chain.
+    /// Returns None if the plugin is disabled (not in engine).
+    ///
+    /// The engine order is: [Enabled Processing Plugins] followed by [Enabled Monitoring Plugins].
+    pub fn get_engine_index(&self, ui_index: usize) -> Option<usize> {
+        let target_plugin = self.plugins.get(ui_index)?;
+        if !target_plugin.enabled {
+            return None;
+        }
+
+        let target_is_monitor = target_plugin.plugin_type().is_monitoring();
+        let mut engine_idx = 0;
+
+        if !target_is_monitor {
+            // Target is a processing plugin.
+            // Engine index is the count of enabled processing plugins before it.
+            for (i, p) in self.plugins.iter().enumerate() {
+                if i == ui_index {
+                    return Some(engine_idx);
+                }
+                if p.enabled && !p.plugin_type().is_monitoring() {
+                    engine_idx += 1;
+                }
+            }
+        } else {
+            // Target is a monitoring plugin.
+            // Engine index is (Count of ALL enabled processing plugins) + (Count of enabled monitors before it).
+
+            // 1. Count all enabled processing plugins
+            for p in &self.plugins {
+                if p.enabled && !p.plugin_type().is_monitoring() {
+                    engine_idx += 1;
+                }
+            }
+
+            // 2. Count enabled monitors until we hit target
+            for (i, p) in self.plugins.iter().enumerate() {
+                if i == ui_index {
+                    return Some(engine_idx);
+                }
+                if p.enabled && p.plugin_type().is_monitoring() {
+                    engine_idx += 1;
+                }
+            }
+        }
+
+        None
     }
 
     pub fn to_plugin_configs(&self, sample_rate: f64) -> Vec<PluginConfig> {

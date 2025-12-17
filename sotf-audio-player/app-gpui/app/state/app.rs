@@ -240,9 +240,9 @@ pub struct App {
     pub upmixer_config_open: bool,
 
     // Rack panel collapse states
-    pub rack_detail_collapsed: bool,   // Horizontal divider between rack and detail
-    pub input_meter_collapsed: bool,   // Left meter panel
-    pub output_meter_collapsed: bool,  // Right meter panel
+    pub rack_detail_collapsed: bool, // Horizontal divider between rack and detail
+    pub input_meter_collapsed: bool, // Left meter panel
+    pub output_meter_collapsed: bool, // Right meter panel
 }
 
 /// GPUI-compatible state wrapper

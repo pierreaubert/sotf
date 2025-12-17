@@ -284,7 +284,13 @@ impl Element for GraphNode {
 }
 
 impl GraphNode {
-    fn paint_port(&self, window: &mut Window, center: Point<Pixels>, port_type: PortType, opacity: f32) {
+    fn paint_port(
+        &self,
+        window: &mut Window,
+        center: Point<Pixels>,
+        port_type: PortType,
+        opacity: f32,
+    ) {
         let (fill_color, stroke_color) = match port_type {
             PortType::Input => (
                 Rgba {

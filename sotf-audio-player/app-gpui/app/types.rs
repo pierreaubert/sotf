@@ -74,7 +74,7 @@ pub enum LayoutMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MeterDisplayMode {
     #[default]
-    Lufs,   // Show LUFS loudness meters
+    Lufs, // Show LUFS loudness meters
     Levels, // Show level meters
 }
 
@@ -1816,16 +1816,14 @@ impl SpinoramaOptimizationMode {
 
     pub fn as_str(&self) -> &'static str {
         match self {
-            SpinoramaOptimizationMode::FlatOnPir => "Flat on PIR",
-            SpinoramaOptimizationMode::SpeakerScore => "Speaker Score",
+            SpinoramaOptimizationMode::FlatOnPir => "Target",
+            SpinoramaOptimizationMode::SpeakerScore => "Score",
         }
     }
 
     pub fn description(&self) -> &'static str {
         match self {
-            SpinoramaOptimizationMode::FlatOnPir => {
-                "Flatten the Estimated In-Room Response curve"
-            }
+            SpinoramaOptimizationMode::FlatOnPir => "Flatten the Estimated In-Room Response curve",
             SpinoramaOptimizationMode::SpeakerScore => {
                 "Optimize for Harman/Olive speaker preference score"
             }
@@ -1870,11 +1868,11 @@ impl Default for SpinoramaOptimizerConfig {
         Self {
             mode: SpinoramaOptimizationMode::FlatOnPir,
             algorithm: RoomEqAlgorithm::Cobyla,
-            num_filters: 10,
+            num_filters: 5,
             min_q: 0.5,
-            max_q: 10.0,
-            min_db: -12.0,
-            max_db: 12.0,
+            max_q: 6.0,
+            min_db: -4.0,
+            max_db: 4.0,
             min_freq: 20.0,
             max_freq: 20000.0,
             max_iter: 10000,
@@ -1917,6 +1915,10 @@ pub struct SpinoramaEqDropdowns {
     pub mode_open: bool,
     pub algorithm_open: bool,
     pub export_format_open: bool,
+    /// AutoEQ form: EQ mode dropdown (IIR/FIR)
+    pub opt_mode_open: bool,
+    /// AutoEQ form: PEQ model dropdown
+    pub peq_model_open: bool,
     /// AutoEQ form editing state
     pub autoeq_editing_field: Option<AutoEqField>,
     /// AutoEQ form edit text

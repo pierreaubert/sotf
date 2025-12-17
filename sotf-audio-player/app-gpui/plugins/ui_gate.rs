@@ -6,8 +6,8 @@
 //! - Gain reduction meter
 
 use super::common::{
-    render_knob, render_section_header, render_toggle_button, render_vertical_slider,
-    ParamSectionStyle,
+    ParamSectionStyle, render_knob, render_section_header, render_toggle_button,
+    render_vertical_slider,
 };
 use super::level_meters::render_gr_meter;
 use crate::app::AppState;
@@ -53,11 +53,7 @@ pub fn render_gate_plugin(
             .iter()
             .cloned()
             .fold(-100.0_f32, f32::max) as f64;
-        let max_attenuation = data
-            .attenuation_db
-            .iter()
-            .cloned()
-            .fold(0.0_f32, f32::max) as f64;
+        let max_attenuation = data.attenuation_db.iter().cloned().fold(0.0_f32, f32::max) as f64;
         (max_input, data.is_open, max_attenuation)
     } else {
         (-100.0, false, 0.0)
@@ -68,11 +64,7 @@ pub fn render_gate_plugin(
     let input_normalized = ((input_db + 80.0) / 80.0).clamp(0.0, 1.0) as f32;
 
     // Cache theme colors
-    let gate_color = if is_open {
-        theme.success
-    } else {
-        theme.error
-    };
+    let gate_color = if is_open { theme.success } else { theme.error };
     let gate_glow = if is_open {
         Theme::opacity_20pct(theme.success)
     } else {
@@ -248,29 +240,25 @@ pub fn render_gate_plugin(
                         .child(render_section_header("METER", theme))
                         // Gate status indicator
                         .child(
-                            div()
-                                .flex()
-                                .justify_center()
-                                .mt_2()
-                                .child(
-                                    div()
-                                        .w(px(60.0))
-                                        .h(px(60.0))
-                                        .rounded_full()
-                                        .flex()
-                                        .items_center()
-                                        .justify_center()
-                                        .bg(gate_glow)
-                                        .border_3()
-                                        .border_color(gate_color)
-                                        .child(
-                                            div()
-                                                .text_xs()
-                                                .font_weight(FontWeight::BOLD)
-                                                .text_color(gate_color)
-                                                .child(if is_open { "OPEN" } else { "CLOSED" }),
-                                        ),
-                                ),
+                            div().flex().justify_center().mt_2().child(
+                                div()
+                                    .w(px(60.0))
+                                    .h(px(60.0))
+                                    .rounded_full()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .bg(gate_glow)
+                                    .border_3()
+                                    .border_color(gate_color)
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .font_weight(FontWeight::BOLD)
+                                            .text_color(gate_color)
+                                            .child(if is_open { "OPEN" } else { "CLOSED" }),
+                                    ),
+                            ),
                         )
                         // Spacer
                         .child(div().flex_1())

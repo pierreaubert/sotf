@@ -1,7 +1,7 @@
 //! Convolution Plugin UI Component
 
 use super::common::{
-    render_edit_hints, render_knob, render_param_row, render_section_header, ParamSectionStyle,
+    ParamSectionStyle, render_edit_hints, render_knob, render_param_row, render_section_header,
 };
 use crate::app::AppState;
 use crate::theme::Theme;

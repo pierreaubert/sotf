@@ -12,9 +12,6 @@ use std::sync::Arc;
 
 // Re-export existing types from shape module
 pub use crate::axis::{AxisConfig, AxisOrientation};
-pub use crate::shape::{
-    BarConfig, BarDatum, CurveType, LineConfig, LinePoint, ScatterConfig, ScatterPoint,
-};
 // Re-export contour types
 pub use crate::contour::{Contour, ContourBand};
 pub use crate::shape::contour::{
@@ -22,6 +19,9 @@ pub use crate::shape::contour::{
     turbo_color_scale, viridis_color_scale,
 };
 pub use crate::shape::contour::{ContourConfig, HeatmapData};
+pub use crate::shape::{
+    BarConfig, BarDatum, CurveType, LineConfig, LinePoint, ScatterConfig, ScatterPoint,
+};
 
 /// Convert D3Color + opacity to Color4
 fn to_color4(color: &D3Color, opacity: f32) -> Color4 {

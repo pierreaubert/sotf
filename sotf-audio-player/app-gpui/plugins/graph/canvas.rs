@@ -93,10 +93,7 @@ impl GraphCanvas {
         let offset_x: f32 = self.offset.x.into();
         let offset_y: f32 = self.offset.y.into();
 
-        point(
-            px(x * self.zoom + offset_x),
-            px(y * self.zoom + offset_y),
-        )
+        point(px(x * self.zoom + offset_x), px(y * self.zoom + offset_y))
     }
 }
 

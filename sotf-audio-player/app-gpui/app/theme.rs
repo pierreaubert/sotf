@@ -226,7 +226,7 @@ impl Theme {
             text_disabled: rgba(0x444444),
 
             // Border colors
-            border: rgba(0x555555), // More visible border
+            border: rgba(0x555555),         // More visible border
             border_focused: rgba(0x1c8cd9), // Brighter for hover states
 
             // Accent colors
@@ -419,7 +419,7 @@ impl Theme {
             text_disabled: rgba(0xaaaaaa),
 
             // Border colors
-            border: rgba(0x999999), // More visible border
+            border: rgba(0x999999),         // More visible border
             border_focused: rgba(0x0077ee), // Brighter for hover states
 
             // Accent colors
@@ -612,7 +612,7 @@ impl Theme {
             text_disabled: rgba(0x484f58),
 
             // Border colors
-            border: rgba(0x444c56), // More visible border
+            border: rgba(0x444c56),         // More visible border
             border_focused: rgba(0x79b8ff), // Brighter for hover states
 
             // Accent colors
@@ -805,7 +805,7 @@ impl Theme {
             text_disabled: rgba(0x556b50),
 
             // Border colors
-            border: rgba(0x4a5a45), // More visible border
+            border: rgba(0x4a5a45),         // More visible border
             border_focused: rgba(0x7dd07c), // Brighter for hover states
 
             // Accent colors

@@ -7,8 +7,8 @@
 //! - Vertical sliders and rotary knob controls
 
 use super::common::{
-    render_knob, render_section_header, render_transfer_curve, render_vertical_slider,
-    ParamSectionStyle,
+    ParamSectionStyle, render_knob, render_section_header, render_transfer_curve,
+    render_vertical_slider,
 };
 use super::level_meters::render_gr_meter;
 use crate::app::AppState;
@@ -167,18 +167,13 @@ pub fn render_limiter_plugin(
                         .param_section_style_lg(theme)
                         .child(render_section_header("METER", theme))
                         // Transfer curve
-                        .child(
-                            div()
-                                .flex()
-                                .justify_center()
-                                .child(render_transfer_curve(
-                                    state.threshold_db,
-                                    f64::INFINITY,
-                                    0.0,
-                                    true,
-                                    theme,
-                                )),
-                        )
+                        .child(div().flex().justify_center().child(render_transfer_curve(
+                            state.threshold_db,
+                            f64::INFINITY,
+                            0.0,
+                            true,
+                            theme,
+                        )))
                         // Peak and GR info row
                         .child(
                             div()

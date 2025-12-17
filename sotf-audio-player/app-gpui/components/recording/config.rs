@@ -9,8 +9,8 @@ use gpui::*;
 use gpui_px::{ScaleType, line};
 use gpui_ui_kit::{
     Accordion, AccordionItem, AccordionMode, Badge, BadgeVariant, Button, ButtonSize,
-    ButtonVariant, HStack, Input, InputSize, NumberInput, NumberInputSize, Select,
-    SelectOption, StackAlign, StackSpacing, Text, TextSize, TextWeight, VStack,
+    ButtonVariant, HStack, Input, InputSize, NumberInput, NumberInputSize, Select, SelectOption,
+    StackAlign, StackSpacing, Text, TextSize, TextWeight, VStack,
 };
 
 /// Standard channel group definitions

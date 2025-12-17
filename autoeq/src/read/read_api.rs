@@ -131,37 +131,56 @@ pub fn extract_curve_by_name(
                 .unwrap_or(false);
 
             if is_spl_trace {
-                // Extract x and y data which are encoded as typed arrays
-                if let (Some(x_data), Some(y_data)) = (
-                    trace.get("x").and_then(|x| x.as_object()),
-                    trace.get("y").and_then(|y| y.as_object()),
-                ) {
-                    // Decode x values (frequency)
-                    if let (Some(dtype), Some(bdata)) = (
-                        x_data.get("dtype").and_then(|d| d.as_str()),
-                        x_data.get("bdata").and_then(|b| b.as_str()),
-                    ) {
-                        let decoded_x = decode_typed_array(bdata, dtype)?;
-                        freqs = decoded_x;
+                // Try to extract x and y data - supports both typed arrays and plain arrays
+                let x_val = trace.get("x");
+                let y_val = trace.get("y");
+
+                if let (Some(x_data), Some(y_data)) = (x_val, y_val) {
+                    // Try typed array format first (object with dtype/bdata)
+                    if let (Some(x_obj), Some(y_obj)) = (x_data.as_object(), y_data.as_object()) {
+                        // Decode x values (frequency)
+                        if let (Some(dtype), Some(bdata)) = (
+                            x_obj.get("dtype").and_then(|d| d.as_str()),
+                            x_obj.get("bdata").and_then(|b| b.as_str()),
+                        ) {
+                            let decoded_x = decode_typed_array(bdata, dtype)?;
+                            freqs = decoded_x;
+                        }
+
+                        // Decode y values (SPL)
+                        if let (Some(dtype), Some(bdata)) = (
+                            y_obj.get("dtype").and_then(|d| d.as_str()),
+                            y_obj.get("bdata").and_then(|b| b.as_str()),
+                        ) {
+                            let decoded_y = decode_typed_array(bdata, dtype)?;
+                            spls = decoded_y;
+                        }
+
+                        if !freqs.is_empty() {
+                            break;
+                        }
                     }
 
-                    // Decode y values (SPL)
-                    if let (Some(dtype), Some(bdata)) = (
-                        y_data.get("dtype").and_then(|d| d.as_str()),
-                        y_data.get("bdata").and_then(|b| b.as_str()),
-                    ) {
-                        let decoded_y = decode_typed_array(bdata, dtype)?;
-                        spls = decoded_y;
-                    }
+                    // Fallback: try plain array format
+                    if let (Some(x_arr), Some(y_arr)) = (x_data.as_array(), y_data.as_array()) {
+                        freqs = x_arr.iter().filter_map(|v| v.as_f64()).collect();
+                        spls = y_arr.iter().filter_map(|v| v.as_f64()).collect();
 
-                    break;
+                        if !freqs.is_empty() {
+                            break;
+                        }
+                    }
                 }
             }
         }
     }
 
     if freqs.is_empty() {
-        return Err("Failed to extract frequency and SPL data from plot data".into());
+        let available = collect_trace_names(plot_data);
+        return Err(format!(
+            "Failed to extract frequency and SPL data for curve '{}' in measurement '{}'. Available traces: {:?}",
+            curve_name, measurement, available
+        ).into());
     }
 
     Ok(crate::Curve {

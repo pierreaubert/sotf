@@ -1043,18 +1043,25 @@ impl PlayerView {
             } => {
                 // Zero-dropout individual parameter update
                 if let Some(plugin) = state.app.plugin_chain.get_plugin(plugin_index) {
-                    if let Some((param_id, value)) =
-                        param_index_to_engine_param(&plugin.settings, param_index)
-                    {
-                        state
-                            .player
-                            .lock()
-                            .set_plugin_parameter(plugin_index, param_id, value)
+                    // We must map the UI index to the Engine index because the Engine reorders plugins
+                    // (analyzers moved to the end) and filters out disabled ones.
+                    if let Some(engine_index) = state.app.plugin_chain.get_engine_index(plugin_index) {
+                        if let Some((param_id, value)) =
+                            param_index_to_engine_param(&plugin.settings, param_index)
+                        {
+                            state
+                                .player
+                                .lock()
+                                .set_plugin_parameter(engine_index, param_id, value)
+                        } else {
+                            // Parameter not supported for individual update, fall back to structural
+                            let sample_rate = 48000.0;
+                            let plugins = state.app.plugin_chain.to_plugin_configs(sample_rate);
+                            state.player.lock().update_plugins(plugins)
+                        }
                     } else {
-                        // Parameter not supported for individual update, fall back to structural
-                        let sample_rate = 48000.0;
-                        let plugins = state.app.plugin_chain.to_plugin_configs(sample_rate);
-                        state.player.lock().update_plugins(plugins)
+                        // Plugin is disabled or not found in engine map - ignore or full update
+                        Ok(())
                     }
                 } else {
                     Ok(()) // Plugin not found, ignore

@@ -7,8 +7,8 @@
 //! - Rotary knobs for secondary parameters
 
 use super::common::{
-    render_edit_hints, render_knob, render_section_header, render_toggle, render_transfer_curve,
-    render_vertical_slider, ParamSectionStyle,
+    ParamSectionStyle, render_edit_hints, render_knob, render_section_header, render_toggle,
+    render_transfer_curve, render_vertical_slider,
 };
 use super::level_meters::render_gr_meter;
 use crate::app::AppState;
@@ -267,18 +267,13 @@ pub fn render_compressor_plugin(
                         .param_section_style_lg(theme)
                         .child(render_section_header("METER", theme))
                         // Transfer curve
-                        .child(
-                            div()
-                                .flex()
-                                .justify_center()
-                                .child(render_transfer_curve(
-                                    state.threshold_db,
-                                    state.ratio,
-                                    state.knee_db,
-                                    false,
-                                    theme,
-                                )),
-                        )
+                        .child(div().flex().justify_center().child(render_transfer_curve(
+                            state.threshold_db,
+                            state.ratio,
+                            state.knee_db,
+                            false,
+                            theme,
+                        )))
                         // Gain reduction meter
                         .child(
                             div()

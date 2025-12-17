@@ -242,9 +242,21 @@ impl PlayerView {
             .when(!meters_collapsed, |d| {
                 let state_entity = self.state.clone();
 
+                // Calculate panel width based on mode and channel count
+                let panel_width = if meter_display_mode == MeterDisplayMode::Lufs {
+                    400.0 // Fixed 400px for LUFS
+                } else {
+                    // For level meters: 200px for stereo, up to 400px for 16 channels
+                    let num_channels = self.state.read(cx).app.level_meter_groups.iter()
+                        .map(|g| g.channels.len())
+                        .sum::<usize>()
+                        .max(2);
+                    crate::plugins::level_meters::calculate_meters_panel_width(num_channels)
+                };
+
                 d.child(
                     div()
-                        .w(relative(meters_ratio + lufs_ratio))
+                        .w(px(panel_width))
                         .flex()
                         .flex_col()
                         .h_full()
@@ -319,6 +331,8 @@ impl PlayerView {
                                                             state.update(cx, |state, _| {
                                                                 state.app.meter_display_mode =
                                                                     MeterDisplayMode::Levels;
+                                                                // Ensure meter groups are initialized
+                                                                state.app.update_level_meter_groups();
                                                             });
                                                             cx.notify();
                                                         }

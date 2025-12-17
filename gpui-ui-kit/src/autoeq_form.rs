@@ -50,10 +50,8 @@ pub const FIR_PHASE_OPTIONS: &[(&str, &str)] = &[
 ];
 
 /// Loss Type options
-pub const LOSS_TYPE_OPTIONS: &[(&str, &str)] = &[
-    ("flat", "Flat Response"),
-    ("score", "Preference Score"),
-];
+pub const LOSS_TYPE_OPTIONS: &[(&str, &str)] =
+    &[("flat", "Flat Response"), ("score", "Preference Score")];
 
 /// Target curve options
 pub const TARGET_CURVE_OPTIONS: &[(&str, &str)] = &[
@@ -969,7 +967,8 @@ impl RenderOnce for AutoEqForm {
 
             if let Some(ref handler) = on_target_curve_toggle_rc {
                 let h = handler.clone();
-                target_curve_select = target_curve_select.on_toggle(move |open, w, cx| h(open, w, cx));
+                target_curve_select =
+                    target_curve_select.on_toggle(move |open, w, cx| h(open, w, cx));
             }
 
             goals_content = goals_content.child(target_curve_select);
@@ -1131,7 +1130,7 @@ impl RenderOnce for AutoEqForm {
                 );
             } else {
                 // FIR only - just show sample rate
-                 eq_design_content = eq_design_content.child(
+                eq_design_content = eq_design_content.child(
                     HStack::new()
                         .spacing(StackSpacing::Md)
                         .child(sample_rate_input),
@@ -1283,7 +1282,8 @@ impl RenderOnce for AutoEqForm {
 
                 if let Some(ref handler) = on_peq_model_toggle_rc {
                     let h = handler.clone();
-                    peq_model_select = peq_model_select.on_toggle(move |open, w, cx| h(open, w, cx));
+                    peq_model_select =
+                        peq_model_select.on_toggle(move |open, w, cx| h(open, w, cx));
                 }
 
                 if let Some(ref handler) = on_peq_model_change_rc {
@@ -1398,7 +1398,7 @@ impl RenderOnce for AutoEqForm {
                 // DE strategy is specific to DE.
 
                 if config.algo.contains(":de") {
-                     // DE Strategy dropdown
+                    // DE Strategy dropdown
                     let strategy_options: Vec<SelectOption> = DE_STRATEGY_OPTIONS
                         .iter()
                         .map(|(val, lbl)| SelectOption::new(*val, *lbl))
@@ -1414,7 +1414,8 @@ impl RenderOnce for AutoEqForm {
 
                     if let Some(ref handler) = on_strategy_toggle_rc {
                         let h = handler.clone();
-                        strategy_select = strategy_select.on_toggle(move |open, w, cx| h(open, w, cx));
+                        strategy_select =
+                            strategy_select.on_toggle(move |open, w, cx| h(open, w, cx));
                     }
 
                     if let Some(ref handler) = on_strategy_change_rc {

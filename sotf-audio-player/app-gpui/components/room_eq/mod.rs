@@ -1555,9 +1555,8 @@ impl PlayerView {
                         let _ = state_entity.update(cx, |state, _| {
                             state.app.room_eq_state.status_message =
                                 format!("Backup saved to {}", file_path.display());
-                            state.app.toast_message = Some(crate::app::ToastMessage::success(
-                                "Rack backup saved",
-                            ));
+                            state.app.toast_message =
+                                Some(crate::app::ToastMessage::success("Rack backup saved"));
                         });
                     }
                     Err(e) => {
@@ -1598,7 +1597,8 @@ impl PlayerView {
             for plugin in &channel_dsp.plugins {
                 if plugin.plugin_type == "EQ" {
                     // Extract filters from the parameters
-                    if let Some(filters) = plugin.parameters.get("filters").and_then(|f| f.as_array())
+                    if let Some(filters) =
+                        plugin.parameters.get("filters").and_then(|f| f.as_array())
                     {
                         for filter in filters {
                             let filter_type_str = filter
@@ -1671,8 +1671,7 @@ impl PlayerView {
 
             // Mark that plugin chain was modified and needs sync
             state.app.plugin_chain_modified = true;
-            state.app.pending_plugin_update =
-                Some(crate::app::types::PluginUpdateType::Structural);
+            state.app.pending_plugin_update = Some(crate::app::types::PluginUpdateType::Structural);
             state.app.room_eq_state.status_message = "Room EQ applied to player!".to_string();
             state.app.toast_message = Some(crate::app::ToastMessage::success(
                 "Room EQ applied successfully",

@@ -51,7 +51,6 @@ pub fn param_index_to_engine_param(
             _ => None,
         },
         PluginSettings::Upmixer {
-            speaker_config: _,
             gain_front_direct,
             gain_front_ambient,
             gain_rear_ambient,
@@ -66,6 +65,7 @@ pub fn param_index_to_engine_param(
             hr_sharpen,
             safety_cap_db,
             decorrelation_mode,
+            ..
         } => match param_idx {
             // param 0 = speaker_config: requires Structural (changes channel count)
             0 => None,
@@ -225,7 +225,11 @@ pub fn render_param_section(theme: &Theme) -> Div {
 
 /// Create a new parameter section container with flex column layout and larger padding
 pub fn render_param_section_lg(theme: &Theme) -> Div {
-    div().flex().flex_col().gap_2().param_section_style_lg(theme)
+    div()
+        .flex()
+        .flex_col()
+        .gap_2()
+        .param_section_style_lg(theme)
 }
 
 /// Render keyboard hints for edit mode

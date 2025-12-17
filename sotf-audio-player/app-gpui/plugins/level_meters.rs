@@ -1285,12 +1285,25 @@ impl PlayerView {
         div()
             .flex()
             .flex_col()
+            .w(px(400.0))
             .p_4()
             .bg(theme.background)
-            .border_r_1()
-            .border_color(theme.border)
             .child(self.render_lufs_with_true_peak(loudness.as_ref(), &theme))
     }
+
+}
+
+/// Calculate ideal width for meters panel based on channel count
+/// Returns width in pixels: 200px for stereo, up to 400px for 16 channels
+pub fn calculate_meters_panel_width(num_channels: usize) -> f32 {
+    // Base width for stereo (2 channels)
+    let base_width = 200.0_f32;
+    // Max width for 16 channels
+    let max_width = 400.0_f32;
+    // Scale linearly between 2 and 16 channels
+    let channels = (num_channels as f32).clamp(2.0, 16.0);
+    let scale = (channels - 2.0) / 14.0; // 0.0 for 2ch, 1.0 for 16ch
+    base_width + scale * (max_width - base_width)
 }
 
 // ============================================================================

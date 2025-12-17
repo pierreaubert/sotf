@@ -767,59 +767,60 @@ impl PlayerView {
             (PluginType::ChannelMuteSolo, "Monitor"),
         ];
 
-        div()
-            .flex()
-            .items_center()
-            .gap_2()
-            .children(all_plugins.into_iter().enumerate().filter_map(|(i, (pt, _category))| {
-                // Check if plugin is already in chain for single-instance plugins
-                let state = self.state.read(cx);
-                let already_present = state
-                    .app
-                    .plugin_chain
-                    .plugins()
-                    .iter()
-                    .any(|p| p.plugin_type() == pt);
+        div().flex().items_center().gap_2().children(
+            all_plugins
+                .into_iter()
+                .enumerate()
+                .filter_map(|(i, (pt, _category))| {
+                    // Check if plugin is already in chain for single-instance plugins
+                    let state = self.state.read(cx);
+                    let already_present = state
+                        .app
+                        .plugin_chain
+                        .plugins()
+                        .iter()
+                        .any(|p| p.plugin_type() == pt);
 
-                let is_single_instance =
-                    matches!(pt, PluginType::Upmixer | PluginType::BinauralDecoder);
+                    let is_single_instance =
+                        matches!(pt, PluginType::Upmixer | PluginType::BinauralDecoder);
 
-                if is_single_instance && already_present {
-                    return None;
-                }
+                    if is_single_instance && already_present {
+                        return None;
+                    }
 
-                let color = plugin_color(&pt, &theme);
-                let name = short_name(&pt);
-                let theme_c = theme.clone();
+                    let color = plugin_color(&pt, &theme);
+                    let name = short_name(&pt);
+                    let theme_c = theme.clone();
 
-                Some(
-                    div()
-                        .id(("add-plugin", i))
-                        .px_2()
-                        .py_1()
-                        .rounded_md()
-                        .bg(theme_c.surface)
-                        .border_1()
-                        .border_color(color)
-                        .text_xs()
-                        .text_color(color)
-                        .cursor_pointer()
-                        .hover(|s| s.bg(color).text_color(rgb(0xffffff)))
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                view.state.update(cx, |state, _cx| {
-                                    state.app.plugin_chain.add_plugin(&pt);
-                                    state.app.pending_plugin_update =
-                                        Some(PluginUpdateType::Structural);
-                                    state.app.update_level_meter_groups(); // Reconfigure metering
-                                });
-                                cx.notify();
-                            }),
-                        )
-                        .child(format!("+{}", name)),
-                )
-            }))
+                    Some(
+                        div()
+                            .id(("add-plugin", i))
+                            .px_2()
+                            .py_1()
+                            .rounded_md()
+                            .bg(theme_c.surface)
+                            .border_1()
+                            .border_color(color)
+                            .text_xs()
+                            .text_color(color)
+                            .cursor_pointer()
+                            .hover(|s| s.bg(color).text_color(rgb(0xffffff)))
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                                    view.state.update(cx, |state, _cx| {
+                                        state.app.plugin_chain.add_plugin(&pt);
+                                        state.app.pending_plugin_update =
+                                            Some(PluginUpdateType::Structural);
+                                        state.app.update_level_meter_groups(); // Reconfigure metering
+                                    });
+                                    cx.notify();
+                                }),
+                            )
+                            .child(format!("+{}", name)),
+                    )
+                }),
+        )
     }
 
     /// Render the plugin detail/settings panel
@@ -909,7 +910,8 @@ impl PlayerView {
                                         ..
                                     } = &p.settings
                                     {
-                                        output_channels = speaker_config_to_channels(speaker_config);
+                                        output_channels =
+                                            speaker_config_to_channels(speaker_config);
                                     } else {
                                         output_channels = 6;
                                     }
@@ -981,16 +983,21 @@ impl PlayerView {
                         // Divider between main zone and output meter (only if multichannel)
                         .when(has_multichannel, |d| {
                             d.child(
-                                PaneDivider::vertical("output-meter-divider", CollapseDirection::Right)
-                                    .label("OUT")
-                                    .theme(divider_theme.clone())
-                                    .thickness(px(4.0))
-                                    .collapsed(output_collapsed)
-                                    .on_toggle(move |collapsed, _window, cx| {
+                                PaneDivider::vertical(
+                                    "output-meter-divider",
+                                    CollapseDirection::Right,
+                                )
+                                .label("OUT")
+                                .theme(divider_theme.clone())
+                                .thickness(px(4.0))
+                                .collapsed(output_collapsed)
+                                .on_toggle(
+                                    move |collapsed, _window, cx| {
                                         state_for_output.update(cx, |s, _| {
                                             s.app.output_meter_collapsed = collapsed;
                                         });
-                                    }),
+                                    },
+                                ),
                             )
                         })
                         // Right: Output Meter

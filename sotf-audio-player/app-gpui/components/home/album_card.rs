@@ -216,19 +216,21 @@ impl AlbumCard {
                             .flex()
                             .items_center()
                             .justify_center()
-                            .child(if let Some(ref thumbnail_bytes) = album.album_art_thumbnail {
-                                img(image_from_jpeg_bytes(thumbnail_bytes))
-                                    .w(px(thumbnail_size))
-                                    .h(px(thumbnail_size))
-                                    .object_fit(ObjectFit::Cover)
-                                    .into_any_element()
-                            } else {
-                                div()
-                                    .text_3xl()
-                                    .text_color(theme.text_muted)
-                                    .child("♪")
-                                    .into_any_element()
-                            }),
+                            .child(
+                                if let Some(ref thumbnail_bytes) = album.album_art_thumbnail {
+                                    img(image_from_jpeg_bytes(thumbnail_bytes))
+                                        .w(px(thumbnail_size))
+                                        .h(px(thumbnail_size))
+                                        .object_fit(ObjectFit::Cover)
+                                        .into_any_element()
+                                } else {
+                                    div()
+                                        .text_3xl()
+                                        .text_color(theme.text_muted)
+                                        .child("♪")
+                                        .into_any_element()
+                                },
+                            ),
                     )
                     // Album title
                     .child(

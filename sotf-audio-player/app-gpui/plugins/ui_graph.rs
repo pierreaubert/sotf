@@ -35,7 +35,8 @@ impl PlayerView {
         let header = self.render_graph_header(cx).into_any_element();
         let palette = self.render_graph_palette(cx).into_any_element();
         let cables = self.render_graph_cables(&graph, &theme, canvas_offset, canvas_zoom);
-        let nodes = self.render_graph_nodes(cx, &graph, &selection, &theme, canvas_offset, canvas_zoom);
+        let nodes =
+            self.render_graph_nodes(cx, &graph, &selection, &theme, canvas_offset, canvas_zoom);
 
         let has_drag = connection_drag.is_some();
         let drag_preview = connection_drag.map(|drag| {
@@ -71,26 +72,29 @@ impl PlayerView {
                             .overflow_hidden()
                             .bg(theme.background)
                             // Pan with scroll wheel
-                            .on_scroll_wheel(cx.listener(|view, event: &ScrollWheelEvent, _window, cx| {
-                                let delta_x: f32 = event.delta.pixel_delta(px(1.0)).x.into();
-                                let delta_y: f32 = event.delta.pixel_delta(px(1.0)).y.into();
+                            .on_scroll_wheel(cx.listener(
+                                |view, event: &ScrollWheelEvent, _window, cx| {
+                                    let delta_x: f32 = event.delta.pixel_delta(px(1.0)).x.into();
+                                    let delta_y: f32 = event.delta.pixel_delta(px(1.0)).y.into();
 
-                                view.state.update(cx, |state, _cx| {
-                                    if let Some(ref mut graph) = state.app.plugin_graph {
-                                        // Check for zoom (pinch or ctrl+scroll)
-                                        if event.modifiers.control || event.modifiers.alt {
-                                            let zoom_delta = delta_y * 0.01;
-                                            graph.canvas_zoom =
-                                                (graph.canvas_zoom + zoom_delta).clamp(0.5, 2.0);
-                                        } else {
-                                            // Pan
-                                            graph.canvas_offset.0 += delta_x;
-                                            graph.canvas_offset.1 += delta_y;
+                                    view.state.update(cx, |state, _cx| {
+                                        if let Some(ref mut graph) = state.app.plugin_graph {
+                                            // Check for zoom (pinch or ctrl+scroll)
+                                            if event.modifiers.control || event.modifiers.alt {
+                                                let zoom_delta = delta_y * 0.01;
+                                                graph.canvas_zoom = (graph.canvas_zoom
+                                                    + zoom_delta)
+                                                    .clamp(0.5, 2.0);
+                                            } else {
+                                                // Pan
+                                                graph.canvas_offset.0 += delta_x;
+                                                graph.canvas_offset.1 += delta_y;
+                                            }
                                         }
-                                    }
-                                });
-                                cx.notify();
-                            }))
+                                    });
+                                    cx.notify();
+                                },
+                            ))
                             // Canvas background with grid
                             .child(
                                 GraphCanvas::new()
@@ -120,9 +124,24 @@ impl PlayerView {
             let state = self.state.read(cx);
             (
                 state.app.theme.clone(),
-                state.app.plugin_graph.as_ref().map(|g| g.nodes.len()).unwrap_or(0),
-                state.app.plugin_graph.as_ref().map(|g| g.connections.len()).unwrap_or(0),
-                state.app.plugin_graph.as_ref().map(|g| g.canvas_zoom * 100.0).unwrap_or(100.0),
+                state
+                    .app
+                    .plugin_graph
+                    .as_ref()
+                    .map(|g| g.nodes.len())
+                    .unwrap_or(0),
+                state
+                    .app
+                    .plugin_graph
+                    .as_ref()
+                    .map(|g| g.connections.len())
+                    .unwrap_or(0),
+                state
+                    .app
+                    .plugin_graph
+                    .as_ref()
+                    .map(|g| g.canvas_zoom * 100.0)
+                    .unwrap_or(100.0),
             )
         };
 
@@ -147,12 +166,10 @@ impl PlayerView {
                             .text_color(theme.text_primary)
                             .child("PLUGIN GRAPH"),
                     )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(theme.text_muted)
-                            .child(format!("{} nodes, {} connections", node_count, connection_count)),
-                    ),
+                    .child(div().text_xs().text_color(theme.text_muted).child(format!(
+                        "{} nodes, {} connections",
+                        node_count, connection_count
+                    ))),
             )
             .child(
                 div()
@@ -176,7 +193,8 @@ impl PlayerView {
                                 cx.listener(|view, _: &MouseUpEvent, _window, cx| {
                                     view.state.update(cx, |state, _cx| {
                                         if let Some(ref mut graph) = state.app.plugin_graph {
-                                            graph.canvas_zoom = (graph.canvas_zoom - 0.1).clamp(0.5, 2.0);
+                                            graph.canvas_zoom =
+                                                (graph.canvas_zoom - 0.1).clamp(0.5, 2.0);
                                         }
                                     });
                                     cx.notify();
@@ -206,7 +224,8 @@ impl PlayerView {
                                 cx.listener(|view, _: &MouseUpEvent, _window, cx| {
                                     view.state.update(cx, |state, _cx| {
                                         if let Some(ref mut graph) = state.app.plugin_graph {
-                                            graph.canvas_zoom = (graph.canvas_zoom + 0.1).clamp(0.5, 2.0);
+                                            graph.canvas_zoom =
+                                                (graph.canvas_zoom + 0.1).clamp(0.5, 2.0);
                                         }
                                     });
                                     cx.notify();
@@ -253,7 +272,10 @@ impl PlayerView {
                 vec![
                     (PluginType::EQ, PluginType::EQ.name().to_string()),
                     (PluginType::Gain, PluginType::Gain.name().to_string()),
-                    (PluginType::Compressor, PluginType::Compressor.name().to_string()),
+                    (
+                        PluginType::Compressor,
+                        PluginType::Compressor.name().to_string(),
+                    ),
                     (PluginType::Limiter, PluginType::Limiter.name().to_string()),
                     (PluginType::Gate, PluginType::Gate.name().to_string()),
                 ],
@@ -262,17 +284,35 @@ impl PlayerView {
                 "Spatial",
                 vec![
                     (PluginType::Upmixer, PluginType::Upmixer.name().to_string()),
-                    (PluginType::BinauralDecoder, PluginType::BinauralDecoder.name().to_string()),
-                    (PluginType::Convolution, PluginType::Convolution.name().to_string()),
+                    (
+                        PluginType::BinauralDecoder,
+                        PluginType::BinauralDecoder.name().to_string(),
+                    ),
+                    (
+                        PluginType::Convolution,
+                        PluginType::Convolution.name().to_string(),
+                    ),
                 ],
             ),
             (
                 "Monitor",
                 vec![
-                    (PluginType::LoudnessCompensation, PluginType::LoudnessCompensation.name().to_string()),
-                    (PluginType::LoudnessMonitor, PluginType::LoudnessMonitor.name().to_string()),
-                    (PluginType::SpectrumAnalyzer, PluginType::SpectrumAnalyzer.name().to_string()),
-                    (PluginType::ChannelMuteSolo, PluginType::ChannelMuteSolo.name().to_string()),
+                    (
+                        PluginType::LoudnessCompensation,
+                        PluginType::LoudnessCompensation.name().to_string(),
+                    ),
+                    (
+                        PluginType::LoudnessMonitor,
+                        PluginType::LoudnessMonitor.name().to_string(),
+                    ),
+                    (
+                        PluginType::SpectrumAnalyzer,
+                        PluginType::SpectrumAnalyzer.name().to_string(),
+                    ),
+                    (
+                        PluginType::ChannelMuteSolo,
+                        PluginType::ChannelMuteSolo.name().to_string(),
+                    ),
                 ],
             ),
         ];
@@ -330,31 +370,24 @@ impl PlayerView {
                                 cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                                     // Add node to center of view
                                     view.state.update(cx, |state, _cx| {
-                                        let graph = state.app.plugin_graph.get_or_insert_with(PluginGraph::new);
+                                        let graph = state
+                                            .app
+                                            .plugin_graph
+                                            .get_or_insert_with(PluginGraph::new);
                                         let offset = graph.canvas_offset;
                                         let zoom = graph.canvas_zoom;
                                         // Place at center of viewport
                                         let x = (400.0 - offset.0) / zoom;
                                         let y = (300.0 - offset.1) / zoom;
                                         graph.add_plugin_node(&pt_clone, NodePosition::new(x, y));
-                                        state.app.pending_plugin_update = Some(PluginUpdateType::Structural);
+                                        state.app.pending_plugin_update =
+                                            Some(PluginUpdateType::Structural);
                                     });
                                     cx.notify();
                                 }),
                             )
-                            .child(
-                                div()
-                                    .w(px(8.0))
-                                    .h(px(8.0))
-                                    .rounded_full()
-                                    .bg(color),
-                            )
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(theme.text_secondary)
-                                    .child(name),
-                            )
+                            .child(div().w(px(8.0)).h(px(8.0)).rounded_full().bg(color))
+                            .child(div().text_xs().text_color(theme.text_secondary).child(name))
                     }))
             }))
     }
@@ -403,7 +436,10 @@ impl PlayerView {
                         cx.listener(move |view, event: &MouseDownEvent, _window, cx| {
                             let add_to_selection = event.modifiers.shift;
                             view.state.update(cx, |state, _cx| {
-                                state.app.graph_selection.select_node(node_id, add_to_selection);
+                                state
+                                    .app
+                                    .graph_selection
+                                    .select_node(node_id, add_to_selection);
                             });
                             cx.notify();
                         }),
@@ -411,9 +447,7 @@ impl PlayerView {
                     // Start drag
                     .on_drag(
                         NodeDragPayload { node_id },
-                        |payload, _position, _window, cx| {
-                            cx.new(|_| payload.clone())
-                        },
+                        |payload, _position, _window, cx| cx.new(|_| payload.clone()),
                     )
                     // Render the actual node
                     .child(
@@ -453,10 +487,22 @@ impl PlayerView {
 
                 // Calculate port positions
                 let from_x = (from_node.position.x + 120.0) * canvas_zoom + canvas_offset.0; // Right side of node
-                let from_y = calculate_port_y(from_node.position.y, conn.from_port, from_node.output_channels, canvas_zoom, canvas_offset.1);
+                let from_y = calculate_port_y(
+                    from_node.position.y,
+                    conn.from_port,
+                    from_node.output_channels,
+                    canvas_zoom,
+                    canvas_offset.1,
+                );
 
                 let to_x = to_node.position.x * canvas_zoom + canvas_offset.0; // Left side of node
-                let to_y = calculate_port_y(to_node.position.y, conn.to_port, to_node.input_channels, canvas_zoom, canvas_offset.1);
+                let to_y = calculate_port_y(
+                    to_node.position.y,
+                    conn.to_port,
+                    to_node.input_channels,
+                    canvas_zoom,
+                    canvas_offset.1,
+                );
 
                 Some(
                     CableElement::new(point(px(from_x), px(from_y)), point(px(to_x), px(to_y)))
@@ -486,7 +532,13 @@ impl Render for NodeDragPayload {
 }
 
 /// Calculate port Y position
-fn calculate_port_y(node_y: f32, port_index: usize, total_ports: usize, zoom: f32, offset_y: f32) -> f32 {
+fn calculate_port_y(
+    node_y: f32,
+    port_index: usize,
+    total_ports: usize,
+    zoom: f32,
+    offset_y: f32,
+) -> f32 {
     if total_ports == 0 {
         return (node_y + 40.0) * zoom + offset_y; // Center of node
     }

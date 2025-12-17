@@ -2,8 +2,8 @@
 
 use super::actions::OpenSofaFile;
 use super::common::{
-    render_edit_hints, render_knob, render_param_row, render_section_header, render_toggle,
-    ParamSectionStyle,
+    ParamSectionStyle, render_edit_hints, render_knob, render_param_row, render_section_header,
+    render_toggle,
 };
 use crate::app::AppState;
 use crate::theme::Theme;

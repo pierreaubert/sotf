@@ -301,13 +301,9 @@ impl PlayerView {
                             .text_color(text_primary)
                             .overflow_hidden()
                             // If title is longer than 40 characters, allow wrapping
-                            .when(title_len <= 40, |d| {
-                                d.text_ellipsis().whitespace_nowrap()
-                            })
+                            .when(title_len <= 40, |d| d.text_ellipsis().whitespace_nowrap())
                             // If title is longer than 40 characters, wrap and justify
-                            .when(title_len > 40, |d| {
-                                d.text_align(gpui::TextAlign::Left)
-                            })
+                            .when(title_len > 40, |d| d.text_align(gpui::TextAlign::Left))
                             .child(title_text),
                     )
                     // Album (9px equivalent)
@@ -568,8 +564,13 @@ impl PlayerView {
                                                     let new_pos =
                                                         state.app.duration_secs * ratio as f64;
                                                     state.app.position_secs = new_pos;
-                                                    if let Err(e) = state.player.lock().seek(new_pos) {
-                                                        log::error!("Failed to seek from waveform: {}", e);
+                                                    if let Err(e) =
+                                                        state.player.lock().seek(new_pos)
+                                                    {
+                                                        log::error!(
+                                                            "Failed to seek from waveform: {}",
+                                                            e
+                                                        );
                                                     }
                                                 });
                                                 cx.notify();

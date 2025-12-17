@@ -2,7 +2,7 @@
 //!
 //! Collapsible content sections with support for both vertical and horizontal orientations.
 
-use crate::theme::{glow_shadow, Theme, ThemeExt};
+use crate::theme::{Theme, ThemeExt, glow_shadow};
 use gpui::prelude::*;
 use gpui::*;
 
@@ -239,7 +239,8 @@ impl Accordion {
                 header = header.opacity(0.5).cursor_not_allowed();
             } else {
                 let hover_bg = theme.header_hover_bg;
-                header = header.hover(move |style| style.bg(hover_bg).shadow(glow_shadow(hover_bg)));
+                header =
+                    header.hover(move |style| style.bg(hover_bg).shadow(glow_shadow(hover_bg)));
 
                 // Click handler
                 if let Some(handler) = on_change.clone() {
@@ -350,7 +351,8 @@ impl Accordion {
                 header = header.opacity(0.5).cursor_not_allowed();
             } else {
                 let hover_bg = theme.header_hover_bg;
-                header = header.hover(move |style| style.bg(hover_bg).shadow(glow_shadow(hover_bg)));
+                header =
+                    header.hover(move |style| style.bg(hover_bg).shadow(glow_shadow(hover_bg)));
 
                 // Click handler
                 if let Some(handler) = on_change.clone() {

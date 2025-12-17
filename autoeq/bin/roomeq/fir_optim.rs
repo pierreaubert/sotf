@@ -63,8 +63,7 @@ pub fn generate_fir_correction(
             _ => return Err(format!("Unknown FIR phase type: {}", fir_config.phase).into()),
         };
 
-        let coeffs =
-            generate_fir_from_response(&correction_curve, sample_rate, n_taps, phase_type);
+        let coeffs = generate_fir_from_response(&correction_curve, sample_rate, n_taps, phase_type);
         Ok(coeffs)
     }
 }
@@ -111,12 +110,8 @@ fn generate_kirkeby_correction(
         // Use phase if available, else assume minimum phase or 0 (Kirkeby works best with phase)
         // If measurement has no phase, we really should generate MP phase first, but 0 is a fallback.
         // Usually room measurements have phase.
-        let m_phase_deg = meas_interp
-            .phase
-            .as_ref()
-            .map(|p| p[i])
-            .unwrap_or(0.0);
-        
+        let m_phase_deg = meas_interp.phase.as_ref().map(|p| p[i]).unwrap_or(0.0);
+
         let m_mag = 10.0_f64.powf(m_spl / 20.0);
         let m_phase_rad = m_phase_deg.to_radians();
         let h = Complex::from_polar(m_mag, m_phase_rad);
@@ -143,7 +138,7 @@ fn generate_kirkeby_correction(
         } else {
             1.0
         };
-        
+
         // Linear interpolation of log regularization?
         // Simple blend:
         let epsilon = out_band_reg + (in_band_reg - out_band_reg) * transition;
@@ -152,7 +147,7 @@ fn generate_kirkeby_correction(
         // This is the regularized least squares solution
         let numerator = h.conj() * t;
         let denominator = h.norm_sqr() + epsilon;
-        
+
         // Avoid div by zero (epsilon ensures this, but safety check)
         let c = if denominator > 1e-12 {
             numerator / denominator
@@ -166,7 +161,7 @@ fn generate_kirkeby_correction(
     // 5. IFFT to get impulse response
     // Construct full spectrum (positive + negative freq)
     let mut spectrum = vec![Complex::new(0.0, 0.0); fft_len];
-    
+
     // DC and Nyquist
     spectrum[0] = h_inv[0];
     spectrum[fft_len / 2] = h_inv[num_bins - 1]; // Nyquist is real for real signal
@@ -192,19 +187,19 @@ fn generate_kirkeby_correction(
     // However, the FFT result wraps around. The peak is likely at index 0.
     // We want to shift index 0 to index n_taps/2.
     // But we are working with fft_len >> n_taps.
-    
+
     // Find the peak to verify (it should be near 0 if minimum phase, but mixed phase might be elsewhere)
     // Actually, regularized inversion of mixed phase room response tends to put the main spike near 0 (acausal correction)
     // or distributed.
     // We generally perform a cyclic shift of fft_len/2 to center it in the FFT buffer.
-    
+
     let shift = fft_len / 2;
     impulse.rotate_right(shift);
 
     // Now the "main energy" should be around `shift`.
     // We want to extract `n_taps` centered around `shift`.
     let start_idx = shift - n_taps / 2;
-    
+
     // Apply windowing (Hann or similar) to the extracted segment to smooth edges
     // Extracted segment:
     let mut coeffs = vec![0.0; n_taps];

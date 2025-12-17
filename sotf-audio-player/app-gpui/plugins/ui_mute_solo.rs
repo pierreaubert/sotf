@@ -1,8 +1,6 @@
 //! Channel Mute/Solo Plugin UI Component
 
-use super::common::{
-    render_edit_hints, render_section_header, render_toggle, ParamSectionStyle,
-};
+use super::common::{ParamSectionStyle, render_edit_hints, render_section_header, render_toggle};
 use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;

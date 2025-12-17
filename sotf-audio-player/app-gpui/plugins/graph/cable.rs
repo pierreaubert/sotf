@@ -229,10 +229,7 @@ impl Element for CableElement {
             let point_x: f32 = point.x.into();
             let point_y: f32 = point.y.into();
             let endpoint_bounds = Bounds {
-                origin: gpui::point(
-                    px(point_x - endpoint_radius),
-                    px(point_y - endpoint_radius),
-                ),
+                origin: gpui::point(px(point_x - endpoint_radius), px(point_y - endpoint_radius)),
                 size: size(px(endpoint_radius * 2.0), px(endpoint_radius * 2.0)),
             };
             window.paint_quad(PaintQuad {

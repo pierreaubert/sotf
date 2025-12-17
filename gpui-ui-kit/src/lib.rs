@@ -96,7 +96,9 @@ pub use potentiometer::{Potentiometer, PotentiometerScale, PotentiometerSize, Po
 pub use select::{Select, SelectOption, SelectSize, SelectTheme};
 pub use slider::{Slider, SliderSize, SliderTheme};
 pub use toggle::{Toggle, ToggleSize, ToggleStyle, ToggleTheme};
-pub use vertical_slider::{VerticalSlider, VerticalSliderScale, VerticalSliderSize, VerticalSliderTheme};
+pub use vertical_slider::{
+    VerticalSlider, VerticalSliderScale, VerticalSliderSize, VerticalSliderTheme,
+};
 pub use volume_knob::VolumeKnob;
 
 // Data display

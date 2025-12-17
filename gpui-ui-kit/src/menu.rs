@@ -2,7 +2,7 @@
 //!
 //! Provides a complete menu system for application navigation and context menus.
 
-use crate::theme::{glow_shadow, Theme, ThemeExt};
+use crate::theme::{Theme, ThemeExt, glow_shadow};
 use gpui::prelude::*;
 use gpui::*;
 

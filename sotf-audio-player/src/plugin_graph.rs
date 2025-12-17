@@ -38,7 +38,12 @@ pub struct GraphConnection {
 }
 
 impl GraphConnection {
-    pub fn new(from_node: GraphNodeId, from_port: usize, to_node: GraphNodeId, to_port: usize) -> Self {
+    pub fn new(
+        from_node: GraphNodeId,
+        from_port: usize,
+        to_node: GraphNodeId,
+        to_port: usize,
+    ) -> Self {
         Self {
             id: Uuid::new_v4(),
             from_node,
@@ -79,9 +84,9 @@ impl PluginGraphNode {
     /// Get default channel counts based on plugin type
     fn channel_counts_for(plugin: &Plugin) -> (usize, usize) {
         match plugin.plugin_type() {
-            PluginType::Upmixer => (2, 6),        // Stereo to 5.1
+            PluginType::Upmixer => (2, 6),         // Stereo to 5.1
             PluginType::BinauralDecoder => (6, 2), // Surround to stereo
-            _ => (2, 2),                          // Most plugins are stereo in/out
+            _ => (2, 2),                           // Most plugins are stereo in/out
         }
     }
 
@@ -182,7 +187,11 @@ impl PluginGraph {
     }
 
     /// Add a plugin node at the given position
-    pub fn add_plugin_node(&mut self, plugin_type: &PluginType, position: NodePosition) -> GraphNodeId {
+    pub fn add_plugin_node(
+        &mut self,
+        plugin_type: &PluginType,
+        position: NodePosition,
+    ) -> GraphNodeId {
         let plugin = Plugin::new(self.next_plugin_id, plugin_type);
         self.next_plugin_id += 1;
         let node = PluginGraphNode::new(plugin, position);
@@ -229,11 +238,12 @@ impl PluginGraph {
         }
 
         // Check for duplicate connection
-        if self
-            .connections
-            .iter()
-            .any(|c| c.from_node == from_node && c.from_port == from_port && c.to_node == to_node && c.to_port == to_port)
-        {
+        if self.connections.iter().any(|c| {
+            c.from_node == from_node
+                && c.from_port == from_port
+                && c.to_node == to_node
+                && c.to_port == to_port
+        }) {
             return Err("Connection already exists".to_string());
         }
 
@@ -295,7 +305,8 @@ impl PluginGraph {
             .copied()
             .collect();
 
-        let mut in_degree: HashMap<GraphNodeId, usize> = all_nodes.iter().map(|&id| (id, 0)).collect();
+        let mut in_degree: HashMap<GraphNodeId, usize> =
+            all_nodes.iter().map(|&id| (id, 0)).collect();
 
         // Calculate in-degrees
         for conn in &self.connections {
@@ -337,12 +348,18 @@ impl PluginGraph {
 
     /// Get connections originating from a node
     pub fn connections_from(&self, node_id: GraphNodeId) -> Vec<&GraphConnection> {
-        self.connections.iter().filter(|c| c.from_node == node_id).collect()
+        self.connections
+            .iter()
+            .filter(|c| c.from_node == node_id)
+            .collect()
     }
 
     /// Get connections going to a node
     pub fn connections_to(&self, node_id: GraphNodeId) -> Vec<&GraphConnection> {
-        self.connections.iter().filter(|c| c.to_node == node_id).collect()
+        self.connections
+            .iter()
+            .filter(|c| c.to_node == node_id)
+            .collect()
     }
 
     /// Get input channel count for a node

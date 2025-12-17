@@ -176,39 +176,88 @@ pub fn render_plugin_content(
         .into_any_element(),
         PluginSettings::Upmixer {
             speaker_config,
+            // Gains
             gain_front_direct,
             gain_front_ambient,
             gain_rear_ambient,
-            lfe_cutoff_hz,
-            stereo_width,
-            bandpass_hz,
             height_gain,
+            stereo_width,
+            center_spread,
+            surround_direct_bleed,
+            rear_late_reflection,
+            // LFE
+            lfe_cutoff_hz,
             lfe_gain,
+            bandpass_hz,
+            // Sub-harmonic
             enable_subharmonic_synth,
             subharmonic_gain,
+            subharmonic_freq_hz,
+            subharmonic_attack_ms,
+            subharmonic_release_ms,
+            // Decorrelation
+            decorrelation_mode,
+            decorrelation_lfo_rate_hz,
+            velvet_noise_duration_ms,
+            velvet_noise_density,
+            // Height
             enable_hr_direct,
             hr_sharpen,
+            height_hf_cap_hz,
+            height_transient_reduction,
+            height_direct_leak,
+            // Ambient
+            ambient_boost,
             safety_cap_db,
-            decorrelation_mode,
+            rear_ambient_boost,
+            // Dialogue
+            dialogue_weight,
+            voice_freq_min_hz,
+            voice_freq_max_hz,
         } => render_upmixer_plugin(
             entity,
             plugin_idx,
             ui_upmixer::UpmixerRenderState {
                 speaker_config,
+                // Gains
                 gain_front_direct: *gain_front_direct,
                 gain_front_ambient: *gain_front_ambient,
                 gain_rear_ambient: *gain_rear_ambient,
-                lfe_cutoff_hz: *lfe_cutoff_hz,
-                stereo_width: *stereo_width,
-                bandpass_hz: *bandpass_hz,
                 height_gain: *height_gain,
+                stereo_width: *stereo_width,
+                center_spread: *center_spread,
+                surround_direct_bleed: *surround_direct_bleed,
+                rear_late_reflection: *rear_late_reflection,
+                // LFE
+                lfe_cutoff_hz: *lfe_cutoff_hz,
                 lfe_gain: *lfe_gain,
+                bandpass_hz: *bandpass_hz,
+                // Sub-harmonic
                 enable_subharmonic_synth: *enable_subharmonic_synth,
                 subharmonic_gain: *subharmonic_gain,
+                subharmonic_freq_hz: *subharmonic_freq_hz,
+                subharmonic_attack_ms: *subharmonic_attack_ms,
+                subharmonic_release_ms: *subharmonic_release_ms,
+                // Decorrelation
+                decorrelation_mode: *decorrelation_mode,
+                decorrelation_lfo_rate_hz: *decorrelation_lfo_rate_hz,
+                velvet_noise_duration_ms: *velvet_noise_duration_ms,
+                velvet_noise_density: *velvet_noise_density,
+                // Height
                 enable_hr_direct: *enable_hr_direct,
                 hr_sharpen: *hr_sharpen,
+                height_hf_cap_hz: *height_hf_cap_hz,
+                height_transient_reduction: *height_transient_reduction,
+                height_direct_leak: *height_direct_leak,
+                // Ambient
+                ambient_boost: *ambient_boost,
                 safety_cap_db: *safety_cap_db,
-                decorrelation_mode: *decorrelation_mode,
+                rear_ambient_boost: *rear_ambient_boost,
+                // Dialogue
+                dialogue_weight: *dialogue_weight,
+                voice_freq_min_hz: *voice_freq_min_hz,
+                voice_freq_max_hz: *voice_freq_max_hz,
+                // UI state
                 is_editing,
                 selected_param,
                 config_open,

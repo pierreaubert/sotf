@@ -6,7 +6,7 @@ use std::sync::Arc;
 use gpui::prelude::*;
 use gpui::*;
 
-use super::common::{render_edit_hints, render_knob, render_section_header, ParamSectionStyle};
+use super::common::{ParamSectionStyle, render_edit_hints, render_knob, render_section_header};
 use crate::app::AppState;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
@@ -340,12 +340,7 @@ fn render_frequency_axis(theme: &Theme) -> impl IntoElement {
 
 /// Render vertical dB axis (-60dB to 0dB)
 fn render_db_axis(theme: &Theme) -> impl IntoElement {
-    let db_labels = [
-        ("0", 0.0),
-        ("-20", 0.333),
-        ("-40", 0.666),
-        ("-60", 1.0),
-    ];
+    let db_labels = [("0", 0.0), ("-20", 0.333), ("-40", 0.666), ("-60", 1.0)];
 
     div()
         .w(px(32.0))
@@ -545,14 +540,12 @@ impl PlayerView {
                         .child(render_db_axis(&theme))
                         // GPU-accelerated spectrum visualization
                         .child(
-                            div()
-                                .flex_1()
-                                .child(
-                                    SpectrumElement::new(magnitudes)
-                                        .height(px(256.0))
-                                        .frequency_range(20.0, 20000.0)
-                                        .smoothing(0.3),
-                                ),
+                            div().flex_1().child(
+                                SpectrumElement::new(magnitudes)
+                                    .height(px(256.0))
+                                    .frequency_range(20.0, 20000.0)
+                                    .smoothing(0.3),
+                            ),
                         ),
                 )
                 // Frequency axis (horizontal, below spectrum)

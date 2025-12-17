@@ -24,12 +24,7 @@ impl PlayerView {
             )
             .child(
                 // Grid layout with 2 equal-width columns
-                div()
-                    .grid()
-                    .grid_cols(2)
-                    .gap_3()
-                    .w_full()
-                    .children(
+                div().grid().grid_cols(2).gap_3().w_full().children(
                     state
                         .app
                         .output_devices

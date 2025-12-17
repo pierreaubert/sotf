@@ -1,6 +1,6 @@
 //! Loudness Plugin UI Components
 
-use super::common::{render_edit_hints, render_knob, render_section_header, ParamSectionStyle};
+use super::common::{ParamSectionStyle, render_edit_hints, render_knob, render_section_header};
 use super::level_meters::render_lufs_with_true_peak;
 use crate::app::AppState;
 use crate::theme::Theme;
@@ -156,11 +156,5 @@ pub fn render_loudness_monitor_plugin(
         // Dynamic LUFS/Peak/Width display from queue view
         .child(render_lufs_with_true_peak(loudness.as_ref(), theme))
         // Info section
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .param_section_base(theme),
-        )
+        .child(div().flex().flex_col().gap_2().param_section_base(theme))
 }

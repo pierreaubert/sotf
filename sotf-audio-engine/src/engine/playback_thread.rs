@@ -93,10 +93,10 @@ struct PlaybackState {
     // Moved into the callback closure, but kept here for ownership management
     // Note: This is an Option because we move it out when building the stream
     ring_buffer_consumer: parking_lot::Mutex<Option<Consumer<f32>>>,
-    
+
     // Capacity of the ring buffer (for metrics)
     capacity: usize,
-    
+
     volume: Arc<parking_lot::RwLock<f32>>,
     muted: Arc<AtomicBool>,
     underrun_count: Arc<AtomicU64>,
@@ -292,10 +292,13 @@ fn run_playback_thread(
                         };
 
                         // Create new ring buffer for the new channel configuration
-                        let new_buffer_capacity = (sample_rate as usize * 200) / 1000 * new_channels;
-                        let (new_producer, new_consumer) = RingBuffer::<f32>::new(new_buffer_capacity);
+                        let new_buffer_capacity =
+                            (sample_rate as usize * 200) / 1000 * new_channels;
+                        let (new_producer, new_consumer) =
+                            RingBuffer::<f32>::new(new_buffer_capacity);
 
-                        let new_state = Arc::new(PlaybackState::new(new_consumer, new_buffer_capacity));
+                        let new_state =
+                            Arc::new(PlaybackState::new(new_consumer, new_buffer_capacity));
 
                         // Continuously drain frames during rebuild - they may have wrong channel count
                         // Use a closure to drain and count
@@ -461,13 +464,15 @@ fn run_playback_thread(
                             downmixed.push(left + center);
                             downmixed.push(right + center);
                         }
-                        
+
                         // Write downmixed audio
                         let chunk = match producer.write_chunk_uninit(downmixed.len()) {
                             Ok(chunk) => chunk,
                             Err(_) => {
                                 // Not enough space, wait a bit
-                                std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_RINGBUFFER));
+                                std::thread::sleep(std::time::Duration::from_millis(
+                                    SPIN_MS_RINGBUFFER,
+                                ));
                                 continue;
                             }
                         };
@@ -483,9 +488,9 @@ fn run_playback_thread(
                 let chunk = match producer.write_chunk_uninit(frame.data.len()) {
                     Ok(chunk) => chunk,
                     Err(_) => {
-                         // Should not happen often due to available_space check above, but purely for safety
-                         std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_RINGBUFFER));
-                         continue;
+                        // Should not happen often due to available_space check above, but purely for safety
+                        std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_RINGBUFFER));
+                        continue;
                     }
                 };
                 chunk.fill_from_iter(frame.data.into_iter());
@@ -543,34 +548,34 @@ fn build_output_stream(
                     let (first, second) = chunk.as_slices();
                     let first_len = first.len();
                     let second_len = second.len();
-                    
+
                     if first_len > 0 {
                         data[..first_len].copy_from_slice(first);
                     }
                     if second_len > 0 {
                         data[first_len..first_len + second_len].copy_from_slice(second);
                     }
-                    
+
                     chunk.commit_all();
                 } else {
                     // Not enough data (underrun)
                     let available = consumer.slots();
-                    
+
                     // Read what we have
                     if let Ok(chunk) = consumer.read_chunk(available) {
-                         let (first, second) = chunk.as_slices();
-                         let first_len = first.len();
-                         let second_len = second.len();
-                         
-                         if first_len > 0 {
-                             data[..first_len].copy_from_slice(first);
-                         }
-                         if second_len > 0 {
-                             data[first_len..first_len + second_len].copy_from_slice(second);
-                         }
-                         chunk.commit_all();
+                        let (first, second) = chunk.as_slices();
+                        let first_len = first.len();
+                        let second_len = second.len();
+
+                        if first_len > 0 {
+                            data[..first_len].copy_from_slice(first);
+                        }
+                        if second_len > 0 {
+                            data[first_len..first_len + second_len].copy_from_slice(second);
+                        }
+                        chunk.commit_all();
                     }
-                    
+
                     // Zero pad the rest
                     if available < requested {
                         data[available..].fill(0.0);
@@ -583,10 +588,11 @@ fn build_output_stream(
                         0
                     };
 
-                    let current_underruns = state_clone.underrun_count.fetch_add(1, Ordering::Relaxed);
+                    let current_underruns =
+                        state_clone.underrun_count.fetch_add(1, Ordering::Relaxed);
                     if current_underruns % 100 == 0 {
-                         event_tx_data.send(ThreadEvent::PlaybackUnderrun).ok();
-                         log::warn!(
+                        event_tx_data.send(ThreadEvent::PlaybackUnderrun).ok();
+                        log::warn!(
                             "[Playback] UNDERRUN #{}: buffer has {} samples but need {} ({}% full)",
                             current_underruns + 1,
                             available,
@@ -603,7 +609,9 @@ fn build_output_stream(
                 } else {
                     0
                 };
-                state_clone.last_buffer_level.store(fill_percent as u64, Ordering::Relaxed);
+                state_clone
+                    .last_buffer_level
+                    .store(fill_percent as u64, Ordering::Relaxed);
 
                 // Apply volume and mute
                 let volume = *state_clone.volume.read();
@@ -644,5 +652,3 @@ fn build_output_stream(
 
     Ok(stream)
 }
-
-
