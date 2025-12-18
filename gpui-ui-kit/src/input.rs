@@ -3,15 +3,37 @@
 //! Text input field with optional label, placeholder, and validation.
 //!
 //! Features:
-//! - Full keyboard text editing support
+//! - Full keyboard text editing support (self-contained)
 //! - Click to focus and start editing
 //! - Enter to confirm, Escape to cancel
-//! - Text selection visual feedback
+//! - Cursor navigation and text selection
+//! - Emacs-style keybindings (Ctrl+A/E/K/U/W/H/D/F/B)
 //! - Disabled and readonly states
+//!
+//! # Simple Usage
+//!
+//! The Input component handles all focus and keyboard events internally.
+//! Just provide callbacks for changes:
+//!
+//! ```ignore
+//! Input::new("my-input")
+//!     .value(current_value)
+//!     .placeholder("Enter text...")
+//!     .on_change(|new_value, _window, _cx| {
+//!         // Called when user confirms with Enter
+//!         println!("Value changed to: {}", new_value);
+//!     })
+//!     .on_text_change(|text, _window, _cx| {
+//!         // Called on every keystroke (optional, for live updates)
+//!         println!("Current text: {}", text);
+//!     })
+//! ```
 
 use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::*;
 use gpui::*;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 /// Theme colors for input styling
 #[derive(Debug, Clone)]
@@ -105,10 +127,135 @@ pub enum InputVariant {
     Flushed,
 }
 
-/// Callback type for input changes
-type OnChangeCallback = Box<dyn Fn(&str, &mut Window, &mut App) + 'static>;
+/// Internal editing state for the input
+#[derive(Clone, Default)]
+struct EditState {
+    /// Whether currently editing
+    editing: bool,
+    /// Current edit text
+    text: String,
+    /// Cursor position (character index)
+    cursor: usize,
+    /// Whether all text is selected
+    text_selected: bool,
+}
+
+impl EditState {
+    fn new(value: &str) -> Self {
+        Self {
+            editing: true,
+            text: value.to_string(),
+            cursor: value.chars().count(),
+            text_selected: true,
+        }
+    }
+
+    fn move_to_start(&mut self) {
+        self.cursor = 0;
+        self.text_selected = false;
+    }
+
+    fn move_to_end(&mut self) {
+        self.cursor = self.text.chars().count();
+        self.text_selected = false;
+    }
+
+    fn move_forward(&mut self) {
+        let len = self.text.chars().count();
+        if self.cursor < len {
+            self.cursor += 1;
+        }
+        self.text_selected = false;
+    }
+
+    fn move_backward(&mut self) {
+        if self.cursor > 0 {
+            self.cursor -= 1;
+        }
+        self.text_selected = false;
+    }
+
+    fn kill_to_end(&mut self) {
+        let chars: Vec<char> = self.text.chars().collect();
+        self.text = chars[..self.cursor].iter().collect();
+        self.text_selected = false;
+    }
+
+    fn kill_to_start(&mut self) {
+        let chars: Vec<char> = self.text.chars().collect();
+        self.text = chars[self.cursor..].iter().collect();
+        self.cursor = 0;
+        self.text_selected = false;
+    }
+
+    fn kill_word_backward(&mut self) {
+        if self.cursor == 0 {
+            return;
+        }
+        let chars: Vec<char> = self.text.chars().collect();
+        let mut new_pos = self.cursor;
+        // Skip trailing spaces
+        while new_pos > 0 && chars[new_pos - 1].is_whitespace() {
+            new_pos -= 1;
+        }
+        // Skip word characters
+        while new_pos > 0 && !chars[new_pos - 1].is_whitespace() {
+            new_pos -= 1;
+        }
+        let mut new_chars = chars[..new_pos].to_vec();
+        new_chars.extend_from_slice(&chars[self.cursor..]);
+        self.text = new_chars.into_iter().collect();
+        self.cursor = new_pos;
+        self.text_selected = false;
+    }
+
+    fn do_backspace(&mut self) {
+        if self.text_selected {
+            self.text.clear();
+            self.cursor = 0;
+            self.text_selected = false;
+        } else if self.cursor > 0 {
+            let mut chars: Vec<char> = self.text.chars().collect();
+            chars.remove(self.cursor - 1);
+            self.text = chars.into_iter().collect();
+            self.cursor -= 1;
+        }
+    }
+
+    fn do_delete(&mut self) {
+        if self.text_selected {
+            self.text.clear();
+            self.cursor = 0;
+            self.text_selected = false;
+        } else {
+            let len = self.text.chars().count();
+            if self.cursor < len {
+                let mut chars: Vec<char> = self.text.chars().collect();
+                chars.remove(self.cursor);
+                self.text = chars.into_iter().collect();
+            }
+        }
+    }
+
+    fn insert_text(&mut self, char_text: &str) {
+        if self.text_selected {
+            self.text.clear();
+            self.cursor = 0;
+            self.text_selected = false;
+        }
+        let mut chars: Vec<char> = self.text.chars().collect();
+        for (i, c) in char_text.chars().enumerate() {
+            chars.insert(self.cursor + i, c);
+        }
+        self.text = chars.into_iter().collect();
+        self.cursor += char_text.chars().count();
+    }
+}
 
 /// A text input component with full keyboard editing support
+///
+/// The Input handles all focus and keyboard events internally.
+/// Parent components only need to provide callbacks for value changes.
 pub struct Input {
     id: ElementId,
     value: SharedString,
@@ -125,13 +272,17 @@ pub struct Input {
     text_color: Option<Rgba>,
     border_color: Option<Rgba>,
     placeholder_color: Option<Rgba>,
-    editing: bool,
-    text_selected: bool,
-    edit_text: Option<SharedString>,
-    on_change: Option<OnChangeCallback>,
+    /// Internal editing state (managed by Input via Rc<RefCell>)
+    edit_state: Rc<RefCell<EditState>>,
+    /// Called when value is confirmed (Enter pressed)
+    on_change: Option<Box<dyn Fn(&str, &mut Window, &mut App) + 'static>>,
+    /// Called when editing starts (click on input)
     on_edit_start: Option<Box<dyn Fn(&mut Window, &mut App) + 'static>>,
+    /// Called when editing ends (Enter = Some(value), Escape = None)
     on_edit_end: Option<Box<dyn Fn(Option<String>, &mut Window, &mut App) + 'static>>,
+    /// Called on every text change during editing (for live updates)
     on_text_change: Option<Box<dyn Fn(String, &mut Window, &mut App) + 'static>>,
+    /// Focus handle for this input
     focus_handle: Option<FocusHandle>,
 }
 
@@ -154,9 +305,7 @@ impl Input {
             text_color: None,
             border_color: None,
             placeholder_color: None,
-            editing: false,
-            text_selected: false,
-            edit_text: None,
+            edit_state: Rc::new(RefCell::new(EditState::default())),
             on_change: None,
             on_edit_start: None,
             on_edit_end: None,
@@ -165,7 +314,7 @@ impl Input {
         }
     }
 
-    /// Set the focus handle
+    /// Set the focus handle (optional - one is created internally if not provided)
     pub fn focus_handle(mut self, handle: FocusHandle) -> Self {
         self.focus_handle = Some(handle);
         self
@@ -255,25 +404,7 @@ impl Input {
         self
     }
 
-    /// Set whether the input is currently being edited
-    pub fn editing(mut self, editing: bool) -> Self {
-        self.editing = editing;
-        self
-    }
-
-    /// Set whether the text is fully selected (for visual feedback)
-    pub fn text_selected(mut self, selected: bool) -> Self {
-        self.text_selected = selected;
-        self
-    }
-
-    /// Set the current edit text (when editing)
-    pub fn edit_text(mut self, text: impl Into<SharedString>) -> Self {
-        self.edit_text = Some(text.into());
-        self
-    }
-
-    /// Set change handler (called when input value changes)
+    /// Set change handler (called when input value is confirmed with Enter)
     pub fn on_change(mut self, handler: impl Fn(&str, &mut Window, &mut App) + 'static) -> Self {
         self.on_change = Some(Box::new(handler));
         self
@@ -295,7 +426,7 @@ impl Input {
         self
     }
 
-    /// Set text change handler (called when edit text changes)
+    /// Set text change handler (called on every keystroke during editing)
     pub fn on_text_change(
         mut self,
         handler: impl Fn(String, &mut Window, &mut App) + 'static,
@@ -306,7 +437,7 @@ impl Input {
 }
 
 impl RenderOnce for Input {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let global_theme = cx.theme();
         let theme = InputTheme::from(&global_theme);
 
@@ -319,13 +450,28 @@ impl RenderOnce for Input {
         let has_error = self.error.is_some();
         let disabled = self.disabled;
         let readonly = self.readonly;
-        let editing = self.editing;
-        let text_selected = self.text_selected;
         let current_value = self.value.clone();
-        let edit_text_clone = self.edit_text.clone();
-        
-        // Use provided focus handle or create a new one (unstable across renders)
+
+        // Use provided focus handle or create a new one
         let focus_handle = self.focus_handle.unwrap_or_else(|| cx.focus_handle());
+
+        // Determine editing state from focus - this is the key fix!
+        // The input is "editing" when it has focus
+        let is_focused = focus_handle.is_focused(window);
+
+        // When focused, we're always in editing mode
+        // The edit text comes from the value prop (which parent updates via on_text_change)
+        let editing = is_focused && !disabled && !readonly;
+        
+        // For display: when editing, show the current value (parent tracks live text)
+        // Text selection only on initial click (handled by click handler setting text_selected)
+        let edit_state = self.edit_state.clone();
+        let state = edit_state.borrow();
+        let text_selected = state.text_selected && editing;
+        drop(state);
+        
+        // The edit text is the current value - parent is responsible for updating it
+        let edit_text = current_value.to_string();
 
         let border_color = if has_error {
             theme.error
@@ -363,7 +509,7 @@ impl RenderOnce for Input {
             .rounded_md()
             .border_1()
             .border_color(border_color)
-            .focusable(); // Make focusable for keyboard events
+            .focusable();
 
         // Apply variant styling
         match self.variant {
@@ -399,86 +545,168 @@ impl RenderOnce for Input {
         let selection_bg = theme.selection_bg;
 
         // Wrap handlers in Rc for sharing
-        let _on_change_rc = self.on_change.map(|h| std::rc::Rc::new(h));
-        let on_edit_start_rc = self.on_edit_start.map(|h| std::rc::Rc::new(h));
-        let on_edit_end_rc = self.on_edit_end.map(|h| std::rc::Rc::new(h));
-        let on_text_change_rc = self.on_text_change.map(|h| std::rc::Rc::new(h));
+        let on_change_rc = self.on_change.map(Rc::new);
+        let on_edit_start_rc = self.on_edit_start.map(Rc::new);
+        let on_edit_end_rc = self.on_edit_end.map(Rc::new);
+        let on_text_change_rc = self.on_text_change.map(Rc::new);
 
-        // Add click handler to start editing
-        if !disabled && !readonly && !editing {
-            let focus_handle = focus_handle.clone();
-            if let Some(ref handler_rc) = on_edit_start_rc {
-                let handler = handler_rc.clone();
-                input_wrapper =
-                    input_wrapper.on_mouse_down(MouseButton::Left, move |_, window, cx| {
-                        window.focus(&focus_handle, cx);
-                        handler(window, cx);
-                    });
-            }
+        // Add click handler - focus and start editing
+        if !disabled && !readonly {
+            let focus_handle_for_click = focus_handle.clone();
+            let edit_state_for_click = edit_state.clone();
+            let value_for_click = current_value.to_string();
+            let on_edit_start_click = on_edit_start_rc.clone();
+
+            input_wrapper =
+                input_wrapper.on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                    // Focus the input
+                    window.focus(&focus_handle_for_click, cx);
+
+                    // Start editing if not already
+                    let mut state = edit_state_for_click.borrow_mut();
+                    if !state.editing {
+                        *state = EditState::new(&value_for_click);
+                        drop(state);
+
+                        // Call on_edit_start callback
+                        if let Some(ref handler) = on_edit_start_click {
+                            handler(window, cx);
+                        }
+                    }
+                });
         }
 
         // Add keyboard event handling
+        // Note: We use the current_value from props as the source of truth.
+        // The edit_state is only used for cursor position and selection state.
         if !disabled && !readonly {
+            let edit_state_for_key = edit_state.clone();
             let on_edit_end_key = on_edit_end_rc.clone();
             let on_text_change_key = on_text_change_rc.clone();
-            let is_editing = editing;
-            let edit_text_for_key = edit_text_clone.clone();
+            let on_change_key = on_change_rc.clone();
+            let focus_handle_for_key = focus_handle.clone();
+            let current_value_for_key = current_value.to_string();
 
             input_wrapper = input_wrapper.on_key_down(move |event, window, cx| {
-                if is_editing {
-                    // Stop propagation to prevent other handlers from firing
-                    cx.stop_propagation();
+                // Check if we're focused (editing) - don't rely on edit_state.editing
+                if !focus_handle_for_key.is_focused(window) {
+                    return;
+                }
 
-                    // Editing mode keyboard handling
-                    match event.keystroke.key.as_str() {
-                        "enter" => {
-                            // Confirm edit
-                            if let Some(ref handler) = on_edit_end_key {
-                                let text = edit_text_for_key
-                                    .as_ref()
-                                    .map(|s| s.to_string())
-                                    .unwrap_or_default();
-                                handler(Some(text), window, cx);
-                            }
+                // Stop propagation to prevent other handlers from firing
+                cx.stop_propagation();
+
+                let key = event.keystroke.key.as_str();
+                let ctrl = event.keystroke.modifiers.control;
+
+                // Get or initialize edit state with current value
+                let mut state = edit_state_for_key.borrow_mut();
+                if !state.editing || state.text != current_value_for_key {
+                    // Sync state with current value, preserving cursor if possible
+                    let old_cursor = state.cursor;
+                    state.text = current_value_for_key.clone();
+                    state.editing = true;
+                    // Keep cursor in bounds
+                    let len = state.text.chars().count();
+                    if old_cursor > len {
+                        state.cursor = len;
+                    }
+                }
+
+                // Emacs-style keybindings when Ctrl is held
+                if ctrl {
+                    match key {
+                        "a" => state.move_to_start(),
+                        "e" => state.move_to_end(),
+                        "k" => state.kill_to_end(),
+                        "u" => state.kill_to_start(),
+                        "w" => state.kill_word_backward(),
+                        "h" => state.do_backspace(),
+                        "d" => state.do_delete(),
+                        "f" => state.move_forward(),
+                        "b" => state.move_backward(),
+                        _ => {}
+                    }
+                    // Notify text change
+                    if let Some(ref handler) = on_text_change_key {
+                        let text = state.text.clone();
+                        drop(state);
+                        handler(text, window, cx);
+                    }
+                    return;
+                }
+
+                // Regular key handling
+                match key {
+                    "enter" => {
+                        // Confirm edit - blur the input
+                        let text = state.text.clone();
+                        state.editing = false;
+                        state.text_selected = false;
+                        drop(state);
+
+                        // Blur focus
+                        window.blur();
+
+                        // Call on_change callback
+                        if let Some(ref handler) = on_change_key {
+                            handler(&text, window, cx);
                         }
-                        "escape" => {
-                            // Cancel edit
-                            if let Some(ref handler) = on_edit_end_key {
-                                handler(None, window, cx);
-                            }
+                        // Call on_edit_end callback
+                        if let Some(ref handler) = on_edit_end_key {
+                            handler(Some(text), window, cx);
                         }
-                        "backspace" => {
-                            // Handle backspace - remove last character (Unicode-safe)
+                    }
+                    "escape" => {
+                        // Cancel edit - blur the input
+                        state.editing = false;
+                        state.text_selected = false;
+                        drop(state);
+
+                        // Blur focus
+                        window.blur();
+
+                        // Call on_edit_end callback
+                        if let Some(ref handler) = on_edit_end_key {
+                            handler(None, window, cx);
+                        }
+                    }
+                    "backspace" => {
+                        state.do_backspace();
+                        let text = state.text.clone();
+                        drop(state);
+                        if let Some(ref handler) = on_text_change_key {
+                            handler(text, window, cx);
+                        }
+                    }
+                    "delete" => {
+                        state.do_delete();
+                        let text = state.text.clone();
+                        drop(state);
+                        if let Some(ref handler) = on_text_change_key {
+                            handler(text, window, cx);
+                        }
+                    }
+                    "left" => {
+                        state.move_backward();
+                    }
+                    "right" => {
+                        state.move_forward();
+                    }
+                    "home" => {
+                        state.move_to_start();
+                    }
+                    "end" => {
+                        state.move_to_end();
+                    }
+                    _ => {
+                        // Handle text input using key_char for IME support
+                        if let Some(char_text) = event.keystroke.key_char.as_ref() {
+                            state.insert_text(char_text);
+                            let text = state.text.clone();
+                            drop(state);
                             if let Some(ref handler) = on_text_change_key {
-                                let current = edit_text_for_key
-                                    .as_ref()
-                                    .map(|s| s.to_string())
-                                    .unwrap_or_default();
-
-                                let new_text = if current.is_empty() {
-                                    current
-                                } else {
-                                    // Pop last char (Unicode-safe)
-                                    let mut chars: Vec<char> = current.chars().collect();
-                                    chars.pop();
-                                    chars.into_iter().collect()
-                                };
-                                handler(new_text, window, cx);
-                            }
-                        }
-                        _ => {
-                            // Handle text input using key_char for IME support
-                            if let Some(ref handler) = on_text_change_key {
-                                // Use key_char for proper IME/international text support
-                                if let Some(char_text) = event.keystroke.key_char.as_ref() {
-                                    let current = edit_text_for_key
-                                        .as_ref()
-                                        .map(|s| s.to_string())
-                                        .unwrap_or_default();
-
-                                    let new_text = format!("{}{}", current, char_text);
-                                    handler(new_text, window, cx);
-                                }
+                                handler(text, window, cx);
                             }
                         }
                     }
@@ -494,10 +722,7 @@ impl RenderOnce for Input {
 
         // Determine display text
         let display_text = if editing {
-            edit_text_clone
-                .as_ref()
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| current_value.to_string())
+            edit_text
         } else if current_value.is_empty() {
             self.placeholder
                 .as_ref()
@@ -536,8 +761,6 @@ impl RenderOnce for Input {
             InputSize::Md => text_el.text_sm(),
             InputSize::Lg => text_el,
         };
-
-        // Note: handlers moved to input_wrapper
 
         input_wrapper = input_wrapper.child(text_el);
 

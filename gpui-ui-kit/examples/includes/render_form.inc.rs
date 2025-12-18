@@ -14,9 +14,9 @@ impl Showcase {
         edit_text: String,
         text_selected: bool,
         input_value: String,
-        input_editing: bool,
-        input_edit_text: String,
-        input_selected: bool,
+        _input_editing: bool,
+        _input_edit_text: String,
+        _input_selected: bool,
         buttonset_view_mode: SharedString,
         buttonset_alignment: SharedString,
         entity: Entity<Self>,
@@ -445,51 +445,27 @@ impl Showcase {
                         HStack::new()
                             .spacing(StackSpacing::Md)
                             .child({
-                                let mut input = Input::new("input-editable")
+                                let entity = entity.clone();
+                                Input::new("input-editable")
                                     .label("Editable Text")
                                     .value(input_value.clone())
                                     .placeholder("Click to edit...")
                                     .variant(InputVariant::Default)
-                                    .editing(input_editing)
-                                    .on_edit_start({
+                                    .on_change({
                                         let entity = entity.clone();
-                                        move |_window, cx| {
+                                        move |new_value, _window, cx| {
                                             entity.update(cx, |showcase, _| {
-                                                showcase.input_editing = true;
-                                                showcase.input_edit_text = showcase.input_value.clone();
-                                                showcase.input_selected = true;
+                                                showcase.input_value = new_value.to_string();
                                             });
                                         }
                                     })
                                     .on_text_change({
-                                        let entity = entity.clone();
                                         move |text, _window, cx| {
                                             entity.update(cx, |showcase, _| {
                                                 showcase.input_edit_text = text;
-                                                showcase.input_selected = false;
                                             });
                                         }
                                     })
-                                    .on_edit_end({
-                                        let entity = entity.clone();
-                                        move |result, _window, cx| {
-                                            entity.update(cx, |showcase, _| {
-                                                if let Some(new_value) = result {
-                                                    showcase.input_value = new_value;
-                                                }
-                                                showcase.input_editing = false;
-                                                showcase.input_edit_text.clear();
-                                                showcase.input_selected = false;
-                                            });
-                                        }
-                                    });
-
-                                if input_editing {
-                                    input = input
-                                        .edit_text(input_edit_text.clone())
-                                        .text_selected(input_selected);
-                                }
-                                input
                             })
                             .child(
                                 Input::new("input-filled")
