@@ -8,7 +8,7 @@
 //!
 //! # 3D Convex Hull Example
 //! ```
-//! use convexhull3d::{ConvexHull3D, Vertex};
+//! use math_convex_hull::{ConvexHull3D, Vertex};
 //!
 //! let vertices = vec![
 //!     Vertex::new(0.0, 0.0, 0.0),

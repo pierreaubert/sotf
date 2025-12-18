@@ -32,7 +32,7 @@ directories = { workspace = true }
 rusqlite = { workspace = true, features = ["bundled"] }
 walkdir = { workspace = true }
 autoeq-env = { workspace = true }
-autoeq-iir = { workspace = true }
+math-iir-fir = { workspace = true }
 rand = { workspace = true }
 rayon = { workspace = true }
 
@@ -56,11 +56,11 @@ id3 = { workspace = true }
 metaflac = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-sotf_hal = { workspace = true, optional = true }
+sotf-hal = { workspace = true, optional = true }
 
 [features]
 default = ["hal"]
-hal = ["sotf_hal"]
+hal = ["sotf-hal"]
 no-hal = []
 
 [target.'cfg(unix)'.dependencies]

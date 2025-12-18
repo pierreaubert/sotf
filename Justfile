@@ -520,13 +520,13 @@ publish: publish-math publish-autoeq publish-gpui
 # QA
 # ----------------------------------------------------------------------
 
-qa: prod-autoeq \
+qa: prod-autoeq qa-fem qa-bem
+
+qa-autoeq: prod-autoeq \
 	qa-ascilab-6b \
 	qa-jbl-m2-flat qa-jbl-m2-score \
 	qa-beyerdynamic-dt1990pro \
-	qa-edifierw830nb \
-	qa-fem \
-	qa-bem
+	qa-edifierw830nb
 
 qa-ascilab-6b:
 	./target/release/autoeq --speaker="AsciLab F6B" --version asr --measurement CEA2034 \
@@ -582,8 +582,8 @@ qa-edifierw830nb-mhrga:
 	--target ./data_tests/targets/harman-over-ear-2018.csv \
 	--min-freq 50 --max-freq 16000 --max-q 8 --max-db 8 \
 	--loss headphone-score \
-	--min-spacing-oct 0.08 --atolerance 0.000001 --tolerance 0.0000001 --algo mh:rga --population 100 --maxeval 20000 \
-	--qa 4.0
+	--min-spacing-oct 0.04 --atolerance 0.00000001 --tolerance 0.0000001 --algo mh:rga --population 100 --maxeval 30000 \
+	--qa 2.5
 
 qa-edifierw830nb-mhfirefly:
 	./target/release/autoeq -n 5 \
@@ -591,8 +591,8 @@ qa-edifierw830nb-mhfirefly:
 	--target ./data_tests/targets/harman-over-ear-2018.csv \
 	--min-freq 50 --max-freq 16000 --max-q 8 --max-db 8 \
 	--loss headphone-score \
-	--min-spacing-oct 0.08 --atolerance 0.000001 --tolerance 0.0000001 --algo mh:rga --population 80 --maxeval 3000 \
-	--qa 4.0
+	--min-spacing-oct 0.04 --atolerance 0.00000001 --tolerance 0.000000001 --algo mh:rga --population 80 --maxeval 30000 \
+	--qa 2.5
 
 qa-fem:
 	cargo run --release --bin qa-suite -p math-fem --features="cli native"

@@ -12,7 +12,7 @@ crate-type = ["staticlib", "cdylib"]
 [dependencies]
 sotf-audio-plugins = { workspace = true, default-features = false, features = ["no-hal"] }
 sotf-audio-engine = { workspace = true, default-features = false, features = ["no-hal"] }
-autoeq-iir = { workspace = true }
+math-iir-fir = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }

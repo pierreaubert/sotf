@@ -1,6 +1,6 @@
 [package]
 name = "autoeq"
-version = "0.2.253"
+version = "0.2.254"
 description = "Automatic equalization for speakers, headphones and rooms!"
 edition = { workspace = true }
 repository = { workspace = true }
@@ -33,8 +33,8 @@ tokio = { workspace = true }
 urlencoding = { workspace = true }
 
 # AutoEQ crates
-autoeq-iir = { path = "../math-iir", version="0.2" }
-autoeq-de = { path = "../math-de", version="0.2" }
+math-iir-fir = { path = "../math-iir-fir", version="0.2" }
+math-differential-evolution = { path = "../math-differential-evolution", version="0.2" }
 autoeq-cea2034 = { path = "../autoeq-cea2034", version="0.2" }
 autoeq-env = { path = "../autoeq-env", version="0.2" }
 

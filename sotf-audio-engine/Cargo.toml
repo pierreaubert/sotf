@@ -50,9 +50,9 @@ log = { workspace = true }
 env_logger = { workspace = true }
 directories = { workspace = true }
 rusqlite = { workspace = true, features = ["bundled"] }
-walkdir = "2"
-autoeq-env = { path = "../autoeq-env" }
-autoeq-iir = { path = "../math-iir" }
+walkdir = { workspace = true }
+autoeq-env = { workspace = true }
+math-iir-fir = { workspace = true }
 sotf-audio-plugins = { path = "../sotf-audio-plugins", default-features = false }
 num-complex = { workspace = true, features = ["serde"] }
 
@@ -78,17 +78,17 @@ hound = { workspace = true }
 rubato = { workspace = true }
 id3 = { workspace = true }
 metaflac = { workspace = true }
-rtrb = "0.3.2"
+rtrb = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-sotf_hal = { path = "../sotf-macos-hal", optional = true }
+sotf-hal = { path = "../sotf-macos-hal", optional = true }
 
 [features]
 default = ["hal"]
-hal = ["sotf_hal", "sotf-audio-plugins/hal"]
+hal = ["sotf-hal", "sotf-audio-plugins/hal"]
 no-hal = ["sotf-audio-plugins/no-hal"]
 
 [dev-dependencies]

@@ -10,6 +10,9 @@ mutants.out
 /data_generated
 /*.csv
 /*.html
+/*.json
+/*.json.bz2
+/todos.md
 
 # node
 /node_modules

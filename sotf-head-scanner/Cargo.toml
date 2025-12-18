@@ -30,7 +30,7 @@ num-complex = { workspace = true }
 chrono = { workspace = true }
 
 # Internal dependencies
-convexhull3d = { workspace = true, package = "math-convexhull3d" }
+# convexhull3d = { workspace = true, package = "math-convexhull3d" }
 
 # Computer vision and image processing
 # export DYLD_FALLBACK_LIBRARY_PATH=/Applications/Xcode.app/Contents/Framework

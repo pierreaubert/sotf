@@ -11,11 +11,11 @@ members = [
     "gpui-ui-kit",
     "math-bem",
     "math-fem",
-    "math-iir",
+    "math-iir-fir",
     "math-solvers",
-    "math-testfunctions",
-    "math-convexhull3d",
-    "math-de",
+    "math-test-functions",
+    "math-convex-hull",
+    "math-differential-evolution",
     "math-wave",
     "math-xem-common",
     "sotf-audio-engine",
@@ -26,7 +26,7 @@ members = [
     "sotf-audio-plugins",
     "sotf-audio-plugins/src-ffi",
     "sotf-macos-hal",
-    "sotf-head-scanner",
+#    "sotf-head-scanner",
 ]
 # Default members excludes
 #   - macOS-only sotf-hal, sotf-configbar
@@ -52,13 +52,13 @@ default-members = [
     "autoeq-env",
     "autoeq-cea2034",
     "autoeq-roomsim",
-    "math-convexhull3d",
+    "math-convex-hull",
     "math-bem",
     "math-fem",
-    "math-de",
-    "math-iir",
+    "math-differential-evolution",
+    "math-iir-fir",
     "math-solvers",
-    "math-testfunctions",
+    "math-test-functions",
     "math-wave",
     "math-xem-common",
 ]
@@ -98,13 +98,16 @@ base64 = "0.22"
 byteorder = "1.5"
 chrono = "0.4"
 clap = { version = "4.5", features = ["derive"] }
+console_error_panic_hook = { version = "0.1" }
 csv = "1.4"
 ctrlc = "3.5"
 directories = "5"
 env = "1"
 env_logger = "0.11"
+getrandom = "0.2"
 libc = "0.2"
 log = "0.4"
+mimalloc = { version = "0.1" }
 notify = { version = "6.1", default-features = false, features = ["macos_kqueue"] }
 num_cpus = "1.17"
 regex = "1.12"
@@ -137,11 +140,11 @@ special = "0.11"  # Bessel, Hankel, Legendre functions
 spec_math = "0.1.6"
 autoeq = { path = "autoeq", version = "0.2" }
 autoeq-cea2034 = { path = "autoeq-cea2034", version = "0.2" }
-autoeq-de = { path = "math-de", version = "0.2" }
 autoeq-env = { path = "autoeq-env", version = "0.2" }
-autoeq-iir = { path = "math-iir", version = "0.2" }
 autoeq-roomsim = { path = "autoeq-roomsim", version = "0.1" }
-autoeq-testfunctions = { path = "math-testfunctions", version = "0.2" }
+math-iir-fir = { path = "math-iir-fir", version = "0.2" }
+math-differential-evolution = { path = "math-differential-evolution", version = "0.2" }
+math-test-functions = { path = "math-test-functions", version = "0.2" }
 gpui-au = { path = "gpui-au", version = "0.5" }
 gpui-d3rs = { path = "gpui-d3rs", version = "0.1" }
 gpui-px = { path = "gpui-px", version = "0.1" }
@@ -160,7 +163,7 @@ sotf-audio-player = { path = "sotf-audio-player", version = "0.5" }
 sotf-audio-plugins = { path = "sotf-audio-plugins", version = "0.5", default-features = false }
 sotf-head-scanner = { path = "sotf-head-scanner", version = "0.1" }
 sotf-macos-hal = { path = "sotf-macos-hal", version = "0.2" }
-sotf_hal = { path = "sotf-macos-hal", version = "0.2" }
+sotf-hal = { path = "sotf-macos-hal", version = "0.2" }
 
 # Plotting and visualization
 plotly = { version = "0.13.5" }
@@ -241,6 +244,53 @@ approx = "0.5"
 proptest = "1.9"
 unicode-normalization = "0.1"
 toml = "0.8"
+
+[workspace.lints.rust]
+ambiguous_negative_literals = "warn"
+missing_debug_implementations = "warn"
+redundant_imports = "warn"
+redundant_lifetimes = "warn"
+trivial_numeric_casts = "warn"
+unsafe_op_in_unsafe_fn = "warn"
+unused_lifetimes = "warn"
+
+[workspace.lints.clippy]
+cargo = { level = "warn", priority = -1 }
+complexity = { level = "warn", priority = -1 }
+correctness = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+perf = { level = "warn", priority = -1 }
+style = { level = "warn", priority = -1 }
+suspicious = { level = "warn", priority = -1 }
+# nursery = { level = "warn", priority = -1 }  # optional, might cause more false positives
+
+# These lints are from the `restriction` lint group and prevent specific
+# constructs being used in source code in order to drive up consistency,
+# quality, and brevity
+allow_attributes_without_reason = "warn"
+as_pointer_underscore = "warn"
+assertions_on_result_states = "warn"
+clone_on_ref_ptr = "warn"
+deref_by_slicing = "warn"
+disallowed_script_idents = "warn"
+empty_drop = "warn"
+empty_enum_variants_with_brackets = "warn"
+empty_structs_with_brackets = "warn"
+fn_to_numeric_cast_any = "warn"
+if_then_some_else_none = "warn"
+map_err_ignore = "warn"
+redundant_type_annotations = "warn"
+renamed_function_params = "warn"
+semicolon_outside_block = "warn"
+string_to_string = "warn"
+undocumented_unsafe_blocks = "warn"
+unnecessary_safety_comment = "warn"
+unnecessary_safety_doc = "warn"
+unneeded_field_pattern = "warn"
+unused_result_ok = "warn"
+
+# May cause issues with structured logging otherwise.
+literal_string_with_formatting_args = "allow"
 
 [patch.crates-io]
 webdriver-downloader = { version = "0.16.4", git = "https://github.com/pierreaubert/webdriver-downloader" }

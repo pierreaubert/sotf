@@ -1,6 +1,6 @@
 [package]
-name = "autoeq-testfunctions"
-version = "0.2.37"
+name = "math-test-functions"
+version = "0.2.38"
 description = "A collection of non linear functions for testing optimisation algorithms"
 edition = { workspace = true }
 repository = { workspace = true }
@@ -26,5 +26,5 @@ name = "autoeq_testfunctions"
 path = "src/lib.rs"
 
 [[bin]]
-name = "plot_functions"
+name = "plot-functions"
 path = "bin/plot_functions.rs"

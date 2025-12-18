@@ -23,6 +23,25 @@ use crate::{Curve, DirectivityCurve, DirectivityData};
 ///
 /// # Returns
 /// * Result containing a Curve struct or an error
+pub async fn read_spinorama(
+    speaker: &str,
+    version: &str,
+    measurement: &str,
+    curve_name: &str,
+) -> Result<crate::Curve, Box<dyn Error>> {
+    fetch_curve_from_api(speaker, version, measurement, curve_name).await
+}
+
+/// Fetch a frequency response curve from the spinorama API
+///
+/// # Arguments
+/// * `speaker` - Speaker name
+/// * `version` - Measurement version
+/// * `measurement` - Measurement type (e.g., "CEA2034")
+/// * `curve_name` - Name of the specific curve to extract
+///
+/// # Returns
+/// * Result containing a Curve struct or an error
 pub async fn fetch_curve_from_api(
     speaker: &str,
     version: &str,
@@ -119,9 +138,11 @@ pub fn extract_curve_by_name(
     // Extract frequency and SPL data from the Plotly JSON structure
     let mut freqs = Vec::new();
     let mut spls = Vec::new();
+    let mut phases = Vec::new();
 
     // Look for the trace with the expected name and extract x and y data
     if let Some(data) = plot_data.get("data").and_then(|d| d.as_array()) {
+        // First pass: find SPL (magnitude)
         for trace in data {
             // Check if this is the SPL trace (not DI or other traces)
             let is_spl_trace = trace
@@ -143,8 +164,7 @@ pub fn extract_curve_by_name(
                             x_obj.get("dtype").and_then(|d| d.as_str()),
                             x_obj.get("bdata").and_then(|b| b.as_str()),
                         ) {
-                            let decoded_x = decode_typed_array(bdata, dtype)?;
-                            freqs = decoded_x;
+                            freqs = decode_typed_array(bdata, dtype)?;
                         }
 
                         // Decode y values (SPL)
@@ -152,24 +172,49 @@ pub fn extract_curve_by_name(
                             y_obj.get("dtype").and_then(|d| d.as_str()),
                             y_obj.get("bdata").and_then(|b| b.as_str()),
                         ) {
-                            let decoded_y = decode_typed_array(bdata, dtype)?;
-                            spls = decoded_y;
-                        }
-
-                        if !freqs.is_empty() {
-                            break;
+                            spls = decode_typed_array(bdata, dtype)?;
                         }
                     }
 
                     // Fallback: try plain array format
-                    if let (Some(x_arr), Some(y_arr)) = (x_data.as_array(), y_data.as_array()) {
-                        freqs = x_arr.iter().filter_map(|v| v.as_f64()).collect();
-                        spls = y_arr.iter().filter_map(|v| v.as_f64()).collect();
-
-                        if !freqs.is_empty() {
-                            break;
+                    if freqs.is_empty() {
+                        if let (Some(x_arr), Some(y_arr)) = (x_data.as_array(), y_data.as_array()) {
+                            freqs = x_arr.iter().filter_map(|v| v.as_f64()).collect();
+                            spls = y_arr.iter().filter_map(|v| v.as_f64()).collect();
                         }
                     }
+                }
+                if !freqs.is_empty() {
+                    break;
+                }
+            }
+        }
+
+        // Second pass: find phase (if available)
+        let phase_name = format!("{} Phase", curve_name);
+        for trace in data {
+            let is_phase_trace = trace
+                .get("name")
+                .and_then(|n| n.as_str())
+                .map(|name| name == phase_name)
+                .unwrap_or(false);
+
+            if is_phase_trace {
+                let y_val = trace.get("y");
+                if let Some(y_data) = y_val {
+                    if let Some(y_obj) = y_data.as_object() {
+                        if let (Some(dtype), Some(bdata)) = (
+                            y_obj.get("dtype").and_then(|d| d.as_str()),
+                            y_obj.get("bdata").and_then(|b| b.as_str()),
+                        ) {
+                            phases = decode_typed_array(bdata, dtype)?;
+                        }
+                    } else if let Some(y_arr) = y_data.as_array() {
+                        phases = y_arr.iter().filter_map(|v| v.as_f64()).collect();
+                    }
+                }
+                if !phases.is_empty() {
+                    break;
                 }
             }
         }
@@ -186,7 +231,11 @@ pub fn extract_curve_by_name(
     Ok(crate::Curve {
         freq: Array1::from(freqs),
         spl: Array1::from(spls),
-        phase: None,
+        phase: if !phases.is_empty() {
+            Some(Array1::from(phases))
+        } else {
+            None
+        },
     })
 }
 

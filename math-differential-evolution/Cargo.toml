@@ -1,5 +1,5 @@
 [package]
-name = "autoeq-de"
+name = "math-differential-evolution"
 version = "0.2.53"
 description = "Non linear optimisation library with own DE solvers and interface to NLOpt and MetaHeuristics"
 edition = { workspace = true }
@@ -18,7 +18,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 plotly = { workspace = true }
-autoeq-testfunctions = { workspace = true }
+math-test-functions = { workspace = true }
 autoeq-env = { workspace = true }
 nlopt = { workspace = true, optional = true }
 plotly_static = { workspace = true, optional = true }
@@ -86,7 +86,7 @@ name = "benchmark_convergence"
 path = "bench/benchmark_convergence.rs"
 
 [[bin]]
-name = "run_autoeq_de"
+name = "run-autoeq-de"
 path = "bin/run_autoeq_de.rs"
 
 [lib]
