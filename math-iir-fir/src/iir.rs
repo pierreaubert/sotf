@@ -658,6 +658,560 @@ mod tests {
             "A-weighted gain should be less negative (bass is less perceptually important)"
         );
     }
+
+    // ========================================================================
+    // Biquad Filter Type Tests
+    // ========================================================================
+
+    #[test]
+    fn test_lowpass_filter_response() {
+        let cutoff = 1000.0;
+        let lp = Biquad::new(BiquadFilterType::Lowpass, cutoff, 48000.0, 0.0, 0.0);
+
+        // DC response should be ~0 dB (unity gain)
+        let dc_response = lp.log_result(10.0);
+        assert!(
+            approx_eq(dc_response, 0.0, 0.5),
+            "Lowpass DC response should be ~0 dB, got {}",
+            dc_response
+        );
+
+        // At cutoff, response should be ~-3 dB
+        let cutoff_response = lp.log_result(cutoff);
+        assert!(
+            approx_eq(cutoff_response, -3.0, 0.5),
+            "Lowpass at cutoff should be ~-3 dB, got {}",
+            cutoff_response
+        );
+
+        // Well above cutoff should be attenuated
+        let high_response = lp.log_result(10000.0);
+        assert!(
+            high_response < -20.0,
+            "Lowpass at 10x cutoff should be < -20 dB, got {}",
+            high_response
+        );
+    }
+
+    #[test]
+    fn test_highpass_filter_response() {
+        let cutoff = 1000.0;
+        let hp = Biquad::new(BiquadFilterType::Highpass, cutoff, 48000.0, 0.0, 0.0);
+
+        // Well below cutoff should be attenuated
+        let low_response = hp.log_result(100.0);
+        assert!(
+            low_response < -20.0,
+            "Highpass at 0.1x cutoff should be < -20 dB, got {}",
+            low_response
+        );
+
+        // At cutoff, response should be ~-3 dB
+        let cutoff_response = hp.log_result(cutoff);
+        assert!(
+            approx_eq(cutoff_response, -3.0, 0.5),
+            "Highpass at cutoff should be ~-3 dB, got {}",
+            cutoff_response
+        );
+
+        // High frequency response should be ~0 dB
+        let high_response = hp.log_result(10000.0);
+        assert!(
+            approx_eq(high_response, 0.0, 0.5),
+            "Highpass high freq response should be ~0 dB, got {}",
+            high_response
+        );
+    }
+
+    #[test]
+    fn test_bandpass_filter_response() {
+        let center = 1000.0;
+        let bp = Biquad::new(BiquadFilterType::Bandpass, center, 48000.0, 1.0, 0.0);
+
+        // At center frequency, response should be maximum
+        let center_response = bp.log_result(center);
+
+        // Well below center should be attenuated
+        let low_response = bp.log_result(100.0);
+        assert!(
+            low_response < center_response - 10.0,
+            "Bandpass below center should be attenuated"
+        );
+
+        // Well above center should be attenuated
+        let high_response = bp.log_result(10000.0);
+        assert!(
+            high_response < center_response - 10.0,
+            "Bandpass above center should be attenuated"
+        );
+    }
+
+    #[test]
+    fn test_notch_filter_response() {
+        let center = 1000.0;
+        let notch = Biquad::new(BiquadFilterType::Notch, center, 48000.0, 0.0, 0.0);
+
+        // At center frequency, response should be deeply attenuated
+        let center_response = notch.log_result(center);
+        assert!(
+            center_response < -30.0,
+            "Notch at center should be < -30 dB, got {}",
+            center_response
+        );
+
+        // Away from center should be ~0 dB
+        let low_response = notch.log_result(100.0);
+        assert!(
+            approx_eq(low_response, 0.0, 1.0),
+            "Notch away from center should be ~0 dB, got {}",
+            low_response
+        );
+
+        let high_response = notch.log_result(10000.0);
+        assert!(
+            approx_eq(high_response, 0.0, 1.0),
+            "Notch away from center should be ~0 dB, got {}",
+            high_response
+        );
+    }
+
+    #[test]
+    fn test_peak_filter_boost() {
+        let center = 1000.0;
+        let gain_db = 6.0;
+        let peak = Biquad::new(BiquadFilterType::Peak, center, 48000.0, 2.0, gain_db);
+
+        // At center frequency, response should match gain
+        let center_response = peak.log_result(center);
+        assert!(
+            approx_eq(center_response, gain_db, 0.5),
+            "Peak at center should be ~{} dB, got {}",
+            gain_db,
+            center_response
+        );
+
+        // Away from center should approach 0 dB
+        let low_response = peak.log_result(100.0);
+        assert!(
+            low_response.abs() < 1.0,
+            "Peak away from center should be ~0 dB, got {}",
+            low_response
+        );
+    }
+
+    #[test]
+    fn test_peak_filter_cut() {
+        let center = 1000.0;
+        let gain_db = -6.0;
+        let peak = Biquad::new(BiquadFilterType::Peak, center, 48000.0, 2.0, gain_db);
+
+        // At center frequency, response should match gain
+        let center_response = peak.log_result(center);
+        assert!(
+            approx_eq(center_response, gain_db, 0.5),
+            "Peak cut at center should be ~{} dB, got {}",
+            gain_db,
+            center_response
+        );
+    }
+
+    #[test]
+    fn test_lowshelf_filter_response() {
+        let freq = 200.0;
+        let gain_db = 6.0;
+        let ls = Biquad::new(BiquadFilterType::Lowshelf, freq, 48000.0, 0.7, gain_db);
+
+        // Well below shelf frequency should have full gain
+        let low_response = ls.log_result(20.0);
+        assert!(
+            approx_eq(low_response, gain_db, 1.0),
+            "Lowshelf below freq should be ~{} dB, got {}",
+            gain_db,
+            low_response
+        );
+
+        // Well above shelf frequency should be ~0 dB
+        let high_response = ls.log_result(5000.0);
+        assert!(
+            approx_eq(high_response, 0.0, 1.0),
+            "Lowshelf above freq should be ~0 dB, got {}",
+            high_response
+        );
+    }
+
+    #[test]
+    fn test_highshelf_filter_response() {
+        let freq = 5000.0;
+        let gain_db = 6.0;
+        let hs = Biquad::new(BiquadFilterType::Highshelf, freq, 48000.0, 0.7, gain_db);
+
+        // Well below shelf frequency should be ~0 dB
+        let low_response = hs.log_result(100.0);
+        assert!(
+            approx_eq(low_response, 0.0, 1.0),
+            "Highshelf below freq should be ~0 dB, got {}",
+            low_response
+        );
+
+        // Well above shelf frequency should have full gain
+        let high_response = hs.log_result(20000.0);
+        assert!(
+            approx_eq(high_response, gain_db, 1.0),
+            "Highshelf above freq should be ~{} dB, got {}",
+            gain_db,
+            high_response
+        );
+    }
+
+    // ========================================================================
+    // Biquad try_new Validation Tests
+    // ========================================================================
+
+    #[test]
+    fn test_try_new_valid_parameters() {
+        let result = Biquad::try_new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 3.0);
+        assert!(result.is_ok());
+        let bq = result.unwrap();
+        assert_eq!(bq.filter_type, BiquadFilterType::Peak);
+        assert_eq!(bq.freq, 1000.0);
+        assert_eq!(bq.srate, 48000.0);
+        assert_eq!(bq.q, 2.0);
+        assert_eq!(bq.db_gain, 3.0);
+    }
+
+    #[test]
+    fn test_try_new_invalid_sample_rate_zero() {
+        let result = Biquad::try_new(BiquadFilterType::Peak, 1000.0, 0.0, 2.0, 3.0);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(
+            err,
+            crate::error::IirError::InvalidSampleRate { .. }
+        ));
+    }
+
+    #[test]
+    fn test_try_new_invalid_sample_rate_negative() {
+        let result = Biquad::try_new(BiquadFilterType::Peak, 1000.0, -48000.0, 2.0, 3.0);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_try_new_invalid_frequency_zero() {
+        let result = Biquad::try_new(BiquadFilterType::Peak, 0.0, 48000.0, 2.0, 3.0);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(
+            err,
+            crate::error::IirError::InvalidFrequency { .. }
+        ));
+    }
+
+    #[test]
+    fn test_try_new_invalid_frequency_above_nyquist() {
+        let result = Biquad::try_new(BiquadFilterType::Peak, 30000.0, 48000.0, 2.0, 3.0);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(
+            err,
+            crate::error::IirError::InvalidFrequency { .. }
+        ));
+    }
+
+    #[test]
+    fn test_try_new_invalid_q_negative() {
+        let result = Biquad::try_new(BiquadFilterType::Peak, 1000.0, 48000.0, -1.0, 3.0);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, crate::error::IirError::InvalidQ { .. }));
+    }
+
+    #[test]
+    fn test_try_new_q_zero_uses_default() {
+        // Q=0 should use default, not error
+        let result = Biquad::try_new(BiquadFilterType::Lowpass, 1000.0, 48000.0, 0.0, 0.0);
+        assert!(result.is_ok());
+        let bq = result.unwrap();
+        // Default Q for lowpass is 1/sqrt(2)
+        assert!(approx_eq(bq.q, crate::DEFAULT_Q_HIGH_LOW_PASS, 0.01));
+    }
+
+    #[test]
+    fn test_try_new_invalid_gain_infinite() {
+        let result = Biquad::try_new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, f64::INFINITY);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, crate::error::IirError::InvalidGain { .. }));
+    }
+
+    #[test]
+    fn test_try_new_invalid_gain_nan() {
+        let result = Biquad::try_new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, f64::NAN);
+        assert!(result.is_err());
+    }
+
+    // ========================================================================
+    // Biquad Sample Processing Tests
+    // ========================================================================
+
+    #[test]
+    fn test_biquad_process_dc_lowpass() {
+        let mut lp = Biquad::new(BiquadFilterType::Lowpass, 1000.0, 48000.0, 0.0, 0.0);
+
+        // Process DC signal (all 1.0)
+        let mut output = 0.0;
+        for _ in 0..1000 {
+            output = lp.process(1.0);
+        }
+
+        // Lowpass should pass DC with unity gain
+        assert!(
+            approx_eq(output, 1.0, 0.01),
+            "Lowpass should pass DC, got {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_biquad_process_dc_highpass() {
+        let mut hp = Biquad::new(BiquadFilterType::Highpass, 1000.0, 48000.0, 0.0, 0.0);
+
+        // Process DC signal (all 1.0)
+        let mut output = 0.0;
+        for _ in 0..1000 {
+            output = hp.process(1.0);
+        }
+
+        // Highpass should block DC
+        assert!(
+            output.abs() < 0.01,
+            "Highpass should block DC, got {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_biquad_process_impulse_response() {
+        let mut peak = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 6.0);
+
+        // Process impulse
+        let first = peak.process(1.0);
+        let second = peak.process(0.0);
+        let third = peak.process(0.0);
+
+        // First output should be non-zero
+        assert!(first.abs() > 0.0, "Impulse response should be non-zero");
+
+        // Filter should ring (subsequent outputs non-zero)
+        assert!(
+            second.abs() > 0.0 || third.abs() > 0.0,
+            "Peak filter should ring after impulse"
+        );
+    }
+
+    #[test]
+    fn test_biquad_constants() {
+        let bq = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 6.0);
+        let (a1, a2, b0, b1, b2) = bq.constants();
+
+        // Coefficients should be finite
+        assert!(a1.is_finite());
+        assert!(a2.is_finite());
+        assert!(b0.is_finite());
+        assert!(b1.is_finite());
+        assert!(b2.is_finite());
+
+        // b0 should be non-zero for a valid filter
+        assert!(b0.abs() > 0.0);
+    }
+
+    #[test]
+    fn test_biquad_display() {
+        let bq = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 6.0);
+        let display = format!("{}", bq);
+
+        assert!(display.contains("PK"));
+        assert!(display.contains("1000"));
+        assert!(display.contains("48000"));
+        assert!(display.contains("2.0"));
+        assert!(display.contains("6.0"));
+    }
+
+    // ========================================================================
+    // PEQ Function Tests
+    // ========================================================================
+
+    #[test]
+    fn test_peq_equal_identical() {
+        let bq1 = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 6.0);
+        let bq2 = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 6.0);
+        let peq1 = vec![(1.0, bq1)];
+        let peq2 = vec![(1.0, bq2)];
+
+        assert!(peq_equal(&peq1, &peq2));
+    }
+
+    #[test]
+    fn test_peq_equal_different_weight() {
+        let bq1 = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 6.0);
+        let bq2 = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 6.0);
+        let peq1 = vec![(1.0, bq1)];
+        let peq2 = vec![(0.5, bq2)];
+
+        assert!(!peq_equal(&peq1, &peq2));
+    }
+
+    #[test]
+    fn test_peq_equal_different_filter_type() {
+        let bq1 = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 6.0);
+        let bq2 = Biquad::new(BiquadFilterType::Lowshelf, 1000.0, 48000.0, 2.0, 6.0);
+        let peq1 = vec![(1.0, bq1)];
+        let peq2 = vec![(1.0, bq2)];
+
+        assert!(!peq_equal(&peq1, &peq2));
+    }
+
+    #[test]
+    fn test_peq_equal_different_length() {
+        let bq1 = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 6.0);
+        let bq2 = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 6.0);
+        let bq3 = Biquad::new(BiquadFilterType::Peak, 2000.0, 48000.0, 2.0, 3.0);
+        let peq1 = vec![(1.0, bq1)];
+        let peq2 = vec![(1.0, bq2), (1.0, bq3)];
+
+        assert!(!peq_equal(&peq1, &peq2));
+    }
+
+    #[test]
+    fn test_peq_equal_empty() {
+        let peq1: Peq = vec![];
+        let peq2: Peq = vec![];
+
+        assert!(peq_equal(&peq1, &peq2));
+    }
+
+    #[test]
+    fn test_compute_peq_response_empty() {
+        let peq: Peq = vec![];
+        let freqs = array![100.0, 1000.0, 10000.0];
+        let response = compute_peq_response(&freqs, &peq, 48000.0);
+
+        assert_eq!(response.len(), 3);
+        for val in response.iter() {
+            assert_eq!(*val, 0.0);
+        }
+    }
+
+    #[test]
+    fn test_compute_peq_response_single_filter() {
+        let bq = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 6.0);
+        let peq = vec![(1.0, bq.clone())];
+        let freqs = array![100.0, 1000.0, 10000.0];
+        let response = compute_peq_response(&freqs, &peq, 48000.0);
+
+        // Response at center should be ~6 dB
+        assert!(approx_eq(response[1], 6.0, 0.5));
+
+        // Response away from center should be ~0 dB
+        assert!(response[0].abs() < 1.0);
+        assert!(response[2].abs() < 1.0);
+    }
+
+    #[test]
+    fn test_compute_peq_response_weighted() {
+        let bq = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 6.0);
+        let peq = vec![(0.5, bq)]; // Half weight
+        let freqs = array![1000.0];
+        let response = compute_peq_response(&freqs, &peq, 48000.0);
+
+        // Response should be half of 6 dB = 3 dB
+        assert!(approx_eq(response[0], 3.0, 0.5));
+    }
+
+    #[test]
+    fn test_compute_peq_response_multiple_filters() {
+        let bq1 = Biquad::new(BiquadFilterType::Peak, 500.0, 48000.0, 2.0, 3.0);
+        let bq2 = Biquad::new(BiquadFilterType::Peak, 2000.0, 48000.0, 2.0, 3.0);
+        let peq = vec![(1.0, bq1), (1.0, bq2)];
+        let freqs = array![500.0, 1000.0, 2000.0];
+        let response = compute_peq_response(&freqs, &peq, 48000.0);
+
+        // Peaks at 500 Hz and 2000 Hz
+        assert!(response[0] > response[1]); // 500 Hz peak
+        assert!(response[2] > response[1]); // 2000 Hz peak
+    }
+
+    #[test]
+    fn test_peq_spl_matches_compute_peq_response() {
+        let bq = Biquad::new(BiquadFilterType::Peak, 1000.0, 48000.0, 2.0, 6.0);
+        let peq = vec![(1.0, bq)];
+        let freqs = array![100.0, 1000.0, 10000.0];
+
+        let spl = peq_spl(&freqs, &peq);
+        let response = compute_peq_response(&freqs, &peq, 48000.0);
+
+        for (s, r) in spl.iter().zip(response.iter()) {
+            assert!(approx_eq(*s, *r, 1e-10));
+        }
+    }
+
+    // ========================================================================
+    // Filter Type Name Tests
+    // ========================================================================
+
+    #[test]
+    fn test_filter_type_short_names() {
+        assert_eq!(BiquadFilterType::Lowpass.short_name(), "LP");
+        assert_eq!(BiquadFilterType::Highpass.short_name(), "HP");
+        assert_eq!(BiquadFilterType::HighpassVariableQ.short_name(), "HPQ");
+        assert_eq!(BiquadFilterType::Bandpass.short_name(), "BP");
+        assert_eq!(BiquadFilterType::Peak.short_name(), "PK");
+        assert_eq!(BiquadFilterType::Notch.short_name(), "NO");
+        assert_eq!(BiquadFilterType::Lowshelf.short_name(), "LS");
+        assert_eq!(BiquadFilterType::Highshelf.short_name(), "HS");
+    }
+
+    #[test]
+    fn test_filter_type_long_names() {
+        assert_eq!(BiquadFilterType::Lowpass.long_name(), "Lowpass");
+        assert_eq!(BiquadFilterType::Highpass.long_name(), "Highpass");
+        assert_eq!(
+            BiquadFilterType::HighpassVariableQ.long_name(),
+            "HighpassVariableQ"
+        );
+        assert_eq!(BiquadFilterType::Bandpass.long_name(), "Bandpass");
+        assert_eq!(BiquadFilterType::Peak.long_name(), "Peak");
+        assert_eq!(BiquadFilterType::Notch.long_name(), "Notch");
+        assert_eq!(BiquadFilterType::Lowshelf.long_name(), "Lowshelf");
+        assert_eq!(BiquadFilterType::Highshelf.long_name(), "Highshelf");
+    }
+
+    // ========================================================================
+    // FilterRow Tests
+    // ========================================================================
+
+    #[test]
+    fn test_filter_row_default() {
+        let row = FilterRow::default();
+        assert_eq!(row.freq, 0.0);
+        assert_eq!(row.q, 0.0);
+        assert_eq!(row.gain, 0.0);
+        assert_eq!(row.kind, "");
+    }
+
+    #[test]
+    fn test_filter_row_creation() {
+        let row = FilterRow {
+            freq: 1000.0,
+            q: 2.0,
+            gain: 6.0,
+            kind: "PK",
+        };
+        assert_eq!(row.freq, 1000.0);
+        assert_eq!(row.q, 2.0);
+        assert_eq!(row.gain, 6.0);
+        assert_eq!(row.kind, "PK");
+    }
 }
 
 /// Check if two PEQs are equal
