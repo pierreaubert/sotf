@@ -99,9 +99,8 @@ impl UpmixerPlugin {
                         // For rear height channels, add late reflections (configurable)
                         // This ensures rear heights have energy even with mono/coherent content
                         if !is_front {
-                            let late_reflection =
-                                (self.direct_left[i] + self.direct_right[i])
-                                    * self.rear_late_reflection;
+                            let late_reflection = (self.direct_left[i] + self.direct_right[i])
+                                * self.rear_late_reflection;
                             ambient_component += late_reflection;
                         }
 

@@ -263,8 +263,8 @@ impl UpmixerPlugin {
 
                     // Transient-adaptive reduction: keep transients coherent
                     // During transients, reduce height channel emphasis by configurable amount
-                    let transient_reduction =
-                        1.0 - (self.hr_transient_env * self.height_transient_reduction)
+                    let transient_reduction = 1.0
+                        - (self.hr_transient_env * self.height_transient_reduction)
                             .min(self.height_transient_reduction);
 
                     let height_mask = (height_suitability * transient_reduction).min(1.0);
