@@ -396,9 +396,10 @@ impl RenderOnce for Input {
         if !disabled && !readonly && !editing {
             if let Some(ref handler_rc) = on_edit_start_rc {
                 let handler = handler_rc.clone();
-                input_wrapper = input_wrapper.on_mouse_down(MouseButton::Left, move |_, window, cx| {
-                    handler(window, cx);
-                });
+                input_wrapper =
+                    input_wrapper.on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                        handler(window, cx);
+                    });
             }
         }
 

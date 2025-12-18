@@ -99,7 +99,7 @@ pub use toggle::{Toggle, ToggleSize, ToggleStyle, ToggleTheme};
 pub use vertical_slider::{
     VerticalSlider, VerticalSliderScale, VerticalSliderSize, VerticalSliderTheme,
 };
-pub use volume_knob::VolumeKnob;
+pub use volume_knob::{VolumeKnob, VolumeKnobTheme};
 
 // Data display
 pub use avatar::{Avatar, AvatarGroup, AvatarShape, AvatarSize, AvatarStatus};

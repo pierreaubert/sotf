@@ -57,6 +57,7 @@ impl Card {
             .flex()
             .flex_col()
             .bg(theme.surface)
+            .text_color(theme.text_primary)
             .border_1()
             .border_color(theme.border)
             .rounded_lg()
@@ -70,31 +71,39 @@ impl Card {
 
         // Header section
         if let Some(header) = self.header {
-            let border = theme.border;
             card = card.child(
                 div()
                     .px_4()
                     .py_3()
+                    .bg(theme.muted)
+                    .text_color(theme.text_primary)
                     .border_b_1()
-                    .border_color(border)
+                    .border_color(theme.border)
                     .child(header),
             );
         }
 
         // Content section
         if let Some(content) = self.content {
-            card = card.child(div().px_4().py_4().child(content));
+            card = card.child(
+                div()
+                    .px_4()
+                    .py_4()
+                    .text_color(theme.text_secondary)
+                    .child(content),
+            );
         }
 
         // Footer section
         if let Some(footer) = self.footer {
-            let border = theme.border;
             card = card.child(
                 div()
                     .px_4()
                     .py_3()
+                    .bg(theme.muted)
+                    .text_color(theme.text_muted)
                     .border_t_1()
-                    .border_color(border)
+                    .border_color(theme.border)
                     .child(footer),
             );
         }

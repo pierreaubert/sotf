@@ -9,9 +9,45 @@
 //!   - Arrow Down/Left: decrease volume
 //!   - M key: toggle mute
 //! - Mute state support
-//! - Customizable colors
+//! - Customizable colors and theme support
 
+use crate::theme::{Theme, ThemeExt};
 use gpui::*;
+
+/// Theme colors for volume knob styling
+#[derive(Debug, Clone)]
+pub struct VolumeKnobTheme {
+    /// Accent color (ring and fill when active)
+    pub accent: Hsla,
+    /// Color when muted
+    pub muted: Hsla,
+    /// Background color
+    pub background: Hsla,
+    /// Text color for label
+    pub text: Hsla,
+}
+
+impl Default for VolumeKnobTheme {
+    fn default() -> Self {
+        Self {
+            accent: hsla(0.0, 0.0, 0.5, 1.0),
+            muted: hsla(0.0, 0.0, 0.3, 1.0),
+            background: hsla(0.0, 0.0, 0.1, 1.0),
+            text: hsla(0.0, 0.0, 0.9, 1.0),
+        }
+    }
+}
+
+impl From<&Theme> for VolumeKnobTheme {
+    fn from(theme: &Theme) -> Self {
+        Self {
+            accent: theme.accent.into(),
+            muted: theme.text_muted.into(),
+            background: theme.surface.into(),
+            text: theme.text_primary.into(),
+        }
+    }
+}
 
 /// A circular volume knob with fill indicator.
 #[derive(IntoElement)]
@@ -21,10 +57,16 @@ pub struct VolumeKnob {
     label: SharedString,
     size: Pixels,
     muted: bool,
-    accent_color: Hsla,
-    muted_color: Hsla,
-    bg_color: Hsla,
-    text_color: Hsla,
+    /// Optional theme (uses global theme if not set)
+    theme: Option<VolumeKnobTheme>,
+    /// Override: accent color
+    accent_color: Option<Hsla>,
+    /// Override: muted color
+    muted_color: Option<Hsla>,
+    /// Override: background color
+    bg_color: Option<Hsla>,
+    /// Override: text color
+    text_color: Option<Hsla>,
     on_change: Option<Box<dyn Fn(f32, &mut Window, &mut App) + 'static>>,
     on_mute_toggle: Option<Box<dyn Fn(bool, &mut Window, &mut App) + 'static>>,
 }
@@ -40,13 +82,20 @@ impl VolumeKnob {
             label: "".into(),
             size: px(40.0),
             muted: false,
-            accent_color: hsla(0.0, 0.0, 0.5, 1.0),
-            muted_color: hsla(0.0, 0.0, 0.3, 1.0),
-            bg_color: hsla(0.0, 0.0, 0.1, 1.0),
-            text_color: hsla(0.0, 0.0, 0.9, 1.0),
+            theme: None,
+            accent_color: None,
+            muted_color: None,
+            bg_color: None,
+            text_color: None,
             on_change: None,
             on_mute_toggle: None,
         }
+    }
+
+    /// Set the theme
+    pub fn theme(mut self, theme: VolumeKnobTheme) -> Self {
+        self.theme = Some(theme);
+        self
     }
 
     pub fn id(mut self, id: impl Into<ElementId>) -> Self {
@@ -74,23 +123,27 @@ impl VolumeKnob {
         self
     }
 
+    /// Override accent color (ring and fill when active)
     pub fn accent_color(mut self, color: impl Into<Hsla>) -> Self {
-        self.accent_color = color.into();
+        self.accent_color = Some(color.into());
         self
     }
 
+    /// Override muted color
     pub fn muted_color(mut self, color: impl Into<Hsla>) -> Self {
-        self.muted_color = color.into();
+        self.muted_color = Some(color.into());
         self
     }
 
+    /// Override background color
     pub fn bg_color(mut self, color: impl Into<Hsla>) -> Self {
-        self.bg_color = color.into();
+        self.bg_color = Some(color.into());
         self
     }
 
+    /// Override text color
     pub fn text_color(mut self, color: impl Into<Hsla>) -> Self {
-        self.text_color = color.into();
+        self.text_color = Some(color.into());
         self
     }
 
@@ -117,29 +170,38 @@ impl Default for VolumeKnob {
 }
 
 impl RenderOnce for VolumeKnob {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        // Get theme: use explicit theme, or derive from global theme
+        let global_theme = cx.theme();
+        let theme = self
+            .theme
+            .clone()
+            .unwrap_or_else(|| VolumeKnobTheme::from(&global_theme));
+
+        // Apply color overrides or use theme defaults
+        let accent_color = self.accent_color.unwrap_or(theme.accent);
+        let muted_color = self.muted_color.unwrap_or(theme.muted);
+        let bg_color = self.bg_color.unwrap_or(theme.background);
+        let text_color = self.text_color.unwrap_or(theme.text);
+
         let display_value = if self.muted {
             0.0
         } else {
             self.value.clamp(0.0, 1.0)
         };
         let ring_color = if self.muted {
-            self.muted_color
+            muted_color
         } else {
-            self.accent_color
+            accent_color
         };
-        let text_color_final = if self.muted {
-            self.muted_color
-        } else {
-            self.text_color
-        };
+        let text_color_final = if self.muted { muted_color } else { text_color };
 
         // Make fill color slightly lighter than the background
         let fill_color = if self.muted {
-            self.muted_color
+            muted_color
         } else {
             // Lighten the background color by increasing lightness
-            let mut lighter = self.bg_color;
+            let mut lighter = bg_color;
             lighter.l = (lighter.l + 0.15).min(1.0);
             lighter
         };
@@ -224,7 +286,7 @@ impl RenderOnce for VolumeKnob {
 
         container
             // Background circle
-            .child(div().absolute().inset_0().rounded_full().bg(self.bg_color))
+            .child(div().absolute().inset_0().rounded_full().bg(bg_color))
             // Filled portion - use a circle that's clipped from bottom
             // We create a full circle and move it up/down to show the fill level
             .child(
