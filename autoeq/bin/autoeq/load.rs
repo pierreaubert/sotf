@@ -55,7 +55,7 @@ pub(super) async fn load_and_prepare(
 
     // Build/Get target and interpolate it
     let target_curve_raw =
-        autoeq::workflow::build_target_curve(args, &standard_freq, &input_curve_raw);
+        autoeq::workflow::build_target_curve(args, &standard_freq, &input_curve_raw)?;
     let target_curve = read::interpolate_log_space(&standard_freq, &target_curve_raw);
 
     // Compute and interpolate deviation curve

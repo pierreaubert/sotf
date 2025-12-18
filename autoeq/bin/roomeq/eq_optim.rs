@@ -44,7 +44,7 @@ pub fn optimize_channel_eq(
             // For now, simpler to re-implement common targets or map to Args
             // We can construct minimal Args with curve_name
             let dummy_args = Args::parse_from(["autoeq", "--curve-name", name]);
-            autoeq::workflow::build_target_curve(&dummy_args, &curve.freq, curve)
+            autoeq::workflow::build_target_curve(&dummy_args, &curve.freq, curve)?
         }
         None => {
             // Default flat target
@@ -160,7 +160,8 @@ pub fn optimize_channel_eq(
         &target_curve,
         &deviation_curve,
         &None, // No spin data
-    );
+    )
+    .expect("setup_objective_data should not fail without spin data");
 
     // Setup bounds
     let (lower_bounds, upper_bounds) = autoeq::workflow::setup_bounds(&args);

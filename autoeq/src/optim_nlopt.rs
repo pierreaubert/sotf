@@ -82,8 +82,14 @@ pub fn optimize_filters_nlopt(
         objective_data,
     );
 
-    let _ = optimizer.set_lower_bounds(lower_bounds).unwrap();
-    let _ = optimizer.set_upper_bounds(upper_bounds).unwrap();
+    // These unwraps are safe because lower_bounds and upper_bounds have the same
+    // length as the optimizer dimension (num_params), which is validated by NLopt
+    optimizer
+        .set_lower_bounds(lower_bounds)
+        .expect("lower bounds should have correct dimension");
+    optimizer
+        .set_upper_bounds(upper_bounds)
+        .expect("upper bounds should have correct dimension");
 
     // Register inequality constraints when not using penalties.
     if !use_penalties {
@@ -103,9 +109,16 @@ pub fn optimize_filters_nlopt(
 
     let _ = optimizer.set_population(population);
     let _ = optimizer.set_maxeval(maxeval as u32);
-    let _ = optimizer.set_stopval(1e-4).unwrap();
-    let _ = optimizer.set_ftol_rel(1e-6).unwrap();
-    let _ = optimizer.set_xtol_rel(1e-4).unwrap();
+    // Stopping criteria - these should never fail with valid positive values
+    optimizer
+        .set_stopval(1e-4)
+        .expect("stopval should be valid");
+    optimizer
+        .set_ftol_rel(1e-6)
+        .expect("ftol_rel should be valid");
+    optimizer
+        .set_xtol_rel(1e-4)
+        .expect("xtol_rel should be valid");
 
     let result = optimizer.optimize(x);
 

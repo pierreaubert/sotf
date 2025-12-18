@@ -133,14 +133,12 @@ pub async fn plot_results(
     // Ensure parent directory exists before writing files
     let html_output_path = output_path.with_extension("html");
     if let Some(parent) = html_output_path.parent() {
-        std::fs::create_dir_all(parent)
-            .unwrap_or_else(|_| panic!("Failed to create output directory: {:?}", parent));
+        std::fs::create_dir_all(parent)?;
     }
 
-    let mut file = File::create(&html_output_path).unwrap();
-    file.write_all(html.as_bytes())
-        .expect("failed to write html output");
-    file.flush().unwrap();
+    let mut file = File::create(&html_output_path)?;
+    file.write_all(html.as_bytes())?;
+    file.flush()?;
 
     // plot_spin.write_html(output_path.with_extension("html"));
 
@@ -183,15 +181,27 @@ pub async fn plot_results(
 
                     // Ensure parent directory exists for PNG files
                     if let Some(parent) = img_path.parent() {
-                        std::fs::create_dir_all(parent).unwrap_or_else(|_| {
-                            panic!("Failed to create PNG output directory: {:?}", parent)
-                        });
+                        if let Err(e) = std::fs::create_dir_all(parent) {
+                            eprintln!(
+                                "Warning: Failed to create PNG output directory {:?}: {}",
+                                parent, e
+                            );
+                            continue;
+                        }
                     }
+
+                    let plot_json = match serde_json::to_value(&plot) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            eprintln!("Warning: Failed to serialize plot to JSON: {}", e);
+                            continue;
+                        }
+                    };
 
                     if let Err(e) = exporter
                         .write_fig(
                             img_path.as_path(),
-                            &serde_json::to_value(&plot).expect("Failed to serialize plot to JSON"),
+                            &plot_json,
                             ImageFormat::PNG,
                             width,
                             height,

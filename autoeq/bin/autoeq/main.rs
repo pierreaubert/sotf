@@ -86,7 +86,9 @@ async fn run(args: autoeq::cli::Args) -> Result<()> {
         &target_curve,
         &deviation_curve,
         &spin_data,
-    );
+    )
+    .map_err(|e| anyhow!("{}", e))
+    .context("Failed to setup objective data")?;
 
     // Compute pre-optimization metrics
     let pre_metrics = prescore::compute_pre_optimization_metrics(
@@ -437,7 +439,8 @@ mod tests {
             phase: None,
         };
 
-        let target_curve = autoeq::workflow::build_target_curve(&args, &freqs, &curve);
+        let target_curve = autoeq::workflow::build_target_curve(&args, &freqs, &curve)
+            .expect("build_target_curve should succeed");
         // Since SPL is zero, target_curve.spl == base_target
         assert!((target_curve.spl[0] - 0.0).abs() < 1e-12);
         assert!((target_curve.spl[1] - 0.0).abs() < 1e-12);

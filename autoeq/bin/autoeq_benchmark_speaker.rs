@@ -415,7 +415,8 @@ async fn run_one(
     let standard_freq = autoeq::read::create_log_frequency_grid(200, 20.0, 20000.0);
     let input_curve_normalized =
         autoeq::read::normalize_and_interpolate_response(&standard_freq, &input_curve);
-    let target_curve = build_target_curve(args, &standard_freq, &input_curve);
+    let target_curve =
+        build_target_curve(args, &standard_freq, &input_curve).map_err(|e| e.to_string())?;
     let deviation_curve = autoeq::Curve {
         freq: target_curve.freq.clone(),
         spl: &target_curve.spl - &input_curve_normalized.spl,
@@ -436,7 +437,8 @@ async fn run_one(
         &target_curve,
         &deviation_curve,
         &spin_data,
-    );
+    )
+    .map_err(|e| e.to_string())?;
 
     // Check for shutdown before optimization
     if shutdown.load(Ordering::Relaxed) {
@@ -477,7 +479,7 @@ fn build_target_curve(
     args: &autoeq::cli::Args,
     standard_freq: &Array1<f64>,
     input_curve: &autoeq::Curve,
-) -> autoeq::Curve {
+) -> Result<autoeq::Curve, autoeq::AutoeqError> {
     autoeq::workflow::build_target_curve(args, standard_freq, input_curve)
 }
 
@@ -487,7 +489,7 @@ fn setup_objective_data(
     target_curve: &autoeq::Curve,
     deviation_curve: &autoeq::Curve,
     spin_data: &Option<HashMap<String, autoeq::Curve>>,
-) -> (ObjectiveData, bool) {
+) -> Result<(ObjectiveData, bool), autoeq::AutoeqError> {
     autoeq::workflow::setup_objective_data(
         args,
         input_curve,

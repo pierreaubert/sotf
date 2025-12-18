@@ -488,6 +488,7 @@ pub fn optimize_filters_autoeq_with_callback(
         spacing_constraint.apply_to(&mut config, 1e3, 1e3);
     }
 
-    let result = differential_evolution(&base_objective_fn, &setup.bounds, config);
+    let result = differential_evolution(&base_objective_fn, &setup.bounds, config)
+        .map_err(|e| (format!("DE optimization failed: {:?}", e), f64::INFINITY))?;
     process_de_results(x, result, "AutoDE")
 }

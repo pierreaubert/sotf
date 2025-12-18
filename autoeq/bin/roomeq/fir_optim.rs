@@ -27,7 +27,7 @@ pub fn generate_fir_correction(
             use autoeq::cli::Args;
             use clap::Parser;
             let dummy_args = Args::parse_from(["autoeq", "--curve-name", name]);
-            autoeq::workflow::build_target_curve(&dummy_args, &measurement.freq, measurement)
+            autoeq::workflow::build_target_curve(&dummy_args, &measurement.freq, measurement)?
         }
         None => Curve {
             freq: measurement.freq.clone(),

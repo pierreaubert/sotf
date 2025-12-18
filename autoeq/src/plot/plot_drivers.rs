@@ -267,8 +267,7 @@ pub fn plot_drivers_results(
     // Ensure parent directory exists before writing files
     let html_output_path = output_path.with_extension("html");
     if let Some(parent) = html_output_path.parent() {
-        std::fs::create_dir_all(parent)
-            .unwrap_or_else(|_| panic!("Failed to create output directory: {:?}", parent));
+        std::fs::create_dir_all(parent)?;
     }
 
     let mut file = File::create(&html_output_path)?;

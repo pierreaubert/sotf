@@ -15,9 +15,13 @@
 //! You should have received a copy of the GNU General Public License
 //! along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+/// Ceiling constraint to limit maximum EQ boost.
 pub mod ceiling;
+/// Constraint for crossover frequency monotonicity in multi-driver systems.
 pub mod crossover_monotonicity;
+/// Minimum gain constraint for EQ filters.
 pub mod min_gain;
+/// Minimum frequency spacing constraint between adjacent filters.
 pub mod min_spacing;
 
 pub use ceiling::*;

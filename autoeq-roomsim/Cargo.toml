@@ -9,26 +9,25 @@ repository = { workspace = true }
 keywords = ["bem", "boundary-element", "acoustics", "numerical", "room acoustics"]
 categories = ["science", "mathematics", "simulation", "hifi"]
 
-
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-wasm-bindgen = "0.2.106"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-num-complex = { version = "0.4", features = ["serde"] }
-console_error_panic_hook = "0.1"
-getrandom = { version = "0.2", features = ["js"] }
-ndarray = "0.17"
-rayon = "1.10"
-wasm-bindgen-rayon = "1.2"
+wasm-bindgen = { workspace = true }
+serde = { workspace=true , features = ["derive"] }
+serde_json = { workspace = true }
+num-complex = { workspace = true , features = ["serde"] }
+console_error_panic_hook = { workspace = true }
+getrandom = { workspace = true, features = ["js"] }
+ndarray = { workspace = true }
+rayon = { workspace = true }
+wasm-bindgen-rayon = { workspace = true }
 
 # Math-BEM with WASM-optimized parallel processing via wasm-bindgen-rayon
 math-bem = { path = "../math-bem", default-features = false, features = ["wasm"] }
 
 [dev-dependencies]
-wasm-bindgen-test = "0.3"
+wasm-bindgen-test = { workspace = true }
 
 [package.metadata.wasm-pack.profile.release]
-wasm-opt = false
+wasm-opt = true

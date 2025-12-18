@@ -64,6 +64,10 @@ fn make_freq_range_shapes(min_freq: f64, max_freq: f64) -> Vec<Shape> {
     shapes
 }
 
+/// Create a plot showing input, target, deviation, and optimized filter responses.
+///
+/// Generates a multi-subplot visualization showing the input measurement,
+/// target curve, deviation, individual filter responses, and combined EQ response.
 pub fn plot_filters(
     args: &crate::cli::Args,
     input_curve: &crate::Curve,

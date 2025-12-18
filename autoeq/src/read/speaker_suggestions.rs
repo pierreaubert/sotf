@@ -5,7 +5,9 @@ use strsim::levenshtein;
 /// Represents an API error response from the spinorama API
 #[derive(Debug)]
 pub struct ApiError {
+    /// The error message returned by the API.
     pub message: String,
+    /// The speaker name extracted from the error, if present.
     pub speaker_name: Option<String>,
 }
 

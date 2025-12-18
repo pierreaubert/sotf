@@ -28,6 +28,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 schemars = "0.8"
 strsim = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true }
 urlencoding = { workspace = true }
 

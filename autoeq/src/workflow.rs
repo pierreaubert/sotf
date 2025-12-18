@@ -4,8 +4,9 @@
 //! building target curves, preparing objective data, and running optimization.
 
 use crate::{
-    Curve, cli::PeqModel, loss::DriversLossData, loss::HeadphoneLossData, loss::SpeakerLossData,
-    optim, optim::ObjectiveData, optim_de::optimize_filters_autoeq_with_callback, read,
+    Curve, cli::PeqModel, error::AutoeqError, loss::DriversLossData, loss::HeadphoneLossData,
+    loss::SpeakerLossData, optim, optim::ObjectiveData,
+    optim_de::optimize_filters_autoeq_with_callback, read,
 };
 use ndarray::Array1;
 use std::{collections::HashMap, error::Error};
@@ -69,11 +70,15 @@ pub async fn load_input_curve(
 
 /// Build a target curve (and optional smoothed version) from CLI args and the input curve.
 /// Returns (inverted_curve, smoothed_curve_opt).
+///
+/// # Errors
+///
+/// Returns `AutoeqError::TargetCurveLoad` if loading from a CSV file fails.
 pub fn build_target_curve(
     args: &crate::cli::Args,
     freqs: &Array1<f64>,
     input_curve: &Curve,
-) -> Curve {
+) -> Result<Curve, AutoeqError> {
     if let Some(ref target_path) = args.target {
         crate::qa_println!(
             args,
@@ -86,15 +91,13 @@ pub fn build_target_curve(
             std::env::current_dir()
         );
 
-        let target_curve = read::read_curve_from_csv(target_path).unwrap_or_else(|e| {
-            eprintln!(
-                "[RUST ERROR] Failed to load target curve from '{}': {}",
-                target_path.display(),
-                e
-            );
-            panic!("Failed to load target curve: {}", e);
-        });
-        read::normalize_and_interpolate_response(freqs, &target_curve)
+        let target_curve = read::read_curve_from_csv(target_path).map_err(|e| {
+            AutoeqError::TargetCurveLoad {
+                path: target_path.display().to_string(),
+                message: e.to_string(),
+            }
+        })?;
+        Ok(read::normalize_and_interpolate_response(freqs, &target_curve))
     } else {
         match args.curve_name.as_str() {
             "Listening Window" => {
@@ -113,11 +116,11 @@ pub fn build_target_curve(
                         -0.5 * t
                     }
                 });
-                Curve {
+                Ok(Curve {
                     freq: freqs.clone(),
                     spl,
                     phase: None,
-                }
+                })
             }
             "Sound Power" | "Early Reflections" | "Estimated In-Room Response" => {
                 let slope =
@@ -137,32 +140,37 @@ pub fn build_target_curve(
                         slope * (f / lo).log2()
                     }
                 });
-                Curve {
+                Ok(Curve {
                     freq: freqs.clone(),
                     spl,
                     phase: None,
-                }
+                })
             }
             _ => {
                 let spl = Array1::zeros(freqs.len());
-                Curve {
+                Ok(Curve {
                     freq: freqs.clone(),
                     spl,
                     phase: None,
-                }
+                })
             }
         }
     }
 }
 
 /// Prepare the ObjectiveData and whether CEA2034-based scoring is active.
+///
+/// # Errors
+///
+/// Returns `AutoeqError::MissingCea2034Curve` if spin_data is provided but missing required curves.
+/// Returns `AutoeqError::CurveLengthMismatch` if spin_data curves have inconsistent lengths.
 pub fn setup_objective_data(
     args: &crate::cli::Args,
     input_curve: &Curve,
     target_curve: &Curve,
     deviation_curve: &Curve,
     spin_data: &Option<HashMap<String, Curve>>,
-) -> (ObjectiveData, bool) {
+) -> Result<(ObjectiveData, bool), AutoeqError> {
     // CEA2034 data is available if spin_data was provided.
     // This can happen either via:
     // 1. CLI path: args.measurement=CEA2034 and args.speaker/version are set
@@ -170,8 +178,8 @@ pub fn setup_objective_data(
     // The key requirement is just having spin_data available.
     let use_cea = spin_data.is_some();
 
-    let speaker_score_data_opt = if use_cea {
-        Some(SpeakerLossData::new(spin_data.as_ref().unwrap()))
+    let speaker_score_data_opt = if let Some(spin) = spin_data {
+        Some(SpeakerLossData::try_new(spin)?)
     } else {
         None
     };
@@ -214,7 +222,7 @@ pub fn setup_objective_data(
         integrality: None,
     };
 
-    (objective_data, use_cea)
+    Ok((objective_data, use_cea))
 }
 
 /// Set up objective data for multi-driver crossover optimization
@@ -931,6 +939,15 @@ pub fn optimize_multisub(
     })
 }
 
+/// Set up objective data for multi-subwoofer optimization.
+///
+/// Creates the objective function configuration for optimizing gain and delay
+/// parameters across multiple subwoofers to achieve a flat combined response.
+///
+/// # Arguments
+///
+/// * `args` - CLI arguments with optimization parameters
+/// * `drivers_data` - Multi-driver measurement and configuration data
 pub fn setup_multisub_objective_data(
     args: &crate::cli::Args,
     drivers_data: DriversLossData,
@@ -959,6 +976,19 @@ pub fn setup_multisub_objective_data(
     }
 }
 
+/// Set up parameter bounds for multi-subwoofer optimization.
+///
+/// Creates lower and upper bounds for gain and delay parameters.
+/// Gains are bounded by `[-max_db, max_db]` and delays by `[0, 20]` ms.
+///
+/// # Arguments
+///
+/// * `args` - CLI arguments with `max_db` setting
+/// * `n_drivers` - Number of subwoofers
+///
+/// # Returns
+///
+/// Tuple of (lower_bounds, upper_bounds) vectors.
 pub fn setup_multisub_bounds(args: &crate::cli::Args, n_drivers: usize) -> (Vec<f64>, Vec<f64>) {
     let n_params = n_drivers * 2; // gains + delays
     let mut lower_bounds = Vec::with_capacity(n_params);
@@ -979,6 +1009,18 @@ pub fn setup_multisub_bounds(args: &crate::cli::Args, n_drivers: usize) -> (Vec<
     (lower_bounds, upper_bounds)
 }
 
+/// Generate initial guess for multi-subwoofer optimization.
+///
+/// Returns a vector of zeros for all gain and delay parameters,
+/// representing no gain adjustment and no delay for each driver.
+///
+/// # Arguments
+///
+/// * `n_drivers` - Number of subwoofers
+///
+/// # Returns
+///
+/// Vector of `n_drivers * 2` zeros (gains followed by delays).
 pub fn multisub_initial_guess(n_drivers: usize) -> Vec<f64> {
     vec![0.0; n_drivers * 2]
 }
@@ -1008,14 +1050,16 @@ mod tests {
         // No smoothing
         args.smooth = false;
         let freqs = Array1::from(vec![100.0, 1000.0, 10000.0]);
-        let _target_curve = super::build_target_curve(&args, &freqs, &curve);
+        let _target_curve = super::build_target_curve(&args, &freqs, &curve)
+            .expect("build_target_curve should succeed");
         let smoothed_none: Option<Curve> = None;
         assert!(smoothed_none.is_none());
 
         // With smoothing
         args.smooth = true;
         let freqs = Array1::from(vec![100.0, 1000.0, 10000.0]);
-        let target_curve = super::build_target_curve(&args, &freqs, &curve);
+        let target_curve = super::build_target_curve(&args, &freqs, &curve)
+            .expect("build_target_curve should succeed");
         let inv_smooth = target_curve.clone();
         let s = target_curve;
         assert_eq!(s.spl.len(), inv_smooth.spl.len());
@@ -1054,8 +1098,14 @@ mod tests {
         let spin_opt = Some(spin);
 
         // Case 1: spin_data is available -> speaker_score_data should be set
-        let (obj, use_cea) =
-            super::setup_objective_data(&args, &input_curve, &target, &deviation, &spin_opt);
+        let (obj, use_cea) = super::setup_objective_data(
+            &args,
+            &input_curve,
+            &target,
+            &deviation,
+            &spin_opt,
+        )
+        .expect("setup_objective_data should succeed with valid spin data");
         assert!(use_cea);
         assert!(obj.speaker_score_data.is_some());
 
@@ -1064,14 +1114,21 @@ mod tests {
         // which curve is being optimized, not what loss functions are available)
         let mut args2 = args.clone();
         args2.measurement = Some("On Axis".to_string());
-        let (obj2, use_cea2) =
-            super::setup_objective_data(&args2, &input_curve, &target, &deviation, &spin_opt);
+        let (obj2, use_cea2) = super::setup_objective_data(
+            &args2,
+            &input_curve,
+            &target,
+            &deviation,
+            &spin_opt,
+        )
+        .expect("setup_objective_data should succeed with valid spin data");
         assert!(use_cea2); // Changed: spin_data available means speaker score is possible
         assert!(obj2.speaker_score_data.is_some());
 
         // Case 3: If spin_data is missing -> use_cea must be false
         let (obj3, use_cea3) =
-            super::setup_objective_data(&args, &input_curve, &target, &deviation, &None);
+            super::setup_objective_data(&args, &input_curve, &target, &deviation, &None)
+                .expect("setup_objective_data should succeed with no spin data");
         assert!(!use_cea3);
         assert!(obj3.speaker_score_data.is_none());
     }

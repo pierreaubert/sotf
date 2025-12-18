@@ -32,6 +32,10 @@ pub use autoeq_iir as iir;
 // Re-export types from CEA2034 crate to ensure type compatibility
 pub use autoeq_cea2034::{Curve, DirectivityCurve, DirectivityData};
 
+/// Error types for autoeq operations.
+pub mod error;
+pub use error::{AutoeqError, Result};
+
 /// Common CLI argument definitions shared across binaries
 pub mod cli;
 /// Constraint functions for optimization

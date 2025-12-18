@@ -17,13 +17,16 @@ pub enum MeasurementRef {
 
     /// Named measurement with optional metadata
     Named {
+        /// Path to the CSV measurement file.
         path: PathBuf,
+        /// Optional display name for the measurement.
         #[serde(skip_serializing_if = "Option::is_none")]
         name: Option<String>,
     },
 }
 
 impl MeasurementRef {
+    /// Returns the path to the measurement file.
     pub fn path(&self) -> &PathBuf {
         match self {
             MeasurementRef::Path(p) => p,
@@ -31,6 +34,7 @@ impl MeasurementRef {
         }
     }
 
+    /// Returns the optional display name, if provided.
     pub fn name(&self) -> Option<&str> {
         match self {
             MeasurementRef::Path(_) => None,
@@ -43,7 +47,9 @@ impl MeasurementRef {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum MeasurementSource {
+    /// A single measurement file.
     Single(MeasurementRef),
+    /// Multiple measurement files to be averaged.
     Multiple(Vec<MeasurementRef>),
 }
 

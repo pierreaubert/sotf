@@ -10,11 +10,15 @@ use mh::methods::{De as MhDe, Fa as MhFa, Pso as MhPso, Rga as MhRga, Tlbo as Mh
 #[allow(unused_imports)]
 use mh::{Bounded as MhBounded, Fitness as MhFitness, ObjFunc as MhObjFunc, Solver as MhSolver};
 
-/// Information passed to callback after each generation
-/// Similar to DEIntermediate but for metaheuristics optimizers
+/// Information passed to callback after each generation.
+///
+/// Similar to DEIntermediate but for metaheuristics optimizers.
 pub struct MHIntermediate {
+    /// Current best solution vector.
     pub x: Array1<f64>,
+    /// Current best fitness value.
     pub fun: f64,
+    /// Current iteration number.
     pub iter: usize,
 }
 
@@ -24,19 +28,26 @@ pub use crate::de::CallbackAction;
 // ---------------- Metaheuristics objective and utilities ----------------
 use std::sync::{Arc, Mutex};
 
+/// Objective function wrapper for metaheuristics optimizers.
 #[derive(Clone)]
 pub struct MHObjective {
+    /// Objective data containing target curves and loss parameters.
     pub data: ObjectiveData,
+    /// Parameter bounds as [min, max] pairs.
     pub bounds: Vec<[f64; 2]>,
-    /// Optional callback state for tracking progress
+    /// Optional callback state for tracking progress.
     pub callback_state: Option<Arc<Mutex<CallbackState>>>,
 }
 
-/// State tracked across fitness evaluations for callback reporting
+/// State tracked across fitness evaluations for callback reporting.
 pub struct CallbackState {
+    /// Best fitness value found so far.
     pub best_fitness: f64,
+    /// Parameters corresponding to best fitness.
     pub best_params: Vec<f64>,
+    /// Total number of fitness evaluations.
     pub eval_count: usize,
+    /// Evaluation count at last callback report.
     pub last_report_eval: usize,
 }
 

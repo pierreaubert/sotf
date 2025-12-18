@@ -206,6 +206,10 @@ fn create_cea2034_with_eq_traces(
     traces
 }
 
+/// Create a detailed CEA2034 spinorama plot with multiple subplots.
+///
+/// Shows On Axis, Listening Window, Early Reflections, and Sound Power curves,
+/// optionally with EQ-applied variants overlaid.
 pub fn plot_spin_details(
     cea2034_curves: Option<&HashMap<String, crate::Curve>>,
     eq_response: Option<&Array1<f64>>,
@@ -307,6 +311,10 @@ pub fn plot_spin_details(
     plot
 }
 
+/// Create a tonal balance plot showing smoothed CEA2034 curves.
+///
+/// Shows the tonal balance (1/2 octave smoothed) for On Axis, Listening Window,
+/// Early Reflections, and Sound Power measurements.
 pub fn plot_spin_tonal(
     cea2034_curves: Option<&HashMap<String, crate::Curve>>,
     eq_response: Option<&Array1<f64>>,
@@ -455,6 +463,10 @@ pub fn plot_spin_tonal(
     plot
 }
 
+/// Create a CEA2034 spinorama overview plot.
+///
+/// Shows directivity indices (ERDI, SPDI) and the main CEA2034 curves
+/// with optional EQ response overlaid.
 pub fn plot_spin(
     cea2034_curves: Option<&HashMap<String, crate::Curve>>,
     eq_response: Option<&Array1<f64>>,

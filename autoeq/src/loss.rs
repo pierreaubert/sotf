@@ -16,6 +16,7 @@
 //! You should have received a copy of the GNU General Public License
 //! along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+use crate::error::{AutoeqError, Result};
 use crate::Curve;
 use crate::cea2034 as score;
 use crate::read;
@@ -56,44 +57,56 @@ pub struct SpeakerLossData {
 }
 
 impl SpeakerLossData {
-    /// Create a new SpeakerLossData instance
+    /// Create a new SpeakerLossData instance.
     ///
     /// # Arguments
     /// * `spin` - Map of CEA2034 curves by name ("On Axis", "Listening Window", "Sound Power", "Estimated In-Room Response")
-    pub fn new(spin: &HashMap<String, Curve>) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns `AutoeqError::MissingCea2034Curve` if any required curve is missing.
+    /// Returns `AutoeqError::CurveLengthMismatch` if curves have different lengths.
+    pub fn try_new(spin: &HashMap<String, Curve>) -> Result<Self> {
         let on = spin
             .get("On Axis")
-            .expect("Missing 'On Axis' in CEA2034 spin data")
+            .ok_or_else(|| AutoeqError::MissingCea2034Curve {
+                curve_name: "On Axis".to_string(),
+            })?
             .spl
             .clone();
         let lw = spin
             .get("Listening Window")
-            .expect("Missing 'Listening Window' in CEA2034 spin data")
+            .ok_or_else(|| AutoeqError::MissingCea2034Curve {
+                curve_name: "Listening Window".to_string(),
+            })?
             .spl
             .clone();
         let sp = spin
             .get("Sound Power")
-            .expect("Missing 'Sound Power' in CEA2034 spin data")
+            .ok_or_else(|| AutoeqError::MissingCea2034Curve {
+                curve_name: "Sound Power".to_string(),
+            })?
             .spl
             .clone();
         let pir = spin
             .get("Estimated In-Room Response")
-            .expect("Missing 'Estimated In-Room Response' in CEA2034 spin data")
+            .ok_or_else(|| AutoeqError::MissingCea2034Curve {
+                curve_name: "Estimated In-Room Response".to_string(),
+            })?
             .spl
             .clone();
 
         // Verify all arrays have the same length
         if on.len() != lw.len() || on.len() != sp.len() || on.len() != pir.len() {
-            panic!(
-                "All CEA2034 curves must have the same length. on: {}, lw: {}, sp: {}, pir: {}",
-                on.len(),
-                lw.len(),
-                sp.len(),
-                pir.len()
-            );
+            return Err(AutoeqError::CurveLengthMismatch {
+                on_len: on.len(),
+                lw_len: lw.len(),
+                sp_len: sp.len(),
+                pir_len: pir.len(),
+            });
         }
 
-        Self { on, lw, sp, pir }
+        Ok(Self { on, lw, sp, pir })
     }
 }
 
@@ -856,7 +869,7 @@ mod tests {
             },
         );
 
-        let sd = SpeakerLossData::new(&spin);
+        let sd = SpeakerLossData::try_new(&spin).expect("test spin data should be valid");
         let zero = Array1::zeros(freq.len());
 
         // Expected preference using score() with zero PEQ (i.e., base curves)
@@ -1121,7 +1134,7 @@ mod tests {
             },
         );
 
-        let sd = SpeakerLossData::new(&spin);
+        let sd = SpeakerLossData::try_new(&spin).expect("test spin data should be valid");
         let peq = Array1::zeros(freq.len());
         let v = mixed_loss(&sd, &freq, &peq);
         assert!(v.is_finite(), "mixed_loss should be finite, got {}", v);
