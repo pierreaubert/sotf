@@ -522,7 +522,8 @@ fn optimize_single_driver(
 
     // Setup objective data
     let (objective_data, _use_cea) =
-        autoeq::workflow::setup_objective_data(&args, curve, target, &deviation_curve, spin_data);
+        autoeq::workflow::setup_objective_data(&args, curve, target, &deviation_curve, spin_data)
+            .map_err(|e| e.to_string())?;
 
     // Create callback if configured
     let frequencies: Vec<f64> = curve.freq.iter().copied().collect();
@@ -1220,6 +1221,7 @@ fn optimize_single_driver_full(
         // Build target based on curve_name
         let args = build_autoeq_args(&config.params);
         autoeq::workflow::build_target_curve(&args, &standard_freq, &input_normalized)
+            .map_err(|e| e.to_string())?
     };
 
     // Run optimization

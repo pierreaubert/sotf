@@ -158,7 +158,8 @@ pub fn run_headphone_optimization(
         &target_curve_norm,
         &deviation_curve,
         &None,
-    );
+    )
+    .map_err(|e| e.to_string())?;
 
     // Run optimization with history tracking
     let history: Vec<(usize, f64)> = Vec::new();

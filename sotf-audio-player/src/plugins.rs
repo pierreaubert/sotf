@@ -783,7 +783,8 @@ impl PluginSettings {
                 enable_hr_direct: upmixer_specs::ENABLE_HR_DIRECT_DEFAULT,
                 hr_sharpen: upmixer_specs::HR_SHARPEN_DEFAULT as f64,
                 height_hf_cap_hz: upmixer_specs::HEIGHT_HF_CAP_HZ_DEFAULT as f64,
-                height_transient_reduction: upmixer_specs::HEIGHT_TRANSIENT_REDUCTION_DEFAULT as f64,
+                height_transient_reduction: upmixer_specs::HEIGHT_TRANSIENT_REDUCTION_DEFAULT
+                    as f64,
                 height_direct_leak: upmixer_specs::HEIGHT_DIRECT_LEAK_DEFAULT as f64,
                 // Ambient
                 ambient_boost: upmixer_specs::AMBIENT_BOOST_DEFAULT as f64,
