@@ -6,6 +6,7 @@
 #![allow(clippy::approx_constant)]
 
 use gpui::{Rgba, SharedString};
+use gpui_ui_kit::theme::{Theme as UiKitTheme, ThemeVariant as UiKitThemeVariant};
 use serde::{Deserialize, Serialize};
 
 /// Available theme identifiers
@@ -47,6 +48,18 @@ impl ThemeId {
             ThemeId::Midnight => ThemeId::Forest,
             ThemeId::Forest => ThemeId::BlackAndWhite,
             ThemeId::BlackAndWhite => ThemeId::Dark,
+        }
+    }
+}
+
+impl From<ThemeId> for UiKitThemeVariant {
+    fn from(id: ThemeId) -> Self {
+        match id {
+            ThemeId::Dark => UiKitThemeVariant::Dark,
+            ThemeId::Light => UiKitThemeVariant::Light,
+            ThemeId::Midnight => UiKitThemeVariant::Midnight,
+            ThemeId::Forest => UiKitThemeVariant::Forest,
+            ThemeId::BlackAndWhite => UiKitThemeVariant::BlackAndWhite,
         }
     }
 }
@@ -197,6 +210,29 @@ pub struct Theme {
 }
 
 impl Theme {
+    /// Convert the app theme to the ui-kit theme so defaults are consistent without per-call overrides.
+    pub fn to_ui_kit_theme(&self, id: ThemeId) -> UiKitTheme {
+        UiKitTheme {
+            variant: UiKitThemeVariant::from(id),
+            background: self.background,
+            surface: self.surface,
+            surface_hover: self.surface_hover,
+            muted: self.background_secondary,
+            text_primary: self.text_primary,
+            text_secondary: self.text_secondary,
+            text_muted: self.text_muted,
+            accent: self.accent,
+            accent_hover: self.accent_hover,
+            accent_muted: self.accent_muted,
+            success: self.success,
+            warning: self.warning,
+            error: self.error,
+            info: self.info,
+            border: self.border,
+            border_hover: self.border_focused,
+        }
+    }
+
     /// Create theme from ThemeId
     pub fn from_id(id: ThemeId) -> Self {
         match id {

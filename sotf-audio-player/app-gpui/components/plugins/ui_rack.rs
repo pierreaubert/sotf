@@ -1,9 +1,9 @@
 //! Plugin screen rendering functions - Professional DAW-style interface
 
+use super::actions::ToggleUpmixerConfig;
 use super::level_meters::{db_to_position, render_gradient_meter};
 use super::render_plugin_content;
 use crate::app::types::PluginUpdateType;
-use crate::plugins::actions::ToggleUpmixerConfig;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -965,20 +965,42 @@ impl PlayerView {
                                 .flex_1()
                                 .overflow_y_scroll()
                                 .p_4()
-                                .child(render_plugin_content(
-                                    self.state.clone(),
-                                    selected_idx, // Pass index
-                                    &plugin.settings,
-                                    is_editing,
-                                    param_selection,
-                                    &theme,
-                                    self.state.read(cx).app.upmixer_config_open,
-                                    self.state.read(cx).app.selected_eq_band,
-                                    // Pass loudness_info for backward compatibility
-                                    self.state.read(cx).app.loudness_info.clone(),
-                                    // Per-plugin real-time data not yet implemented
-                                    None,
-                                )),
+                                .child({
+                                    // Get plugin-specific real-time data based on plugin type
+                                    let plugin_data: Option<
+                                        std::sync::Arc<dyn std::any::Any + Send + Sync>,
+                                    > = match &plugin.settings {
+                                        sotf_audio_player::PluginSettings::SpectrumAnalyzer {
+                                            ..
+                                        } => self
+                                            .state
+                                            .read(cx)
+                                            .app
+                                            .spectrum_info
+                                            .clone()
+                                            .map(|s| {
+                                                std::sync::Arc::new(s)
+                                                    as std::sync::Arc<
+                                                        dyn std::any::Any + Send + Sync,
+                                                    >
+                                            }),
+                                        _ => None,
+                                    };
+
+                                    render_plugin_content(
+                                        self.state.clone(),
+                                        selected_idx, // Pass index
+                                        &plugin.settings,
+                                        is_editing,
+                                        param_selection,
+                                        &theme,
+                                        self.state.read(cx).app.upmixer_config_open,
+                                        self.state.read(cx).app.selected_eq_band,
+                                        // Pass loudness_info for backward compatibility
+                                        self.state.read(cx).app.loudness_info.clone(),
+                                        plugin_data,
+                                    )
+                                }),
                         )
                         // Divider between main zone and output meter (only if multichannel)
                         .when(has_multichannel, |d| {

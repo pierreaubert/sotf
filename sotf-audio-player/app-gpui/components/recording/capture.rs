@@ -27,13 +27,11 @@ impl PlayerView {
                     .child(
                         Text::new("Signal Recording")
                             .size(TextSize::Lg)
-                            .weight(TextWeight::Bold)
-                            .color(theme.text_primary),
+                            .weight(TextWeight::Bold),
                     )
                     .child(
                         Text::new("Test each channel individually. Signals will play sequentially with a 1-second pause between channels.")
-                            .size(TextSize::Sm)
-                            .color(theme.text_secondary),
+                            .size(TextSize::Sm),
                     ),
             )
             .child(self.render_signal_config_section(cx))
@@ -59,8 +57,7 @@ impl PlayerView {
                         .child(
                             Text::new("Signal Type:")
                                 .size(TextSize::Sm)
-                                .weight(TextWeight::Semibold)
-                                .color(theme.text_secondary),
+                                .weight(TextWeight::Semibold),
                         )
                         .child(self.render_signal_type_dropdown(cx)),
                 )
@@ -71,8 +68,7 @@ impl PlayerView {
                         .child(
                             Text::new("Duration:")
                                 .size(TextSize::Sm)
-                                .weight(TextWeight::Semibold)
-                                .color(theme.text_secondary),
+                                .weight(TextWeight::Semibold),
                         )
                         .child(self.render_duration_dropdown(cx)),
                 )
@@ -81,9 +77,7 @@ impl PlayerView {
                         .spacing(StackSpacing::Md)
                         .align(StackAlign::Center)
                         .child(
-                            Text::new("Level:")
-                                .size(TextSize::Sm)
-                                .color(theme.text_secondary),
+                            Text::new("Level:").size(TextSize::Sm),
                         )
                         .child({
                             let view = cx.entity().clone();
@@ -266,12 +260,7 @@ impl PlayerView {
                 )
                 .child(self.render_channel_list(cx))
                 .when(!status_message.is_empty(), |stack| {
-                    let theme = theme.clone();
-                    stack.child(
-                        Text::new(status_message.clone())
-                            .size(TextSize::Sm)
-                            .color(theme.text_secondary),
-                    )
+                    stack.child(Text::new(status_message.clone()).size(TextSize::Sm))
                 })
                 .when(is_recording, |stack| {
                     stack.child(

@@ -28,6 +28,31 @@ impl App {
         None
     }
 
+    /// Add album to queue and immediately jump to it and start playing
+    /// (used for "Play Now" context menu action)
+    pub fn play_album_now(&mut self) -> Option<PathBuf> {
+        // Get the selected album from the grid view
+        let albums = self.filtered_albums();
+        let selected_album = albums.get(self.selected_album_index).cloned();
+
+        if let Some(album) = selected_album {
+            // Add to queue
+            self.queue.push(QueueItem::new(album.clone()));
+            self.expanded_queue_items.push(false);
+
+            // Jump to the newly added album (last in queue)
+            let new_index = self.queue.len() - 1;
+            self.current_queue_index = Some(new_index);
+            self.is_playing = true;
+
+            // Get the first track
+            return self.queue[new_index]
+                .current_track()
+                .map(|track| track.path.clone());
+        }
+        None
+    }
+
     pub fn start_queue(&mut self) -> Option<PathBuf> {
         if self.queue.is_empty() {
             return None;

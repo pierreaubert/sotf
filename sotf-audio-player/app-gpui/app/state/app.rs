@@ -440,9 +440,18 @@ impl App {
                         // Set sample rates
                         self.recording_state.playback_config.available_sample_rates =
                             device.available_sample_rates.clone();
-                        if let Some(rate) = device.available_sample_rates.first() {
-                            self.recording_state.playback_config.sample_rate = *rate;
-                        }
+                        
+                        let rates = &device.available_sample_rates;
+                        let default_rate = if rates.contains(&48000) {
+                            48000
+                        } else if rates.contains(&44100) {
+                            44100
+                        } else {
+                            device.default_config.as_ref().map(|c| c.sample_rate).unwrap_or(
+                                rates.first().copied().unwrap_or(48000)
+                            )
+                        };
+                        self.recording_state.playback_config.sample_rate = default_rate;
                     }
                 }
             }
@@ -464,9 +473,18 @@ impl App {
                         // Set sample rates
                         self.recording_state.recording_config.available_sample_rates =
                             device.available_sample_rates.clone();
-                        if let Some(rate) = device.available_sample_rates.first() {
-                            self.recording_state.recording_config.sample_rate = *rate;
-                        }
+                        
+                        let rates = &device.available_sample_rates;
+                        let default_rate = if rates.contains(&48000) {
+                            48000
+                        } else if rates.contains(&44100) {
+                            44100
+                        } else {
+                            device.default_config.as_ref().map(|c| c.sample_rate).unwrap_or(
+                                rates.first().copied().unwrap_or(48000)
+                            )
+                        };
+                        self.recording_state.recording_config.sample_rate = default_rate;
                     }
                 }
             }
@@ -500,6 +518,30 @@ impl App {
         // Restore volume and muted state
         self.volume = config.volume;
         self.muted = config.muted;
+
+        // Restore recording config
+        if !config.recording_config.playback.device_name.is_empty() {
+            self.recording_state.playback_config = config.recording_config.playback;
+        }
+        if !config.recording_config.recording.device_name.is_empty() {
+            self.recording_state.recording_config = config.recording_config.recording;
+        }
+
+        self.recording_state.signal_type = config.recording_config.signal_type;
+        self.recording_state.signal_duration_secs = config.recording_config.signal_duration_secs;
+        self.recording_state.signal_level_db = config.recording_config.signal_level_db;
+        self.recording_state.mic_calibration_path = config.recording_config.mic_calibration_path;
+        self.recording_state.recording_directory = config.recording_config.recording_directory;
+        self.recording_state.recording_base_directory =
+            config.recording_config.recording_base_directory;
+
+        // Reload calibration data if path exists
+        if let Some(ref path) = self.recording_state.mic_calibration_path {
+            if let Ok(content) = std::fs::read_to_string(path) {
+                self.recording_state.mic_calibration_data =
+                    crate::app::types::CalibrationData::parse(&content);
+            }
+        }
 
         // Restore plugin presets path if we had a last loaded preset
         if let Some(preset_name) = config.last_loaded_plugin_preset {
@@ -551,6 +593,16 @@ impl App {
             }),
             volume: self.volume,
             muted: self.muted,
+            recording_config: crate::app::config::RecordingConfigState {
+                playback: self.recording_state.playback_config.clone(),
+                recording: self.recording_state.recording_config.clone(),
+                signal_type: self.recording_state.signal_type,
+                signal_duration_secs: self.recording_state.signal_duration_secs,
+                signal_level_db: self.recording_state.signal_level_db,
+                mic_calibration_path: self.recording_state.mic_calibration_path.clone(),
+                recording_directory: self.recording_state.recording_directory.clone(),
+                recording_base_directory: self.recording_state.recording_base_directory.clone(),
+            },
         };
         config.save()?;
         Ok(())

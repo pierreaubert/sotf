@@ -1564,6 +1564,7 @@ impl App {
                     hr_sharpen,
                     safety_cap_db,
                     decorrelation_mode,
+                    ..
                 } => {
                     match param_idx {
                         0 => {

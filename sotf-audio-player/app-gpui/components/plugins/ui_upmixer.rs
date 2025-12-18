@@ -11,8 +11,7 @@ use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    HStack, Select, SelectOption, SelectSize, StackAlign, StackSpacing, Toggle, ToggleStyle,
-    VStack,
+    HStack, Select, SelectOption, SelectSize, StackAlign, StackSpacing, Toggle, ToggleStyle, VStack,
 };
 use sotf_audio_player::param_specs::upmixer::*;
 
@@ -126,70 +125,66 @@ pub fn render_upmixer_plugin(
         .spacing(StackSpacing::Sm)
         // Top bar: Output config selector on the right
         .child(
-            div()
-                .flex()
-                .justify_end()
-                .w_full()
-                .child(
-                    HStack::new()
-                        .spacing(StackSpacing::Sm)
-                        .align(StackAlign::Center)
-                        .child(
-                            div()
-                                .text_xs()
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .text_color(theme.text_secondary)
-                                .child("Output"),
-                        )
-                        .child(
-                            div().w(px(80.0)).child(
-                                Select::new("config-select")
-                                    .options(
-                                        [
+            div().flex().justify_end().w_full().child(
+                HStack::new()
+                    .spacing(StackSpacing::Sm)
+                    .align(StackAlign::Center)
+                    .child(
+                        div()
+                            .text_xs()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(theme.text_secondary)
+                            .child("Output"),
+                    )
+                    .child(
+                        div().w(px(80.0)).child(
+                            Select::new("config-select")
+                                .options(
+                                    [
+                                        "2.0", "5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2",
+                                        "7.1.4", "9.1.4", "9.1.6",
+                                    ]
+                                    .iter()
+                                    .map(|c| SelectOption::new(c.to_string(), c.to_string()))
+                                    .collect(),
+                                )
+                                .selected(speaker_config_owned.clone())
+                                .is_open(config_open)
+                                .size(SelectSize::Sm)
+                                .on_toggle({
+                                    let entity = entity.clone();
+                                    move |is_open, _window, cx| {
+                                        entity.update(cx, |state, _| {
+                                            state.app.upmixer_config_open = is_open;
+                                        });
+                                    }
+                                })
+                                .on_change({
+                                    let entity = entity.clone();
+                                    move |value, _, cx| {
+                                        let configs = [
                                             "2.0", "5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2",
                                             "7.1.4", "9.1.4", "9.1.6",
-                                        ]
-                                        .iter()
-                                        .map(|c| SelectOption::new(c.to_string(), c.to_string()))
-                                        .collect(),
-                                    )
-                                    .selected(speaker_config_owned.clone())
-                                    .is_open(config_open)
-                                    .size(SelectSize::Sm)
-                                    .on_toggle({
-                                        let entity = entity.clone();
-                                        move |is_open, _window, cx| {
-                                            entity.update(cx, |state, _| {
-                                                state.app.upmixer_config_open = is_open;
-                                            });
-                                        }
-                                    })
-                                    .on_change({
-                                        let entity = entity.clone();
-                                        move |value, _, cx| {
-                                            let configs = [
-                                                "2.0", "5.0", "5.1", "7.1", "5.1.2", "5.1.4",
-                                                "7.1.2", "7.1.4", "9.1.4", "9.1.6",
-                                            ];
-                                            let idx = configs
-                                                .iter()
-                                                .position(|&c| c == value.as_ref())
-                                                .unwrap_or(0);
-                                            entity.update(cx, |state, _| {
-                                                state.app.set_plugin_param(
-                                                    plugin_idx,
-                                                    param_idx::SPEAKER_CONFIG,
-                                                    idx as f64,
-                                                );
-                                                state.app.upmixer_config_open = false;
-                                                state.app.update_level_meter_groups();
-                                            });
-                                        }
-                                    }),
-                            ),
-                        )
-                        .build(),
-                ),
+                                        ];
+                                        let idx = configs
+                                            .iter()
+                                            .position(|&c| c == value.as_ref())
+                                            .unwrap_or(0);
+                                        entity.update(cx, |state, _| {
+                                            state.app.set_plugin_param(
+                                                plugin_idx,
+                                                param_idx::SPEAKER_CONFIG,
+                                                idx as f64,
+                                            );
+                                            state.app.upmixer_config_open = false;
+                                            state.app.update_level_meter_groups();
+                                        });
+                                    }
+                                }),
+                        ),
+                    )
+                    .build(),
+            ),
         )
         // Row 1: Crossovers, SubHarmonic, 8 Sliders
         .child(
@@ -228,12 +223,7 @@ pub fn render_upmixer_plugin(
                     &state,
                     theme,
                 ))
-                .child(render_height_box(
-                    entity.clone(),
-                    plugin_idx,
-                    &state,
-                    theme,
-                ))
+                .child(render_height_box(entity.clone(), plugin_idx, &state, theme))
                 .child(render_decorrelation_box(
                     entity.clone(),
                     plugin_idx,

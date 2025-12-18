@@ -56,13 +56,11 @@ impl PlayerView {
                     .child(
                         Text::new("Audio Device Configuration")
                             .size(TextSize::Lg)
-                            .weight(TextWeight::Bold)
-                            .color(theme.text_primary),
+                            .weight(TextWeight::Bold),
                     )
                     .child(
                         Text::new("Configure your playback and recording devices, set up channel routing, and load microphone calibration.")
-                            .size(TextSize::Sm)
-                            .color(theme.text_secondary),
+                            .size(TextSize::Sm),
                     ),
             )
             .child(
@@ -125,12 +123,9 @@ impl PlayerView {
         };
         let view = cx.entity().clone();
 
-        let device_label = VStack::new().spacing(StackSpacing::Sm).child(
-            Text::new("Output Device")
-                .size(TextSize::Sm)
-                .weight(TextWeight::Semibold)
-                .color(theme.text_secondary),
-        );
+        let device_label = VStack::new()
+            .spacing(StackSpacing::Sm)
+            .child(Text::new("Output Device").size(TextSize::Sm).weight(TextWeight::Semibold));
 
         // Sample rate dropdown row
         let sample_rate_row = self
@@ -146,9 +141,7 @@ impl PlayerView {
                 .spacing(StackSpacing::Md)
                 .align(StackAlign::Center)
                 .child(
-                    Text::new("Number of channels:")
-                        .size(TextSize::Sm)
-                        .color(theme.text_secondary),
+                    Text::new("Number of channels:").size(TextSize::Sm),
                 )
                 .child({
                     let view = view.clone();
@@ -247,7 +240,7 @@ impl PlayerView {
             .child({
                 let view = view.clone();
                 NumberInput::new("recording_channel_count")
-                    .value(num_channels as f64)
+                    .value(1.0)
                     .min(1.0)
                     .max(16.0)
                     .step(1.0)
@@ -546,10 +539,22 @@ impl PlayerView {
                                 .iter()
                                 .find(|d| d.name == value.as_ref())
                             {
-                                if let Some(config) = &device.default_config {
-                                    state.app.recording_state.playback_config.sample_rate =
-                                        config.sample_rate;
-                                }
+                                // Set default sample rate (prefer 48k, then 44.1k, then default)
+                                let rates = &device.available_sample_rates;
+                                let default_rate = if rates.contains(&48000) {
+                                    48000
+                                } else if rates.contains(&44100) {
+                                    44100
+                                } else {
+                                    device
+                                        .default_config
+                                        .as_ref()
+                                        .map(|c| c.sample_rate)
+                                        .unwrap_or(48000)
+                                };
+
+                                state.app.recording_state.playback_config.sample_rate =
+                                    default_rate;
                                 // Update available sample rates from device
                                 state
                                     .app
@@ -717,7 +722,7 @@ impl PlayerView {
                                                 .iter()
                                                 .enumerate()
                                                 .map(|(i, name)| ChannelMapping {
-                                                    interface_channel: i + 1, // 1-indexed for display
+                                                    interface_channel: i, // 1-indexed for display
                                                     group_name: name.to_string(),
                                                 })
                                                 .collect();
@@ -785,7 +790,7 @@ impl PlayerView {
                                         "playback_interface_{}",
                                         idx
                                     )))
-                                    .value((interface_ch + 1) as f64)
+                                    .value(interface_ch as f64)
                                     .min(1.0)
                                     .max(16.0)
                                     .step(1.0)
@@ -945,10 +950,22 @@ impl PlayerView {
                                 .iter()
                                 .find(|d| d.name == value.as_ref())
                             {
-                                if let Some(config) = &device.default_config {
-                                    state.app.recording_state.recording_config.sample_rate =
-                                        config.sample_rate;
-                                }
+                                // Set default sample rate (prefer 48k, then 44.1k, then default)
+                                let rates = &device.available_sample_rates;
+                                let default_rate = if rates.contains(&48000) {
+                                    48000
+                                } else if rates.contains(&44100) {
+                                    44100
+                                } else {
+                                    device
+                                        .default_config
+                                        .as_ref()
+                                        .map(|c| c.sample_rate)
+                                        .unwrap_or(48000)
+                                };
+
+                                state.app.recording_state.recording_config.sample_rate =
+                                    default_rate;
                                 // Update available sample rates from device
                                 state
                                     .app
@@ -1082,7 +1099,7 @@ impl PlayerView {
                                             "recording_interface_{}",
                                             idx
                                         )))
-                                        .value((interface_ch + 1) as f64)
+                                        .value(interface_ch  as f64)
                                         .min(1.0)
                                         .max(16.0)
                                         .step(1.0)
@@ -1224,7 +1241,7 @@ fn update_playback_channel_mappings(state: &mut RecordingState) {
                 .map(|(id, _)| id.to_string())
                 .unwrap_or_default();
             state.playback_config.channel_mappings.push(ChannelMapping {
-                interface_channel: i + 1, // 1-indexed for display
+                interface_channel: i, // 0-indexed internally
                 group_name: group,
             });
         }
@@ -1245,7 +1262,7 @@ fn update_recording_channel_mappings(state: &mut RecordingState) {
     if target_count > current_count {
         // Add new mappings (1-indexed for display)
         for i in current_count..target_count {
-            state.recording_config.channel_mappings.push(i + 1);
+            state.recording_config.channel_mappings.push(i);
         }
     } else if target_count < current_count {
         // Remove extra mappings

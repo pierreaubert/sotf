@@ -285,9 +285,13 @@ impl PlayerView {
                                             (
                                                 crate::app::ContextMenuType::Album,
                                                 "Add to Queue",
-                                            )
-                                            | (crate::app::ContextMenuType::Album, "Play Now") => {
+                                            ) => {
                                                 if let Some(path) = state.app.add_album_to_queue() {
+                                                    Self::play_track(state, path);
+                                                }
+                                            }
+                                            (crate::app::ContextMenuType::Album, "Play Now") => {
+                                                if let Some(path) = state.app.play_album_now() {
                                                     Self::play_track(state, path);
                                                 }
                                             }

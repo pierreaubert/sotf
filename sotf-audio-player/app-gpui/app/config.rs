@@ -1,9 +1,38 @@
 use serde::{Deserialize, Serialize};
 use sotf_audio_player::DirectoryInfo;
 
+use crate::app::types::{PlaybackDeviceConfig, RecordingDeviceConfig, RecordingSignalType};
 use crate::i18n::Language;
 use crate::keybindings::KeymapPreset;
 use crate::theme::ThemeId;
+
+/// Persisted state for recording screen
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecordingConfigState {
+    pub playback: PlaybackDeviceConfig,
+    pub recording: RecordingDeviceConfig,
+    pub signal_type: RecordingSignalType,
+    pub signal_duration_secs: f32,
+    pub signal_level_db: f32,
+    pub mic_calibration_path: Option<String>,
+    pub recording_directory: Option<String>,
+    pub recording_base_directory: Option<String>,
+}
+
+impl Default for RecordingConfigState {
+    fn default() -> Self {
+        Self {
+            playback: PlaybackDeviceConfig::default(),
+            recording: RecordingDeviceConfig::default(),
+            signal_type: RecordingSignalType::Sweep,
+            signal_duration_secs: 5.0,
+            signal_level_db: -20.0,
+            mic_calibration_path: None,
+            recording_directory: None,
+            recording_base_directory: None,
+        }
+    }
+}
 
 /// Window geometry for persisting window size and position
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -102,6 +131,9 @@ pub struct Config {
     /// Muted state
     #[serde(default)]
     pub muted: bool,
+    /// Recording screen configuration
+    #[serde(default)]
+    pub recording_config: RecordingConfigState,
 }
 
 fn default_volume() -> f32 {
@@ -127,6 +159,7 @@ impl Config {
                     window_geometry: WindowGeometry::default(),
                     volume: default_volume(),
                     muted: false,
+                    recording_config: RecordingConfigState::default(),
                 })
             }
         } else {

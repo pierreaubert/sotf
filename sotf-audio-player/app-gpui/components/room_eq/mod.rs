@@ -229,6 +229,9 @@ impl PlayerView {
             .when(error_message.is_some(), |div| {
                 div.child(
                     Card::new()
+                        .background(theme.surface)
+                        .header_background(theme.background_secondary)
+                        .border(theme.border)
                         .content(
                             VStack::new()
                                 .spacing(StackSpacing::Sm)
@@ -270,7 +273,10 @@ impl PlayerView {
             })
             .child(
                 Card::new()
-                    .header(Text::new("From Recording Session").weight(TextWeight::Semibold))
+                    .background(theme.surface)
+                    .header_background(theme.background_secondary)
+                    .border(theme.border)
+                    .header(Text::new("From Recording Session").color(theme.text_primary).weight(TextWeight::Semibold))
                     .content(
                         VStack::new()
                             .spacing(StackSpacing::Md)
@@ -295,7 +301,10 @@ impl PlayerView {
             )
             .child(
                 Card::new()
-                    .header(Text::new("From JSON File").weight(TextWeight::Semibold))
+                    .background(theme.surface)
+                    .header_background(theme.background_secondary)
+                    .border(theme.border)
+                    .header(Text::new("From JSON File").color(theme.text_primary).weight(TextWeight::Semibold))
                     .content(
                         VStack::new()
                             .spacing(StackSpacing::Md)
@@ -321,7 +330,10 @@ impl PlayerView {
             .when(has_recordings, |div| {
                 div.child(
                     Card::new()
-                        .header(Text::new("Loaded Data").weight(TextWeight::Semibold))
+                        .background(theme.surface)
+                        .header_background(theme.background_secondary)
+                        .border(theme.border)
+                        .header(Text::new("Loaded Data").color(theme.text_primary).weight(TextWeight::Semibold))
                         .content(
                             VStack::new()
                                 .spacing(StackSpacing::Md)
@@ -529,12 +541,18 @@ impl PlayerView {
             )
             .child(
                 Card::new()
-                    .header(Text::new("Optimizer Settings").weight(TextWeight::Semibold))
+                    .background(theme.surface)
+                    .header_background(theme.background_secondary)
+                    .border(theme.border)
+                    .header(Text::new("Optimizer Settings").color(theme.text_primary).weight(TextWeight::Semibold))
                     .content(autoeq_form),
             )
             .child(
                 Card::new()
-                    .header(Text::new("Channel Configuration").weight(TextWeight::Semibold))
+                    .background(theme.surface)
+                    .header_background(theme.background_secondary)
+                    .border(theme.border)
+                    .header(Text::new("Channel Configuration").color(theme.text_primary).weight(TextWeight::Semibold))
                     .content(self.render_channel_config_list(cx)),
             )
     }
@@ -561,7 +579,10 @@ impl PlayerView {
             )
             .child(
                 Card::new()
-                    .header(Text::new("Optimization Progress").weight(TextWeight::Semibold))
+                    .background(theme.surface)
+                    .header_background(theme.background_secondary)
+                    .border(theme.border)
+                    .header(Text::new("Optimization Progress").color(theme.text_primary).weight(TextWeight::Semibold))
                     .content(
                         VStack::new()
                             .spacing(StackSpacing::Md)
@@ -650,13 +671,16 @@ impl PlayerView {
             )
             .child(
                 Card::new()
-                    .header(Text::new("Score Summary").weight(TextWeight::Semibold))
+                    .background(theme.surface)
+                    .header_background(theme.background_secondary)
+                    .border(theme.border)
+                    .header(Text::new("Score Summary").color(theme.text_primary).weight(TextWeight::Semibold))
                     .content(
                         VStack::new().spacing(StackSpacing::Sm).child(
                             HStack::new()
                                 .spacing(StackSpacing::Lg)
-                                .child(Text::new(format!("Before: {:.2}", pre_score)))
-                                .child(Text::new(format!("After: {:.2}", post_score)))
+                                .child(Text::new(format!("Before: {:.2}", pre_score)).color(theme.text_primary))
+                                .child(Text::new(format!("After: {:.2}", post_score)).color(theme.text_primary))
                                 .child(
                                     Text::new(format!(
                                         "Improvement: {:.2}",
@@ -675,7 +699,10 @@ impl PlayerView {
             )
             .child(
                 Card::new()
-                    .header(Text::new("Per-Channel Results").weight(TextWeight::Semibold))
+                    .background(theme.surface)
+                    .header_background(theme.background_secondary)
+                    .border(theme.border)
+                    .header(Text::new("Per-Channel Results").color(theme.text_primary).weight(TextWeight::Semibold))
                     .content(self.render_channel_results(cx)),
             )
     }
@@ -703,7 +730,10 @@ impl PlayerView {
             )
             .child(
                 Card::new()
-                    .header(Text::new("Backup Current Rack").weight(TextWeight::Semibold))
+                    .background(theme.surface)
+                    .header_background(theme.background_secondary)
+                    .border(theme.border)
+                    .header(Text::new("Backup Current Rack").color(theme.text_primary).weight(TextWeight::Semibold))
                     .content(
                         VStack::new()
                             .spacing(StackSpacing::Md)
@@ -729,7 +759,10 @@ impl PlayerView {
             )
             .child(
                 Card::new()
-                    .header(Text::new("Export Options").weight(TextWeight::Semibold))
+                    .background(theme.surface)
+                    .header_background(theme.background_secondary)
+                    .border(theme.border)
+                    .header(Text::new("Export Options").color(theme.text_primary).weight(TextWeight::Semibold))
                     .content(
                         VStack::new()
                             .spacing(StackSpacing::Md)
@@ -748,7 +781,10 @@ impl PlayerView {
             )
             .child(
                 Card::new()
-                    .header(Text::new("Apply to Player").weight(TextWeight::Semibold))
+                    .background(theme.surface)
+                    .header_background(theme.background_secondary)
+                    .border(theme.border)
+                    .header(Text::new("Apply to Player").color(theme.text_primary).weight(TextWeight::Semibold))
                     .content(
                         VStack::new()
                             .spacing(StackSpacing::Md)

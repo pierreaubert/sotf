@@ -524,11 +524,13 @@ pub fn render_gradient_meter(
         .flex_col()
         .items_center()
         .flex_1()
+        .h_full()
         // Meter bar container
         .child(
             div()
                 .w(px(16.0))
                 .flex_1()
+                .min_h(px(180.0))
                 .bg(theme_c.background)
                 .rounded(px(2.0))
                 .overflow_hidden()
@@ -832,6 +834,7 @@ impl PlayerView {
             .flex()
             .flex_col()
             .h_full()
+            .min_h(px(280.0))
             .p(px(2.0)) // Match meter group padding
             // Outer container (matches meters_row flex_1 h_full)
             .child(
@@ -839,12 +842,13 @@ impl PlayerView {
                     .flex()
                     .flex_col()
                     .flex_1()
-                    .h_full()
+                    .min_h(px(200.0))
                     // Ticks area (matches meter_bar flex_1)
                     .child(
                         div()
                             .relative()
                             .flex_1()
+                            .min_h(px(180.0))
                             .w(px(24.0))
                             .overflow_hidden()
                             .children(ticks.into_iter().map(move |db| {
@@ -962,12 +966,13 @@ impl PlayerView {
         div()
             .flex()
             .flex_col()
-            .flex_1()
+            .h_full()
+            .min_h(px(280.0))
             .p(px(2.0))
             // Removed rounded_md and selection background logic
             .bg(theme_c.background_secondary)
             // Channel meters
-            .child(div().flex().gap(px(1.0)).flex_1().h_full().children(
+            .child(div().flex().gap(px(1.0)).flex_1().min_h(px(200.0)).children(
                 channel_data.into_iter().map(
                     |(fill_ratio, yellow_threshold, red_threshold, name)| {
                         render_gradient_meter(
@@ -1090,8 +1095,7 @@ impl PlayerView {
         div()
             .flex()
             .flex_col()
-            .flex_1()
-            .min_h(px(350.0))
+            .size_full()
             .p_4()
             .bg(theme.background)
             .child(
@@ -1163,9 +1167,10 @@ impl PlayerView {
                 div()
                     .id("meter-groups-scroll")
                     .flex()
+                    .flex_1()
                     .gap(px(0.0))
                     .overflow_x_scroll()
-                    .h_full()
+                    .min_h(px(300.0))
                     .children(meter_elements)
             })
     }
@@ -1290,7 +1295,6 @@ impl PlayerView {
             .bg(theme.background)
             .child(self.render_lufs_with_true_peak(loudness.as_ref(), &theme))
     }
-
 }
 
 /// Calculate ideal width for meters panel based on channel count

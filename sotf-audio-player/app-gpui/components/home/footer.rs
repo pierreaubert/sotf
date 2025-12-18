@@ -269,12 +269,18 @@ impl PlayerView {
             })
             // Track info
             .child({
-                let title_text = if title.is_empty() {
+                let title_raw = if title.is_empty() {
                     no_track_label.to_string()
                 } else {
                     title.clone()
                 };
-                let title_len = title_text.chars().count();
+
+                // Truncate track title if too long (max 30 characters)
+                let title_text = if title_raw.chars().count() > 30 {
+                    title_raw.chars().take(30).collect::<String>() + "..."
+                } else {
+                    title_raw
+                };
 
                 // Truncate album name if too long (max 35 characters)
                 let album_text = if album_name.chars().count() > 35 {
@@ -300,10 +306,8 @@ impl PlayerView {
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(text_primary)
                             .overflow_hidden()
-                            // If title is longer than 40 characters, allow wrapping
-                            .when(title_len <= 40, |d| d.text_ellipsis().whitespace_nowrap())
-                            // If title is longer than 40 characters, wrap and justify
-                            .when(title_len > 40, |d| d.text_align(gpui::TextAlign::Left))
+                            .text_ellipsis()
+                            .whitespace_nowrap()
                             .child(title_text),
                     )
                     // Album (9px equivalent)

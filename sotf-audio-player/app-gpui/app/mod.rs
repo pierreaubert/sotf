@@ -28,7 +28,7 @@ pub use state::{App, AppState};
 pub use theme::{Theme, ThemeId};
 
 // Re-export everything publicly
-pub use crate::plugins::get_param_count;
+pub use crate::components::plugins::get_param_count;
 pub use types::{
     ActiveMenu, ChannelFilter, ChannelGroup, ChannelInfo, ContextMenuState, ContextMenuType,
     InputMode, LayoutMode, LibrarySortOrder, QueueItem, Screen, SettingsTab, ToastMessage,

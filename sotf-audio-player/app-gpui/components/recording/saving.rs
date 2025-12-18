@@ -78,9 +78,7 @@ impl PlayerView {
                             div().w(px(300.0)).child(
                                 Input::new("save_name_input")
                                     .value(save_name.clone())
-                                    .edit_text(save_name)
                                     .placeholder("Enter recording name")
-                                    .editing(true)
                                     .on_text_change({
                                         let view = view.clone();
                                         move |value, _, cx| {

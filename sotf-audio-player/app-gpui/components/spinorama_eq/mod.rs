@@ -11,9 +11,8 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    AutoEqConfig, AutoEqForm, AutoEqFormUiState, Button, ButtonSize, ButtonVariant, Card, HStack,
-    Input, InputSize, Progress, ProgressSize, StackAlign, StackSpacing, Text, TextSize, TextWeight,
-    VStack,
+    Button, ButtonSize, ButtonVariant, HStack, StackAlign, StackSpacing, Text, TextSize,
+    TextWeight, VStack,
 };
 use sotf_audio_player::autoeq::speaker::{
     CallbackConfig, MeasurementInput, SpeakerOptimizationCallback, SpeakerOptimizationConfig,
@@ -22,15 +21,93 @@ use sotf_audio_player::autoeq::speaker::{
 use sotf_audio_player::autoeq::types::SpeakerConfigType;
 use std::sync::Mutex;
 
+mod step_1_select;
+mod step_2_configure;
+mod step_3_optimise;
+mod step_4_review;
+
 // Global for sharing optimization result between threads
-// Format: (success, result, error_message)
+// Format: (success, result, full_result, error_message)
 static SPINORAMA_RESULT: Mutex<
     Option<(
         bool,
         Option<crate::app::types::SpinoramaEqResult>,
+        Option<sotf_audio_player::autoeq::SpeakerOptimizationResult>,
         Option<String>,
     )>,
 > = Mutex::new(None);
+
+// Global mutex for sharing phase check results between threads
+static PHASE_CHECK_RESULT: Mutex<Option<bool>> = Mutex::new(None);
+
+// Global mutex for sharing optimization progress between threads
+// Format: Vec<(iteration, loss, progress_pct)>
+static SPINORAMA_PROGRESS: Mutex<Vec<(usize, f64, f32)>> = Mutex::new(Vec::new());
+
+// Global mutex for sharing preview curves result between threads
+// Format: Option<Result<PreviewCurves, error_string>>
+static SPINORAMA_PREVIEW: Mutex<Option<Result<sotf_audio_player::autoeq::speaker::PreviewCurves, String>>> = Mutex::new(None);
+
+/// Spawn a background thread to load preview curves for the Configure step.
+fn spawn_preview_curves_thread(
+    speaker: String,
+    version: String,
+    measurement: String,
+    curve_name: String,
+) {
+    // Clear previous result
+    *SPINORAMA_PREVIEW.lock().unwrap() = None;
+
+    std::thread::spawn(move || {
+        log::info!(
+            "Loading preview curves for {} / {} / {} / {}",
+            speaker, version, measurement, curve_name
+        );
+        let result = sotf_audio_player::autoeq::speaker::load_preview_curves(
+            &speaker, &version, &measurement, &curve_name,
+        );
+        match &result {
+            Ok(curves) => {
+                log::info!(
+                    "Preview curves loaded: {} frequencies, input range [{:.1}, {:.1}] dB",
+                    curves.frequencies.len(),
+                    curves.input_curve.iter().cloned().fold(f64::INFINITY, f64::min),
+                    curves.input_curve.iter().cloned().fold(f64::NEG_INFINITY, f64::max)
+                );
+            }
+            Err(e) => {
+                log::error!("Failed to load preview curves: {}", e);
+            }
+        }
+        *SPINORAMA_PREVIEW.lock().unwrap() = Some(result);
+    });
+}
+
+/// Spawn a background task to check phase data availability for a speaker/version/measurement.
+/// This updates the state asynchronously when the result is ready.
+fn spawn_phase_data_check_thread(
+    speaker: String,
+    version: String,
+    measurement: String,
+) {
+    *PHASE_CHECK_RESULT.lock().unwrap() = None;
+
+    let curve_name = "Estimated In-Room Response".to_string();
+
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+        let has_phase = rt.block_on(async {
+            match autoeq::read::read_spinorama(&speaker, &version, &measurement, &curve_name).await {
+                Ok(curve) => curve.phase.is_some(),
+                Err(e) => {
+                    log::warn!("Failed to fetch curve for phase check: {}", e);
+                    false
+                }
+            }
+        });
+        *PHASE_CHECK_RESULT.lock().unwrap() = Some(has_phase);
+    });
+}
 
 impl PlayerView {
     // ========================================================================
@@ -299,6 +376,14 @@ impl PlayerView {
                         let view = view.clone();
                         move |_, cx| {
                             view.update(cx, |this, cx| {
+                                // Extract data before mutating state
+                                let current_step = this.state.read(cx).app.spinorama_eq_state.step;
+                                let speaker = this.state.read(cx).app.spinorama_eq_state.selected_speaker.clone();
+                                let version = this.state.read(cx).app.spinorama_eq_state.selected_version.clone();
+                                let measurement = this.state.read(cx).app.spinorama_eq_state.selected_measurement.clone();
+                                let mode = this.state.read(cx).app.spinorama_eq_state.optimizer_config.mode;
+                                let target_curve = this.state.read(cx).app.spinorama_eq_state.optimizer_config.target_curve;
+
                                 this.state.update(cx, |state, _| {
                                     match state.app.spinorama_eq_state.step {
                                         SpinoramaStep::Review => {
@@ -315,856 +400,74 @@ impl PlayerView {
                                         }
                                     }
                                 });
+
+                                // When transitioning from SelectSpeaker to Configure, load preview curves
+                                if current_step == SpinoramaStep::SelectSpeaker {
+                                    if let Some(speaker_name) = speaker {
+                                        // Determine curve name based on mode
+                                        let curve_name = if mode == SpinoramaOptimizationMode::FlatOnPir {
+                                            target_curve.api_name().to_string()
+                                        } else {
+                                            "Estimated In-Room Response".to_string()
+                                        };
+
+                                        // Set loading state
+                                        this.state.update(cx, |state, _| {
+                                            state.app.spinorama_eq_state.loading_preview = true;
+                                            state.app.spinorama_eq_state.preview_error = None;
+                                        });
+
+                                        // Spawn background thread to load preview
+                                        spawn_preview_curves_thread(
+                                            speaker_name,
+                                            if version.is_empty() { "asr".to_string() } else { version },
+                                            if measurement.is_empty() { "CEA2034".to_string() } else { measurement },
+                                            curve_name,
+                                        );
+
+                                        // Start polling for preview result
+                                        let state_for_poll = this.state.clone();
+                                        cx.spawn(async move |_, cx| {
+                                            loop {
+                                                cx.background_executor()
+                                                    .timer(std::time::Duration::from_millis(100))
+                                                    .await;
+
+                                                // Check for preview result
+                                                let preview_result = {
+                                                    let mut guard = SPINORAMA_PREVIEW.lock().unwrap();
+                                                    guard.take()
+                                                };
+
+                                                if let Some(result) = preview_result {
+                                                    let _ = state_for_poll.update(cx, |state, cx| {
+                                                        state.app.spinorama_eq_state.loading_preview = false;
+                                                        match result {
+                                                            Ok(curves) => {
+                                                                state.app.spinorama_eq_state.preview_frequencies = curves.frequencies;
+                                                                state.app.spinorama_eq_state.preview_input_curve = curves.input_curve;
+                                                                state.app.spinorama_eq_state.preview_target_curve = curves.target_curve;
+                                                                state.app.spinorama_eq_state.preview_deviation_curve = curves.deviation_curve;
+                                                                state.app.spinorama_eq_state.preview_error = None;
+                                                            }
+                                                            Err(e) => {
+                                                                state.app.spinorama_eq_state.preview_error = Some(e);
+                                                            }
+                                                        }
+                                                        cx.notify();
+                                                    });
+                                                    break;
+                                                }
+                                            }
+                                        }).detach();
+                                    }
+                                }
+
                                 cx.notify();
                             });
                         }
                     }),
             )
-    }
-
-    // ========================================================================
-    // Step 1: Select Speaker
-    // ========================================================================
-
-    fn render_spinorama_select_speaker(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
-        let spinorama = &state.app.spinorama_eq_state;
-        let is_searching = state.app.input_mode == crate::app::InputMode::SpinoramaSpeakerSearch;
-
-        let search_query = spinorama.speaker_search.clone();
-        let selected_speaker = spinorama.selected_speaker.clone();
-        let suggestions = spinorama.speaker_suggestions.clone();
-        let is_loading = spinorama.loading_speakers;
-
-        VStack::new()
-            .spacing(StackSpacing::Lg)
-            .child(
-                Text::new("Select Speaker")
-                    .weight(TextWeight::Bold)
-                    .size(TextSize::Lg),
-            )
-            .child(
-                Text::new("Search for your speaker model from spinorama.org measurements.")
-                    .size(TextSize::Sm)
-                    .color(theme.text_secondary),
-            )
-            .child(
-                Card::new()
-                    .header(Text::new("Speaker Search").weight(TextWeight::Semibold))
-                    .content(
-                        VStack::new()
-                            .spacing(StackSpacing::Md)
-                            .child(
-                                Text::new(
-                                    "Type your speaker brand and model to search the database.",
-                                )
-                                .size(TextSize::Sm)
-                                .color(theme.text_secondary),
-                            )
-                            .child({
-                                let state = self.state.clone();
-                                let state_for_edit_start = self.state.clone();
-                                let accent = theme.accent;
-                                let border = theme.border;
-                                Input::new("speaker-search")
-                                    .placeholder("Click to search speakers...")
-                                    .value(SharedString::from(search_query.clone()))
-                                    .edit_text(SharedString::from(search_query.clone()))
-                                    .size(InputSize::Md)
-                                    .bg_color(theme.surface)
-                                    .text_color(theme.text_primary)
-                                    .placeholder_color(theme.text_muted)
-                                    .border_color(if is_searching { accent } else { border })
-                                    .editing(is_searching)
-                                    .on_edit_start(move |_window, cx| {
-                                        state_for_edit_start.update(cx, |state, cx| {
-                                            state.app.input_mode =
-                                                crate::app::InputMode::SpinoramaSpeakerSearch;
-                                            cx.notify();
-                                        });
-                                    })
-                                    .on_text_change(move |text, _window, cx| {
-                                        state.update(cx, |state, _| {
-                                            state.app.spinorama_eq_state.speaker_search = text;
-                                            state.app.spinorama_eq_state.update_suggestions();
-                                        });
-                                    })
-                            })
-                            .child(
-                                HStack::new()
-                                    .spacing(StackSpacing::Sm)
-                                    .child(
-                                        Button::new("refresh-speakers", "⟳ Refresh")
-                                            .variant(ButtonVariant::Secondary)
-                                            .size(ButtonSize::Sm)
-                                            .disabled(is_loading)
-                                            .build()
-                                            .on_mouse_up(
-                                                MouseButton::Left,
-                                                cx.listener(|view, _, _, cx| {
-                                                    view.fetch_spinorama_speakers(cx);
-                                                }),
-                                            ),
-                                    )
-                                    .when(is_loading, |hstack| {
-                                        hstack.child(
-                                            Text::new("Loading...")
-                                                .size(TextSize::Sm)
-                                                .color(theme.text_muted),
-                                        )
-                                    })
-                                    .when(
-                                        !is_loading && !spinorama.available_speakers.is_empty(),
-                                        |hstack| {
-                                            hstack.child(
-                                                Text::new(format!(
-                                                    "{} speakers",
-                                                    spinorama.available_speakers.len()
-                                                ))
-                                                .size(TextSize::Sm)
-                                                .color(theme.text_muted),
-                                            )
-                                        },
-                                    ),
-                            ),
-                    ),
-            )
-            // Speaker suggestions list
-            .child(
-                Card::new()
-                    .header(
-                        HStack::new()
-                            .spacing(StackSpacing::Sm)
-                            .child(Text::new("Available Speakers").weight(TextWeight::Semibold))
-                            .child(
-                                Text::new(format!("({} matches)", suggestions.len()))
-                                    .size(TextSize::Sm)
-                                    .color(theme.text_muted),
-                            ),
-                    )
-                    .content(
-                        div()
-                            .id("speaker-suggestions-scroll")
-                            .flex()
-                            .flex_col()
-                            .gap_1()
-                            .max_h(px(300.0))
-                            .overflow_y_scroll()
-                            .when(suggestions.is_empty() && is_loading, |d| {
-                                d.child(
-                                    Text::new("Loading speakers from spinorama.org...")
-                                        .size(TextSize::Sm)
-                                        .color(theme.text_muted),
-                                )
-                            })
-                            .when(suggestions.is_empty() && !is_loading, |d| {
-                                d.child(
-                                    Text::new(if search_query.is_empty() {
-                                        "No speakers loaded. Click Refresh to load."
-                                    } else {
-                                        "No matching speakers found."
-                                    })
-                                    .size(TextSize::Sm)
-                                    .color(theme.text_muted),
-                                )
-                            })
-                            .children(suggestions.iter().map(|speaker| {
-                                let is_selected = selected_speaker.as_ref() == Some(speaker);
-                                let speaker_name = speaker.clone();
-                                let accent = theme.accent;
-                                let surface = theme.surface;
-                                let text_primary = theme.text_primary;
-                                let text_on_accent = theme.text_on_accent;
-
-                                div()
-                                    .id(SharedString::from(format!(
-                                        "speaker-option-{}",
-                                        speaker_name
-                                    )))
-                                    .px_3()
-                                    .py_2()
-                                    .rounded_md()
-                                    .cursor_pointer()
-                                    .bg(if is_selected { accent } else { surface })
-                                    .text_color(if is_selected {
-                                        text_on_accent
-                                    } else {
-                                        text_primary
-                                    })
-                                    .text_sm()
-                                    .hover(|s| {
-                                        s.bg(if is_selected {
-                                            accent
-                                        } else {
-                                            theme.surface_hover
-                                        })
-                                    })
-                                    .on_mouse_down(
-                                        MouseButton::Left,
-                                        cx.listener({
-                                            let speaker_name = speaker_name.clone();
-                                            move |view, _, _, cx| {
-                                                view.select_spinorama_speaker(&speaker_name, cx);
-                                            }
-                                        }),
-                                    )
-                                    .child(speaker_name)
-                            })),
-                    ),
-            )
-            // Selected speaker display
-            .when_some(selected_speaker.clone(), |vstack, speaker| {
-                vstack.child(
-                    Card::new()
-                        .header(Text::new("Selected Speaker").weight(TextWeight::Semibold))
-                        .content(
-                            VStack::new()
-                                .spacing(StackSpacing::Sm)
-                                .child(
-                                    Text::new(speaker)
-                                        .size(TextSize::Lg)
-                                        .weight(TextWeight::Bold)
-                                        .color(theme.accent),
-                                )
-                                .child(
-                                    Text::new("Click 'Next' to configure optimization parameters.")
-                                        .size(TextSize::Sm)
-                                        .color(theme.text_secondary),
-                                ),
-                        ),
-                )
-            })
-    }
-
-    // ========================================================================
-    // Step 2: Configure
-    // ========================================================================
-
-    fn render_spinorama_configure(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
-        let spinorama = &state.app.spinorama_eq_state;
-
-        // Build AutoEqConfig from our SpinoramaOptimizerConfig
-        let config = &spinorama.optimizer_config;
-        let autoeq_config = AutoEqConfig {
-            num_filters: config.num_filters,
-            sample_rate: 48000,
-            min_db: config.min_db,
-            max_db: config.max_db,
-            min_q: config.min_q,
-            max_q: config.max_q,
-            min_freq: config.min_freq,
-            max_freq: config.max_freq,
-            peq_model: "pk".to_string(),
-            algo: match config.algorithm {
-                crate::app::types::RoomEqAlgorithm::Cobyla => "nlopt:cobyla",
-                crate::app::types::RoomEqAlgorithm::DifferentialEvolution => "autoeq:de",
-                crate::app::types::RoomEqAlgorithm::NelderMead => "nlopt:neldermead",
-            }
-            .to_string(),
-            population: 100,
-            maxeval: config.max_iter,
-            de_f: 0.8,
-            de_cr: 0.9,
-            strategy: "currenttobest1bin".to_string(),
-            refine: false,
-            local_algo: "cobyla".to_string(),
-            smooth: false,
-            ..Default::default()
-        };
-
-        // Build AutoEqFormUiState from our dropdowns
-        let autoeq_ui_state = AutoEqFormUiState {
-            opt_mode_open: spinorama.dropdowns.opt_mode_open,
-            peq_model_open: spinorama.dropdowns.peq_model_open,
-            algo_open: spinorama.dropdowns.algorithm_open,
-            strategy_open: false,
-            local_algo_open: false,
-            ..Default::default()
-        };
-
-        // Build the AutoEQ form with handlers
-        let autoeq_form = AutoEqForm::new("spinorama-eq-optimizer-form")
-            .config(autoeq_config)
-            .ui_state(autoeq_ui_state)
-            .show_goals(false) // Hide Goals section (System Type, Loss Type, Target Curve)
-            .show_optimization_tuning(false) // Hide Optimization Tuning section
-            .on_opt_mode_toggle({
-                let state = self.state.clone();
-                move |open, _window, cx| {
-                    state.update(cx, |state, cx| {
-                        state.app.spinorama_eq_state.dropdowns.opt_mode_open = open;
-                        cx.notify();
-                    });
-                }
-            })
-            .on_peq_model_toggle({
-                let state = self.state.clone();
-                move |open, _window, cx| {
-                    state.update(cx, |state, cx| {
-                        state.app.spinorama_eq_state.dropdowns.peq_model_open = open;
-                        cx.notify();
-                    });
-                }
-            })
-            .on_algo_change({
-                let state = self.state.clone();
-                move |algo, _window, cx| {
-                    use crate::app::types::RoomEqAlgorithm;
-                    state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.algorithm = match algo {
-                            "nlopt:cobyla" => RoomEqAlgorithm::Cobyla,
-                            "autoeq:de" => RoomEqAlgorithm::DifferentialEvolution,
-                            "nlopt:neldermead" => RoomEqAlgorithm::NelderMead,
-                            _ => RoomEqAlgorithm::Cobyla,
-                        };
-                        state.app.spinorama_eq_state.dropdowns.algorithm_open = false;
-                    });
-                }
-            })
-            .on_algo_toggle({
-                let state = self.state.clone();
-                move |open, _window, cx| {
-                    state.update(cx, |state, cx| {
-                        state.app.spinorama_eq_state.dropdowns.algorithm_open = open;
-                        cx.notify();
-                    });
-                }
-            })
-            .on_num_filters_change({
-                let state = self.state.clone();
-                move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.num_filters = value;
-                    });
-                }
-            })
-            .on_min_q_change({
-                let state = self.state.clone();
-                move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.min_q = value;
-                    });
-                }
-            })
-            .on_max_q_change({
-                let state = self.state.clone();
-                move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.max_q = value;
-                    });
-                }
-            })
-            .on_min_db_change({
-                let state = self.state.clone();
-                move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.min_db = value;
-                    });
-                }
-            })
-            .on_max_db_change({
-                let state = self.state.clone();
-                move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.max_db = value;
-                    });
-                }
-            })
-            .on_min_freq_change({
-                let state = self.state.clone();
-                move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.min_freq = value;
-                    });
-                }
-            })
-            .on_max_freq_change({
-                let state = self.state.clone();
-                move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.max_freq = value;
-                    });
-                }
-            })
-            .on_maxeval_change({
-                let state = self.state.clone();
-                move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.max_iter = value;
-                    });
-                }
-            });
-
-        // Optimization mode selection
-        let current_mode = spinorama.optimizer_config.mode;
-
-        VStack::new()
-            .spacing(StackSpacing::Lg)
-            .child(
-                Text::new("Configure Optimization")
-                    .weight(TextWeight::Bold)
-                    .size(TextSize::Lg),
-            )
-            .child(
-                Text::new("Set the optimization parameters for your speaker EQ.")
-                    .size(TextSize::Sm)
-                    .color(theme.text_secondary),
-            )
-            .child(
-                Card::new()
-                    .header(Text::new("Optimization Mode").weight(TextWeight::Semibold))
-                    .content(
-                        VStack::new()
-                            .spacing(StackSpacing::Md)
-                            .child(
-                                Text::new("Choose what the optimizer should optimize for.")
-                                    .size(TextSize::Sm)
-                                    .color(theme.text_secondary),
-                            )
-                            .child(HStack::new().spacing(StackSpacing::Sm).children(
-                                SpinoramaOptimizationMode::all().iter().map(|mode| {
-                                    let is_selected = current_mode == *mode;
-                                    let mode_value = *mode;
-
-                                    Button::new(
-                                        SharedString::from(format!("spinorama-mode-{:?}", mode)),
-                                        mode.as_str(),
-                                    )
-                                    .variant(if is_selected {
-                                        ButtonVariant::Primary
-                                    } else {
-                                        ButtonVariant::Secondary
-                                    })
-                                    .size(ButtonSize::Md)
-                                    .build()
-                                    .on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(move |view, _, _, cx| {
-                                            view.state.update(cx, |state, _cx| {
-                                                state
-                                                    .app
-                                                    .spinorama_eq_state
-                                                    .optimizer_config
-                                                    .mode = mode_value;
-                                            });
-                                            cx.notify();
-                                        }),
-                                    )
-                                }),
-                            ))
-                            .child(
-                                Text::new(current_mode.description())
-                                    .size(TextSize::Xs)
-                                    .color(theme.text_muted),
-                            ),
-                    ),
-            )
-            .child(
-                Card::new()
-                    .header(Text::new("EQ Parameters").weight(TextWeight::Semibold))
-                    .content(autoeq_form),
-            )
-    }
-
-    // ========================================================================
-    // Step 3: Optimize
-    // ========================================================================
-
-    fn render_spinorama_optimize(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
-        let spinorama = &state.app.spinorama_eq_state;
-
-        let progress = spinorama.progress;
-        let status_msg = spinorama.status_message.clone();
-        let error_msg = spinorama.error_message.clone();
-        let is_optimizing = spinorama.is_optimizing();
-        let selected_speaker = spinorama.selected_speaker.clone().unwrap_or_default();
-        let mode = spinorama.optimizer_config.mode;
-
-        VStack::new()
-            .spacing(StackSpacing::Lg)
-            .child(
-                Text::new("Run Optimization")
-                    .weight(TextWeight::Bold)
-                    .size(TextSize::Lg),
-            )
-            .child(
-                Text::new("Generate optimized EQ filters for your speaker.")
-                    .size(TextSize::Sm)
-                    .color(theme.text_secondary),
-            )
-            .child(
-                Card::new()
-                    .header(Text::new("Configuration Summary").weight(TextWeight::Semibold))
-                    .content(
-                        VStack::new().spacing(StackSpacing::Sm).child(
-                            HStack::new()
-                                .spacing(StackSpacing::Lg)
-                                .child(
-                                    VStack::new()
-                                        .spacing(StackSpacing::Xs)
-                                        .child(
-                                            Text::new("Speaker")
-                                                .size(TextSize::Xs)
-                                                .color(theme.text_muted),
-                                        )
-                                        .child(
-                                            Text::new(selected_speaker)
-                                                .weight(TextWeight::Bold)
-                                                .color(theme.accent),
-                                        ),
-                                )
-                                .child(
-                                    VStack::new()
-                                        .spacing(StackSpacing::Xs)
-                                        .child(
-                                            Text::new("Mode")
-                                                .size(TextSize::Xs)
-                                                .color(theme.text_muted),
-                                        )
-                                        .child(Text::new(mode.as_str()).weight(TextWeight::Bold)),
-                                )
-                                .child(
-                                    VStack::new()
-                                        .spacing(StackSpacing::Xs)
-                                        .child(
-                                            Text::new("Filters")
-                                                .size(TextSize::Xs)
-                                                .color(theme.text_muted),
-                                        )
-                                        .child(
-                                            Text::new(format!(
-                                                "{}",
-                                                spinorama.optimizer_config.num_filters
-                                            ))
-                                            .weight(TextWeight::Bold),
-                                        ),
-                                ),
-                        ),
-                    ),
-            )
-            .child(
-                Card::new()
-                    .header(Text::new("Generate Speaker EQ").weight(TextWeight::Semibold))
-                    .content(
-                        VStack::new()
-                            .spacing(StackSpacing::Md)
-                            .child(
-                                Button::new(
-                                    "start_spinorama_optimization",
-                                    if is_optimizing {
-                                        "Optimizing..."
-                                    } else {
-                                        "Generate Speaker EQ"
-                                    },
-                                )
-                                .variant(ButtonVariant::Primary)
-                                .size(ButtonSize::Lg)
-                                .full_width(true)
-                                .disabled(is_optimizing)
-                                .build()
-                                .when(!is_optimizing, |btn| {
-                                    btn.on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(|view, _, _, cx| {
-                                            view.start_spinorama_optimization(cx);
-                                        }),
-                                    )
-                                }),
-                            )
-                            .when(is_optimizing || progress > 0.0, |vstack| {
-                                vstack
-                                    .child(
-                                        Text::new(format!("Progress: {:.0}%", progress * 100.0))
-                                            .size(TextSize::Sm),
-                                    )
-                                    .child(Progress::new(progress * 100.0).size(ProgressSize::Md))
-                                    .child(
-                                        Text::new(status_msg)
-                                            .size(TextSize::Sm)
-                                            .color(theme.text_secondary),
-                                    )
-                            })
-                            .when_some(error_msg, |vstack, err| {
-                                vstack.child(Text::new(err).size(TextSize::Sm).color(theme.error))
-                            }),
-                    ),
-            )
-    }
-
-    // ========================================================================
-    // Step 4: Review
-    // ========================================================================
-
-    fn render_spinorama_review(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
-        let spinorama = &state.app.spinorama_eq_state;
-        let result = spinorama.result.as_ref();
-        let export_format = spinorama.export_format.clone();
-
-        VStack::new()
-            .spacing(StackSpacing::Lg)
-            .child(
-                Text::new("Review & Apply")
-                    .weight(TextWeight::Bold)
-                    .size(TextSize::Lg),
-            )
-            .child(
-                Text::new("Review the optimized EQ and apply it to your playback.")
-                    .size(TextSize::Sm)
-                    .color(theme.text_secondary),
-            )
-            .when_some(result, |vstack, result| {
-                let theme = theme.clone();
-                let num_filters = result.biquads.len();
-                let biquads = result.biquads.clone();
-
-                vstack
-                    .child(
-                        Card::new()
-                            .header(Text::new("Optimization Results").weight(TextWeight::Semibold))
-                            .content(
-                                VStack::new()
-                                    .spacing(StackSpacing::Sm)
-                                    .child(
-                                        HStack::new()
-                                            .spacing(StackSpacing::Lg)
-                                            .child(
-                                                Text::new(format!("Before: {:.2}", result.pre_score)),
-                                            )
-                                            .child(
-                                                Text::new(format!("After: {:.2}", result.post_score)),
-                                            )
-                                            .child(
-                                                Text::new(format!(
-                                                    "Improvement: {:.2}",
-                                                    result.pre_score - result.post_score
-                                                ))
-                                                .color(if result.post_score < result.pre_score {
-                                                    theme.success
-                                                } else {
-                                                    theme.error
-                                                }),
-                                            ),
-                                    )
-                                    .child(
-                                        Text::new(format!("{} filters generated", num_filters))
-                                            .size(TextSize::Sm)
-                                            .color(theme.text_secondary),
-                                    ),
-                            ),
-                    )
-                    .child(
-                        Card::new()
-                            .header(Text::new("EQ Filters").weight(TextWeight::Semibold))
-                            .content(
-                                div()
-                                    .id("spinorama-filter-list-scroll")
-                                    .flex()
-                                    .flex_col()
-                                    .gap_1()
-                                    .p_2()
-                                    .rounded_md()
-                                    .bg(theme.surface)
-                                    .max_h(px(200.0))
-                                    .overflow_y_scroll()
-                                    .children(biquads.iter().enumerate().map(|(i, biquad)| {
-                                        let filter_type = biquad.filter_type.clone();
-                                        let freq = biquad.freq;
-                                        let q = biquad.q;
-                                        let gain = biquad.db_gain;
-
-                                        div()
-                                            .flex()
-                                            .justify_between()
-                                            .items_center()
-                                            .px_2()
-                                            .py_1()
-                                            .rounded(px(4.0))
-                                            .bg(theme.background)
-                                            .child(
-                                                div()
-                                                    .flex()
-                                                    .items_center()
-                                                    .gap_2()
-                                                    .child(
-                                                        div()
-                                                            .text_xs()
-                                                            .text_color(theme.accent)
-                                                            .child(format!("#{}", i + 1)),
-                                                    )
-                                                    .child(
-                                                        div()
-                                                            .text_xs()
-                                                            .text_color(theme.text_secondary)
-                                                            .child(filter_type),
-                                                    ),
-                                            )
-                                            .child(
-                                                div()
-                                                    .flex()
-                                                    .items_center()
-                                                    .gap_3()
-                                                    .child(
-                                                        div()
-                                                            .text_xs()
-                                                            .text_color(theme.text_primary)
-                                                            .child(format!("{:.0} Hz", freq)),
-                                                    )
-                                                    .child(
-                                                        div()
-                                                            .text_xs()
-                                                            .text_color(theme.text_muted)
-                                                            .child(format!("Q {:.2}", q)),
-                                                    )
-                                                    .child(
-                                                        div()
-                                                            .text_xs()
-                                                            .text_color(if gain >= 0.0 {
-                                                                theme.success
-                                                            } else {
-                                                                theme.error
-                                                            })
-                                                            .child(format!("{:+.1} dB", gain)),
-                                                    ),
-                                            )
-                                    })),
-                            ),
-                    )
-                    .child(
-                        Card::new()
-                            .header(Text::new("Apply to Playback").weight(TextWeight::Semibold))
-                            .content(
-                                VStack::new()
-                                    .spacing(StackSpacing::Md)
-                                    .child(
-                                        Text::new(
-                                            "Apply the EQ to your current playback to hear the difference.",
-                                        )
-                                        .size(TextSize::Sm)
-                                        .color(theme.text_secondary),
-                                    )
-                                    .child(
-                                        HStack::new()
-                                            .spacing(StackSpacing::Sm)
-                                            .child(
-                                                Button::new(
-                                                    "apply-spinorama-eq",
-                                                    "Apply to Playback",
-                                                )
-                                                .variant(ButtonVariant::Primary)
-                                                .size(ButtonSize::Md)
-                                                .build()
-                                                .on_mouse_up(
-                                                    MouseButton::Left,
-                                                    cx.listener(|view, _, _, cx| {
-                                                        view.apply_spinorama_eq_result(cx);
-                                                    }),
-                                                ),
-                                            )
-                                            .child(
-                                                Button::new("clear-spinorama-eq", "Clear EQ")
-                                                    .variant(ButtonVariant::Secondary)
-                                                    .size(ButtonSize::Md)
-                                                    .build()
-                                                    .on_mouse_up(
-                                                        MouseButton::Left,
-                                                        cx.listener(|view, _, _, cx| {
-                                                            view.clear_spinorama_eq_from_playback(cx);
-                                                        }),
-                                                    ),
-                                            ),
-                                    ),
-                            ),
-                    )
-                    .child(
-                        Card::new()
-                            .header(Text::new("Export").weight(TextWeight::Semibold))
-                            .content(
-                                VStack::new()
-                                    .spacing(StackSpacing::Md)
-                                    .child(
-                                        Text::new("Select export format and save your EQ.")
-                                            .size(TextSize::Sm)
-                                            .color(theme.text_secondary),
-                                    )
-                                    .child(
-                                        HStack::new()
-                                            .spacing(StackSpacing::Sm)
-                                            .wrap(true)
-                                            .children(
-                                                sotf_audio_player::autoeq::EQ_EXPORT_FORMAT_OPTIONS.iter().map(
-                                                    |(value, label, _ext)| {
-                                                        let is_selected = export_format == *value;
-                                                        let value = value.to_string();
-
-                                                        Button::new(
-                                                            SharedString::from(format!(
-                                                                "spinorama-export-format-{}",
-                                                                value
-                                                            )),
-                                                            *label,
-                                                        )
-                                                        .variant(if is_selected {
-                                                            ButtonVariant::Primary
-                                                        } else {
-                                                            ButtonVariant::Secondary
-                                                        })
-                                                        .size(ButtonSize::Sm)
-                                                        .build()
-                                                        .on_mouse_up(
-                                                            MouseButton::Left,
-                                                            cx.listener(
-                                                                move |view, _, _, cx| {
-                                                                    view.state.update(
-                                                                        cx,
-                                                                        |state, _cx| {
-                                                                            state
-                                                                                .app
-                                                                                .spinorama_eq_state
-                                                                                .export_format =
-                                                                                value.clone();
-                                                                        },
-                                                                    );
-                                                                    cx.notify();
-                                                                },
-                                                            ),
-                                                        )
-                                                    },
-                                                ),
-                                            ),
-                                    )
-                                    .child(
-                                        Button::new("save-spinorama-eq", "Save EQ File")
-                                            .variant(ButtonVariant::Primary)
-                                            .size(ButtonSize::Md)
-                                            .build()
-                                            .on_mouse_up(
-                                                MouseButton::Left,
-                                                cx.listener(|view, _, _, cx| {
-                                                    view.save_spinorama_eq_result(cx);
-                                                }),
-                                            ),
-                                    ),
-                            ),
-                    )
-            })
-            .when(result.is_none(), |vstack| {
-                vstack.child(
-                    Card::new()
-                        .header(Text::new("No Results").weight(TextWeight::Semibold))
-                        .content(
-                            Text::new("Go back and run optimization to generate an EQ curve.")
-                                .size(TextSize::Sm)
-                                .color(theme.text_secondary),
-                        ),
-                )
-            })
     }
 
     // ========================================================================
@@ -1239,21 +542,271 @@ impl PlayerView {
         log::info!("Selected speaker: {}", speaker);
         self.state.update(cx, |state, _cx| {
             state.app.spinorama_eq_state.selected_speaker = Some(speaker.to_string());
+            // Reset phase data flag and clear version/measurement lists
+            state.app.spinorama_eq_state.has_phase_data = false;
+            state.app.spinorama_eq_state.available_versions.clear();
+            state.app.spinorama_eq_state.available_measurements.clear();
+            state.app.spinorama_eq_state.loading_versions = true;
         });
         cx.notify();
+
+        // Fetch available versions for the selected speaker
+        self.fetch_spinorama_versions(speaker, cx);
+    }
+
+    fn fetch_spinorama_versions(&mut self, speaker: &str, cx: &mut Context<Self>) {
+        log::info!("Fetching versions for speaker: {}", speaker);
+        let speaker_name = speaker.to_string();
+
+        // Use a global mutex to share results
+        static VERSIONS_RESULT: std::sync::Mutex<Option<Result<Vec<String>, String>>> =
+            std::sync::Mutex::new(None);
+        *VERSIONS_RESULT.lock().unwrap() = None;
+
+        // Spawn background thread for HTTP request
+        let speaker_for_fetch = speaker_name.clone();
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+            let result = rt.block_on(async {
+                let encoded_speaker = urlencoding::encode(&speaker_for_fetch);
+                let url = format!(
+                    "https://api.spinorama.org/v1/speaker/{}/versions",
+                    encoded_speaker
+                );
+                let response = reqwest::get(&url).await?;
+                if !response.status().is_success() {
+                    return Err(format!("API request failed: {}", response.status()).into());
+                }
+                let versions: Vec<String> = response.json().await?;
+                Ok::<Vec<String>, Box<dyn std::error::Error + Send + Sync>>(versions)
+            });
+            *VERSIONS_RESULT.lock().unwrap() = Some(result.map_err(|e| e.to_string()));
+        });
+
+        // Poll for results
+        let state_entity = self.state.clone();
+        let speaker_for_poll = speaker_name.clone();
+        cx.spawn(async move |view, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(100))
+                    .await;
+
+                let result = VERSIONS_RESULT.lock().unwrap().take();
+                if let Some(result) = result {
+                    match result {
+                        Ok(versions) => {
+                            log::info!("Fetched {} versions for {}", versions.len(), speaker_for_poll);
+                            let first_version = versions.first().cloned();
+                            let selected_version = first_version.clone();
+                            let _ = state_entity.update(cx, |state, cx| {
+                                state.app.spinorama_eq_state.available_versions = versions;
+                                state.app.spinorama_eq_state.loading_versions = false;
+                                // Auto-select first version if available
+                                if let Some(ref version) = selected_version {
+                                    state.app.spinorama_eq_state.selected_version = version.clone();
+                                }
+                                cx.notify();
+                            });
+                            // Fetch measurements for the selected version
+                            if let Some(version) = selected_version {
+                                let _ = view.update(cx, |view, cx| {
+                                    view.fetch_spinorama_measurements(&speaker_for_poll, &version, cx);
+                                });
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("Failed to fetch versions: {}", e);
+                            let _ = state_entity.update(cx, |state, cx| {
+                                state.app.spinorama_eq_state.loading_versions = false;
+                                state.app.spinorama_eq_state.error_message =
+                                    Some(format!("Failed to fetch versions: {}", e));
+                                cx.notify();
+                            });
+                        }
+                    }
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    fn fetch_spinorama_measurements(&mut self, speaker: &str, version: &str, cx: &mut Context<Self>) {
+        log::info!("Fetching measurements for speaker: {}, version: {}", speaker, version);
+
+        self.state.update(cx, |state, _cx| {
+            state.app.spinorama_eq_state.loading_measurements = true;
+            state.app.spinorama_eq_state.available_measurements.clear();
+        });
+        cx.notify();
+
+        let speaker_name = speaker.to_string();
+        let version_name = version.to_string();
+
+        // Use a global mutex to share results
+        static MEASUREMENTS_RESULT: std::sync::Mutex<Option<Result<Vec<String>, String>>> =
+            std::sync::Mutex::new(None);
+        *MEASUREMENTS_RESULT.lock().unwrap() = None;
+
+        // Spawn background thread for HTTP request
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+            let result = rt.block_on(async {
+                let encoded_speaker = urlencoding::encode(&speaker_name);
+                let encoded_version = urlencoding::encode(&version_name);
+                let url = format!(
+                    "https://api.spinorama.org/v1/speaker/{}/version/{}/measurements",
+                    encoded_speaker, encoded_version
+                );
+                let response = reqwest::get(&url).await?;
+                if !response.status().is_success() {
+                    return Err(format!("API request failed: {}", response.status()).into());
+                }
+                let measurements: Vec<String> = response.json().await?;
+                Ok::<Vec<String>, Box<dyn std::error::Error + Send + Sync>>(measurements)
+            });
+            *MEASUREMENTS_RESULT.lock().unwrap() = Some(result.map_err(|e| e.to_string()));
+        });
+
+        // Poll for results
+        let state_entity = self.state.clone();
+        let speaker_for_poll = speaker.to_string();
+        let version_for_poll = version.to_string();
+        cx.spawn(async move |_, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(100))
+                    .await;
+
+                let result = MEASUREMENTS_RESULT.lock().unwrap().take();
+                if let Some(result) = result {
+                    match result {
+                        Ok(measurements) => {
+                            log::info!("Fetched {} measurements for {}/{}", measurements.len(), speaker_for_poll, version_for_poll);
+                            let has_cea2034 = measurements.iter().any(|m| m == "CEA2034");
+                            // Determine which measurement to auto-select
+                            let selected_measurement = if has_cea2034 {
+                                "CEA2034".to_string()
+                            } else {
+                                measurements.first().cloned().unwrap_or_else(|| "CEA2034".to_string())
+                            };
+                            let measurement_for_phase = selected_measurement.clone();
+                            let _ = state_entity.update(cx, |state, cx| {
+                                state.app.spinorama_eq_state.available_measurements = measurements;
+                                state.app.spinorama_eq_state.loading_measurements = false;
+                                state.app.spinorama_eq_state.selected_measurement = selected_measurement;
+                                cx.notify();
+                            });
+                            // Check for phase data availability
+                            spawn_phase_data_check_thread(speaker_for_poll.clone(), version_for_poll.clone(), measurement_for_phase);
+                            // Continue polling for phase check result in this same task
+                            loop {
+                                cx.background_executor()
+                                    .timer(std::time::Duration::from_millis(100))
+                                    .await;
+                                if let Some(has_phase) = PHASE_CHECK_RESULT.lock().unwrap().take() {
+                                    let _ = state_entity.update(cx, |state, cx| {
+                                        state.app.spinorama_eq_state.has_phase_data = has_phase;
+                                        log::info!("Phase data availability: {}", has_phase);
+                                        cx.notify();
+                                    });
+                                    break;
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("Failed to fetch measurements: {}", e);
+                            let _ = state_entity.update(cx, |state, cx| {
+                                state.app.spinorama_eq_state.loading_measurements = false;
+                                state.app.spinorama_eq_state.error_message =
+                                    Some(format!("Failed to fetch measurements: {}", e));
+                                cx.notify();
+                            });
+                        }
+                    }
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    fn select_spinorama_version(&mut self, version: &str, cx: &mut Context<Self>) {
+        log::info!("Selected version: {}", version);
+        let speaker = {
+            let state = self.state.read(cx);
+            state.app.spinorama_eq_state.selected_speaker.clone()
+        };
+
+        self.state.update(cx, |state, _cx| {
+            state.app.spinorama_eq_state.selected_version = version.to_string();
+            state.app.spinorama_eq_state.has_phase_data = false;
+        });
+        cx.notify();
+
+        // Fetch measurements for the new version
+        if let Some(speaker) = speaker {
+            self.fetch_spinorama_measurements(&speaker, version, cx);
+        }
+    }
+
+    fn select_spinorama_measurement(&mut self, measurement: &str, cx: &mut Context<Self>) {
+        log::info!("Selected measurement: {}", measurement);
+        let (speaker, version) = {
+            let state = self.state.read(cx);
+            (
+                state.app.spinorama_eq_state.selected_speaker.clone(),
+                state.app.spinorama_eq_state.selected_version.clone(),
+            )
+        };
+
+        self.state.update(cx, |state, _cx| {
+            state.app.spinorama_eq_state.selected_measurement = measurement.to_string();
+            state.app.spinorama_eq_state.has_phase_data = false;
+        });
+        cx.notify();
+
+        // Check phase data for the new measurement
+        if let Some(speaker) = speaker {
+            let state_entity = self.state.clone();
+            let measurement = measurement.to_string();
+            spawn_phase_data_check_thread(speaker, version, measurement);
+            // Poll for phase check result
+            cx.spawn(async move |_, cx| {
+                loop {
+                    cx.background_executor()
+                        .timer(std::time::Duration::from_millis(100))
+                        .await;
+                    if let Some(has_phase) = PHASE_CHECK_RESULT.lock().unwrap().take() {
+                        let _ = state_entity.update(cx, |state, cx| {
+                            state.app.spinorama_eq_state.has_phase_data = has_phase;
+                            log::info!("Phase data availability: {}", has_phase);
+                            cx.notify();
+                        });
+                        break;
+                    }
+                }
+            })
+            .detach();
+        }
     }
 
     fn start_spinorama_optimization(&mut self, cx: &mut Context<Self>) {
         log::info!("Starting spinorama optimization...");
 
         // Gather config from state
-        let (speaker_name, optimizer_config, mode) = {
+        let (speaker_name, version, measurement, curve_name, optimizer_config, mode, target_curve) = {
             let state = self.state.read(cx);
             let spinorama = &state.app.spinorama_eq_state;
             let speaker = spinorama.selected_speaker.clone().unwrap_or_default();
+            let version = spinorama.selected_version.clone();
+            let measurement = spinorama.selected_measurement.clone();
+            let curve = spinorama.selected_curve.clone();
             let config = spinorama.optimizer_config.clone();
             let mode = spinorama.optimizer_config.mode;
-            (speaker, config, mode)
+            let target_curve = spinorama.optimizer_config.target_curve;
+            (speaker, version, measurement, curve, config, mode, target_curve)
         };
 
         if speaker_name.is_empty() {
@@ -1275,6 +828,9 @@ impl PlayerView {
         });
         cx.notify();
 
+        // Clear progress mutex for fresh start
+        SPINORAMA_PROGRESS.lock().unwrap().clear();
+
         let state_entity = self.state.clone();
 
         // Build optimization params
@@ -1285,6 +841,36 @@ impl PlayerView {
             crate::app::types::RoomEqAlgorithm::NelderMead => "nlopt:neldermead",
         }
         .to_string();
+
+        // Use the user-selected curve, or override based on mode
+        let effective_curve_name = if curve_name.is_empty() {
+            // Default to PIR if no curve selected
+            "Estimated In-Room Response".to_string()
+        } else if mode == crate::app::types::SpinoramaOptimizationMode::FlatOnPir {
+            // For FlatOnPir mode, use the target curve selection
+            target_curve.api_name().to_string()
+        } else {
+            curve_name.clone()
+        };
+
+        // Use CEA2034 as default measurement if none selected
+        let effective_measurement = if measurement.is_empty() {
+            "CEA2034".to_string()
+        } else {
+            measurement.clone()
+        };
+
+        // Use first available version or "asr" as fallback
+        let effective_version = if version.is_empty() {
+            "asr".to_string()
+        } else {
+            version.clone()
+        };
+
+        log::info!(
+            "Spinorama optimization config: speaker={}, version={}, measurement={}, curve={}",
+            speaker_name, effective_version, effective_measurement, effective_curve_name
+        );
 
         let params = sotf_audio_player::autoeq::params::OptimizationParams {
             num_filters: optimizer_config.num_filters,
@@ -1298,22 +884,20 @@ impl PlayerView {
             maxeval: optimizer_config.max_iter,
             loss,
             algo,
-            curve_name: "Estimated In-Room Response".to_string(),
+            curve_name: effective_curve_name.clone(),
             ..Default::default()
         };
 
         // Run optimization in background thread (blocking tokio runtime)
         std::thread::spawn(move || {
             // Build the optimization config
-            // Use "Estimated In-Room Response" as measurement to trigger the special
-            // handling in load_spinorama_measurement which fetches CEA2034 and computes PIR
             let config = SpeakerOptimizationConfig {
                 config_type: SpeakerConfigType::Single,
                 main_measurement: Some(MeasurementInput::Spinorama {
                     speaker: speaker_name.clone(),
-                    version: "asr".to_string(),
-                    measurement: "Estimated In-Room Response".to_string(),
-                    curve_name: "Estimated In-Room Response".to_string(),
+                    version: effective_version,
+                    measurement: effective_measurement,
+                    curve_name: effective_curve_name.clone(),
                 }),
                 driver_measurements: Vec::new(),
                 crossover_type: None,
@@ -1328,7 +912,6 @@ impl PlayerView {
             };
 
             // Create callback for progress updates
-            let _state_for_callback = state_entity.clone();
             let max_iter = params.maxeval;
             let callback: SpeakerOptimizationCallback =
                 Box::new(move |progress: &SpeakerOptimizationProgress| {
@@ -1336,8 +919,11 @@ impl PlayerView {
                     let iter = progress.iteration;
                     let loss = progress.loss;
 
-                    // We can't directly update GPUI state from here, so we use a channel or atomic
-                    // For now, just log the progress
+                    // Push progress to global mutex for GPUI polling
+                    if let Ok(mut progress_vec) = SPINORAMA_PROGRESS.lock() {
+                        progress_vec.push((iter, loss, progress_pct));
+                    }
+
                     log::debug!(
                         "Spinorama optimization: iter={}, loss={:.4}, progress={:.1}%",
                         iter,
@@ -1421,29 +1007,53 @@ impl PlayerView {
                         SPINORAMA_RESULT
                             .lock()
                             .unwrap()
-                            .replace((true, Some(result), None));
+                            .replace((true, Some(result), Some(opt_result), None));
                     }
                     Err(e) => {
                         log::error!("Optimization failed: {}", e);
                         SPINORAMA_RESULT
                             .lock()
                             .unwrap()
-                            .replace((false, None, Some(e)));
+                            .replace((false, None, None, Some(e)));
                     }
                 }
             });
         });
 
-        // Start a polling timer to check for results
+        // Start a polling timer to check for results and progress
         let state_for_poll = self.state.clone();
         cx.spawn(async move |_, cx| {
             loop {
                 smol::Timer::after(std::time::Duration::from_millis(100)).await;
 
+                // Check for progress updates and transfer to state
+                let new_progress: Vec<(usize, f64, f32)> = {
+                    let mut progress_guard = SPINORAMA_PROGRESS.lock().unwrap();
+                    std::mem::take(&mut *progress_guard)
+                };
+
+                if !new_progress.is_empty() {
+                    let _ = state_for_poll.update(cx, |state, cx| {
+                        // Append new progress points to history
+                        for (iter, loss, _) in &new_progress {
+                            state
+                                .app
+                                .spinorama_eq_state
+                                .progress_history
+                                .push((*iter, *loss));
+                        }
+                        // Update progress from last entry
+                        if let Some((_, _, pct)) = new_progress.last() {
+                            state.app.spinorama_eq_state.progress = *pct;
+                        }
+                        cx.notify();
+                    });
+                }
+
                 // Check if result is ready
                 let result_ready = SPINORAMA_RESULT.lock().unwrap().take();
 
-                if let Some((success, result, error)) = result_ready {
+                if let Some((success, result, full_result, error)) = result_ready {
                     let _ = state_for_poll.update(cx, |state, cx| {
                         if success {
                             state.app.spinorama_eq_state.optimization_status =
@@ -1451,6 +1061,7 @@ impl PlayerView {
                             state.app.spinorama_eq_state.status_message = "Complete!".to_string();
                             state.app.spinorama_eq_state.progress = 1.0;
                             state.app.spinorama_eq_state.result = result;
+                            state.app.spinorama_eq_state.full_result = full_result;
                             state.app.spinorama_eq_state.step =
                                 crate::app::types::SpinoramaStep::Review;
                         } else {

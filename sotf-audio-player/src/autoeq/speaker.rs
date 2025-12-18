@@ -312,8 +312,12 @@ fn load_spinorama_measurement(
         tokio::runtime::Runtime::new().map_err(|e| format!("Failed to create runtime: {}", e))?;
 
     rt.block_on(async {
-        // Handle Estimated In-Room Response specially - calculate from CEA2034
-        if measurement == "Estimated In-Room Response" {
+        // Handle Estimated In-Room Response specially - it's computed from CEA2034 curves
+        // This can be requested either as measurement="Estimated In-Room Response" or
+        // as measurement="CEA2034" with curve_name="Estimated In-Room Response"
+        if measurement == "Estimated In-Room Response"
+            || (measurement == "CEA2034" && curve_name == "Estimated In-Room Response")
+        {
             let plot_data = autoeq::read::fetch_measurement_plot_data(speaker, version, "CEA2034")
                 .await
                 .map_err(|e| format!("API error: {}", e))?;
@@ -328,16 +332,16 @@ fn load_spinorama_measurement(
 
             Ok((pir_curve, Some(curves)))
         } else {
-            let plot_data =
-                autoeq::read::fetch_measurement_plot_data(speaker, version, measurement)
-                    .await
-                    .map_err(|e| format!("API error: {}", e))?;
+            let curve = autoeq::read::read_spinorama(speaker, version, measurement, curve_name)
+                .await
+                .map_err(|e| format!("API error: {}", e))?;
 
-            let curve = autoeq::read::extract_curve_by_name(&plot_data, measurement, curve_name)
-                .map_err(|e| format!("Curve extraction error: {}", e))?;
-
-            // Extract spin data if CEA2034
+            // Extract spin data if CEA2034 (still need the full plot data for this)
             let spin_data = if measurement == "CEA2034" {
+                let plot_data =
+                    autoeq::read::fetch_measurement_plot_data(speaker, version, measurement)
+                        .await
+                        .map_err(|e| format!("API error: {}", e))?;
                 Some(
                     autoeq::read::extract_cea2034_curves_original(&plot_data, "CEA2034")
                         .map_err(|e| format!("Spin data error: {}", e))?,
@@ -1213,6 +1217,16 @@ fn optimize_single_driver_full(
     // Normalize input curve
     let input_normalized = autoeq::normalize_and_interpolate_response(&standard_freq, &input_curve);
 
+    // Interpolate spin_data curves to standard frequency grid
+    let spin_data_interpolated = spin_data.as_ref().map(|spin| {
+        spin.iter()
+            .map(|(name, curve)| {
+                let interpolated = autoeq::normalize_and_interpolate_response(&standard_freq, curve);
+                (name.clone(), interpolated)
+            })
+            .collect::<HashMap<String, autoeq::Curve>>()
+    });
+
     // Load or build target curve
     let target_curve = if let Some(ref target_input) = config.target {
         let target = load_measurement(target_input)?;
@@ -1228,7 +1242,7 @@ fn optimize_single_driver_full(
     let (biquads, history, initial_loss, final_loss) = optimize_single_driver(
         &input_normalized,
         &target_curve,
-        &spin_data,
+        &spin_data_interpolated,
         &config.params,
         &config.callback_config,
         callback,
@@ -1241,7 +1255,7 @@ fn optimize_single_driver_full(
         &input_normalized,
         &target_curve,
         &biquads,
-        &spin_data,
+        &spin_data_interpolated,
     );
 
     Ok(SpeakerOptimizationResult {
@@ -1457,6 +1471,148 @@ fn optimize_dba_full(
         crossover_freqs: None,
         driver_gains: Some(result.gains),
         driver_delays: Some(result.delays),
+    })
+}
+
+// ============================================================================
+// Dummy Data Generator (for testing)
+// ============================================================================
+
+// ============================================================================
+// Preview Curves (for displaying before optimization)
+// ============================================================================
+
+/// Result of loading preview curves
+#[derive(Clone, Debug)]
+pub struct PreviewCurves {
+    /// Frequencies (Hz)
+    pub frequencies: Vec<f64>,
+    /// Input curve (dB) - the raw measurement
+    pub input_curve: Vec<f64>,
+    /// Target curve (dB) - what we're optimizing towards
+    pub target_curve: Vec<f64>,
+    /// Deviation curve (dB) - target minus input (what needs to be corrected)
+    pub deviation_curve: Vec<f64>,
+}
+
+/// Load and compute preview curves for display before optimization
+///
+/// This loads the input measurement from Spinorama API and builds the target
+/// curve based on the curve_name, allowing users to see what will be optimized.
+///
+/// # Arguments
+/// * `speaker` - Speaker name (e.g., "KEF R3")
+/// * `version` - Version (e.g., "asr")
+/// * `measurement` - Measurement type (e.g., "CEA2034")
+/// * `curve_name` - Curve to optimize (e.g., "Estimated In-Room Response", "Listening Window")
+///
+/// # Returns
+/// Preview curves for display
+pub fn load_preview_curves(
+    speaker: &str,
+    version: &str,
+    measurement: &str,
+    curve_name: &str,
+) -> Result<PreviewCurves, String> {
+    // Create runtime for blocking API call
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|e| format!("Failed to create runtime: {}", e))?;
+
+    rt.block_on(async {
+        load_preview_curves_async(speaker, version, measurement, curve_name).await
+    })
+}
+
+/// Async version of load_preview_curves
+pub async fn load_preview_curves_async(
+    speaker: &str,
+    version: &str,
+    measurement: &str,
+    curve_name: &str,
+) -> Result<PreviewCurves, String> {
+    // Load input curve from Spinorama API
+    let input = MeasurementInput::Spinorama {
+        speaker: speaker.to_string(),
+        version: version.to_string(),
+        measurement: measurement.to_string(),
+        curve_name: curve_name.to_string(),
+    };
+
+    let (input_curve, _spin_data) = load_measurement_with_spin(&input)?;
+
+    // Create standard frequency grid
+    let standard_freq = autoeq::read::create_log_frequency_grid(200, 20.0, 20000.0);
+
+    // Normalize input curve to standard grid
+    let input_normalized = autoeq::normalize_and_interpolate_response(&standard_freq, &input_curve);
+
+    // Build target curve based on curve_name
+    // Create minimal args for build_target_curve
+    let args = autoeq::Args {
+        num_filters: 7,
+        sample_rate: 48000.0,
+        loss: autoeq::LossType::SpeakerFlat,
+        algo: "nlopt:cobyla".to_string(),
+        population: 100,
+        maxeval: 10000,
+        strategy: "currenttobest1bin".to_string(),
+        min_db: -4.0,
+        max_db: 4.0,
+        min_q: 0.5,
+        max_q: 6.0,
+        min_freq: 20.0,
+        max_freq: 20000.0,
+        min_spacing_oct: 0.0,
+        spacing_weight: 0.0,
+        smooth: false,
+        smooth_n: 1,
+        refine: false,
+        local_algo: "cobyla".to_string(),
+        tolerance: 1e-6,
+        atolerance: 1e-6,
+        recombination: 0.9,
+        adaptive_weight_f: 0.5,
+        adaptive_weight_cr: 0.5,
+        peq_model: autoeq::cli::PeqModel::Pk,
+        curve: None,
+        target: None,
+        output: None,
+        speaker: None,
+        version: None,
+        measurement: None,
+        curve_name: curve_name.to_string(),
+        peq_model_list: false,
+        algo_list: false,
+        strategy_list: false,
+        no_parallel: false,
+        parallel_threads: 0,
+        seed: None,
+        qa: None,
+        driver1: None,
+        driver2: None,
+        driver3: None,
+        driver4: None,
+        crossover_type: "linkwitzriley4".to_string(),
+    };
+
+    let target_curve = autoeq::workflow::build_target_curve(&args, &standard_freq, &input_normalized)
+        .map_err(|e| e.to_string())?;
+
+    // Compute deviation = target - input
+    let frequencies: Vec<f64> = standard_freq.iter().copied().collect();
+    let input_vec: Vec<f64> = input_normalized.spl.iter().copied().collect();
+    let target_vec: Vec<f64> = target_curve.spl.iter().copied().collect();
+    let deviation_vec: Vec<f64> = target_vec
+        .iter()
+        .zip(input_vec.iter())
+        .map(|(t, i)| t - i)
+        .collect();
+
+    Ok(PreviewCurves {
+        frequencies,
+        input_curve: input_vec,
+        target_curve: target_vec,
+        deviation_curve: deviation_vec,
     })
 }
 

@@ -20,9 +20,9 @@ sotf-audio-plugins = { path = "../../sotf-audio-plugins" }
 sotf-audio-engine = { path = "../../sotf-audio-engine" }
 
 # math libraries
-autoeq-iir = { path = "../../math-iir" }
-autoeq = { path = "../../autoeq" }
-autoeq-de = { path = "../../math-de" }
+math-iir-fir = { workspace = true }
+autoeq = { workspace = true }
+math-differential-evolution = { workspace = true }
 autoeq-roomsim = { path = "../../autoeq-roomsim" }
 
 # Synchronous mutex (faster than std::sync::Mutex)
@@ -64,6 +64,10 @@ env_logger = { workspace = true }
 # Smol runtime (used by GPUI)
 smol = { workspace = true }
 
+# HTTP client
+reqwest = { version = "0.12", features = ["json"] }
+urlencoding = "2"
+
 # Array processing
 ndarray = { workspace = true }
 num-complex = { workspace = true }
@@ -75,6 +79,9 @@ anyhow = { workspace = true }
 # Image processing
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 
+# Memory allocator
+mimalloc = { workspace = true }
+
 [lib]
 name = "sotf_audio_player_gpui"
 path = "lib.rs"
@@ -84,7 +91,7 @@ name = "sotf-gpui"
 path = "main.rs"
 
 [dev-dependencies]
-autoeq-iir = { path = "../../math-iir" }
+math-iir-fir.workspace = true
 cpal.workspace = true
 hound.workspace = true
 sotf-audio-engine = { path = "../../sotf-audio-engine" }

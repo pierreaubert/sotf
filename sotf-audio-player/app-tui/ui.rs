@@ -2262,6 +2262,7 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             hr_sharpen,
             safety_cap_db,
             decorrelation_mode,
+            ..
         } => vec![
             ("Speaker Config".to_string(), speaker_config.clone()),
             (

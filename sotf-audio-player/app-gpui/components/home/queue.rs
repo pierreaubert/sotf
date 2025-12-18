@@ -251,7 +251,7 @@ impl PlayerView {
                         .map(|g| g.channels.len())
                         .sum::<usize>()
                         .max(2);
-                    crate::plugins::level_meters::calculate_meters_panel_width(num_channels)
+                    crate::components::plugins::level_meters::calculate_meters_panel_width(num_channels)
                 };
 
                 d.child(
@@ -392,15 +392,15 @@ impl PlayerView {
             // Get channel count from current track
             let channels = current_track.and_then(|t| t.channels).unwrap_or(2);
 
-            let album_title_raw = album.title.clone();
+            let album_title_full = album.title.clone();
             let artist_raw = album.artist();
             let art_path = album.album_art_path.clone();
 
-            // Truncate album title to 20 characters max
-            let album_title = if album_title_raw.chars().count() > 20 {
-                album_title_raw.chars().take(20).collect::<String>() + "..."
+            // Truncate album title to 20 characters max for display
+            let album_title = if album_title_full.chars().count() > 20 {
+                album_title_full.chars().take(20).collect::<String>() + "..."
             } else {
-                album_title_raw
+                album_title_full.clone()
             };
 
             // Truncate artist to 20 characters max
@@ -542,6 +542,7 @@ impl PlayerView {
                 .child(self.render_track_list(
                     &disc_map,
                     current_track_idx,
+                    &album_title_full,
                     &translations,
                     &theme_for_closure,
                     cx,
@@ -590,10 +591,15 @@ impl PlayerView {
         &self,
         disc_map: &BTreeMap<u32, Vec<(usize, Track)>>,
         current_track_idx: usize,
+        album_title: &str,
         translations: &crate::i18n::Translations,
         theme: &crate::theme::Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        // Find common prefix to strip from track names
+        // For albums like "Monteverdi: Vespro della Beata...", tracks often start with "Vespro della Beata..."
+        let prefix_to_strip = Self::find_common_track_prefix(album_title, disc_map);
+
         let disc_count = disc_map.len();
         let mut all_elements: Vec<AnyElement> = Vec::new();
 
@@ -618,11 +624,22 @@ impl PlayerView {
                 let idx = *idx;
                 let title_raw = track.title.clone().unwrap_or_else(|| "Unknown".to_string());
 
-                // Truncate track title to 20 characters max
-                let title = if title_raw.chars().count() > 20 {
-                    title_raw.chars().take(20).collect::<String>() + "..."
+                // Strip common prefix from track title if present
+                let title_stripped = if let Some(ref prefix) = prefix_to_strip {
+                    if title_raw.starts_with(prefix) {
+                        title_raw[prefix.len()..].trim_start_matches(&[' ', ':', '-', '.'][..]).to_string()
+                    } else {
+                        title_raw
+                    }
                 } else {
                     title_raw
+                };
+
+                // Truncate track title to 20 characters max
+                let title = if title_stripped.chars().count() > 20 {
+                    title_stripped.chars().take(20).collect::<String>() + "..."
+                } else {
+                    title_stripped
                 };
 
                 let duration = track.duration_secs.unwrap_or(0);
@@ -727,5 +744,62 @@ impl PlayerView {
                     .overflow_y_scroll()
                     .children(all_elements),
             )
+    }
+
+    /// Find a common prefix in track titles that matches part of the album title.
+    /// For albums like "Monteverdi: Vespro della Beata Vergine", tracks often start with
+    /// "Vespro della Beata Vergine" which should be stripped.
+    fn find_common_track_prefix(
+        album_title: &str,
+        disc_map: &BTreeMap<u32, Vec<(usize, Track)>>,
+    ) -> Option<String> {
+        // Extract potential prefix candidates from album title
+        // Try the part after ":" if present, otherwise use the full title
+        let candidates: Vec<&str> = if album_title.contains(':') {
+            album_title
+                .split(':')
+                .skip(1)
+                .map(|s| s.trim())
+                .filter(|s| s.len() >= 5) // Minimum meaningful prefix length
+                .collect()
+        } else {
+            vec![album_title.trim()]
+        };
+
+        // Collect all track titles
+        let all_tracks: Vec<&str> = disc_map
+            .values()
+            .flat_map(|tracks| tracks.iter())
+            .filter_map(|(_, track)| track.title.as_deref())
+            .collect();
+
+        if all_tracks.is_empty() {
+            return None;
+        }
+
+        // For each candidate, check if most tracks start with it
+        for candidate in candidates {
+            // Try progressively shorter prefixes from the candidate
+            let words: Vec<&str> = candidate.split_whitespace().collect();
+            for word_count in (2..=words.len()).rev() {
+                let prefix = words[..word_count].join(" ");
+                if prefix.len() < 5 {
+                    continue;
+                }
+
+                // Count how many tracks start with this prefix
+                let matching_count = all_tracks
+                    .iter()
+                    .filter(|title| title.starts_with(&prefix))
+                    .count();
+
+                // If at least 75% of tracks match, use this prefix
+                if matching_count * 4 >= all_tracks.len() * 3 {
+                    return Some(prefix);
+                }
+            }
+        }
+
+        None
     }
 }

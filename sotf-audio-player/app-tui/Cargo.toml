@@ -14,7 +14,7 @@ sotf-audio-player = { path = ".." }
 # Audio engine
 sotf-audio-plugins = { path = "../../sotf-audio-plugins" }
 sotf-audio-engine = { path = "../../sotf-audio-engine" }
-autoeq-iir = { path = "../../math-iir" }
+math-iir-fir = { workspace = true }
 
 # TUI framework
 ratatui = { workspace = true }

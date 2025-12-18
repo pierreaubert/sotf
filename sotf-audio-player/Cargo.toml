@@ -24,7 +24,7 @@ path = "src/bin/bliss_scan.rs"
 # Audio engine
 sotf-audio-plugins = { path = "../sotf-audio-plugins" }
 sotf-audio-engine = { path = "../sotf-audio-engine" }
-autoeq-iir = { path = "../math-iir" }
+math-iir-fir = { workspace = true }
 autoeq-cea2034 = { path = "../autoeq-cea2034" }
 autoeq-roomsim = { path = "../autoeq-roomsim" }
 autoeq = { path = "../autoeq" }

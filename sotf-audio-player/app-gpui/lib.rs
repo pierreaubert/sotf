@@ -8,7 +8,6 @@
 #![recursion_limit = "1024"]
 
 pub mod components;
-pub mod plugins;
 
 // Note: ui must be loaded before app because app re-exports from ui::components::host
 pub mod app;

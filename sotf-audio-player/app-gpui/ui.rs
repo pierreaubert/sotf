@@ -1,18 +1,18 @@
 use crate::app::types::PluginUpdateType;
 use crate::app::{AppState, Screen};
-use crate::plugins::common::param_index_to_engine_param;
+use crate::components::plugins::common::param_index_to_engine_param;
 
 // Re-export modules for backward compatibility with crate::ui::components, etc.
 pub use crate::components;
-pub use crate::plugins;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::theme::ThemeState as UiKitThemeState;
 use gpui_ui_kit::{CollapseDirection, PaneDivider, PaneDividerTheme};
 use std::time::Duration;
 
 // Re-export all actions for backward compatibility
 pub use crate::app::actions::*;
-use crate::plugins::actions::{
+use crate::components::plugins::actions::{
     ResetPluginParam, SelectPluginParam, StartKnobDrag, UpdatePluginParam,
 };
 
@@ -760,6 +760,7 @@ impl PlayerView {
                 | InputMode::LoadPlugins
                 | InputMode::LoadApoFile
                 | InputMode::LoadSofaFile
+                | InputMode::SpinoramaSpeakerSearch
         )
     }
 
@@ -1045,7 +1046,9 @@ impl PlayerView {
                 if let Some(plugin) = state.app.plugin_chain.get_plugin(plugin_index) {
                     // We must map the UI index to the Engine index because the Engine reorders plugins
                     // (analyzers moved to the end) and filters out disabled ones.
-                    if let Some(engine_index) = state.app.plugin_chain.get_engine_index(plugin_index) {
+                    if let Some(engine_index) =
+                        state.app.plugin_chain.get_engine_index(plugin_index)
+                    {
                         if let Some((param_id, value)) =
                             param_index_to_engine_param(&plugin.settings, param_index)
                         {
@@ -1394,14 +1397,16 @@ impl PlayerView {
         }
     }
 
-    fn handle_spinorama_speaker_search_input(
+    pub(crate) fn handle_spinorama_speaker_search_input(
         &mut self,
         event: &KeyDownEvent,
         cx: &mut Context<Self>,
     ) {
+        log::info!("[SPINORAMA] handle_spinorama_speaker_search_input called, key={}", event.keystroke.key);
         // Handle text input for spinorama speaker search mode
         match event.keystroke.key.as_str() {
             "backspace" => {
+                log::info!("[SPINORAMA] Backspace pressed");
                 self.state.update(cx, |state, _cx| {
                     state.app.spinorama_eq_state.speaker_search.pop();
                     state.app.spinorama_eq_state.update_suggestions();
@@ -1409,6 +1414,7 @@ impl PlayerView {
                 cx.notify();
             }
             "escape" => {
+                log::info!("[SPINORAMA] Escape pressed - exiting search mode");
                 // Exit search mode
                 self.state.update(cx, |state, _cx| {
                     state.app.input_mode = crate::app::InputMode::Normal;
@@ -1416,6 +1422,7 @@ impl PlayerView {
                 cx.notify();
             }
             "enter" => {
+                log::info!("[SPINORAMA] Enter pressed - exiting search mode");
                 // Exit search mode, keep current search results
                 self.state.update(cx, |state, _cx| {
                     state.app.input_mode = crate::app::InputMode::Normal;
@@ -1423,8 +1430,9 @@ impl PlayerView {
                 cx.notify();
             }
             _ => {
-                // Add character to search query
+                // Add character to search query using key_char (handles all printable chars including space)
                 if let Some(text) = event.keystroke.key_char.as_ref() {
+                    log::info!("[SPINORAMA] Character typed: '{}'", text);
                     self.state.update(cx, |state, _cx| {
                         state.app.spinorama_eq_state.speaker_search.push_str(text);
                         state.app.spinorama_eq_state.update_suggestions();
@@ -1746,7 +1754,7 @@ impl Render for PlayerView {
         // Focus view on first render to activate macOS menu bar
         if self.needs_initial_focus {
             self.needs_initial_focus = false;
-            self.focus_handle.focus(window);
+            self.focus_handle.focus(window, cx);
             window.activate_window();
             cx.activate(true);
         }
@@ -1808,6 +1816,13 @@ impl Render for PlayerView {
                 state.app.active_menu,
             )
         };
+
+        // Keep gpui-ui-kit global theme in sync with app theme so components get consistent defaults.
+        // This allows builder overrides but ensures out-of-the-box colors match the app theme.
+        let ui_kit_theme = theme.to_ui_kit_theme(self.state.read(cx).app.theme_id);
+        cx.set_global(UiKitThemeState {
+            theme: ui_kit_theme,
+        });
 
         // Determine key context based on input mode
         // Use "TextInput" context when typing to disable single-letter keybindings

@@ -1,5 +1,6 @@
 use anyhow::anyhow;
 use gpui::*;
+use mimalloc::MiMalloc;
 use rust_embed::RustEmbed;
 use sotf_audio_player::Player;
 use sotf_audio_player_gpui::app::actions::*;
@@ -10,6 +11,9 @@ use sotf_audio_player_gpui::ui;
 use std::borrow::Cow;
 use std::fs::OpenOptions;
 use std::sync::Arc;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 
 actions!(sotf_player, [Quit, NextScreen, PrevScreen]);
 
@@ -87,12 +91,8 @@ fn main() {
             Menu {
                 name: "View".into(),
                 items: vec![
-                    MenuItem::action("Library", SwitchToLibrary),
-                    MenuItem::action("Queue", SwitchToQueue),
-                    MenuItem::action("Settings", SwitchToSettings),
-                    MenuItem::action("Devices", SwitchToDevices),
+                    MenuItem::action("Home", SwitchToLibrary),
                     MenuItem::action("Plugins", SwitchToPlugins),
-                    MenuItem::separator(),
                     MenuItem::action("Recording", SwitchToRecording),
                     MenuItem::action("Room EQ", SwitchToRoomEQ),
                     MenuItem::action("Headphone EQ", SwitchToHeadphoneEQ),

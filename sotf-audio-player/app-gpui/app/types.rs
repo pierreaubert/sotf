@@ -389,7 +389,7 @@ pub enum ChannelRecordingState {
 }
 
 /// Configuration for a single channel mapping
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChannelMapping {
     /// Physical channel index on the interface
     pub interface_channel: usize,
@@ -398,7 +398,7 @@ pub struct ChannelMapping {
 }
 
 /// Playback device configuration
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlaybackDeviceConfig {
     pub device_id: String,
     pub device_name: String,
@@ -434,7 +434,7 @@ impl Default for PlaybackDeviceConfig {
 }
 
 /// Recording device configuration
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecordingDeviceConfig {
     pub device_id: String,
     pub device_name: String,
@@ -480,7 +480,7 @@ pub struct RecordingResult {
 }
 
 /// Signal type for test signal generation
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RecordingSignalType {
     Sweep,
     WhiteNoise,
@@ -506,7 +506,7 @@ impl RecordingSignalType {
 }
 
 /// Speaker configuration presets
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SpeakerConfiguration {
     Stereo,     // 2.0
     Stereo21,   // 2.1
@@ -1799,11 +1799,64 @@ impl SpinoramaStep {
 /// Optimization mode for Spinorama EQ
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum SpinoramaOptimizationMode {
-    /// Flatten the Estimated In-Room Response (PIR) curve
+    /// Flatten a target curve (ON, LW, PIR, ER)
     #[default]
     FlatOnPir,
     /// Optimize Harman/Olive speaker preference score
     SpeakerScore,
+}
+
+/// Target curve types for spinorama optimization
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum SpinoramaTargetCurve {
+    /// On-Axis response
+    OnAxis,
+    /// Listening Window response
+    ListeningWindow,
+    /// Estimated In-Room Response (default)
+    #[default]
+    EstimatedInRoom,
+    /// Early Reflections
+    EarlyReflections,
+}
+
+impl SpinoramaTargetCurve {
+    pub fn all() -> &'static [SpinoramaTargetCurve] {
+        &[
+            SpinoramaTargetCurve::OnAxis,
+            SpinoramaTargetCurve::ListeningWindow,
+            SpinoramaTargetCurve::EstimatedInRoom,
+            SpinoramaTargetCurve::EarlyReflections,
+        ]
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SpinoramaTargetCurve::OnAxis => "ON (On-Axis)",
+            SpinoramaTargetCurve::ListeningWindow => "LW (Listening Window)",
+            SpinoramaTargetCurve::EstimatedInRoom => "PIR (In-Room)",
+            SpinoramaTargetCurve::EarlyReflections => "ER (Early Reflections)",
+        }
+    }
+
+    pub fn short_name(&self) -> &'static str {
+        match self {
+            SpinoramaTargetCurve::OnAxis => "ON",
+            SpinoramaTargetCurve::ListeningWindow => "LW",
+            SpinoramaTargetCurve::EstimatedInRoom => "PIR",
+            SpinoramaTargetCurve::EarlyReflections => "ER",
+        }
+    }
+
+    /// Get the curve name used in spinorama.org API
+    pub fn api_name(&self) -> &'static str {
+        match self {
+            SpinoramaTargetCurve::OnAxis => "On Axis",
+            SpinoramaTargetCurve::ListeningWindow => "Listening Window",
+            SpinoramaTargetCurve::EstimatedInRoom => "Estimated In-Room Response",
+            SpinoramaTargetCurve::EarlyReflections => "Early Reflections",
+        }
+    }
 }
 
 impl SpinoramaOptimizationMode {
@@ -1843,6 +1896,8 @@ impl SpinoramaOptimizationMode {
 pub struct SpinoramaOptimizerConfig {
     /// Optimization target mode
     pub mode: SpinoramaOptimizationMode,
+    /// Target curve for FlatOnPir mode
+    pub target_curve: SpinoramaTargetCurve,
     /// Optimization algorithm
     pub algorithm: RoomEqAlgorithm,
     /// Number of PEQ filters
@@ -1861,12 +1916,29 @@ pub struct SpinoramaOptimizerConfig {
     pub max_freq: f64,
     /// Maximum number of iterations
     pub max_iter: usize,
+    /// PEQ model (e.g., "pk", "ls-pk-hs")
+    pub peq_model: String,
+    /// Population size for evolutionary algorithms
+    pub population: usize,
+    /// Mutation factor (F) for DE
+    pub de_f: f64,
+    /// Crossover rate (CR) for DE
+    pub de_cr: f64,
+    /// DE strategy (e.g., "currenttobest1bin")
+    pub strategy: String,
+    /// Enable local refinement after global optimization
+    pub refine: bool,
+    /// Local algorithm for refinement
+    pub local_algo: String,
+    /// Enable smoothing
+    pub smooth: bool,
 }
 
 impl Default for SpinoramaOptimizerConfig {
     fn default() -> Self {
         Self {
             mode: SpinoramaOptimizationMode::FlatOnPir,
+            target_curve: SpinoramaTargetCurve::default(),
             algorithm: RoomEqAlgorithm::Cobyla,
             num_filters: 5,
             min_q: 0.5,
@@ -1876,6 +1948,14 @@ impl Default for SpinoramaOptimizerConfig {
             min_freq: 20.0,
             max_freq: 20000.0,
             max_iter: 10000,
+            peq_model: "pk".to_string(),
+            population: 100,
+            de_f: 0.8,
+            de_cr: 0.9,
+            strategy: "currenttobest1bin".to_string(),
+            refine: true,
+            local_algo: "cobyla".to_string(),
+            smooth: false,
         }
     }
 }
@@ -1907,7 +1987,7 @@ pub struct SpinoramaBiquad {
 }
 
 /// UI state for Spinorama EQ dropdowns
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct SpinoramaEqDropdowns {
     pub version_open: bool,
     pub measurement_open: bool,
@@ -1915,14 +1995,43 @@ pub struct SpinoramaEqDropdowns {
     pub mode_open: bool,
     pub algorithm_open: bool,
     pub export_format_open: bool,
+    /// Target curve dropdown (ON, LW, PIR, ER)
+    pub target_curve_open: bool,
     /// AutoEQ form: EQ mode dropdown (IIR/FIR)
     pub opt_mode_open: bool,
+    /// Selected EQ mode ("iir", "fir", "mixed")
+    pub opt_mode: String,
     /// AutoEQ form: PEQ model dropdown
     pub peq_model_open: bool,
+    /// AutoEQ form: DE strategy dropdown
+    pub strategy_open: bool,
+    /// AutoEQ form: local algorithm dropdown
+    pub local_algo_open: bool,
     /// AutoEQ form editing state
     pub autoeq_editing_field: Option<AutoEqField>,
     /// AutoEQ form edit text
     pub autoeq_edit_text: String,
+}
+
+impl Default for SpinoramaEqDropdowns {
+    fn default() -> Self {
+        Self {
+            version_open: false,
+            measurement_open: false,
+            curve_open: false,
+            mode_open: false,
+            algorithm_open: false,
+            export_format_open: false,
+            target_curve_open: false,
+            opt_mode_open: false,
+            opt_mode: "iir".to_string(),
+            peq_model_open: false,
+            strategy_open: false,
+            local_algo_open: false,
+            autoeq_editing_field: None,
+            autoeq_edit_text: String::new(),
+        }
+    }
 }
 
 /// Complete Spinorama EQ screen state
@@ -1970,20 +2079,44 @@ pub struct SpinoramaEqState {
     pub error_message: Option<String>,
 
     // === Step 4: Results ===
-    /// Optimization result
+    /// Optimization result (simplified for UI)
     pub result: Option<SpinoramaEqResult>,
+    /// Full optimization result (for graphs)
+    pub full_result: Option<sotf_audio_player::autoeq::SpeakerOptimizationResult>,
     /// Export format selection
     pub export_format: String,
 
     // === UI State ===
-    /// Loading indicator for API calls
+    /// Loading indicator for speakers API call
     pub loading_speakers: bool,
+    /// Loading indicator for versions API call
+    pub loading_versions: bool,
+    /// Loading indicator for measurements API call
+    pub loading_measurements: bool,
     /// Dropdown states
     pub dropdowns: SpinoramaEqDropdowns,
     /// Expanded accordion sections
     pub expanded_sections: Vec<gpui::SharedString>,
     /// Timestamp when speakers were last fetched (for cache invalidation)
     pub speakers_cached_at: Option<std::time::Instant>,
+    /// Focus handle for the search input
+    pub search_focus_handle: Option<gpui::FocusHandle>,
+    /// Whether the selected measurement has phase data
+    pub has_phase_data: bool,
+
+    // === Preview Curves (computed before optimization) ===
+    /// Preview frequencies (Hz)
+    pub preview_frequencies: Vec<f64>,
+    /// Preview input curve (dB) - the raw measurement
+    pub preview_input_curve: Vec<f64>,
+    /// Preview target curve (dB) - what we're optimizing towards
+    pub preview_target_curve: Vec<f64>,
+    /// Preview deviation curve (dB) - target minus input
+    pub preview_deviation_curve: Vec<f64>,
+    /// Whether preview curves are being loaded
+    pub loading_preview: bool,
+    /// Error message if preview loading failed
+    pub preview_error: Option<String>,
 }
 
 impl Default for SpinoramaEqState {
@@ -2007,11 +2140,22 @@ impl Default for SpinoramaEqState {
             status_message: String::new(),
             error_message: None,
             result: None,
+            full_result: None,
             export_format: "json".to_string(),
             loading_speakers: false,
+            loading_versions: false,
+            loading_measurements: false,
             dropdowns: SpinoramaEqDropdowns::default(),
             expanded_sections: vec!["speaker".into(), "options".into()],
             speakers_cached_at: None,
+            search_focus_handle: None,
+            has_phase_data: false,
+            preview_frequencies: Vec::new(),
+            preview_input_curve: Vec::new(),
+            preview_target_curve: Vec::new(),
+            preview_deviation_curve: Vec::new(),
+            loading_preview: false,
+            preview_error: None,
         }
     }
 }

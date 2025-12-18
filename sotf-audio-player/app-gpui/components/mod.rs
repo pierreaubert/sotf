@@ -6,14 +6,13 @@ pub mod graphs;
 pub mod headphone_eq;
 pub mod home;
 pub mod icons;
+pub mod plugins;
 pub mod recording;
 mod room_eq;
 mod settings;
 mod speaker_diy;
 mod spinorama_eq;
-
-// Level meter and spectrum types are now in crate::plugins module
-pub use crate::plugins::{
+pub use plugins::{
     LevelMeterElement, MeterColors, MeterData, SpectrumColors, SpectrumElement, get_param_count,
     render_plugin_content,
 };

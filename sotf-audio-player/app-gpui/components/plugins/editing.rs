@@ -4,9 +4,9 @@
 
 use sotf_audio_player::PluginSettings;
 
+use super::common::param_index_to_engine_param;
 use crate::app::types::PluginUpdateType;
 use crate::app::{App, ToastMessage};
-use crate::plugins::common::param_index_to_engine_param;
 
 impl App {
     // Plugin management methods
@@ -121,19 +121,36 @@ impl App {
                     gain_front_direct,
                     gain_front_ambient,
                     gain_rear_ambient,
-                    lfe_cutoff_hz,
-                    stereo_width,
-                    bandpass_hz,
                     height_gain,
+                    stereo_width,
+                    center_spread,
+                    surround_direct_bleed,
+                    rear_late_reflection,
+                    lfe_cutoff_hz,
                     lfe_gain,
+                    bandpass_hz,
                     enable_subharmonic_synth,
                     subharmonic_gain,
+                    subharmonic_freq_hz,
+                    subharmonic_attack_ms,
+                    subharmonic_release_ms,
+                    decorrelation_mode,
+                    decorrelation_lfo_rate_hz,
+                    velvet_noise_duration_ms,
+                    velvet_noise_density,
                     enable_hr_direct,
                     hr_sharpen,
+                    height_hf_cap_hz,
+                    height_transient_reduction,
+                    height_direct_leak,
+                    ambient_boost,
                     safety_cap_db,
-                    decorrelation_mode,
-                    ..
+                    rear_ambient_boost,
+                    dialogue_weight,
+                    voice_freq_min_hz,
+                    voice_freq_max_hz,
                 } => {
+                    use sotf_audio_player::param_specs::upmixer::*;
                     match param_idx {
                         0 => {
                             // speaker_config: cycle through available configs
@@ -147,81 +164,196 @@ impl App {
                                 .unwrap_or(0);
                             let new_idx = if delta > 0.0 {
                                 (current_idx + 1) % configs.len()
+                            } else if current_idx == 0 {
+                                configs.len() - 1
                             } else {
-                                if current_idx == 0 {
-                                    configs.len() - 1
-                                } else {
-                                    current_idx - 1
-                                }
+                                current_idx - 1
                             };
                             *speaker_config = configs[new_idx].to_string();
                             channel_count_changed = true;
                             true
                         }
                         1 => {
-                            *gain_front_direct =
-                                (*gain_front_direct + delta as f64).max(-30.0).min(30.0);
+                            *gain_front_direct = (*gain_front_direct + delta * 0.05)
+                                .clamp(GAIN_FRONT_DIRECT_MIN as f64, GAIN_FRONT_DIRECT_MAX as f64);
                             true
                         }
                         2 => {
-                            *gain_front_ambient =
-                                (*gain_front_ambient + delta as f64).max(-30.0).min(30.0);
+                            *gain_front_ambient = (*gain_front_ambient + delta * 0.05).clamp(
+                                GAIN_FRONT_AMBIENT_MIN as f64,
+                                GAIN_FRONT_AMBIENT_MAX as f64,
+                            );
                             true
                         }
                         3 => {
-                            *gain_rear_ambient =
-                                (*gain_rear_ambient + delta as f64).max(-30.0).min(30.0);
+                            *gain_rear_ambient = (*gain_rear_ambient + delta * 0.05)
+                                .clamp(GAIN_REAR_AMBIENT_MIN as f64, GAIN_REAR_AMBIENT_MAX as f64);
                             true
                         }
                         4 => {
-                            *lfe_cutoff_hz =
-                                (*lfe_cutoff_hz + delta as f64 * 10.0).max(20.0).min(200.0);
+                            *height_gain = (*height_gain + delta * 0.05)
+                                .clamp(GAIN_HEIGHT_MIN as f64, GAIN_HEIGHT_MAX as f64);
                             true
                         }
                         5 => {
-                            *stereo_width = (*stereo_width + delta as f64 * 0.1).max(0.0).min(2.0);
+                            *lfe_gain = (*lfe_gain + delta * 0.05)
+                                .clamp(LFE_GAIN_MIN as f64, LFE_GAIN_MAX as f64);
                             true
                         }
                         6 => {
-                            *bandpass_hz =
-                                (*bandpass_hz + delta as f64 * 50.0).max(100.0).min(1000.0);
+                            *lfe_cutoff_hz = (*lfe_cutoff_hz + delta * 5.0)
+                                .clamp(LFE_CUTOFF_HZ_MIN as f64, LFE_CUTOFF_HZ_MAX as f64);
                             true
                         }
                         7 => {
-                            *height_gain = (*height_gain + delta as f64).max(-30.0).min(30.0);
+                            *stereo_width = (*stereo_width + delta * 0.05)
+                                .clamp(STEREO_WIDTH_MIN as f64, STEREO_WIDTH_MAX as f64);
                             true
                         }
                         8 => {
-                            *lfe_gain = (*lfe_gain + delta as f64).max(-30.0).min(30.0);
+                            *center_spread = (*center_spread + delta * 0.05)
+                                .clamp(CENTER_SPREAD_MIN as f64, CENTER_SPREAD_MAX as f64);
                             true
                         }
                         9 => {
-                            *enable_subharmonic_synth = !*enable_subharmonic_synth;
+                            *bandpass_hz = (*bandpass_hz + delta * 5.0)
+                                .clamp(BANDPASS_HZ_MIN as f64, BANDPASS_HZ_MAX as f64);
                             true
                         }
                         10 => {
-                            *subharmonic_gain =
-                                (*subharmonic_gain + delta as f64).max(-30.0).min(30.0);
+                            *enable_subharmonic_synth = !*enable_subharmonic_synth;
                             true
                         }
                         11 => {
-                            *enable_hr_direct = !*enable_hr_direct;
+                            *subharmonic_gain = (*subharmonic_gain + delta * 0.05)
+                                .clamp(SUBHARMONIC_GAIN_MIN as f64, SUBHARMONIC_GAIN_MAX as f64);
                             true
                         }
                         12 => {
-                            *hr_sharpen = (*hr_sharpen + delta as f64 * 0.05).max(0.0).min(1.0);
+                            *enable_hr_direct = !*enable_hr_direct;
                             true
                         }
                         13 => {
-                            *safety_cap_db =
-                                (*safety_cap_db + delta as f64 * 0.5).max(0.0).min(12.0);
+                            *hr_sharpen = (*hr_sharpen + delta * 0.05)
+                                .clamp(HR_SHARPEN_MIN as f64, HR_SHARPEN_MAX as f64);
                             true
                         }
                         14 => {
+                            *safety_cap_db = (*safety_cap_db + delta * 0.1)
+                                .clamp(SAFETY_CAP_DB_MIN as f64, SAFETY_CAP_DB_MAX as f64);
+                            true
+                        }
+                        15 => {
                             // Toggle decorrelation mode (0 or 1)
                             if delta.abs() > 0.1 {
                                 *decorrelation_mode = if *decorrelation_mode == 0 { 1 } else { 0 };
                             }
+                            true
+                        }
+                        16 => {
+                            *subharmonic_freq_hz = (*subharmonic_freq_hz + delta * 2.0).clamp(
+                                SUBHARMONIC_FREQ_HZ_MIN as f64,
+                                SUBHARMONIC_FREQ_HZ_MAX as f64,
+                            );
+                            true
+                        }
+                        17 => {
+                            *subharmonic_attack_ms = (*subharmonic_attack_ms + delta * 2.0).clamp(
+                                SUBHARMONIC_ATTACK_MS_MIN as f64,
+                                SUBHARMONIC_ATTACK_MS_MAX as f64,
+                            );
+                            true
+                        }
+                        18 => {
+                            *subharmonic_release_ms = (*subharmonic_release_ms + delta * 10.0)
+                                .clamp(
+                                    SUBHARMONIC_RELEASE_MS_MIN as f64,
+                                    SUBHARMONIC_RELEASE_MS_MAX as f64,
+                                );
+                            true
+                        }
+                        19 => {
+                            *decorrelation_lfo_rate_hz =
+                                (*decorrelation_lfo_rate_hz + delta * 0.02).clamp(
+                                    DECORRELATION_LFO_RATE_HZ_MIN as f64,
+                                    DECORRELATION_LFO_RATE_HZ_MAX as f64,
+                                );
+                            true
+                        }
+                        20 => {
+                            *velvet_noise_duration_ms = (*velvet_noise_duration_ms + delta * 2.0)
+                                .clamp(
+                                    VELVET_NOISE_DURATION_MS_MIN as f64,
+                                    VELVET_NOISE_DURATION_MS_MAX as f64,
+                                );
+                            true
+                        }
+                        21 => {
+                            *velvet_noise_density = (*velvet_noise_density + delta * 100.0).clamp(
+                                VELVET_NOISE_DENSITY_MIN as f64,
+                                VELVET_NOISE_DENSITY_MAX as f64,
+                            );
+                            true
+                        }
+                        22 => {
+                            *height_hf_cap_hz = (*height_hf_cap_hz + delta * 200.0)
+                                .clamp(HEIGHT_HF_CAP_HZ_MIN as f64, HEIGHT_HF_CAP_HZ_MAX as f64);
+                            true
+                        }
+                        23 => {
+                            *height_transient_reduction =
+                                (*height_transient_reduction + delta * 0.05).clamp(
+                                    HEIGHT_TRANSIENT_REDUCTION_MIN as f64,
+                                    HEIGHT_TRANSIENT_REDUCTION_MAX as f64,
+                                );
+                            true
+                        }
+                        24 => {
+                            *height_direct_leak = (*height_direct_leak + delta * 0.02).clamp(
+                                HEIGHT_DIRECT_LEAK_MIN as f64,
+                                HEIGHT_DIRECT_LEAK_MAX as f64,
+                            );
+                            true
+                        }
+                        25 => {
+                            *surround_direct_bleed = (*surround_direct_bleed + delta * 0.05).clamp(
+                                SURROUND_DIRECT_BLEED_MIN as f64,
+                                SURROUND_DIRECT_BLEED_MAX as f64,
+                            );
+                            true
+                        }
+                        26 => {
+                            *rear_ambient_boost = (*rear_ambient_boost + delta * 0.05).clamp(
+                                REAR_AMBIENT_BOOST_MIN as f64,
+                                REAR_AMBIENT_BOOST_MAX as f64,
+                            );
+                            true
+                        }
+                        27 => {
+                            *rear_late_reflection = (*rear_late_reflection + delta * 0.02).clamp(
+                                REAR_LATE_REFLECTION_MIN as f64,
+                                REAR_LATE_REFLECTION_MAX as f64,
+                            );
+                            true
+                        }
+                        28 => {
+                            *ambient_boost = (*ambient_boost + delta * 0.05)
+                                .clamp(AMBIENT_BOOST_MIN as f64, AMBIENT_BOOST_MAX as f64);
+                            true
+                        }
+                        29 => {
+                            *dialogue_weight = (*dialogue_weight + delta * 0.05)
+                                .clamp(DIALOGUE_WEIGHT_MIN as f64, DIALOGUE_WEIGHT_MAX as f64);
+                            true
+                        }
+                        30 => {
+                            *voice_freq_min_hz = (*voice_freq_min_hz + delta * 20.0)
+                                .clamp(VOICE_FREQ_MIN_HZ_MIN as f64, VOICE_FREQ_MIN_HZ_MAX as f64);
+                            true
+                        }
+                        31 => {
+                            *voice_freq_max_hz = (*voice_freq_max_hz + delta * 100.0)
+                                .clamp(VOICE_FREQ_MAX_HZ_MIN as f64, VOICE_FREQ_MAX_HZ_MAX as f64);
                             true
                         }
                         _ => false,
@@ -465,9 +597,20 @@ impl App {
                         _ => false,
                     }
                 }
-                PluginSettings::Convolution { .. } => {
-                    // Convolution has no adjustable parameters for now
-                    false
+                PluginSettings::Convolution { mix, gain_db, .. } => {
+                    use sotf_audio_player::param_specs::convolution::*;
+                    match param_idx {
+                        0 => {
+                            *mix = (*mix + delta * 0.05).clamp(MIX_MIN as f64, MIX_MAX as f64);
+                            true
+                        }
+                        1 => {
+                            *gain_db = (*gain_db + delta * 0.5)
+                                .clamp(GAIN_DB_MIN as f64, GAIN_DB_MAX as f64);
+                            true
+                        }
+                        _ => false,
+                    }
                 }
                 PluginSettings::LoudnessMonitor => {
                     // Analyzer plugin - no parameters to adjust
@@ -556,23 +699,39 @@ impl App {
                     gain_front_direct,
                     gain_front_ambient,
                     gain_rear_ambient,
-                    lfe_cutoff_hz,
-                    stereo_width,
-                    bandpass_hz,
                     height_gain,
+                    stereo_width,
+                    center_spread,
+                    surround_direct_bleed,
+                    rear_late_reflection,
+                    lfe_cutoff_hz,
                     lfe_gain,
+                    bandpass_hz,
                     enable_subharmonic_synth,
                     subharmonic_gain,
+                    subharmonic_freq_hz,
+                    subharmonic_attack_ms,
+                    subharmonic_release_ms,
+                    decorrelation_mode,
+                    decorrelation_lfo_rate_hz,
+                    velvet_noise_duration_ms,
+                    velvet_noise_density,
                     enable_hr_direct,
                     hr_sharpen,
+                    height_hf_cap_hz,
+                    height_transient_reduction,
+                    height_direct_leak,
+                    ambient_boost,
                     safety_cap_db,
-                    decorrelation_mode,
-                    ..
+                    rear_ambient_boost,
+                    dialogue_weight,
+                    voice_freq_min_hz,
+                    voice_freq_max_hz,
                 } => {
+                    use sotf_audio_player::param_specs::upmixer::*;
                     match param_idx {
                         0 => {
                             // speaker_config: map value (index) to string
-
                             let configs = [
                                 "2.0", "5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4",
                                 "9.1.4", "9.1.6",
@@ -583,73 +742,177 @@ impl App {
                             update_needed = true;
                         }
                         1 => {
-                            // gain_front_direct (dB)
-                            *gain_front_direct = value.clamp(-30.0, 30.0);
+                            *gain_front_direct = value
+                                .clamp(GAIN_FRONT_DIRECT_MIN as f64, GAIN_FRONT_DIRECT_MAX as f64);
                             update_needed = true;
                         }
                         2 => {
-                            // gain_front_ambient (Center Gain, dB)
-                            *gain_front_ambient = value.clamp(-30.0, 30.0);
+                            *gain_front_ambient = value.clamp(
+                                GAIN_FRONT_AMBIENT_MIN as f64,
+                                GAIN_FRONT_AMBIENT_MAX as f64,
+                            );
                             update_needed = true;
                         }
                         3 => {
-                            // gain_rear_ambient (Surround Gain, dB)
-                            *gain_rear_ambient = value.clamp(-30.0, 30.0);
+                            *gain_rear_ambient = value
+                                .clamp(GAIN_REAR_AMBIENT_MIN as f64, GAIN_REAR_AMBIENT_MAX as f64);
                             update_needed = true;
                         }
                         4 => {
-                            // lfe_cutoff_hz
-                            *lfe_cutoff_hz = value.clamp(20.0, 200.0);
+                            *height_gain =
+                                value.clamp(GAIN_HEIGHT_MIN as f64, GAIN_HEIGHT_MAX as f64);
                             update_needed = true;
                         }
                         5 => {
-                            // stereo_width
-                            *stereo_width = value.clamp(0.0, 2.0);
+                            *lfe_gain = value.clamp(LFE_GAIN_MIN as f64, LFE_GAIN_MAX as f64);
                             update_needed = true;
                         }
                         6 => {
-                            // bandpass_hz
-                            *bandpass_hz = value.clamp(100.0, 1000.0);
+                            *lfe_cutoff_hz =
+                                value.clamp(LFE_CUTOFF_HZ_MIN as f64, LFE_CUTOFF_HZ_MAX as f64);
                             update_needed = true;
                         }
                         7 => {
-                            // height_gain (Top Gain, dB)
-                            *height_gain = value.clamp(-30.0, 30.0);
+                            *stereo_width =
+                                value.clamp(STEREO_WIDTH_MIN as f64, STEREO_WIDTH_MAX as f64);
                             update_needed = true;
                         }
                         8 => {
-                            // lfe_gain (LFE Gain, dB)
-                            *lfe_gain = value.clamp(-30.0, 30.0);
+                            *center_spread =
+                                value.clamp(CENTER_SPREAD_MIN as f64, CENTER_SPREAD_MAX as f64);
                             update_needed = true;
                         }
                         9 => {
-                            // enable_subharmonic_synth (toggle)
-                            *enable_subharmonic_synth = value > 0.5;
+                            *bandpass_hz =
+                                value.clamp(BANDPASS_HZ_MIN as f64, BANDPASS_HZ_MAX as f64);
                             update_needed = true;
                         }
                         10 => {
-                            // subharmonic_gain (dB)
-                            *subharmonic_gain = value.clamp(-30.0, 30.0);
+                            *enable_subharmonic_synth = value > 0.5;
                             update_needed = true;
                         }
                         11 => {
-                            // enable_hr_direct (toggle)
-                            *enable_hr_direct = value > 0.5;
+                            *subharmonic_gain = value
+                                .clamp(SUBHARMONIC_GAIN_MIN as f64, SUBHARMONIC_GAIN_MAX as f64);
                             update_needed = true;
                         }
                         12 => {
-                            // hr_sharpen
-                            *hr_sharpen = value.clamp(0.0, 1.0);
+                            *enable_hr_direct = value > 0.5;
                             update_needed = true;
                         }
                         13 => {
-                            // safety_cap_db
-                            *safety_cap_db = value.clamp(0.0, 12.0);
+                            *hr_sharpen = value.clamp(HR_SHARPEN_MIN as f64, HR_SHARPEN_MAX as f64);
                             update_needed = true;
                         }
                         14 => {
-                            // decorrelation_mode (0=Velvet/1=LFO)
+                            *safety_cap_db =
+                                value.clamp(SAFETY_CAP_DB_MIN as f64, SAFETY_CAP_DB_MAX as f64);
+                            update_needed = true;
+                        }
+                        15 => {
                             *decorrelation_mode = if value > 0.5 { 1 } else { 0 };
+                            update_needed = true;
+                        }
+                        16 => {
+                            *subharmonic_freq_hz = value.clamp(
+                                SUBHARMONIC_FREQ_HZ_MIN as f64,
+                                SUBHARMONIC_FREQ_HZ_MAX as f64,
+                            );
+                            update_needed = true;
+                        }
+                        17 => {
+                            *subharmonic_attack_ms = value.clamp(
+                                SUBHARMONIC_ATTACK_MS_MIN as f64,
+                                SUBHARMONIC_ATTACK_MS_MAX as f64,
+                            );
+                            update_needed = true;
+                        }
+                        18 => {
+                            *subharmonic_release_ms = value.clamp(
+                                SUBHARMONIC_RELEASE_MS_MIN as f64,
+                                SUBHARMONIC_RELEASE_MS_MAX as f64,
+                            );
+                            update_needed = true;
+                        }
+                        19 => {
+                            *decorrelation_lfo_rate_hz = value.clamp(
+                                DECORRELATION_LFO_RATE_HZ_MIN as f64,
+                                DECORRELATION_LFO_RATE_HZ_MAX as f64,
+                            );
+                            update_needed = true;
+                        }
+                        20 => {
+                            *velvet_noise_duration_ms = value.clamp(
+                                VELVET_NOISE_DURATION_MS_MIN as f64,
+                                VELVET_NOISE_DURATION_MS_MAX as f64,
+                            );
+                            update_needed = true;
+                        }
+                        21 => {
+                            *velvet_noise_density = value.clamp(
+                                VELVET_NOISE_DENSITY_MIN as f64,
+                                VELVET_NOISE_DENSITY_MAX as f64,
+                            );
+                            update_needed = true;
+                        }
+                        22 => {
+                            *height_hf_cap_hz = value
+                                .clamp(HEIGHT_HF_CAP_HZ_MIN as f64, HEIGHT_HF_CAP_HZ_MAX as f64);
+                            update_needed = true;
+                        }
+                        23 => {
+                            *height_transient_reduction = value.clamp(
+                                HEIGHT_TRANSIENT_REDUCTION_MIN as f64,
+                                HEIGHT_TRANSIENT_REDUCTION_MAX as f64,
+                            );
+                            update_needed = true;
+                        }
+                        24 => {
+                            *height_direct_leak = value.clamp(
+                                HEIGHT_DIRECT_LEAK_MIN as f64,
+                                HEIGHT_DIRECT_LEAK_MAX as f64,
+                            );
+                            update_needed = true;
+                        }
+                        25 => {
+                            *surround_direct_bleed = value.clamp(
+                                SURROUND_DIRECT_BLEED_MIN as f64,
+                                SURROUND_DIRECT_BLEED_MAX as f64,
+                            );
+                            update_needed = true;
+                        }
+                        26 => {
+                            *rear_ambient_boost = value.clamp(
+                                REAR_AMBIENT_BOOST_MIN as f64,
+                                REAR_AMBIENT_BOOST_MAX as f64,
+                            );
+                            update_needed = true;
+                        }
+                        27 => {
+                            *rear_late_reflection = value.clamp(
+                                REAR_LATE_REFLECTION_MIN as f64,
+                                REAR_LATE_REFLECTION_MAX as f64,
+                            );
+                            update_needed = true;
+                        }
+                        28 => {
+                            *ambient_boost =
+                                value.clamp(AMBIENT_BOOST_MIN as f64, AMBIENT_BOOST_MAX as f64);
+                            update_needed = true;
+                        }
+                        29 => {
+                            *dialogue_weight =
+                                value.clamp(DIALOGUE_WEIGHT_MIN as f64, DIALOGUE_WEIGHT_MAX as f64);
+                            update_needed = true;
+                        }
+                        30 => {
+                            *voice_freq_min_hz = value
+                                .clamp(VOICE_FREQ_MIN_HZ_MIN as f64, VOICE_FREQ_MIN_HZ_MAX as f64);
+                            update_needed = true;
+                        }
+                        31 => {
+                            *voice_freq_max_hz = value
+                                .clamp(VOICE_FREQ_MAX_HZ_MIN as f64, VOICE_FREQ_MAX_HZ_MAX as f64);
                             update_needed = true;
                         }
                         _ => {}
@@ -863,17 +1126,20 @@ impl App {
                     }
                     _ => {}
                 },
-                PluginSettings::Convolution { mix, gain_db, .. } => match param_idx {
-                    1 => {
-                        *mix = value.clamp(0.0, 1.0);
-                        update_needed = true;
+                PluginSettings::Convolution { mix, gain_db, .. } => {
+                    use sotf_audio_player::param_specs::convolution::*;
+                    match param_idx {
+                        0 => {
+                            *mix = value.clamp(MIX_MIN as f64, MIX_MAX as f64);
+                            update_needed = true;
+                        }
+                        1 => {
+                            *gain_db = value.clamp(GAIN_DB_MIN as f64, GAIN_DB_MAX as f64);
+                            update_needed = true;
+                        }
+                        _ => {}
                     }
-                    2 => {
-                        *gain_db = value.clamp(-20.0, 20.0);
-                        update_needed = true;
-                    }
-                    _ => {}
-                },
+                }
                 PluginSettings::SpectrumAnalyzer {
                     num_bins,
                     min_freq,
@@ -951,46 +1217,81 @@ impl App {
                 gain_front_direct,
                 gain_front_ambient,
                 gain_rear_ambient,
-                lfe_cutoff_hz,
-                stereo_width,
-                bandpass_hz,
                 height_gain,
+                stereo_width,
+                center_spread,
+                surround_direct_bleed,
+                rear_late_reflection,
+                lfe_cutoff_hz,
                 lfe_gain,
+                bandpass_hz,
                 enable_subharmonic_synth,
                 subharmonic_gain,
+                subharmonic_freq_hz,
+                subharmonic_attack_ms,
+                subharmonic_release_ms,
+                decorrelation_mode,
+                decorrelation_lfo_rate_hz,
+                velvet_noise_duration_ms,
+                velvet_noise_density,
                 enable_hr_direct,
                 hr_sharpen,
+                height_hf_cap_hz,
+                height_transient_reduction,
+                height_direct_leak,
+                ambient_boost,
                 safety_cap_db,
-                decorrelation_mode,
+                rear_ambient_boost,
+                dialogue_weight,
+                voice_freq_min_hz,
+                voice_freq_max_hz,
                 ..
             } => {
                 match param_idx {
+                    // 0: speaker_config - no default reset (keep current)
                     1 => *gain_front_direct,
                     2 => *gain_front_ambient,
                     3 => *gain_rear_ambient,
-                    4 => *lfe_cutoff_hz,
-                    5 => *stereo_width,
-                    6 => *bandpass_hz,
-                    7 => *height_gain,
-                    8 => *lfe_gain,
-                    9 => {
+                    4 => *height_gain,
+                    5 => *lfe_gain,
+                    6 => *lfe_cutoff_hz,
+                    7 => *stereo_width,
+                    8 => *center_spread,
+                    9 => *bandpass_hz,
+                    10 => {
                         if *enable_subharmonic_synth {
                             1.0
                         } else {
                             0.0
                         }
                     }
-                    10 => *subharmonic_gain,
-                    11 => {
+                    11 => *subharmonic_gain,
+                    12 => {
                         if *enable_hr_direct {
                             1.0
                         } else {
                             0.0
                         }
                     }
-                    12 => *hr_sharpen,
-                    13 => *safety_cap_db,
-                    14 => *decorrelation_mode as f64,
+                    13 => *hr_sharpen,
+                    14 => *safety_cap_db,
+                    15 => *decorrelation_mode as f64,
+                    16 => *subharmonic_freq_hz,
+                    17 => *subharmonic_attack_ms,
+                    18 => *subharmonic_release_ms,
+                    19 => *decorrelation_lfo_rate_hz,
+                    20 => *velvet_noise_duration_ms,
+                    21 => *velvet_noise_density,
+                    22 => *height_hf_cap_hz,
+                    23 => *height_transient_reduction,
+                    24 => *height_direct_leak,
+                    25 => *surround_direct_bleed,
+                    26 => *rear_ambient_boost,
+                    27 => *rear_late_reflection,
+                    28 => *ambient_boost,
+                    29 => *dialogue_weight,
+                    30 => *voice_freq_min_hz,
+                    31 => *voice_freq_max_hz,
                     _ => return, // No reset for others or unknown
                 }
             }
@@ -1001,6 +1302,11 @@ impl App {
                     return;
                 }
             }
+            PluginSettings::Convolution { mix, gain_db, .. } => match param_idx {
+                0 => *mix,
+                1 => *gain_db,
+                _ => return,
+            },
             _ => return,
         };
 
@@ -1264,14 +1570,14 @@ impl App {
 // Helper function to get parameter count for a plugin
 pub fn get_param_count(settings: &PluginSettings) -> usize {
     match settings {
-        PluginSettings::Upmixer { .. } => 15,
+        PluginSettings::Upmixer { .. } => 32, // All 32 upmixer parameters
         PluginSettings::EQ { filters } => filters.len() * 4, // freq, q, gain, type for each filter
         PluginSettings::Compressor { .. } => 10, // threshold, ratio, attack, release, knee, makeup_gain, mix, auto_makeup, link_channels, sidechain_hpf_hz
         PluginSettings::Gate { .. } => 7, // threshold, ratio, attack, release, mix, link_channels, sidechain_hpf_hz
         PluginSettings::Limiter { .. } => 3, // threshold, release, mix
         PluginSettings::LoudnessCompensation { .. } => 4, // low_freq, low_gain, high_freq, high_gain
         PluginSettings::BinauralDecoder { .. } => 5, // sofa_file, input_channels, enable_optimization, externalization, near_field_strength
-        PluginSettings::Convolution { .. } => 0,     // No adjustable params for now
+        PluginSettings::Convolution { .. } => 2,     // mix, gain_db
         PluginSettings::LoudnessMonitor => 0,        // No parameters
         PluginSettings::SpectrumAnalyzer { .. } => 4, // num_bins, min_freq, max_freq, smoothing
         PluginSettings::Gain { .. } => 1,            // gain_db
