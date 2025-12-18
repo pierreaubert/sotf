@@ -12,6 +12,12 @@ pub struct Card {
     header: Option<AnyElement>,
     content: Option<AnyElement>,
     footer: Option<AnyElement>,
+    /// Custom background color (overrides theme)
+    background: Option<Rgba>,
+    /// Custom header background color (overrides theme)
+    header_background: Option<Rgba>,
+    /// Custom border color (overrides theme)
+    border_color: Option<Rgba>,
     /// Additional styling
     extra_classes: Vec<Box<dyn FnOnce(Div) -> Div>>,
 }
@@ -23,6 +29,9 @@ impl Card {
             header: None,
             content: None,
             footer: None,
+            background: None,
+            header_background: None,
+            border_color: None,
             extra_classes: Vec::new(),
         }
     }
@@ -51,15 +60,37 @@ impl Card {
         self
     }
 
+    /// Set custom background color (overrides theme)
+    pub fn background(mut self, color: Rgba) -> Self {
+        self.background = Some(color);
+        self
+    }
+
+    /// Set custom header background color (overrides theme)
+    pub fn header_background(mut self, color: Rgba) -> Self {
+        self.header_background = Some(color);
+        self
+    }
+
+    /// Set custom border color (overrides theme)
+    pub fn border(mut self, color: Rgba) -> Self {
+        self.border_color = Some(color);
+        self
+    }
+
     /// Build the card into an element with theme
     pub fn build_with_theme(self, theme: &Theme) -> Div {
+        let bg_color = self.background.unwrap_or(theme.surface);
+        let border_color = self.border_color.unwrap_or(theme.border);
+        let header_bg = self.header_background.unwrap_or(theme.muted);
+
         let mut card = div()
             .flex()
             .flex_col()
-            .bg(theme.surface)
+            .bg(bg_color)
             .text_color(theme.text_primary)
             .border_1()
-            .border_color(theme.border)
+            .border_color(border_color)
             .rounded_lg()
             .shadow_md()
             .overflow_hidden();
@@ -75,10 +106,10 @@ impl Card {
                 div()
                     .px_4()
                     .py_3()
-                    .bg(theme.muted)
+                    .bg(header_bg)
                     .text_color(theme.text_primary)
                     .border_b_1()
-                    .border_color(theme.border)
+                    .border_color(border_color)
                     .child(header),
             );
         }
@@ -100,10 +131,10 @@ impl Card {
                 div()
                     .px_4()
                     .py_3()
-                    .bg(theme.muted)
+                    .bg(header_bg)
                     .text_color(theme.text_muted)
                     .border_t_1()
-                    .border_color(theme.border)
+                    .border_color(border_color)
                     .child(footer),
             );
         }
