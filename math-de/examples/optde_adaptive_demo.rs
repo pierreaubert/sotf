@@ -104,7 +104,8 @@ fn main() {
         .build();
 
     println!("Running adaptive DE on Rosenbrock function with progress display...");
-    let result = differential_evolution(&rosenbrock, &bounds, config);
+    let result = differential_evolution(&rosenbrock, &bounds, config)
+        .expect("optimization failed");
 
     println!(
         "Final result: f = {:.6e} at x = [{:.4}, {:.4}]",
@@ -133,6 +134,7 @@ fn run_traditional_de(func: fn(&Array1<f64>) -> f64, bounds: &[(f64, f64)]) -> a
         .build();
 
     differential_evolution(&func, bounds, config)
+        .expect("optimization failed")
 }
 
 fn run_adaptive_de(
@@ -160,4 +162,5 @@ fn run_adaptive_de(
         .build();
 
     differential_evolution(&func, bounds, config)
+        .expect("optimization failed")
 }

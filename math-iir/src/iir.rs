@@ -6,8 +6,14 @@ use ndarray::Array1;
 use std::f64::consts::PI;
 use std::fmt;
 
+use crate::error::IirError;
 use crate::{DEFAULT_Q_HIGH_LOW_PASS, DEFAULT_Q_HIGH_LOW_SHELF, q2bw};
 
+/// Parametric EQ filter chain: a vector of (gain, Biquad) pairs.
+///
+/// Each element is a tuple of:
+/// - `f64`: The linear gain multiplier for this stage
+/// - `Biquad`: The biquad filter for this stage
 pub type Peq = Vec<(f64, Biquad)>;
 
 /// Filter types for biquad filters
@@ -96,6 +102,22 @@ pub struct Biquad {
 
 impl Biquad {
     /// Creates and initializes a new Biquad filter.
+    ///
+    /// This constructor applies default Q values for certain filter types and clamps
+    /// invalid Q values to a minimum of 0.01 for numerical stability.
+    ///
+    /// # Arguments
+    ///
+    /// * `filter_type` - The type of filter to create
+    /// * `freq` - Center/cutoff frequency in Hz
+    /// * `srate` - Sample rate in Hz
+    /// * `q` - Q factor (quality factor). Use 0.0 for default.
+    /// * `db_gain` - Gain in dB (only used for Peak, Lowshelf, Highshelf)
+    ///
+    /// # Panics
+    ///
+    /// This method does not panic but silently clamps invalid parameters.
+    /// Use [`try_new`](Self::try_new) for explicit error handling.
     pub fn new(filter_type: BiquadFilterType, freq: f64, srate: f64, q: f64, db_gain: f64) -> Self {
         let mut biquad = Biquad {
             filter_type,
@@ -144,6 +166,71 @@ impl Biquad {
 
         biquad.compute_coeffs();
         biquad
+    }
+
+    /// Creates a new Biquad filter with validation.
+    ///
+    /// Unlike [`new`](Self::new), this method returns an error for invalid parameters
+    /// instead of silently clamping them.
+    ///
+    /// # Arguments
+    ///
+    /// * `filter_type` - The type of filter to create
+    /// * `freq` - Center/cutoff frequency in Hz (must be > 0 and < Nyquist)
+    /// * `srate` - Sample rate in Hz (must be > 0)
+    /// * `q` - Q factor (must be > 0, or 0.0 for default)
+    /// * `db_gain` - Gain in dB (must be finite)
+    ///
+    /// # Errors
+    ///
+    /// Returns `IirError::InvalidSampleRate` if sample rate is <= 0.
+    /// Returns `IirError::InvalidFrequency` if frequency is <= 0 or >= Nyquist.
+    /// Returns `IirError::InvalidQ` if Q is negative (but not zero, which uses default).
+    /// Returns `IirError::InvalidGain` if gain is not finite.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use autoeq_iir::{Biquad, BiquadFilterType, SRATE};
+    ///
+    /// // Valid filter
+    /// let filter = Biquad::try_new(BiquadFilterType::Peak, 1000.0, SRATE, 2.0, 3.0)
+    ///     .expect("valid parameters");
+    ///
+    /// // Invalid frequency (above Nyquist)
+    /// let result = Biquad::try_new(BiquadFilterType::Peak, 30000.0, SRATE, 2.0, 0.0);
+    /// assert!(result.is_err());
+    /// ```
+    pub fn try_new(
+        filter_type: BiquadFilterType,
+        freq: f64,
+        srate: f64,
+        q: f64,
+        db_gain: f64,
+    ) -> Result<Self, IirError> {
+        // Validate sample rate
+        if srate <= 0.0 || !srate.is_finite() {
+            return Err(IirError::InvalidSampleRate { sample_rate: srate });
+        }
+
+        let nyquist = srate / 2.0;
+
+        // Validate frequency
+        if freq <= 0.0 || freq >= nyquist || !freq.is_finite() {
+            return Err(IirError::InvalidFrequency { freq, nyquist });
+        }
+
+        // Validate Q (0.0 is allowed as it means "use default")
+        if q < 0.0 || (q != 0.0 && !q.is_finite()) {
+            return Err(IirError::InvalidQ { q });
+        }
+
+        // Validate gain
+        if !db_gain.is_finite() {
+            return Err(IirError::InvalidGain { gain_db: db_gain });
+        }
+
+        Ok(Self::new(filter_type, freq, srate, q, db_gain))
     }
 
     fn compute_coeffs(&mut self) {

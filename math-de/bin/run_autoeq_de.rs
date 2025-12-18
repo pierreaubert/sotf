@@ -312,7 +312,13 @@ fn main() {
     let config = builder.build();
     let objective = |x: &Array1<f64>| (function)(x);
 
-    let report = differential_evolution(&objective, &bounds, config);
+    let report = match differential_evolution(&objective, &bounds, config) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("Error: optimization failed: {}", e);
+            process::exit(2);
+        }
+    };
 
     let elapsed = overall_start.elapsed();
     println!("\nOptimization completed in {:.2?}", elapsed);

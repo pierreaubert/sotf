@@ -10,28 +10,40 @@ pub type TestFunction = fn(&Array1<f64>) -> f64;
 /// CSV trace point: (x_vector, f_value, is_improvement)
 pub type TracePoint = (Vec<f64>, f64, bool);
 
-/// Configuration for a benchmark
+/// Configuration for a benchmark run.
 #[derive(Clone, Debug)]
 pub struct BenchmarkConfig {
+    /// Descriptive name for the benchmark.
     pub name: String,
+    /// Name of the test function.
     pub function_name: String,
+    /// Variable bounds as (lower, upper) pairs.
     pub bounds: Vec<(f64, f64)>,
+    /// Expected optimal solution coordinates.
     pub expected_optimum: Vec<f64>,
+    /// Tolerance for objective function value comparison.
     pub fun_tolerance: f64,
+    /// Tolerance for solution position comparison.
     pub position_tolerance: f64,
+    /// Maximum iterations for the benchmark.
     pub maxiter: usize,
+    /// Population size multiplier.
     pub popsize: usize,
+    /// DE strategy to use.
     pub strategy: Strategy,
+    /// Crossover probability.
     pub recombination: f64,
+    /// Random seed for reproducibility.
     pub seed: u64,
 }
 
-/// Function registry mapping names to actual function pointers
+/// Function registry mapping names to actual function pointers.
 pub struct FunctionRegistry {
     functions: HashMap<String, TestFunction>,
 }
 
 impl FunctionRegistry {
+    /// Creates a new registry with all standard test functions.
     pub fn new() -> Self {
         let mut functions = HashMap::new();
 
@@ -239,16 +251,19 @@ impl FunctionRegistry {
         Self { functions }
     }
 
+    /// Gets a test function by name.
     pub fn get(&self, name: &str) -> Option<TestFunction> {
         self.functions.get(name).copied()
     }
 
+    /// Lists all available function names, sorted alphabetically.
     pub fn list_functions(&self) -> Vec<String> {
         let mut names: Vec<_> = self.functions.keys().cloned().collect();
         names.sort();
         names
     }
 
+    /// Returns an iterator over all (name, function) pairs.
     pub fn iter(&self) -> impl Iterator<Item = (&String, &TestFunction)> {
         self.functions.iter()
     }

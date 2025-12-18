@@ -37,7 +37,8 @@ fn main() {
     // Apply nonlinear constraints with penalties
     nlc.apply_to(&mut cfg, 1e3, 1e3);
 
-    let rep = differential_evolution(&himmelblau, &bounds, cfg);
+    let rep = differential_evolution(&himmelblau, &bounds, cfg)
+        .expect("optimization failed");
     println!(
         "success={} message=\"{}\"\nbest f={:.6e}\nbest x={:?}",
         rep.success, rep.message, rep.fun, rep.x

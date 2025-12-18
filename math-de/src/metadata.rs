@@ -21,7 +21,8 @@ mod tests {
         config.recombination = 0.9;
         config.strategy = Strategy::RandToBest1Exp;
 
-        let result = differential_evolution(&rosenbrock, &bounds, config);
+        let result = differential_evolution(&rosenbrock, &bounds, config)
+            .expect("optimization should succeed");
 
         // Rosenbrock function: Global minimum f(x) = 0 at x = (1, 1)
         assert!(result.fun < 1e-3);

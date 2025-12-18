@@ -1,8 +1,38 @@
+//! IIR and FIR filter library for audio processing.
+//!
+//! This crate provides digital filter implementations for audio signal processing,
+//! including biquad IIR filters and FIR filters. The filters are designed for
+//! parametric equalization and audio processing applications.
+//!
+//! # Features
+//!
+//! - **Biquad IIR filters**: Peak, Lowpass, Highpass, Lowshelf, Highshelf, Bandpass, Notch
+//! - **FIR filters**: Windowed sinc filters with various window types
+//! - **Frequency response computation**: For both IIR and FIR filters
+//! - **Multiple output formats**: APO, RME, AU Preset
+//!
+//! # Example
+//!
+//! ```rust
+//! use autoeq_iir::{Biquad, BiquadFilterType, SRATE};
+//!
+//! // Create a peak filter at 1kHz with Q=2 and +3dB gain
+//! let filter = Biquad::new(BiquadFilterType::Peak, 1000.0, SRATE, 2.0, 3.0);
+//!
+//! // Get the frequency response at 1kHz
+//! let response_db = filter.spl(1000.0);
+//! assert!((response_db - 3.0).abs() < 0.1);
+//! ```
 #![doc = include_str!("../README.md")]
+#![warn(missing_docs)]
 
 // Module declarations
+mod error;
 mod fir;
 mod iir;
+
+// Re-export error types
+pub use error::{IirError, Result};
 
 // Re-export IIR types and functions
 pub use iir::{

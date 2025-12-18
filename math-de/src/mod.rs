@@ -1,6 +1,45 @@
+//! Differential Evolution optimization library.
+//!
+//! This crate provides a Rust implementation of the Differential Evolution (DE)
+//! algorithm, a population-based stochastic optimizer for continuous optimization
+//! problems. The implementation is inspired by SciPy's differential_evolution.
+//!
+//! # Features
+//!
+//! - Multiple mutation strategies (Best1, Rand1, CurrentToBest1, etc.)
+//! - Binomial and exponential crossover
+//! - Adaptive parameter control
+//! - Parallel population evaluation
+//! - Constraint handling via penalty methods
+//! - Latin Hypercube initialization
+//!
+//! # Example
+//!
+//! ```rust
+//! use autoeq_de::{differential_evolution, DEConfigBuilder};
+//!
+//! // Minimize the sphere function: f(x) = sum(x_i^2)
+//! let bounds = vec![(-5.0, 5.0), (-5.0, 5.0)];
+//! let config = DEConfigBuilder::new()
+//!     .maxiter(100)
+//!     .seed(42)
+//!     .build();
+//!
+//! let result = differential_evolution(
+//!     &|x| x.iter().map(|&xi| xi * xi).sum(),
+//!     &bounds,
+//!     config,
+//! ).expect("optimization should succeed");
+//!
+//! assert!(result.fun < 1e-6);
+//! ```
 #![doc = include_str!("../README.md")]
 #![doc = include_str!("../REFERENCES.md")]
-#![allow(missing_docs)]
+#![warn(missing_docs)]
+
+pub mod error;
+pub use error::{DEError, Result};
+
 use std::fmt;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -10,32 +49,54 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::time::Instant;
 
+/// Linear penalty stacking utilities for combining multiple constraints.
 pub mod stack_linear_penalty;
 
+/// Integer variable handling for mixed-integer optimization.
 pub mod apply_integrality;
+/// Wrapper Local Search (WLS) application for local refinement.
 pub mod apply_wls;
 
+/// Utilities for selecting distinct random indices from a population.
 pub mod distinct_indices;
+/// Latin Hypercube Sampling initialization strategy.
 pub mod init_latin_hypercube;
+/// Random uniform initialization strategy.
 pub mod init_random;
 
+/// Adaptive mutation strategy with dynamic parameter control.
 pub mod mutant_adaptive;
+/// Best/1 mutation strategy: uses best individual plus one difference vector.
 pub mod mutant_best1;
+/// Best/2 mutation strategy: uses best individual plus two difference vectors.
 pub mod mutant_best2;
+/// Current-to-best/1 mutation: blends current with best individual.
 pub mod mutant_current_to_best1;
+/// Rand/1 mutation strategy: uses random individual plus one difference vector.
 pub mod mutant_rand1;
+/// Rand/2 mutation strategy: uses random individual plus two difference vectors.
 pub mod mutant_rand2;
+/// Rand-to-best/1 mutation: blends random with best individual.
 pub mod mutant_rand_to_best1;
 
+/// Binomial (uniform) crossover implementation.
 pub mod crossover_binomial;
+/// Exponential crossover implementation.
 pub mod crossover_exponential;
 
+/// Main differential evolution algorithm implementation.
 pub mod differential_evolution;
+/// Registry of standard test functions for benchmarking.
 pub mod function_registry;
+/// Internal helper functions for DE implementation.
 pub mod impl_helpers;
+/// Metadata-driven optimization examples and tests.
 pub mod metadata;
+/// Parallel population evaluation support.
 pub mod parallel_eval;
+/// Optimization recording for analysis and debugging.
 pub mod recorder;
+/// Recorded optimization wrapper for testing.
 pub mod run_recorded;
 pub use differential_evolution::differential_evolution;
 pub use parallel_eval::ParallelConfig;
@@ -64,23 +125,39 @@ pub(crate) fn argmin(v: &Array1<f64>) -> (usize, f64) {
     (best_i, best_v)
 }
 
-/// Differential Evolution strategy
+/// Differential Evolution mutation/crossover strategy.
+///
+/// The strategy name follows the pattern `{mutation}{n}{crossover}` where:
+/// - `mutation`: Base vector selection (Best, Rand, CurrentToBest, RandToBest, Adaptive)
+/// - `n`: Number of difference vectors (1 or 2)
+/// - `crossover`: Crossover type (Bin = binomial, Exp = exponential)
 #[derive(Debug, Clone, Copy)]
 pub enum Strategy {
+    /// Best/1/Bin: Best individual + 1 difference vector, binomial crossover
     Best1Bin,
+    /// Best/1/Exp: Best individual + 1 difference vector, exponential crossover
     Best1Exp,
+    /// Rand/1/Bin: Random individual + 1 difference vector, binomial crossover
     Rand1Bin,
+    /// Rand/1/Exp: Random individual + 1 difference vector, exponential crossover
     Rand1Exp,
+    /// Rand/2/Bin: Random individual + 2 difference vectors, binomial crossover
     Rand2Bin,
+    /// Rand/2/Exp: Random individual + 2 difference vectors, exponential crossover
     Rand2Exp,
+    /// Current-to-best/1/Bin: Blend of current and best + 1 diff, binomial crossover
     CurrentToBest1Bin,
+    /// Current-to-best/1/Exp: Blend of current and best + 1 diff, exponential crossover
     CurrentToBest1Exp,
+    /// Best/2/Bin: Best individual + 2 difference vectors, binomial crossover
     Best2Bin,
+    /// Best/2/Exp: Best individual + 2 difference vectors, exponential crossover
     Best2Exp,
+    /// Rand-to-best/1/Bin: Blend of random and best + 1 diff, binomial crossover
     RandToBest1Bin,
+    /// Rand-to-best/1/Exp: Blend of random and best + 1 diff, exponential crossover
     RandToBest1Exp,
-    /// Adaptive mutation based on the SAM approach: dynamic sampling from top w% individuals
-    /// where w decreases linearly from w_max to w_min based on current iteration
+    /// Adaptive mutation with binomial crossover (SAM approach)
     AdaptiveBin,
     /// Adaptive mutation with exponential crossover
     AdaptiveExp,
@@ -88,7 +165,7 @@ pub enum Strategy {
 
 impl FromStr for Strategy {
     type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         let t = s.to_lowercase();
         match t.as_str() {
             "best1bin" | "best1" => Ok(Strategy::Best1Bin),
@@ -130,15 +207,23 @@ pub enum Crossover {
     Exponential,
 }
 
-/// Mutation setting: either a fixed factor, a uniform range (dithering), or adaptive
+/// Mutation setting: either a fixed factor, a uniform range (dithering), or adaptive.
 #[derive(Debug, Clone, Copy)]
 pub enum Mutation {
-    /// Fixed mutation factor F in [0, 2)
+    /// Fixed mutation factor F in [0, 2).
     Factor(f64),
-    /// Dithering range [min, max) with 0 <= min < max <= 2
-    Range { min: f64, max: f64 },
-    /// Adaptive mutation factor using Cauchy distribution with location parameter tracking
-    Adaptive { initial_f: f64 },
+    /// Dithering range [min, max) with 0 <= min < max <= 2.
+    Range {
+        /// Minimum mutation factor.
+        min: f64,
+        /// Maximum mutation factor.
+        max: f64,
+    },
+    /// Adaptive mutation factor using Cauchy distribution.
+    Adaptive {
+        /// Initial mutation factor before adaptation.
+        initial_f: f64,
+    },
 }
 
 impl Default for Mutation {
@@ -166,35 +251,45 @@ impl Mutation {
     }
 }
 
-/// Initialization scheme for the population
+/// Initialization scheme for the population.
 #[derive(Debug, Clone, Copy, Default)]
 pub enum Init {
+    /// Latin Hypercube Sampling for better space coverage.
     #[default]
     LatinHypercube,
+    /// Uniform random initialization.
     Random,
 }
 
-/// Whether best updates during a generation (we use Deferred only)
+/// Whether best updates during a generation (we use Deferred only).
 #[derive(Debug, Clone, Copy, Default)]
 pub enum Updating {
+    /// Deferred update: best is updated after all trials are evaluated.
     #[default]
     Deferred,
 }
 
-/// Linear penalty specification: lb <= A x <= ub (component-wise)
+/// Linear penalty specification: lb <= A x <= ub (component-wise).
 #[derive(Debug, Clone)]
 pub struct LinearPenalty {
+    /// Constraint matrix A (m x n).
     pub a: Array2<f64>,
+    /// Lower bounds vector (m elements).
     pub lb: Array1<f64>,
+    /// Upper bounds vector (m elements).
     pub ub: Array1<f64>,
+    /// Penalty weight for constraint violations.
     pub weight: f64,
 }
 
-/// SciPy-like linear constraint helper: lb <= A x <= ub
+/// SciPy-like linear constraint helper: lb <= A x <= ub.
 #[derive(Debug, Clone)]
 pub struct LinearConstraintHelper {
+    /// Constraint matrix A (m x n).
     pub a: Array2<f64>,
+    /// Lower bounds vector (m elements).
     pub lb: Array1<f64>,
+    /// Upper bounds vector (m elements).
     pub ub: Array1<f64>,
 }
 
@@ -216,11 +311,14 @@ impl LinearConstraintHelper {
     }
 }
 
-/// SciPy-like nonlinear constraint helper: vector-valued fun(x) with lb <= fun(x) <= ub
+/// SciPy-like nonlinear constraint helper: vector-valued fun(x) with lb <= fun(x) <= ub.
 #[derive(Clone)]
 pub struct NonlinearConstraintHelper {
+    /// Vector-valued constraint function.
     pub fun: VectorConstraintFn,
+    /// Lower bounds for each constraint component.
     pub lb: Array1<f64>,
+    /// Upper bounds for each constraint component.
     pub ub: Array1<f64>,
 }
 
@@ -418,46 +516,64 @@ impl Default for AdaptiveConfig {
     }
 }
 
-/// Polishing configuration using NLopt local optimizer within bounds
+/// Polishing configuration using NLopt local optimizer within bounds.
 #[derive(Debug, Clone)]
 pub struct PolishConfig {
+    /// Whether polishing is enabled.
     pub enabled: bool,
-    pub algo: String,   // e.g., "neldermead", "sbplx", "cobyla"
-    pub maxeval: usize, // e.g., 200*n
+    /// Local optimizer algorithm name (e.g., "neldermead", "sbplx", "cobyla").
+    pub algo: String,
+    /// Maximum function evaluations for polishing (e.g., 200*n).
+    pub maxeval: usize,
 }
 
-/// Configuration for the Differential Evolution optimizer
+/// Configuration for the Differential Evolution optimizer.
+///
+/// This struct holds all parameters controlling the DE algorithm behavior,
+/// including population size, mutation/crossover settings, constraints, and
+/// convergence criteria.
 pub struct DEConfig {
+    /// Maximum number of generations (iterations).
     pub maxiter: usize,
-    pub popsize: usize, // total NP = popsize * n_params_free
+    /// Population size multiplier (total NP = popsize * n_params_free).
+    pub popsize: usize,
+    /// Relative tolerance for convergence (population energy std dev).
     pub tol: f64,
+    /// Absolute tolerance for convergence on best fitness.
     pub atol: f64,
+    /// Mutation factor setting.
     pub mutation: Mutation,
-    pub recombination: f64, // CR in [0,1]
+    /// Crossover probability CR in [0, 1].
+    pub recombination: f64,
+    /// Mutation/crossover strategy.
     pub strategy: Strategy,
+    /// Crossover type (binomial or exponential).
     pub crossover: Crossover,
+    /// Population initialization scheme.
     pub init: Init,
+    /// Update timing (deferred).
     pub updating: Updating,
+    /// Optional random seed for reproducibility.
     pub seed: Option<u64>,
-    /// Optional integrality mask; true => variable is integer-constrained
+    /// Optional integrality mask; true => variable is integer-constrained.
     pub integrality: Option<Vec<bool>>,
-    /// Optional initial guess used to replace the best member after init
+    /// Optional initial guess used to replace the best member after init.
     pub x0: Option<Array1<f64>>,
-    /// Print objective best at each iteration
+    /// Print objective best at each iteration.
     pub disp: bool,
-    /// Optional per-iteration callback (may stop early)
+    /// Optional per-iteration callback (may stop early).
     pub callback: Option<CallbackFn>,
-    /// Penalty-based inequality constraints: fc(x) <= 0
+    /// Penalty-based inequality constraints: fc(x) <= 0.
     pub penalty_ineq: Vec<PenaltyTuple>,
-    /// Penalty-based equality constraints: h(x) = 0
+    /// Penalty-based equality constraints: h(x) = 0.
     pub penalty_eq: Vec<PenaltyTuple>,
-    /// Optional linear constraints treated by penalty: lb <= A x <= ub (component-wise)
+    /// Optional linear constraints treated by penalty: lb <= A x <= ub.
     pub linear_penalty: Option<LinearPenalty>,
-    /// Polishing configuration (optional)
+    /// Polishing configuration (optional).
     pub polish: Option<PolishConfig>,
-    /// Adaptive differential evolution configuration
+    /// Adaptive differential evolution configuration.
     pub adaptive: AdaptiveConfig,
-    /// Parallel evaluation configuration
+    /// Parallel evaluation configuration.
     pub parallel: parallel_eval::ParallelConfig,
 }
 
@@ -490,6 +606,21 @@ impl Default for DEConfig {
 }
 
 /// Fluent builder for `DEConfig` for ergonomic configuration.
+///
+/// # Example
+///
+/// ```rust
+/// use autoeq_de::{DEConfigBuilder, Strategy, Mutation};
+///
+/// let config = DEConfigBuilder::new()
+///     .maxiter(500)
+///     .popsize(20)
+///     .strategy(Strategy::Best1Bin)
+///     .mutation(Mutation::Factor(0.8))
+///     .recombination(0.9)
+///     .seed(42)
+///     .build();
+/// ```
 pub struct DEConfigBuilder {
     cfg: DEConfig,
 }
@@ -500,67 +631,83 @@ impl Default for DEConfigBuilder {
 }
 
 impl DEConfigBuilder {
+    /// Creates a new builder with default configuration.
     pub fn new() -> Self {
         Self {
             cfg: DEConfig::default(),
         }
     }
+    /// Sets the maximum number of iterations.
     pub fn maxiter(mut self, v: usize) -> Self {
         self.cfg.maxiter = v;
         self
     }
+    /// Sets the population size multiplier.
     pub fn popsize(mut self, v: usize) -> Self {
         self.cfg.popsize = v;
         self
     }
+    /// Sets the relative convergence tolerance.
     pub fn tol(mut self, v: f64) -> Self {
         self.cfg.tol = v;
         self
     }
+    /// Sets the absolute convergence tolerance.
     pub fn atol(mut self, v: f64) -> Self {
         self.cfg.atol = v;
         self
     }
+    /// Sets the mutation factor configuration.
     pub fn mutation(mut self, v: Mutation) -> Self {
         self.cfg.mutation = v;
         self
     }
+    /// Sets the crossover probability (CR).
     pub fn recombination(mut self, v: f64) -> Self {
         self.cfg.recombination = v;
         self
     }
+    /// Sets the mutation/crossover strategy.
     pub fn strategy(mut self, v: Strategy) -> Self {
         self.cfg.strategy = v;
         self
     }
+    /// Sets the crossover type.
     pub fn crossover(mut self, v: Crossover) -> Self {
         self.cfg.crossover = v;
         self
     }
+    /// Sets the population initialization scheme.
     pub fn init(mut self, v: Init) -> Self {
         self.cfg.init = v;
         self
     }
+    /// Sets the random seed for reproducibility.
     pub fn seed(mut self, v: u64) -> Self {
         self.cfg.seed = Some(v);
         self
     }
+    /// Sets the integrality mask for mixed-integer optimization.
     pub fn integrality(mut self, v: Vec<bool>) -> Self {
         self.cfg.integrality = Some(v);
         self
     }
+    /// Sets an initial guess to seed the population.
     pub fn x0(mut self, v: Array1<f64>) -> Self {
         self.cfg.x0 = Some(v);
         self
     }
+    /// Enables/disables progress display.
     pub fn disp(mut self, v: bool) -> Self {
         self.cfg.disp = v;
         self
     }
+    /// Sets a per-iteration callback function.
     pub fn callback(mut self, cb: Box<dyn FnMut(&DEIntermediate) -> CallbackAction>) -> Self {
         self.cfg.callback = Some(cb);
         self
     }
+    /// Adds an inequality constraint penalty function.
     pub fn add_penalty_ineq<FN>(mut self, f: FN, w: f64) -> Self
     where
         FN: Fn(&Array1<f64>) -> f64 + Send + Sync + 'static,
@@ -568,6 +715,7 @@ impl DEConfigBuilder {
         self.cfg.penalty_ineq.push((Arc::new(f), w));
         self
     }
+    /// Adds an equality constraint penalty function.
     pub fn add_penalty_eq<FN>(mut self, f: FN, w: f64) -> Self
     where
         FN: Fn(&Array1<f64>) -> f64 + Send + Sync + 'static,
@@ -575,58 +723,78 @@ impl DEConfigBuilder {
         self.cfg.penalty_eq.push((Arc::new(f), w));
         self
     }
+    /// Sets a linear constraint penalty.
     pub fn linear_penalty(mut self, lp: LinearPenalty) -> Self {
         self.cfg.linear_penalty = Some(lp);
         self
     }
+    /// Sets the polishing configuration.
     pub fn polish(mut self, pol: PolishConfig) -> Self {
         self.cfg.polish = Some(pol);
         self
     }
+    /// Sets the adaptive DE configuration.
     pub fn adaptive(mut self, adaptive: AdaptiveConfig) -> Self {
         self.cfg.adaptive = adaptive;
         self
     }
+    /// Enables/disables adaptive mutation.
     pub fn enable_adaptive_mutation(mut self, enable: bool) -> Self {
         self.cfg.adaptive.adaptive_mutation = enable;
         self
     }
+    /// Enables/disables Wrapper Local Search.
     pub fn enable_wls(mut self, enable: bool) -> Self {
         self.cfg.adaptive.wls_enabled = enable;
         self
     }
+    /// Sets the adaptive weight bounds.
     pub fn adaptive_weights(mut self, w_max: f64, w_min: f64) -> Self {
         self.cfg.adaptive.w_max = w_max;
         self.cfg.adaptive.w_min = w_min;
         self
     }
+    /// Sets the parallel evaluation configuration.
     pub fn parallel(mut self, parallel: parallel_eval::ParallelConfig) -> Self {
         self.cfg.parallel = parallel;
         self
     }
+    /// Enables/disables parallel evaluation.
     pub fn enable_parallel(mut self, enable: bool) -> Self {
         self.cfg.parallel.enabled = enable;
         self
     }
+    /// Sets the number of parallel threads.
     pub fn parallel_threads(mut self, num_threads: usize) -> Self {
         self.cfg.parallel.num_threads = Some(num_threads);
         self
     }
+    /// Builds and returns the configuration.
     pub fn build(self) -> DEConfig {
         self.cfg
     }
 }
 
-/// Result/Report of a DE optimization run
+/// Result/report of a DE optimization run.
+///
+/// Contains the optimal solution, convergence status, and statistics.
 #[derive(Clone)]
 pub struct DEReport {
+    /// The optimal solution vector.
     pub x: Array1<f64>,
+    /// The objective function value at the optimal solution.
     pub fun: f64,
+    /// Whether the optimization converged successfully.
     pub success: bool,
+    /// Human-readable status message.
     pub message: String,
+    /// Number of iterations (generations) performed.
     pub nit: usize,
+    /// Number of function evaluations performed.
     pub nfev: usize,
+    /// Final population matrix (NP x n).
     pub population: Array2<f64>,
+    /// Fitness values for each population member.
     pub population_energies: Array1<f64>,
 }
 
@@ -651,21 +819,31 @@ impl fmt::Debug for DEReport {
     }
 }
 
-/// Information passed to callback after each generation
+/// Information passed to callback after each generation.
 pub struct DEIntermediate {
+    /// Current best solution vector.
     pub x: Array1<f64>,
+    /// Current best objective value.
     pub fun: f64,
-    pub convergence: f64, // measured as std(pop_f)
+    /// Convergence measure (population fitness std dev).
+    pub convergence: f64,
+    /// Current iteration number.
     pub iter: usize,
 }
 
-/// Action returned by callback
+/// Action returned by callback to control optimization flow.
 pub enum CallbackAction {
+    /// Continue optimization.
     Continue,
+    /// Stop optimization early.
     Stop,
 }
 
-/// Differential Evolution optimizer
+/// Differential Evolution optimizer.
+///
+/// A population-based stochastic optimizer for continuous functions.
+/// Use [`DifferentialEvolution::new`] to create an instance, configure
+/// with [`config_mut`](Self::config_mut), then call [`solve`](Self::solve).
 pub struct DifferentialEvolution<'a, F>
 where
     F: Fn(&Array1<f64>) -> f64 + Sync,
@@ -680,15 +858,37 @@ impl<'a, F> DifferentialEvolution<'a, F>
 where
     F: Fn(&Array1<f64>) -> f64 + Sync,
 {
-    /// Create a new DE optimizer with objective `func` and bounds [lower, upper]
-    pub fn new(func: &'a F, lower: Array1<f64>, upper: Array1<f64>) -> Self {
-        assert_eq!(lower.len(), upper.len(), "lower/upper size mismatch");
-        Self {
+    /// Creates a new DE optimizer with objective `func` and bounds [lower, upper].
+    ///
+    /// # Errors
+    ///
+    /// Returns `DEError::BoundsMismatch` if `lower` and `upper` have different lengths.
+    /// Returns `DEError::InvalidBounds` if any lower bound exceeds its corresponding upper bound.
+    pub fn new(func: &'a F, lower: Array1<f64>, upper: Array1<f64>) -> Result<Self> {
+        if lower.len() != upper.len() {
+            return Err(DEError::BoundsMismatch {
+                lower_len: lower.len(),
+                upper_len: upper.len(),
+            });
+        }
+
+        // Validate that lower <= upper for all dimensions
+        for i in 0..lower.len() {
+            if lower[i] > upper[i] {
+                return Err(DEError::InvalidBounds {
+                    index: i,
+                    lower: lower[i],
+                    upper: upper[i],
+                });
+            }
+        }
+
+        Ok(Self {
             func,
             lower,
             upper,
             config: DEConfig::default(),
-        }
+        })
     }
 
     /// Mutable access to configuration

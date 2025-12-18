@@ -90,10 +90,13 @@ where
     trials.par_iter().map(|trial| eval_fn(trial)).collect()
 }
 
-/// Structure to batch evaluate individuals with their indices
+/// Structure to batch evaluate individuals with their indices.
 pub struct IndexedEvaluation {
+    /// Index of the individual in the population.
     pub index: usize,
+    /// The individual's solution vector.
     pub individual: Array1<f64>,
+    /// The computed fitness value.
     pub fitness: f64,
 }
 

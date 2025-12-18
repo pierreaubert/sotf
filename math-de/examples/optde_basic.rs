@@ -57,7 +57,8 @@ fn main() {
         maxeval: 400,
     });
 
-    let report = differential_evolution(&ackley, &bounds, cfg);
+    let report = differential_evolution(&ackley, &bounds, cfg)
+        .expect("optimization failed");
 
     println!(
         "success={} message=\"{}\"\nbest f={:.6e}\nbest x={:?}",

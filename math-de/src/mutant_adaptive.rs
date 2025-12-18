@@ -74,7 +74,8 @@ mod tests {
             .adaptive(adaptive_config)
             .build();
 
-        let result = differential_evolution(&quadratic, &bounds, config);
+        let result = differential_evolution(&quadratic, &bounds, config)
+            .expect("optimization should succeed");
 
         // Should converge to global minimum at (0, 0)
         assert!(
@@ -114,7 +115,8 @@ mod tests {
             .adaptive(adaptive_config)
             .build();
 
-        let result = differential_evolution(&quadratic, &bounds, config);
+        let result = differential_evolution(&quadratic, &bounds, config)
+            .expect("optimization should succeed");
 
         // Should converge even better with WLS
         assert!(

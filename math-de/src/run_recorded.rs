@@ -38,7 +38,7 @@ where
     };
 
     // Run differential evolution with the wrapped function
-    let result = differential_evolution(&recorded_func, bounds, config);
+    let result = differential_evolution(&recorded_func, bounds, config)?;
 
     // Finalize recording and get CSV file paths
     let csv_files = recorder.finalize()?;
