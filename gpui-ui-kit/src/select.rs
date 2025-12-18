@@ -351,14 +351,13 @@ impl Select {
                         }
                         "enter" if currently_open => {
                             // Select highlighted option
-                            if let Some(idx) = current_highlight {
-                                if idx < options_clone.len() && !options_clone[idx].disabled {
+                            if let Some(idx) = current_highlight
+                                && idx < options_clone.len() && !options_clone[idx].disabled {
                                     if let Some(ref change_handler) = change_rc {
                                         change_handler(&options_clone[idx].value, window, cx);
                                     }
                                     toggle_rc(false, window, cx);
                                 }
-                            }
                         }
                         "down" | "up" if currently_open => {
                             // Navigate options

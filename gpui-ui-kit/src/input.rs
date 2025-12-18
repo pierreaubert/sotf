@@ -132,6 +132,7 @@ pub struct Input {
     on_edit_start: Option<Box<dyn Fn(&mut Window, &mut App) + 'static>>,
     on_edit_end: Option<Box<dyn Fn(Option<String>, &mut Window, &mut App) + 'static>>,
     on_text_change: Option<Box<dyn Fn(String, &mut Window, &mut App) + 'static>>,
+    focus_handle: Option<FocusHandle>,
 }
 
 impl Input {
@@ -160,7 +161,14 @@ impl Input {
             on_edit_start: None,
             on_edit_end: None,
             on_text_change: None,
+            focus_handle: None,
         }
+    }
+
+    /// Set the focus handle
+    pub fn focus_handle(mut self, handle: FocusHandle) -> Self {
+        self.focus_handle = Some(handle);
+        self
     }
 
     /// Set the input value
@@ -315,6 +323,9 @@ impl RenderOnce for Input {
         let text_selected = self.text_selected;
         let current_value = self.value.clone();
         let edit_text_clone = self.edit_text.clone();
+        
+        // Use provided focus handle or create a new one (unstable across renders)
+        let focus_handle = self.focus_handle.unwrap_or_else(|| cx.focus_handle());
 
         let border_color = if has_error {
             theme.error
@@ -343,6 +354,7 @@ impl RenderOnce for Input {
         // Input wrapper
         let mut input_wrapper = div()
             .id(self.id.clone())
+            .track_focus(&focus_handle)
             .flex()
             .items_center()
             .gap_2()
@@ -394,10 +406,12 @@ impl RenderOnce for Input {
 
         // Add click handler to start editing
         if !disabled && !readonly && !editing {
+            let focus_handle = focus_handle.clone();
             if let Some(ref handler_rc) = on_edit_start_rc {
                 let handler = handler_rc.clone();
                 input_wrapper =
                     input_wrapper.on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                        window.focus(&focus_handle, cx);
                         handler(window, cx);
                     });
             }
@@ -412,6 +426,9 @@ impl RenderOnce for Input {
 
             input_wrapper = input_wrapper.on_key_down(move |event, window, cx| {
                 if is_editing {
+                    // Stop propagation to prevent other handlers from firing
+                    cx.stop_propagation();
+
                     // Editing mode keyboard handling
                     match event.keystroke.key.as_str() {
                         "enter" => {
@@ -430,30 +447,38 @@ impl RenderOnce for Input {
                                 handler(None, window, cx);
                             }
                         }
-                        _ => {
-                            // Handle text input
+                        "backspace" => {
+                            // Handle backspace - remove last character (Unicode-safe)
                             if let Some(ref handler) = on_text_change_key {
                                 let current = edit_text_for_key
                                     .as_ref()
                                     .map(|s| s.to_string())
                                     .unwrap_or_default();
 
-                                // Handle backspace
-                                let new_text = if event.keystroke.key == "backspace" {
-                                    if current.is_empty() {
-                                        current
-                                    } else {
-                                        current[..current.len() - 1].to_string()
-                                    }
-                                } else if event.keystroke.key.len() == 1 {
-                                    // Single character - append
-                                    let ch = event.keystroke.key.chars().next().unwrap();
-                                    format!("{}{}", current, ch)
-                                } else {
+                                let new_text = if current.is_empty() {
                                     current
+                                } else {
+                                    // Pop last char (Unicode-safe)
+                                    let mut chars: Vec<char> = current.chars().collect();
+                                    chars.pop();
+                                    chars.into_iter().collect()
                                 };
-
                                 handler(new_text, window, cx);
+                            }
+                        }
+                        _ => {
+                            // Handle text input using key_char for IME support
+                            if let Some(ref handler) = on_text_change_key {
+                                // Use key_char for proper IME/international text support
+                                if let Some(char_text) = event.keystroke.key_char.as_ref() {
+                                    let current = edit_text_for_key
+                                        .as_ref()
+                                        .map(|s| s.to_string())
+                                        .unwrap_or_default();
+
+                                    let new_text = format!("{}{}", current, char_text);
+                                    handler(new_text, window, cx);
+                                }
                             }
                         }
                     }

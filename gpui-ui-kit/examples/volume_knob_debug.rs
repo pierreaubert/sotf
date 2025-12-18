@@ -530,6 +530,6 @@ fn main() {
             .scrollable(true)
             .with_theme(true)
             .with_i18n(true),
-        |cx| cx.new(|cx| VolumeKnobDebug::new(cx)),
+        |cx| cx.new(VolumeKnobDebug::new),
     );
 }

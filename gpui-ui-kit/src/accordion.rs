@@ -264,9 +264,7 @@ impl Accordion {
             // Expand/collapse indicator (different for vertical vs horizontal)
             let indicator = if is_vertical {
                 if is_expanded { "▼" } else { "▶" }
-            } else {
-                if is_expanded { "▼" } else { "▲" }
-            };
+            } else if is_expanded { "▼" } else { "▲" };
             header = header.child(
                 div()
                     .text_xs()
@@ -277,20 +275,17 @@ impl Accordion {
             item_wrapper = item_wrapper.child(header);
 
             // Content (only if expanded)
-            if is_expanded {
-                if let Some(content) = item.content {
-                    let mut content_div = div().px_4().py_3().bg(theme.content_bg);
-
-                    // Add border based on orientation
-                    content_div = if is_vertical {
-                        content_div.border_t_1().border_color(theme.border)
-                    } else {
-                        content_div.border_t_1().border_color(theme.border)
-                    };
+            if is_expanded
+                && let Some(content) = item.content {
+                    let content_div = div()
+                        .px_4()
+                        .py_3()
+                        .bg(theme.content_bg)
+                        .border_t_1()
+                        .border_color(theme.border);
 
                     item_wrapper = item_wrapper.child(content_div.child(content));
                 }
-            }
 
             container = container.child(item_wrapper);
         }
@@ -381,7 +376,7 @@ impl Accordion {
                 }
             } else {
                 // Show first character only when closed
-                let label_text = if item.title.len() > 0 {
+                let label_text = if !item.title.is_empty() {
                     item.title.chars().next().unwrap().to_string()
                 } else {
                     String::from("?")
@@ -408,8 +403,8 @@ impl Accordion {
         for item in items.into_iter() {
             let is_expanded = expanded.contains(&item.id);
 
-            if is_expanded {
-                if let Some(content) = item.content {
+            if is_expanded
+                && let Some(content) = item.content {
                     let content_div = div()
                         .flex_1()
                         .px_4()
@@ -421,7 +416,6 @@ impl Accordion {
 
                     content_container = content_container.child(content_div);
                 }
-            }
         }
 
         container = container.child(content_container);

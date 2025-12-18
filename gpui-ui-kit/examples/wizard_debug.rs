@@ -776,6 +776,6 @@ fn main() {
             .scrollable(true)
             .with_theme(true)
             .with_i18n(true),
-        |cx| cx.new(|cx| WizardDebug::new(cx)),
+        |cx| cx.new(WizardDebug::new),
     );
 }

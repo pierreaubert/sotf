@@ -3,6 +3,11 @@
 //! Inspired by adabraka-ui patterns but compatible with zed's gpui version.
 //! Provides reusable, composable UI components with consistent styling.
 
+// Allow complex callback types - common in UI code
+#![allow(clippy::type_complexity)]
+// Allow to_* methods that take self by reference - matches GPUI patterns
+#![allow(clippy::wrong_self_convention)]
+
 // Application templates
 #[path = "../src-app/mod.rs"]
 pub mod app;

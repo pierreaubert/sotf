@@ -606,8 +606,8 @@ impl RenderOnce for NumberInput {
         input_row = input_row.child(inc_button);
 
         // Scroll wheel on the whole input
-        if !disabled {
-            if let Some(ref handler_rc) = on_change_rc {
+        if !disabled
+            && let Some(ref handler_rc) = on_change_rc {
                 let handler_scroll = handler_rc.clone();
                 input_row = input_row.on_scroll_wheel(move |event, window, cx| {
                     let delta = event.delta.pixel_delta(px(20.0)).y;
@@ -617,7 +617,6 @@ impl RenderOnce for NumberInput {
                     handler_scroll(new_value, window, cx);
                 });
             }
-        }
 
         container.child(input_row)
     }

@@ -29,3 +29,7 @@ path = "examples/showcase.rs"
 [[example]]
 name = "select_debug"
 path = "examples/select_debug.rs"
+
+[[example]]
+name = "input_debug"
+path = "examples/input_debug.rs"

@@ -280,8 +280,8 @@ impl Toggle {
         track = track.child(knob);
 
         // Label first if selected (for row layout)
-        if let Some(label) = &self.label {
-            if selected {
+        if let Some(label) = &self.label
+            && selected {
                 let label_el = match self.size {
                     ToggleSize::Sm => div().text_xs(),
                     ToggleSize::Md => div().text_sm(),
@@ -294,13 +294,12 @@ impl Toggle {
                         .child(label.clone()),
                 );
             }
-        }
 
         container = container.child(track);
 
         // Label after track if not selected
-        if let Some(label) = &self.label {
-            if !selected {
+        if let Some(label) = &self.label
+            && !selected {
                 let label_el = match self.size {
                     ToggleSize::Sm => div().text_xs(),
                     ToggleSize::Md => div().text_sm(),
@@ -308,11 +307,10 @@ impl Toggle {
                 };
                 container = container.child(label_el.text_color(theme.label).child(label.clone()));
             }
-        }
 
         // Click and keyboard handlers
-        if !self.disabled {
-            if let Some(handler) = self.on_change {
+        if !self.disabled
+            && let Some(handler) = self.on_change {
                 let handler_rc = std::rc::Rc::new(handler);
                 let new_checked = !checked;
 
@@ -332,7 +330,6 @@ impl Toggle {
                     });
                 }
             }
-        }
 
         container
     }
@@ -437,8 +434,8 @@ impl Toggle {
         container = container.child(switch);
 
         // Click and keyboard handlers
-        if !self.disabled {
-            if let Some(handler) = self.on_change {
+        if !self.disabled
+            && let Some(handler) = self.on_change {
                 let handler_rc = std::rc::Rc::new(handler);
                 let new_checked = !checked;
 
@@ -458,7 +455,6 @@ impl Toggle {
                     });
                 }
             }
-        }
 
         container
     }

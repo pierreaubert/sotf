@@ -175,8 +175,8 @@ impl Dialog {
             .bg(theme.backdrop);
 
         // Handle backdrop click
-        if close_on_backdrop {
-            if let Some(ref handler) = on_close {
+        if close_on_backdrop
+            && let Some(ref handler) = on_close {
                 let handler: *const dyn Fn(&mut Window, &mut App) = handler.as_ref();
                 backdrop = backdrop.on_mouse_down(MouseButton::Left, move |_event, window, cx| {
                     // Safety: handler is valid for the lifetime of the dialog
@@ -185,7 +185,6 @@ impl Dialog {
                     }
                 });
             }
-        }
 
         // Dialog container
         let mut dialog = div()
@@ -228,8 +227,8 @@ impl Dialog {
                 header = header.child(div()); // Spacer
             }
 
-            if self.show_close_button {
-                if let Some(ref handler) = on_close {
+            if self.show_close_button
+                && let Some(ref handler) = on_close {
                     let handler: *const dyn Fn(&mut Window, &mut App) = handler.as_ref();
                     let close_color = theme.close;
                     let close_hover = theme.close_hover;
@@ -249,7 +248,6 @@ impl Dialog {
                             .child("×"),
                     );
                 }
-            }
 
             dialog = dialog.child(header);
         }

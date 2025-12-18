@@ -521,6 +521,6 @@ fn main() {
             .scrollable(true)
             .with_theme(true)
             .with_i18n(true),
-        |cx| cx.new(|cx| Showcase::new(cx)),
+        |cx| cx.new(Showcase::new),
     );
 }

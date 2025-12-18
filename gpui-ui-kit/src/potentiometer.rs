@@ -408,9 +408,8 @@ impl Potentiometer {
             format!("{:.0}", pct)
         } else if unit == "Hz" {
             format!("{:.0}", value)
-        } else if unit.is_empty() {
-            format!("{:.1}", value)
         } else {
+            // Default: show one decimal place
             format!("{:.1}", value)
         }
     }
@@ -492,10 +491,8 @@ impl RenderOnce for Potentiometer {
         } else {
             theme.text_primary
         };
-        // For Lg size, always use accent color for better visibility
-        let indicator_color = if matches!(self.size, PotentiometerSize::Lg) {
-            theme.accent
-        } else if selected {
+        // For Lg size or when selected, use accent color for better visibility
+        let indicator_color = if matches!(self.size, PotentiometerSize::Lg) || selected {
             theme.accent
         } else {
             theme.text_muted

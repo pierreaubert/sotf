@@ -379,6 +379,7 @@ pub struct AutoEqForm {
     show_eq_design: bool,
     show_optimization_tuning: bool,
     theme: Option<AutoEqFormTheme>,
+    allowed_opt_modes: Option<Vec<String>>,
 
     // EQ Design callbacks
     on_opt_mode_change: Option<StringCallback>,
@@ -432,6 +433,7 @@ impl AutoEqForm {
             show_eq_design: true,
             show_optimization_tuning: true,
             theme: None,
+            allowed_opt_modes: None,
             on_opt_mode_change: None,
             on_opt_mode_toggle: None,
             on_fir_taps_change: None,
@@ -507,6 +509,12 @@ impl AutoEqForm {
     /// Set theme
     pub fn theme(mut self, theme: AutoEqFormTheme) -> Self {
         self.theme = Some(theme);
+        self
+    }
+
+    /// Set allowed optimization modes (e.g., vec!["iir".to_string(), "fir".to_string()])
+    pub fn allowed_opt_modes(mut self, modes: Vec<String>) -> Self {
+        self.allowed_opt_modes = Some(modes);
         self
     }
 
@@ -1002,6 +1010,13 @@ impl RenderOnce for AutoEqForm {
             // EQ Mode dropdown
             let opt_mode_options: Vec<SelectOption> = OPT_MODE_OPTIONS
                 .iter()
+                .filter(|(val, _)| {
+                    if let Some(allowed) = &self.allowed_opt_modes {
+                        allowed.contains(&val.to_string())
+                    } else {
+                        true
+                    }
+                })
                 .map(|(val, lbl)| SelectOption::new(*val, *lbl))
                 .collect();
 

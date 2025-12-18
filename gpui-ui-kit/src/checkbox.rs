@@ -205,8 +205,8 @@ impl Checkbox {
         }
 
         // Event handlers
-        if !self.disabled {
-            if let Some(handler) = self.on_change {
+        if !self.disabled
+            && let Some(handler) = self.on_change {
                 let handler_rc = std::rc::Rc::new(handler);
                 let new_checked = !checked;
 
@@ -227,7 +227,6 @@ impl Checkbox {
                     }
                 });
             }
-        }
 
         container
     }

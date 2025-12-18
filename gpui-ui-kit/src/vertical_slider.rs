@@ -133,7 +133,8 @@ impl VerticalSliderSize {
 /// Information about a tick mark
 #[derive(Debug, Clone)]
 struct TickMark {
-    /// The actual value at this tick
+    /// The actual value at this tick (stored for potential debugging/future use)
+    #[allow(dead_code)]
     value: f64,
     /// Normalized position (0.0 = bottom/min, 1.0 = top/max)
     normalized_pos: f64,
@@ -159,9 +160,8 @@ fn format_value_abbrev(value: f64) -> String {
         } else {
             format!("{}{:.1}k", sign, k_value)
         }
-    } else if abs_value >= 100.0 {
-        format!("{}{}", sign, abs_value.round() as i32)
     } else if abs_value >= 10.0 {
+        // For values >= 10, show as integer
         format!("{}{}", sign, abs_value.round() as i32)
     } else if abs_value >= 1.0 {
         // Show one decimal if needed
@@ -788,8 +788,8 @@ impl RenderOnce for VerticalSlider {
             }
 
             // Keyboard navigation when selected
-            if selected {
-                if let Some(ref handler_rc) = on_change_rc {
+            if selected
+                && let Some(ref handler_rc) = on_change_rc {
                     let handler_key = handler_rc.clone();
                     let reset_key = on_reset_rc.clone();
                     container = container.on_key_down(move |event, window, cx| {
@@ -822,7 +822,6 @@ impl RenderOnce for VerticalSlider {
                         }
                     });
                 }
-            }
         }
 
         // Label with keyboard shortcut
