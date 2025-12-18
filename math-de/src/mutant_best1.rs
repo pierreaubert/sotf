@@ -1,4 +1,4 @@
-use ndarray::{Array1, Array2};
+use ndarray::{Array1, Array2, Zip};
 use rand::Rng;
 
 use crate::distinct_indices::distinct_indices;
@@ -14,5 +14,9 @@ pub(crate) fn mutant_best1<R: Rng + ?Sized>(
     let idxs = distinct_indices(i, 2, pop.nrows(), rng);
     let r0 = idxs[0];
     let r1 = idxs[1];
-    &pop.row(best_idx).to_owned() + &(pop.row(r0).to_owned() - pop.row(r1).to_owned()) * f
+
+    Zip::from(pop.row(best_idx))
+        .and(pop.row(r0))
+        .and(pop.row(r1))
+        .map_collect(|&best, &x0, &x1| best + f * (x0 - x1))
 }

@@ -1,6 +1,6 @@
 [package]
 name = "autoeq-de"
-version = "0.2.52"
+version = "0.2.53"
 description = "Non linear optimisation library with own DE solvers and interface to NLOpt and MetaHeuristics"
 edition = { workspace = true }
 repository = { workspace = true }

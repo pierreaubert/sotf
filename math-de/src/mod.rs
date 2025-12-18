@@ -868,7 +868,7 @@ where
         let t_eval0 = Instant::now();
         let mut energies = parallel_eval::evaluate_population_parallel(
             &eval_pop,
-            energy_fn,
+            energy_fn.clone(),
             &self.config.parallel,
         );
         let t_eval_init = t_eval0.elapsed();
@@ -983,7 +983,7 @@ where
 
             // Parallelize trial generation using rayon
             use rayon::prelude::*;
-            let trial_data: Vec<(Array1<f64>, f64, f64)> = (0..npop)
+            let (trials, trial_params): (Vec<_>, Vec<_>) = (0..npop)
                 .into_par_iter()
                 .map(|i| {
                     // Create thread-local RNG from base seed + iteration + individual index
@@ -1148,68 +1148,14 @@ where
                     }
 
                     // Return trial and parameters
-                    (trial_clipped, f, cr)
+                    (trial_clipped, (f, cr))
                 })
-                .collect();
-
-            // Unpack trials and parameters
-            let mut trials = Vec::with_capacity(npop);
-            let mut trial_params = Vec::with_capacity(npop);
-            for (trial, f, cr) in trial_data {
-                trials.push(trial);
-                trial_params.push((f, cr));
-            }
-            // Evaluate all trials including penalties, possibly in parallel
-            let func_ref = self.func;
-            let penalty_ineq_vec: Vec<PenaltyTuple> = self
-                .config
-                .penalty_ineq
-                .iter()
-                .map(|(f, w)| (f.clone(), *w))
-                .collect();
-            let penalty_eq_vec: Vec<PenaltyTuple> = self
-                .config
-                .penalty_eq
-                .iter()
-                .map(|(f, w)| (f.clone(), *w))
-                .collect();
-            let linear_penalty = self.config.linear_penalty.clone();
-
-            let energy_fn_loop = Arc::new(move |x: &Array1<f64>| -> f64 {
-                let base = (func_ref)(x);
-                let mut p = 0.0;
-                for (f, w) in &penalty_ineq_vec {
-                    let v = f(x);
-                    let viol = v.max(0.0);
-                    p += w * viol * viol;
-                }
-                for (h, w) in &penalty_eq_vec {
-                    let v = h(x);
-                    p += w * v * v;
-                }
-                if let Some(ref lp) = linear_penalty {
-                    let ax = lp.a.dot(&x.view());
-                    for i in 0..ax.len() {
-                        let v = ax[i];
-                        let lo = lp.lb[i];
-                        let hi = lp.ub[i];
-                        if v < lo {
-                            let d = lo - v;
-                            p += lp.weight * d * d;
-                        }
-                        if v > hi {
-                            let d = v - hi;
-                            p += lp.weight * d * d;
-                        }
-                    }
-                }
-                base + p
-            });
+                .unzip();
 
             let t_build = t_build0.elapsed();
             let t_eval0 = Instant::now();
             let trial_energies =
-                evaluate_trials_parallel(trials.clone(), energy_fn_loop, &self.config.parallel);
+                evaluate_trials_parallel(&trials, energy_fn.clone(), &self.config.parallel);
             let t_eval = t_eval0.elapsed();
             nfev += npop;
 

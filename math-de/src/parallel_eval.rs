@@ -74,7 +74,7 @@ where
 /// # Returns
 /// Vector of fitness values for each trial
 pub fn evaluate_trials_parallel<F>(
-    trials: Vec<Array1<f64>>,
+    trials: &[Array1<f64>],
     eval_fn: Arc<F>,
     config: &ParallelConfig,
 ) -> Vec<f64>
