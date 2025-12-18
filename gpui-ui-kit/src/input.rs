@@ -33,7 +33,23 @@ use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::*;
 use gpui::*;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
+
+// Thread-local registry for focus handles, keyed by element ID.
+// This ensures the same focus handle is reused across renders for Input components
+// that don't provide their own focus handle. Without this, focus would be lost
+// on every re-render since Input is a RenderOnce component.
+thread_local! {
+    static FOCUS_HANDLES: RefCell<HashMap<ElementId, FocusHandle>> = RefCell::new(HashMap::new());
+}
+
+// Thread-local registry for edit state, keyed by element ID.
+// This ensures edit state (cursor position, current text, selection) persists
+// across renders. Without this, every re-render would reset the editing state.
+thread_local! {
+    static EDIT_STATES: RefCell<HashMap<ElementId, Rc<RefCell<EditState>>>> = RefCell::new(HashMap::new());
+}
 
 /// Theme colors for input styling
 #[derive(Debug, Clone)]
@@ -272,8 +288,6 @@ pub struct Input {
     text_color: Option<Rgba>,
     border_color: Option<Rgba>,
     placeholder_color: Option<Rgba>,
-    /// Internal editing state (managed by Input via Rc<RefCell>)
-    edit_state: Rc<RefCell<EditState>>,
     /// Called when value is confirmed (Enter pressed)
     on_change: Option<Box<dyn Fn(&str, &mut Window, &mut App) + 'static>>,
     /// Called when editing starts (click on input)
@@ -305,7 +319,6 @@ impl Input {
             text_color: None,
             border_color: None,
             placeholder_color: None,
-            edit_state: Rc::new(RefCell::new(EditState::default())),
             on_change: None,
             on_edit_start: None,
             on_edit_end: None,
@@ -452,26 +465,45 @@ impl RenderOnce for Input {
         let readonly = self.readonly;
         let current_value = self.value.clone();
 
-        // Use provided focus handle or create a new one
-        let focus_handle = self.focus_handle.unwrap_or_else(|| cx.focus_handle());
+        // Use provided focus handle, or get/create one from the registry.
+        // The registry ensures the same focus handle is reused across renders,
+        // which is critical since Input is a RenderOnce component.
+        let focus_handle = self.focus_handle.unwrap_or_else(|| {
+            FOCUS_HANDLES.with(|handles| {
+                let mut handles = handles.borrow_mut();
+                handles
+                    .entry(self.id.clone())
+                    .or_insert_with(|| cx.focus_handle())
+                    .clone()
+            })
+        });
 
-        // Determine editing state from focus - this is the key fix!
+        // Determine editing state from focus
         // The input is "editing" when it has focus
         let is_focused = focus_handle.is_focused(window);
 
         // When focused, we're always in editing mode
-        // The edit text comes from the value prop (which parent updates via on_text_change)
         let editing = is_focused && !disabled && !readonly;
-        
-        // For display: when editing, show the current value (parent tracks live text)
-        // Text selection only on initial click (handled by click handler setting text_selected)
-        let edit_state = self.edit_state.clone();
+
+        // Get or create edit state from registry (persists across renders)
+        let edit_state = EDIT_STATES.with(|states| {
+            let mut states = states.borrow_mut();
+            states
+                .entry(self.id.clone())
+                .or_insert_with(|| Rc::new(RefCell::new(EditState::default())))
+                .clone()
+        });
+
+        // Get display state from edit_state
         let state = edit_state.borrow();
         let text_selected = state.text_selected && editing;
+        // When editing, display the internal state.text; otherwise display props value
+        let edit_text = if editing && state.editing {
+            state.text.clone()
+        } else {
+            current_value.to_string()
+        };
         drop(state);
-        
-        // The edit text is the current value - parent is responsible for updating it
-        let edit_text = current_value.to_string();
 
         let border_color = if has_error {
             theme.error
@@ -577,8 +609,8 @@ impl RenderOnce for Input {
         }
 
         // Add keyboard event handling
-        // Note: We use the current_value from props as the source of truth.
-        // The edit_state is only used for cursor position and selection state.
+        // The edit_state persists across renders (via registry), so we use state.text
+        // as the source of truth during editing.
         if !disabled && !readonly {
             let edit_state_for_key = edit_state.clone();
             let on_edit_end_key = on_edit_end_rc.clone();
@@ -588,7 +620,7 @@ impl RenderOnce for Input {
             let current_value_for_key = current_value.to_string();
 
             input_wrapper = input_wrapper.on_key_down(move |event, window, cx| {
-                // Check if we're focused (editing) - don't rely on edit_state.editing
+                // Check if we're focused (editing)
                 if !focus_handle_for_key.is_focused(window) {
                     return;
                 }
@@ -599,18 +631,15 @@ impl RenderOnce for Input {
                 let key = event.keystroke.key.as_str();
                 let ctrl = event.keystroke.modifiers.control;
 
-                // Get or initialize edit state with current value
+                // Get edit state - only initialize from props if not yet editing
+                // (e.g., if focus was gained via tab navigation instead of click)
                 let mut state = edit_state_for_key.borrow_mut();
-                if !state.editing || state.text != current_value_for_key {
-                    // Sync state with current value, preserving cursor if possible
-                    let old_cursor = state.cursor;
+                if !state.editing {
+                    // Initialize state from props value
                     state.text = current_value_for_key.clone();
                     state.editing = true;
-                    // Keep cursor in bounds
-                    let len = state.text.chars().count();
-                    if old_cursor > len {
-                        state.cursor = len;
-                    }
+                    state.cursor = state.text.chars().count();
+                    state.text_selected = true;
                 }
 
                 // Emacs-style keybindings when Ctrl is held
@@ -627,12 +656,13 @@ impl RenderOnce for Input {
                         "b" => state.move_backward(),
                         _ => {}
                     }
-                    // Notify text change
+                    // Notify text change and refresh display
+                    let text = state.text.clone();
+                    drop(state);
                     if let Some(ref handler) = on_text_change_key {
-                        let text = state.text.clone();
-                        drop(state);
                         handler(text, window, cx);
                     }
+                    window.refresh();
                     return;
                 }
 
@@ -678,6 +708,7 @@ impl RenderOnce for Input {
                         if let Some(ref handler) = on_text_change_key {
                             handler(text, window, cx);
                         }
+                        window.refresh();
                     }
                     "delete" => {
                         state.do_delete();
@@ -686,18 +717,27 @@ impl RenderOnce for Input {
                         if let Some(ref handler) = on_text_change_key {
                             handler(text, window, cx);
                         }
+                        window.refresh();
                     }
                     "left" => {
                         state.move_backward();
+                        drop(state);
+                        window.refresh();
                     }
                     "right" => {
                         state.move_forward();
+                        drop(state);
+                        window.refresh();
                     }
                     "home" => {
                         state.move_to_start();
+                        drop(state);
+                        window.refresh();
                     }
                     "end" => {
                         state.move_to_end();
+                        drop(state);
+                        window.refresh();
                     }
                     _ => {
                         // Handle text input using key_char for IME support
@@ -708,6 +748,7 @@ impl RenderOnce for Input {
                             if let Some(ref handler) = on_text_change_key {
                                 handler(text, window, cx);
                             }
+                            window.refresh();
                         }
                     }
                 }
