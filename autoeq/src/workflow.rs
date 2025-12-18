@@ -163,11 +163,12 @@ pub fn setup_objective_data(
     deviation_curve: &Curve,
     spin_data: &Option<HashMap<String, Curve>>,
 ) -> (ObjectiveData, bool) {
-    let use_cea = (matches!(args.measurement.as_deref(), Some(m) if m.eq_ignore_ascii_case("CEA2034"))
-        || matches!(args.measurement.as_deref(), Some(m) if m.eq_ignore_ascii_case("Estimated In-Room Response")))
-        && args.speaker.is_some()
-        && args.version.is_some()
-        && spin_data.is_some();
+    // CEA2034 data is available if spin_data was provided.
+    // This can happen either via:
+    // 1. CLI path: args.measurement=CEA2034 and args.speaker/version are set
+    // 2. Library path: spin_data passed directly from API fetch
+    // The key requirement is just having spin_data available.
+    let use_cea = spin_data.is_some();
 
     let speaker_score_data_opt = if use_cea {
         Some(SpeakerLossData::new(spin_data.as_ref().unwrap()))
@@ -175,6 +176,7 @@ pub fn setup_objective_data(
         None
     };
 
+    // Headphone score data is available when NOT using CEA2034 speaker data
     let headphone_score_data_opt = if !use_cea {
         Some(HeadphoneLossData::new(args.smooth, args.smooth_n))
     } else {
@@ -1051,20 +1053,23 @@ mod tests {
         }
         let spin_opt = Some(spin);
 
+        // Case 1: spin_data is available -> speaker_score_data should be set
         let (obj, use_cea) =
             super::setup_objective_data(&args, &input_curve, &target, &deviation, &spin_opt);
         assert!(use_cea);
         assert!(obj.speaker_score_data.is_some());
 
-        // If measurement not CEA2034/EIR -> use_cea must be false
+        // Case 2: Even if measurement is "On Axis", if spin_data is available,
+        // we can still compute speaker score (the measurement just determines
+        // which curve is being optimized, not what loss functions are available)
         let mut args2 = args.clone();
         args2.measurement = Some("On Axis".to_string());
         let (obj2, use_cea2) =
             super::setup_objective_data(&args2, &input_curve, &target, &deviation, &spin_opt);
-        assert!(!use_cea2);
-        assert!(obj2.speaker_score_data.is_none());
+        assert!(use_cea2); // Changed: spin_data available means speaker score is possible
+        assert!(obj2.speaker_score_data.is_some());
 
-        // If spin data missing -> use_cea must be false
+        // Case 3: If spin_data is missing -> use_cea must be false
         let (obj3, use_cea3) =
             super::setup_objective_data(&args, &input_curve, &target, &deviation, &None);
         assert!(!use_cea3);
