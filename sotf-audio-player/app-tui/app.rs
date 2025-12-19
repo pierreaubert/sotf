@@ -3651,4 +3651,946 @@ mod tests {
             panic!("Expected BinauralDecoder plugin");
         }
     }
+
+    // ============================================================================
+    // QueueItem Unit Tests
+    // ============================================================================
+
+    #[test]
+    fn test_queue_item_new() {
+        let album = create_test_album("Artist", "Album", "/music/album", 3);
+        let queue_item = QueueItem::new(album);
+
+        assert_eq!(queue_item.current_track_index, 0);
+        assert_eq!(queue_item.album.title, "Album");
+        assert_eq!(queue_item.album.tracks.len(), 3);
+    }
+
+    #[test]
+    fn test_queue_item_current_track() {
+        let album = create_test_album("Artist", "Album", "/music/album", 3);
+        let queue_item = QueueItem::new(album);
+
+        let track = queue_item.current_track().unwrap();
+        assert!(track.path.to_string_lossy().contains("track0.flac"));
+    }
+
+    #[test]
+    fn test_queue_item_next_track() {
+        let album = create_test_album("Artist", "Album", "/music/album", 3);
+        let mut queue_item = QueueItem::new(album);
+
+        assert_eq!(queue_item.current_track_index, 0);
+
+        // Advance to next track
+        let track = queue_item.next_track().unwrap();
+        assert!(track.path.to_string_lossy().contains("track1.flac"));
+        assert_eq!(queue_item.current_track_index, 1);
+
+        // Advance again
+        let track = queue_item.next_track().unwrap();
+        assert!(track.path.to_string_lossy().contains("track2.flac"));
+        assert_eq!(queue_item.current_track_index, 2);
+
+        // No more tracks
+        assert!(queue_item.next_track().is_none());
+        assert_eq!(queue_item.current_track_index, 2); // Index unchanged
+    }
+
+    #[test]
+    fn test_queue_item_previous_track() {
+        let album = create_test_album("Artist", "Album", "/music/album", 3);
+        let mut queue_item = QueueItem::new(album);
+
+        // Start at last track
+        queue_item.current_track_index = 2;
+
+        // Go back
+        let track = queue_item.previous_track().unwrap();
+        assert!(track.path.to_string_lossy().contains("track1.flac"));
+        assert_eq!(queue_item.current_track_index, 1);
+
+        // Go back again
+        let track = queue_item.previous_track().unwrap();
+        assert!(track.path.to_string_lossy().contains("track0.flac"));
+        assert_eq!(queue_item.current_track_index, 0);
+
+        // Can't go back further
+        assert!(queue_item.previous_track().is_none());
+        assert_eq!(queue_item.current_track_index, 0); // Index unchanged
+    }
+
+    #[test]
+    fn test_queue_item_empty_album() {
+        let album = create_test_album("Artist", "Empty Album", "/music/empty", 0);
+        let mut queue_item = QueueItem::new(album);
+
+        assert!(queue_item.current_track().is_none());
+        assert!(queue_item.next_track().is_none());
+        assert!(queue_item.previous_track().is_none());
+    }
+
+    // ============================================================================
+    // Volume Control Tests
+    // ============================================================================
+
+    #[test]
+    fn test_increase_volume() {
+        let mut app = App::new(Theme::default());
+        app.volume = 0.5;
+
+        app.increase_volume();
+        assert!((app.volume - 0.55).abs() < 0.001);
+
+        // Keep increasing
+        for _ in 0..20 {
+            app.increase_volume();
+        }
+        // Should clamp at 1.0
+        assert!((app.volume - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_decrease_volume() {
+        let mut app = App::new(Theme::default());
+        app.volume = 0.5;
+
+        app.decrease_volume();
+        assert!((app.volume - 0.45).abs() < 0.001);
+
+        // Keep decreasing
+        for _ in 0..20 {
+            app.decrease_volume();
+        }
+        // Should clamp at 0.0
+        assert!((app.volume - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_volume_boundary_values() {
+        let mut app = App::new(Theme::default());
+
+        // Start at 0
+        app.volume = 0.0;
+        app.decrease_volume();
+        assert_eq!(app.volume, 0.0);
+
+        // Start at 1
+        app.volume = 1.0;
+        app.increase_volume();
+        assert_eq!(app.volume, 1.0);
+    }
+
+    // ============================================================================
+    // Queue Management Tests
+    // ============================================================================
+
+    #[test]
+    fn test_clear_queue() {
+        let mut app = App::new(Theme::default());
+
+        // Add some items to queue
+        let album1 = create_test_album("Artist", "Album1", "/music/album1", 2);
+        let album2 = create_test_album("Artist", "Album2", "/music/album2", 2);
+        app.queue = vec![QueueItem::new(album1), QueueItem::new(album2)];
+        app.expanded_queue_items = vec![false, true];
+        app.current_queue_index = Some(1);
+        app.is_playing = true;
+
+        app.clear_queue();
+
+        assert!(app.queue.is_empty());
+        assert!(app.expanded_queue_items.is_empty());
+        assert!(app.current_queue_index.is_none());
+        assert!(!app.is_playing);
+    }
+
+    #[test]
+    fn test_remove_from_queue_first_item() {
+        let mut app = App::new(Theme::default());
+
+        let album1 = create_test_album("Artist", "Album1", "/music/album1", 2);
+        let album2 = create_test_album("Artist", "Album2", "/music/album2", 2);
+        let album3 = create_test_album("Artist", "Album3", "/music/album3", 2);
+        app.queue = vec![
+            QueueItem::new(album1),
+            QueueItem::new(album2),
+            QueueItem::new(album3),
+        ];
+        app.expanded_queue_items = vec![false, false, false];
+        app.current_queue_index = Some(1);
+
+        // Remove first item
+        app.remove_from_queue(0);
+
+        assert_eq!(app.queue.len(), 2);
+        assert_eq!(app.queue[0].album.title, "Album2");
+        assert_eq!(app.current_queue_index, Some(0)); // Adjusted
+    }
+
+    #[test]
+    fn test_remove_from_queue_current_playing() {
+        let mut app = App::new(Theme::default());
+
+        let album1 = create_test_album("Artist", "Album1", "/music/album1", 2);
+        let album2 = create_test_album("Artist", "Album2", "/music/album2", 2);
+        app.queue = vec![QueueItem::new(album1), QueueItem::new(album2)];
+        app.expanded_queue_items = vec![false, false];
+        app.current_queue_index = Some(0);
+        app.is_playing = true;
+
+        // Remove currently playing item
+        app.remove_from_queue(0);
+
+        assert_eq!(app.queue.len(), 1);
+        assert_eq!(app.queue[0].album.title, "Album2");
+        // Current queue index should remain at 0 (now pointing to Album2)
+        assert_eq!(app.current_queue_index, Some(0));
+    }
+
+    #[test]
+    fn test_remove_from_queue_last_item() {
+        let mut app = App::new(Theme::default());
+
+        let album1 = create_test_album("Artist", "Album1", "/music/album1", 2);
+        app.queue = vec![QueueItem::new(album1)];
+        app.expanded_queue_items = vec![false];
+        app.current_queue_index = Some(0);
+        app.is_playing = true;
+
+        // Remove last item
+        app.remove_from_queue(0);
+
+        assert!(app.queue.is_empty());
+        assert!(app.current_queue_index.is_none());
+        assert!(!app.is_playing);
+    }
+
+    #[test]
+    fn test_toggle_queue_item_expansion() {
+        let mut app = App::new(Theme::default());
+
+        let album1 = create_test_album("Artist", "Album1", "/music/album1", 2);
+        let album2 = create_test_album("Artist", "Album2", "/music/album2", 2);
+        app.queue = vec![QueueItem::new(album1), QueueItem::new(album2)];
+        app.expanded_queue_items = vec![false, false];
+        app.selected_queue_index = 1;
+
+        // Toggle expansion
+        app.toggle_queue_item_expansion();
+        assert!(!app.expanded_queue_items[0]);
+        assert!(app.expanded_queue_items[1]);
+
+        // Toggle again
+        app.toggle_queue_item_expansion();
+        assert!(!app.expanded_queue_items[1]);
+    }
+
+    #[test]
+    fn test_select_next_queue_item() {
+        let mut app = App::new(Theme::default());
+
+        let album1 = create_test_album("Artist", "Album1", "/music/album1", 2);
+        let album2 = create_test_album("Artist", "Album2", "/music/album2", 2);
+        app.queue = vec![QueueItem::new(album1), QueueItem::new(album2)];
+        app.selected_queue_index = 0;
+
+        app.select_next_queue_item();
+        assert_eq!(app.selected_queue_index, 1);
+
+        // Wrap around
+        app.select_next_queue_item();
+        assert_eq!(app.selected_queue_index, 0);
+    }
+
+    #[test]
+    fn test_select_previous_queue_item() {
+        let mut app = App::new(Theme::default());
+
+        let album1 = create_test_album("Artist", "Album1", "/music/album1", 2);
+        let album2 = create_test_album("Artist", "Album2", "/music/album2", 2);
+        app.queue = vec![QueueItem::new(album1), QueueItem::new(album2)];
+        app.selected_queue_index = 0;
+
+        // Wrap around to last
+        app.select_previous_queue_item();
+        assert_eq!(app.selected_queue_index, 1);
+
+        app.select_previous_queue_item();
+        assert_eq!(app.selected_queue_index, 0);
+    }
+
+    #[test]
+    fn test_queue_navigation_empty() {
+        let mut app = App::new(Theme::default());
+        app.selected_queue_index = 0;
+
+        app.select_next_queue_item();
+        assert_eq!(app.selected_queue_index, 0);
+
+        app.select_previous_queue_item();
+        assert_eq!(app.selected_queue_index, 0);
+    }
+
+    // ============================================================================
+    // Album Navigation Tests
+    // ============================================================================
+
+    fn create_test_app_with_albums(num_albums: usize) -> App {
+        let mut app = App::new(Theme::default());
+        for i in 0..num_albums {
+            let album = create_test_album(
+                &format!("Artist{}", i),
+                &format!("Album{}", i),
+                &format!("/music/album{}", i),
+                3,
+            );
+            app.library.albums.push(album);
+        }
+        app
+    }
+
+    #[test]
+    fn test_select_next_album() {
+        let mut app = create_test_app_with_albums(5);
+        app.selected_album_index = 0;
+
+        app.select_next_album();
+        assert_eq!(app.selected_album_index, 1);
+
+        app.select_next_album();
+        assert_eq!(app.selected_album_index, 2);
+    }
+
+    #[test]
+    fn test_select_previous_album() {
+        let mut app = create_test_app_with_albums(5);
+        app.selected_album_index = 2;
+
+        app.select_previous_album();
+        assert_eq!(app.selected_album_index, 1);
+
+        app.select_previous_album();
+        assert_eq!(app.selected_album_index, 0);
+
+        // Wraps around to last album
+        app.select_previous_album();
+        assert_eq!(app.selected_album_index, 4);
+    }
+
+    #[test]
+    fn test_page_down_albums() {
+        let mut app = create_test_app_with_albums(30);
+        app.selected_album_index = 0;
+
+        app.page_down_albums(10);
+        assert_eq!(app.selected_album_index, 10);
+
+        app.page_down_albums(10);
+        assert_eq!(app.selected_album_index, 20);
+
+        // Should stop at max (29)
+        app.page_down_albums(20);
+        assert_eq!(app.selected_album_index, 29);
+    }
+
+    #[test]
+    fn test_page_up_albums() {
+        let mut app = create_test_app_with_albums(30);
+        app.selected_album_index = 25;
+
+        app.page_up_albums(10);
+        assert_eq!(app.selected_album_index, 15);
+
+        app.page_up_albums(10);
+        assert_eq!(app.selected_album_index, 5);
+
+        // Should stop at 0
+        app.page_up_albums(10);
+        assert_eq!(app.selected_album_index, 0);
+    }
+
+    #[test]
+    fn test_album_navigation_empty_library() {
+        let mut app = App::new(Theme::default());
+        app.selected_album_index = 0;
+
+        app.select_next_album();
+        assert_eq!(app.selected_album_index, 0);
+
+        app.page_down_albums(10);
+        assert_eq!(app.selected_album_index, 0);
+    }
+
+    // ============================================================================
+    // Plugin Management Tests
+    // ============================================================================
+
+    #[test]
+    fn test_add_plugin() {
+        let mut app = App::new(Theme::default());
+        // App starts with 2 default plugins: LoudnessMonitor and ChannelMuteSolo
+        let initial_count = app.plugin_chain.len();
+        assert!(initial_count >= 2, "App should start with default plugins");
+
+        app.add_plugin(&PluginType::Gain);
+        assert_eq!(app.plugin_chain.len(), initial_count + 1);
+        assert!(app.needs_plugin_update);
+
+        app.add_plugin(&PluginType::EQ);
+        assert_eq!(app.plugin_chain.len(), initial_count + 2);
+    }
+
+    #[test]
+    fn test_remove_plugin() {
+        let mut app = App::new(Theme::default());
+        let initial_count = app.plugin_chain.len();
+
+        app.add_plugin(&PluginType::Gain);
+        app.add_plugin(&PluginType::EQ);
+        app.add_plugin(&PluginType::Limiter);
+
+        assert_eq!(app.plugin_chain.len(), initial_count + 3);
+
+        // Remove one of our added plugins (index after the defaults)
+        app.remove_plugin(initial_count);
+        assert_eq!(app.plugin_chain.len(), initial_count + 2);
+        assert!(app.needs_plugin_update);
+    }
+
+    #[test]
+    fn test_toggle_plugin() {
+        let mut app = App::new(Theme::default());
+        app.add_plugin(&PluginType::Gain);
+
+        // Check initial state (enabled)
+        let plugin = app.plugin_chain.get_plugin(0).unwrap();
+        assert!(plugin.enabled);
+
+        // Toggle off
+        app.toggle_plugin(0);
+        let plugin = app.plugin_chain.get_plugin(0).unwrap();
+        assert!(!plugin.enabled);
+
+        // Toggle on
+        app.toggle_plugin(0);
+        let plugin = app.plugin_chain.get_plugin(0).unwrap();
+        assert!(plugin.enabled);
+    }
+
+    #[test]
+    fn test_move_plugin_up() {
+        let mut app = App::new(Theme::default());
+        let base_idx = app.plugin_chain.len();
+        app.add_plugin(&PluginType::Gain);
+        app.add_plugin(&PluginType::EQ);
+        app.add_plugin(&PluginType::Limiter);
+
+        // Move limiter up (from base_idx + 2 to base_idx + 1)
+        app.move_plugin_up(base_idx + 2);
+
+        // Limiter should now be at base_idx + 1
+        let plugin = app.plugin_chain.get_plugin(base_idx + 1).unwrap();
+        assert!(matches!(plugin.plugin_type(), PluginType::Limiter));
+    }
+
+    #[test]
+    fn test_move_plugin_down() {
+        let mut app = App::new(Theme::default());
+        let base_idx = app.plugin_chain.len();
+        app.add_plugin(&PluginType::Gain);
+        app.add_plugin(&PluginType::EQ);
+        app.add_plugin(&PluginType::Limiter);
+
+        // Move gain down (from base_idx to base_idx + 1)
+        app.move_plugin_down(base_idx);
+
+        // Gain should now be at base_idx + 1
+        let plugin = app.plugin_chain.get_plugin(base_idx + 1).unwrap();
+        assert!(matches!(plugin.plugin_type(), PluginType::Gain));
+    }
+
+    #[test]
+    fn test_move_plugin_boundary() {
+        let mut app = App::new(Theme::default());
+        app.add_plugin(&PluginType::Gain);
+        app.add_plugin(&PluginType::EQ);
+
+        // Try to move first plugin (index 0) up - should do nothing
+        let first_plugin_type = app.plugin_chain.get_plugin(0).unwrap().plugin_type();
+        app.move_plugin_up(0);
+        let plugin = app.plugin_chain.get_plugin(0).unwrap();
+        assert_eq!(plugin.plugin_type(), first_plugin_type);
+
+        // Try to move last plugin down (should do nothing)
+        let last_idx = app.plugin_chain.len() - 1;
+        let last_plugin_type = app.plugin_chain.get_plugin(last_idx).unwrap().plugin_type();
+        app.move_plugin_down(last_idx);
+        let plugin = app.plugin_chain.get_plugin(last_idx).unwrap();
+        assert_eq!(plugin.plugin_type(), last_plugin_type);
+    }
+
+    #[test]
+    fn test_select_next_plugin() {
+        let mut app = App::new(Theme::default());
+        app.add_plugin(&PluginType::Gain);
+        app.add_plugin(&PluginType::EQ);
+
+        let total_plugins = app.plugin_chain.len();
+        app.selected_plugin_index = 0;
+
+        // Navigate through all plugins
+        for i in 1..total_plugins {
+            app.select_next_plugin();
+            assert_eq!(app.selected_plugin_index, i);
+        }
+
+        // Wrap around to 0
+        app.select_next_plugin();
+        assert_eq!(app.selected_plugin_index, 0);
+    }
+
+    #[test]
+    fn test_select_previous_plugin() {
+        let mut app = App::new(Theme::default());
+        app.add_plugin(&PluginType::Gain);
+
+        let total_plugins = app.plugin_chain.len();
+        app.selected_plugin_index = 0;
+
+        // Wrap to last
+        app.select_previous_plugin();
+        assert_eq!(app.selected_plugin_index, total_plugins - 1);
+
+        // Navigate back to 0
+        for _ in 1..total_plugins {
+            app.select_previous_plugin();
+        }
+        assert_eq!(app.selected_plugin_index, 0);
+    }
+
+    #[test]
+    fn test_enter_exit_plugin_edit_mode() {
+        let mut app = App::new(Theme::default());
+        app.add_plugin(&PluginType::EQ);
+        app.selected_plugin_index = 0;
+
+        assert!(app.editing_plugin_index.is_none());
+
+        app.enter_plugin_edit_mode();
+        assert_eq!(app.editing_plugin_index, Some(0));
+        assert_eq!(app.plugin_param_selection, 0);
+
+        app.exit_plugin_edit_mode();
+        assert!(app.editing_plugin_index.is_none());
+    }
+
+    // ============================================================================
+    // Library View Mode Tests
+    // ============================================================================
+
+    #[test]
+    fn test_toggle_library_view_mode() {
+        let mut app = App::new(Theme::default());
+        assert_eq!(app.library_view_mode, LibraryViewMode::Flat);
+
+        app.toggle_library_view_mode();
+        assert_eq!(app.library_view_mode, LibraryViewMode::TreeView);
+
+        app.toggle_library_view_mode();
+        assert_eq!(app.library_view_mode, LibraryViewMode::Flat);
+    }
+
+    #[test]
+    fn test_set_library_sort_order() {
+        let mut app = App::new(Theme::default());
+
+        app.set_library_sort_order(LibrarySortOrder::Artist);
+        assert_eq!(app.library_sort_order, LibrarySortOrder::Artist);
+
+        app.set_library_sort_order(LibrarySortOrder::Album);
+        assert_eq!(app.library_sort_order, LibrarySortOrder::Album);
+
+        app.set_library_sort_order(LibrarySortOrder::Year);
+        assert_eq!(app.library_sort_order, LibrarySortOrder::Year);
+    }
+
+    #[test]
+    fn test_set_channel_filter() {
+        let mut app = App::new(Theme::default());
+
+        app.set_channel_filter(ChannelFilter::All);
+        assert_eq!(app.channel_filter, ChannelFilter::All);
+
+        app.set_channel_filter(ChannelFilter::Stereo);
+        assert_eq!(app.channel_filter, ChannelFilter::Stereo);
+
+        app.set_channel_filter(ChannelFilter::Multichannel);
+        assert_eq!(app.channel_filter, ChannelFilter::Multichannel);
+    }
+
+    #[test]
+    fn test_cycle_channel_filter() {
+        let mut app = App::new(Theme::default());
+        app.channel_filter = ChannelFilter::All;
+
+        // Cycling depends on available channel counts, so test basic cycling
+        // When library is empty, cycling should still work
+        let initial = app.channel_filter;
+        app.cycle_channel_filter();
+        // After cycling, filter may or may not change depending on library
+        // At minimum, it shouldn't panic
+        let _ = app.channel_filter;
+
+        // Reset
+        app.channel_filter = initial;
+    }
+
+    // ============================================================================
+    // Tree View Tests
+    // ============================================================================
+
+    #[test]
+    fn test_rebuild_artist_tree() {
+        let mut app = App::new(Theme::default());
+
+        // Add albums with different artists
+        let album1 = create_test_album("Artist A", "Album1", "/music/album1", 2);
+        let album2 = create_test_album("Artist A", "Album2", "/music/album2", 2);
+        let album3 = create_test_album("Artist B", "Album3", "/music/album3", 2);
+        app.library.albums.push(album1);
+        app.library.albums.push(album2);
+        app.library.albums.push(album3);
+
+        app.rebuild_artist_tree();
+
+        // Should have 2 artists
+        assert_eq!(app.artist_tree.len(), 2);
+
+        // Find Artist A node - should have 2 albums
+        let artist_a = app
+            .artist_tree
+            .iter()
+            .find(|n| n.artist == "Artist A")
+            .unwrap();
+        assert_eq!(artist_a.album_indices.len(), 2);
+
+        // Find Artist B node - should have 1 album
+        let artist_b = app
+            .artist_tree
+            .iter()
+            .find(|n| n.artist == "Artist B")
+            .unwrap();
+        assert_eq!(artist_b.album_indices.len(), 1);
+    }
+
+    #[test]
+    fn test_toggle_artist_expansion() {
+        let mut app = App::new(Theme::default());
+
+        let album1 = create_test_album("Artist A", "Album1", "/music/album1", 2);
+        let album2 = create_test_album("Artist B", "Album2", "/music/album2", 2);
+        app.library.albums.push(album1);
+        app.library.albums.push(album2);
+        app.rebuild_artist_tree();
+
+        app.library_view_mode = LibraryViewMode::TreeView;
+        app.selected_tree_index = 0;
+
+        // Initially collapsed
+        assert!(!app.artist_tree[0].expanded);
+
+        // Toggle expansion
+        app.toggle_artist_expansion();
+        assert!(app.artist_tree[0].expanded);
+
+        // Toggle again
+        app.toggle_artist_expansion();
+        assert!(!app.artist_tree[0].expanded);
+    }
+
+    #[test]
+    fn test_get_tree_items_collapsed() {
+        let mut app = App::new(Theme::default());
+
+        let album1 = create_test_album("Artist A", "Album1", "/music/album1", 2);
+        let album2 = create_test_album("Artist A", "Album2", "/music/album2", 2);
+        let album3 = create_test_album("Artist B", "Album3", "/music/album3", 2);
+        app.library.albums.push(album1);
+        app.library.albums.push(album2);
+        app.library.albums.push(album3);
+        app.rebuild_artist_tree();
+
+        // All collapsed - should only show artists
+        let items = app.get_tree_items();
+        assert_eq!(items.len(), 2);
+
+        // Both should be Artist items
+        for item in &items {
+            assert!(matches!(item, TreeItem::Artist { .. }));
+        }
+    }
+
+    #[test]
+    fn test_get_tree_items_expanded() {
+        let mut app = App::new(Theme::default());
+
+        let album1 = create_test_album("Artist A", "Album1", "/music/album1", 2);
+        let album2 = create_test_album("Artist A", "Album2", "/music/album2", 2);
+        let album3 = create_test_album("Artist B", "Album3", "/music/album3", 2);
+        app.library.albums.push(album1);
+        app.library.albums.push(album2);
+        app.library.albums.push(album3);
+        app.rebuild_artist_tree();
+
+        // Expand first artist
+        app.artist_tree[0].expanded = true;
+
+        let items = app.get_tree_items();
+        // Artist A (expanded) + 2 albums + Artist B (collapsed) = 4 items
+        assert_eq!(items.len(), 4);
+
+        // First should be Artist A (expanded)
+        assert!(matches!(&items[0], TreeItem::Artist { name, expanded } if name == "Artist A" && *expanded));
+
+        // Next two should be albums
+        assert!(matches!(&items[1], TreeItem::Album { .. }));
+        assert!(matches!(&items[2], TreeItem::Album { .. }));
+
+        // Last should be Artist B (collapsed)
+        assert!(matches!(&items[3], TreeItem::Artist { name, expanded } if name == "Artist B" && !*expanded));
+    }
+
+    #[test]
+    fn test_select_next_tree_item() {
+        let mut app = App::new(Theme::default());
+
+        let album1 = create_test_album("Artist A", "Album1", "/music/album1", 2);
+        let album2 = create_test_album("Artist B", "Album2", "/music/album2", 2);
+        app.library.albums.push(album1);
+        app.library.albums.push(album2);
+        app.rebuild_artist_tree();
+
+        app.library_view_mode = LibraryViewMode::TreeView;
+        app.selected_tree_index = 0;
+
+        app.select_next_tree_item();
+        assert_eq!(app.selected_tree_index, 1);
+
+        // Should wrap
+        app.select_next_tree_item();
+        assert_eq!(app.selected_tree_index, 0);
+    }
+
+    #[test]
+    fn test_select_previous_tree_item() {
+        let mut app = App::new(Theme::default());
+
+        let album1 = create_test_album("Artist A", "Album1", "/music/album1", 2);
+        let album2 = create_test_album("Artist B", "Album2", "/music/album2", 2);
+        app.library.albums.push(album1);
+        app.library.albums.push(album2);
+        app.rebuild_artist_tree();
+
+        app.library_view_mode = LibraryViewMode::TreeView;
+        app.selected_tree_index = 0;
+
+        // Wrap to last
+        app.select_previous_tree_item();
+        assert_eq!(app.selected_tree_index, 1);
+
+        app.select_previous_tree_item();
+        assert_eq!(app.selected_tree_index, 0);
+    }
+
+    // ============================================================================
+    // Output Device Tests
+    // ============================================================================
+
+    fn create_test_audio_device(name: &str, is_default: bool) -> AudioDevice {
+        AudioDevice {
+            name: name.to_string(),
+            is_input: false,
+            is_default,
+            supported_configs: vec![],
+            default_config: None,
+            available_sample_rates: vec![44100, 48000, 96000],
+        }
+    }
+
+    #[test]
+    fn test_select_next_output_device() {
+        let mut app = App::new(Theme::default());
+
+        // Simulate having some devices
+        app.output_devices = vec![
+            create_test_audio_device("Device 1", true),
+            create_test_audio_device("Device 2", false),
+        ];
+        app.selected_output_device_index = 0;
+
+        app.select_next_output_device();
+        assert_eq!(app.selected_output_device_index, 1);
+
+        // Wrap
+        app.select_next_output_device();
+        assert_eq!(app.selected_output_device_index, 0);
+    }
+
+    #[test]
+    fn test_select_previous_output_device() {
+        let mut app = App::new(Theme::default());
+
+        app.output_devices = vec![
+            create_test_audio_device("Device 1", true),
+            create_test_audio_device("Device 2", false),
+        ];
+        app.selected_output_device_index = 0;
+
+        // Wrap to last
+        app.select_previous_output_device();
+        assert_eq!(app.selected_output_device_index, 1);
+
+        app.select_previous_output_device();
+        assert_eq!(app.selected_output_device_index, 0);
+    }
+
+    #[test]
+    fn test_get_selected_output_device() {
+        let mut app = App::new(Theme::default());
+
+        // Empty devices
+        assert!(app.get_selected_output_device().is_none());
+
+        app.output_devices = vec![create_test_audio_device("Test Device", false)];
+        app.selected_output_device_index = 0;
+
+        let device = app.get_selected_output_device().unwrap();
+        assert_eq!(device.name, "Test Device");
+    }
+
+    #[test]
+    fn test_output_device_navigation_empty() {
+        let mut app = App::new(Theme::default());
+        app.selected_output_device_index = 0;
+
+        // Should not panic with empty devices
+        app.select_next_output_device();
+        assert_eq!(app.selected_output_device_index, 0);
+
+        app.select_previous_output_device();
+        assert_eq!(app.selected_output_device_index, 0);
+    }
+
+    // ============================================================================
+    // Screen and Mode Tests
+    // ============================================================================
+
+    #[test]
+    fn test_screen_variants() {
+        let mut app = App::new(Theme::default());
+
+        app.current_screen = Screen::Library;
+        assert_eq!(app.current_screen, Screen::Library);
+
+        app.current_screen = Screen::DirectoryManager;
+        assert_eq!(app.current_screen, Screen::DirectoryManager);
+
+        app.current_screen = Screen::Queue;
+        assert_eq!(app.current_screen, Screen::Queue);
+
+        app.current_screen = Screen::Plugins;
+        assert_eq!(app.current_screen, Screen::Plugins);
+
+        app.current_screen = Screen::Devices;
+        assert_eq!(app.current_screen, Screen::Devices);
+    }
+
+    #[test]
+    fn test_input_mode_variants() {
+        let mut app = App::new(Theme::default());
+
+        app.input_mode = InputMode::Normal;
+        assert_eq!(app.input_mode, InputMode::Normal);
+
+        app.input_mode = InputMode::Search;
+        assert_eq!(app.input_mode, InputMode::Search);
+
+        app.input_mode = InputMode::AddDirectory;
+        assert_eq!(app.input_mode, InputMode::AddDirectory);
+
+        app.input_mode = InputMode::EditPlugin;
+        assert_eq!(app.input_mode, InputMode::EditPlugin);
+
+        app.input_mode = InputMode::ShowHelp;
+        assert_eq!(app.input_mode, InputMode::ShowHelp);
+
+        app.input_mode = InputMode::ShowError;
+        assert_eq!(app.input_mode, InputMode::ShowError);
+    }
+
+    // ============================================================================
+    // Playback State Tests
+    // ============================================================================
+
+    #[test]
+    fn test_start_queue() {
+        let mut app = App::new(Theme::default());
+
+        // Empty queue
+        assert!(app.start_queue().is_none());
+        assert!(app.current_queue_index.is_none());
+        assert!(!app.is_playing);
+
+        // Add items to queue
+        let album = create_test_album("Artist", "Album", "/music/album", 3);
+        app.queue.push(QueueItem::new(album));
+        app.expanded_queue_items.push(false);
+
+        let path = app.start_queue();
+        assert!(path.is_some());
+        assert_eq!(app.current_queue_index, Some(0));
+        assert!(app.is_playing);
+    }
+
+    #[test]
+    fn test_previous_track_within_album() {
+        let mut app = App::new(Theme::default());
+
+        let album = create_test_album("Artist", "Album", "/music/album", 3);
+        app.queue.push(QueueItem::new(album));
+        app.expanded_queue_items.push(false);
+        app.current_queue_index = Some(0);
+        app.is_playing = true;
+
+        // Move to track 2
+        app.queue[0].current_track_index = 2;
+
+        // Go back
+        let path = app.previous_track();
+        assert!(path.is_some());
+        assert!(path.unwrap().to_string_lossy().contains("track1.flac"));
+    }
+
+    #[test]
+    fn test_previous_track_to_previous_album() {
+        let mut app = App::new(Theme::default());
+
+        let album1 = create_test_album("Artist", "Album1", "/music/album1", 2);
+        let album2 = create_test_album("Artist", "Album2", "/music/album2", 2);
+        app.queue.push(QueueItem::new(album1));
+        app.queue.push(QueueItem::new(album2));
+        app.expanded_queue_items = vec![false, false];
+        app.current_queue_index = Some(1);
+        app.is_playing = true;
+
+        // At first track of second album
+        app.queue[1].current_track_index = 0;
+
+        // Go back should go to last track of first album
+        let path = app.previous_track();
+        assert!(path.is_some());
+        assert!(path.unwrap().to_string_lossy().contains("album1/track1.flac"));
+        assert_eq!(app.current_queue_index, Some(0));
+    }
 }

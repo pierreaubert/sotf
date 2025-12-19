@@ -127,3 +127,79 @@ impl Default for Theme {
         Self::dark()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_theme_type_from_str() {
+        assert_eq!(ThemeType::from_str("dark"), Some(ThemeType::Dark));
+        assert_eq!(ThemeType::from_str("Dark"), Some(ThemeType::Dark));
+        assert_eq!(ThemeType::from_str("DARK"), Some(ThemeType::Dark));
+
+        assert_eq!(ThemeType::from_str("light"), Some(ThemeType::Light));
+        assert_eq!(ThemeType::from_str("Light"), Some(ThemeType::Light));
+        assert_eq!(ThemeType::from_str("LIGHT"), Some(ThemeType::Light));
+
+        assert_eq!(ThemeType::from_str("invalid"), None);
+        assert_eq!(ThemeType::from_str(""), None);
+    }
+
+    #[test]
+    fn test_dark_theme() {
+        let theme = Theme::dark();
+        assert_eq!(theme.bg_primary, Color::Black);
+        assert_eq!(theme.fg_primary, Color::White);
+        assert_eq!(theme.border_color, Color::Green);
+    }
+
+    #[test]
+    fn test_light_theme() {
+        let theme = Theme::light();
+        assert_eq!(theme.bg_primary, Color::White);
+        assert_eq!(theme.fg_primary, Color::Black);
+        assert_eq!(theme.border_color, Color::Blue);
+    }
+
+    #[test]
+    fn test_theme_from_type() {
+        let dark = Theme::from_type(ThemeType::Dark);
+        assert_eq!(dark.bg_primary, Color::Black);
+
+        let light = Theme::from_type(ThemeType::Light);
+        assert_eq!(light.bg_primary, Color::White);
+    }
+
+    #[test]
+    fn test_theme_default() {
+        let default_theme = Theme::default();
+        let dark_theme = Theme::dark();
+
+        // Default should be dark theme
+        assert_eq!(default_theme.bg_primary, dark_theme.bg_primary);
+        assert_eq!(default_theme.fg_primary, dark_theme.fg_primary);
+        assert_eq!(default_theme.border_color, dark_theme.border_color);
+    }
+
+    #[test]
+    fn test_theme_colors_are_different() {
+        let dark = Theme::dark();
+        let light = Theme::light();
+
+        // Themes should have different primary colors
+        assert_ne!(dark.bg_primary, light.bg_primary);
+        assert_ne!(dark.fg_primary, light.fg_primary);
+        assert_ne!(dark.border_color, light.border_color);
+    }
+
+    #[test]
+    fn test_theme_copy_and_clone() {
+        let theme = Theme::dark();
+        let copied = theme;
+        let cloned = theme.clone();
+
+        assert_eq!(theme.bg_primary, copied.bg_primary);
+        assert_eq!(theme.bg_primary, cloned.bg_primary);
+    }
+}

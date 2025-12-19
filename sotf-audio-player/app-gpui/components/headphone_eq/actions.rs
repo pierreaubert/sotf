@@ -145,6 +145,25 @@ impl PlayerView {
                                 &opt_result.frequencies,
                                 &opt_result.target_curve,
                             )),
+                            filter_response: Some(zip_vectors(
+                                &opt_result.frequencies,
+                                &opt_result.filter_response,
+                            )),
+                            deviation_response: Some(zip_vectors(
+                                &opt_result.frequencies,
+                                &opt_result.deviation_curve,
+                            )),
+                            error_response: Some(zip_vectors(
+                                &opt_result.frequencies,
+                                &opt_result.error_curve,
+                            )),
+                            individual_responses: Some(
+                                opt_result
+                                    .individual_filter_responses
+                                    .iter()
+                                    .map(|response| zip_vectors(&opt_result.frequencies, response))
+                                    .collect(),
+                            ),
                         };
 
                         state.app.headphone_eq_state.result = Some(app_result);

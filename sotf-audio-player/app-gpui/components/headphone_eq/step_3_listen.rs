@@ -41,7 +41,11 @@ impl PlayerView {
                             .background(theme.surface)
                             .header_background(theme.background_secondary)
                             .border(theme.border)
-                            .header(Text::new("Optimization Results").color(theme.text_primary).weight(TextWeight::Semibold))
+                            .header(
+                                Text::new("Optimization Results")
+                                    .color(theme.text_primary)
+                                    .weight(TextWeight::Semibold),
+                            )
                             .content(
                                 VStack::new()
                                     .spacing(StackSpacing::Sm)
@@ -80,7 +84,23 @@ impl PlayerView {
                             .background(theme.surface)
                             .header_background(theme.background_secondary)
                             .border(theme.border)
-                            .header(Text::new("EQ Filters").color(theme.text_primary).weight(TextWeight::Semibold))
+                            .header(
+                                Text::new("Response Visualization")
+                                    .color(theme.text_primary)
+                                    .weight(TextWeight::Semibold),
+                            )
+                            .content(self.render_optimization_result_graphs(result, &theme, 800.0)),
+                    )
+                    .child(
+                        Card::new()
+                            .background(theme.surface)
+                            .header_background(theme.background_secondary)
+                            .border(theme.border)
+                            .header(
+                                Text::new("EQ Filters")
+                                    .color(theme.text_primary)
+                                    .weight(TextWeight::Semibold),
+                            )
                             .content(
                                 div()
                                     .id("filter-list-scroll")
@@ -93,7 +113,7 @@ impl PlayerView {
                                     .max_h(px(200.0))
                                     .overflow_y_scroll()
                                     .children(biquads.iter().enumerate().map(|(i, biquad)| {
-                                        let filter_type = format!("{:?}", biquad.filter_type);
+                                        let filter_type = biquad.filter_type.clone();
                                         let freq = biquad.freq;
                                         let q = biquad.q;
                                         let gain = biquad.db_gain;
@@ -160,7 +180,11 @@ impl PlayerView {
                             .background(theme.surface)
                             .header_background(theme.background_secondary)
                             .border(theme.border)
-                            .header(Text::new("Playback Preview").color(theme.text_primary).weight(TextWeight::Semibold))
+                            .header(
+                                Text::new("Playback Preview")
+                                    .color(theme.text_primary)
+                                    .weight(TextWeight::Semibold),
+                            )
                             .content(
                                 VStack::new()
                                     .spacing(StackSpacing::Md)
@@ -213,7 +237,11 @@ impl PlayerView {
                         .background(theme.surface)
                         .header_background(theme.background_secondary)
                         .border(theme.border)
-                        .header(Text::new("No Results").color(theme.text_primary).weight(TextWeight::Semibold))
+                        .header(
+                            Text::new("No Results")
+                                .color(theme.text_primary)
+                                .weight(TextWeight::Semibold),
+                        )
                         .content(
                             Text::new("Go back and run optimization to generate an EQ curve.")
                                 .size(TextSize::Sm)
@@ -223,4 +251,3 @@ impl PlayerView {
             })
     }
 }
-
