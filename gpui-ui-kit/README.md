@@ -31,10 +31,15 @@ gpui-ui-kit = { path = "../gpui-ui-kit" }
 
 | Component | Description |
 |-----------|-------------|
-| `Input` | Text input with label, placeholder, validation, and variants |
+| `Input` | Text input with label, placeholder, validation, mouse drag selection, clipboard (Cmd+C/V/X), and Emacs keybindings |
+| `NumberInput` | Numeric input with +/- buttons, min/max bounds, step size, scroll wheel support, and keyboard navigation |
 | `Checkbox` | Checkbox with label and indeterminate state |
 | `Toggle` | Toggle switch |
 | `Select` | Dropdown select with options |
+| `ButtonSet` | Grouped button options for single selection |
+| `ColorPicker` | Color picker with palette and custom color input |
+| `Slider` | Horizontal slider with value display |
+| `Wizard` | Multi-step wizard with navigation and step validation |
 
 ### Data Display
 
@@ -60,8 +65,17 @@ gpui-ui-kit = { path = "../gpui-ui-kit" }
 | `VStack` / `HStack` | Vertical and horizontal stack layouts |
 | `Spacer` | Flexible spacer element |
 | `Divider` | Horizontal/vertical dividers with optional interactivity |
+| `PaneDivider` | Resizable pane divider for split views |
 | `Accordion` | Collapsible content panels |
 | `Breadcrumbs` | Navigation breadcrumbs |
+
+### Audio Controls
+
+| Component | Description |
+|-----------|-------------|
+| `Potentiometer` | Rotary knob control with customizable range and visual feedback |
+| `VerticalSlider` | Vertical slider with ticks and value display |
+| `VolumeKnob` | Specialized volume control with mute state and dB display |
 
 ## Usage Examples
 
@@ -128,12 +142,72 @@ Input::new("username")
     .value("invalid!")
     .error("Username contains invalid characters")
 
-// Filled variant
+// Filled variant with icon
 Input::new("search")
     .variant(InputVariant::Filled)
     .placeholder("Search...")
     .icon_left("🔍")
+
+// Input with change callback
+Input::new("name")
+    .label("Name")
+    .on_change(|value, window, cx| {
+        println!("Input changed: {}", value);
+    })
 ```
+
+**Input Features:**
+- **Mouse drag selection**: Click and drag to select text ranges
+- **Double-click**: Select all text
+- **Clipboard**: Cmd+C (copy), Cmd+V (paste), Cmd+X (cut), Cmd+A (select all)
+- **Emacs keybindings**: Ctrl+A (beginning), Ctrl+E (end), Ctrl+K (kill to end), Ctrl+U (kill to beginning)
+- **Navigation**: Arrow keys, Home/End, Backspace/Delete
+
+### NumberInput
+
+```rust
+use gpui_ui_kit::{NumberInput, NumberInputSize};
+
+// Basic number input
+NumberInput::new("quantity")
+    .label("Quantity")
+    .value(10.0)
+    .min(0.0)
+    .max(100.0)
+    .step(1.0)
+
+// Number input with decimals and units
+NumberInput::new("frequency")
+    .label("Frequency")
+    .value(1000.0)
+    .min(20.0)
+    .max(20000.0)
+    .step(10.0)
+    .decimals(1)
+    .unit("Hz")
+    .width(120.0)
+    .on_change(|value, window, cx| {
+        println!("Frequency: {} Hz", value);
+    })
+
+// Compact size for dense layouts
+NumberInput::new("gain")
+    .value(0.0)
+    .min(-12.0)
+    .max(12.0)
+    .step(0.5)
+    .decimals(1)
+    .unit("dB")
+    .size(NumberInputSize::Sm)
+```
+
+**NumberInput Features:**
+- **+/- buttons**: Click to increment/decrement by step size
+- **Click to edit**: Click the value to enter edit mode
+- **Double-click**: Select all text in edit mode
+- **Scroll wheel**: Scroll up/down to adjust value
+- **Arrow keys**: Up/Down to adjust value when focused
+- **Bounds enforcement**: Values clamped to min/max range
 
 ### Tabs
 
@@ -320,6 +394,108 @@ Accordion::new("faq")
     ])
 ```
 
+### ButtonSet
+
+```rust
+use gpui_ui_kit::{ButtonSet, ButtonSetOption, ButtonSetSize};
+
+ButtonSet::new("view-mode")
+    .options(vec![
+        ButtonSetOption::new("list", "List").icon("☰"),
+        ButtonSetOption::new("grid", "Grid").icon("⊞"),
+        ButtonSetOption::new("compact", "Compact").icon("≡"),
+    ])
+    .selected("grid")
+    .size(ButtonSetSize::Md)
+    .on_change(|value, window, cx| {
+        println!("View mode: {}", value);
+    })
+```
+
+### Potentiometer
+
+```rust
+use gpui_ui_kit::{Potentiometer, PotentiometerSize};
+
+// Basic rotary knob
+Potentiometer::new("volume")
+    .value(0.75)
+    .min(0.0)
+    .max(1.0)
+    .size(PotentiometerSize::Md)
+    .on_change(|value, window, cx| {
+        println!("Volume: {:.0}%", value * 100.0);
+    })
+
+// With label and units
+Potentiometer::new("pan")
+    .label("Pan")
+    .value(0.0)
+    .min(-1.0)
+    .max(1.0)
+    .unit("L/R")
+```
+
+### VerticalSlider
+
+```rust
+use gpui_ui_kit::{VerticalSlider, VerticalSliderSize};
+
+VerticalSlider::new("fader")
+    .value(0.0)
+    .min(-60.0)
+    .max(12.0)
+    .height(200.0)
+    .show_ticks(true)
+    .on_change(|value, window, cx| {
+        println!("Level: {:.1} dB", value);
+    })
+```
+
+### VolumeKnob
+
+```rust
+use gpui_ui_kit::{VolumeKnob, VolumeKnobSize};
+
+VolumeKnob::new("master-volume")
+    .value(0.8)
+    .muted(false)
+    .size(VolumeKnobSize::Lg)
+    .on_change(|value, window, cx| {
+        println!("Volume: {:.0}%", value * 100.0);
+    })
+    .on_mute_toggle(|muted, window, cx| {
+        println!("Muted: {}", muted);
+    })
+```
+
+### Wizard
+
+```rust
+use gpui_ui_kit::{Wizard, WizardStep, WizardStepStatus};
+use gpui::div;
+
+Wizard::new("setup-wizard")
+    .steps(vec![
+        WizardStep::new("welcome", "Welcome")
+            .status(WizardStepStatus::Completed)
+            .content(div().child("Welcome to the setup wizard!")),
+        WizardStep::new("config", "Configuration")
+            .status(WizardStepStatus::Current)
+            .content(div().child("Configure your settings here.")),
+        WizardStep::new("finish", "Finish")
+            .status(WizardStepStatus::Pending)
+            .content(div().child("Setup complete!")),
+    ])
+    .current_step(1)
+    .on_next(|step, window, cx| {
+        println!("Moving to step: {}", step);
+    })
+    .on_back(|step, window, cx| {
+        println!("Going back to step: {}", step);
+    })
+```
+
 ## Theming
 
 Components use a default dark theme. Button theme can be customized:
@@ -401,11 +577,12 @@ cargo test --test component_tests  # Component API tests
 ```
 
 **Test Coverage**:
+- ✅ **Integration Tests** (237 tests): Comprehensive UI component tests including mouse actions, button clicks, keyboard navigation, and visual rendering
 - ✅ **Interaction Tests** (37 tests): Verify all stateful components support mouse and keyboard events
+- ✅ **Component Tests** (15 tests): Ensure component APIs work correctly and configurations are valid
 - ✅ **I18n Tests** (11 tests): Verify all translations exist across 5 languages (English, French, German, Spanish, Japanese)
-- ✅ **Component Tests** (14 tests): Ensure component APIs work correctly and configurations are valid
-- ✅ **Library Tests** (7 tests): Verify MiniApp configuration and utilities
-- ✅ **69 total tests** covering critical functionality
+- ✅ **Library Tests** (10 tests): Verify MiniApp configuration and utilities
+- ✅ **310 total tests** covering critical functionality
 
 See [`TESTING.md`](TESTING.md) for detailed testing guide and [`tests/README.md`](tests/README.md) for quick reference.
 

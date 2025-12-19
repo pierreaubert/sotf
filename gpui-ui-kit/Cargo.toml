@@ -10,7 +10,6 @@ repository.workspace = true
 [dependencies]
 # GPUI framework
 gpui = { workspace = true }
-gpui_macros = { workspace = true }
 
 # Serialization for Color type
 serde = { workspace = true }
@@ -26,10 +25,3 @@ path = "src/lib.rs"
 name = "showcase"
 path = "examples/showcase.rs"
 
-[[example]]
-name = "select_debug"
-path = "examples/select_debug.rs"
-
-[[example]]
-name = "input_debug"
-path = "examples/input_debug.rs"
