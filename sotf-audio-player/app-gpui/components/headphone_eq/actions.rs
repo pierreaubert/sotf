@@ -189,10 +189,11 @@ impl PlayerView {
     pub(crate) fn apply_headphone_eq_result(&mut self, cx: &mut Context<Self>) {
         self.state.update(cx, |state, cx| {
             if let Some(result) = &state.app.headphone_eq_state.result {
-                // Convert biquads to EQFilters
+                // Convert biquads to EQFilters, filtering out near-zero gain filters
                 let filters: Vec<EQFilter> = result
                     .biquads
                     .iter()
+                    .filter(|bq| bq.db_gain.abs() >= 0.1) // Skip effectively disabled filters
                     .map(|bq| {
                         EQFilter::new(
                             parse_filter_type(&bq.filter_type),

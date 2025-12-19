@@ -294,13 +294,81 @@ fn load_measurement_with_spin(
     }
 }
 
+/// Load measurement from any supported source, including spin data (async version)
+async fn load_measurement_with_spin_async(
+    input: &MeasurementInput,
+) -> Result<(autoeq::Curve, Option<HashMap<String, autoeq::Curve>>), String> {
+    match input {
+        MeasurementInput::CsvFile(path) => {
+            let curve = load_csv_measurement(path)?;
+            Ok((curve, None))
+        }
+        MeasurementInput::Spinorama {
+            speaker,
+            version,
+            measurement,
+            curve_name,
+        } => load_spinorama_measurement_async(speaker, version, measurement, curve_name).await,
+        MeasurementInput::Curve(curve) => Ok((curve.clone(), None)),
+    }
+}
+
 /// Load measurement from CSV file
 fn load_csv_measurement(path: &std::path::Path) -> Result<autoeq::Curve, String> {
     autoeq::read::read_curve_from_csv(&path.to_path_buf())
         .map_err(|e| format!("Failed to read CSV: {}", e))
 }
 
-/// Load measurement from Spinorama API
+/// Load measurement from Spinorama API (async version)
+async fn load_spinorama_measurement_async(
+    speaker: &str,
+    version: &str,
+    measurement: &str,
+    curve_name: &str,
+) -> Result<(autoeq::Curve, Option<HashMap<String, autoeq::Curve>>), String> {
+    // Handle Estimated In-Room Response specially - it's computed from CEA2034 curves
+    // This can be requested either as measurement="Estimated In-Room Response" or
+    // as measurement="CEA2034" with curve_name="Estimated In-Room Response"
+    if measurement == "Estimated In-Room Response"
+        || (measurement == "CEA2034" && curve_name == "Estimated In-Room Response")
+    {
+        let plot_data = autoeq::read::fetch_measurement_plot_data(speaker, version, "CEA2034")
+            .await
+            .map_err(|e| format!("API error: {}", e))?;
+
+        let curves = autoeq::read::extract_cea2034_curves_original(&plot_data, "CEA2034")
+            .map_err(|e| format!("Spin data error: {}", e))?;
+
+        let pir_curve = curves
+            .get("Estimated In-Room Response")
+            .ok_or("PIR curve not found in CEA2034 data")?
+            .clone();
+
+        Ok((pir_curve, Some(curves)))
+    } else {
+        let curve = autoeq::read::read_spinorama(speaker, version, measurement, curve_name)
+            .await
+            .map_err(|e| format!("API error: {}", e))?;
+
+        // Extract spin data if CEA2034 (still need the full plot data for this)
+        let spin_data = if measurement == "CEA2034" {
+            let plot_data =
+                autoeq::read::fetch_measurement_plot_data(speaker, version, measurement)
+                    .await
+                    .map_err(|e| format!("API error: {}", e))?;
+            Some(
+                autoeq::read::extract_cea2034_curves_original(&plot_data, "CEA2034")
+                    .map_err(|e| format!("Spin data error: {}", e))?,
+            )
+        } else {
+            None
+        };
+
+        Ok((curve, spin_data))
+    }
+}
+
+/// Load measurement from Spinorama API (sync version, creates runtime if needed)
 fn load_spinorama_measurement(
     speaker: &str,
     version: &str,
@@ -311,48 +379,9 @@ fn load_spinorama_measurement(
     let rt =
         tokio::runtime::Runtime::new().map_err(|e| format!("Failed to create runtime: {}", e))?;
 
-    rt.block_on(async {
-        // Handle Estimated In-Room Response specially - it's computed from CEA2034 curves
-        // This can be requested either as measurement="Estimated In-Room Response" or
-        // as measurement="CEA2034" with curve_name="Estimated In-Room Response"
-        if measurement == "Estimated In-Room Response"
-            || (measurement == "CEA2034" && curve_name == "Estimated In-Room Response")
-        {
-            let plot_data = autoeq::read::fetch_measurement_plot_data(speaker, version, "CEA2034")
-                .await
-                .map_err(|e| format!("API error: {}", e))?;
-
-            let curves = autoeq::read::extract_cea2034_curves_original(&plot_data, "CEA2034")
-                .map_err(|e| format!("Spin data error: {}", e))?;
-
-            let pir_curve = curves
-                .get("Estimated In-Room Response")
-                .ok_or("PIR curve not found in CEA2034 data")?
-                .clone();
-
-            Ok((pir_curve, Some(curves)))
-        } else {
-            let curve = autoeq::read::read_spinorama(speaker, version, measurement, curve_name)
-                .await
-                .map_err(|e| format!("API error: {}", e))?;
-
-            // Extract spin data if CEA2034 (still need the full plot data for this)
-            let spin_data = if measurement == "CEA2034" {
-                let plot_data =
-                    autoeq::read::fetch_measurement_plot_data(speaker, version, measurement)
-                        .await
-                        .map_err(|e| format!("API error: {}", e))?;
-                Some(
-                    autoeq::read::extract_cea2034_curves_original(&plot_data, "CEA2034")
-                        .map_err(|e| format!("Spin data error: {}", e))?,
-                )
-            } else {
-                None
-            };
-
-            Ok((curve, spin_data))
-        }
-    })
+    rt.block_on(load_spinorama_measurement_async(
+        speaker, version, measurement, curve_name,
+    ))
 }
 
 // ============================================================================
@@ -1538,7 +1567,7 @@ pub async fn load_preview_curves_async(
         curve_name: curve_name.to_string(),
     };
 
-    let (input_curve, _spin_data) = load_measurement_with_spin(&input)?;
+    let (input_curve, _spin_data) = load_measurement_with_spin_async(&input).await?;
 
     // Create standard frequency grid
     let standard_freq = autoeq::read::create_log_frequency_grid(200, 20.0, 20000.0);

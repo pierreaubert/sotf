@@ -32,8 +32,15 @@ impl PlayerView {
             )
             .when_some(result, |vstack, result| {
                 let theme = theme.clone();
-                let num_filters = result.biquads.len();
-                let biquads = result.biquads.clone();
+                // Filter out near-zero gain filters (|gain| < 0.1 dB are effectively disabled)
+                let active_biquads: Vec<_> = result
+                    .biquads
+                    .iter()
+                    .filter(|b| b.db_gain.abs() >= 0.1)
+                    .cloned()
+                    .collect();
+                let num_filters = active_biquads.len();
+                let biquads = active_biquads;
 
                 vstack
                     .child(
@@ -89,7 +96,7 @@ impl PlayerView {
                                     .color(theme.text_primary)
                                     .weight(TextWeight::Semibold),
                             )
-                            .content(self.render_optimization_result_graphs(result, &theme, 800.0)),
+                            .content(self.render_optimization_result_graphs(result, &theme, 1200.0)),
                     )
                     .child(
                         Card::new()

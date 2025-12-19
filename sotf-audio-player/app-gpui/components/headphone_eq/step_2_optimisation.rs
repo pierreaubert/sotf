@@ -1,9 +1,11 @@
+use crate::app::types::OptimizationStatus;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    AutoEqConfig, AutoEqForm, AutoEqFormUiState, Button, ButtonSize, ButtonVariant, Card, HStack,
-    Progress, ProgressSize, StackSpacing, Text, TextSize, TextWeight, VStack,
+    AutoEqConfig, AutoEqForm, AutoEqFormUiState, Badge, BadgeVariant, Button, ButtonSize,
+    ButtonVariant, Card, Progress, ProgressSize, ProgressVariant, StackSpacing, Text, TextSize,
+    TextWeight, VStack,
 };
 
 impl PlayerView {
@@ -34,7 +36,7 @@ impl PlayerView {
                 crate::app::types::RoomEqAlgorithm::NelderMead => "nlopt:neldermead",
             }
             .to_string(),
-            population: 100,
+            population: 80,
             maxeval: config.max_iter,
             de_f: 0.8,
             de_cr: 0.9,
@@ -58,7 +60,8 @@ impl PlayerView {
         let autoeq_form = AutoEqForm::new("headphone-eq-optimizer-form")
             .config(autoeq_config)
             .ui_state(autoeq_ui_state)
-            .show_optimization_tuning(false) // Only show EQ Design section
+            .show_goals(false)
+            .show_optimization_tuning(true)
             .on_algo_change({
                 let state = self.state.clone();
                 move |algo, _window, cx| {
@@ -163,9 +166,6 @@ impl PlayerView {
                 }
             });
 
-        // Loss function selection
-        let current_loss = headphone_eq.optimizer_config.loss.clone();
-
         VStack::new()
             .spacing(StackSpacing::Lg)
             .child(
@@ -178,78 +178,6 @@ impl PlayerView {
                 Text::new("Set the optimization parameters for your headphone EQ.")
                     .size(TextSize::Sm)
                     .color(theme.text_secondary),
-            )
-            .child(
-                Card::new()
-                    .background(theme.surface)
-                    .header_background(theme.background_secondary)
-                    .border(theme.border)
-                    .header(
-                        Text::new("Optimization Goal")
-                            .color(theme.text_primary)
-                            .weight(TextWeight::Semibold),
-                    )
-                    .content(
-                        VStack::new()
-                            .spacing(StackSpacing::Md)
-                            .child(
-                                Text::new("Choose what the optimizer should optimize for.")
-                                    .size(TextSize::Sm)
-                                    .color(theme.text_secondary),
-                            )
-                            .child(
-                                HStack::new()
-                                    .spacing(StackSpacing::Sm)
-                                    .child({
-                                        let is_selected = current_loss == "headphone-score";
-                                        Button::new("loss-score", "Harman Score")
-                                            .variant(if is_selected {
-                                                ButtonVariant::Primary
-                                            } else {
-                                                ButtonVariant::Secondary
-                                            })
-                                            .size(ButtonSize::Sm)
-                                            .build()
-                                            .on_mouse_up(
-                                                MouseButton::Left,
-                                                cx.listener(|view, _, _, cx| {
-                                                    view.state.update(cx, |state, _cx| {
-                                                        state
-                                                            .app
-                                                            .headphone_eq_state
-                                                            .optimizer_config
-                                                            .loss = "headphone-score".to_string();
-                                                    });
-                                                    cx.notify();
-                                                }),
-                                            )
-                                    })
-                                    .child({
-                                        let is_selected = current_loss == "headphone-flat";
-                                        Button::new("loss-flat", "Target Flat")
-                                            .variant(if is_selected {
-                                                ButtonVariant::Primary
-                                            } else {
-                                                ButtonVariant::Secondary
-                                            })
-                                            .size(ButtonSize::Sm)
-                                            .build()
-                                            .on_mouse_up(
-                                                MouseButton::Left,
-                                                cx.listener(|view, _, _, cx| {
-                                                    view.state.update(cx, |state, _cx| {
-                                                        state
-                                                            .app
-                                                            .headphone_eq_state
-                                                            .optimizer_config
-                                                            .loss = "headphone-flat".to_string();
-                                                    });
-                                                    cx.notify();
-                                                }),
-                                            )
-                                    }),
-                            ),
-                    ),
             )
             .child(
                 Card::new()
@@ -277,7 +205,11 @@ impl PlayerView {
                     .content({
                         let progress = headphone_eq.progress;
                         let status_msg = headphone_eq.status_message.clone();
+                        let optimization_status = headphone_eq.optimization_status.clone();
                         let is_optimizing = headphone_eq.is_optimizing();
+                        let is_completed = optimization_status == OptimizationStatus::Completed;
+                        let is_failed = optimization_status == OptimizationStatus::Failed;
+                        let show_progress = is_optimizing || is_completed || is_failed;
 
                         VStack::new()
                             .spacing(StackSpacing::Md)
@@ -304,18 +236,66 @@ impl PlayerView {
                                     )
                                 }),
                             )
-                            .when(is_optimizing || progress > 0.0, |vstack| {
+                            .when(show_progress, |vstack| {
+                                let display_progress = if is_completed {
+                                    100.0
+                                } else if is_optimizing {
+                                    // Show indeterminate progress while optimizing
+                                    // Using a small non-zero value to show activity
+                                    (progress * 100.0).max(5.0)
+                                } else {
+                                    progress * 100.0
+                                };
+
                                 vstack
                                     .child(
-                                        Text::new(format!("Progress: {:.0}%", progress * 100.0))
-                                            .size(TextSize::Sm)
-                                            .color(theme.text_primary),
+                                        div()
+                                            .flex()
+                                            .flex_row()
+                                            .items_center()
+                                            .gap_2()
+                                            .child(
+                                                Text::new(if is_optimizing {
+                                                    "Optimizing...".to_string()
+                                                } else {
+                                                    format!("Progress: {:.0}%", display_progress)
+                                                })
+                                                .size(TextSize::Sm)
+                                                .color(theme.text_primary),
+                                            )
+                                            .when(is_completed, |el| {
+                                                el.child(
+                                                    Badge::new("Success")
+                                                        .variant(BadgeVariant::Success),
+                                                )
+                                            })
+                                            .when(is_failed, |el| {
+                                                el.child(
+                                                    Badge::new("Failed").variant(BadgeVariant::Error),
+                                                )
+                                            }),
                                     )
-                                    .child(Progress::new(progress * 100.0).size(ProgressSize::Md))
+                                    .child(
+                                        Progress::new(display_progress)
+                                            .size(ProgressSize::Md)
+                                            .variant(if is_completed {
+                                                ProgressVariant::Success
+                                            } else if is_failed {
+                                                ProgressVariant::Error
+                                            } else {
+                                                ProgressVariant::Default
+                                            }),
+                                    )
                                     .child(
                                         Text::new(status_msg)
                                             .size(TextSize::Sm)
-                                            .color(theme.text_secondary),
+                                            .color(if is_completed {
+                                                theme.success
+                                            } else if is_failed {
+                                                theme.error
+                                            } else {
+                                                theme.text_secondary
+                                            }),
                                     )
                             })
                     }),

@@ -1744,11 +1744,9 @@ pub enum SpinoramaStep {
     /// Step 1: Select speaker from spinorama.org
     #[default]
     SelectSpeaker,
-    /// Step 2: Configure optimizer parameters
+    /// Step 2: Configure and run optimization
     Configure,
-    /// Step 3: Run optimization
-    Optimize,
-    /// Step 4: Review and apply results
+    /// Step 3: Review and apply results
     Review,
 }
 
@@ -1758,7 +1756,6 @@ impl SpinoramaStep {
         &[
             SpinoramaStep::SelectSpeaker,
             SpinoramaStep::Configure,
-            SpinoramaStep::Optimize,
             SpinoramaStep::Review,
         ]
     }
@@ -1768,8 +1765,7 @@ impl SpinoramaStep {
         match self {
             SpinoramaStep::SelectSpeaker => 0,
             SpinoramaStep::Configure => 1,
-            SpinoramaStep::Optimize => 2,
-            SpinoramaStep::Review => 3,
+            SpinoramaStep::Review => 2,
         }
     }
 
@@ -1778,7 +1774,6 @@ impl SpinoramaStep {
         match self {
             SpinoramaStep::SelectSpeaker => "Select",
             SpinoramaStep::Configure => "Configure",
-            SpinoramaStep::Optimize => "Optimize",
             SpinoramaStep::Review => "Review",
         }
     }
@@ -1787,8 +1782,7 @@ impl SpinoramaStep {
     pub fn next(&self) -> Option<SpinoramaStep> {
         match self {
             SpinoramaStep::SelectSpeaker => Some(SpinoramaStep::Configure),
-            SpinoramaStep::Configure => Some(SpinoramaStep::Optimize),
-            SpinoramaStep::Optimize => Some(SpinoramaStep::Review),
+            SpinoramaStep::Configure => Some(SpinoramaStep::Review),
             SpinoramaStep::Review => None,
         }
     }
@@ -1798,8 +1792,7 @@ impl SpinoramaStep {
         match self {
             SpinoramaStep::SelectSpeaker => None,
             SpinoramaStep::Configure => Some(SpinoramaStep::SelectSpeaker),
-            SpinoramaStep::Optimize => Some(SpinoramaStep::Configure),
-            SpinoramaStep::Review => Some(SpinoramaStep::Optimize),
+            SpinoramaStep::Review => Some(SpinoramaStep::Configure),
         }
     }
 }
@@ -2173,8 +2166,8 @@ impl SpinoramaEqState {
     pub fn can_advance(&self) -> bool {
         match self.step {
             SpinoramaStep::SelectSpeaker => self.selected_speaker.is_some(),
-            SpinoramaStep::Configure => true,
-            SpinoramaStep::Optimize => self.optimization_status == OptimizationStatus::Completed,
+            // Configure step now includes optimization - must complete before advancing
+            SpinoramaStep::Configure => self.optimization_status == OptimizationStatus::Completed,
             SpinoramaStep::Review => self.result.is_some(),
         }
     }
