@@ -40,8 +40,8 @@ static SPINORAMA_RESULT: Mutex<
 static PHASE_CHECK_RESULT: Mutex<Option<bool>> = Mutex::new(None);
 
 // Global mutex for sharing optimization progress between threads
-// Format: Vec<(iteration, loss, progress_pct)>
-static SPINORAMA_PROGRESS: Mutex<Vec<(usize, f64, f32)>> = Mutex::new(Vec::new());
+// Format: Vec<(iteration, loss, optional_score, progress_pct)>
+static SPINORAMA_PROGRESS: Mutex<Vec<(usize, f64, Option<f64>, f32)>> = Mutex::new(Vec::new());
 
 // Global mutex for sharing preview curves result between threads
 // Format: Option<Result<PreviewCurves, error_string>>
@@ -911,16 +911,18 @@ impl PlayerView {
                     let progress_pct = progress.iteration as f32 / max_iter as f32;
                     let iter = progress.iteration;
                     let loss = progress.loss;
+                    let score = progress.score;
 
                     // Push progress to global mutex for GPUI polling
                     if let Ok(mut progress_vec) = SPINORAMA_PROGRESS.lock() {
-                        progress_vec.push((iter, loss, progress_pct));
+                        progress_vec.push((iter, loss, score, progress_pct));
                     }
 
                     log::debug!(
-                        "Spinorama optimization: iter={}, loss={:.4}, progress={:.1}%",
+                        "Spinorama optimization: iter={}, loss={:.4}, score={:?}, progress={:.1}%",
                         iter,
                         loss,
+                        score,
                         progress_pct * 100.0
                     );
 
@@ -1020,7 +1022,7 @@ impl PlayerView {
                 smol::Timer::after(std::time::Duration::from_millis(100)).await;
 
                 // Check for progress updates and transfer to state
-                let new_progress: Vec<(usize, f64, f32)> = {
+                let new_progress: Vec<(usize, f64, Option<f64>, f32)> = {
                     let mut progress_guard = SPINORAMA_PROGRESS.lock().unwrap();
                     std::mem::take(&mut *progress_guard)
                 };
@@ -1028,15 +1030,15 @@ impl PlayerView {
                 if !new_progress.is_empty() {
                     let _ = state_for_poll.update(cx, |state, cx| {
                         // Append new progress points to history
-                        for (iter, loss, _) in &new_progress {
+                        for (iter, loss, score, _) in &new_progress {
                             state
                                 .app
                                 .spinorama_eq_state
                                 .progress_history
-                                .push((*iter, *loss));
+                                .push((*iter, *loss, *score));
                         }
                         // Update progress from last entry
-                        if let Some((_, _, pct)) = new_progress.last() {
+                        if let Some((_, _, _, pct)) = new_progress.last() {
                             state.app.spinorama_eq_state.progress = *pct;
                         }
                         cx.notify();

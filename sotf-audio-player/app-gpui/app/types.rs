@@ -2072,8 +2072,8 @@ pub struct SpinoramaEqState {
     pub optimization_status: OptimizationStatus,
     /// Progress (0.0 - 1.0)
     pub progress: f32,
-    /// Progress history for loss curve (iteration, loss)
-    pub progress_history: Vec<(usize, f64)>,
+    /// Progress history for loss/score curves (iteration, loss, optional_score)
+    pub progress_history: Vec<(usize, f64, Option<f64>)>,
     /// Status message during optimization
     pub status_message: String,
     /// Error message if optimization failed

@@ -1,8 +1,6 @@
-use crate::components::graphs::common::{rgba_to_u32, theme_to_chart_theme};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_px::line;
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Card, HStack, StackSpacing, Text, TextSize, TextWeight,
     VStack,
@@ -21,7 +19,6 @@ impl PlayerView {
         let result = spinorama.result.as_ref();
         let full_result = spinorama.full_result.as_ref();
         let export_format = spinorama.export_format.clone();
-        let progress_history = spinorama.progress_history.clone();
 
         VStack::new()
             .spacing(StackSpacing::Lg)
@@ -36,62 +33,6 @@ impl PlayerView {
                     .size(TextSize::Sm)
                     .color(theme.text_secondary),
             )
-            // Optimization Process graph (if history is available)
-            .when(!progress_history.is_empty(), |vstack| {
-                let theme = theme.clone();
-                let history = progress_history.clone();
-                let chart_theme = theme_to_chart_theme(&theme);
-
-                let iterations: Vec<f64> = history.iter().map(|&(i, _)| i as f64).collect();
-                let losses: Vec<f64> = history.iter().map(|&(_, loss)| loss).collect();
-
-                let current_loss = losses.last().copied().unwrap_or(0.0);
-                let best_loss = losses.iter().copied().fold(f64::INFINITY, f64::min);
-
-                let chart = line(&iterations, &losses)
-                    .title("Optimization Process")
-                    .x_label("Iteration")
-                    .y_label("Loss")
-                    .label("Loss")
-                    .color(rgba_to_u32(theme.graph_colors.filter_response))
-                    .stroke_width(2.0)
-                    .theme(chart_theme)
-                    .size(700.0, 250.0)
-                    .build();
-
-                vstack.child(
-                    Card::new()
-                        .background(theme.surface)
-                        .header_background(theme.background_secondary)
-                        .border(theme.border)
-                        .header(
-                            HStack::new()
-                                .spacing(StackSpacing::Lg)
-                                .child(
-                                    Text::new("Optimization Process")
-                                        .color(theme.text_primary)
-                                        .weight(TextWeight::Semibold),
-                                )
-                                .child(
-                                    Text::new(format!("Final: {:.4}", current_loss))
-                                        .size(TextSize::Sm)
-                                        .color(theme.text_secondary),
-                                )
-                                .child(
-                                    Text::new(format!("Best: {:.4}", best_loss))
-                                        .size(TextSize::Sm)
-                                        .color(theme.success),
-                                ),
-                        )
-                        .content(
-                            div()
-                                .w(px(700.0))
-                                .flex()
-                                .flex_col()
-                                .when_some(chart.ok(), |el, c| el.child(c)),
-                        ),
-                )
-            })
             // Graphs card (if full_result is available)
             .when_some(full_result.cloned(), |vstack, full_res| {
                 let theme_for_graphs = theme.clone();

@@ -28,6 +28,9 @@ pub struct SpeakerOptimizationProgress {
     pub iteration: usize,
     /// Current loss/objective value
     pub loss: f64,
+    /// Optional score value (higher is better, e.g., Harman score)
+    /// Only available when using score-based loss functions like speaker-score
+    pub score: Option<f64>,
     /// Convergence metric (population standard deviation)
     pub convergence: f64,
     /// Current best parameters (raw optimizer params)
@@ -428,6 +431,7 @@ fn create_interval_callback(
                 let progress = SpeakerOptimizationProgress {
                     iteration: intermediate.iter,
                     loss: intermediate.fun,
+                    score: None, // Score is computed separately if using score-based losses
                     convergence: intermediate.convergence,
                     current_params: intermediate.x.to_vec(),
                     current_biquads,
@@ -1559,15 +1563,45 @@ pub async fn load_preview_curves_async(
     measurement: &str,
     curve_name: &str,
 ) -> Result<PreviewCurves, String> {
-    // Load input curve from Spinorama API
-    let input = MeasurementInput::Spinorama {
-        speaker: speaker.to_string(),
-        version: version.to_string(),
-        measurement: measurement.to_string(),
-        curve_name: curve_name.to_string(),
-    };
+    // CEA2034 curve names that must be extracted from CEA2034 measurement data
+    const CEA2034_CURVES: &[&str] = &[
+        "On Axis",
+        "Listening Window",
+        "Early Reflections",
+        "Sound Power",
+        "Early Reflections DI",
+        "Sound Power DI",
+        "Estimated In-Room Response",
+    ];
 
-    let (input_curve, _spin_data) = load_measurement_with_spin_async(&input).await?;
+    // Check if curve_name is a CEA2034 curve that needs extraction
+    let is_cea2034_curve = CEA2034_CURVES.contains(&curve_name);
+
+    // Load input curve - for CEA2034 curves, always fetch from CEA2034 measurement
+    let input_curve = if is_cea2034_curve {
+        // Fetch CEA2034 data and extract the requested curve
+        let plot_data = autoeq::read::fetch_measurement_plot_data(speaker, version, "CEA2034")
+            .await
+            .map_err(|e| format!("API error: {}", e))?;
+
+        let curves = autoeq::read::extract_cea2034_curves_original(&plot_data, "CEA2034")
+            .map_err(|e| format!("Failed to extract CEA2034 curves: {}", e))?;
+
+        curves
+            .get(curve_name)
+            .ok_or_else(|| format!("Curve '{}' not found in CEA2034 data", curve_name))?
+            .clone()
+    } else {
+        // For non-CEA2034 curves, use direct API fetch
+        let input = MeasurementInput::Spinorama {
+            speaker: speaker.to_string(),
+            version: version.to_string(),
+            measurement: measurement.to_string(),
+            curve_name: curve_name.to_string(),
+        };
+        let (curve, _spin_data) = load_measurement_with_spin_async(&input).await?;
+        curve
+    };
 
     // Create standard frequency grid
     let standard_freq = autoeq::read::create_log_frequency_grid(200, 20.0, 20000.0);
