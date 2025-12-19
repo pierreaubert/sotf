@@ -148,6 +148,8 @@ fn generate_log_ticks(min: f64, max: f64) -> Vec<f64> {
 /// A single series in a line chart
 #[derive(Debug, Clone)]
 struct LineSeries {
+    /// Optional custom X values (if None, uses the primary X values)
+    x: Option<Vec<f64>>,
     y: Vec<f64>,
     label: Option<String>,
     color: u32,
@@ -177,6 +179,8 @@ pub struct LineChart {
     height: f32,
     x_scale_type: ScaleType,
     y_scale_type: ScaleType,
+    x_range: Option<[f64; 2]>,
+    y_range: Option<[f64; 2]>,
     show_legend: bool,
     theme: ChartTheme,
 }
@@ -282,6 +286,44 @@ impl LineChart {
         self
     }
 
+    /// Set the X-axis display range.
+    ///
+    /// When set, only data points within this range are displayed, and the
+    /// axis is scaled to show exactly this range. Points outside the range
+    /// are clipped.
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// use gpui_px::line;
+    /// // Show only the range from 100 Hz to 10000 Hz
+    /// let chart = line(&[20.0, 100.0, 1000.0, 10000.0, 20000.0], &[1.0, 2.0, 3.0, 4.0, 5.0])
+    ///     .x_range(100.0, 10000.0)
+    ///     .build();
+    /// ```
+    pub fn x_range(mut self, min: f64, max: f64) -> Self {
+        self.x_range = Some([min, max]);
+        self
+    }
+
+    /// Set the Y-axis display range.
+    ///
+    /// When set, only data points within this range are displayed, and the
+    /// axis is scaled to show exactly this range. Points outside the range
+    /// are clipped.
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// use gpui_px::line;
+    /// // Show only Y values from -10 dB to +10 dB
+    /// let chart = line(&[1.0, 2.0, 3.0, 4.0], &[-20.0, 5.0, -5.0, 15.0])
+    ///     .y_range(-10.0, 10.0)
+    ///     .build();
+    /// ```
+    pub fn y_range(mut self, min: f64, max: f64) -> Self {
+        self.y_range = Some([min, max]);
+        self
+    }
+
     /// Add an additional data series to the chart.
     ///
     /// All series share the same X-axis data. This allows overlaying multiple
@@ -308,6 +350,35 @@ impl LineChart {
         opacity: f32,
     ) -> Self {
         self.series.push(LineSeries {
+            x: None,
+            y: y.to_vec(),
+            label: label.map(|l| l.into()),
+            color,
+            stroke_width,
+            opacity,
+        });
+        // Auto-enable legend if any series has a label
+        if self.series.iter().any(|s| s.label.is_some()) {
+            self.show_legend = true;
+        }
+        self
+    }
+
+    /// Add an additional series with custom X values.
+    ///
+    /// Use this when the series has different X coordinates than the primary series.
+    /// Useful for reference lines or overlaying data with different sampling.
+    pub fn add_series_with_x(
+        mut self,
+        x: &[f64],
+        y: &[f64],
+        label: Option<impl Into<String>>,
+        color: u32,
+        stroke_width: f32,
+        opacity: f32,
+    ) -> Self {
+        self.series.push(LineSeries {
+            x: Some(x.to_vec()),
             y: y.to_vec(),
             label: label.map(|l| l.into()),
             color,
@@ -346,7 +417,17 @@ impl LineChart {
         // Validate all additional series
         for series in &self.series {
             validate_data_array(&series.y, "series.y")?;
-            validate_data_length(self.x.len(), series.y.len(), "x", "series.y")?;
+            if let Some(ref x) = series.x {
+                // Series has custom X values
+                validate_data_array(x, "series.x")?;
+                validate_data_length(x.len(), series.y.len(), "series.x", "series.y")?;
+                if self.x_scale_type == ScaleType::Log {
+                    validate_positive(x, "series.x")?;
+                }
+            } else {
+                // Series shares primary X values
+                validate_data_length(self.x.len(), series.y.len(), "x", "series.y")?;
+            }
             if self.y_scale_type == ScaleType::Log {
                 validate_positive(&series.y, "series.y")?;
             }
@@ -417,7 +498,11 @@ impl LineChart {
             (self.height as f64 - title_height as f64 - margin_top - margin_bottom).max(0.0);
 
         // Calculate domains with padding - include all series in Y-axis range
-        let (x_min, x_max) = if self.x_scale_type == ScaleType::Log {
+        // Use user-provided ranges if set, otherwise auto-calculate from data
+        let (x_min, x_max) = if let Some([min, max]) = self.x_range {
+            // User-specified range - use exactly as provided (no padding)
+            (min, max)
+        } else if self.x_scale_type == ScaleType::Log {
             // For log scale, use multiplicative padding to avoid going negative
             let min = self.x.iter().copied().fold(f64::INFINITY, f64::min);
             let max = self.x.iter().copied().fold(f64::NEG_INFINITY, f64::max);
@@ -432,7 +517,10 @@ impl LineChart {
         for series in &self.series {
             all_y_values.extend_from_slice(&series.y);
         }
-        let (y_min, y_max) = if self.y_scale_type == ScaleType::Log {
+        let (y_min, y_max) = if let Some([min, max]) = self.y_range {
+            // User-specified range - use exactly as provided (no padding)
+            (min, max)
+        } else if self.y_scale_type == ScaleType::Log {
             // For log scale, use multiplicative padding
             let min = all_y_values.iter().copied().fold(f64::INFINITY, f64::min);
             let max = all_y_values
@@ -464,8 +552,9 @@ impl LineChart {
         // Prepare additional series data and configs
         let mut series_data_configs: Vec<(Vec<LinePoint>, LineConfig)> = Vec::new();
         for series in &self.series {
-            let series_points: Vec<LinePoint> = self
-                .x
+            // Use custom X values if provided, otherwise use primary X values
+            let x_values = series.x.as_ref().unwrap_or(&self.x);
+            let series_points: Vec<LinePoint> = x_values
                 .iter()
                 .zip(series.y.iter())
                 .map(|(&x, &y)| LinePoint::new(x, y))
@@ -899,6 +988,8 @@ pub fn line(x: &[f64], y: &[f64]) -> LineChart {
         height: DEFAULT_HEIGHT,
         x_scale_type: ScaleType::Linear,
         y_scale_type: ScaleType::Linear,
+        x_range: None,
+        y_range: None,
         show_legend: false,
         theme: ChartTheme::default(),
     }
@@ -1044,6 +1135,126 @@ mod tests {
             .x_scale(ScaleType::Log)
             .curve(CurveType::Linear)
             .show_points(true)
+            .build();
+        assert!(result.is_ok());
+    }
+
+    // ============================================================================
+    // Range Clipping Tests
+    // ============================================================================
+
+    #[test]
+    fn test_line_x_range() {
+        let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let y = vec![10.0, 20.0, 30.0, 40.0, 50.0];
+        let result = line(&x, &y).x_range(2.0, 4.0).build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_line_y_range() {
+        let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let y = vec![10.0, 20.0, 30.0, 40.0, 50.0];
+        let result = line(&x, &y).y_range(15.0, 45.0).build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_line_both_ranges() {
+        let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let y = vec![10.0, 20.0, 30.0, 40.0, 50.0];
+        let result = line(&x, &y).x_range(1.5, 4.5).y_range(15.0, 45.0).build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_line_x_range_with_log_scale() {
+        let x = vec![10.0, 100.0, 1000.0, 10000.0];
+        let y = vec![1.0, 2.0, 3.0, 4.0];
+        let result = line(&x, &y)
+            .x_scale(ScaleType::Log)
+            .x_range(50.0, 5000.0)
+            .build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_line_y_range_with_log_scale() {
+        let x = vec![1.0, 2.0, 3.0, 4.0];
+        let y = vec![10.0, 100.0, 1000.0, 10000.0];
+        let result = line(&x, &y)
+            .y_scale(ScaleType::Log)
+            .y_range(50.0, 5000.0)
+            .build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_line_range_with_title_and_labels() {
+        let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let y = vec![10.0, 20.0, 30.0, 40.0, 50.0];
+        let result = line(&x, &y)
+            .title("Range Test")
+            .x_label("X Axis")
+            .y_label("Y Axis")
+            .x_range(1.0, 5.0)
+            .y_range(10.0, 50.0)
+            .build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_line_range_outside_data() {
+        // Range extends beyond data - should still work (shows empty space)
+        let x = vec![2.0, 3.0, 4.0];
+        let y = vec![20.0, 30.0, 40.0];
+        let result = line(&x, &y).x_range(0.0, 10.0).y_range(0.0, 100.0).build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_line_range_narrower_than_data() {
+        // Range is narrower than data - clips some data points visually
+        let x = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+        let y = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+        let result = line(&x, &y).x_range(3.0, 7.0).y_range(3.0, 7.0).build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_line_range_with_multiple_series() {
+        let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let y1 = vec![10.0, 20.0, 30.0, 40.0, 50.0];
+        let y2 = vec![5.0, 15.0, 25.0, 35.0, 45.0];
+        let result = line(&x, &y1)
+            .label("Series 1")
+            .add_series(&y2, Some("Series 2"), 0xff7f0e, 2.0, 1.0)
+            .x_range(1.5, 4.5)
+            .y_range(10.0, 45.0)
+            .build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_line_range_negative_values() {
+        let x = vec![-5.0, -2.0, 0.0, 2.0, 5.0];
+        let y = vec![-10.0, -5.0, 0.0, 5.0, 10.0];
+        let result = line(&x, &y).x_range(-3.0, 3.0).y_range(-8.0, 8.0).build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_line_range_frequency_response_use_case() {
+        // Typical audio frequency response display: 20 Hz to 20 kHz on log scale
+        let x: Vec<f64> = (1..=100).map(|i| 20.0 * (1000.0_f64).powf(i as f64 / 100.0)).collect();
+        let y: Vec<f64> = x.iter().map(|_| 0.0).collect(); // flat response
+        let result = line(&x, &y)
+            .x_scale(ScaleType::Log)
+            .x_range(20.0, 20000.0)
+            .y_range(-20.0, 20.0)
+            .title("Frequency Response")
+            .x_label("Frequency (Hz)")
+            .y_label("dB")
             .build();
         assert!(result.is_ok());
     }
