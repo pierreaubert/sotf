@@ -6,7 +6,11 @@
 use fem::assembly::HelmholtzProblem;
 use fem::basis::PolynomialDegree;
 use fem::boundary::{DirichletBC, apply_dirichlet};
-use fem::mesh::{rectangular_mesh_triangles, unit_square_triangles};
+use fem::mesh::{
+    annular_mesh_triangles, box_mesh_tetrahedra, rectangular_mesh_triangles,
+    spherical_shell_mesh_tetrahedra, unit_square_triangles, BoundaryType,
+};
+use math_wave::analytical::{legendre_p, spherical_bessel_j, spherical_bessel_y};
 use ndarray::Array1;
 use num_complex::Complex64;
 use solvers::{CsrMatrix, GmresConfig, gmres};
@@ -965,8 +969,6 @@ fn test_mms_rectangle() {
 // Scattering Problem: Circular Obstacle (2D)
 // ============================================================================
 
-use fem::mesh::annular_mesh_triangles;
-
 /// Helper: compute the analytical scattered field for a sound-soft cylinder
 ///
 /// For a sound-soft (Dirichlet) cylinder with u=0 on surface:
@@ -1220,4 +1222,314 @@ fn test_cylinder_scattering_far_field_decay() {
             actual_ratio
         );
     }
+}
+
+// ============================================================================
+// 3D Tests
+// ============================================================================
+
+/// Test 3D plane wave solution
+#[test]
+fn test_3d_plane_wave() {
+    let k = 2.0;
+    let theta = PI / 4.0;
+    let phi = PI / 3.0;
+
+    // Wave vector
+    let kx = k * theta.sin() * phi.cos();
+    let ky = k * theta.sin() * phi.sin();
+    let kz = k * theta.cos();
+
+    // Use box mesh
+    let mut mesh = box_mesh_tetrahedra(0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 4, 4, 4);
+
+    // Set all boundaries to tag 1 (Dirichlet)
+    mesh.set_boundary_condition(BoundaryType::Dirichlet, 1, |_| true);
+
+    let k_complex = Complex64::new(k, 0.0);
+    let mut problem =
+        HelmholtzProblem::assemble(&mesh, PolynomialDegree::P1, k_complex, |_, _, _| {
+            Complex64::default()
+        });
+
+    let plane_wave = move |x: f64, y: f64, z: f64| {
+        let phase = kx * x + ky * y + kz * z;
+        Complex64::new(phase.cos(), phase.sin())
+    };
+
+    // Apply BC on tag 1
+    let bc = DirichletBC::new(1, plane_wave);
+    apply_dirichlet(&mut problem, &mesh, &[bc]);
+
+    let matrix = to_csr_matrix(&problem);
+    let rhs = Array1::from_vec(problem.rhs.clone());
+    let config = GmresConfig {
+        max_iterations: 500,
+        restart: 50,
+        tolerance: 1e-10,
+        print_interval: 0,
+    };
+    let solution = gmres(&matrix, &rhs, &config);
+    assert!(solution.converged, "GMRES should converge");
+
+    let error = l2_error(&mesh, &solution.x, plane_wave);
+    assert!(
+        error < 0.05,
+        "3D plane wave error {} should be < 0.05",
+        error
+    );
+}
+
+/// Helper: 2D Rigid Cylinder scattering
+fn cylinder_scattering_rigid_point(k: f64, a: f64, x: f64, y: f64, num_terms: usize) -> Complex64 {
+    use spec_math::Bessel;
+
+    let r = (x * x + y * y).sqrt();
+    let theta = y.atan2(x);
+    let ka = k * a;
+    let kr = k * r;
+
+    let incident = Complex64::new((kr * theta.cos()).cos(), (kr * theta.cos()).sin());
+    let mut scattered = Complex64::new(0.0, 0.0);
+
+    for n in 0..num_terms {
+        let n_f64 = n as f64;
+        let epsilon_n = if n == 0 { 1.0 } else { 2.0 };
+
+        // Derivatives J'_n(x) = J_{n-1}(x) - n/x J_n(x)
+        let jn_ka = ka.bessel_jv(n_f64);
+        let jn_prev = if n == 0 {
+            -ka.bessel_jv(1.0)
+        } else {
+            ka.bessel_jv(n_f64 - 1.0)
+        };
+        let jn_prime = jn_prev - n_f64 / ka * jn_ka;
+
+        // Y'_n(x)
+        let yn_ka = ka.bessel_yv(n_f64);
+        let yn_prev = if n == 0 {
+            -ka.bessel_yv(1.0)
+        } else {
+            ka.bessel_yv(n_f64 - 1.0)
+        };
+        let yn_prime = yn_prev - n_f64 / ka * yn_ka;
+
+        let hn_prime = Complex64::new(jn_prime, yn_prime);
+        let hn_kr = Complex64::new(kr.bessel_jv(n_f64), kr.bessel_yv(n_f64));
+
+        let i_pow_n = Complex64::new((n_f64 * PI / 2.0).cos(), (n_f64 * PI / 2.0).sin());
+
+        // Coefficient for rigid cylinder (Neumann)
+        let coeff = -epsilon_n * jn_prime / hn_prime * i_pow_n;
+
+        scattered += coeff * hn_kr * (n_f64 * theta).cos();
+    }
+    incident + scattered
+}
+
+#[test]
+fn test_cylinder_scattering_rigid() {
+    let cylinder_radius = 1.0;
+    let outer_radius = 3.0;
+    let k = 2.0;
+
+    let n_radial = 16;
+    let n_angular = 32;
+    let mesh =
+        annular_mesh_triangles(0.0, 0.0, cylinder_radius, outer_radius, n_radial, n_angular);
+
+    let num_terms = 30;
+    let exact_u = move |x: f64, y: f64, _z: f64| {
+        cylinder_scattering_rigid_point(k, cylinder_radius, x, y, num_terms)
+    };
+
+    let k_complex = Complex64::new(k, 0.0);
+    let mut problem =
+        HelmholtzProblem::assemble(&mesh, PolynomialDegree::P1, k_complex, |_, _, _| {
+            Complex64::default()
+        });
+
+    // BCs:
+    // Inner (tag 1): Neumann (Rigid) -> Natural BC (do nothing)
+    // Outer (tag 2): Dirichlet -> Exact solution
+    let bc_outer = DirichletBC::new(2, exact_u);
+    apply_dirichlet(&mut problem, &mesh, &[bc_outer]);
+
+    let matrix = to_csr_matrix(&problem);
+    let rhs = Array1::from_vec(problem.rhs.clone());
+    let config = GmresConfig {
+        max_iterations: 2000,
+        restart: 100,
+        tolerance: 1e-10,
+        print_interval: 0,
+    };
+    let solution = gmres(&matrix, &rhs, &config);
+    assert!(solution.converged);
+
+    let error = l2_error(&mesh, &solution.x, exact_u);
+    assert!(
+        error < 0.25,
+        "Rigid cylinder error {} should be < 0.25",
+        error
+    );
+}
+
+/// Helper: 3D Sphere scattering point evaluation
+fn sphere_scattering_point(
+    k: f64,
+    a: f64,
+    x: f64,
+    y: f64,
+    z: f64,
+    num_terms: usize,
+    bc_type: &str,
+) -> Complex64 {
+    let r = (x * x + y * y + z * z).sqrt();
+    if r < 1e-10 {
+        return Complex64::default();
+    }
+    // Angle theta from z-axis
+    let cos_theta = z / r;
+
+    let ka = k * a;
+    let kr = k * r;
+
+    let mut total = Complex64::default();
+
+    for n in 0..num_terms {
+        let n_f64 = n as f64;
+        let prefactor = 2.0 * n_f64 + 1.0;
+        let i_pow_n = Complex64::new((n_f64 * PI / 2.0).cos(), (n_f64 * PI / 2.0).sin());
+
+        let jn_ka = spherical_bessel_j(n, ka);
+        let yn_ka = spherical_bessel_y(n, ka);
+        let hn_ka = Complex64::new(jn_ka, yn_ka);
+
+        let jn_kr = spherical_bessel_j(n, kr);
+        let yn_kr = spherical_bessel_y(n, kr);
+        let hn_kr = Complex64::new(jn_kr, yn_kr);
+
+        let pn = legendre_p(n, cos_theta);
+
+        let coeff;
+        if bc_type == "dirichlet" {
+            // Sound-soft: jn(ka) / hn(ka)
+            coeff = jn_ka / hn_ka;
+        } else {
+            // Rigid: jn'(ka) / hn'(ka)
+            let jn_prev = if n == 0 {
+                ka.cos() / ka
+            } else {
+                spherical_bessel_j(n - 1, ka)
+            };
+            let jn_prime = jn_prev - (n_f64 + 1.0) / ka * jn_ka;
+
+            let yn_prev = if n == 0 {
+                -ka.sin() / ka
+            } else {
+                spherical_bessel_y(n - 1, ka)
+            };
+            let yn_prime = yn_prev - (n_f64 + 1.0) / ka * yn_ka;
+
+            let hn_prime = Complex64::new(jn_prime, yn_prime);
+            coeff = Complex64::new(jn_prime, 0.0) / hn_prime;
+        }
+
+        // Total field = incident + scattered
+        // u = Σ (2n+1) i^n [jn(kr) - coeff * hn(kr)] Pn(cos theta)
+        total += prefactor * i_pow_n * (jn_kr - coeff * hn_kr) * pn;
+    }
+    total
+}
+
+#[test]
+fn test_sphere_scattering_sound_soft() {
+    let a = 1.0;
+    let outer_r = 2.0; // Keep domain small for test speed
+    let k = 1.0; // ka=1 (Mie)
+
+    // Coarse mesh for speed
+    let mesh = spherical_shell_mesh_tetrahedra(0.0, 0.0, 0.0, a, outer_r, 1, 4);
+
+    let num_terms = 15;
+    let exact_u = move |x: f64, y: f64, z: f64| {
+        sphere_scattering_point(k, a, x, y, z, num_terms, "dirichlet")
+    };
+
+    let k_complex = Complex64::new(k, 0.0);
+    let mut problem =
+        HelmholtzProblem::assemble(&mesh, PolynomialDegree::P1, k_complex, |_, _, _| {
+            Complex64::default()
+        });
+
+    // Inner: Dirichlet u=0
+    let bc_inner = DirichletBC::new(1, |_, _, _| Complex64::default());
+    // Outer: Exact
+    let bc_outer = DirichletBC::new(2, exact_u);
+
+    apply_dirichlet(&mut problem, &mesh, &[bc_inner, bc_outer]);
+
+    let matrix = to_csr_matrix(&problem);
+    let rhs = Array1::from_vec(problem.rhs.clone());
+    let config = GmresConfig {
+        max_iterations: 1000,
+        restart: 50,
+        tolerance: 1e-8,
+        print_interval: 0,
+    };
+    let solution = gmres(&matrix, &rhs, &config);
+    assert!(solution.converged);
+
+    let error = l2_error(&mesh, &solution.x, exact_u);
+    // 3D FEM with linear tets on coarse mesh is not super accurate
+    // Just check it's not garbage
+    assert!(
+        error < 0.4,
+        "Sphere scattering (soft) error {} should be < 0.4",
+        error
+    );
+}
+
+#[test]
+fn test_sphere_scattering_rigid() {
+    let a = 1.0;
+    let outer_r = 2.0;
+    let k = 1.0;
+
+    let mesh = spherical_shell_mesh_tetrahedra(0.0, 0.0, 0.0, a, outer_r, 1, 4);
+
+    let num_terms = 15;
+    let exact_u = move |x: f64, y: f64, z: f64| {
+        sphere_scattering_point(k, a, x, y, z, num_terms, "rigid")
+    };
+
+    let k_complex = Complex64::new(k, 0.0);
+    let mut problem =
+        HelmholtzProblem::assemble(&mesh, PolynomialDegree::P1, k_complex, |_, _, _| {
+            Complex64::default()
+        });
+
+    // Inner: Natural Neumann (Rigid)
+    // Outer: Exact
+    let bc_outer = DirichletBC::new(2, exact_u);
+
+    apply_dirichlet(&mut problem, &mesh, &[bc_outer]);
+
+    let matrix = to_csr_matrix(&problem);
+    let rhs = Array1::from_vec(problem.rhs.clone());
+    let config = GmresConfig {
+        max_iterations: 1000,
+        restart: 50,
+        tolerance: 1e-8,
+        print_interval: 0,
+    };
+    let solution = gmres(&matrix, &rhs, &config);
+    assert!(solution.converged);
+
+    let error = l2_error(&mesh, &solution.x, exact_u);
+    assert!(
+        error < 0.4,
+        "Sphere scattering (rigid) error {} should be < 0.4",
+        error
+    );
 }
