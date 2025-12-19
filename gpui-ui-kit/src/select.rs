@@ -453,32 +453,41 @@ impl Select {
                         .bg(theme.dropdown_bg)
                         .text_color(theme.disabled_color)
                         .cursor_not_allowed();
-                } else if is_selected {
-                    option_el = option_el
-                        .bg(theme.selected_bg)
-                        .text_color(theme.selected_text_color);
-                } else if is_highlighted {
-                    // Highlight option for keyboard navigation
-                    option_el = option_el
-                        .bg(theme.option_hover_bg)
-                        .text_color(theme.option_text_color);
                 } else {
-                    let hover_bg = theme.option_hover_bg;
-                    option_el = option_el
-                        .bg(theme.dropdown_bg)
-                        .text_color(theme.option_text_color)
-                        .hover(move |s| s.bg(hover_bg));
-
-                    // Add click handler for non-disabled, non-selected options
-                    if let Some(ref handler) = on_change_rc {
-                        let handler_click = handler.clone();
-                        option_el = option_el.on_mouse_down(
-                            MouseButton::Left,
-                            move |_event, window, cx| {
-                                handler_click(&option_value, window, cx);
-                            },
-                        );
+                    // Apply styling based on state
+                    if is_selected {
+                        option_el = option_el
+                            .bg(theme.selected_bg)
+                            .text_color(theme.selected_text_color);
+                    } else if is_highlighted {
+                        // Highlight option for keyboard navigation
+                        option_el = option_el
+                            .bg(theme.option_hover_bg)
+                            .text_color(theme.option_text_color);
+                    } else {
+                        let hover_bg = theme.option_hover_bg;
+                        option_el = option_el
+                            .bg(theme.dropdown_bg)
+                            .text_color(theme.option_text_color)
+                            .hover(move |s| s.bg(hover_bg));
                     }
+
+                    // Add click handler for ALL non-disabled options
+                    let change_handler = on_change_rc.clone();
+                    let toggle_handler = on_toggle_rc.clone();
+                    option_el = option_el.on_mouse_down(
+                        MouseButton::Left,
+                        move |_event, window, cx| {
+                            // Call change handler if provided
+                            if let Some(ref handler) = change_handler {
+                                handler(&option_value, window, cx);
+                            }
+                            // Close the dropdown
+                            if let Some(ref handler) = toggle_handler {
+                                handler(false, window, cx);
+                            }
+                        },
+                    );
                 }
 
                 option_el = option_el.child(option.label.clone());

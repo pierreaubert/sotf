@@ -7,6 +7,8 @@
 //! - Click to focus and start editing
 //! - Enter to confirm, Escape to cancel
 //! - Cursor navigation and text selection
+//! - Mouse drag to select text, double-click to select all
+//! - Clipboard support: Cmd+C (copy), Cmd+X (cut), Cmd+V (paste), Cmd+A (select all)
 //! - Emacs-style keybindings (Ctrl+A/E/K/U/W/H/D/F/B)
 //! - Disabled and readonly states
 //!
@@ -152,28 +154,76 @@ struct EditState {
     text: String,
     /// Cursor position (character index)
     cursor: usize,
-    /// Whether all text is selected
-    text_selected: bool,
+    /// Selection anchor (where selection started). If Some, selection is from anchor to cursor.
+    selection_anchor: Option<usize>,
+    /// Whether currently dragging to select
+    is_dragging: bool,
 }
 
 impl EditState {
     fn new(value: &str) -> Self {
+        let len = value.chars().count();
         Self {
             editing: true,
             text: value.to_string(),
-            cursor: value.chars().count(),
-            text_selected: true,
+            cursor: len,
+            selection_anchor: Some(0), // Select all by default
+            is_dragging: false,
         }
+    }
+
+    /// Check if there's any selection
+    #[allow(dead_code)]
+    fn has_selection(&self) -> bool {
+        if let Some(anchor) = self.selection_anchor {
+            anchor != self.cursor
+        } else {
+            false
+        }
+    }
+
+    /// Get selection range (start, end) where start <= end
+    fn selection_range(&self) -> Option<(usize, usize)> {
+        self.selection_anchor.map(|anchor| {
+            let start = anchor.min(self.cursor);
+            let end = anchor.max(self.cursor);
+            (start, end)
+        })
+    }
+
+    /// Check if all text is selected
+    #[allow(dead_code)]
+    fn is_all_selected(&self) -> bool {
+        if let Some((start, end)) = self.selection_range() {
+            start == 0 && end == self.text.chars().count()
+        } else {
+            false
+        }
+    }
+
+    /// Get the currently selected text
+    fn get_selected_text(&self) -> Option<String> {
+        if let Some((start, end)) = self.selection_range()
+            && start != end
+        {
+            let chars: Vec<char> = self.text.chars().collect();
+            return Some(chars[start..end].iter().collect());
+        }
+        None
+    }
+
+    fn clear_selection(&mut self) {
+        self.selection_anchor = None;
     }
 
     fn move_to_start(&mut self) {
         self.cursor = 0;
-        self.text_selected = false;
+        self.clear_selection();
     }
 
     fn move_to_end(&mut self) {
         self.cursor = self.text.chars().count();
-        self.text_selected = false;
+        self.clear_selection();
     }
 
     fn move_forward(&mut self) {
@@ -181,32 +231,32 @@ impl EditState {
         if self.cursor < len {
             self.cursor += 1;
         }
-        self.text_selected = false;
+        self.clear_selection();
     }
 
     fn move_backward(&mut self) {
         if self.cursor > 0 {
             self.cursor -= 1;
         }
-        self.text_selected = false;
+        self.clear_selection();
     }
 
     fn select_all(&mut self) {
-        self.text_selected = true;
+        self.selection_anchor = Some(0);
         self.cursor = self.text.chars().count();
     }
 
     fn kill_to_end(&mut self) {
         let chars: Vec<char> = self.text.chars().collect();
         self.text = chars[..self.cursor].iter().collect();
-        self.text_selected = false;
+        self.clear_selection();
     }
 
     fn kill_to_start(&mut self) {
         let chars: Vec<char> = self.text.chars().collect();
         self.text = chars[self.cursor..].iter().collect();
         self.cursor = 0;
-        self.text_selected = false;
+        self.clear_selection();
     }
 
     fn kill_word_backward(&mut self) {
@@ -227,15 +277,30 @@ impl EditState {
         new_chars.extend_from_slice(&chars[self.cursor..]);
         self.text = new_chars.into_iter().collect();
         self.cursor = new_pos;
-        self.text_selected = false;
+        self.clear_selection();
+    }
+
+    /// Delete selected text, returning true if something was deleted
+    fn delete_selection(&mut self) -> bool {
+        if let Some((start, end)) = self.selection_range()
+            && start != end
+        {
+            let chars: Vec<char> = self.text.chars().collect();
+            let mut new_chars = chars[..start].to_vec();
+            new_chars.extend_from_slice(&chars[end..]);
+            self.text = new_chars.into_iter().collect();
+            self.cursor = start;
+            self.clear_selection();
+            return true;
+        }
+        false
     }
 
     fn do_backspace(&mut self) {
-        if self.text_selected {
-            self.text.clear();
-            self.cursor = 0;
-            self.text_selected = false;
-        } else if self.cursor > 0 {
+        if self.delete_selection() {
+            return;
+        }
+        if self.cursor > 0 {
             let mut chars: Vec<char> = self.text.chars().collect();
             chars.remove(self.cursor - 1);
             self.text = chars.into_iter().collect();
@@ -244,32 +309,48 @@ impl EditState {
     }
 
     fn do_delete(&mut self) {
-        if self.text_selected {
-            self.text.clear();
-            self.cursor = 0;
-            self.text_selected = false;
-        } else {
-            let len = self.text.chars().count();
-            if self.cursor < len {
-                let mut chars: Vec<char> = self.text.chars().collect();
-                chars.remove(self.cursor);
-                self.text = chars.into_iter().collect();
-            }
+        if self.delete_selection() {
+            return;
+        }
+        let len = self.text.chars().count();
+        if self.cursor < len {
+            let mut chars: Vec<char> = self.text.chars().collect();
+            chars.remove(self.cursor);
+            self.text = chars.into_iter().collect();
         }
     }
 
     fn insert_text(&mut self, char_text: &str) {
-        if self.text_selected {
-            self.text.clear();
-            self.cursor = 0;
-            self.text_selected = false;
-        }
+        self.delete_selection();
         let mut chars: Vec<char> = self.text.chars().collect();
         for (i, c) in char_text.chars().enumerate() {
             chars.insert(self.cursor + i, c);
         }
         self.text = chars.into_iter().collect();
         self.cursor += char_text.chars().count();
+    }
+
+    /// Start a selection at the given position
+    fn start_selection(&mut self, pos: usize) {
+        self.cursor = pos;
+        self.selection_anchor = Some(pos);
+        self.is_dragging = true;
+    }
+
+    /// Update selection during drag
+    fn update_selection(&mut self, pos: usize) {
+        self.cursor = pos;
+    }
+
+    /// End selection drag
+    fn end_selection(&mut self) {
+        self.is_dragging = false;
+        // If no actual selection (anchor == cursor), clear the anchor
+        if let Some(anchor) = self.selection_anchor
+            && anchor == self.cursor
+        {
+            self.selection_anchor = None;
+        }
     }
 }
 
@@ -501,7 +582,9 @@ impl RenderOnce for Input {
 
         // Get display state from edit_state
         let state = edit_state.borrow();
-        let text_selected = state.text_selected && editing;
+        let selection_range = if editing { state.selection_range() } else { None };
+        let _cursor_pos = state.cursor; // TODO: use for cursor rendering
+        let _is_dragging = state.is_dragging;
         // When editing, display the internal state.text; otherwise display props value
         let edit_text = if editing && state.editing {
             state.text.clone()
@@ -589,11 +672,13 @@ impl RenderOnce for Input {
 
         // Add click handler - focus and start editing
         // Double-click selects all text
+        // Single click positions cursor, drag selects text
         if !disabled && !readonly {
             let focus_handle_for_click = focus_handle.clone();
             let edit_state_for_click = edit_state.clone();
             let value_for_click = current_value.to_string();
             let on_edit_start_click = on_edit_start_rc.clone();
+            let edit_text_for_click = edit_text.clone();
 
             input_wrapper =
                 input_wrapper.on_mouse_down(MouseButton::Left, move |event, window, cx| {
@@ -615,9 +700,11 @@ impl RenderOnce for Input {
                         return;
                     }
 
-                    // Single click: start editing if not already
+                    // Single click: start editing if not already, position cursor
                     if !state.editing {
                         *state = EditState::new(&value_for_click);
+                        // Clear default selection, will be set by drag or stay at click position
+                        state.clear_selection();
                         drop(state);
 
                         // Call on_edit_start callback
@@ -625,8 +712,47 @@ impl RenderOnce for Input {
                             handler(window, cx);
                         }
                     } else {
-                        // Already editing - clear selection on single click
-                        state.text_selected = false;
+                        // Already editing - calculate cursor position from click
+                        // Use a simple heuristic: assume monospace ~8px per character
+                        let text_len = edit_text_for_click.chars().count();
+                        let char_width = 8.0_f32; // Approximate width per character
+                        let click_x: f32 = event.position.x.into();
+                        // Estimate position (this is approximate without actual text metrics)
+                        let char_pos = ((click_x / char_width).round() as usize).min(text_len);
+                        state.start_selection(char_pos);
+                        drop(state);
+                    }
+                    window.refresh();
+                });
+
+            // Mouse move handler for drag selection
+            let edit_state_for_move = edit_state.clone();
+            let edit_text_for_move = edit_text.clone();
+
+            input_wrapper =
+                input_wrapper.on_mouse_move(move |event, window, _cx| {
+                    let mut state = edit_state_for_move.borrow_mut();
+                    if state.is_dragging && state.editing {
+                        let text_len = edit_text_for_move.chars().count();
+                        let char_width = 8.0_f32;
+                        let move_x: f32 = event.position.x.into();
+                        let char_pos = ((move_x / char_width).round() as usize).min(text_len);
+                        state.update_selection(char_pos);
+                        drop(state);
+                        window.refresh();
+                    }
+                });
+
+            // Mouse up handler to end drag selection
+            let edit_state_for_up = edit_state.clone();
+
+            input_wrapper =
+                input_wrapper.on_mouse_up(MouseButton::Left, move |_event, window, _cx| {
+                    let mut state = edit_state_for_up.borrow_mut();
+                    if state.is_dragging {
+                        state.end_selection();
+                        drop(state);
+                        window.refresh();
                     }
                 });
         }
@@ -653,6 +779,7 @@ impl RenderOnce for Input {
 
                 let key = event.keystroke.key.as_str();
                 let ctrl = event.keystroke.modifiers.control;
+                let cmd = event.keystroke.modifiers.platform; // Cmd on macOS, Ctrl on other platforms
 
                 // Get edit state - only initialize from props if not yet editing
                 // (e.g., if focus was gained via tab navigation instead of click)
@@ -662,7 +789,58 @@ impl RenderOnce for Input {
                     state.text = current_value_for_key.clone();
                     state.editing = true;
                     state.cursor = state.text.chars().count();
-                    state.text_selected = true;
+                    state.selection_anchor = Some(0); // Select all by default
+                }
+
+                // Clipboard operations (Cmd+C, Cmd+V, Cmd+X)
+                if cmd {
+                    match key {
+                        "c" => {
+                            // Copy selected text to clipboard
+                            if let Some(selected) = state.get_selected_text() {
+                                drop(state);
+                                cx.write_to_clipboard(ClipboardItem::new_string(selected));
+                            }
+                            return;
+                        }
+                        "x" => {
+                            // Cut selected text (copy + delete)
+                            if let Some(selected) = state.get_selected_text() {
+                                cx.write_to_clipboard(ClipboardItem::new_string(selected));
+                                state.delete_selection();
+                                let text = state.text.clone();
+                                drop(state);
+                                if let Some(ref handler) = on_text_change_key {
+                                    handler(text, window, cx);
+                                }
+                                window.refresh();
+                            }
+                            return;
+                        }
+                        "v" => {
+                            // Paste from clipboard
+                            if let Some(clipboard) = cx.read_from_clipboard()
+                                && let Some(paste_text) = clipboard.text()
+                            {
+                                state.insert_text(&paste_text);
+                                let text = state.text.clone();
+                                drop(state);
+                                if let Some(ref handler) = on_text_change_key {
+                                    handler(text, window, cx);
+                                }
+                                window.refresh();
+                            }
+                            return;
+                        }
+                        "a" => {
+                            // Select all (Cmd+A)
+                            state.select_all();
+                            drop(state);
+                            window.refresh();
+                            return;
+                        }
+                        _ => {}
+                    }
                 }
 
                 // Emacs-style keybindings when Ctrl is held
@@ -695,7 +873,7 @@ impl RenderOnce for Input {
                         // Confirm edit - blur the input
                         let text = state.text.clone();
                         state.editing = false;
-                        state.text_selected = false;
+                        state.clear_selection();
                         drop(state);
 
                         // Blur focus
@@ -713,7 +891,7 @@ impl RenderOnce for Input {
                     "escape" => {
                         // Cancel edit - blur the input
                         state.editing = false;
-                        state.text_selected = false;
+                        state.clear_selection();
                         drop(state);
 
                         // Blur focus
@@ -796,28 +974,12 @@ impl RenderOnce for Input {
             current_value.to_string()
         };
 
-        // Visual selection highlight: when text_selected is true, show accent background
-        let (value_bg, value_text_color) = if editing && text_selected {
-            // Selected text: selection background with text color
-            (Some(selection_bg), text_color)
-        } else if !editing && current_value.is_empty() {
-            // Placeholder text
-            (None, placeholder_color)
-        } else {
-            // Normal text
-            (None, text_color)
-        };
-
+        // Build the text element with partial selection support
         let mut text_el = div()
             .id(field_id)
             .flex_1()
-            .text_color(value_text_color)
-            .child(display_text);
-
-        // Apply selection background if selected
-        if let Some(bg) = value_bg {
-            text_el = text_el.bg(bg);
-        }
+            .flex()
+            .items_center();
 
         // Apply text size
         text_el = match self.size {
@@ -825,6 +987,48 @@ impl RenderOnce for Input {
             InputSize::Md => text_el.text_sm(),
             InputSize::Lg => text_el,
         };
+
+        // Render text with selection highlighting
+        if editing {
+            if let Some((sel_start, sel_end)) = selection_range {
+                if sel_start != sel_end {
+                    // Partial or full selection - render in parts
+                    let chars: Vec<char> = display_text.chars().collect();
+                    let before: String = chars[..sel_start].iter().collect();
+                    let selected: String = chars[sel_start..sel_end].iter().collect();
+                    let after: String = chars[sel_end..].iter().collect();
+
+                    if !before.is_empty() {
+                        text_el = text_el.child(
+                            div().text_color(text_color).child(before)
+                        );
+                    }
+                    text_el = text_el.child(
+                        div()
+                            .bg(selection_bg)
+                            .text_color(text_color)
+                            .child(selected)
+                    );
+                    if !after.is_empty() {
+                        text_el = text_el.child(
+                            div().text_color(text_color).child(after)
+                        );
+                    }
+                } else {
+                    // Cursor only, no selection
+                    text_el = text_el.text_color(text_color).child(display_text);
+                }
+            } else {
+                // No selection anchor
+                text_el = text_el.text_color(text_color).child(display_text);
+            }
+        } else if !editing && current_value.is_empty() {
+            // Placeholder text
+            text_el = text_el.text_color(placeholder_color).child(display_text);
+        } else {
+            // Normal text (not editing)
+            text_el = text_el.text_color(text_color).child(display_text);
+        }
 
         input_wrapper = input_wrapper.child(text_el);
 

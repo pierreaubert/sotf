@@ -174,6 +174,26 @@ impl ParamLimits {
         max: 1.0,
         step: 0.1,
     };
+    pub const SMOOTH_N: Self = Self {
+        min: 1.0,
+        max: 24.0,
+        step: 1.0,
+    };
+    pub const TOLERANCE: Self = Self {
+        min: 0.0,
+        max: 1.0,
+        step: 0.000001,
+    };
+    pub const SPACING_WEIGHT: Self = Self {
+        min: 0.0,
+        max: 1000.0,
+        step: 0.1,
+    };
+    pub const MIN_SPACING_OCT: Self = Self {
+        min: 0.01,
+        max: 1.0,
+        step: 0.01,
+    };
 }
 
 // ============================================================================
@@ -208,6 +228,10 @@ pub struct AutoEqConfig {
     pub max_freq: f64,
     /// PEQ model (e.g., "pk", "ls-pk-hs")
     pub peq_model: String,
+    /// Spacing constraint weight (0-1000)
+    pub spacing_weight: f64,
+    /// Minimum spacing between filters in octaves (0.01-1.0)
+    pub min_spacing_oct: f64,
 
     // Algorithm Parameters
     /// Optimization algorithm (e.g., "autoeq:de", "nlopt:cobyla")
@@ -216,6 +240,10 @@ pub struct AutoEqConfig {
     pub population: usize,
     /// Maximum function evaluations
     pub maxeval: usize,
+    /// Relative tolerance for convergence
+    pub tolerance: f64,
+    /// Absolute tolerance for convergence
+    pub atolerance: f64,
 
     // DE-specific Parameters
     /// Mutation factor (F) for DE
@@ -234,6 +262,8 @@ pub struct AutoEqConfig {
     // Smoothing Parameters
     /// Enable smoothing
     pub smooth: bool,
+    /// Smoothing window size (1-24)
+    pub smooth_n: usize,
 
     // Goals & Configuration
     /// Loss function type (e.g., "flat", "score")
@@ -259,15 +289,20 @@ impl Default for AutoEqConfig {
             min_freq: 20.0,
             max_freq: 20000.0,
             peq_model: "pk".to_string(),
+            spacing_weight: 1.0,
+            min_spacing_oct: 0.08,
             algo: "autoeq:de".to_string(),
             population: 100,
             maxeval: 10000,
+            tolerance: 0.00001,
+            atolerance: 0.00001,
             de_f: 0.8,
             de_cr: 0.9,
             strategy: "currenttobest1bin".to_string(),
             refine: true,
             local_algo: "cobyla".to_string(),
             smooth: false,
+            smooth_n: 6,
             loss_type: "flat".to_string(),
             target_curve: "flat".to_string(),
             system_type: "stereo".to_string(),
@@ -397,12 +432,16 @@ pub struct AutoEqForm {
     on_max_freq_change: Option<F64Callback>,
     on_peq_model_change: Option<StringCallback>,
     on_peq_model_toggle: Option<ToggleCallback>,
+    on_spacing_weight_change: Option<F64Callback>,
+    on_min_spacing_oct_change: Option<F64Callback>,
 
     // Optimization callbacks
     on_algo_change: Option<StringCallback>,
     on_algo_toggle: Option<ToggleCallback>,
     on_population_change: Option<UsizeCallback>,
     on_maxeval_change: Option<UsizeCallback>,
+    on_tolerance_change: Option<F64Callback>,
+    on_atolerance_change: Option<F64Callback>,
     on_de_f_change: Option<F64Callback>,
     on_de_cr_change: Option<F64Callback>,
     on_strategy_change: Option<StringCallback>,
@@ -411,6 +450,7 @@ pub struct AutoEqForm {
     on_local_algo_change: Option<StringCallback>,
     on_local_algo_toggle: Option<ToggleCallback>,
     on_smooth_change: Option<BoolCallback>,
+    on_smooth_n_change: Option<UsizeCallback>,
 
     // Goals callbacks
     on_loss_type_change: Option<StringCallback>,
@@ -449,10 +489,14 @@ impl AutoEqForm {
             on_max_freq_change: None,
             on_peq_model_change: None,
             on_peq_model_toggle: None,
+            on_spacing_weight_change: None,
+            on_min_spacing_oct_change: None,
             on_algo_change: None,
             on_algo_toggle: None,
             on_population_change: None,
             on_maxeval_change: None,
+            on_tolerance_change: None,
+            on_atolerance_change: None,
             on_de_f_change: None,
             on_de_cr_change: None,
             on_strategy_change: None,
@@ -461,6 +505,7 @@ impl AutoEqForm {
             on_local_algo_change: None,
             on_local_algo_toggle: None,
             on_smooth_change: None,
+            on_smooth_n_change: None,
             on_loss_type_change: None,
             on_loss_type_toggle: None,
             on_target_curve_change: None,
@@ -655,6 +700,24 @@ impl AutoEqForm {
         self
     }
 
+    /// Set spacing weight change handler
+    pub fn on_spacing_weight_change(
+        mut self,
+        handler: impl Fn(f64, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_spacing_weight_change = Some(Box::new(handler));
+        self
+    }
+
+    /// Set min spacing octaves change handler
+    pub fn on_min_spacing_oct_change(
+        mut self,
+        handler: impl Fn(f64, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_min_spacing_oct_change = Some(Box::new(handler));
+        self
+    }
+
     // Optimization callbacks
 
     /// Set algorithm change handler
@@ -690,6 +753,24 @@ impl AutoEqForm {
         handler: impl Fn(usize, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_maxeval_change = Some(Box::new(handler));
+        self
+    }
+
+    /// Set relative tolerance change handler
+    pub fn on_tolerance_change(
+        mut self,
+        handler: impl Fn(f64, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_tolerance_change = Some(Box::new(handler));
+        self
+    }
+
+    /// Set absolute tolerance change handler
+    pub fn on_atolerance_change(
+        mut self,
+        handler: impl Fn(f64, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_atolerance_change = Some(Box::new(handler));
         self
     }
 
@@ -762,6 +843,15 @@ impl AutoEqForm {
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.on_smooth_change = Some(Box::new(handler));
+        self
+    }
+
+    /// Set smoothing window size change handler
+    pub fn on_smooth_n_change(
+        mut self,
+        handler: impl Fn(usize, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_smooth_n_change = Some(Box::new(handler));
         self
     }
 
@@ -854,10 +944,14 @@ impl RenderOnce for AutoEqForm {
         let on_max_freq_change_rc = self.on_max_freq_change.map(std::rc::Rc::new);
         let on_peq_model_change_rc = self.on_peq_model_change.map(std::rc::Rc::new);
         let on_peq_model_toggle_rc = self.on_peq_model_toggle.map(std::rc::Rc::new);
+        let on_spacing_weight_change_rc = self.on_spacing_weight_change.map(std::rc::Rc::new);
+        let on_min_spacing_oct_change_rc = self.on_min_spacing_oct_change.map(std::rc::Rc::new);
         let on_algo_change_rc = self.on_algo_change.map(std::rc::Rc::new);
         let on_algo_toggle_rc = self.on_algo_toggle.map(std::rc::Rc::new);
         let on_population_change_rc = self.on_population_change.map(std::rc::Rc::new);
         let on_maxeval_change_rc = self.on_maxeval_change.map(std::rc::Rc::new);
+        let on_tolerance_change_rc = self.on_tolerance_change.map(std::rc::Rc::new);
+        let on_atolerance_change_rc = self.on_atolerance_change.map(std::rc::Rc::new);
         let on_de_f_change_rc = self.on_de_f_change.map(std::rc::Rc::new);
         let on_de_cr_change_rc = self.on_de_cr_change.map(std::rc::Rc::new);
         let on_strategy_change_rc = self.on_strategy_change.map(std::rc::Rc::new);
@@ -866,6 +960,7 @@ impl RenderOnce for AutoEqForm {
         let on_local_algo_change_rc = self.on_local_algo_change.map(std::rc::Rc::new);
         let on_local_algo_toggle_rc = self.on_local_algo_toggle.map(std::rc::Rc::new);
         let on_smooth_change_rc = self.on_smooth_change.map(std::rc::Rc::new);
+        let on_smooth_n_change_rc = self.on_smooth_n_change.map(std::rc::Rc::new);
         let on_loss_type_change_rc = self.on_loss_type_change.map(std::rc::Rc::new);
         let on_loss_type_toggle_rc = self.on_loss_type_toggle.map(std::rc::Rc::new);
         let on_target_curve_change_rc = self.on_target_curve_change.map(std::rc::Rc::new);
@@ -1308,6 +1403,48 @@ impl RenderOnce for AutoEqForm {
                 }
 
                 eq_design_content = eq_design_content.child(peq_model_select);
+
+                // Spacing constraint row
+                let mut spacing_weight_input = NumberInput::new("autoeq-spacing-weight")
+                    .value(config.spacing_weight)
+                    .min(ParamLimits::SPACING_WEIGHT.min)
+                    .max(ParamLimits::SPACING_WEIGHT.max)
+                    .step(ParamLimits::SPACING_WEIGHT.step)
+                    .decimals(1)
+                    .label("Spacing Weight")
+                    .size(NumberInputSize::Sm)
+                    .width(100.0)
+                    .disabled(disabled)
+                    .theme(theme.number_input_theme.clone());
+
+                if let Some(ref handler) = on_spacing_weight_change_rc {
+                    let h = handler.clone();
+                    spacing_weight_input = spacing_weight_input.on_change(move |v, w, cx| h(v, w, cx));
+                }
+
+                let mut min_spacing_oct_input = NumberInput::new("autoeq-min-spacing-oct")
+                    .value(config.min_spacing_oct)
+                    .min(ParamLimits::MIN_SPACING_OCT.min)
+                    .max(ParamLimits::MIN_SPACING_OCT.max)
+                    .step(ParamLimits::MIN_SPACING_OCT.step)
+                    .decimals(2)
+                    .label("Min Spacing (oct)")
+                    .size(NumberInputSize::Sm)
+                    .width(120.0)
+                    .disabled(disabled)
+                    .theme(theme.number_input_theme.clone());
+
+                if let Some(ref handler) = on_min_spacing_oct_change_rc {
+                    let h = handler.clone();
+                    min_spacing_oct_input = min_spacing_oct_input.on_change(move |v, w, cx| h(v, w, cx));
+                }
+
+                eq_design_content = eq_design_content.child(
+                    HStack::new()
+                        .spacing(StackSpacing::Md)
+                        .child(spacing_weight_input)
+                        .child(min_spacing_oct_input),
+                );
             }
 
             form = form.child(Card::new().content(eq_design_content));
@@ -1404,6 +1541,48 @@ impl RenderOnce for AutoEqForm {
                     .spacing(StackSpacing::Md)
                     .child(population_input)
                     .child(maxeval_input),
+            );
+
+            // Tolerance row
+            let mut tolerance_input = NumberInput::new("autoeq-tolerance")
+                .value(config.tolerance)
+                .min(ParamLimits::TOLERANCE.min)
+                .max(ParamLimits::TOLERANCE.max)
+                .step(ParamLimits::TOLERANCE.step)
+                .decimals(6)
+                .label("Tolerance")
+                .size(NumberInputSize::Sm)
+                .width(120.0)
+                .disabled(disabled)
+                .theme(theme.number_input_theme.clone());
+
+            if let Some(ref handler) = on_tolerance_change_rc {
+                let h = handler.clone();
+                tolerance_input = tolerance_input.on_change(move |v, w, cx| h(v, w, cx));
+            }
+
+            let mut atolerance_input = NumberInput::new("autoeq-atolerance")
+                .value(config.atolerance)
+                .min(ParamLimits::TOLERANCE.min)
+                .max(ParamLimits::TOLERANCE.max)
+                .step(ParamLimits::TOLERANCE.step)
+                .decimals(6)
+                .label("Abs Tolerance")
+                .size(NumberInputSize::Sm)
+                .width(120.0)
+                .disabled(disabled)
+                .theme(theme.number_input_theme.clone());
+
+            if let Some(ref handler) = on_atolerance_change_rc {
+                let h = handler.clone();
+                atolerance_input = atolerance_input.on_change(move |v, w, cx| h(v, w, cx));
+            }
+
+            opt_tuning_content = opt_tuning_content.child(
+                HStack::new()
+                    .spacing(StackSpacing::Md)
+                    .child(tolerance_input)
+                    .child(atolerance_input),
             );
 
             // DE-specific settings (only show when DE algorithm selected)
@@ -1573,6 +1752,28 @@ impl RenderOnce for AutoEqForm {
                     )
                     .child(smooth_toggle),
             );
+
+            // Smoothing window size (only when smooth is enabled)
+            if config.smooth {
+                let mut smooth_n_input = NumberInput::new("autoeq-smooth-n")
+                    .value(config.smooth_n as f64)
+                    .min(ParamLimits::SMOOTH_N.min)
+                    .max(ParamLimits::SMOOTH_N.max)
+                    .step(ParamLimits::SMOOTH_N.step)
+                    .decimals(0)
+                    .label("Smooth Window")
+                    .size(NumberInputSize::Sm)
+                    .width(120.0)
+                    .disabled(disabled)
+                    .theme(theme.number_input_theme.clone());
+
+                if let Some(ref handler) = on_smooth_n_change_rc {
+                    let h = handler.clone();
+                    smooth_n_input = smooth_n_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
+                }
+
+                opt_tuning_content = opt_tuning_content.child(smooth_n_input);
+            }
 
             form = form.child(Card::new().content(opt_tuning_content));
         }

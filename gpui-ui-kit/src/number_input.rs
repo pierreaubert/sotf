@@ -2,7 +2,7 @@
 //!
 //! A numeric input field with:
 //! - Increment/decrement buttons (+ and -)
-//! - Direct text editing of the value
+//! - Direct text editing of the value (click on value to edit)
 //! - Keyboard navigation:
 //!   - Arrow Up/Right: increase value
 //!   - Arrow Down/Left: decrease value
@@ -11,10 +11,126 @@
 //! - Scroll wheel adjustment
 //! - Configurable step size, min/max bounds
 //! - Value formatting (decimals, units)
+//!
+//! The component handles its own editing state internally - just provide
+//! an `on_change` callback to receive value updates.
 
 use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::*;
 use gpui::*;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
+
+// Thread-local registry for focus handles, keyed by element ID.
+thread_local! {
+    static NUMBER_INPUT_FOCUS_HANDLES: RefCell<HashMap<ElementId, FocusHandle>> = RefCell::new(HashMap::new());
+}
+
+// Thread-local registry for edit state, keyed by element ID.
+thread_local! {
+    static NUMBER_INPUT_EDIT_STATES: RefCell<HashMap<ElementId, Rc<RefCell<NumberEditState>>>> = RefCell::new(HashMap::new());
+}
+
+/// Internal editing state for the number input
+#[derive(Clone, Default)]
+struct NumberEditState {
+    /// Whether currently editing
+    editing: bool,
+    /// Current edit text
+    text: String,
+    /// Cursor position (character index)
+    cursor: usize,
+    /// Whether all text is selected
+    text_selected: bool,
+}
+
+impl NumberEditState {
+    fn new(value: &str) -> Self {
+        Self {
+            editing: true,
+            text: value.to_string(),
+            cursor: value.chars().count(),
+            text_selected: true,
+        }
+    }
+
+    fn select_all(&mut self) {
+        self.text_selected = true;
+        self.cursor = self.text.chars().count();
+    }
+
+    fn do_backspace(&mut self) {
+        if self.text_selected {
+            self.text.clear();
+            self.cursor = 0;
+            self.text_selected = false;
+        } else if self.cursor > 0 {
+            let mut chars: Vec<char> = self.text.chars().collect();
+            chars.remove(self.cursor - 1);
+            self.text = chars.into_iter().collect();
+            self.cursor -= 1;
+        }
+    }
+
+    fn do_delete(&mut self) {
+        if self.text_selected {
+            self.text.clear();
+            self.cursor = 0;
+            self.text_selected = false;
+        } else {
+            let len = self.text.chars().count();
+            if self.cursor < len {
+                let mut chars: Vec<char> = self.text.chars().collect();
+                chars.remove(self.cursor);
+                self.text = chars.into_iter().collect();
+            }
+        }
+    }
+
+    fn insert_char(&mut self, ch: char) {
+        // Only allow valid numeric characters
+        if !ch.is_ascii_digit() && ch != '.' && ch != '-' && ch != '+' {
+            return;
+        }
+
+        if self.text_selected {
+            self.text.clear();
+            self.cursor = 0;
+            self.text_selected = false;
+        }
+
+        let mut chars: Vec<char> = self.text.chars().collect();
+        chars.insert(self.cursor, ch);
+        self.text = chars.into_iter().collect();
+        self.cursor += 1;
+    }
+
+    fn move_left(&mut self) {
+        if self.cursor > 0 {
+            self.cursor -= 1;
+        }
+        self.text_selected = false;
+    }
+
+    fn move_right(&mut self) {
+        let len = self.text.chars().count();
+        if self.cursor < len {
+            self.cursor += 1;
+        }
+        self.text_selected = false;
+    }
+
+    fn move_to_start(&mut self) {
+        self.cursor = 0;
+        self.text_selected = false;
+    }
+
+    fn move_to_end(&mut self) {
+        self.cursor = self.text.chars().count();
+        self.text_selected = false;
+    }
+}
 
 /// Theme colors for number input styling
 #[derive(Debug, Clone)]
@@ -122,6 +238,9 @@ impl NumberInputSize {
 }
 
 /// A numeric input component with increment/decrement buttons
+///
+/// The component handles its own editing state internally. Just provide
+/// an `on_change` callback to receive value updates.
 #[derive(IntoElement)]
 pub struct NumberInput {
     id: ElementId,
@@ -135,14 +254,8 @@ pub struct NumberInput {
     size: NumberInputSize,
     width: Option<f32>,
     disabled: bool,
-    editing: bool,
-    text_selected: bool,
-    edit_text: Option<SharedString>,
     theme: Option<NumberInputTheme>,
     on_change: Option<Box<dyn Fn(f64, &mut Window, &mut App) + 'static>>,
-    on_edit_start: Option<Box<dyn Fn(&mut Window, &mut App) + 'static>>,
-    on_edit_end: Option<Box<dyn Fn(Option<f64>, &mut Window, &mut App) + 'static>>,
-    on_text_change: Option<Box<dyn Fn(String, &mut Window, &mut App) + 'static>>,
 }
 
 impl NumberInput {
@@ -160,14 +273,8 @@ impl NumberInput {
             size: NumberInputSize::default(),
             width: None,
             disabled: false,
-            editing: false,
-            text_selected: false,
-            edit_text: None,
             theme: None,
             on_change: None,
-            on_edit_start: None,
-            on_edit_end: None,
-            on_text_change: None,
         }
     }
 
@@ -231,89 +338,37 @@ impl NumberInput {
         self
     }
 
-    /// Set whether the input is currently being edited
-    pub fn editing(mut self, editing: bool) -> Self {
-        self.editing = editing;
-        self
-    }
-
-    /// Set whether the text is fully selected (for visual feedback)
-    pub fn text_selected(mut self, selected: bool) -> Self {
-        self.text_selected = selected;
-        self
-    }
-
-    /// Set the current edit text (when editing)
-    pub fn edit_text(mut self, text: impl Into<SharedString>) -> Self {
-        self.edit_text = Some(text.into());
-        self
-    }
-
     /// Set the theme
     pub fn theme(mut self, theme: NumberInputTheme) -> Self {
         self.theme = Some(theme);
         self
     }
 
-    /// Set value change handler (called on button click, scroll, keyboard arrows)
+    /// Set value change handler (called on button click, scroll, keyboard, or text edit confirm)
     pub fn on_change(mut self, handler: impl Fn(f64, &mut Window, &mut App) + 'static) -> Self {
         self.on_change = Some(Box::new(handler));
         self
     }
 
-    /// Set edit start handler (called when user clicks on value to edit)
-    pub fn on_edit_start(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
-        self.on_edit_start = Some(Box::new(handler));
-        self
-    }
-
-    /// Set edit end handler (called when user confirms or cancels edit)
-    /// The Option<f64> is Some(value) if confirmed, None if cancelled
-    pub fn on_edit_end(
-        mut self,
-        handler: impl Fn(Option<f64>, &mut Window, &mut App) + 'static,
-    ) -> Self {
-        self.on_edit_end = Some(Box::new(handler));
-        self
-    }
-
-    /// Set text change handler (called when edit text changes)
-    pub fn on_text_change(
-        mut self,
-        handler: impl Fn(String, &mut Window, &mut App) + 'static,
-    ) -> Self {
-        self.on_text_change = Some(Box::new(handler));
-        self
-    }
-
-    /// Format the current value for display
-    /// Note: Currently unused due to ownership constraints in render closures.
-    /// Logic is duplicated inline where needed.
-    #[allow(dead_code)]
-    fn format_value(&self) -> String {
-        let formatted = format!("{:.prec$}", self.value, prec = self.decimals);
-        if let Some(ref unit) = self.unit {
+    /// Format value for display
+    fn format_value_str(value: f64, decimals: usize, unit: Option<&SharedString>) -> String {
+        let formatted = format!("{:.prec$}", value, prec = decimals);
+        if let Some(unit) = unit {
             format!("{} {}", formatted, unit)
         } else {
             formatted
         }
     }
 
-    /// Parse a string to a value, respecting bounds
-    /// Note: Currently unused due to ownership constraints in render closures.
-    /// Logic is duplicated inline where needed.
-    #[allow(dead_code)]
-    fn parse_value(&self, text: &str) -> Option<f64> {
-        // Remove unit suffix if present
-        let text = if let Some(ref unit) = self.unit {
+    /// Parse a string to a value, removing unit suffix
+    fn parse_value_str(text: &str, unit: Option<&SharedString>, min: f64, max: f64) -> Option<f64> {
+        let text = if let Some(unit) = unit {
             text.trim().trim_end_matches(unit.as_ref()).trim()
         } else {
             text.trim()
         };
 
-        text.parse::<f64>()
-            .ok()
-            .map(|v| v.clamp(self.min, self.max))
+        text.parse::<f64>().ok().map(|v| v.clamp(min, max))
     }
 }
 
@@ -327,15 +382,42 @@ impl RenderOnce for NumberInput {
         let button_width = self.size.button_width();
         let padding = self.size.padding();
         let disabled = self.disabled;
-        let editing = self.editing;
-        let text_selected = self.text_selected;
         let current_value = self.value;
         let min = self.min;
         let max = self.max;
         let step = self.step;
         let decimals = self.decimals;
         let unit_clone = self.unit.clone();
-        let edit_text_clone = self.edit_text.clone();
+
+        // Get or create focus handle for this element
+        let focus_handle = NUMBER_INPUT_FOCUS_HANDLES.with(|handles| {
+            let mut handles = handles.borrow_mut();
+            handles
+                .entry(self.id.clone())
+                .or_insert_with(|| cx.focus_handle())
+                .clone()
+        });
+
+        // Get or create edit state for this element
+        let edit_state = NUMBER_INPUT_EDIT_STATES.with(|states| {
+            let mut states = states.borrow_mut();
+            states
+                .entry(self.id.clone())
+                .or_insert_with(|| Rc::new(RefCell::new(NumberEditState::default())))
+                .clone()
+        });
+
+        // Read current edit state
+        let state = edit_state.borrow();
+        let editing = state.editing;
+        let text_selected = state.text_selected;
+        let edit_text = if editing {
+            state.text.clone()
+        } else {
+            Self::format_value_str(current_value, decimals, unit_clone.as_ref())
+        };
+        let cursor_pos = state.cursor;
+        drop(state);
 
         // Create unique child IDs based on parent ID
         let parent_id = format!("{:?}", self.id);
@@ -343,11 +425,8 @@ impl RenderOnce for NumberInput {
         let value_id = ElementId::Name(format!("{}-value", parent_id).into());
         let inc_id = ElementId::Name(format!("{}-inc", parent_id).into());
 
-        // Wrap handlers in Rc for sharing
-        let on_change_rc = self.on_change.map(|h| std::rc::Rc::new(h));
-        let on_edit_start_rc = self.on_edit_start.map(|h| std::rc::Rc::new(h));
-        let on_edit_end_rc = self.on_edit_end.map(|h| std::rc::Rc::new(h));
-        let on_text_change_rc = self.on_text_change.map(|h| std::rc::Rc::new(h));
+        // Wrap handler in Rc for sharing
+        let on_change_rc = self.on_change.map(Rc::new);
 
         let mut container = div().flex().flex_col().gap_1();
 
@@ -413,7 +492,7 @@ impl RenderOnce for NumberInput {
 
             if let Some(ref handler_rc) = on_change_rc {
                 let handler = handler_rc.clone();
-                dec_button = dec_button.on_mouse_up(MouseButton::Left, move |_, window, cx| {
+                dec_button = dec_button.on_mouse_down(MouseButton::Left, move |_, window, cx| {
                     let new_value = (current_value - step).clamp(min, max);
                     handler(new_value, window, cx);
                 });
@@ -425,33 +504,34 @@ impl RenderOnce for NumberInput {
         input_row = input_row.child(dec_button);
 
         // Value display / edit field
-        let display_text = if editing {
-            edit_text_clone
-                .as_ref()
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| {
-                    let formatted = format!("{:.prec$}", current_value, prec = decimals);
-                    if let Some(ref unit) = unit_clone {
-                        format!("{} {}", formatted, unit)
-                    } else {
-                        formatted
-                    }
-                })
-        } else {
-            let formatted = format!("{:.prec$}", current_value, prec = decimals);
-            if let Some(ref unit) = unit_clone {
-                format!("{} {}", formatted, unit)
-            } else {
-                formatted
-            }
-        };
-
         // Visual selection highlight: when text_selected is true, show accent background
         let (value_bg, value_text_color) = if editing && text_selected {
-            // Selected text: accent background with contrasting text
             (Some(theme.button_active), rgba(0xffffffff))
         } else {
             (None, text_color)
+        };
+
+        // Build display with cursor if editing and not all selected
+        let display_element: AnyElement = if editing && !text_selected {
+            // Show text with cursor
+            let chars: Vec<char> = edit_text.chars().collect();
+            let before: String = chars[..cursor_pos].iter().collect();
+            let after: String = chars[cursor_pos..].iter().collect();
+
+            div()
+                .flex()
+                .items_center()
+                .child(before)
+                .child(
+                    div()
+                        .w(px(1.0))
+                        .h(px(self.size.font_size() + 2.0))
+                        .bg(text_color),
+                )
+                .child(after)
+                .into_any_element()
+        } else {
+            div().child(edit_text.clone()).into_any_element()
         };
 
         let mut value_field = div()
@@ -463,7 +543,9 @@ impl RenderOnce for NumberInput {
             .h_full()
             .px(px(padding))
             .text_color(value_text_color)
-            .child(display_text);
+            .track_focus(&focus_handle)
+            .focusable()
+            .child(display_element);
 
         // Apply selection background if selected
         if let Some(bg) = value_bg {
@@ -473,99 +555,130 @@ impl RenderOnce for NumberInput {
         // Apply font size
         value_field = value_field.text_size(px(self.size.font_size()));
 
-        if !disabled && !editing {
-            // Click to start editing
-            value_field = value_field.cursor_text();
-            if let Some(ref handler_rc) = on_edit_start_rc {
-                let handler = handler_rc.clone();
-                value_field = value_field.on_mouse_up(MouseButton::Left, move |_, window, cx| {
-                    handler(window, cx);
-                });
-            }
-        }
-
-        // Keyboard handling for the value field
         if !disabled {
-            // Clone handlers for keyboard events
+            // Click to start editing / focus
+            let edit_state_for_click = edit_state.clone();
+            let focus_handle_for_click = focus_handle.clone();
+            let formatted_value =
+                Self::format_value_str(current_value, decimals, unit_clone.as_ref());
+
+            value_field =
+                value_field
+                    .cursor_text()
+                    .on_mouse_down(MouseButton::Left, move |event, window, cx| {
+                        // Focus the input
+                        window.focus(&focus_handle_for_click, cx);
+
+                        let mut state = edit_state_for_click.borrow_mut();
+
+                        // Double-click: select all
+                        if event.click_count == 2 {
+                            if state.editing {
+                                state.select_all();
+                            } else {
+                                *state = NumberEditState::new(&formatted_value);
+                            }
+                            drop(state);
+                            window.refresh();
+                            return;
+                        }
+
+                        // Single click: start editing if not already
+                        if !state.editing {
+                            *state = NumberEditState::new(&formatted_value);
+                        } else {
+                            // Clear selection on single click while editing
+                            state.text_selected = false;
+                        }
+                    });
+
+            // Keyboard handling
+            let edit_state_for_key = edit_state.clone();
             let on_change_key = on_change_rc.clone();
-            let on_edit_end_key = on_edit_end_rc.clone();
-            let on_text_change_key = on_text_change_rc.clone();
-            let is_editing = editing;
-            let edit_text_for_key = edit_text_clone.clone();
             let unit_for_key = unit_clone.clone();
 
             value_field = value_field.on_key_down(move |event, window, cx| {
-                if is_editing {
-                    // Editing mode keyboard handling
+                let mut state = edit_state_for_key.borrow_mut();
+
+                if state.editing {
                     match event.keystroke.key.as_str() {
                         "enter" => {
-                            // Confirm edit
-                            if let Some(ref handler) = on_edit_end_key {
-                                let text = edit_text_for_key
-                                    .as_ref()
-                                    .map(|s| s.to_string())
-                                    .unwrap_or_default();
+                            // Confirm edit - parse and call on_change
+                            let parsed =
+                                Self::parse_value_str(&state.text, unit_for_key.as_ref(), min, max);
+                            state.editing = false;
+                            state.text.clear();
+                            state.text_selected = false;
+                            drop(state);
 
-                                // Remove unit suffix if present
-                                let text = if let Some(ref unit) = unit_for_key {
-                                    text.trim().trim_end_matches(unit.as_ref()).trim()
-                                } else {
-                                    text.trim()
-                                };
-
-                                let parsed = text.parse::<f64>().ok().map(|v| v.clamp(min, max));
-                                handler(parsed, window, cx);
+                            if let Some(ref handler) = on_change_key
+                                && let Some(value) = parsed
+                            {
+                                handler(value, window, cx);
                             }
+                            window.refresh();
                         }
                         "escape" => {
-                            // Cancel edit
-                            if let Some(ref handler) = on_edit_end_key {
-                                handler(None, window, cx);
+                            // Cancel edit - restore original value
+                            state.editing = false;
+                            state.text.clear();
+                            state.text_selected = false;
+                            drop(state);
+                            window.refresh();
+                        }
+                        "backspace" => {
+                            state.do_backspace();
+                            drop(state);
+                            window.refresh();
+                        }
+                        "delete" => {
+                            state.do_delete();
+                            drop(state);
+                            window.refresh();
+                        }
+                        "left" => {
+                            state.move_left();
+                            drop(state);
+                            window.refresh();
+                        }
+                        "right" => {
+                            state.move_right();
+                            drop(state);
+                            window.refresh();
+                        }
+                        "home" => {
+                            state.move_to_start();
+                            drop(state);
+                            window.refresh();
+                        }
+                        "end" => {
+                            state.move_to_end();
+                            drop(state);
+                            window.refresh();
+                        }
+                        key if key.len() == 1 => {
+                            // Single character input
+                            if let Some(ch) = key.chars().next() {
+                                state.insert_char(ch);
+                                drop(state);
+                                window.refresh();
                             }
                         }
-                        _ => {
-                            // Handle text input (simplified - real implementation would need full text editing)
-                            if let Some(ref handler) = on_text_change_key {
-                                let current = edit_text_for_key
-                                    .as_ref()
-                                    .map(|s| s.to_string())
-                                    .unwrap_or_default();
-
-                                // Handle backspace
-                                let new_text = if event.keystroke.key == "backspace" {
-                                    if current.is_empty() {
-                                        current
-                                    } else {
-                                        current[..current.len() - 1].to_string()
-                                    }
-                                } else if event.keystroke.key.len() == 1 {
-                                    // Single character - append if valid for number
-                                    let ch = event.keystroke.key.chars().next().unwrap();
-                                    if ch.is_ascii_digit() || ch == '.' || ch == '-' || ch == '+' {
-                                        format!("{}{}", current, ch)
-                                    } else {
-                                        current
-                                    }
-                                } else {
-                                    current
-                                };
-
-                                handler(new_text, window, cx);
-                            }
-                        }
+                        _ => {}
                     }
                 } else {
                     // Non-editing mode - arrow keys adjust value
-                    if let Some(ref handler) = on_change_key {
-                        let new_value = match event.keystroke.key.as_str() {
-                            "up" | "right" => Some((current_value + step).clamp(min, max)),
-                            "down" | "left" => Some((current_value - step).clamp(min, max)),
-                            _ => None,
-                        };
+                    let new_value = match event.keystroke.key.as_str() {
+                        "up" | "right" => Some((current_value + step).clamp(min, max)),
+                        "down" | "left" => Some((current_value - step).clamp(min, max)),
+                        _ => None,
+                    };
+                    drop(state);
 
-                        if let Some(v) = new_value {
-                            handler(v, window, cx);
-                        }
+                    if let Some(v) = new_value
+                        && let Some(ref handler) = on_change_key
+                    {
+                        handler(v, window, cx);
                     }
                 }
             });
@@ -594,7 +707,7 @@ impl RenderOnce for NumberInput {
 
             if let Some(ref handler_rc) = on_change_rc {
                 let handler = handler_rc.clone();
-                inc_button = inc_button.on_mouse_up(MouseButton::Left, move |_, window, cx| {
+                inc_button = inc_button.on_mouse_down(MouseButton::Left, move |_, window, cx| {
                     let new_value = (current_value + step).clamp(min, max);
                     handler(new_value, window, cx);
                 });

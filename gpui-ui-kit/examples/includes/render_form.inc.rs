@@ -10,9 +10,9 @@ impl Showcase {
         number_value: f64,
         number_freq: f64,
         number_db: f64,
-        editing_number: Option<&'static str>,
-        edit_text: String,
-        text_selected: bool,
+        _editing_number: Option<&'static str>,
+        _edit_text: String,
+        _text_selected: bool,
         input_value: String,
         _input_editing: bool,
         _input_edit_text: String,
@@ -169,6 +169,7 @@ impl Showcase {
                     ),
             )
             // Number Input
+            // Note: NumberInput now handles editing state internally - just provide value and on_change
             .child(
                 VStack::new()
                     .spacing(StackSpacing::Sm)
@@ -179,9 +180,8 @@ impl Showcase {
                         HStack::new()
                             .spacing(StackSpacing::Lg)
                             .align(StackAlign::End)
-                            .child({
-                                let is_editing = editing_number == Some("basic");
-                                let mut input = NumberInput::new("num-basic")
+                            .child(
+                                NumberInput::new("num-basic")
                                     .value(number_value)
                                     .min(0.0)
                                     .max(100.0)
@@ -190,7 +190,6 @@ impl Showcase {
                                     .label("Count")
                                     .size(NumberInputSize::Md)
                                     .width(120.0)
-                                    .editing(is_editing)
                                     .on_change({
                                         let entity = entity.clone();
                                         move |value, _window, cx| {
@@ -198,48 +197,10 @@ impl Showcase {
                                                 showcase.number_value = value;
                                             });
                                         }
-                                    })
-                                    .on_edit_start({
-                                        let entity = entity.clone();
-                                        move |_window, cx| {
-                                            entity.update(cx, |showcase, _| {
-                                                showcase.editing_number = Some("basic");
-                                                showcase.edit_text =
-                                                    format!("{:.0}", showcase.number_value);
-                                                showcase.text_selected = true;
-                                            });
-                                        }
-                                    })
-                                    .on_edit_end({
-                                        let entity = entity.clone();
-                                        move |value, _window, cx| {
-                                            entity.update(cx, |showcase, _cx| {
-                                                if let Some(v) = value {
-                                                    showcase.number_value = v;
-                                                }
-                                                showcase.editing_number = None;
-                                                showcase.edit_text.clear();
-                                            });
-                                        }
-                                    })
-                                    .on_text_change({
-                                        let entity = entity.clone();
-                                        move |text, _window, cx| {
-                                            entity.update(cx, |showcase, _cx| {
-                                                showcase.edit_text = text;
-                                            });
-                                        }
-                                    });
-                                if is_editing {
-                                    input = input
-                                        .edit_text(edit_text.clone())
-                                        .text_selected(text_selected);
-                                }
-                                input
-                            })
-                            .child({
-                                let is_editing = editing_number == Some("freq");
-                                let mut input = NumberInput::new("num-freq")
+                                    }),
+                            )
+                            .child(
+                                NumberInput::new("num-freq")
                                     .value(number_freq)
                                     .min(20.0)
                                     .max(20000.0)
@@ -249,7 +210,6 @@ impl Showcase {
                                     .label("Frequency")
                                     .size(NumberInputSize::Md)
                                     .width(140.0)
-                                    .editing(is_editing)
                                     .on_change({
                                         let entity = entity.clone();
                                         move |value, _window, cx| {
@@ -257,48 +217,10 @@ impl Showcase {
                                                 showcase.number_freq = value;
                                             });
                                         }
-                                    })
-                                    .on_edit_start({
-                                        let entity = entity.clone();
-                                        move |_window, cx| {
-                                            entity.update(cx, |showcase, _| {
-                                                showcase.editing_number = Some("freq");
-                                                showcase.edit_text =
-                                                    format!("{:.0}", showcase.number_freq);
-                                                showcase.text_selected = true;
-                                            });
-                                        }
-                                    })
-                                    .on_edit_end({
-                                        let entity = entity.clone();
-                                        move |value, _window, cx| {
-                                            entity.update(cx, |showcase, _cx| {
-                                                if let Some(v) = value {
-                                                    showcase.number_freq = v;
-                                                }
-                                                showcase.editing_number = None;
-                                                showcase.edit_text.clear();
-                                            });
-                                        }
-                                    })
-                                    .on_text_change({
-                                        let entity = entity.clone();
-                                        move |text, _window, cx| {
-                                            entity.update(cx, |showcase, _cx| {
-                                                showcase.edit_text = text;
-                                            });
-                                        }
-                                    });
-                                if is_editing {
-                                    input = input
-                                        .edit_text(edit_text.clone())
-                                        .text_selected(text_selected);
-                                }
-                                input
-                            })
-                            .child({
-                                let is_editing = editing_number == Some("db");
-                                let mut input = NumberInput::new("num-db")
+                                    }),
+                            )
+                            .child(
+                                NumberInput::new("num-db")
                                     .value(number_db)
                                     .min(-12.0)
                                     .max(12.0)
@@ -308,7 +230,6 @@ impl Showcase {
                                     .label("Gain")
                                     .size(NumberInputSize::Sm)
                                     .width(100.0)
-                                    .editing(is_editing)
                                     .on_change({
                                         let entity = entity.clone();
                                         move |value, _window, cx| {
@@ -316,45 +237,8 @@ impl Showcase {
                                                 showcase.number_db = value;
                                             });
                                         }
-                                    })
-                                    .on_edit_start({
-                                        let entity = entity.clone();
-                                        move |_window, cx| {
-                                            entity.update(cx, |showcase, _| {
-                                                showcase.editing_number = Some("db");
-                                                showcase.edit_text =
-                                                    format!("{:.1}", showcase.number_db);
-                                                showcase.text_selected = true;
-                                            });
-                                        }
-                                    })
-                                    .on_edit_end({
-                                        let entity = entity.clone();
-                                        move |value, _window, cx| {
-                                            entity.update(cx, |showcase, _cx| {
-                                                if let Some(v) = value {
-                                                    showcase.number_db = v;
-                                                }
-                                                showcase.editing_number = None;
-                                                showcase.edit_text.clear();
-                                            });
-                                        }
-                                    })
-                                    .on_text_change({
-                                        let entity = entity.clone();
-                                        move |text, _window, cx| {
-                                            entity.update(cx, |showcase, _cx| {
-                                                showcase.edit_text = text;
-                                            });
-                                        }
-                                    });
-                                if is_editing {
-                                    input = input
-                                        .edit_text(edit_text.clone())
-                                        .text_selected(text_selected);
-                                }
-                                input
-                            })
+                                    }),
+                            )
                             .child(
                                 NumberInput::new("num-disabled")
                                     .value(50.0)
