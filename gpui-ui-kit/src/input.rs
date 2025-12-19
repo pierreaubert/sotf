@@ -191,6 +191,11 @@ impl EditState {
         self.text_selected = false;
     }
 
+    fn select_all(&mut self) {
+        self.text_selected = true;
+        self.cursor = self.text.chars().count();
+    }
+
     fn kill_to_end(&mut self) {
         let chars: Vec<char> = self.text.chars().collect();
         self.text = chars[..self.cursor].iter().collect();
@@ -583,6 +588,7 @@ impl RenderOnce for Input {
         let on_text_change_rc = self.on_text_change.map(Rc::new);
 
         // Add click handler - focus and start editing
+        // Double-click selects all text
         if !disabled && !readonly {
             let focus_handle_for_click = focus_handle.clone();
             let edit_state_for_click = edit_state.clone();
@@ -590,12 +596,26 @@ impl RenderOnce for Input {
             let on_edit_start_click = on_edit_start_rc.clone();
 
             input_wrapper =
-                input_wrapper.on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                input_wrapper.on_mouse_down(MouseButton::Left, move |event, window, cx| {
                     // Focus the input
                     window.focus(&focus_handle_for_click, cx);
 
-                    // Start editing if not already
                     let mut state = edit_state_for_click.borrow_mut();
+
+                    // Double-click: select all text
+                    if event.click_count == 2 {
+                        if state.editing {
+                            state.select_all();
+                        } else {
+                            // Start editing with all text selected
+                            *state = EditState::new(&value_for_click);
+                        }
+                        drop(state);
+                        window.refresh();
+                        return;
+                    }
+
+                    // Single click: start editing if not already
                     if !state.editing {
                         *state = EditState::new(&value_for_click);
                         drop(state);
@@ -604,6 +624,9 @@ impl RenderOnce for Input {
                         if let Some(ref handler) = on_edit_start_click {
                             handler(window, cx);
                         }
+                    } else {
+                        // Already editing - clear selection on single click
+                        state.text_selected = false;
                     }
                 });
         }
