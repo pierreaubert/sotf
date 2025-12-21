@@ -20,7 +20,7 @@ cocoa = "0.26"
 
 # Audio player types and UI
 sotf-audio-player = { path = "../sotf-audio-player" }
-math-iir-fir = { path = "../math-iir-fir" }
+math-iir-fir = { workspace = true }
 gpui-ui-kit = { path = "../gpui-ui-kit" }
 
 # Embed assets

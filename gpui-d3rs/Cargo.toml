@@ -25,8 +25,8 @@ regex = "1"
 delaunator = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-autoeq = { version="0.2", path = "../autoeq", optional = true }
-autoeq-cea2034 = { version="0.2", path = "../autoeq-cea2034", optional = true }
+autoeq = { version="0.2", optional = true }
+autoeq-cea2034 = { version="0.2", optional = true }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"], optional = true }
 ndarray = { version = "0.16", optional = true }
 reqwest = { version = "0.12", features = ["json"], optional = true }

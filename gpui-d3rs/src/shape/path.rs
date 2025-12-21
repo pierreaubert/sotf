@@ -288,24 +288,20 @@ impl Path {
         let mut min_y = f64::INFINITY;
         let mut max_x = f64::NEG_INFINITY;
         let mut max_y = f64::NEG_INFINITY;
-        let mut current = Point::default();
 
         for cmd in &self.commands {
             match *cmd {
                 PathCommand::MoveTo { x, y } | PathCommand::LineTo { x, y } => {
-                    current = Point::new(x, y);
                     min_x = min_x.min(x);
                     min_y = min_y.min(y);
                     max_x = max_x.max(x);
                     max_y = max_y.max(y);
                 }
                 PathCommand::HorizontalLineTo { x } => {
-                    current.x = x;
                     min_x = min_x.min(x);
                     max_x = max_x.max(x);
                 }
                 PathCommand::VerticalLineTo { y } => {
-                    current.y = y;
                     min_y = min_y.min(y);
                     max_y = max_y.max(y);
                 }
@@ -316,7 +312,6 @@ impl Path {
                     min_y = min_y.min(y1).min(y);
                     max_x = max_x.max(x1).max(x);
                     max_y = max_y.max(y1).max(y);
-                    current = Point::new(x, y);
                 }
                 PathCommand::CubicCurveTo {
                     x1,
@@ -331,14 +326,12 @@ impl Path {
                     min_y = min_y.min(y1).min(y2).min(y);
                     max_x = max_x.max(x1).max(x2).max(x);
                     max_y = max_y.max(y1).max(y2).max(y);
-                    current = Point::new(x, y);
                 }
                 PathCommand::Arc {
                     x,
                     y,
                     radius,
                     start_angle,
-                    end_angle,
                     ..
                 } => {
                     // Approximate with bounding circle
@@ -346,8 +339,6 @@ impl Path {
                     min_y = min_y.min(y - radius);
                     max_x = max_x.max(x + radius);
                     max_y = max_y.max(y + radius);
-                    current =
-                        Point::new(x + radius * end_angle.cos(), y + radius * end_angle.sin());
                     // Update with start point too
                     let start_x = x + radius * start_angle.cos();
                     let start_y = y + radius * start_angle.sin();
@@ -362,7 +353,6 @@ impl Path {
                     min_y = min_y.min(y - ry);
                     max_x = max_x.max(x + rx);
                     max_y = max_y.max(y + ry);
-                    current = Point::new(x, y);
                 }
                 PathCommand::Rect {
                     x,
@@ -374,7 +364,6 @@ impl Path {
                     min_y = min_y.min(y);
                     max_x = max_x.max(x + width);
                     max_y = max_y.max(y + height);
-                    current = Point::new(x, y);
                 }
             }
         }
