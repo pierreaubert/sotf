@@ -1174,26 +1174,70 @@ impl MusicLibrary {
     /// Uses FTS5 full-text search for fast prefix matching
     /// FTS index is synced after each library scan
     pub fn search_albums(&self, query: &str) -> Vec<&Album> {
+        if query.is_empty() {
+            return self.albums.iter().collect();
+        }
+
+        let mut results = Vec::new();
+
         // Use FTS5 search if database is available
-        if let Some(db) = &self.db
-            && let Ok(album_ids) = db.search_library(query)
-            && !album_ids.is_empty()
-        {
-            return self
+        if let Some(db) = &self.db {
+            if let Ok(album_ids) = db.search_library(query) {
+                if !album_ids.is_empty() {
+                    results = self
+                        .albums
+                        .iter()
+                        .filter(|album| {
+                            if let Some(id) = album.id {
+                                album_ids.contains(&id)
+                            } else {
+                                false
+                            }
+                        })
+                        .collect();
+                }
+            }
+        }
+
+        // Fallback to in-memory search if no results found via DB
+        // This handles cases where:
+        // 1. Database is not available (e.g. tests, or initialization failed)
+        // 2. FTS index is out of sync or empty
+        // 3. Search query matches something not indexed or FTS is too strict (e.g. substring)
+        if results.is_empty() && !query.is_empty() {
+            let query_lower = query.to_lowercase();
+            results = self
                 .albums
                 .iter()
                 .filter(|album| {
-                    if let Some(id) = album.id {
-                        album_ids.contains(&id)
-                    } else {
-                        false
+                    // Match album title
+                    if album.title.to_lowercase().contains(&query_lower) {
+                        return true;
                     }
+                    // Match album artist
+                    if album.artist().to_lowercase().contains(&query_lower) {
+                        return true;
+                    }
+                    // Match track titles
+                    for track in &album.tracks {
+                        if let Some(title) = &track.title {
+                            if title.to_lowercase().contains(&query_lower) {
+                                return true;
+                            }
+                        }
+                        // Match track artist
+                        if let Some(artist) = &track.artist {
+                            if artist.to_lowercase().contains(&query_lower) {
+                                return true;
+                            }
+                        }
+                    }
+                    false
                 })
                 .collect();
         }
 
-        // No database or no results - return empty
-        Vec::new()
+        results
     }
 
     /// Update directory scan times from database
