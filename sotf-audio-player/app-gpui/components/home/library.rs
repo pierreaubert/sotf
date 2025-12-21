@@ -104,7 +104,7 @@ impl PlayerView {
             badge_bg: theme.surface_hover,
             close_color: theme.text_muted,
             close_hover_color: theme.text_primary,
-            icon_selected: None,
+            icon_selected: Some(theme.icon_on_accent),
             icon_unselected: None,
         };
 

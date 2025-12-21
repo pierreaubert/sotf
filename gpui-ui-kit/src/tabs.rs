@@ -33,6 +33,10 @@ pub struct TabsTheme {
     pub close_color: Rgba,
     /// Close button hover color
     pub close_hover_color: Rgba,
+    /// Icon color for selected tab (defaults to text_selected if not set)
+    pub icon_selected: Option<Rgba>,
+    /// Icon color for unselected tab (defaults to accent if not set)
+    pub icon_unselected: Option<Rgba>,
 }
 
 impl Default for TabsTheme {
@@ -50,6 +54,8 @@ impl Default for TabsTheme {
             badge_bg: rgba(0x555555ff),
             close_color: rgba(0x888888ff),
             close_hover_color: rgba(0xffffffff),
+            icon_selected: None,
+            icon_unselected: None,
         }
     }
 }
@@ -69,6 +75,8 @@ impl From<&Theme> for TabsTheme {
             badge_bg: theme.muted,
             close_color: theme.text_muted,
             close_hover_color: theme.text_primary,
+            icon_selected: None,
+            icon_unselected: None,
         }
     }
 }
@@ -399,10 +407,29 @@ impl Tabs {
                 }
 
                 // Icon on left (large, spans both rows visually)
+                // Apply appropriate icon color based on selection state
+                let icon_color = if is_selected {
+                    theme.icon_selected.unwrap_or(theme.text_selected)
+                } else {
+                    theme.icon_unselected.unwrap_or(theme.accent)
+                };
                 if let Some(custom_icon) = custom_icon {
-                    tab_el = tab_el.child(div().flex().items_center().child(custom_icon));
+                    tab_el = tab_el.child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .text_color(icon_color)
+                            .child(custom_icon),
+                    );
                 } else if let Some(icon) = icon {
-                    tab_el = tab_el.child(div().flex().items_center().text_xl().child(icon));
+                    tab_el = tab_el.child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .text_xl()
+                            .text_color(icon_color)
+                            .child(icon),
+                    );
                 }
 
                 // Right side: Title on top, Number below

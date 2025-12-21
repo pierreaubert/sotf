@@ -80,6 +80,16 @@ pub struct App {
     // Library sort and filter
     pub library_sort_order: LibrarySortOrder,
     pub channel_filter: ChannelFilter,
+    // Selection filters for each sort mode (None = show selection UI)
+    pub selected_genre: Option<String>,
+    pub selected_decade: Option<(i32, i32)>, // Decade range (start, end) e.g., (2020, 2029)
+    pub selected_year: Option<i32>,
+    pub selected_artist_letter: Option<char>, // First letter filter for artists
+    pub selected_artist: Option<String>,
+    pub selected_composer_letter: Option<char>, // First letter filter for composers
+    pub selected_composer: Option<String>,
+    pub selected_album_letter: Option<char>,
+    pub selected_track_range: Option<(usize, usize)>, // (min, max) track count range
 
     // Pagination for library
     pub library_items_per_page: usize, // Items per page
@@ -313,6 +323,15 @@ impl App {
             selected_eq_band: 0,
             library_sort_order: LibrarySortOrder::Album,
             channel_filter: ChannelFilter::All,
+            selected_genre: None,
+            selected_decade: None,
+            selected_year: None,
+            selected_artist_letter: None,
+            selected_artist: None,
+            selected_composer_letter: None,
+            selected_composer: None,
+            selected_album_letter: None,
+            selected_track_range: None,
             library_items_per_page: 50, // Show 50 items per page
             library_columns: 4,
             plugin_chain: {
@@ -698,11 +717,19 @@ impl App {
     /// Compute library statistics from scratch.
     /// This is expensive - O(n) over all albums and tracks.
     fn compute_library_stats(&mut self) {
-        use std::collections::HashSet;
+        use std::collections::{HashMap, HashSet};
 
         let mut artists: HashSet<String> = HashSet::new();
         let mut composers: HashSet<String> = HashSet::new();
         let mut genres: HashSet<String> = HashSet::new();
+        let mut genre_counts: HashMap<String, usize> = HashMap::new();
+        let mut year_counts: HashMap<i32, usize> = HashMap::new();
+        let mut artist_counts: HashMap<String, usize> = HashMap::new();
+        let mut artist_letter_counts: HashMap<char, usize> = HashMap::new();
+        let mut composer_counts: HashMap<String, usize> = HashMap::new();
+        let mut composer_letter_counts: HashMap<char, usize> = HashMap::new();
+        let mut album_letter_counts: HashMap<char, usize> = HashMap::new();
+        let mut track_count_distribution: HashMap<usize, usize> = HashMap::new();
         let mut total_tracks = 0usize;
         let mut min_year = i32::MAX;
         let mut max_year = 0i32;
@@ -725,7 +752,7 @@ impl App {
                 }
             }
 
-            // Track year range
+            // Track year range and count per year
             if let Some(y) = album.year {
                 let y = y as i32;
                 if y > 0 {
@@ -734,6 +761,55 @@ impl App {
                     }
                     if y > max_year {
                         max_year = y;
+                    }
+                    *year_counts.entry(y).or_insert(0) += 1;
+                }
+            }
+
+            // Count albums per first letter
+            if let Some(first_char) = album.title.chars().next() {
+                let letter = first_char.to_ascii_uppercase();
+                let key = if letter.is_ascii_alphabetic() {
+                    letter
+                } else {
+                    '#' // Group non-alphabetic titles
+                };
+                *album_letter_counts.entry(key).or_insert(0) += 1;
+            }
+
+            // Count track distribution
+            let track_count = album.tracks.len();
+            *track_count_distribution.entry(track_count).or_insert(0) += 1;
+
+            // Get album artist for artist counts and artist letter counts
+            let album_artist = album.artist();
+            if !album_artist.is_empty() {
+                *artist_counts.entry(album_artist.to_string()).or_insert(0) += 1;
+                // Count by first letter
+                if let Some(first_char) = album_artist.chars().next() {
+                    let letter = first_char.to_ascii_uppercase();
+                    let key = if letter.is_ascii_alphabetic() { letter } else { '#' };
+                    *artist_letter_counts.entry(key).or_insert(0) += 1;
+                }
+            }
+
+            // Get album genre (from first track) for genre counts
+            if let Some(first_track) = album.tracks.first() {
+                if let Some(genre) = &first_track.genre {
+                    if !genre.is_empty() {
+                        *genre_counts.entry(genre.clone()).or_insert(0) += 1;
+                    }
+                }
+                // Get album composer for composer counts and composer letter counts
+                if let Some(composer) = &first_track.composer {
+                    if !composer.is_empty() {
+                        *composer_counts.entry(composer.clone()).or_insert(0) += 1;
+                        // Count by first letter
+                        if let Some(first_char) = composer.chars().next() {
+                            let letter = first_char.to_ascii_uppercase();
+                            let key = if letter.is_ascii_alphabetic() { letter } else { '#' };
+                            *composer_letter_counts.entry(key).or_insert(0) += 1;
+                        }
                     }
                 }
             }
@@ -764,11 +840,26 @@ impl App {
             min_year = 0;
         }
 
+        // Build track range counts (group into ranges)
+        let track_range_counts = Self::build_track_ranges(&track_count_distribution);
+
+        // Build decade counts from year_counts
+        let decade_counts = Self::build_decade_counts(&year_counts);
+
         self.library_stats = LibraryStats {
             artists_count: artists.len(),
             composers_count: composers.len(),
             total_tracks,
             genres_count: genres.len(),
+            genre_counts,
+            year_counts,
+            decade_counts,
+            artist_counts,
+            artist_letter_counts,
+            composer_counts,
+            composer_letter_counts,
+            album_letter_counts,
+            track_range_counts,
             min_year,
             max_year,
             mono_count,
@@ -778,5 +869,59 @@ impl App {
             surround_plus_count,
             valid: true,
         };
+    }
+
+    /// Build decade counts from year counts
+    fn build_decade_counts(year_counts: &std::collections::HashMap<i32, usize>) -> Vec<(i32, i32, usize)> {
+        use std::collections::HashMap;
+
+        let mut decade_map: HashMap<i32, usize> = HashMap::new();
+
+        for (year, count) in year_counts {
+            let decade_start = (*year / 10) * 10;
+            *decade_map.entry(decade_start).or_insert(0) += count;
+        }
+
+        let mut decades: Vec<(i32, i32, usize)> = decade_map
+            .into_iter()
+            .map(|(start, count)| (start, start + 9, count))
+            .collect();
+
+        // Sort by decade descending (most recent first)
+        decades.sort_by(|a, b| b.0.cmp(&a.0));
+
+        decades
+    }
+
+    /// Build track count ranges from distribution
+    fn build_track_ranges(
+        distribution: &std::collections::HashMap<usize, usize>,
+    ) -> Vec<(usize, usize, usize)> {
+        // Define meaningful ranges
+        let ranges = [
+            (1, 5, "1-5 tracks"),
+            (6, 10, "6-10 tracks"),
+            (11, 15, "11-15 tracks"),
+            (16, 20, "16-20 tracks"),
+            (21, 30, "21-30 tracks"),
+            (31, 50, "31-50 tracks"),
+            (51, usize::MAX, "51+ tracks"),
+        ];
+
+        ranges
+            .iter()
+            .filter_map(|(min, max, _label)| {
+                let count: usize = distribution
+                    .iter()
+                    .filter(|(tracks, _)| **tracks >= *min && **tracks <= *max)
+                    .map(|(_, count)| count)
+                    .sum();
+                if count > 0 {
+                    Some((*min, *max, count))
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 }

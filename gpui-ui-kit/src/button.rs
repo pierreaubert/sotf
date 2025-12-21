@@ -45,6 +45,8 @@ pub struct ButtonTheme {
     pub surface_hover: Rgba,
     pub text_primary: Rgba,
     pub text_secondary: Rgba,
+    /// Text color for Primary variant buttons (on accent background)
+    pub text_on_accent: Rgba,
     pub error: Rgba,
     pub border: Rgba,
 }
@@ -58,6 +60,7 @@ impl Default for ButtonTheme {
             surface_hover: rgb(0x4a4a4a),
             text_primary: rgb(0xffffff),
             text_secondary: rgb(0xcccccc),
+            text_on_accent: rgb(0xffffff),
             error: rgb(0xcc3333),
             border: rgb(0x555555),
         }
@@ -163,7 +166,7 @@ impl Button {
             (
                 theme.accent,
                 theme.accent_hover,
-                theme.text_primary,
+                theme.text_on_accent,
                 theme.accent,
             )
         } else {
@@ -171,7 +174,7 @@ impl Button {
                 ButtonVariant::Primary => (
                     theme.accent,
                     theme.accent_hover,
-                    theme.text_primary,
+                    theme.text_on_accent,
                     theme.accent,
                 ),
                 ButtonVariant::Secondary => (
@@ -181,7 +184,7 @@ impl Button {
                     theme.surface,
                 ),
                 ButtonVariant::Destructive => {
-                    (theme.error, rgb(0xe64545), theme.text_primary, theme.error)
+                    (theme.error, rgb(0xe64545), theme.text_on_accent, theme.error)
                 }
                 ButtonVariant::Ghost => (
                     rgba(0x00000000),

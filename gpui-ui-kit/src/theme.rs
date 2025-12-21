@@ -352,6 +352,8 @@ impl From<&Theme> for ButtonTheme {
             surface_hover: theme.surface_hover,
             text_primary: theme.text_primary,
             text_secondary: theme.text_secondary,
+            // For generic themes, use text_primary as fallback for text on accent backgrounds
+            text_on_accent: theme.text_primary,
             error: theme.error,
             border: theme.border,
         }

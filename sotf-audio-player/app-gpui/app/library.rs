@@ -11,11 +11,114 @@ use super::types::{ChannelFilter, LibrarySortOrder, ToastMessage};
 
 impl App {
     pub fn filtered_albums(&self) -> Vec<Album> {
-        self.library.get_filtered_albums(
+        let mut albums = self.library.get_filtered_albums(
             &self.search_query,
             self.library_sort_order,
             self.channel_filter,
-        )
+        );
+
+        // Filter by selected genre if set
+        if let Some(ref genre) = self.selected_genre {
+            albums.retain(|album| {
+                album
+                    .tracks
+                    .first()
+                    .and_then(|t| t.genre.as_ref())
+                    .is_some_and(|g| g.eq_ignore_ascii_case(genre))
+            });
+        }
+
+        // Filter by selected decade if set (but no specific year)
+        if let Some((decade_start, decade_end)) = self.selected_decade {
+            if self.selected_year.is_none() {
+                albums.retain(|album| {
+                    album.year.map(|y| y as i32).is_some_and(|y| y >= decade_start && y <= decade_end)
+                });
+            }
+        }
+
+        // Filter by selected year if set
+        if let Some(year) = self.selected_year {
+            albums.retain(|album| album.year.map(|y| y as i32) == Some(year));
+        }
+
+        // Filter by selected artist letter if set (but no specific artist)
+        if let Some(letter) = self.selected_artist_letter {
+            if self.selected_artist.is_none() {
+                albums.retain(|album| {
+                    album.artist().chars().next().map_or(false, |c| {
+                        let first = c.to_ascii_uppercase();
+                        if letter == '#' {
+                            !first.is_ascii_alphabetic()
+                        } else {
+                            first == letter
+                        }
+                    })
+                });
+            }
+        }
+
+        // Filter by selected artist if set
+        if let Some(ref artist) = self.selected_artist {
+            albums.retain(|album| album.artist().eq_ignore_ascii_case(artist));
+        }
+
+        // Filter by selected composer letter if set (but no specific composer)
+        if let Some(letter) = self.selected_composer_letter {
+            if self.selected_composer.is_none() {
+                albums.retain(|album| {
+                    album
+                        .tracks
+                        .first()
+                        .and_then(|t| t.composer.as_ref())
+                        .map_or(false, |c| {
+                            c.chars().next().map_or(false, |ch| {
+                                let first = ch.to_ascii_uppercase();
+                                if letter == '#' {
+                                    !first.is_ascii_alphabetic()
+                                } else {
+                                    first == letter
+                                }
+                            })
+                        })
+                });
+            }
+        }
+
+        // Filter by selected composer if set
+        if let Some(ref composer) = self.selected_composer {
+            albums.retain(|album| {
+                album
+                    .tracks
+                    .first()
+                    .and_then(|t| t.composer.as_ref())
+                    .is_some_and(|c| c.eq_ignore_ascii_case(composer))
+            });
+        }
+
+        // Filter by selected album letter if set
+        if let Some(letter) = self.selected_album_letter {
+            albums.retain(|album| {
+                album.title.chars().next().map_or(false, |c| {
+                    let first = c.to_ascii_uppercase();
+                    if letter == '#' {
+                        !first.is_ascii_alphabetic()
+                    } else {
+                        first == letter
+                    }
+                })
+            });
+        }
+
+        // Filter by selected track range if set
+        if let Some((min, max)) = self.selected_track_range {
+            albums.retain(|album| {
+                let count = album.tracks.len();
+                count >= min && count <= max
+            });
+        }
+
+        albums
     }
 
     /// Set library sort order
@@ -23,6 +126,16 @@ impl App {
         self.library_sort_order = order;
         // Reset selection and page to top when changing sort order
         self.selected_album_index = 0;
+        // Clear all selection filters when changing sort order
+        self.selected_genre = None;
+        self.selected_decade = None;
+        self.selected_year = None;
+        self.selected_artist_letter = None;
+        self.selected_artist = None;
+        self.selected_composer_letter = None;
+        self.selected_composer = None;
+        self.selected_album_letter = None;
+        self.selected_track_range = None;
         self.reset_page();
     }
 

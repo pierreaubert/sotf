@@ -65,6 +65,7 @@ fn render_spinorama_main_response_plot(
 
     let chart = line(&result.frequencies, &result.input_curve)
         .x_scale(ScaleType::Log)
+        .y_range(-15.0, 5.0)
         .label("Original")
         .color(rgba_to_u32(colors::input(theme)))
         .stroke_width(1.5)
@@ -159,6 +160,7 @@ fn render_spinorama_er_plot(
 
     let chart = line(&result.frequencies, &result.er_curve)
         .x_scale(ScaleType::Log)
+        .y_range(-15.0, 5.0)
         .label("Original ER")
         .color(rgba_to_u32(colors::secondary_line(theme)))
         .stroke_width(1.5)
@@ -199,6 +201,7 @@ fn render_spinorama_sp_plot(
 
     let chart = line(&result.frequencies, &result.sp_curve)
         .x_scale(ScaleType::Log)
+        .y_range(-15.0, 5.0)
         .label("Original SP")
         .color(rgba_to_u32(colors::secondary_line(theme)))
         .stroke_width(1.5)

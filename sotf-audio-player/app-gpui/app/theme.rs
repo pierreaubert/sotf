@@ -157,6 +157,7 @@ pub struct Theme {
     // Text on accent (for contrast on accent backgrounds)
     pub text_on_accent: Rgba,
     pub text_on_accent_muted: Rgba,
+    pub icon_on_accent: Rgba,
 
     // Semantic colors
     pub success: Rgba,
@@ -273,6 +274,7 @@ impl Theme {
             // Text on accent
             text_on_accent: rgba(0xffffff),
             text_on_accent_muted: rgba(0xffffffcc),
+            icon_on_accent: rgba(0x1e1e1e),
 
             // Semantic colors
             success: rgba(0x4ec9b0),
@@ -466,6 +468,7 @@ impl Theme {
             // Text on accent
             text_on_accent: rgba(0xffffff),
             text_on_accent_muted: rgba(0xffffffcc),
+            icon_on_accent: rgba(0x1e1e1e),
 
             // Semantic colors
             success: rgba(0x28a745),
@@ -659,6 +662,7 @@ impl Theme {
             // Text on accent
             text_on_accent: rgba(0xffffff),
             text_on_accent_muted: rgba(0xffffffcc),
+            icon_on_accent: rgba(0x1e1e1e),
 
             // Semantic colors
             success: rgba(0x3fb950),
@@ -852,6 +856,7 @@ impl Theme {
             // Text on accent
             text_on_accent: rgba(0xffffff),
             text_on_accent_muted: rgba(0xffffffcc),
+            icon_on_accent: rgba(0x1e1e1e),
 
             // Semantic colors
             success: rgba(0x6abf69),
@@ -1042,11 +1047,12 @@ impl Theme {
             accent_hover: rgba(0xeeeeee),
             accent_muted: rgba(0x888888),
 
-            // Text on accent (black text on white background)
+            // Text on accent
             text_on_accent: rgba(0x000000),
             text_on_accent_muted: rgba(0x333333),
+            icon_on_accent: rgba(0x000000),
 
-            // Semantic colors (grayscale for B&W theme)
+            // Semantic colors
             success: rgba(0xaaaaaa),
             warning: rgba(0x888888),
             error: rgba(0x666666),
@@ -1088,49 +1094,33 @@ impl Theme {
                 mute_solo: rgba(0x999999),
             },
             graph_colors: GraphLineColors {
-                input: rgba(0xcccccc),
-                target: rgba(0x999999),
-                filter_response: rgba(0xaaaaaa),
-                corrected: rgba(0xbbbbbb),
-                error: rgba(0x666666),
-                deviation: rgba(0x888888),
+                input: rgba(0x5c77a5),           // Blue
+                target: rgba(0x71a152),          // Green
+                filter_response: rgba(0xdc842a), // Orange
+                corrected: rgba(0x76b7b2),       // Teal-cyan
+                error: rgba(0xc85857),           // Red
+                deviation: rgba(0xb07aa1),       // Purple
                 grid: Rgba {
                     r: 1.0,
                     g: 1.0,
                     b: 1.0,
                     a: 0.083,
                 }, // rgba(0xffffff15) = 21/255 ≈ 8.3%
-                secondary_line: Rgba {
-                    r: 0.533,
-                    g: 0.533,
-                    b: 0.533,
-                    a: 1.0,
-                }, // rgba(0x888888)
-                directivity_er: Rgba {
-                    r: 0.667,
-                    g: 0.667,
-                    b: 0.667,
-                    a: 1.0,
-                }, // rgba(0xaaaaaa)
-                directivity_sp: Rgba {
-                    r: 0.733,
-                    g: 0.733,
-                    b: 0.733,
-                    a: 1.0,
-                }, // rgba(0xbbbbbb)
+                secondary_line: rgba(0xbab0ac), // Gray
+                directivity_er: rgba(0xe15759), // Red-pink
+                directivity_sp: rgba(0x89b5b1), // Teal
             },
             band_colors: vec![
-                rgba(0x333333), // Dark gray
-                rgba(0x444444), //
-                rgba(0x555555), //
-                rgba(0x666666), //
-                rgba(0x777777), //
-                rgba(0x888888), // Medium gray
-                rgba(0x999999), //
-                rgba(0xaaaaaa), //
-                rgba(0xbbbbbb), //
-                rgba(0xcccccc), //
-                rgba(0xdddddd), // Light gray
+                rgba(0x5c77a5), // Blue
+                rgba(0xdc842a), // Orange
+                rgba(0xc85857), // Red
+                rgba(0x89b5b1), // Teal
+                rgba(0x71a152), // Green
+                rgba(0xbab0ac), // Gray
+                rgba(0xe15759), // Red-pink
+                rgba(0xb07aa1), // Purple
+                rgba(0x76b7b2), // Teal-cyan
+                rgba(0xff9da7), // Pink
             ],
             eq_curve_colors: EQCurveColors {
                 background: rgba(0x000000),
@@ -1250,9 +1240,10 @@ impl Theme {
             accent_hover: self.accent_hover,
             surface: self.surface,
             surface_hover: self.surface_hover,
-            // Use text_on_accent for primary buttons (accent background)
-            text_primary: self.text_on_accent,
+            text_primary: self.text_primary,
             text_secondary: self.text_secondary,
+            // Use text_on_accent for Primary variant buttons (on accent background)
+            text_on_accent: self.text_on_accent,
             error: self.error,
             border: self.border,
         }
@@ -1321,6 +1312,8 @@ impl Theme {
             badge_bg: self.surface_hover,
             close_color: self.text_muted,
             close_hover_color: self.text_primary,
+            icon_selected: Some(self.icon_on_accent),
+            icon_unselected: None,
         }
     }
 

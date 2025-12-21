@@ -164,6 +164,24 @@ pub struct LibraryStats {
     pub total_tracks: usize,
     /// Number of unique genres (case-insensitive)
     pub genres_count: usize,
+    /// Count of albums per genre (for selection UI)
+    pub genre_counts: std::collections::HashMap<String, usize>,
+    /// Count of albums per year (for selection UI)
+    pub year_counts: std::collections::HashMap<i32, usize>,
+    /// Count of albums per decade (for selection UI) - key is (start_year, end_year)
+    pub decade_counts: Vec<(i32, i32, usize)>,
+    /// Count of albums per artist (for selection UI)
+    pub artist_counts: std::collections::HashMap<String, usize>,
+    /// Count of albums per artist first letter (for selection UI)
+    pub artist_letter_counts: std::collections::HashMap<char, usize>,
+    /// Count of albums per composer (for selection UI)
+    pub composer_counts: std::collections::HashMap<String, usize>,
+    /// Count of albums per composer first letter (for selection UI)
+    pub composer_letter_counts: std::collections::HashMap<char, usize>,
+    /// Count of albums per first letter of album name (for selection UI)
+    pub album_letter_counts: std::collections::HashMap<char, usize>,
+    /// Count of albums per track count range (for selection UI)
+    pub track_range_counts: Vec<(usize, usize, usize)>, // (min, max, count)
     /// Minimum year across all albums (0 if none have year)
     pub min_year: i32,
     /// Maximum year across all albums (0 if none have year)
@@ -1946,17 +1964,17 @@ impl Default for SpinoramaOptimizerConfig {
         Self {
             mode: SpinoramaOptimizationMode::FlatOnPir,
             target_curve: SpinoramaTargetCurve::default(),
-            algorithm: RoomEqAlgorithm::Cobyla,
+            algorithm: RoomEqAlgorithm::DifferentialEvolution,
             num_filters: 5,
             min_q: 0.5,
             max_q: 6.0,
             min_db: -4.0,
             max_db: 4.0,
-            min_freq: 20.0,
-            max_freq: 20000.0,
+            min_freq: 60.0,
+            max_freq: 160000.0,
             max_iter: 10000,
             peq_model: "pk".to_string(),
-            population: 100,
+            population: 40,
             de_f: 0.8,
             de_cr: 0.9,
             strategy: "currenttobest1bin".to_string(),
@@ -1984,6 +2002,17 @@ pub struct SpinoramaEqResult {
     pub target_response: Option<Vec<(f64, f64)>>,
 }
 
+/// A single directivity curve at a specific angle
+#[derive(Debug, Clone, Default)]
+pub struct DirectivityCurve {
+    /// Angle in degrees
+    pub angle: f64,
+    /// Frequency points
+    pub frequencies: Vec<f64>,
+    /// SPL values (dB)
+    pub spl: Vec<f64>,
+}
+
 /// CEA2034 spinorama curves data for plotting
 #[derive(Debug, Clone, Default)]
 pub struct SpinoramaCurves {
@@ -2001,14 +2030,35 @@ pub struct SpinoramaCurves {
     pub early_reflections_di: Vec<f64>,
     /// Sound Power DI (dB) - for secondary y-axis
     pub sound_power_di: Vec<f64>,
+    /// Estimated In-Room Response (PIR) - computed from LW, ER, SP
+    pub estimated_in_room: Vec<f64>,
+    /// Horizontal directivity curves (SPL Horizontal at various angles)
+    pub horizontal_directivity: Vec<DirectivityCurve>,
+    /// Vertical directivity curves (SPL Vertical at various angles)
+    pub vertical_directivity: Vec<DirectivityCurve>,
 }
 
 impl SpinoramaCurves {
-    /// Check if we have valid data to plot
+    /// Check if we have valid CEA2034 data to plot
     pub fn is_valid(&self) -> bool {
         !self.frequencies.is_empty()
             && self.frequencies.len() == self.on_axis.len()
             && self.frequencies.len() == self.listening_window.len()
+    }
+
+    /// Check if we have PIR data
+    pub fn has_pir(&self) -> bool {
+        !self.estimated_in_room.is_empty()
+    }
+
+    /// Check if we have horizontal directivity data
+    pub fn has_horizontal(&self) -> bool {
+        !self.horizontal_directivity.is_empty()
+    }
+
+    /// Check if we have vertical directivity data
+    pub fn has_vertical(&self) -> bool {
+        !self.vertical_directivity.is_empty()
     }
 }
 
