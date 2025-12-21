@@ -958,6 +958,7 @@ pub fn {}() -> EditorTheme {{
             surface_hover: self.surface_hover.to_rgba(),
             text_primary: self.text_primary.to_rgba(),
             text_secondary: self.text_secondary.to_rgba(),
+            text_on_accent: self.text_on_accent.to_rgba(),
             error: self.error.to_rgba(),
             border: self.border.to_rgba(),
         }
