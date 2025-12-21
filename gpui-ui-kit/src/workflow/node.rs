@@ -1,0 +1,268 @@
+//! Workflow node component
+
+use super::port::{Port, PortDirection};
+use super::state::{NodeId, Position, WorkflowNodeData};
+use super::theme::WorkflowTheme;
+use crate::theme::ThemeExt;
+use gpui::prelude::*;
+use gpui::*;
+
+/// Trait for custom node content rendering
+pub trait NodeContent: 'static {
+    /// Render the interior content of the node
+    fn render(&self, node: &WorkflowNodeData, cx: &mut App) -> AnyElement;
+
+    /// Get preferred size for this content
+    fn preferred_size(&self) -> (f32, f32) {
+        (160.0, 60.0)
+    }
+}
+
+/// Default node content that just shows the title
+pub struct DefaultNodeContent;
+
+impl NodeContent for DefaultNodeContent {
+    fn render(&self, node: &WorkflowNodeData, cx: &mut App) -> AnyElement {
+        let theme = cx.theme();
+        div()
+            .p_2()
+            .text_sm()
+            .text_color(theme.text_primary)
+            .child(node.title.clone())
+            .into_any_element()
+    }
+}
+
+/// A workflow node component
+#[derive(IntoElement)]
+pub struct WorkflowNode {
+    id: ElementId,
+    node_id: NodeId,
+    data: WorkflowNodeData,
+    selected: bool,
+    dragging: bool,
+    theme: Option<WorkflowTheme>,
+    content: Option<Box<dyn NodeContent>>,
+
+    // Event handlers
+    on_select: Option<Box<dyn Fn(NodeId, bool, &mut Window, &mut App) + 'static>>,
+    on_drag_start: Option<Box<dyn Fn(NodeId, Position, &mut Window, &mut App) + 'static>>,
+    on_port_mouse_down:
+        Option<Box<dyn Fn(NodeId, PortDirection, usize, &mut Window, &mut App) + 'static>>,
+    on_port_mouse_up:
+        Option<Box<dyn Fn(NodeId, PortDirection, usize, &mut Window, &mut App) + 'static>>,
+}
+
+impl WorkflowNode {
+    pub fn new(id: impl Into<ElementId>, data: WorkflowNodeData) -> Self {
+        let node_id = data.id;
+        Self {
+            id: id.into(),
+            node_id,
+            data,
+            selected: false,
+            dragging: false,
+            theme: None,
+            content: None,
+            on_select: None,
+            on_drag_start: None,
+            on_port_mouse_down: None,
+            on_port_mouse_up: None,
+        }
+    }
+
+    /// Set whether the node is selected
+    pub fn selected(mut self, selected: bool) -> Self {
+        self.selected = selected;
+        self
+    }
+
+    /// Set whether the node is being dragged
+    pub fn dragging(mut self, dragging: bool) -> Self {
+        self.dragging = dragging;
+        self
+    }
+
+    /// Set custom theme
+    pub fn theme(mut self, theme: WorkflowTheme) -> Self {
+        self.theme = Some(theme);
+        self
+    }
+
+    /// Set custom content renderer
+    pub fn content(mut self, content: impl NodeContent) -> Self {
+        self.content = Some(Box::new(content));
+        self
+    }
+
+    /// Set selection handler
+    pub fn on_select(
+        mut self,
+        handler: impl Fn(NodeId, bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_select = Some(Box::new(handler));
+        self
+    }
+
+    /// Set drag start handler
+    pub fn on_drag_start(
+        mut self,
+        handler: impl Fn(NodeId, Position, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_drag_start = Some(Box::new(handler));
+        self
+    }
+
+    /// Set port mouse down handler
+    pub fn on_port_mouse_down(
+        mut self,
+        handler: impl Fn(NodeId, PortDirection, usize, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_port_mouse_down = Some(Box::new(handler));
+        self
+    }
+
+    /// Set port mouse up handler
+    pub fn on_port_mouse_up(
+        mut self,
+        handler: impl Fn(NodeId, PortDirection, usize, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_port_mouse_up = Some(Box::new(handler));
+        self
+    }
+}
+
+impl RenderOnce for WorkflowNode {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let theme = self
+            .theme
+            .clone()
+            .unwrap_or_else(|| WorkflowTheme::from_theme(&cx.theme()));
+        let node_id = self.node_id;
+
+        // Build input ports
+        let input_ports: Vec<_> = (0..self.data.input_count)
+            .map(|i| {
+                Port::new(
+                    format!("port-in-{}-{}", node_id, i),
+                    PortDirection::Input,
+                    i,
+                )
+            })
+            .collect();
+
+        // Build output ports
+        let output_ports: Vec<_> = (0..self.data.output_count)
+            .map(|i| {
+                Port::new(
+                    format!("port-out-{}-{}", node_id, i),
+                    PortDirection::Output,
+                    i,
+                )
+            })
+            .collect();
+
+        let border_color = if self.selected {
+            theme.node_border_selected
+        } else {
+            theme.node_border
+        };
+
+        let on_select = self.on_select;
+        let on_drag_start = self.on_drag_start;
+
+        div()
+            .id(self.id)
+            .absolute()
+            .left(px(self.data.position.x))
+            .top(px(self.data.position.y))
+            .w(px(self.data.width))
+            .min_h(px(self.data.height))
+            .bg(theme.node_background)
+            .border_2()
+            .border_color(border_color)
+            .rounded(px(theme.node_border_radius))
+            .shadow_md()
+            .cursor_pointer()
+            .when(self.dragging, |el| el.opacity(0.8))
+            // Mouse events
+            .when_some(on_select, |el, handler| {
+                el.on_click(move |event, window, cx| {
+                    let shift = event.modifiers().shift;
+                    handler(node_id, shift, window, cx);
+                })
+            })
+            .when_some(on_drag_start, |el, handler| {
+                el.on_mouse_down(MouseButton::Left, move |event, window, cx| {
+                    let x: f32 = event.position.x.into();
+                    let y: f32 = event.position.y.into();
+                    let pos = Position::new(x, y);
+                    handler(node_id, pos, window, cx);
+                })
+            })
+            // Node structure
+            .child(
+                // Header
+                div()
+                    .w_full()
+                    .px_3()
+                    .py_1()
+                    .bg(theme.node_header)
+                    .rounded_t(px(theme.node_border_radius - 2.0))
+                    .text_sm()
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(theme.node_text)
+                    .child(self.data.title.clone()),
+            )
+            // Content area with ports
+            .child(
+                div()
+                    .w_full()
+                    .flex()
+                    .flex_row()
+                    .min_h(px(self.data.height - theme.node_header_height - 4.0))
+                    // Input ports column
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .justify_around()
+                            .py_2()
+                            .children(input_ports.into_iter().map(|port| {
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .ml(px(-theme.port_radius))
+                                    .child(port)
+                            })),
+                    )
+                    // Main content
+                    .child(
+                        div()
+                            .flex_1()
+                            .p_2()
+                            .child(if let Some(content) = self.content {
+                                content.render(&self.data, cx)
+                            } else {
+                                DefaultNodeContent.render(&self.data, cx)
+                            }),
+                    )
+                    // Output ports column
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .justify_around()
+                            .py_2()
+                            .children(output_ports.into_iter().map(|port| {
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .justify_end()
+                                    .mr(px(-theme.port_radius))
+                                    .child(port)
+                            })),
+                    ),
+            )
+    }
+}

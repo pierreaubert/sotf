@@ -63,6 +63,9 @@ pub mod wizard;
 pub mod pane_divider;
 pub mod stack;
 
+// Workflow canvas
+pub mod workflow;
+
 // Re-export commonly used types
 
 // Buttons
@@ -129,3 +132,10 @@ pub use app::{MiniApp, MiniAppConfig};
 // Theme and i18n
 pub use i18n::{I18nExt, I18nState, Language, TranslationKey, Translations};
 pub use theme::{Theme, ThemeExt, ThemeState, ThemeVariant};
+
+// Workflow canvas
+pub use workflow::{
+    CanvasState, Command, Connection, ConnectionId, HitTestResult, HitTester, HistoryManager,
+    NodeContent, NodeId, Port, PortDirection, Position, SelectionState, ViewportState,
+    WorkflowCanvas, WorkflowGraph, WorkflowNode, WorkflowNodeData, WorkflowTheme,
+};

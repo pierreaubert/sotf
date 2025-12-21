@@ -13,6 +13,10 @@ gpui = { workspace = true }
 
 # Serialization for Color type
 serde = { workspace = true }
+serde_json = { workspace = true }
+
+# UUID for node/connection IDs
+uuid = { version = "1", features = ["v4", "serde"] }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
@@ -24,4 +28,8 @@ path = "src/lib.rs"
 [[example]]
 name = "showcase"
 path = "examples/showcase.rs"
+
+[[example]]
+name = "workflow_debug"
+path = "examples/workflow_debug.rs"
 
