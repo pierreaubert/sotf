@@ -1148,7 +1148,7 @@ impl MusicLibrary {
                         album.tracks.push(track);
                         }
                         Err(e) => {
-                            log::debug!(
+                            log::warn!(
                                 "Failed to extract metadata from {}: {}",
                                 path.display(),
                                 e
