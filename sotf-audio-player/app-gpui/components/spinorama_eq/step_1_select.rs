@@ -1,6 +1,7 @@
+use crate::components::graphs::speaker_graphs::{
+    render_speaker_preview_graph, render_spinorama_cea2034_graph,
+};
 use crate::ui::PlayerView;
-use d3rs::prelude::{render_line, D3Color, LineConfig, LinePoint, LinearScale, LogScale};
-use d3rs::scale::Scale;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
@@ -31,6 +32,13 @@ impl PlayerView {
         let preview_target = spinorama.preview_target_curve.clone();
         let preview_deviation = spinorama.preview_deviation_curve.clone();
         let has_preview = !preview_frequencies.is_empty();
+
+        // Spinorama CEA2034 curves data
+        let spinorama_curves = spinorama.spinorama_curves.clone();
+        let spinorama_curves_loading = spinorama.loading_spinorama_curves;
+        let spinorama_curves_error = spinorama.spinorama_curves_error.clone();
+        let has_spinorama_curves = spinorama_curves.is_valid();
+        let is_cea2034 = spinorama.selected_measurement == "CEA2034";
 
 		VStack::new()
 		    .spacing(StackSpacing::Lg)
@@ -452,12 +460,14 @@ impl PlayerView {
                                     )
                                     .into_any_element()
                             } else if has_preview {
-                                self.render_speaker_preview_chart(
+                                render_speaker_preview_graph(
                                     &preview_frequencies,
                                     &preview_input,
                                     &preview_target,
                                     &preview_deviation,
                                     &theme,
+                                    550.0,
+                                    150.0,
                                 )
                                 .into_any_element()
                             } else {
@@ -469,155 +479,61 @@ impl PlayerView {
                         ),
                 )
             })
-    }
-
-    /// Render the speaker preview chart with input, target, and deviation curves
-    fn render_speaker_preview_chart(
-        &self,
-        frequencies: &[f64],
-        input: &[f64],
-        target: &[f64],
-        deviation: &[f64],
-        theme: &crate::app::theme::Theme,
-    ) -> impl IntoElement {
-        const GRAPH_WIDTH: f32 = 550.0;
-        const GRAPH_HEIGHT: f32 = 150.0;
-
-        // Create log scale for frequency (x-axis)
-        let freq_min = frequencies.first().copied().unwrap_or(20.0).max(20.0);
-        let freq_max = frequencies.last().copied().unwrap_or(20000.0);
-        let freq_scale = LogScale::new()
-            .domain(freq_min, freq_max)
-            .range(0.0, GRAPH_WIDTH as f64);
-
-        // Find y-axis range from all curves
-        let all_values: Vec<f64> = input
-            .iter()
-            .chain(target.iter())
-            .chain(deviation.iter())
-            .copied()
-            .collect();
-        let y_min = all_values.iter().cloned().fold(f64::INFINITY, f64::min) - 2.0;
-        let y_max = all_values.iter().cloned().fold(f64::NEG_INFINITY, f64::max) + 2.0;
-        let db_scale = LinearScale::new()
-            .domain(y_max, y_min) // Inverted for SVG coordinates
-            .range(0.0, GRAPH_HEIGHT as f64);
-
-        // Generate line points for each curve (use raw values, scale handles transformation)
-        let input_points: Vec<LinePoint> = frequencies
-            .iter()
-            .zip(input.iter())
-            .filter(|(f, _)| **f >= freq_min && **f <= freq_max)
-            .map(|(f, db)| LinePoint::new(*f, *db))
-            .collect();
-
-        let target_points: Vec<LinePoint> = frequencies
-            .iter()
-            .zip(target.iter())
-            .filter(|(f, _)| **f >= freq_min && **f <= freq_max)
-            .map(|(f, db)| LinePoint::new(*f, *db))
-            .collect();
-
-        let deviation_points: Vec<LinePoint> = frequencies
-            .iter()
-            .zip(deviation.iter())
-            .filter(|(f, _)| **f >= freq_min && **f <= freq_max)
-            .map(|(f, db)| LinePoint::new(*f, *db))
-            .collect();
-
-        // Configure line styles
-        let input_config = LineConfig::new()
-            .stroke_width(1.5)
-            .stroke_color(D3Color::from_hex(0x3498db)); // Blue
-
-        let target_config = LineConfig::new()
-            .stroke_width(1.5)
-            .stroke_color(D3Color::from_hex(0x27ae60)); // Green
-
-        let deviation_config = LineConfig::new()
-            .stroke_width(1.0)
-            .stroke_color(D3Color::from_hex(0xe74c3c)); // Red
-
-        // Render the lines using d3rs
-        let input_line = render_line(&freq_scale, &db_scale, &input_points, &input_config);
-        let target_line = render_line(&freq_scale, &db_scale, &target_points, &target_config);
-        let deviation_line = render_line(&freq_scale, &db_scale, &deviation_points, &deviation_config);
-
-        // Calculate zero line position
-        let zero_y = db_scale.scale(0.0) as f32;
-
-        // Build legend
-        let legend = HStack::new()
-            .spacing(StackSpacing::Lg)
-            .child(
-                HStack::new()
-                    .spacing(StackSpacing::Xs)
-                    .child(
-                        div()
-                            .w(px(16.0))
-                            .h(px(2.0))
-                            .bg(gpui::rgb(0x3498db)),
-                    )
-                    .child(Text::new("Input").size(TextSize::Xs).color(theme.text_secondary)),
-            )
-            .child(
-                HStack::new()
-                    .spacing(StackSpacing::Xs)
-                    .child(
-                        div()
-                            .w(px(16.0))
-                            .h(px(2.0))
-                            .bg(gpui::rgb(0x27ae60)),
-                    )
-                    .child(Text::new("Target").size(TextSize::Xs).color(theme.text_secondary)),
-            )
-            .child(
-                HStack::new()
-                    .spacing(StackSpacing::Xs)
-                    .child(
-                        div()
-                            .w(px(16.0))
-                            .h(px(2.0))
-                            .bg(gpui::rgb(0xe74c3c)),
-                    )
-                    .child(Text::new("Deviation").size(TextSize::Xs).color(theme.text_secondary)),
-            );
-
-        VStack::new()
-            .spacing(StackSpacing::Sm)
-            .child(legend)
-            .child(
-                div()
-                    .w(px(GRAPH_WIDTH))
-                    .h(px(GRAPH_HEIGHT))
-                    .bg(theme.background)
-                    .rounded_md()
-                    .border_1()
-                    .border_color(theme.border)
-                    .relative()
-                    .overflow_hidden()
-                    // Zero line
-                    .when(y_min <= 0.0 && y_max >= 0.0, |el| {
-                        el.child(
-                            div()
-                                .absolute()
-                                .top(px(zero_y))
-                                .left_0()
-                                .right_0()
-                                .h(px(1.0))
-                                .bg(theme.text_muted)
-                                .opacity(0.3),
+            // CEA2034 Spinorama plot (shown only for CEA2034 measurements)
+            .when(is_cea2034 && selected_speaker.is_some(), |vstack| {
+                let theme = theme.clone();
+                vstack.child(
+                    Card::new()
+                        .background(theme.surface)
+                        .header_background(theme.background_secondary)
+                        .border(theme.border)
+                        .header(
+                            Text::new("CEA2034 Spinorama")
+                                .color(theme.text_primary)
+                                .weight(TextWeight::Semibold),
                         )
-                    })
-                    .child(input_line)
-                    .child(target_line)
-                    .child(deviation_line),
-            )
-            .child(
-                Text::new("Frequency Response (dB)")
-                    .size(TextSize::Xs)
-                    .color(theme.text_muted),
-            )
+                        .content(
+                            if spinorama_curves_loading {
+                                VStack::new()
+                                    .spacing(StackSpacing::Md)
+                                    .align(StackAlign::Center)
+                                    .child(
+                                        Text::new("Loading spinorama curves...")
+                                            .size(TextSize::Sm)
+                                            .color(theme.text_secondary),
+                                    )
+                                    .child(Progress::new(0.0).size(ProgressSize::Md))
+                                    .into_any_element()
+                            } else if let Some(err) = spinorama_curves_error {
+                                VStack::new()
+                                    .spacing(StackSpacing::Md)
+                                    .child(
+                                        Text::new("Failed to load spinorama data")
+                                            .size(TextSize::Sm)
+                                            .color(theme.error),
+                                    )
+                                    .child(
+                                        Text::new(err)
+                                            .size(TextSize::Xs)
+                                            .color(theme.text_muted),
+                                    )
+                                    .into_any_element()
+                            } else if has_spinorama_curves {
+                                render_spinorama_cea2034_graph(
+                                    &spinorama_curves,
+                                    &theme,
+                                    600.0,
+                                    200.0,
+                                )
+                                .into_any_element()
+                            } else {
+                                Text::new("Spinorama data will appear after selecting CEA2034")
+                                    .size(TextSize::Sm)
+                                    .color(theme.text_muted)
+                                    .into_any_element()
+                            },
+                        ),
+                )
+            })
     }
-
 }

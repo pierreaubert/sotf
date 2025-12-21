@@ -1978,6 +1978,34 @@ pub struct SpinoramaEqResult {
     pub target_response: Option<Vec<(f64, f64)>>,
 }
 
+/// CEA2034 spinorama curves data for plotting
+#[derive(Debug, Clone, Default)]
+pub struct SpinoramaCurves {
+    /// Frequency points (shared across all curves)
+    pub frequencies: Vec<f64>,
+    /// On Axis response (dB)
+    pub on_axis: Vec<f64>,
+    /// Listening Window response (dB)
+    pub listening_window: Vec<f64>,
+    /// Early Reflections response (dB)
+    pub early_reflections: Vec<f64>,
+    /// Sound Power response (dB)
+    pub sound_power: Vec<f64>,
+    /// Early Reflections DI (dB) - for secondary y-axis
+    pub early_reflections_di: Vec<f64>,
+    /// Sound Power DI (dB) - for secondary y-axis
+    pub sound_power_di: Vec<f64>,
+}
+
+impl SpinoramaCurves {
+    /// Check if we have valid data to plot
+    pub fn is_valid(&self) -> bool {
+        !self.frequencies.is_empty()
+            && self.frequencies.len() == self.on_axis.len()
+            && self.frequencies.len() == self.listening_window.len()
+    }
+}
+
 /// Biquad filter for Spinorama EQ
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpinoramaBiquad {
@@ -2118,6 +2146,14 @@ pub struct SpinoramaEqState {
     pub loading_preview: bool,
     /// Error message if preview loading failed
     pub preview_error: Option<String>,
+
+    // === Spinorama Curves (for CEA2034 plot in Step 1) ===
+    /// CEA2034 curves data for spinorama plot
+    pub spinorama_curves: SpinoramaCurves,
+    /// Whether spinorama curves are being loaded
+    pub loading_spinorama_curves: bool,
+    /// Error message if spinorama curves loading failed
+    pub spinorama_curves_error: Option<String>,
 }
 
 impl Default for SpinoramaEqState {
@@ -2157,6 +2193,9 @@ impl Default for SpinoramaEqState {
             preview_deviation_curve: Vec::new(),
             loading_preview: false,
             preview_error: None,
+            spinorama_curves: SpinoramaCurves::default(),
+            loading_spinorama_curves: false,
+            spinorama_curves_error: None,
         }
     }
 }

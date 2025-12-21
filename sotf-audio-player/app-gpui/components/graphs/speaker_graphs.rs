@@ -199,6 +199,7 @@ fn render_spinorama_sp_plot(
 }
 
 /// Plot 6: Speaker Optimization Loss vs Iteration using gpui-px
+#[allow(dead_code)]
 fn render_speaker_optimization_loss_plot(
     result: &SpeakerOptimizationResult,
     theme: &Theme,
@@ -231,6 +232,120 @@ fn render_speaker_optimization_loss_plot(
         .stroke_width(2.0)
         .theme(chart_theme)
         .size(width, height)
+        .build();
+
+    div()
+        .w(px(width))
+        .flex()
+        .flex_col()
+        .when_some(chart.ok(), |el, c| el.child(c))
+}
+
+/// Render measurement preview graph showing Input, Target, and Deviation curves
+/// Used in spinorama_eq Step 1 (Select Speaker) for previewing the measurement before optimization
+pub fn render_speaker_preview_graph(
+    frequencies: &[f64],
+    input_curve: &[f64],
+    target_curve: &[f64],
+    deviation_curve: &[f64],
+    theme: &Theme,
+    width: f32,
+    height: f32,
+) -> Div {
+    let chart_theme = theme_to_chart_theme(theme);
+
+    let chart = line(frequencies, input_curve)
+        .x_scale(ScaleType::Log)
+        .label("Input")
+        .color(0x3498db) // Blue
+        .stroke_width(1.5)
+        .theme(chart_theme)
+        .size(width, height)
+        .add_series(target_curve, Some("Target"), 0x27ae60, 1.5, 1.0) // Green
+        .add_series(deviation_curve, Some("Deviation"), 0xe74c3c, 1.0, 1.0) // Red
+        .build();
+
+    div()
+        .w(px(width))
+        .flex()
+        .flex_col()
+        .when_some(chart.ok(), |el, c| el.child(c))
+}
+
+use crate::app::types::SpinoramaCurves;
+
+/// Render CEA2034 Spinorama plot with dual y-axis
+/// Left axis: ON (On Axis), LW (Listening Window), ER (Early Reflections), SP (Sound Power)
+/// Right axis: ERDI (Early Reflections DI), SPDI (Sound Power DI)
+pub fn render_spinorama_cea2034_graph(
+    curves: &SpinoramaCurves,
+    theme: &Theme,
+    width: f32,
+    height: f32,
+) -> Div {
+    if !curves.is_valid() {
+        return div().child("No data available");
+    }
+
+    let chart_theme = theme_to_chart_theme(theme);
+
+    // CEA2034 standard colors (matching spinorama.org)
+    const ON_AXIS_COLOR: u32 = 0x1f77b4; // Blue
+    const LISTENING_WINDOW_COLOR: u32 = 0xff7f0e; // Orange
+    const EARLY_REFLECTIONS_COLOR: u32 = 0x2ca02c; // Green
+    const SOUND_POWER_COLOR: u32 = 0xd62728; // Red
+    const ERDI_COLOR: u32 = 0x9467bd; // Purple (dashed style would be nice)
+    const SPDI_COLOR: u32 = 0x8c564b; // Brown (dashed style would be nice)
+
+    let chart = line(&curves.frequencies, &curves.on_axis)
+        .x_scale(ScaleType::Log)
+        .x_range(20.0, 20000.0)
+        .y_label("SPL (dB)")
+        .y_range(-40.0, 10.0)
+        .y2range(0.0, 50.0)
+        .y2_label("DI (dB)")
+        .label("On Axis")
+        .color(ON_AXIS_COLOR)
+        .stroke_width(2.0)
+        .theme(chart_theme)
+        .size(width, height)
+        // Primary axis series (SPL curves)
+        .add_series(
+            &curves.listening_window,
+            Some("Listening Window"),
+            LISTENING_WINDOW_COLOR,
+            2.0,
+            1.0,
+        )
+        .add_series(
+            &curves.early_reflections,
+            Some("Early Reflections"),
+            EARLY_REFLECTIONS_COLOR,
+            1.5,
+            0.8,
+        )
+        .add_series(
+            &curves.sound_power,
+            Some("Sound Power"),
+            SOUND_POWER_COLOR,
+            1.5,
+            0.8,
+        )
+        // Secondary axis series (DI curves)
+        .add_series_y2(
+            &curves.early_reflections_di,
+            Some("ER DI"),
+            ERDI_COLOR,
+            1.5,
+            0.9,
+        )
+        .add_series_y2(
+            &curves.sound_power_di,
+            Some("SP DI"),
+            SPDI_COLOR,
+            1.5,
+            0.9,
+        )
         .build();
 
     div()

@@ -47,6 +47,77 @@ static SPINORAMA_PROGRESS: Mutex<Vec<(usize, f64, Option<f64>, f32)>> = Mutex::n
 // Format: Option<Result<PreviewCurves, error_string>>
 static SPINORAMA_PREVIEW: Mutex<Option<Result<sotf_audio_player::autoeq::speaker::PreviewCurves, String>>> = Mutex::new(None);
 
+// Global mutex for sharing spinorama CEA2034 curves result between threads
+static SPINORAMA_CURVES: Mutex<Option<Result<crate::app::types::SpinoramaCurves, String>>> = Mutex::new(None);
+
+/// Spawn a background thread to load CEA2034 spinorama curves for the plot.
+fn spawn_spinorama_curves_thread(
+    speaker: String,
+    version: String,
+) {
+    // Clear previous result
+    *SPINORAMA_CURVES.lock().unwrap() = None;
+
+    std::thread::spawn(move || {
+        log::info!("Loading spinorama CEA2034 curves for {} / {}", speaker, version);
+        let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+        let result = rt.block_on(async {
+            // Fetch CEA2034 measurement data
+            let plot_data = autoeq::read::fetch_measurement_plot_data(&speaker, &version, "CEA2034")
+                .await
+                .map_err(|e| format!("API error: {}", e))?;
+
+            // Extract curves using original frequency grid
+            let curves = autoeq::read::extract_cea2034_curves_original(&plot_data, "CEA2034")
+                .map_err(|e| format!("Extraction error: {}", e))?;
+
+            // Convert to our SpinoramaCurves format
+            let on_axis = curves.get("On Axis").ok_or("On Axis curve not found")?;
+            let frequencies: Vec<f64> = on_axis.freq.to_vec();
+
+            let spinorama_curves = crate::app::types::SpinoramaCurves {
+                frequencies: frequencies.clone(),
+                on_axis: on_axis.spl.to_vec(),
+                listening_window: curves
+                    .get("Listening Window")
+                    .map(|c| c.spl.to_vec())
+                    .unwrap_or_else(|| vec![0.0; frequencies.len()]),
+                early_reflections: curves
+                    .get("Early Reflections")
+                    .map(|c| c.spl.to_vec())
+                    .unwrap_or_else(|| vec![0.0; frequencies.len()]),
+                sound_power: curves
+                    .get("Sound Power")
+                    .map(|c| c.spl.to_vec())
+                    .unwrap_or_else(|| vec![0.0; frequencies.len()]),
+                early_reflections_di: curves
+                    .get("Early Reflections DI")
+                    .map(|c| c.spl.to_vec())
+                    .unwrap_or_else(|| vec![0.0; frequencies.len()]),
+                sound_power_di: curves
+                    .get("Sound Power DI")
+                    .map(|c| c.spl.to_vec())
+                    .unwrap_or_else(|| vec![0.0; frequencies.len()]),
+            };
+
+            Ok::<crate::app::types::SpinoramaCurves, String>(spinorama_curves)
+        });
+
+        match &result {
+            Ok(curves) => {
+                log::info!(
+                    "Spinorama curves loaded: {} frequencies",
+                    curves.frequencies.len()
+                );
+            }
+            Err(e) => {
+                log::error!("Failed to load spinorama curves: {}", e);
+            }
+        }
+        *SPINORAMA_CURVES.lock().unwrap() = Some(result);
+    });
+}
+
 /// Spawn a background thread to load preview curves for the Configure step.
 fn spawn_preview_curves_thread(
     speaker: String,
@@ -693,12 +764,14 @@ impl PlayerView {
             state.app.spinorama_eq_state.preview_target_curve.clear();
             state.app.spinorama_eq_state.preview_deviation_curve.clear();
             state.app.spinorama_eq_state.preview_error = None;
+            // Clear old spinorama curves data
+            state.app.spinorama_eq_state.spinorama_curves = Default::default();
+            state.app.spinorama_eq_state.spinorama_curves_error = None;
         });
         cx.notify();
 
         // Check phase data and load preview for the new measurement
         if let Some(speaker_name) = speaker {
-            let state_entity = self.state.clone();
             let measurement_str = measurement.to_string();
             let version_str = if version.is_empty() { "asr".to_string() } else { version.clone() };
 
@@ -712,24 +785,36 @@ impl PlayerView {
                 "Estimated In-Room Response".to_string()
             };
 
+            // Check if this is a CEA2034 measurement (for spinorama curves loading)
+            let is_cea2034 = measurement_str == "CEA2034" or measurement_str == "CEA2034 Normalized";
+
             // Set loading state
             self.state.update(cx, |state, _| {
                 state.app.spinorama_eq_state.loading_preview = true;
+                if is_cea2034 {
+                    state.app.spinorama_eq_state.loading_spinorama_curves = true;
+                }
             });
 
             // Spawn background thread to load preview
             spawn_preview_curves_thread(
-                speaker_name,
-                version_str,
+                speaker_name.clone(),
+                version_str.clone(),
                 measurement_str,
                 curve_name,
             );
 
-            // Start polling for both phase check and preview result
+            // Spawn background thread to load spinorama curves (only for CEA2034)
+            if is_cea2034 {
+                spawn_spinorama_curves_thread(speaker_name, version_str);
+            }
+
+            // Start polling for phase check, preview result, and spinorama curves
             let state_for_poll = self.state.clone();
             cx.spawn(async move |_, cx| {
                 let mut phase_done = false;
                 let mut preview_done = false;
+                let mut spinorama_done = !is_cea2034; // Skip if not CEA2034
 
                 loop {
                     cx.background_executor()
@@ -776,7 +861,32 @@ impl PlayerView {
                         }
                     }
 
-                    if phase_done && preview_done {
+                    // Check for spinorama curves result
+                    if !spinorama_done {
+                        let spinorama_result = {
+                            let mut guard = SPINORAMA_CURVES.lock().unwrap();
+                            guard.take()
+                        };
+
+                        if let Some(result) = spinorama_result {
+                            let _ = state_for_poll.update(cx, |state, cx| {
+                                state.app.spinorama_eq_state.loading_spinorama_curves = false;
+                                match result {
+                                    Ok(curves) => {
+                                        state.app.spinorama_eq_state.spinorama_curves = curves;
+                                        state.app.spinorama_eq_state.spinorama_curves_error = None;
+                                    }
+                                    Err(e) => {
+                                        state.app.spinorama_eq_state.spinorama_curves_error = Some(e);
+                                    }
+                                }
+                                cx.notify();
+                            });
+                            spinorama_done = true;
+                        }
+                    }
+
+                    if phase_done && preview_done && spinorama_done {
                         break;
                     }
                 }
