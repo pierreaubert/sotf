@@ -140,7 +140,7 @@ impl RenderOnce for WorkflowNode {
             .unwrap_or_else(|| WorkflowTheme::from_theme(&cx.theme()));
         let node_id = self.node_id;
 
-        // Build input ports
+        // Build input ports with scaled theme
         let input_ports: Vec<_> = (0..self.data.input_count)
             .map(|i| {
                 Port::new(
@@ -148,10 +148,11 @@ impl RenderOnce for WorkflowNode {
                     PortDirection::Input,
                     i,
                 )
+                .theme(theme.clone())
             })
             .collect();
 
-        // Build output ports
+        // Build output ports with scaled theme
         let output_ports: Vec<_> = (0..self.data.output_count)
             .map(|i| {
                 Port::new(
@@ -159,6 +160,7 @@ impl RenderOnce for WorkflowNode {
                     PortDirection::Output,
                     i,
                 )
+                .theme(theme.clone())
             })
             .collect();
 
@@ -202,14 +204,17 @@ impl RenderOnce for WorkflowNode {
             })
             // Node structure
             .child(
-                // Header
+                // Header - fixed height, text can wrap to 2 lines or be clipped
                 div()
                     .w_full()
-                    .px_3()
+                    .h(px(theme.node_header_height))
+                    .overflow_hidden()
+                    .px_2()
                     .py_1()
                     .bg(theme.node_header)
                     .rounded_t(px(theme.node_border_radius - 2.0))
-                    .text_sm()
+                    .text_size(px(theme.node_header_height * 0.45)) // Scale text with header
+                    .line_height(px(theme.node_header_height * 0.5))
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(theme.node_text)
                     .child(self.data.title.clone()),
@@ -221,21 +226,31 @@ impl RenderOnce for WorkflowNode {
                     .flex()
                     .flex_row()
                     .min_h(px(self.data.height - theme.node_header_height - 4.0))
-                    // Input ports column
-                    .child(
+                    // Input ports column - use relative positioning to match hit_test.rs
+                    .child({
+                        let content_height = self.data.height - theme.node_header_height - 4.0;
+                        let padding = theme.node_content_padding;
+                        let available = content_height - 2.0 * padding;
+                        let input_count = self.data.input_count;
+
                         div()
-                            .flex()
-                            .flex_col()
-                            .justify_around()
-                            .py_2()
-                            .children(input_ports.into_iter().map(|port| {
+                            .relative()
+                            .h(px(content_height))
+                            .w(px(theme.port_radius))
+                            .children(input_ports.into_iter().enumerate().map(|(i, port)| {
+                                let y = if input_count == 0 {
+                                    content_height / 2.0
+                                } else {
+                                    let spacing = available / input_count as f32;
+                                    padding + spacing * (i as f32 + 0.5)
+                                };
                                 div()
-                                    .flex()
-                                    .items_center()
-                                    .ml(px(-theme.port_radius))
+                                    .absolute()
+                                    .left(px(-theme.port_radius))
+                                    .top(px(y - theme.port_radius))
                                     .child(port)
-                            })),
-                    )
+                            }))
+                    })
                     // Main content
                     .child(
                         div()
@@ -247,22 +262,31 @@ impl RenderOnce for WorkflowNode {
                                 DefaultNodeContent.render(&self.data, cx)
                             }),
                     )
-                    // Output ports column
-                    .child(
+                    // Output ports column - use relative positioning to match hit_test.rs
+                    .child({
+                        let content_height = self.data.height - theme.node_header_height - 4.0;
+                        let padding = theme.node_content_padding;
+                        let available = content_height - 2.0 * padding;
+                        let output_count = self.data.output_count;
+
                         div()
-                            .flex()
-                            .flex_col()
-                            .justify_around()
-                            .py_2()
-                            .children(output_ports.into_iter().map(|port| {
+                            .relative()
+                            .h(px(content_height))
+                            .w(px(theme.port_radius))
+                            .children(output_ports.into_iter().enumerate().map(|(i, port)| {
+                                let y = if output_count == 0 {
+                                    content_height / 2.0
+                                } else {
+                                    let spacing = available / output_count as f32;
+                                    padding + spacing * (i as f32 + 0.5)
+                                };
                                 div()
-                                    .flex()
-                                    .items_center()
-                                    .justify_end()
-                                    .mr(px(-theme.port_radius))
+                                    .absolute()
+                                    .right(px(-theme.port_radius))
+                                    .top(px(y - theme.port_radius))
                                     .child(port)
-                            })),
-                    ),
+                            }))
+                    }),
             )
     }
 }

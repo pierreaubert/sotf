@@ -753,6 +753,8 @@ impl Render for WorkflowCanvas {
         let conn_preview = theme.connection_preview;
         // Scale connection width
         let conn_width = scaled_theme.connection_width;
+        // Port radius for shortening connection lines
+        let port_radius = scaled_theme.port_radius;
 
         // Use entity to update canvas origin during prepaint
         let entity = cx.entity().clone();
@@ -774,6 +776,7 @@ impl Render for WorkflowCanvas {
                 let origin_y: f32 = bounds.origin.y.into();
 
                 // Draw connections - positions are already in screen coordinates
+                // Shorten lines by port_radius at each end so they don't overlap ports
                 for (from_pos, to_pos, selected) in &connections {
                     let color = if *selected {
                         conn_selected
@@ -786,7 +789,8 @@ impl Render for WorkflowCanvas {
                         *from_pos,
                         *to_pos,
                         color,
-                        conn_width, // Already scaled
+                        conn_width,
+                        port_radius,
                         origin_x,
                         origin_y,
                     );
@@ -813,12 +817,15 @@ impl Render for WorkflowCanvas {
                         (drag_screen_pos, port_screen_pos)
                     };
 
-                    draw_connection(
+                    // For preview, only shorten the port end (not the mouse cursor end)
+                    draw_connection_preview(
                         window,
                         from,
                         to,
                         conn_preview,
-                        conn_width, // Already scaled
+                        conn_width,
+                        port_radius,
+                        drag.is_output,
                         origin_x,
                         origin_y,
                     );
@@ -988,17 +995,35 @@ impl Render for WorkflowCanvas {
     }
 }
 
-/// Clipboard data for copy/paste
+/// Draw a connection line between two ports, shortened at both ends by port_radius
 fn draw_connection(
     window: &mut Window,
     from: Position,
     to: Position,
     color: Rgba,
     width: f32,
+    port_radius: f32,
     offset_x: f32,
     offset_y: f32,
 ) {
-    let path_points = connection_path(from, to, 2.0);
+    // Shorten the line at both ends so it doesn't overlap with ports
+    let dx = to.x - from.x;
+    let dy = to.y - from.y;
+    let length = (dx * dx + dy * dy).sqrt();
+
+    if length < port_radius * 2.5 {
+        return; // Too short to draw
+    }
+
+    // Normalize direction
+    let nx = dx / length;
+    let ny = dy / length;
+
+    // Shorten both ends by port_radius
+    let shortened_from = Position::new(from.x + nx * port_radius, from.y + ny * port_radius);
+    let shortened_to = Position::new(to.x - nx * port_radius, to.y - ny * port_radius);
+
+    let path_points = connection_path(shortened_from, shortened_to, 2.0);
 
     if path_points.len() < 2 {
         return;
@@ -1013,6 +1038,68 @@ fn draw_connection(
     ));
 
     // Line to remaining points
+    for point_pos in path_points.iter().skip(1) {
+        builder.line_to(point(
+            px(point_pos.x + offset_x),
+            px(point_pos.y + offset_y),
+        ));
+    }
+
+    if let Ok(path) = builder.build() {
+        window.paint_path(path, color);
+    }
+}
+
+/// Draw a connection preview line, shortened only at the port end
+fn draw_connection_preview(
+    window: &mut Window,
+    from: Position,
+    to: Position,
+    color: Rgba,
+    width: f32,
+    port_radius: f32,
+    from_is_port: bool, // true if 'from' is the port, false if 'to' is the port
+    offset_x: f32,
+    offset_y: f32,
+) {
+    let dx = to.x - from.x;
+    let dy = to.y - from.y;
+    let length = (dx * dx + dy * dy).sqrt();
+
+    if length < port_radius * 1.5 {
+        return; // Too short to draw
+    }
+
+    // Normalize direction
+    let nx = dx / length;
+    let ny = dy / length;
+
+    // Shorten only the port end
+    let (shortened_from, shortened_to) = if from_is_port {
+        (
+            Position::new(from.x + nx * port_radius, from.y + ny * port_radius),
+            to,
+        )
+    } else {
+        (
+            from,
+            Position::new(to.x - nx * port_radius, to.y - ny * port_radius),
+        )
+    };
+
+    let path_points = connection_path(shortened_from, shortened_to, 2.0);
+
+    if path_points.len() < 2 {
+        return;
+    }
+
+    let mut builder = PathBuilder::stroke(px(width));
+
+    builder.move_to(point(
+        px(path_points[0].x + offset_x),
+        px(path_points[0].y + offset_y),
+    ));
+
     for point_pos in path_points.iter().skip(1) {
         builder.line_to(point(
             px(point_pos.x + offset_x),
