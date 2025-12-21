@@ -290,8 +290,8 @@ fn handle_library_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             None
         }
         KeyCode::Char('8') => {
-            // Filter: Multichannel only
-            app.set_channel_filter(ChannelFilter::Multichannel);
+            // Filter: Surround only (5.0/5.1)
+            app.set_channel_filter(ChannelFilter::Surround);
             None
         }
         KeyCode::Char('9') => {

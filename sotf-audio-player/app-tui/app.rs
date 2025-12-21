@@ -1134,8 +1134,10 @@ impl App {
         self.channel_filter = match self.channel_filter {
             ChannelFilter::All => ChannelFilter::Mono,
             ChannelFilter::Mono => ChannelFilter::Stereo,
-            ChannelFilter::Stereo => ChannelFilter::Multichannel,
-            ChannelFilter::Multichannel => ChannelFilter::Mixed,
+            ChannelFilter::Stereo => ChannelFilter::Surround,
+            ChannelFilter::Surround => ChannelFilter::Surround71,
+            ChannelFilter::Surround71 => ChannelFilter::SurroundPlus,
+            ChannelFilter::SurroundPlus => ChannelFilter::Mixed,
             ChannelFilter::Mixed => {
                 // Cycle to first specific count if available, otherwise back to All
                 if let Some(&first_count) = specific_counts.first() {
@@ -1210,14 +1212,13 @@ impl App {
                 match self.channel_filter {
                     ChannelFilter::All => true,
                     ChannelFilter::Mono => album.uniform_channel_count() == Some(1),
-                    ChannelFilter::Stereo => {
-                        matches!(album.channel_type(), Some(AlbumChannelType::Stereo))
+                    ChannelFilter::Stereo => album.uniform_channel_count() == Some(2),
+                    ChannelFilter::Surround => {
+                        matches!(album.uniform_channel_count(), Some(5) | Some(6))
                     }
-                    ChannelFilter::Multichannel => {
-                        matches!(
-                            album.channel_type(),
-                            Some(AlbumChannelType::Multichannel(_))
-                        )
+                    ChannelFilter::Surround71 => album.uniform_channel_count() == Some(8),
+                    ChannelFilter::SurroundPlus => {
+                        album.uniform_channel_count().is_some_and(|ch| ch > 8)
                     }
                     ChannelFilter::Mixed => {
                         matches!(album.channel_type(), Some(AlbumChannelType::Mixed))

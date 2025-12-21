@@ -412,7 +412,9 @@ fn draw_search_box(f: &mut Frame, area: Rect, app: &App) {
         ChannelFilter::All => "All".to_string(),
         ChannelFilter::Mono => "Mono".to_string(),
         ChannelFilter::Stereo => "2.0".to_string(),
-        ChannelFilter::Multichannel => "Multi".to_string(),
+        ChannelFilter::Surround => "5.x".to_string(),
+        ChannelFilter::Surround71 => "7.1".to_string(),
+        ChannelFilter::SurroundPlus => "8+".to_string(),
         ChannelFilter::Mixed => "Mixed".to_string(),
         ChannelFilter::Specific(n) => format_channel_count(n),
     };
