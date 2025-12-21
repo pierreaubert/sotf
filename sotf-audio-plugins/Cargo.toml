@@ -59,7 +59,7 @@ metaflac = { workspace = true }
 sotf-hal = { workspace = true, optional = true }
 
 [features]
-default = ["hal"]
+default = []
 hal = ["sotf-hal"]
 no-hal = []
 
