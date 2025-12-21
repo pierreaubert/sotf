@@ -155,6 +155,8 @@ struct LineSeries {
     color: u32,
     stroke_width: f32,
     opacity: f32,
+    /// Whether this series uses the secondary (right) Y-axis
+    use_secondary_axis: bool,
 }
 
 /// Line chart builder.
@@ -183,6 +185,9 @@ pub struct LineChart {
     y_range: Option<[f64; 2]>,
     show_legend: bool,
     theme: ChartTheme,
+    // Secondary Y-axis settings
+    y2_label: Option<String>,
+    y2_range: Option<[f64; 2]>,
 }
 
 impl LineChart {
@@ -356,6 +361,7 @@ impl LineChart {
             color,
             stroke_width,
             opacity,
+            use_secondary_axis: false,
         });
         // Auto-enable legend if any series has a label
         if self.series.iter().any(|s| s.label.is_some()) {
@@ -384,6 +390,92 @@ impl LineChart {
             color,
             stroke_width,
             opacity,
+            use_secondary_axis: false,
+        });
+        // Auto-enable legend if any series has a label
+        if self.series.iter().any(|s| s.label.is_some()) {
+            self.show_legend = true;
+        }
+        self
+    }
+
+    /// Set label for secondary Y-axis (right side).
+    ///
+    /// When a secondary axis label is set, series added with `add_series_y2`
+    /// will be plotted against the right Y-axis.
+    pub fn y2_label(mut self, label: impl Into<String>) -> Self {
+        self.y2_label = Some(label.into());
+        self
+    }
+
+    /// Set the secondary Y-axis display range.
+    ///
+    /// This sets the range for series added with `add_series_y2`.
+    pub fn y2_range(mut self, min: f64, max: f64) -> Self {
+        self.y2_range = Some([min, max]);
+        self
+    }
+
+    /// Add a series that uses the secondary (right) Y-axis.
+    ///
+    /// Series added with this method will be plotted against a separate
+    /// Y-axis on the right side of the chart.
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// use gpui_px::line;
+    /// let x = vec![1.0, 2.0, 3.0];
+    /// let spl = vec![80.0, 85.0, 82.0];  // SPL in dB
+    /// let di = vec![5.0, 6.0, 5.5];      // Directivity Index
+    /// let chart = line(&x, &spl)
+    ///     .label("SPL")
+    ///     .y_label("SPL (dB)")
+    ///     .y2_label("DI (dB)")
+    ///     .add_series_y2(&di, Some("DI"), 0xff7f0e, 2.0, 1.0)
+    ///     .build();
+    /// ```
+    pub fn add_series_y2(
+        mut self,
+        y: &[f64],
+        label: Option<impl Into<String>>,
+        color: u32,
+        stroke_width: f32,
+        opacity: f32,
+    ) -> Self {
+        self.series.push(LineSeries {
+            x: None,
+            y: y.to_vec(),
+            label: label.map(|l| l.into()),
+            color,
+            stroke_width,
+            opacity,
+            use_secondary_axis: true,
+        });
+        // Auto-enable legend if any series has a label
+        if self.series.iter().any(|s| s.label.is_some()) {
+            self.show_legend = true;
+        }
+        self
+    }
+
+    /// Add a series with custom X values that uses the secondary (right) Y-axis.
+    pub fn add_series_y2_with_x(
+        mut self,
+        x: &[f64],
+        y: &[f64],
+        label: Option<impl Into<String>>,
+        color: u32,
+        stroke_width: f32,
+        opacity: f32,
+    ) -> Self {
+        self.series.push(LineSeries {
+            x: Some(x.to_vec()),
+            y: y.to_vec(),
+            label: label.map(|l| l.into()),
+            color,
+            stroke_width,
+            opacity,
+            use_secondary_axis: true,
         });
         // Auto-enable legend if any series has a label
         if self.series.iter().any(|s| s.label.is_some()) {
@@ -441,11 +533,14 @@ impl LineChart {
             validate_positive(&self.y, "y")?;
         }
 
-        // Define margins
+        // Check if we have secondary axis series
+        let has_secondary_axis = self.series.iter().any(|s| s.use_secondary_axis);
+
+        // Define margins - increase right margin if secondary axis is needed
         let margin_left = 50.0;
         let margin_bottom = 30.0;
         let margin_top = 10.0;
-        let margin_right = 20.0;
+        let margin_right = if has_secondary_axis { 60.0 } else { 20.0 };
 
         // Calculate plot area (reserve space for title if present)
         let title_height = if self.title.is_some() {
@@ -512,25 +607,46 @@ impl LineChart {
             extent_padded(&self.x, DEFAULT_PADDING_FRACTION)
         };
 
-        // Collect all Y values from primary series and additional series
-        let mut all_y_values: Vec<f64> = self.y.clone();
+        // Collect Y values from primary series and non-secondary additional series
+        let mut primary_y_values: Vec<f64> = self.y.clone();
         for series in &self.series {
-            all_y_values.extend_from_slice(&series.y);
+            if !series.use_secondary_axis {
+                primary_y_values.extend_from_slice(&series.y);
+            }
         }
         let (y_min, y_max) = if let Some([min, max]) = self.y_range {
             // User-specified range - use exactly as provided (no padding)
             (min, max)
         } else if self.y_scale_type == ScaleType::Log {
             // For log scale, use multiplicative padding
-            let min = all_y_values.iter().copied().fold(f64::INFINITY, f64::min);
-            let max = all_y_values
+            let min = primary_y_values.iter().copied().fold(f64::INFINITY, f64::min);
+            let max = primary_y_values
                 .iter()
                 .copied()
                 .fold(f64::NEG_INFINITY, f64::max);
             let padding_factor = 1.0 + DEFAULT_PADDING_FRACTION;
             (min / padding_factor, max * padding_factor)
         } else {
-            extent_padded(&all_y_values, DEFAULT_PADDING_FRACTION)
+            extent_padded(&primary_y_values, DEFAULT_PADDING_FRACTION)
+        };
+
+        // Calculate secondary Y axis domain if needed
+        let (y2_min, y2_max) = if has_secondary_axis {
+            let mut secondary_y_values: Vec<f64> = Vec::new();
+            for series in &self.series {
+                if series.use_secondary_axis {
+                    secondary_y_values.extend_from_slice(&series.y);
+                }
+            }
+            if let Some([min, max]) = self.y2_range {
+                (min, max)
+            } else if secondary_y_values.is_empty() {
+                (0.0, 1.0) // Default fallback
+            } else {
+                extent_padded(&secondary_y_values, DEFAULT_PADDING_FRACTION)
+            }
+        } else {
+            (0.0, 1.0) // Placeholder, won't be used
         };
 
         // Create data points for primary series
@@ -549,8 +665,9 @@ impl LineChart {
             .curve(self.curve)
             .show_points(self.show_points);
 
-        // Prepare additional series data and configs
+        // Prepare additional series data and configs, separating primary and secondary axis series
         let mut series_data_configs: Vec<(Vec<LinePoint>, LineConfig)> = Vec::new();
+        let mut secondary_series_data_configs: Vec<(Vec<LinePoint>, LineConfig)> = Vec::new();
         for series in &self.series {
             // Use custom X values if provided, otherwise use primary X values
             let x_values = series.x.as_ref().unwrap_or(&self.x);
@@ -567,7 +684,11 @@ impl LineChart {
                 .curve(self.curve)
                 .show_points(self.show_points);
 
-            series_data_configs.push((series_points, series_config));
+            if series.use_secondary_axis {
+                secondary_series_data_configs.push((series_points, series_config));
+            } else {
+                series_data_configs.push((series_points, series_config));
+            }
         }
 
         let axis_theme = ChartAxisTheme {
@@ -657,6 +778,11 @@ impl LineChart {
                     .domain(y_min, y_max)
                     .range(plot_height, 0.0);
 
+                // Create secondary Y scale if needed
+                let y2_scale = LinearScale::new()
+                    .domain(y2_min, y2_max)
+                    .range(plot_height, 0.0);
+
                 // Build plot area with grid and all lines
                 let mut plot_area = div()
                     .w(px(plot_width as f32))
@@ -672,7 +798,7 @@ impl LineChart {
                         &axis_theme,
                     ));
 
-                // Render all additional series first
+                // Render all primary axis series first
                 for (series_data, series_config) in &series_data_configs {
                     plot_area = plot_area.child(render_line(
                         &x_scale,
@@ -689,6 +815,16 @@ impl LineChart {
                     &primary_data,
                     &primary_config,
                 ));
+
+                // Render secondary axis series using secondary Y scale
+                for (series_data, series_config) in &secondary_series_data_configs {
+                    plot_area = plot_area.child(render_line(
+                        &x_scale,
+                        &y2_scale,
+                        series_data,
+                        series_config,
+                    ));
+                }
 
                 // Create axis configs with labels and angled X labels for log scale
                 let mut y_axis_config = AxisConfig::left().with_label_font_size(8.0);
@@ -707,21 +843,51 @@ impl LineChart {
                     x_axis_config = x_axis_config.with_title(label.clone());
                 }
 
-                div()
-                    .flex()
-                    .child(render_axis(
-                        &y_scale,
-                        &y_axis_config,
-                        plot_height as f32,
-                        &axis_theme,
-                    ))
-                    .child(div().flex().flex_col().child(plot_area).child(render_axis(
-                        &x_scale,
-                        &x_axis_config,
-                        plot_width as f32,
-                        &axis_theme,
-                    )))
-                    .into_any_element()
+                // Build chart with optional secondary Y axis
+                if has_secondary_axis {
+                    let mut y2_axis_config = AxisConfig::right().with_label_font_size(8.0);
+                    if let Some(ref label) = self.y2_label {
+                        y2_axis_config = y2_axis_config.with_title(label.clone());
+                    }
+
+                    div()
+                        .flex()
+                        .child(render_axis(
+                            &y_scale,
+                            &y_axis_config,
+                            plot_height as f32,
+                            &axis_theme,
+                        ))
+                        .child(div().flex().flex_col().child(plot_area).child(render_axis(
+                            &x_scale,
+                            &x_axis_config,
+                            plot_width as f32,
+                            &axis_theme,
+                        )))
+                        .child(render_axis(
+                            &y2_scale,
+                            &y2_axis_config,
+                            plot_height as f32,
+                            &axis_theme,
+                        ))
+                        .into_any_element()
+                } else {
+                    div()
+                        .flex()
+                        .child(render_axis(
+                            &y_scale,
+                            &y_axis_config,
+                            plot_height as f32,
+                            &axis_theme,
+                        ))
+                        .child(div().flex().flex_col().child(plot_area).child(render_axis(
+                            &x_scale,
+                            &x_axis_config,
+                            plot_width as f32,
+                            &axis_theme,
+                        )))
+                        .into_any_element()
+                }
             }
             (ScaleType::Linear, ScaleType::Log) => {
                 let x_scale = LinearScale::new()
@@ -992,6 +1158,8 @@ pub fn line(x: &[f64], y: &[f64]) -> LineChart {
         y_range: None,
         show_legend: false,
         theme: ChartTheme::default(),
+        y2_label: None,
+        y2_range: None,
     }
 }
 
