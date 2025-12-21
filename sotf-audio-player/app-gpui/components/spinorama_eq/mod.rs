@@ -75,6 +75,40 @@ fn spawn_spinorama_curves_thread(
             let on_axis = curves.get("On Axis").ok_or("On Axis curve not found")?;
             let frequencies: Vec<f64> = on_axis.freq.to_vec();
 
+            // Get PIR (Estimated In-Room Response)
+            let estimated_in_room = curves
+                .get("Estimated In-Room Response")
+                .map(|c| c.spl.to_vec())
+                .unwrap_or_else(|| vec![0.0; frequencies.len()]);
+
+            // Try to fetch directivity data (SPL Horizontal and SPL Vertical)
+            let directivity = autoeq::read::fetch_directivity_data(&speaker, &version).await.ok();
+
+            let (horizontal_directivity, vertical_directivity) = if let Some(dir) = directivity {
+                let horizontal: Vec<crate::app::types::DirectivityCurve> = dir
+                    .horizontal
+                    .iter()
+                    .map(|c| crate::app::types::DirectivityCurve {
+                        angle: c.angle,
+                        frequencies: c.freq.to_vec(),
+                        spl: c.spl.to_vec(),
+                    })
+                    .collect();
+                let vertical: Vec<crate::app::types::DirectivityCurve> = dir
+                    .vertical
+                    .iter()
+                    .map(|c| crate::app::types::DirectivityCurve {
+                        angle: c.angle,
+                        frequencies: c.freq.to_vec(),
+                        spl: c.spl.to_vec(),
+                    })
+                    .collect();
+                (horizontal, vertical)
+            } else {
+                log::warn!("Directivity data not available for {} / {}", speaker, version);
+                (Vec::new(), Vec::new())
+            };
+
             let spinorama_curves = crate::app::types::SpinoramaCurves {
                 frequencies: frequencies.clone(),
                 on_axis: on_axis.spl.to_vec(),
@@ -98,6 +132,9 @@ fn spawn_spinorama_curves_thread(
                     .get("Sound Power DI")
                     .map(|c| c.spl.to_vec())
                     .unwrap_or_else(|| vec![0.0; frequencies.len()]),
+                estimated_in_room,
+                horizontal_directivity,
+                vertical_directivity,
             };
 
             Ok::<crate::app::types::SpinoramaCurves, String>(spinorama_curves)
@@ -106,8 +143,10 @@ fn spawn_spinorama_curves_thread(
         match &result {
             Ok(curves) => {
                 log::info!(
-                    "Spinorama curves loaded: {} frequencies",
-                    curves.frequencies.len()
+                    "Spinorama curves loaded: {} frequencies, {} horizontal, {} vertical",
+                    curves.frequencies.len(),
+                    curves.horizontal_directivity.len(),
+                    curves.vertical_directivity.len()
                 );
             }
             Err(e) => {
@@ -236,6 +275,70 @@ impl PlayerView {
                 let _ = view.update(cx, |view, cx| {
                     view.fetch_spinorama_speakers(cx);
                 });
+            })
+            .detach();
+        }
+
+        // Check if we need to auto-load spinorama curves (Step 1 with speaker selected but curves not loaded)
+        let needs_curves = {
+            let state = self.state.read(cx);
+            let spinorama = &state.app.spinorama_eq_state;
+            spinorama.step == SpinoramaStep::SelectSpeaker
+                && spinorama.selected_speaker.is_some()
+                && !spinorama.selected_version.is_empty()
+                && (spinorama.selected_measurement == "CEA2034"
+                    || spinorama.selected_measurement == "CEA2034 Normalized")
+                && !spinorama.spinorama_curves.is_valid()
+                && !spinorama.loading_spinorama_curves
+                && spinorama.spinorama_curves_error.is_none()
+        };
+
+        if needs_curves {
+            let (speaker, version) = {
+                let state = self.state.read(cx);
+                (
+                    state.app.spinorama_eq_state.selected_speaker.clone().unwrap_or_default(),
+                    state.app.spinorama_eq_state.selected_version.clone(),
+                )
+            };
+            log::info!("Auto-loading spinorama curves for {} / {}", speaker, version);
+            self.state.update(cx, |state, _| {
+                state.app.spinorama_eq_state.loading_spinorama_curves = true;
+            });
+            spawn_spinorama_curves_thread(speaker, version);
+
+            // Poll for results
+            let state_for_poll = self.state.clone();
+            cx.spawn(async move |_, cx| {
+                loop {
+                    cx.background_executor()
+                        .timer(std::time::Duration::from_millis(100))
+                        .await;
+
+                    let spinorama_result = {
+                        let mut guard = SPINORAMA_CURVES.lock().unwrap();
+                        guard.take()
+                    };
+
+                    if let Some(result) = spinorama_result {
+                        let _ = state_for_poll.update(cx, |state, cx| {
+                            state.app.spinorama_eq_state.loading_spinorama_curves = false;
+                            match result {
+                                Ok(curves) => {
+                                    log::info!("Auto-loaded spinorama curves successfully");
+                                    state.app.spinorama_eq_state.spinorama_curves = curves;
+                                    state.app.spinorama_eq_state.spinorama_curves_error = None;
+                                }
+                                Err(e) => {
+                                    log::error!("Failed to auto-load spinorama curves: {}", e);
+                                    state.app.spinorama_eq_state.spinorama_curves_error = Some(e);
+                                }
+                            }
+                            cx.notify();
+                        });
+                        break;
+                    }
+                }
             })
             .detach();
         }
@@ -688,21 +791,65 @@ impl PlayerView {
                                 state.app.spinorama_eq_state.available_measurements = measurements;
                                 state.app.spinorama_eq_state.loading_measurements = false;
                                 state.app.spinorama_eq_state.selected_measurement = selected_measurement;
+                                // Auto-load spinorama curves if CEA2034 is selected
+                                if has_cea2034 {
+                                    state.app.spinorama_eq_state.loading_spinorama_curves = true;
+                                }
                                 cx.notify();
                             });
+                            // Auto-load spinorama curves when CEA2034 is available
+                            if has_cea2034 {
+                                spawn_spinorama_curves_thread(speaker_for_poll.clone(), version_for_poll.clone());
+                            }
                             // Check for phase data availability
                             spawn_phase_data_check_thread(speaker_for_poll.clone(), version_for_poll.clone(), measurement_for_phase);
-                            // Continue polling for phase check result in this same task
+                            // Continue polling for phase check and spinorama curves results
+                            let mut phase_done = false;
+                            let mut spinorama_done = !has_cea2034; // Skip if not CEA2034
                             loop {
                                 cx.background_executor()
                                     .timer(std::time::Duration::from_millis(100))
                                     .await;
-                                if let Some(has_phase) = PHASE_CHECK_RESULT.lock().unwrap().take() {
-                                    let _ = state_entity.update(cx, |state, cx| {
-                                        state.app.spinorama_eq_state.has_phase_data = has_phase;
-                                        log::info!("Phase data availability: {}", has_phase);
-                                        cx.notify();
-                                    });
+
+                                // Check for phase result
+                                if !phase_done {
+                                    if let Some(has_phase) = PHASE_CHECK_RESULT.lock().unwrap().take() {
+                                        let _ = state_entity.update(cx, |state, cx| {
+                                            state.app.spinorama_eq_state.has_phase_data = has_phase;
+                                            log::info!("Phase data availability: {}", has_phase);
+                                            cx.notify();
+                                        });
+                                        phase_done = true;
+                                    }
+                                }
+
+                                // Check for spinorama curves result
+                                if !spinorama_done {
+                                    let spinorama_result = {
+                                        let mut guard = SPINORAMA_CURVES.lock().unwrap();
+                                        guard.take()
+                                    };
+                                    if let Some(result) = spinorama_result {
+                                        let _ = state_entity.update(cx, |state, cx| {
+                                            state.app.spinorama_eq_state.loading_spinorama_curves = false;
+                                            match result {
+                                                Ok(curves) => {
+                                                    log::info!("Auto-loaded spinorama curves successfully");
+                                                    state.app.spinorama_eq_state.spinorama_curves = curves;
+                                                    state.app.spinorama_eq_state.spinorama_curves_error = None;
+                                                }
+                                                Err(e) => {
+                                                    log::error!("Failed to auto-load spinorama curves: {}", e);
+                                                    state.app.spinorama_eq_state.spinorama_curves_error = Some(e);
+                                                }
+                                            }
+                                            cx.notify();
+                                        });
+                                        spinorama_done = true;
+                                    }
+                                }
+
+                                if phase_done && spinorama_done {
                                     break;
                                 }
                             }
@@ -974,6 +1121,14 @@ impl PlayerView {
             "Spinorama optimization config: speaker={}, version={}, measurement={}, curve={}",
             speaker_name, effective_version, effective_measurement, effective_curve_name
         );
+        log::info!(
+            "Spinorama optimization mode: {:?}, loss={}, target_curve={:?}",
+            mode, loss, target_curve
+        );
+        log::info!(
+            "Spinorama optimization params: algo={}, maxeval={}, num_filters={}, population={}",
+            algo, optimizer_config.max_iter, optimizer_config.num_filters, optimizer_config.population
+        );
 
         let params = sotf_audio_player::autoeq::params::OptimizationParams {
             num_filters: optimizer_config.num_filters,
@@ -985,6 +1140,17 @@ impl PlayerView {
             min_freq: optimizer_config.min_freq,
             max_freq: optimizer_config.max_freq,
             maxeval: optimizer_config.max_iter,
+            population: optimizer_config.population,
+            de_f: optimizer_config.de_f,
+            de_cr: optimizer_config.de_cr,
+            strategy: optimizer_config.strategy.clone(),
+            refine: optimizer_config.refine,
+            local_algo: optimizer_config.local_algo.clone(),
+            smooth: optimizer_config.smooth,
+            peq_model: optimizer_config.peq_model.clone(),
+            // Set very small tolerances to prevent early convergence - run full maxeval iterations
+            tolerance: 1e-10,
+            abs_tolerance: 1e-10,
             loss,
             algo,
             curve_name: effective_curve_name.clone(),
@@ -1042,6 +1208,37 @@ impl PlayerView {
 
             // Run the actual optimization
             log::info!("Running speaker optimization for: {}", speaker_name);
+            log::info!(
+                "OptimizationParams: algo={}, maxeval={}, population={}, num_filters={}",
+                config.params.algo,
+                config.params.maxeval,
+                config.params.population,
+                config.params.num_filters
+            );
+            log::info!(
+                "OptimizationParams: strategy={}, de_f={}, de_cr={}, refine={}, local_algo={}",
+                config.params.strategy,
+                config.params.de_f,
+                config.params.de_cr,
+                config.params.refine,
+                config.params.local_algo
+            );
+            log::info!(
+                "OptimizationParams: tolerance={}, abs_tolerance={}, smooth={}, peq_model={}",
+                config.params.tolerance,
+                config.params.abs_tolerance,
+                config.params.smooth,
+                config.params.peq_model
+            );
+            log::info!(
+                "OptimizationParams: min_db={}, max_db={}, min_q={}, max_q={}, min_freq={}, max_freq={}",
+                config.params.min_db,
+                config.params.max_db,
+                config.params.min_q,
+                config.params.max_q,
+                config.params.min_freq,
+                config.params.max_freq
+            );
             let result = sotf_audio_player::autoeq::speaker::run_speaker_optimization_with_callback(
                 &config,
                 Some(callback),

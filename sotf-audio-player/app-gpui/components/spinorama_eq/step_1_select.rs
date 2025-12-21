@@ -1,5 +1,6 @@
 use crate::components::graphs::speaker_graphs::{
-    render_speaker_preview_graph, render_spinorama_cea2034_graph,
+    render_speaker_preview_graph, render_spinorama_cea2034_graph, render_spinorama_horizontal_graph,
+    render_spinorama_pir_graph, render_spinorama_vertical_graph,
 };
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -18,19 +19,19 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
         let spinorama = &state.app.spinorama_eq_state;
+        let app_width = state.app.window_width;
 
         let search_query = spinorama.speaker_search.clone();
         let selected_speaker = spinorama.selected_speaker.clone();
         let suggestions = spinorama.speaker_suggestions.clone();
         let is_loading = spinorama.loading_speakers;
 
-        // Preview curves data
+        // Preview curves data (On Axis and optional target)
         let preview_loading = spinorama.loading_preview;
         let preview_error = spinorama.preview_error.clone();
         let preview_frequencies = spinorama.preview_frequencies.clone();
-        let preview_input = spinorama.preview_input_curve.clone();
+        let preview_on_axis = spinorama.preview_input_curve.clone();
         let preview_target = spinorama.preview_target_curve.clone();
-        let preview_deviation = spinorama.preview_deviation_curve.clone();
         let has_preview = !preview_frequencies.is_empty();
 
         // Spinorama CEA2034 curves data
@@ -38,7 +39,8 @@ impl PlayerView {
         let spinorama_curves_loading = spinorama.loading_spinorama_curves;
         let spinorama_curves_error = spinorama.spinorama_curves_error.clone();
         let has_spinorama_curves = spinorama_curves.is_valid();
-        let is_cea2034 = spinorama.selected_measurement == "CEA2034";
+        let is_cea2034 = spinorama.selected_measurement == "CEA2034"
+            || spinorama.selected_measurement == "CEA2034 Normalized";
 
 		VStack::new()
 		    .spacing(StackSpacing::Lg)
@@ -460,11 +462,16 @@ impl PlayerView {
                                     )
                                     .into_any_element()
                             } else if has_preview {
+                                // Show On Axis curve and target if available
+                                let target_ref = if preview_target.is_empty() {
+                                    None
+                                } else {
+                                    Some(preview_target.as_slice())
+                                };
                                 render_speaker_preview_graph(
                                     &preview_frequencies,
-                                    &preview_input,
-                                    &preview_target,
-                                    &preview_deviation,
+                                    &preview_on_axis,
+                                    target_ref,
                                     &theme,
                                     550.0,
                                     150.0,
@@ -483,17 +490,18 @@ impl PlayerView {
             .when(is_cea2034 && selected_speaker.is_some(), |vstack| {
                 let theme = theme.clone();
                 vstack.child(
-                    Card::new()
-                        .background(theme.surface)
-                        .header_background(theme.background_secondary)
-                        .border(theme.border)
-                        .header(
-                            Text::new("CEA2034 Spinorama")
-                                .color(theme.text_primary)
-                                .weight(TextWeight::Semibold),
-                        )
-                        .content(
-                            if spinorama_curves_loading {
+                    // 2x2 Grid of plots when we have CEA2034 data
+                    if spinorama_curves_loading {
+                        Card::new()
+                            .background(theme.surface)
+                            .header_background(theme.background_secondary)
+                            .border(theme.border)
+                            .header(
+                                Text::new("Loading Spinorama Data...")
+                                    .color(theme.text_primary)
+                                    .weight(TextWeight::Semibold),
+                            )
+                            .content(
                                 VStack::new()
                                     .spacing(StackSpacing::Md)
                                     .align(StackAlign::Center)
@@ -502,9 +510,20 @@ impl PlayerView {
                                             .size(TextSize::Sm)
                                             .color(theme.text_secondary),
                                     )
-                                    .child(Progress::new(0.0).size(ProgressSize::Md))
-                                    .into_any_element()
-                            } else if let Some(err) = spinorama_curves_error {
+                                    .child(Progress::new(0.0).size(ProgressSize::Md)),
+                            )
+                            .into_any_element()
+                    } else if let Some(err) = spinorama_curves_error {
+                        Card::new()
+                            .background(theme.surface)
+                            .header_background(theme.background_secondary)
+                            .border(theme.border)
+                            .header(
+                                Text::new("Error Loading Data")
+                                    .color(theme.error)
+                                    .weight(TextWeight::Semibold),
+                            )
+                            .content(
                                 VStack::new()
                                     .spacing(StackSpacing::Md)
                                     .child(
@@ -516,23 +535,139 @@ impl PlayerView {
                                         Text::new(err)
                                             .size(TextSize::Xs)
                                             .color(theme.text_muted),
+                                    ),
+                            )
+                            .into_any_element()
+                    } else if has_spinorama_curves {
+                        // 2x2 grid of plots - calculate width based on app width
+                        // Account for: sidebar (~300px in expanded mode), padding (32px), gap between plots (16px)
+                        let available_width = (app_width - 300.0 - 32.0 - 16.0).max(600.0);
+                        let plot_width = (available_width / 2.0).max(280.0);
+                        let plot_height = 180.0;
+
+                        div()
+                            .flex()
+                            .flex_col()
+                            .w_full()
+                            .gap_4()
+                            // Row 1: CEA2034 Spinorama and PIR
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_row()
+                                    .w_full()
+                                    .gap_4()
+                                    // Left: CEA2034 Spinorama
+                                    .child(
+                                        div().flex_1().child(
+                                            Card::new()
+                                                .background(theme.surface)
+                                                .header_background(theme.background_secondary)
+                                                .border(theme.border)
+                                                .header(
+                                                    Text::new("Spinorama")
+                                                        .color(theme.text_primary)
+                                                        .weight(TextWeight::Semibold)
+                                                        .size(TextSize::Sm),
+                                                )
+                                                .content(render_spinorama_cea2034_graph(
+                                                    &spinorama_curves,
+                                                    &theme,
+                                                    plot_width,
+                                                    plot_height,
+                                                )),
+                                        ),
                                     )
-                                    .into_any_element()
-                            } else if has_spinorama_curves {
-                                render_spinorama_cea2034_graph(
-                                    &spinorama_curves,
-                                    &theme,
-                                    600.0,
-                                    200.0,
-                                )
-                                .into_any_element()
-                            } else {
-                                Text::new("Spinorama data will appear after selecting CEA2034")
+                                    // Right: PIR (Estimated In-Room Response)
+                                    .child(
+                                        div().flex_1().child(
+                                            Card::new()
+                                                .background(theme.surface)
+                                                .header_background(theme.background_secondary)
+                                                .border(theme.border)
+                                                .header(
+                                                    Text::new("PIR (In-Room)")
+                                                        .color(theme.text_primary)
+                                                        .weight(TextWeight::Semibold)
+                                                        .size(TextSize::Sm),
+                                                )
+                                                .content(render_spinorama_pir_graph(
+                                                    &spinorama_curves,
+                                                    &theme,
+                                                    plot_width,
+                                                    plot_height,
+                                                )),
+                                        ),
+                                    ),
+                            )
+                            // Row 2: Horizontal and Vertical reflections
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_row()
+                                    .w_full()
+                                    .gap_4()
+                                    // Left: Horizontal reflections
+                                    .child(
+                                        div().flex_1().child(
+                                            Card::new()
+                                                .background(theme.surface)
+                                                .header_background(theme.background_secondary)
+                                                .border(theme.border)
+                                                .header(
+                                                    Text::new("Horizontal")
+                                                        .color(theme.text_primary)
+                                                        .weight(TextWeight::Semibold)
+                                                        .size(TextSize::Sm),
+                                                )
+                                                .content(render_spinorama_horizontal_graph(
+                                                    &spinorama_curves,
+                                                    &theme,
+                                                    plot_width,
+                                                    plot_height,
+                                                )),
+                                        ),
+                                    )
+                                    // Right: Vertical reflections
+                                    .child(
+                                        div().flex_1().child(
+                                            Card::new()
+                                                .background(theme.surface)
+                                                .header_background(theme.background_secondary)
+                                                .border(theme.border)
+                                                .header(
+                                                    Text::new("Vertical")
+                                                        .color(theme.text_primary)
+                                                        .weight(TextWeight::Semibold)
+                                                        .size(TextSize::Sm),
+                                                )
+                                                .content(render_spinorama_vertical_graph(
+                                                    &spinorama_curves,
+                                                    &theme,
+                                                    plot_width,
+                                                    plot_height,
+                                                )),
+                                        ),
+                                    ),
+                            )
+                            .into_any_element()
+                    } else {
+                        Card::new()
+                            .background(theme.surface)
+                            .header_background(theme.background_secondary)
+                            .border(theme.border)
+                            .header(
+                                Text::new("CEA2034 Spinorama")
+                                    .color(theme.text_primary)
+                                    .weight(TextWeight::Semibold),
+                            )
+                            .content(
+                                Text::new("Spinorama data will appear after selecting a speaker with CEA2034 measurement")
                                     .size(TextSize::Sm)
-                                    .color(theme.text_muted)
-                                    .into_any_element()
-                            },
-                        ),
+                                    .color(theme.text_muted),
+                            )
+                            .into_any_element()
+                    },
                 )
             })
     }

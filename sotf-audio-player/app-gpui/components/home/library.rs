@@ -10,6 +10,13 @@ use gpui_ui_kit::{
 };
 use std::sync::Arc;
 
+/// Selection action types for the library filter UI (Genre only)
+/// Note: Artist, Composer, Tracks now use filter bars like Year/Album
+#[derive(Clone)]
+enum SelectionAction {
+    Genre(String),
+}
+
 impl PlayerView {
     pub(crate) fn render_library_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         // Ensure library stats are computed (cached - only recomputes when invalidated)
@@ -18,51 +25,49 @@ impl PlayerView {
         });
 
         // Now read all values including cached stats
-        let (
-            albums_count,
-            artists_count,
-            tracks_count,
-            composers_count,
-            search_query,
-            input_mode,
-            sort_order,
-            channel_filter,
-            filter_menu_open,
-            theme,
-            translations,
-            min_year,
-            max_year,
-            genres_count,
-            mono_count,
-            stereo_count,
-            surround_count,
-            surround71_count,
-            surround_plus_count,
-        ) = {
-            let state = self.state.read(cx);
-            let stats = &state.app.library_stats;
-            (
-                state.app.library.albums.len(),
-                stats.artists_count,
-                stats.total_tracks,
-                stats.composers_count,
-                state.app.search_query.clone(),
-                state.app.input_mode,
-                state.app.library_sort_order,
-                state.app.channel_filter,
-                state.app.filter_menu_open,
-                state.app.theme.clone(),
-                state.app.translations.clone(),
-                stats.min_year,
-                stats.max_year,
-                stats.genres_count,
-                stats.mono_count,
-                stats.stereo_count,
-                stats.surround_count,
-                stats.surround71_count,
-                stats.surround_plus_count,
-            )
-        };
+        let state = self.state.read(cx);
+        let stats = &state.app.library_stats;
+
+        let albums_count = state.app.library.albums.len();
+        let artists_count = stats.artists_count;
+        let tracks_count = stats.total_tracks;
+        let composers_count = stats.composers_count;
+        let search_query = state.app.search_query.clone();
+        let input_mode = state.app.input_mode;
+        let sort_order = state.app.library_sort_order;
+        let channel_filter = state.app.channel_filter;
+        let filter_menu_open = state.app.filter_menu_open;
+        let theme = state.app.theme.clone();
+        let translations = state.app.translations.clone();
+        let min_year = stats.min_year;
+        let max_year = stats.max_year;
+        let genres_count = stats.genres_count;
+        let mono_count = stats.mono_count;
+        let stereo_count = stats.stereo_count;
+        let surround_count = stats.surround_count;
+        let surround71_count = stats.surround71_count;
+        let surround_plus_count = stats.surround_plus_count;
+
+        // Selection filters and counts for each category
+        let selected_genre = state.app.selected_genre.clone();
+        let selected_decade = state.app.selected_decade;
+        let selected_year = state.app.selected_year;
+        let selected_artist_letter = state.app.selected_artist_letter;
+        let selected_artist = state.app.selected_artist.clone();
+        let selected_composer_letter = state.app.selected_composer_letter;
+        let selected_composer = state.app.selected_composer.clone();
+        let selected_album_letter = state.app.selected_album_letter;
+        let selected_track_range = state.app.selected_track_range;
+
+        let genre_counts = stats.genre_counts.clone();
+        let year_counts = stats.year_counts.clone();
+        let decade_counts = stats.decade_counts.clone();
+        let artist_counts = stats.artist_counts.clone();
+        let artist_letter_counts = stats.artist_letter_counts.clone();
+        let composer_counts = stats.composer_counts.clone();
+        let composer_letter_counts = stats.composer_letter_counts.clone();
+        let album_letter_counts = stats.album_letter_counts.clone();
+        let track_range_counts = stats.track_range_counts.clone();
 
         let is_search_mode = input_mode == crate::app::InputMode::Search;
         let is_filter_mode = filter_menu_open;
@@ -99,6 +104,8 @@ impl PlayerView {
             badge_bg: theme.surface_hover,
             close_color: theme.text_muted,
             close_hover_color: theme.text_primary,
+            icon_selected: None,
+            icon_unselected: None,
         };
 
         // Format year range for tab badge
@@ -117,55 +124,29 @@ impl PlayerView {
         );
 
         // Build sort tabs with Filter and Search
+        // Note: Icons don't set explicit color - they inherit from the Tabs component's
+        // icon_selected/icon_unselected theme colors for proper visibility on selection
         let sort_tabs = vec![
             TabItem::new("year", translations.library_years)
-                .custom_icon(
-                    Icon::new(IconName::Disc)
-                        .size(IconSize::Lg)
-                        .color(theme.accent),
-                )
+                .custom_icon(Icon::new(IconName::Disc).size(IconSize::Lg))
                 .badge(year_badge),
             TabItem::new("genre", translations.library_genres)
-                .custom_icon(
-                    Icon::new(IconName::Folder)
-                        .size(IconSize::Lg)
-                        .color(theme.accent),
-                )
+                .custom_icon(Icon::new(IconName::Folder).size(IconSize::Lg))
                 .badge(genres_count.to_string()),
             TabItem::new("artist", translations.library_artists)
-                .custom_icon(
-                    Icon::new(IconName::User)
-                        .size(IconSize::Lg)
-                        .color(theme.accent),
-                )
+                .custom_icon(Icon::new(IconName::User).size(IconSize::Lg))
                 .badge(artists_count.to_string()),
             TabItem::new("album", translations.library_albums)
-                .custom_icon(
-                    Icon::new(IconName::Album)
-                        .size(IconSize::Lg)
-                        .color(theme.accent),
-                )
+                .custom_icon(Icon::new(IconName::Album).size(IconSize::Lg))
                 .badge(albums_count.to_string()),
             TabItem::new("tracks", translations.library_tracks)
-                .custom_icon(
-                    Icon::new(IconName::Music)
-                        .size(IconSize::Lg)
-                        .color(theme.accent),
-                )
+                .custom_icon(Icon::new(IconName::Music).size(IconSize::Lg))
                 .badge(tracks_count.to_string()),
             TabItem::new("composer", translations.library_composers)
-                .custom_icon(
-                    Icon::new(IconName::PenTool)
-                        .size(IconSize::Lg)
-                        .color(theme.accent),
-                )
+                .custom_icon(Icon::new(IconName::PenTool).size(IconSize::Lg))
                 .badge(composers_count.to_string()),
             TabItem::new("filter", translations.library_stereo_multi)
-                .custom_icon(
-                    Icon::new(IconName::AudioWaveform)
-                        .size(IconSize::Lg)
-                        .color(theme.accent),
-                )
+                .custom_icon(Icon::new(IconName::AudioWaveform).size(IconSize::Lg))
                 .badge(format!(
                     "{}/{}/{}",
                     stereo_count,
@@ -173,11 +154,7 @@ impl PlayerView {
                     surround71_count + surround_plus_count
                 )),
             TabItem::new("search", translations.library_search)
-                .custom_icon(
-                    Icon::new(IconName::Search)
-                        .size(IconSize::Lg)
-                        .color(theme.accent),
-                )
+                .custom_icon(Icon::new(IconName::Search).size(IconSize::Lg))
                 .badge(translations.library_albums),
         ];
 
@@ -314,8 +291,903 @@ impl PlayerView {
                     .flex_1()
                     .min_h_0()
                     .overflow_hidden()
-                    .child(self.render_library_grid(cx)),
+                    .child(self.render_library_content(
+                        sort_order,
+                        theme.clone(),
+                        // Selection states
+                        selected_genre,
+                        selected_decade,
+                        selected_year,
+                        selected_artist_letter,
+                        selected_artist,
+                        selected_composer_letter,
+                        selected_composer,
+                        selected_album_letter,
+                        selected_track_range,
+                        // Count maps
+                        genre_counts,
+                        decade_counts,
+                        year_counts,
+                        artist_counts,
+                        artist_letter_counts,
+                        composer_counts,
+                        composer_letter_counts,
+                        album_letter_counts,
+                        track_range_counts,
+                        cx,
+                    )),
             )
+    }
+
+    /// Render library content - either selection UI or album grid based on sort order
+    #[allow(clippy::too_many_arguments)]
+    fn render_library_content(
+        &self,
+        sort_order: crate::app::LibrarySortOrder,
+        theme: crate::theme::Theme,
+        // Selection states
+        selected_genre: Option<String>,
+        selected_decade: Option<(i32, i32)>,
+        selected_year: Option<i32>,
+        selected_artist_letter: Option<char>,
+        selected_artist: Option<String>,
+        selected_composer_letter: Option<char>,
+        selected_composer: Option<String>,
+        selected_album_letter: Option<char>,
+        selected_track_range: Option<(usize, usize)>,
+        // Count maps
+        genre_counts: std::collections::HashMap<String, usize>,
+        decade_counts: Vec<(i32, i32, usize)>,
+        year_counts: std::collections::HashMap<i32, usize>,
+        artist_counts: std::collections::HashMap<String, usize>,
+        artist_letter_counts: std::collections::HashMap<char, usize>,
+        composer_counts: std::collections::HashMap<String, usize>,
+        composer_letter_counts: std::collections::HashMap<char, usize>,
+        album_letter_counts: std::collections::HashMap<char, usize>,
+        track_range_counts: Vec<(usize, usize, usize)>,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        use crate::app::LibrarySortOrder;
+
+        // Year, Album, Artist, Composer, and Tracks tabs show filter bar + albums (always visible)
+        // Genre shows selection UI first, then albums with back button
+        match sort_order {
+            LibrarySortOrder::Year => {
+                // Year tab: filter bar (decades/years) + album grid with year dividers
+                self.render_year_tab_content(
+                    selected_decade,
+                    selected_year,
+                    decade_counts,
+                    year_counts,
+                    theme,
+                    cx,
+                ).into_any_element()
+            }
+            LibrarySortOrder::Album => {
+                // Album tab: letter filter bar + album grid with letter dividers
+                self.render_album_tab_content(
+                    selected_album_letter,
+                    album_letter_counts,
+                    theme,
+                    cx,
+                ).into_any_element()
+            }
+            LibrarySortOrder::Artist => {
+                // Artist tab: letter filter bar + artist names (top 20) + album grid with artist dividers
+                self.render_artist_tab_content(
+                    selected_artist_letter,
+                    selected_artist.clone(),
+                    artist_letter_counts,
+                    artist_counts,
+                    theme,
+                    cx,
+                ).into_any_element()
+            }
+            LibrarySortOrder::Composer => {
+                // Composer tab: letter filter bar + composer names (top 20) + album grid with composer dividers
+                self.render_composer_tab_content(
+                    selected_composer_letter,
+                    selected_composer.clone(),
+                    composer_letter_counts,
+                    composer_counts,
+                    theme,
+                    cx,
+                ).into_any_element()
+            }
+            LibrarySortOrder::Tracks => {
+                // Tracks tab: track range filter bar + album grid with track count dividers
+                self.render_tracks_tab_content(
+                    selected_track_range,
+                    track_range_counts,
+                    theme,
+                    cx,
+                ).into_any_element()
+            }
+            _ => {
+                // Genre tab: selection UI first, then albums with back button
+                self.render_selection_based_content(
+                    sort_order,
+                    theme,
+                    selected_genre,
+                    genre_counts,
+                    cx,
+                ).into_any_element()
+            }
+        }
+    }
+
+    /// Render Year tab with filter bar and album grid
+    fn render_year_tab_content(
+        &self,
+        selected_decade: Option<(i32, i32)>,
+        selected_year: Option<i32>,
+        decade_counts: Vec<(i32, i32, usize)>,
+        year_counts: std::collections::HashMap<i32, usize>,
+        theme: crate::theme::Theme,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .child(
+                // Filter bar
+                self.render_year_filter_bar(selected_decade, selected_year, decade_counts, year_counts, theme.clone(), cx)
+            )
+            .child(
+                // Album grid
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_hidden()
+                    .child(self.render_library_grid(cx))
+            )
+    }
+
+    /// Render year filter bar with decades and years
+    fn render_year_filter_bar(
+        &self,
+        selected_decade: Option<(i32, i32)>,
+        selected_year: Option<i32>,
+        decade_counts: Vec<(i32, i32, usize)>,
+        year_counts: std::collections::HashMap<i32, usize>,
+        theme: crate::theme::Theme,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        div()
+            .flex()
+            .flex_col()
+            .items_center()
+            .gap_1()
+            .p_2()
+            .bg(theme.surface)
+            .border_b_1()
+            .border_color(theme.border)
+            .child(
+                // Decade buttons row
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .justify_center()
+                    .gap_1()
+                    .children(decade_counts.into_iter().map(|(start, end, count)| {
+                        let is_selected = selected_decade == Some((start, end));
+                        let label = format!("{}s ({})", start, count);
+
+                        Button::new(
+                            SharedString::from(format!("decade-{}", start)),
+                            SharedString::from(label),
+                        )
+                        .variant(if is_selected { ButtonVariant::Primary } else { ButtonVariant::Secondary })
+                        .size(ButtonSize::Xs)
+                        .theme(theme.to_button_theme())
+                        .build()
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                                view.state.update(cx, |state, _cx| {
+                                    if state.app.selected_decade == Some((start, end)) {
+                                        // Deselect if already selected
+                                        state.app.selected_decade = None;
+                                        state.app.selected_year = None;
+                                    } else {
+                                        state.app.selected_decade = Some((start, end));
+                                        state.app.selected_year = None;
+                                    }
+                                    state.app.selected_album_index = 0;
+                                });
+                                cx.notify();
+                            }),
+                        )
+                    }))
+            )
+            .when_some(selected_decade, |el, (decade_start, decade_end)| {
+                // Year buttons for selected decade
+                let mut years_in_decade: Vec<(i32, usize)> = year_counts
+                    .iter()
+                    .filter(|(y, _)| **y >= decade_start && **y <= decade_end)
+                    .map(|(y, c)| (*y, *c))
+                    .collect();
+                years_in_decade.sort_by(|a, b| b.0.cmp(&a.0));
+
+                el.child(
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .justify_center()
+                        .gap_1()
+                        .mt_1()
+                        .children(years_in_decade.into_iter().map(|(year, count)| {
+                            let is_selected = selected_year == Some(year);
+                            let label = format!("{} ({})", year, count);
+
+                            Button::new(
+                                SharedString::from(format!("year-{}", year)),
+                                SharedString::from(label),
+                            )
+                            .variant(if is_selected { ButtonVariant::Primary } else { ButtonVariant::Secondary })
+                            .size(ButtonSize::Xs)
+                            .theme(theme.to_button_theme())
+                            .build()
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                                    view.state.update(cx, |state, _cx| {
+                                        if state.app.selected_year == Some(year) {
+                                            state.app.selected_year = None;
+                                        } else {
+                                            state.app.selected_year = Some(year);
+                                        }
+                                        state.app.selected_album_index = 0;
+                                    });
+                                    cx.notify();
+                                }),
+                            )
+                        }))
+                )
+            })
+    }
+
+    /// Render Album tab with letter filter bar and album grid
+    fn render_album_tab_content(
+        &self,
+        selected_letter: Option<char>,
+        letter_counts: std::collections::HashMap<char, usize>,
+        theme: crate::theme::Theme,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .child(
+                // Letter filter bar
+                self.render_album_letter_filter_bar(selected_letter, letter_counts, theme.clone(), cx)
+            )
+            .child(
+                // Album grid
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_hidden()
+                    .child(self.render_library_grid(cx))
+            )
+    }
+
+    /// Render album letter filter bar (A-Z, #)
+    fn render_album_letter_filter_bar(
+        &self,
+        selected_letter: Option<char>,
+        letter_counts: std::collections::HashMap<char, usize>,
+        theme: crate::theme::Theme,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        // Sort alphabetically, # at the end
+        let mut letters: Vec<char> = letter_counts.keys().copied().collect();
+        letters.sort_by(|a, b| {
+            if *a == '#' { std::cmp::Ordering::Greater }
+            else if *b == '#' { std::cmp::Ordering::Less }
+            else { a.cmp(b) }
+        });
+
+        div()
+            .flex()
+            .flex_wrap()
+            .justify_center()
+            .gap_1()
+            .p_2()
+            .bg(theme.surface)
+            .border_b_1()
+            .border_color(theme.border)
+            .children(letters.into_iter().map(|letter| {
+                let is_selected = selected_letter == Some(letter);
+
+                Button::new(
+                    SharedString::from(format!("letter-{}", letter)),
+                    SharedString::from(letter.to_string()),
+                )
+                .variant(if is_selected { ButtonVariant::Primary } else { ButtonVariant::Secondary })
+                .size(ButtonSize::Xs)
+                .theme(theme.to_button_theme())
+                .build()
+                .on_mouse_up(
+                    MouseButton::Left,
+                    cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                        view.state.update(cx, |state, _cx| {
+                            if state.app.selected_album_letter == Some(letter) {
+                                state.app.selected_album_letter = None;
+                            } else {
+                                state.app.selected_album_letter = Some(letter);
+                            }
+                            state.app.selected_album_index = 0;
+                        });
+                        cx.notify();
+                    }),
+                )
+            }))
+    }
+
+    /// Render Artist tab with letter filter bar, artist names, and album grid
+    fn render_artist_tab_content(
+        &self,
+        selected_letter: Option<char>,
+        selected_artist: Option<String>,
+        letter_counts: std::collections::HashMap<char, usize>,
+        artist_counts: std::collections::HashMap<String, usize>,
+        theme: crate::theme::Theme,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .child(
+                // Filter bar (letters + artist names)
+                self.render_artist_filter_bar(selected_letter, selected_artist, letter_counts, artist_counts, theme.clone(), cx)
+            )
+            .child(
+                // Album grid
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_hidden()
+                    .child(self.render_library_grid(cx))
+            )
+    }
+
+    /// Render artist filter bar with letters and artist names (top 20)
+    fn render_artist_filter_bar(
+        &self,
+        selected_letter: Option<char>,
+        selected_artist: Option<String>,
+        letter_counts: std::collections::HashMap<char, usize>,
+        artist_counts: std::collections::HashMap<String, usize>,
+        theme: crate::theme::Theme,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        // Sort letters alphabetically, # at the end
+        let mut letters: Vec<char> = letter_counts.keys().copied().collect();
+        letters.sort_by(|a, b| {
+            if *a == '#' { std::cmp::Ordering::Greater }
+            else if *b == '#' { std::cmp::Ordering::Less }
+            else { a.cmp(b) }
+        });
+
+        // Get artists for selected letter (top 20, sorted alphabetically)
+        let artists_for_letter: Vec<(String, usize)> = if let Some(letter) = selected_letter {
+            let mut filtered: Vec<(String, usize)> = artist_counts
+                .iter()
+                .filter(|(name, _)| {
+                    name.chars().next().map_or(false, |c| {
+                        let first = c.to_ascii_uppercase();
+                        if letter == '#' {
+                            !first.is_ascii_alphabetic()
+                        } else {
+                            first == letter
+                        }
+                    })
+                })
+                .map(|(name, count)| (name.clone(), *count))
+                .collect();
+            filtered.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+            filtered.into_iter().take(20).collect()
+        } else {
+            Vec::new()
+        };
+
+        div()
+            .flex()
+            .flex_col()
+            .items_center()
+            .gap_1()
+            .p_2()
+            .bg(theme.surface)
+            .border_b_1()
+            .border_color(theme.border)
+            .child(
+                // Letter buttons row
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .justify_center()
+                    .gap_1()
+                    .children(letters.into_iter().map(|letter| {
+                        let is_selected = selected_letter == Some(letter);
+
+                        Button::new(
+                            SharedString::from(format!("artist-letter-{}", letter)),
+                            SharedString::from(letter.to_string()),
+                        )
+                        .variant(if is_selected { ButtonVariant::Primary } else { ButtonVariant::Ghost })
+                        .size(ButtonSize::Xs)
+                            .theme(theme.to_button_theme())
+                            .build()
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                                    view.state.update(cx, |state, _cx| {
+                                        if state.app.selected_artist_letter == Some(letter) {
+                                            state.app.selected_artist_letter = None;
+                                            state.app.selected_artist = None;
+                                        } else {
+                                            state.app.selected_artist_letter = Some(letter);
+                                            state.app.selected_artist = None;
+                                        }
+                                        state.app.selected_album_index = 0;
+                                    });
+                                    cx.notify();
+                                }),
+                            )
+                    }))
+            )
+            // Artist names row (when a letter is selected)
+            .when(!artists_for_letter.is_empty(), |el| {
+                let artists = artists_for_letter.clone();
+                el.child(
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .justify_center()
+                        .gap_1()
+                        .pt_1()
+                        .children(artists.into_iter().map(|(artist, count)| {
+                            let is_selected = selected_artist.as_ref() == Some(&artist);
+                            let artist_clone = artist.clone();
+
+                            Button::new(
+                                SharedString::from(format!("artist-name-{}", artist.clone())),
+                                SharedString::from(format!("{} ({})", artist, count)),
+                            )
+                            .variant(if is_selected { ButtonVariant::Primary } else { ButtonVariant::Secondary })
+                            .size(ButtonSize::Xs)
+                                .theme(theme.to_button_theme())
+                                .build()
+                                .on_mouse_up(
+                                    MouseButton::Left,
+                                    cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                                        let artist_to_set = artist_clone.clone();
+                                        view.state.update(cx, |state, _cx| {
+                                            if state.app.selected_artist.as_ref() == Some(&artist_to_set) {
+                                                state.app.selected_artist = None;
+                                            } else {
+                                                state.app.selected_artist = Some(artist_to_set);
+                                            }
+                                            state.app.selected_album_index = 0;
+                                        });
+                                        cx.notify();
+                                    }),
+                                )
+                        }))
+                )
+            })
+    }
+
+    /// Render Composer tab with letter filter bar, composer names, and album grid
+    fn render_composer_tab_content(
+        &self,
+        selected_letter: Option<char>,
+        selected_composer: Option<String>,
+        letter_counts: std::collections::HashMap<char, usize>,
+        composer_counts: std::collections::HashMap<String, usize>,
+        theme: crate::theme::Theme,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .child(
+                // Filter bar (letters + composer names)
+                self.render_composer_filter_bar(selected_letter, selected_composer, letter_counts, composer_counts, theme.clone(), cx)
+            )
+            .child(
+                // Album grid
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_hidden()
+                    .child(self.render_library_grid(cx))
+            )
+    }
+
+    /// Render composer filter bar with letters and composer names (top 20)
+    fn render_composer_filter_bar(
+        &self,
+        selected_letter: Option<char>,
+        selected_composer: Option<String>,
+        letter_counts: std::collections::HashMap<char, usize>,
+        composer_counts: std::collections::HashMap<String, usize>,
+        theme: crate::theme::Theme,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        // Sort letters alphabetically, # at the end
+        let mut letters: Vec<char> = letter_counts.keys().copied().collect();
+        letters.sort_by(|a, b| {
+            if *a == '#' { std::cmp::Ordering::Greater }
+            else if *b == '#' { std::cmp::Ordering::Less }
+            else { a.cmp(b) }
+        });
+
+        // Get composers for selected letter (top 20, sorted alphabetically)
+        let composers_for_letter: Vec<(String, usize)> = if let Some(letter) = selected_letter {
+            let mut filtered: Vec<(String, usize)> = composer_counts
+                .iter()
+                .filter(|(name, _)| {
+                    name.chars().next().map_or(false, |c| {
+                        let first = c.to_ascii_uppercase();
+                        if letter == '#' {
+                            !first.is_ascii_alphabetic()
+                        } else {
+                            first == letter
+                        }
+                    })
+                })
+                .map(|(name, count)| (name.clone(), *count))
+                .collect();
+            filtered.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+            filtered.into_iter().take(20).collect()
+        } else {
+            Vec::new()
+        };
+
+        div()
+            .flex()
+            .flex_col()
+            .items_center()
+            .gap_1()
+            .p_2()
+            .bg(theme.surface)
+            .border_b_1()
+            .border_color(theme.border)
+            .child(
+                // Letter buttons row
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .justify_center()
+                    .gap_1()
+                    .children(letters.into_iter().map(|letter| {
+                        let is_selected = selected_letter == Some(letter);
+
+                        Button::new(
+                            SharedString::from(format!("composer-letter-{}", letter)),
+                            SharedString::from(letter.to_string()),
+                        )
+                        .variant(if is_selected { ButtonVariant::Primary } else { ButtonVariant::Ghost })
+                        .size(ButtonSize::Xs)
+                        .theme(theme.to_button_theme())
+                        .build()
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                                view.state.update(cx, |state, _cx| {
+                                    if state.app.selected_composer_letter == Some(letter) {
+                                        state.app.selected_composer_letter = None;
+                                        state.app.selected_composer = None;
+                                    } else {
+                                        state.app.selected_composer_letter = Some(letter);
+                                        state.app.selected_composer = None;
+                                    }
+                                    state.app.selected_album_index = 0;
+                                });
+                                cx.notify();
+                            }),
+                        )
+                    }))
+            )
+            // Composer names row (when a letter is selected)
+            .when(!composers_for_letter.is_empty(), |el| {
+                let composers = composers_for_letter.clone();
+                el.child(
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .justify_center()
+                        .gap_1()
+                        .pt_1()
+                        .children(composers.into_iter().map(|(composer, count)| {
+                            let is_selected = selected_composer.as_ref() == Some(&composer);
+                            let composer_clone = composer.clone();
+
+                            Button::new(
+                                SharedString::from(format!("composer-name-{}", composer.clone())),
+                                SharedString::from(format!("{} ({})", composer, count)),
+                            )
+                            .variant(if is_selected { ButtonVariant::Primary } else { ButtonVariant::Secondary })
+                            .size(ButtonSize::Xs)
+                            .theme(theme.to_button_theme())
+                            .build()
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                                    let composer_to_set = composer_clone.clone();
+                                    view.state.update(cx, |state, _cx| {
+                                        if state.app.selected_composer.as_ref() == Some(&composer_to_set) {
+                                            state.app.selected_composer = None;
+                                        } else {
+                                            state.app.selected_composer = Some(composer_to_set);
+                                        }
+                                        state.app.selected_album_index = 0;
+                                    });
+                                    cx.notify();
+                                }),
+                            )
+                        }))
+                )
+            })
+    }
+
+    /// Render Tracks tab with track range filter bar and album grid
+    fn render_tracks_tab_content(
+        &self,
+        selected_range: Option<(usize, usize)>,
+        track_range_counts: Vec<(usize, usize, usize)>,
+        theme: crate::theme::Theme,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .child(
+                // Filter bar (track ranges)
+                self.render_tracks_filter_bar(selected_range, track_range_counts, theme.clone(), cx)
+            )
+            .child(
+                // Album grid
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_hidden()
+                    .child(self.render_library_grid(cx))
+            )
+    }
+
+    /// Render tracks filter bar with track count ranges
+    fn render_tracks_filter_bar(
+        &self,
+        selected_range: Option<(usize, usize)>,
+        track_range_counts: Vec<(usize, usize, usize)>,
+        theme: crate::theme::Theme,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        div()
+            .flex()
+            .flex_wrap()
+            .justify_center()
+            .items_center()
+            .gap_1()
+            .p_2()
+            .bg(theme.surface)
+            .border_b_1()
+            .border_color(theme.border)
+            .children(track_range_counts.into_iter().map(|(min, max, count)| {
+                let is_selected = selected_range == Some((min, max));
+                let label = if max == usize::MAX {
+                    format!("{}+ ({})", min, count)
+                } else if min == max {
+                    format!("{} ({})", min, count)
+                } else {
+                    format!("{}-{} ({})", min, max, count)
+                };
+
+                Button::new(
+                    SharedString::from(format!("tracks-range-{}-{}", min, max)),
+                    SharedString::from(label),
+                )
+                .variant(if is_selected { ButtonVariant::Primary } else { ButtonVariant::Ghost })
+                .size(ButtonSize::Xs)
+                .theme(theme.to_button_theme())
+                .build()
+                .on_mouse_up(
+                    MouseButton::Left,
+                    cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                        view.state.update(cx, |state, _cx| {
+                            if state.app.selected_track_range == Some((min, max)) {
+                                state.app.selected_track_range = None;
+                            } else {
+                                state.app.selected_track_range = Some((min, max));
+                            }
+                            state.app.selected_album_index = 0;
+                        });
+                        cx.notify();
+                    }),
+                )
+            }))
+    }
+
+    /// Render content for Genre tab that uses selection UI
+    fn render_selection_based_content(
+        &self,
+        _sort_order: crate::app::LibrarySortOrder,
+        theme: crate::theme::Theme,
+        selected_genre: Option<String>,
+        genre_counts: std::collections::HashMap<String, usize>,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        // Check if we need to show selection UI
+        let needs_selection = selected_genre.is_none();
+
+        if needs_selection {
+            self.render_genre_selection(genre_counts, theme, cx)
+                .into_any_element()
+        } else {
+            // Show album grid with back button
+            let mut content = div().size_full().flex().flex_col();
+
+            if let Some(label) = selected_genre.clone() {
+                content = content.child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .p_2()
+                        .bg(theme.surface)
+                        .border_b_1()
+                        .border_color(theme.border)
+                        .child(
+                            Button::new("back-to-selection", "← Back to Genres")
+                                .variant(ButtonVariant::Secondary)
+                                .size(ButtonSize::Sm)
+                                .theme(theme.to_button_theme())
+                                .build()
+                                .on_mouse_up(
+                                    MouseButton::Left,
+                                    cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                                        view.state.update(cx, |state, _cx| {
+                                            state.app.selected_genre = None;
+                                            state.app.selected_album_index = 0;
+                                        });
+                                        cx.notify();
+                                    }),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .text_lg()
+                                .font_weight(FontWeight::BOLD)
+                                .text_color(theme.text_primary)
+                                .child(label),
+                        ),
+                );
+            }
+
+            content = content.child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_hidden()
+                    .child(self.render_library_grid(cx)),
+            );
+
+            content.into_any_element()
+        }
+    }
+    /// Render genre selection grid
+    fn render_genre_selection(
+        &self,
+        genre_counts: std::collections::HashMap<String, usize>,
+        theme: crate::theme::Theme,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        if genre_counts.is_empty() {
+            return self.render_empty_selection("No genres found in library", &theme);
+        }
+
+        let mut genres: Vec<(String, usize)> = genre_counts
+            .into_iter()
+            .filter(|(_, count)| *count >= 5)
+            .collect();
+        genres.sort_by(|a, b| b.1.cmp(&a.1));
+
+        if genres.is_empty() {
+            return self.render_empty_selection("No genres with 5+ albums found", &theme);
+        }
+
+        self.render_selection_grid(
+            "Select a Genre",
+            genres.into_iter().map(|(genre, count)| {
+                let label = format!("{} ({})", genre, count);
+                let size = (80.0 + (count as f32).sqrt() * 20.0).min(250.0);
+                (format!("genre-{}", genre.clone()), label, size, SelectionAction::Genre(genre))
+            }).collect(),
+            theme,
+            cx,
+        )
+    }
+
+    /// Helper to render empty selection message
+    fn render_empty_selection(&self, message: &str, theme: &crate::theme::Theme) -> AnyElement {
+        div()
+            .size_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(
+                div()
+                    .text_color(theme.text_muted)
+                    .child(message.to_string()),
+            )
+            .into_any_element()
+    }
+
+    /// Generic helper to render a selection grid
+    fn render_selection_grid(
+        &self,
+        title: &str,
+        items: Vec<(String, String, f32, SelectionAction)>,
+        theme: crate::theme::Theme,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        div()
+            .id("selection-scroll")
+            .size_full()
+            .flex()
+            .flex_col()
+            .items_center()
+            .overflow_y_scroll()
+            .p_4()
+            .child(
+                div()
+                    .text_xl()
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(theme.text_primary)
+                    .mb_4()
+                    .child(title.to_string()),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap_3()
+                    .max_w(px(1000.0))
+                    .justify_center()
+                    .children(items.into_iter().map(|(id, label, size, action)| {
+                        Button::new(
+                            SharedString::from(id),
+                            SharedString::from(label),
+                        )
+                        .variant(ButtonVariant::Secondary)
+                        .size(ButtonSize::Md)
+                        .theme(theme.to_button_theme())
+                        .build()
+                        .w(px(size))
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                                let action = action.clone();
+                                view.state.update(cx, |state, _cx| {
+                                    match action {
+                                        SelectionAction::Genre(g) => state.app.selected_genre = Some(g),
+                                    }
+                                    state.app.selected_album_index = 0;
+                                });
+                                cx.notify();
+                            }),
+                        )
+                    })),
+            )
+            .into_any_element()
     }
 
     /// Render album grid view with thumbnails

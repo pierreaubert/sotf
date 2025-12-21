@@ -564,8 +564,8 @@ impl PlayerView {
                 let current_loss = losses.last().copied().unwrap_or(0.0);
                 let best_loss = losses.iter().copied().fold(f64::INFINITY, f64::min);
 
-                // Build chart with loss curve (and optionally score curve)
-                let chart_builder = line(&iterations, &losses)
+                // Build chart with loss curve (and optionally score curve on secondary axis)
+                let mut chart_builder = line(&iterations, &losses)
                     .title("Optimization Process")
                     .x_label("Iteration")
                     .y_label("Loss")
@@ -575,14 +575,18 @@ impl PlayerView {
                     .theme(chart_theme.clone())
                     .size(700.0, 250.0);
 
-                // Add score series if scores are available
+                // Add score series on secondary (right) axis if scores are available
                 let chart = if has_scores {
                     let score_iterations: Vec<f64> = history
                         .iter()
                         .filter_map(|&(i, _, score)| score.map(|_| i as f64))
                         .collect();
+                    // Set secondary axis label and range for score
+                    chart_builder = chart_builder
+                        .y2_label("Score")
+                        .y2_range(0.0, 10.0);
                     chart_builder
-                        .add_series_with_x(
+                        .add_series_y2_with_x(
                             &score_iterations,
                             &scores,
                             Some("Score"),
