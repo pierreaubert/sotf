@@ -1142,6 +1142,29 @@ impl MusicDatabase {
         Ok(album_ids)
     }
 
+    /// Rebuild FTS index from current database state
+    /// This ensures FTS is in sync after bulk operations like scanning
+    pub fn sync_fts_index(&self) -> SqlResult<()> {
+        // Clear existing FTS data
+        self.conn.execute("DELETE FROM library_fts", [])?;
+
+        // Rebuild from tracks and albums tables
+        self.conn.execute(
+            "INSERT INTO library_fts(artist, album_title, track_title, album_id)
+             SELECT
+                COALESCE(t.album_artist, t.artist, 'Unknown Artist'),
+                a.title,
+                t.title,
+                t.album_id
+             FROM tracks t
+             JOIN albums a ON t.album_id = a.id",
+            [],
+        )?;
+
+        log::debug!("FTS index synchronized with database");
+        Ok(())
+    }
+
     /// Get the file modification time for a track by path
     pub fn get_track_mtime(&self, path: &Path) -> SqlResult<Option<u64>> {
         let path_str = path.to_string_lossy();

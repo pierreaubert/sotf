@@ -798,6 +798,13 @@ impl MusicLibrary {
         // Create a map of directory path to (file count, album count)
         let mut dir_stats: HashMap<PathBuf, (usize, usize)> = HashMap::new();
 
+        // Log directories being scanned
+        log::info!(
+            "Scanning {} directories: {:?}",
+            self.directories.len(),
+            self.directories.iter().map(|d| d.path.display().to_string()).collect::<Vec<_>>()
+        );
+
         for dir_info in &self.directories {
             // We need to scan recursively and aggregate stats
             // But scan_directory already does a recursive walk
@@ -956,6 +963,12 @@ impl MusicLibrary {
         if let Some(db) = &mut self.db {
             db.save_albums(&self.albums)?;
 
+            // Sync FTS index to ensure search works correctly after scan
+            // This rebuilds the FTS index from the current database state
+            if let Err(e) = db.sync_fts_index() {
+                log::warn!("Failed to sync FTS index after scan: {}", e);
+            }
+
             // Record scan history for each directory
             for dir_info in &self.directories {
                 db.record_scan(&dir_info.path, total_tracks, self.albums.len())?;
@@ -968,6 +981,13 @@ impl MusicLibrary {
             scanned_tracks,
             self.albums.len()
         );
+
+        // Log album titles for debugging (at debug level to avoid spam)
+        if log::log_enabled!(log::Level::Debug) {
+            for album in &self.albums {
+                log::debug!("  Album: {} ({} tracks)", album.title, album.tracks.len());
+            }
+        }
 
         Ok(())
     }
@@ -1063,7 +1083,8 @@ impl MusicLibrary {
 
                     scanned_tracks += 1;
 
-                    if let Ok(metadata) = extract_metadata(path) {
+                    match extract_metadata(path) {
+                        Ok(metadata) => {
                         let raw_album_title = metadata
                             .album
                             .clone()
@@ -1125,6 +1146,14 @@ impl MusicLibrary {
                         };
 
                         album.tracks.push(track);
+                        }
+                        Err(e) => {
+                            log::debug!(
+                                "Failed to extract metadata from {}: {}",
+                                path.display(),
+                                e
+                            );
+                        }
                     }
                 }
             }
@@ -1142,11 +1171,10 @@ impl MusicLibrary {
     }
 
     /// Search albums with fuzzy matching across artist, album title, and track titles
-    /// Uses FTS5 full-text search if database is available, otherwise falls back to in-memory search
-    /// Works regardless of how albums are sorted - searches all text content
+    /// Uses FTS5 full-text search for fast prefix matching
+    /// FTS index is synced after each library scan
     pub fn search_albums(&self, query: &str) -> Vec<&Album> {
-        // Try to use FTS5 search if database is available
-        // FTS5 provides fast fuzzy search across all indexed text fields
+        // Use FTS5 search if database is available
         if let Some(db) = &self.db
             && let Ok(album_ids) = db.search_library(query)
             && !album_ids.is_empty()
@@ -1164,34 +1192,8 @@ impl MusicLibrary {
                 .collect();
         }
 
-        // Fallback to in-memory search if DB search fails or returns no results
-        // Also searches artist, album title, and track titles for consistency
-        let query_lower = query.to_lowercase();
-        self.albums
-            .iter()
-            .filter(|album| {
-                // Search artist (computed from tracks) and album title
-                if album.artist().to_lowercase().contains(&query_lower)
-                    || album.title.to_lowercase().contains(&query_lower)
-                {
-                    return true;
-                }
-
-                // Also search track titles and track artists
-                album.tracks.iter().any(|track| {
-                    track
-                        .title
-                        .as_ref()
-                        .map(|t| t.to_lowercase().contains(&query_lower))
-                        .unwrap_or(false)
-                        || track
-                            .artist
-                            .as_ref()
-                            .map(|a| a.to_lowercase().contains(&query_lower))
-                            .unwrap_or(false)
-                })
-            })
-            .collect()
+        // No database or no results - return empty
+        Vec::new()
     }
 
     /// Update directory scan times from database
@@ -1233,6 +1235,9 @@ struct TrackMetadata {
 /// Create a custom probe with all supported format readers registered
 fn create_probe() -> Probe {
     let mut probe = Probe::default();
+
+    // Register metadata readers to read ID3 tags
+    probe.register_all::<symphonia_metadata::id3v2::Id3v2Reader>();
 
     // Register all format readers to help probe find formats more efficiently
     probe.register_all::<symphonia_bundle_flac::FlacReader>();
@@ -1296,7 +1301,8 @@ fn extract_metadata(path: &Path) -> Result<TrackMetadata, Box<dyn std::error::Er
     // Extract metadata tags
     use symphonia::core::meta::StandardTagKey;
 
-    if let Some(metadata_rev) = probed.format.metadata().current() {
+    // Helper to process tags from a metadata revision
+    let mut process_tags = |metadata_rev: &symphonia::core::meta::MetadataRevision| {
         for tag in metadata_rev.tags() {
             match tag.std_key {
                 Some(StandardTagKey::TrackTitle) => {
@@ -1357,6 +1363,18 @@ fn extract_metadata(path: &Path) -> Result<TrackMetadata, Box<dyn std::error::Er
                 _ => {}
             }
         }
+    };
+
+    // First check metadata from the probe phase (for ID3 tags in MP3 files)
+    // ID3v2 tags are read during probe and stored in probed.metadata
+    if let Some(metadata_rev) = probed.metadata.get().as_ref().and_then(|m| m.current()) {
+        process_tags(metadata_rev);
+    }
+
+    // Then check format metadata (for tags embedded in the container, like FLAC, OGG)
+    // This may override probe metadata if both are present
+    if let Some(metadata_rev) = probed.format.metadata().current() {
+        process_tags(metadata_rev);
     }
 
     // Try to detect edition from directory name

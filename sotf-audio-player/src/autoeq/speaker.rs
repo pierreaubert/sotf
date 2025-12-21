@@ -402,8 +402,11 @@ fn create_interval_callback(
     include_biquads: bool,
     include_filter_response: bool,
     frequencies: Vec<f64>,
+    loss_type: autoeq::LossType,
+    speaker_score_data: Option<autoeq::loss::SpeakerLossData>,
 ) -> Box<dyn FnMut(&autoeq::de::DEIntermediate) -> CallbackAction + Send> {
     let mut last_reported_iter = 0usize;
+    let freq_array = ndarray::Array1::from(frequencies.clone());
 
     Box::new(
         move |intermediate: &autoeq::de::DEIntermediate| -> CallbackAction {
@@ -428,10 +431,35 @@ fn create_interval_callback(
                         Vec::new()
                     };
 
+                // Compute score whenever speaker_score_data is available (CEA2034 data)
+                // This allows showing the score even when using flat loss with a target curve
+                let score = if let Some(ref sd) = speaker_score_data {
+                    // Compute PEQ response at frequencies
+                    let peq_response = if !current_biquads.is_empty() {
+                        ndarray::Array1::from(current_filter_response.clone())
+                    } else {
+                        // Decode and compute response
+                        let biquads = decode_params_to_biquads(
+                            &intermediate.x.to_vec(),
+                            sample_rate,
+                            peq_model,
+                        );
+                        ndarray::Array1::from(compute_filter_response(&frequencies, &biquads))
+                    };
+                    // Compute the actual speaker score
+                    Some(autoeq::loss::speaker_score_loss(sd, &freq_array, &peq_response))
+                } else if loss_type == autoeq::LossType::HeadphoneScore {
+                    // For headphone score, we can estimate from loss
+                    // The loss is the negative preference rating
+                    Some(intermediate.fun)
+                } else {
+                    None
+                };
+
                 let progress = SpeakerOptimizationProgress {
                     iteration: intermediate.iter,
                     loss: intermediate.fun,
-                    score: None, // Score is computed separately if using score-based losses
+                    score,
                     convergence: intermediate.convergence,
                     current_params: intermediate.x.to_vec(),
                     current_biquads,
@@ -550,6 +578,13 @@ fn optimize_single_driver(
     // Build autoeq::Args from OptimizationParams
     let args = build_autoeq_args(params);
 
+    log::info!(
+        "optimize_single_driver: loss_type={:?}, curve_name={}, has_spin_data={}",
+        args.loss,
+        params.curve_name,
+        spin_data.is_some()
+    );
+
     // Create deviation curve (target - input)
     let deviation_curve = autoeq::Curve {
         freq: target.freq.clone(),
@@ -570,6 +605,13 @@ fn optimize_single_driver(
     let peq_model = args.peq_model;
     let sample_rate = args.sample_rate;
     let maxeval = args.maxeval;
+    let loss_type = args.loss;
+    // Clone speaker score data for the callback (if available)
+    let speaker_score_data = objective_data.speaker_score_data.clone();
+    log::info!(
+        "optimize_single_driver: speaker_score_data available={}",
+        speaker_score_data.is_some()
+    );
 
     let de_callback: Box<dyn FnMut(&autoeq::de::DEIntermediate) -> CallbackAction + Send> =
         if let (Some(cfg), Some(user_cb)) = (callback_config, callback.take()) {
@@ -584,6 +626,8 @@ fn optimize_single_driver(
                 cfg.include_biquads,
                 cfg.include_filter_response,
                 frequencies.clone(),
+                loss_type,
+                speaker_score_data,
             );
 
             // Combine with history recording
