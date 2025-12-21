@@ -39,8 +39,10 @@ impl App {
         self.channel_filter = match self.channel_filter {
             ChannelFilter::All => ChannelFilter::Mono,
             ChannelFilter::Mono => ChannelFilter::Stereo,
-            ChannelFilter::Stereo => ChannelFilter::Multichannel,
-            ChannelFilter::Multichannel => ChannelFilter::Mixed,
+            ChannelFilter::Stereo => ChannelFilter::Surround,
+            ChannelFilter::Surround => ChannelFilter::Surround71,
+            ChannelFilter::Surround71 => ChannelFilter::SurroundPlus,
+            ChannelFilter::SurroundPlus => ChannelFilter::Mixed,
             ChannelFilter::Mixed => ChannelFilter::All,
             ChannelFilter::Specific(_) => ChannelFilter::All,
         };

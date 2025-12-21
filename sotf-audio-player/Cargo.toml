@@ -21,13 +21,14 @@ name = "sotf-bliss-scan"
 path = "src/bin/bliss_scan.rs"
 
 [dependencies]
-# Audio engine
+math-iir-fir = { workspace = true }
+autoeq-env = { workspace = true }
+autoeq-cea2034 = { workspace = true }
+autoeq = { workspace = true }
 sotf-audio-plugins = { path = "../sotf-audio-plugins" }
 sotf-audio-engine = { path = "../sotf-audio-engine" }
-math-iir-fir = { workspace = true }
-autoeq-cea2034 = { path = "../autoeq-cea2034" }
-autoeq-roomsim = { path = "../autoeq-roomsim" }
-autoeq = { path = "../autoeq" }
+
+# math
 ndarray = { workspace = true }
 ndarray-linalg = { workspace = true }
 num-complex = { workspace = true }

@@ -168,10 +168,16 @@ pub struct LibraryStats {
     pub min_year: i32,
     /// Maximum year across all albums (0 if none have year)
     pub max_year: i32,
+    /// Number of mono albums (1 channel)
+    pub mono_count: usize,
     /// Number of stereo albums (2 channels)
     pub stereo_count: usize,
-    /// Number of multichannel albums (>2 channels)
-    pub multichannel_count: usize,
+    /// Number of surround albums (5.0/5.1 - 5 or 6 channels)
+    pub surround_count: usize,
+    /// Number of 7.1 albums (8 channels)
+    pub surround71_count: usize,
+    /// Number of albums with more than 8 channels
+    pub surround_plus_count: usize,
     /// Whether stats are valid (false = need recomputation)
     pub valid: bool,
 }

@@ -243,11 +243,13 @@ pub enum LibrarySortOrder {
 /// Channel filter options
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChannelFilter {
-    All,           // Show all albums
-    Mono,          // Only 1-channel albums
-    Stereo,        // Only 2-channel albums
-    Multichannel,  // Only albums with > 2 channels
-    Mixed,         // Only albums with mixed channel counts
+    All,          // Show all albums
+    Mono,         // Only 1-channel albums
+    Stereo,       // Only 2-channel albums
+    Surround,     // 5.0/5.1 albums (5-6 channels)
+    Surround71,   // 7.1 albums (8 channels)
+    SurroundPlus, // More than 8 channels
+    Mixed,        // Only albums with mixed channel counts
     Specific(u32), // Only albums with specific channel count
 }
 
@@ -617,11 +619,16 @@ impl MusicLibrary {
         albums.retain(|album| match channel_filter {
             ChannelFilter::All => true,
             ChannelFilter::Mono => album.uniform_channel_count() == Some(1),
-            ChannelFilter::Stereo => matches!(album.channel_type(), Some(AlbumChannelType::Stereo)),
-            ChannelFilter::Multichannel => matches!(
-                album.channel_type(),
-                Some(AlbumChannelType::Multichannel(_))
-            ),
+            ChannelFilter::Stereo => album.uniform_channel_count() == Some(2),
+            ChannelFilter::Surround => {
+                // 5.0 (5 channels) or 5.1 (6 channels)
+                matches!(album.uniform_channel_count(), Some(5) | Some(6))
+            }
+            ChannelFilter::Surround71 => album.uniform_channel_count() == Some(8),
+            ChannelFilter::SurroundPlus => {
+                // More than 8 channels
+                album.uniform_channel_count().is_some_and(|ch| ch > 8)
+            }
             ChannelFilter::Mixed => matches!(album.channel_type(), Some(AlbumChannelType::Mixed)),
             ChannelFilter::Specific(n) => album.uniform_channel_count() == Some(n),
         });

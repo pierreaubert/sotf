@@ -1,51 +1,60 @@
 //! Plugin Graph Screen
 //!
 //! Main screen for the 2D plugin graph view with nodes and connections.
+//! Uses the WorkflowCanvas from gpui-ui-kit for pan/zoom, connections, and hit testing.
 
 use gpui::prelude::*;
 use gpui::*;
-use sotf_audio_player::{GraphNodeId, NodePosition, PluginGraph, PluginType};
+use gpui_ui_kit::workflow::{
+    Position, WorkflowCanvas, WorkflowGraph, WorkflowNodeData, WorkflowTheme,
+};
+use sotf_audio_player::{NodePosition, PluginGraph, PluginType};
 
-use super::graph::{CableElement, GraphCanvas, GraphNode};
 use crate::app::types::PluginUpdateType;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 
 impl PlayerView {
-    /// Render the plugin graph screen
+    /// Ensure the WorkflowCanvas entity exists, creating it if needed
+    pub(crate) fn ensure_workflow_canvas(&self, cx: &mut Context<Self>) {
+        let has_canvas = self.state.read(cx).app.workflow_canvas.is_some();
+
+        if !has_canvas {
+            // Build workflow graph from plugin graph
+            let plugin_graph = self.state.read(cx).app.plugin_graph.clone();
+            let workflow_graph = build_workflow_graph(&plugin_graph);
+
+            // Create the WorkflowCanvas entity
+            let canvas = cx.new(|cx| WorkflowCanvas::with_graph(workflow_graph, cx));
+
+            // Set theme
+            let theme = self.state.read(cx).app.theme.clone();
+            let workflow_theme = create_workflow_theme(&theme);
+            canvas.update(cx, |canvas, _cx| {
+                canvas.set_theme(workflow_theme);
+            });
+
+            // Store the canvas entity
+            self.state.update(cx, |state, _cx| {
+                state.app.workflow_canvas = Some(canvas);
+            });
+        }
+    }
+
+    /// Render the plugin graph screen using WorkflowCanvas from gpui-ui-kit
     pub(crate) fn render_plugin_graph_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        // Extract all state upfront to avoid borrow issues
-        let (theme, graph, selection, connection_drag) = {
+        // Ensure the canvas entity exists
+        self.ensure_workflow_canvas(cx);
+
+        // Extract state
+        let (theme, workflow_canvas) = {
             let state = self.state.read(cx);
-            (
-                state.app.theme.clone(),
-                state.app.plugin_graph.clone(),
-                state.app.graph_selection.clone(),
-                state.app.graph_connection_drag.clone(),
-            )
+            (state.app.theme.clone(), state.app.workflow_canvas.clone())
         };
 
-        let canvas_offset = graph
-            .as_ref()
-            .map(|g| g.canvas_offset)
-            .unwrap_or((0.0, 0.0));
-        let canvas_zoom = graph.as_ref().map(|g| g.canvas_zoom).unwrap_or(1.0);
-
-        // Pre-render sub-components (using AnyElement to avoid lifetime issues)
+        // Pre-render sub-components
         let header = self.render_graph_header(cx).into_any_element();
         let palette = self.render_graph_palette(cx).into_any_element();
-        let cables = self.render_graph_cables(&graph, &theme, canvas_offset, canvas_zoom);
-        let nodes =
-            self.render_graph_nodes(cx, &graph, &selection, &theme, canvas_offset, canvas_zoom);
-
-        let has_drag = connection_drag.is_some();
-        let drag_preview = connection_drag.map(|drag| {
-            let from = point(px(drag.current_position.0), px(drag.current_position.1));
-            CableElement::new(from, from)
-                .preview(true)
-                .color(theme.accent)
-                .into_any_element()
-        });
 
         div()
             .id("plugin-graph-screen")
@@ -63,57 +72,13 @@ impl PlayerView {
                     .overflow_hidden()
                     // Sidebar palette
                     .child(palette)
-                    // Canvas area
+                    // Canvas area - render the WorkflowCanvas entity
                     .child(
                         div()
-                            .id("graph-canvas-container")
                             .flex_1()
+                            .size_full()
                             .relative()
-                            .overflow_hidden()
-                            .bg(theme.background)
-                            // Pan with scroll wheel
-                            .on_scroll_wheel(cx.listener(
-                                |view, event: &ScrollWheelEvent, _window, cx| {
-                                    let delta_x: f32 = event.delta.pixel_delta(px(1.0)).x.into();
-                                    let delta_y: f32 = event.delta.pixel_delta(px(1.0)).y.into();
-
-                                    view.state.update(cx, |state, _cx| {
-                                        if let Some(ref mut graph) = state.app.plugin_graph {
-                                            // Check for zoom (pinch or ctrl+scroll)
-                                            if event.modifiers.control || event.modifiers.alt {
-                                                let zoom_delta = delta_y * 0.01;
-                                                graph.canvas_zoom = (graph.canvas_zoom
-                                                    + zoom_delta)
-                                                    .clamp(0.5, 2.0);
-                                            } else {
-                                                // Pan
-                                                graph.canvas_offset.0 += delta_x;
-                                                graph.canvas_offset.1 += delta_y;
-                                            }
-                                        }
-                                    });
-                                    cx.notify();
-                                },
-                            ))
-                            // Canvas background with grid
-                            .child(
-                                GraphCanvas::new()
-                                    .offset(point(px(canvas_offset.0), px(canvas_offset.1)))
-                                    .zoom(canvas_zoom)
-                                    .background(theme.background),
-                            )
-                            // Render connections (cables)
-                            .children(cables)
-                            // Render nodes
-                            .children(nodes)
-                            // Connection drag preview
-                            .when(has_drag, |d| {
-                                if let Some(preview) = drag_preview {
-                                    d.child(preview)
-                                } else {
-                                    d
-                                }
-                            }),
+                            .when_some(workflow_canvas, |el, canvas| el.child(canvas)),
                     ),
             )
     }
@@ -392,160 +357,90 @@ impl PlayerView {
             }))
     }
 
-    /// Render all graph nodes
-    fn render_graph_nodes(
-        &self,
-        cx: &mut Context<Self>,
-        graph: &Option<PluginGraph>,
-        selection: &sotf_audio_player::GraphSelection,
-        theme: &Theme,
-        canvas_offset: (f32, f32),
-        canvas_zoom: f32,
-    ) -> Vec<AnyElement> {
-        let Some(graph) = graph else {
-            return vec![];
-        };
-
-        graph
-            .nodes
-            .iter()
-            .map(|(node_id, node)| {
-                let is_selected = selection.selected_nodes.contains(node_id);
-                let screen_x = node.position.x * canvas_zoom + canvas_offset.0;
-                let screen_y = node.position.y * canvas_zoom + canvas_offset.1;
-
-                let node_id = *node_id;
-                let theme = theme.clone();
-                let plugin_type = node.plugin.plugin_type().clone();
-                let input_channels = node.input_channels;
-                let output_channels = node.output_channels;
-                let enabled = node.plugin.enabled;
-
-                // Use a div wrapper for interaction handling
-                div()
-                    .id(SharedString::from(format!("node-{}", node_id)))
-                    .absolute()
-                    .left(px(screen_x))
-                    .top(px(screen_y))
-                    .w(px(120.0 * canvas_zoom))
-                    .h(px(80.0 * canvas_zoom))
-                    .cursor_grab()
-                    // Selection on click
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(move |view, event: &MouseDownEvent, _window, cx| {
-                            let add_to_selection = event.modifiers.shift;
-                            view.state.update(cx, |state, _cx| {
-                                state
-                                    .app
-                                    .graph_selection
-                                    .select_node(node_id, add_to_selection);
-                            });
-                            cx.notify();
-                        }),
-                    )
-                    // Start drag
-                    .on_drag(
-                        NodeDragPayload { node_id },
-                        |payload, _position, _window, cx| cx.new(|_| payload.clone()),
-                    )
-                    // Render the actual node
-                    .child(
-                        GraphNode::new(
-                            plugin_type,
-                            point(px(0.0), px(0.0)),
-                            input_channels,
-                            output_channels,
-                            &theme,
-                        )
-                        .selected(is_selected)
-                        .enabled(enabled),
-                    )
-                    .into_any_element()
-            })
-            .collect()
-    }
-
-    /// Render all graph cables/connections
-    fn render_graph_cables(
-        &self,
-        graph: &Option<PluginGraph>,
-        theme: &Theme,
-        canvas_offset: (f32, f32),
-        canvas_zoom: f32,
-    ) -> Vec<AnyElement> {
-        let Some(graph) = graph else {
-            return vec![];
-        };
-
-        graph
-            .connections
-            .iter()
-            .filter_map(|conn| {
-                let from_node = graph.nodes.get(&conn.from_node)?;
-                let to_node = graph.nodes.get(&conn.to_node)?;
-
-                // Calculate port positions
-                let from_x = (from_node.position.x + 120.0) * canvas_zoom + canvas_offset.0; // Right side of node
-                let from_y = calculate_port_y(
-                    from_node.position.y,
-                    conn.from_port,
-                    from_node.output_channels,
-                    canvas_zoom,
-                    canvas_offset.1,
-                );
-
-                let to_x = to_node.position.x * canvas_zoom + canvas_offset.0; // Left side of node
-                let to_y = calculate_port_y(
-                    to_node.position.y,
-                    conn.to_port,
-                    to_node.input_channels,
-                    canvas_zoom,
-                    canvas_offset.1,
-                );
-
-                Some(
-                    CableElement::new(point(px(from_x), px(from_y)), point(px(to_x), px(to_y)))
-                        .color(theme.accent)
-                        .into_any_element(),
-                )
-            })
-            .collect()
-    }
 }
 
-/// Payload for node dragging
-#[derive(Clone)]
-struct NodeDragPayload {
-    node_id: GraphNodeId,
+// ============================================================================
+// Workflow Canvas Integration
+// ============================================================================
+
+/// Build a WorkflowGraph from the PluginGraph
+fn build_workflow_graph(plugin_graph: &Option<PluginGraph>) -> WorkflowGraph {
+    let Some(graph) = plugin_graph else {
+        return WorkflowGraph::new();
+    };
+
+    let mut workflow_graph = WorkflowGraph::new();
+
+    // Convert plugin nodes to workflow nodes
+    for (_graph_node_id, node) in &graph.nodes {
+        let plugin_type = node.plugin.plugin_type();
+
+        let workflow_node = WorkflowNodeData::new(
+            plugin_type.name(),
+            Position::new(node.position.x, node.position.y),
+        )
+        .with_ports(node.input_channels.min(1), node.output_channels.min(1))
+        .with_size(180.0, 90.0)
+        .with_user_data(serde_json::json!({
+            "plugin_type": format!("{:?}", plugin_type),
+            "enabled": node.plugin.enabled,
+        }));
+
+        workflow_graph.add_node(workflow_node);
+    }
+
+    // TODO: Convert connections when ID mapping is implemented
+
+    workflow_graph
 }
 
-impl Render for NodeDragPayload {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .w(px(60.0))
-            .h(px(40.0))
-            .rounded_md()
-            .bg(rgba(0x3b82f680))
-            .opacity(0.8)
+/// Create a WorkflowTheme from the app Theme
+fn create_workflow_theme(theme: &Theme) -> WorkflowTheme {
+    WorkflowTheme {
+        canvas_background: theme.background,
+        grid_color: Rgba {
+            r: theme.border.r,
+            g: theme.border.g,
+            b: theme.border.b,
+            a: 0.3,
+        },
+        grid_spacing: 20.0,
+        node_background: theme.surface,
+        node_border: theme.border,
+        node_border_selected: theme.accent,
+        node_header: Rgba {
+            r: theme.surface.r * 0.8,
+            g: theme.surface.g * 0.8,
+            b: theme.surface.b * 0.8,
+            a: theme.surface.a,
+        },
+        node_text: theme.text_primary,
+        node_border_radius: 8.0,
+        node_header_height: 28.0,
+        node_content_padding: 8.0,
+        port_input: theme.info,
+        port_output: theme.success,
+        port_hover: theme.accent_hover,
+        port_valid: theme.success,
+        port_invalid: theme.error,
+        port_radius: 6.0,
+        connection_color: theme.text_secondary,
+        connection_selected: theme.accent,
+        connection_width: 2.0,
+        connection_preview: Rgba {
+            r: theme.accent.r,
+            g: theme.accent.g,
+            b: theme.accent.b,
+            a: 0.6,
+        },
+        selection_fill: Rgba {
+            r: theme.accent.r,
+            g: theme.accent.g,
+            b: theme.accent.b,
+            a: 0.1,
+        },
+        selection_border: theme.accent,
     }
-}
-
-/// Calculate port Y position
-fn calculate_port_y(
-    node_y: f32,
-    port_index: usize,
-    total_ports: usize,
-    zoom: f32,
-    offset_y: f32,
-) -> f32 {
-    if total_ports == 0 {
-        return (node_y + 40.0) * zoom + offset_y; // Center of node
-    }
-    let port_spacing = 16.0;
-    let total_height = (total_ports - 1) as f32 * port_spacing;
-    let start_y = node_y + (80.0 - total_height) / 2.0;
-    (start_y + port_index as f32 * port_spacing) * zoom + offset_y
 }
 
 // Plugin color scheme for different types

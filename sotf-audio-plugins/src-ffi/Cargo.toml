@@ -1,6 +1,6 @@
 [package]
 name = "sotf-audio-plugins-ffi"
-version = "0.2.1"
+version = "0.5.1"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "C FFI bindings for SOTF audio plugins (for Audio Unit integration)"
@@ -10,8 +10,8 @@ license = { workspace = true }
 crate-type = ["staticlib", "cdylib"]
 
 [dependencies]
-sotf-audio-plugins = { workspace = true, default-features = false, features = ["no-hal"] }
-sotf-audio-engine = { workspace = true, default-features = false, features = ["no-hal"] }
+sotf-audio-plugins = { workspace = true }
+sotf-audio-engine = { workspace = true }
 math-iir-fir = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

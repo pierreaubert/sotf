@@ -35,70 +35,6 @@ and you are set up. See this [README](autoeq/README.md) for instructions on how 
 
 ## Toolkit
 
-Overall you can group the crates:
-- math-*: all modelisation related things
-- autoeq-*: all automatique equalisation related things
-- gpui-*: utilities to build app with gpui
-- soft-*: the audio engine, plugins and players. it also integrate the room correction system.
-
-### math-testfunctions
-
-A [set of functions](math-testfunctions/README.md) for testing non linear optimisation algorithms used in the next crate.
-
-### math-de
-
-A implementation of [differential evolution algorithm](math-de/README.md) (forked from Scipy) with an interface to NLopt and MetaHeuristics two libraries that also provide various optimisation algorithms. DE support linear and non-linear constraints and implement other features like JADE or adaptative behaviour.
-
-Status: good for speaker equalisation. Not tested enough for other use cases.
-
-### math-iir
-
-An IIR and FIR filter implementation in rust. Does what you expect. Compatible with Equalizer APO. It can generate various output formats.
-
-Status: stable and working well.
-
-### math-solvers
-
-A set of classical solvers with preconditionners that use LAPACK, BLAS and rayon for parallelisation. Support sparse matrices.
-Also can work in WASM which is convenient for web demos.
-
-Status: correct and relatively fast but not optimised to death. WASM needs rust nightly to run in parallel.
-
-### math-wave
-
-A set of functions to compute know analytical solution of the wave equation.
-
-Status: correct.
-
-### math-bem, math-fem and math-xem
-
-Implement BEM and FEM for the Helmotz and wave equations. Support multigrid for both systems. XEM holds the common code.
-
-Status: unknown, results match analytical results on simple mesh. Needs more testing especially for the advance features.
-
-### autoeq-cea2034
-
-A implementation of CEA2034 aka [Spinorama](https://spinorama.org): a set of metrics and curves that describe a loudspeaker performance.
-
-Status: mature.
-
-### autoeq
-
-A [CLI](autoeq/README.md) to optimise the response of your headset or headphone.
-
-Status: good up to very good depending what you optimise for.
-
-### autoeq-roomsim
-
-A room simulator to help you to understand the response of your speakers on your room. [Available online](https://roomsim.spinorama.org) try it out!
-
-Status: getting good.
-
-### autoeq-env
-
-A small set of functions and constants used by the other crates but you are unlikely to be interested.
-
-
 ### GPUI support
 
 #### gpui-ui-kit
@@ -190,35 +126,9 @@ Status:
 - sotf-audio-player/app-gpui: experimental status
 
 
-### MacOS specific: sotf-macos-hal and sotf-macos-configbar
+### MacOS specific: sotf-macos-hal
 
 sotf-macos-hal crate builds a HAL (Audio Driver on MacOS) such that you can redirect all your music to this driver and benefit from corrected sounds all the time.
-sotf-macos-configbar crate allows you to configure the above driver and is conveniently available from the menubar.
 
 Status: experimental for HAL and ok for confbar.
-
-### math-convexhull3d
-
-This crate computes a convex hull in 3d.
-
-Status: good quality aka no known bug.
-
-### math-bem
-
-This crate implements a BEM (Boundary Element Solver) for the HRTF computation. It will also be used for optimal shape of speaker waveguide.
-This part is not on GH yet. It is a merge of previous projects in python and will come step by step. BEM is the first crate but the control theory part is
-not converted yet (adjoint computation etc).
-
-Status: ok-ish
-
-### sotf-head-scanner
-
-An experimental app to scan your head and do all the computations to get an HRTF. There is a long way to go but we are making progress.
-
-### app-tauri and and app-tauri/sotf-ui-frontend
-
-The Tauri backend for the frontend. Noting special here, just a wrapper around sotf-audio and autoeq.
-The UI frontend :) Nothing special here, just a boring UI.
-
-Status: working but unpolished
 

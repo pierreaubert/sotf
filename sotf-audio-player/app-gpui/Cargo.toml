@@ -23,7 +23,6 @@ sotf-audio-engine = { path = "../../sotf-audio-engine" }
 math-iir-fir = { workspace = true }
 autoeq = { workspace = true }
 math-differential-evolution = { workspace = true }
-autoeq-roomsim = { path = "../../autoeq-roomsim" }
 
 # Synchronous mutex (faster than std::sync::Mutex)
 parking_lot = { workspace = true }

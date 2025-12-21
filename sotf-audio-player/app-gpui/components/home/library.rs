@@ -33,8 +33,11 @@ impl PlayerView {
             min_year,
             max_year,
             genres_count,
+            mono_count,
             stereo_count,
-            multichannel_count,
+            surround_count,
+            surround71_count,
+            surround_plus_count,
         ) = {
             let state = self.state.read(cx);
             let stats = &state.app.library_stats;
@@ -53,8 +56,11 @@ impl PlayerView {
                 stats.min_year,
                 stats.max_year,
                 stats.genres_count,
+                stats.mono_count,
                 stats.stereo_count,
-                stats.multichannel_count,
+                stats.surround_count,
+                stats.surround71_count,
+                stats.surround_plus_count,
             )
         };
 
@@ -160,7 +166,12 @@ impl PlayerView {
                         .size(IconSize::Lg)
                         .color(theme.accent),
                 )
-                .badge(format!("{}/{}", stereo_count, multichannel_count)),
+                .badge(format!(
+                    "{}/{}/{}",
+                    stereo_count,
+                    surround_count,
+                    surround71_count + surround_plus_count
+                )),
             TabItem::new("search", translations.library_search)
                 .custom_icon(
                     Icon::new(IconName::Search)
@@ -225,6 +236,7 @@ impl PlayerView {
                 el.child(
                     div()
                         .flex()
+                        .flex_wrap()
                         .justify_center()
                         .gap_2()
                         .mb_2()
@@ -240,6 +252,13 @@ impl PlayerView {
                             cx,
                         ))
                         .child(self.render_filter_button(
+                            &format!("1.0 Mono ({})", mono_count),
+                            crate::app::ChannelFilter::Mono,
+                            channel_filter,
+                            theme.clone(),
+                            cx,
+                        ))
+                        .child(self.render_filter_button(
                             &format!("2.0 Stereo ({})", stereo_count),
                             crate::app::ChannelFilter::Stereo,
                             channel_filter,
@@ -247,8 +266,22 @@ impl PlayerView {
                             cx,
                         ))
                         .child(self.render_filter_button(
-                            &format!("5.1+ Multichannel ({})", multichannel_count),
-                            crate::app::ChannelFilter::Multichannel,
+                            &format!("5.x Surround ({})", surround_count),
+                            crate::app::ChannelFilter::Surround,
+                            channel_filter,
+                            theme.clone(),
+                            cx,
+                        ))
+                        .child(self.render_filter_button(
+                            &format!("7.1 ({})", surround71_count),
+                            crate::app::ChannelFilter::Surround71,
+                            channel_filter,
+                            theme.clone(),
+                            cx,
+                        ))
+                        .child(self.render_filter_button(
+                            &format!("7.1+ ({})", surround_plus_count),
+                            crate::app::ChannelFilter::SurroundPlus,
                             channel_filter,
                             theme.clone(),
                             cx,
@@ -287,14 +320,108 @@ impl PlayerView {
 
     /// Render album grid view with thumbnails
     pub(crate) fn render_library_grid(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let (albums, selected_album_index, theme) = {
+        let (albums, selected_album_index, theme, sort_order) = {
             let state = self.state.read(cx);
             (
                 state.app.get_paginated_albums(),
                 state.app.selected_album_index,
                 state.app.theme.clone(),
+                state.app.library_sort_order,
             )
         };
+
+        // Build elements with dividers based on sort order
+        let mut elements: Vec<AnyElement> = Vec::new();
+        let mut previous_group: Option<String> = None;
+
+        for (idx, album) in albums.iter().enumerate() {
+            // Determine group key based on sort order
+            let group_key = match sort_order {
+                crate::app::LibrarySortOrder::Year => {
+                    let year = album.year.unwrap_or(0);
+                    if year == 0 {
+                        "Unknown Year".to_string()
+                    } else {
+                        year.to_string()
+                    }
+                }
+                crate::app::LibrarySortOrder::Genre => album
+                    .tracks
+                    .first()
+                    .and_then(|t| t.genre.as_ref())
+                    .cloned()
+                    .unwrap_or_else(|| "Unknown Genre".to_string()),
+                crate::app::LibrarySortOrder::Artist => {
+                    let artist = album.artist();
+                    artist
+                        .chars()
+                        .next()
+                        .map(|c| c.to_uppercase().to_string())
+                        .unwrap_or_else(|| "#".to_string())
+                }
+                crate::app::LibrarySortOrder::Composer => {
+                    let composer = album
+                        .tracks
+                        .first()
+                        .and_then(|t| t.composer.as_ref())
+                        .cloned()
+                        .unwrap_or_default();
+                    if composer.is_empty() {
+                        "Unknown Composer".to_string()
+                    } else {
+                        composer
+                            .chars()
+                            .next()
+                            .map(|c| c.to_uppercase().to_string())
+                            .unwrap_or_else(|| "#".to_string())
+                    }
+                }
+                // No dividers for Album, Tracks, Popularity sort orders
+                _ => String::new(),
+            };
+
+            // Add divider when group changes (only for sort orders that use grouping)
+            if !group_key.is_empty() && previous_group.as_ref() != Some(&group_key) {
+                elements.push(self.render_section_divider(&group_key, idx, &theme));
+                previous_group = Some(group_key);
+            }
+
+            let is_selected = selected_album_index == idx;
+            let card_theme = theme.clone();
+
+            let album_card = div()
+                .id(("album-wrapper", idx))
+                .on_mouse_up(
+                    MouseButton::Left,
+                    cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                        view.state.update(cx, |state, _cx| {
+                            state.app.selected_album_index = idx;
+                        });
+                        cx.notify();
+                    }),
+                )
+                .on_mouse_up(
+                    MouseButton::Right,
+                    cx.listener(move |view, event: &MouseUpEvent, _window, cx| {
+                        view.state.update(cx, |state, _cx| {
+                            state.app.selected_album_index = idx;
+                            state.app.context_menu = Some(crate::app::ContextMenuState {
+                                menu_type: crate::app::ContextMenuType::Album,
+                                position_x: event.position.x.into(),
+                                position_y: event.position.y.into(),
+                                item_index: idx,
+                            });
+                        });
+                        cx.notify();
+                    }),
+                )
+                .child(
+                    AlbumCard::new(Arc::new(album.clone()), idx, is_selected, card_theme)
+                        .mode(AlbumCardMode::Grid),
+                );
+
+            elements.push(album_card.into_any_element());
+        }
 
         div()
             .id("album-grid")
@@ -306,42 +433,33 @@ impl PlayerView {
             .size_full()
             .overflow_y_scroll()
             .track_scroll(&self.grid_scroll_handle)
-            .children(albums.iter().enumerate().map(|(idx, album)| {
-                let is_selected = selected_album_index == idx;
-                // Avoid cloning theme per album - AlbumCard takes ownership but we can clone once
-                let card_theme = theme.clone();
+            .children(elements)
+    }
 
+    /// Render a section divider with label and horizontal line
+    fn render_section_divider(
+        &self,
+        label: &str,
+        index: usize,
+        theme: &crate::theme::Theme,
+    ) -> AnyElement {
+        div()
+            .id(("section-divider", index))
+            .flex_basis(relative(1.0)) // Full width to force new row
+            .pt_4()
+            .pb_2()
+            .flex()
+            .items_center()
+            .gap_3()
+            .child(
                 div()
-                    .id(("album-wrapper", idx))
-                    .on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                            view.state.update(cx, |state, _cx| {
-                                state.app.selected_album_index = idx;
-                            });
-                            cx.notify();
-                        }),
-                    )
-                    .on_mouse_up(
-                        MouseButton::Right,
-                        cx.listener(move |view, event: &MouseUpEvent, _window, cx| {
-                            view.state.update(cx, |state, _cx| {
-                                state.app.selected_album_index = idx;
-                                state.app.context_menu = Some(crate::app::ContextMenuState {
-                                    menu_type: crate::app::ContextMenuType::Album,
-                                    position_x: event.position.x.into(),
-                                    position_y: event.position.y.into(),
-                                    item_index: idx,
-                                });
-                            });
-                            cx.notify();
-                        }),
-                    )
-                    .child(
-                        AlbumCard::new(Arc::new(album.clone()), idx, is_selected, card_theme)
-                            .mode(AlbumCardMode::Grid),
-                    )
-            }))
+                    .text_lg()
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(theme.text_primary)
+                    .child(label.to_string()),
+            )
+            .child(div().flex_1().h(px(1.0)).bg(theme.border))
+            .into_any_element()
     }
 
     /// Render a filter button with active state styling

@@ -726,16 +726,44 @@ impl PlayerView {
         cx.notify();
     }
 
-    fn set_filter_multichannel(
+    fn set_filter_surround(
         &mut self,
-        _: &SetFilterMultichannel,
+        _: &SetFilterSurround,
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.state.update(cx, |state, _cx| {
             state
                 .app
-                .set_channel_filter(crate::app::ChannelFilter::Multichannel);
+                .set_channel_filter(crate::app::ChannelFilter::Surround);
+        });
+        cx.notify();
+    }
+
+    fn set_filter_surround71(
+        &mut self,
+        _: &SetFilterSurround71,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.update(cx, |state, _cx| {
+            state
+                .app
+                .set_channel_filter(crate::app::ChannelFilter::Surround71);
+        });
+        cx.notify();
+    }
+
+    fn set_filter_surround_plus(
+        &mut self,
+        _: &SetFilterSurroundPlus,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.update(cx, |state, _cx| {
+            state
+                .app
+                .set_channel_filter(crate::app::ChannelFilter::SurroundPlus);
         });
         cx.notify();
     }
@@ -1873,7 +1901,9 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::set_filter_all))
             .on_action(cx.listener(Self::set_filter_mono))
             .on_action(cx.listener(Self::set_filter_stereo))
-            .on_action(cx.listener(Self::set_filter_multichannel))
+            .on_action(cx.listener(Self::set_filter_surround))
+            .on_action(cx.listener(Self::set_filter_surround71))
+            .on_action(cx.listener(Self::set_filter_surround_plus))
             .on_action(cx.listener(Self::set_filter_mixed))
             .on_action(cx.listener(Self::select_next))
             .on_action(cx.listener(Self::select_prev))

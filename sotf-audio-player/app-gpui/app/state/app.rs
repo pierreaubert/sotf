@@ -2,8 +2,11 @@
 //!
 //! Contains the main App struct and AppState wrapper.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
+use gpui::Entity;
+use gpui_ui_kit::workflow::{NodeId, WorkflowCanvas};
 use sotf_audio::devices::AudioDevice;
 use sotf_audio_player::{
     ConnectionDrag, GraphSelection, LoudnessData, MusicLibrary, NodeDrag, Player, PluginChain,
@@ -22,6 +25,13 @@ use crate::app::types::{
     OptimizationUiState, PluginViewMode, QueueItem, RecordingState, RoomEqState, Screen,
     SpinoramaEqState, ToastMessage,
 };
+
+/// Mapping between workflow NodeIds and plugin indices
+#[derive(Clone, Default, Debug)]
+pub struct WorkflowNodeMapping {
+    pub node_to_plugin: HashMap<NodeId, usize>,
+    pub plugin_to_node: HashMap<usize, NodeId>,
+}
 
 #[derive(Debug)]
 pub struct App {
@@ -90,6 +100,10 @@ pub struct App {
     pub graph_selection: GraphSelection,
     pub graph_connection_drag: Option<ConnectionDrag>,
     pub graph_node_drag: Option<NodeDrag>,
+
+    // Workflow canvas (for WorkflowCanvas from gpui-ui-kit)
+    pub workflow_canvas: Option<Entity<WorkflowCanvas>>,
+    pub workflow_node_mapping: Option<WorkflowNodeMapping>,
 
     // Playback state
     pub is_playing: bool,
@@ -316,6 +330,8 @@ impl App {
             graph_selection: GraphSelection::default(),
             graph_connection_drag: None,
             graph_node_drag: None,
+            workflow_canvas: None,
+            workflow_node_mapping: None,
             is_playing: false,
             current_queue_index: None,
             volume: 0.1, // Start at 10% volume
@@ -690,16 +706,22 @@ impl App {
         let mut total_tracks = 0usize;
         let mut min_year = i32::MAX;
         let mut max_year = 0i32;
+        let mut mono_count = 0usize;
         let mut stereo_count = 0usize;
-        let mut multichannel_count = 0usize;
+        let mut surround_count = 0usize;
+        let mut surround71_count = 0usize;
+        let mut surround_plus_count = 0usize;
 
         for album in &self.library.albums {
             // Count channels
             if let Some(channels) = album.uniform_channel_count() {
-                if channels == 2 {
-                    stereo_count += 1;
-                } else if channels > 2 {
-                    multichannel_count += 1;
+                match channels {
+                    1 => mono_count += 1,
+                    2 => stereo_count += 1,
+                    5 | 6 => surround_count += 1,
+                    8 => surround71_count += 1,
+                    n if n > 8 => surround_plus_count += 1,
+                    _ => {} // 3, 4, 7 channels - rare, skip
                 }
             }
 
@@ -749,8 +771,11 @@ impl App {
             genres_count: genres.len(),
             min_year,
             max_year,
+            mono_count,
             stereo_count,
-            multichannel_count,
+            surround_count,
+            surround71_count,
+            surround_plus_count,
             valid: true,
         };
     }

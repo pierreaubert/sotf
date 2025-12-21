@@ -8,6 +8,10 @@ edition = { workspace = true }
 name = "sotf_audio"
 path = "src/lib.rs"
 
+[features]
+default = []
+hal = ["sotf-hal", "sotf-audio-plugins/hal"]
+
 [[bin]]
 name = "sotf-player-cli"
 path = "bin/sotf_player_cli.rs"
@@ -27,12 +31,12 @@ path = "bin/wav2csv.rs"
 [[bin]]
 name = "sotf-daemon"
 path = "bin/sotf_daemon.rs"
+required-features = ["hal"]
 
 [dependencies]
 tokio = { workspace = true }
 ndarray = { workspace = true }
 notify = { workspace = true }
-netcdf = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 cpal = { workspace = true }
@@ -84,12 +88,7 @@ rtrb = { workspace = true }
 signal-hook = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-sotf-hal = { path = "../sotf-macos-hal", optional = true }
-
-[features]
-default = ["hal"]
-hal = ["sotf-hal", "sotf-audio-plugins/hal"]
-no-hal = ["sotf-audio-plugins/no-hal"]
+sotf-hal = { workspace = true, optional = true }
 
 [dev-dependencies]
 rand = { workspace = true }

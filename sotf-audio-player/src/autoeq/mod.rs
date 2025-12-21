@@ -46,7 +46,7 @@ pub mod types;
 pub mod headphone;
 pub mod params;
 pub mod speaker;
-pub mod spinorama;
+// pub mod spinorama;
 
 // Re-export room EQ types and functions
 pub use optimizer::{RoomEqOptimizer, run_optimization_task};
@@ -80,6 +80,8 @@ pub use speaker::{
 };
 
 // Re-export spinorama types
+/*
 pub use spinorama::{
     MeasurementCurve, RoomCorrectionInput, RoomMeasurement, calculate_room_correction,
 };
+*/

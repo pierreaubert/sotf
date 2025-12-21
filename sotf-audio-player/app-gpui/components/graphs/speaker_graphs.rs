@@ -302,7 +302,7 @@ pub fn render_spinorama_cea2034_graph(
         .x_range(20.0, 20000.0)
         .y_label("SPL (dB)")
         .y_range(-40.0, 10.0)
-        .y2range(0.0, 50.0)
+        .y2_range(0.0, 50.0)
         .y2_label("DI (dB)")
         .label("On Axis")
         .color(ON_AXIS_COLOR)

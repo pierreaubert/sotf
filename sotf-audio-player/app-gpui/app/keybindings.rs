@@ -121,8 +121,9 @@ fn common_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("5", actions::SetFilterAll, None),
         KeyBinding::new("6", actions::SetFilterMono, None),
         KeyBinding::new("7", actions::SetFilterStereo, None),
-        KeyBinding::new("8", actions::SetFilterMultichannel, None),
-        KeyBinding::new("9", actions::SetFilterMixed, None),
+        KeyBinding::new("8", actions::SetFilterSurround, None),
+        KeyBinding::new("9", actions::SetFilterSurround71, None),
+        KeyBinding::new("0", actions::SetFilterSurroundPlus, None),
     ]
 }
 

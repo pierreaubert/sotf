@@ -23,11 +23,13 @@ pub enum LibrarySortOrder {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ChannelFilter {
     #[default]
-    All, // Show all albums
-    Mono,          // Only 1-channel albums
-    Stereo,        // Only 2-channel albums
-    Multichannel,  // Only albums with > 2 channels
-    Mixed,         // Only albums with mixed channel counts
+    All,          // Show all albums
+    Mono,         // Only 1-channel albums
+    Stereo,       // Only 2-channel albums
+    Surround,     // 5.0/5.1 albums (5-6 channels)
+    Surround71,   // 7.1 albums (8 channels)
+    SurroundPlus, // More than 8 channels
+    Mixed,        // Only albums with mixed channel counts
     Specific(u32), // Only albums with specific channel count
 }
 
@@ -128,10 +130,13 @@ impl LibraryState {
             ChannelFilter::All => true,
             ChannelFilter::Mono => album.uniform_channel_count() == Some(1),
             ChannelFilter::Stereo => album.uniform_channel_count() == Some(2),
-            ChannelFilter::Multichannel => album
-                .uniform_channel_count()
-                .map(|c| c > 2)
-                .unwrap_or(false),
+            ChannelFilter::Surround => {
+                matches!(album.uniform_channel_count(), Some(5) | Some(6))
+            }
+            ChannelFilter::Surround71 => album.uniform_channel_count() == Some(8),
+            ChannelFilter::SurroundPlus => {
+                album.uniform_channel_count().is_some_and(|ch| ch > 8)
+            }
             ChannelFilter::Mixed => album.uniform_channel_count().is_none(),
             ChannelFilter::Specific(n) => album.uniform_channel_count() == Some(n),
         }
@@ -224,8 +229,10 @@ impl LibraryState {
         self.filter = match self.filter {
             ChannelFilter::All => ChannelFilter::Mono,
             ChannelFilter::Mono => ChannelFilter::Stereo,
-            ChannelFilter::Stereo => ChannelFilter::Multichannel,
-            ChannelFilter::Multichannel => ChannelFilter::Mixed,
+            ChannelFilter::Stereo => ChannelFilter::Surround,
+            ChannelFilter::Surround => ChannelFilter::Surround71,
+            ChannelFilter::Surround71 => ChannelFilter::SurroundPlus,
+            ChannelFilter::SurroundPlus => ChannelFilter::Mixed,
             ChannelFilter::Mixed | ChannelFilter::Specific(_) => ChannelFilter::All,
         };
         self.selected_index = 0;

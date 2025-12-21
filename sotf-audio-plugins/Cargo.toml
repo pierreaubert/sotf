@@ -8,11 +8,14 @@ edition = { workspace = true }
 name = "sotf_plugins"
 path = "src/lib.rs"
 
+[features]
+default = []
+hal = ["sotf-hal"]
+
 [dependencies]
 tokio = { workspace = true }
 ndarray = { workspace = true }
 notify = { workspace = true }
-netcdf = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 cpal = { workspace = true }
@@ -23,6 +26,7 @@ clap = { workspace = true }
 ctrlc = { workspace = true }
 chrono = { workspace = true }
 libc = { workspace = true }
+netcdf =  { workspace = true }
 parking_lot = { workspace = true }
 rustfft = { workspace = true }
 realfft = { workspace = true }
@@ -55,16 +59,11 @@ rubato = { workspace = true }
 id3 = { workspace = true }
 metaflac = { workspace = true }
 
-[target.'cfg(target_os = "macos")'.dependencies]
-sotf-hal = { workspace = true, optional = true }
-
-[features]
-default = []
-hal = ["sotf-hal"]
-no-hal = []
-
 [target.'cfg(unix)'.dependencies]
 signal-hook = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+sotf-hal = { workspace = true, optional = true }
 
 [dev-dependencies]
 rand = { workspace = true }

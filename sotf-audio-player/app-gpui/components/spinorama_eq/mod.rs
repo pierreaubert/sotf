@@ -786,7 +786,7 @@ impl PlayerView {
             };
 
             // Check if this is a CEA2034 measurement (for spinorama curves loading)
-            let is_cea2034 = measurement_str == "CEA2034" or measurement_str == "CEA2034 Normalized";
+            let is_cea2034 = measurement_str == "CEA2034" || measurement_str == "CEA2034 Normalized";
 
             // Set loading state
             self.state.update(cx, |state, _| {

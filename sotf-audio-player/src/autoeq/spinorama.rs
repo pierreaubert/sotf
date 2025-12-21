@@ -3,7 +3,12 @@
 //! Provides functionality for calculating room corrections using multiple measurements
 //! and room mode analysis.
 
-use autoeq_roomsim::{Point3D, calculate_modal_pressure};
+// Pierre: TODO: migrate the python code here to Rust
+// Can scratch the whole thing
+
+/*
+
+// use autoeq_roomsim::{Point3D, calculate_modal_pressure};
 use num_complex::Complex64;
 use std::f64::consts::PI;
 
@@ -166,3 +171,5 @@ pub fn calculate_room_correction(input: &RoomCorrectionInput) -> Result<Measurem
         phase_deg: Some(corrected_phase),
     })
 }
+
+*/
