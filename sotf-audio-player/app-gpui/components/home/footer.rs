@@ -999,6 +999,15 @@ impl PlayerView {
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |view, event: &MouseDownEvent, _window, cx| {
+                    if event.click_count == 2 {
+                        // Double click resets volume to 10%
+                        view.state.update(cx, |state, _cx| {
+                            state.app.volume = 0.1;
+                            let _ = state.player.lock().set_volume(0.1);
+                        });
+                        cx.notify();
+                        return;
+                    }
                     // Start volume drag
                     view.state.update(cx, |state, _cx| {
                         state.app.is_dragging_volume = true;

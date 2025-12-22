@@ -15,6 +15,8 @@ actions!(
         PrevTrack,
         VolumeUp,
         VolumeDown,
+        VolumeUpSmall,
+        VolumeDownSmall,
         SwitchToDevices,
         SwitchToDirectoryManager,
         SwitchToHeadphoneEQ,

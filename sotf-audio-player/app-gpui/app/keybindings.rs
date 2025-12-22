@@ -140,6 +140,8 @@ fn default_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("=", actions::VolumeUp, None),
         KeyBinding::new("-", actions::VolumeDown, None),
         KeyBinding::new("_", actions::VolumeDown, None),
+        KeyBinding::new("ctrl-up", actions::VolumeUpSmall, None),
+        KeyBinding::new("ctrl-down", actions::VolumeDownSmall, None),
         // Theme and language
         KeyBinding::new("shift-t", actions::CycleTheme, None),
         KeyBinding::new("T", actions::CycleTheme, None),
@@ -333,9 +335,9 @@ fn vscode_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("ctrl-shift-p", actions::PrevTrack, None),
         KeyBinding::new("alt-left", actions::PrevTrack, None),
         // Volume
-        KeyBinding::new("ctrl-up", actions::VolumeUp, None),
+        KeyBinding::new("ctrl-up", actions::VolumeUpSmall, None),
         KeyBinding::new("+", actions::VolumeUp, None),
-        KeyBinding::new("ctrl-down", actions::VolumeDown, None),
+        KeyBinding::new("ctrl-down", actions::VolumeDownSmall, None),
         KeyBinding::new("-", actions::VolumeDown, None),
         // Theme and language - VSCode style
         KeyBinding::new("ctrl-k ctrl-t", actions::CycleTheme, None),

@@ -206,6 +206,14 @@ impl PlayerView {
         self.adjust_volume(-0.05, cx);
     }
 
+    fn volume_up_small(&mut self, _: &VolumeUpSmall, _: &mut Window, cx: &mut Context<Self>) {
+        self.adjust_volume(0.01, cx);
+    }
+
+    fn volume_down_small(&mut self, _: &VolumeDownSmall, _: &mut Window, cx: &mut Context<Self>) {
+        self.adjust_volume(-0.01, cx);
+    }
+
     pub(crate) fn switch_screen(&mut self, screen: Screen, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             if state.app.current_screen != screen {
@@ -1880,6 +1888,8 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::prev_track))
             .on_action(cx.listener(Self::volume_up))
             .on_action(cx.listener(Self::volume_down))
+            .on_action(cx.listener(Self::volume_up_small))
+            .on_action(cx.listener(Self::volume_down_small))
             .on_action(cx.listener(Self::switch_to_library))
             .on_action(cx.listener(Self::switch_to_queue))
             .on_action(cx.listener(Self::switch_to_plugins))

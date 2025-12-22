@@ -559,7 +559,7 @@ impl App {
         self.lufs_panel_ratio = config.panel_layout.lufs_ratio;
 
         // Restore volume and muted state
-        self.volume = config.volume;
+        // self.volume = config.volume; // Always start at default (10%) per requirement
         self.muted = config.muted;
 
         // Restore recording config
