@@ -4,26 +4,11 @@ A reusable UI component library for [GPUI](https://github.com/zed-industries/zed
 
 Provides composable, styled UI components with consistent theming for building desktop applications with the GPUI framework.
 
-## Examples
+## Showcase
 
-A showcase is provided that demonstrate the capabilities of the library. Here are few examples:
+First app built with gpui-ui-kit is [SotF](https://github.com/pierreaubert/sotf).
 
-| Buttons | Fonts |
-| :---: | :---: |
-| ![Buttons](./docs/images/1.png) | ![Fonts](./docs/images/2.png) |
-| Badges | Avatars |
-| ![Badges](./docs/images/3.png) | ![Avatars](./docs/images/4.png) |
-| Inputs | Progress |
-| ![Inputs](./docs/images/5.png) | ![Progress](./docs/images/6.png) |
-| Alerts |  |
-| ![Alerts](./docs/images/7.png) | ![2](./docs/images/8.png) |
-| Tabs | Layouts | 
-| ![Tabs](./docs/images/9.png) | ![Layouts](./docs/images/10.png) |
-| Menus | Potentiometers |
-| ![Menus](./docs/images/11.png) | ![Potentiometers](./docs/images/12.png) |
-| Wizard | Workflow |
-| ![Wizard](./docs/images/14.png) | ![Workflow](./docs/images/15.png) |
-
+![SotF](./docs/images/sotf-v0.5.3.png)
 
 ## Installation
 
@@ -31,7 +16,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-gpui-ui-kit = { path = "../gpui-ui-kit" }
+gpui-ui-kit = { version = "0.1.16", git="https://github.com/pierreaubert/gpui-toolkit/kit" }
 ```
 
 ## Components
@@ -639,6 +624,27 @@ Or setup git hooks to run automatically:
 ./scripts/setup-hooks.sh
 ```
 
+## Examples
+
+A showcase is provided that demonstrate the capabilities of the library. Here are few examples:
+
+| Buttons | Fonts |
+| :---: | :---: |
+| ![Buttons](./docs/images/1.png) | ![Fonts](./docs/images/2.png) |
+| Badges | Avatars |
+| ![Badges](./docs/images/3.png) | ![Avatars](./docs/images/4.png) |
+| Inputs | Progress |
+| ![Inputs](./docs/images/5.png) | ![Progress](./docs/images/6.png) |
+| Alerts |  |
+| ![Alerts](./docs/images/7.png) | ![2](./docs/images/8.png) |
+| Tabs | Layouts |
+| ![Tabs](./docs/images/9.png) | ![Layouts](./docs/images/10.png) |
+| Menus | Potentiometers |
+| ![Menus](./docs/images/11.png) | ![Potentiometers](./docs/images/12.png) |
+| Wizard | Workflow |
+| ![Wizard](./docs/images/14.png) | ![Workflow](./docs/images/15.png) |
+
+
 ## License
 
-See workspace root for license information.
+ISC (similar to Apaches2 or MIT)

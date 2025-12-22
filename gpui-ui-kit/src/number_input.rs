@@ -407,9 +407,31 @@ impl RenderOnce for NumberInput {
                 .clone()
         });
 
+        // Check if we're focused - editing is only active when focused
+        let is_focused = focus_handle.is_focused(_window);
+
+        // If we were editing but lost focus, confirm the edit
+        {
+            let mut state = edit_state.borrow_mut();
+            if state.editing && !is_focused {
+                // Parse and confirm the value on focus loss
+                if let Some(value) =
+                    Self::parse_value_str(&state.text, self.unit.as_ref(), min, max)
+                {
+                    if let Some(ref handler) = self.on_change {
+                        handler(value, _window, cx);
+                    }
+                }
+                // Clear editing state
+                state.editing = false;
+                state.text.clear();
+                state.text_selected = false;
+            }
+        }
+
         // Read current edit state
         let state = edit_state.borrow();
-        let editing = state.editing;
+        let editing = state.editing && is_focused; // Only edit when focused
         let text_selected = state.text_selected;
         let edit_text = if editing {
             state.text.clone()
@@ -656,15 +678,16 @@ impl RenderOnce for NumberInput {
                             drop(state);
                             window.refresh();
                         }
-                        key if key.len() == 1 => {
-                            // Single character input
-                            if let Some(ch) = key.chars().next() {
-                                state.insert_char(ch);
-                                drop(state);
-                                window.refresh();
+                        _ => {
+                            // Character input - use key_char for actual text characters
+                            if let Some(text) = event.keystroke.key_char.as_ref() {
+                                if let Some(ch) = text.chars().next() {
+                                    state.insert_char(ch);
+                                    drop(state);
+                                    window.refresh();
+                                }
                             }
                         }
-                        _ => {}
                     }
                 } else {
                     // Non-editing mode - arrow keys adjust value
