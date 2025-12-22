@@ -173,16 +173,16 @@ mod surface3d;
 mod treemap;
 
 pub use area::{AreaChart, area};
-pub use bar::{BarChart, bar};
+pub use bar::{BarChart, BarTheme, bar};
 pub use boxplot::{BoxPlotChart, boxplot};
 pub use color_scale::ColorScale;
 pub use contour::{ContourChart, contour};
 pub use error::ChartError;
 pub use heatmap::{HeatmapChart, heatmap};
 pub use isoline::{IsolineChart, isoline};
-pub use line::{ChartTheme, LineChart, line};
+pub use line::{ChartTheme, LegendPosition, LineChart, line};
 pub use pie::{PieChart, donut, pie};
-pub use scatter::{ScatterChart, scatter};
+pub use scatter::{ScatterChart, ScatterTheme, scatter};
 pub use surface3d::{Surface3DChart, surface3d};
 pub use treemap::{TilingMethod, Treemap, TreemapNode, treemap};
 

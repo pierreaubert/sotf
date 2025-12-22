@@ -15,6 +15,20 @@ use d3rs::text::{VectorFontConfig, render_vector_text};
 use gpui::prelude::*;
 use gpui::{AnyElement, IntoElement, Rgba, div, px, rgb};
 
+/// Position of the legend relative to the chart
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub enum LegendPosition {
+    /// Legend on the right side of the chart (default)
+    #[default]
+    Right,
+    /// Legend on the left side of the chart
+    Left,
+    /// Legend above the chart
+    Top,
+    /// Legend below the chart
+    Bottom,
+}
+
 /// Theme for chart styling
 #[derive(Debug, Clone)]
 pub struct ChartTheme {
@@ -184,6 +198,11 @@ pub struct LineChart {
     x_range: Option<[f64; 2]>,
     y_range: Option<[f64; 2]>,
     show_legend: bool,
+    legend_position: LegendPosition,
+    /// Whether legend_position was explicitly set by user
+    legend_position_explicit: bool,
+    /// Target aspect ratio for the graph (height = width * ratio)
+    graph_ratio: f32,
     theme: ChartTheme,
     // Secondary Y-axis settings
     y2_label: Option<String>,
@@ -498,6 +517,49 @@ impl LineChart {
         self
     }
 
+    /// Set the legend position.
+    ///
+    /// Controls where the legend is displayed relative to the chart area.
+    /// Available positions: `Right` (default), `Left`, `Top`, `Bottom`.
+    ///
+    /// When not explicitly set, the legend position is automatically chosen
+    /// to achieve a graph aspect ratio closest to `graph_ratio`.
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// use gpui_px::{line, LegendPosition};
+    /// let chart = line(&[1.0, 2.0], &[1.0, 2.0])
+    ///     .label("Data")
+    ///     .legend_position(LegendPosition::Bottom)
+    ///     .build();
+    /// ```
+    pub fn legend_position(mut self, position: LegendPosition) -> Self {
+        self.legend_position = position;
+        self.legend_position_explicit = true;
+        self
+    }
+
+    /// Set the target aspect ratio for the graph area.
+    ///
+    /// The ratio is defined as `height / width`. Default is `1.414` (≈ √2, similar to A4 paper).
+    ///
+    /// When a legend is shown and `legend_position` is not explicitly set,
+    /// the legend position is automatically chosen to achieve an aspect ratio
+    /// closest to this target ratio.
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// use gpui_px::line;
+    /// let chart = line(&[1.0, 2.0], &[1.0, 2.0])
+    ///     .label("Data")
+    ///     .graph_ratio(1.0)  // Square aspect ratio
+    ///     .build();
+    /// ```
+    pub fn graph_ratio(mut self, ratio: f32) -> Self {
+        self.graph_ratio = ratio;
+        self
+    }
+
     /// Build and validate the chart, returning renderable element.
     pub fn build(self) -> Result<impl IntoElement, ChartError> {
         // Validate inputs
@@ -549,48 +611,123 @@ impl LineChart {
             0.0
         };
 
-        // Calculate legend width first (needed for plot width calculation)
+        // Calculate legend dimensions based on position
         // Formula: color_indicator_width + gap + estimated_text_width + padding
         // Color indicator: 16px, gap: 8px (gap_2), padding: 8px (p_2 on both sides)
         let legend_gap = 20.0; // Gap between chart and legend
-        let legend_width = if self.show_legend {
-            // Collect legend items to determine if we have any
-            let mut has_legend_items = false;
-            let mut max_label_len = 0;
 
-            if self.label.is_some() {
-                has_legend_items = true;
-                max_label_len = max_label_len.max(self.label.as_ref().unwrap().len());
+        // Count legend items and calculate max label length
+        let mut legend_item_count = 0;
+        let mut max_label_len = 0;
+
+        if self.show_legend {
+            if let Some(ref label) = self.label {
+                legend_item_count += 1;
+                max_label_len = max_label_len.max(label.len());
             }
 
             for series in &self.series {
-                if series.label.is_some() {
-                    has_legend_items = true;
-                    max_label_len = max_label_len.max(series.label.as_ref().unwrap().len());
+                if let Some(ref label) = series.label {
+                    legend_item_count += 1;
+                    max_label_len = max_label_len.max(label.len());
                 }
             }
+        }
 
-            if has_legend_items {
-                // Estimate ~7 pixels per character for text_xs font
-                let estimated_text_width = (max_label_len as f32) * 7.0;
-                16.0 + 8.0 + estimated_text_width + 16.0 // color + gap + text + padding
+        let has_legend_items = legend_item_count > 0;
+
+        // Calculate base legend dimensions for each orientation
+        // Estimate ~7 pixels per character for text_xs font
+        let estimated_text_width = (max_label_len as f32) * 7.0;
+        let single_item_width = 16.0 + 8.0 + estimated_text_width + 16.0; // color + gap + text + padding
+        let single_item_height = 24.0; // Approximate height for a legend item with padding
+
+        // Vertical legend dimensions (for Left/Right)
+        let vertical_legend_width = single_item_width;
+        let vertical_legend_height = (legend_item_count as f32) * single_item_height + 16.0;
+
+        // Horizontal legend dimensions (for Top/Bottom)
+        let horizontal_legend_width = (legend_item_count as f32) * (single_item_width + 16.0);
+        let horizontal_legend_height = single_item_height + 8.0;
+
+        // Base available dimensions (without legend)
+        let base_available_width = self.width as f64 - margin_left - margin_right;
+        let base_available_height =
+            self.height as f64 - title_height as f64 - margin_top - margin_bottom;
+
+        // Determine legend position (auto-select if not explicit)
+        let legend_position = if has_legend_items && !self.legend_position_explicit {
+            // Calculate plot dimensions and aspect ratios for each position
+            let target_ratio = self.graph_ratio as f64;
+
+            // Helper to calculate how close a ratio is to target
+            let ratio_distance = |plot_w: f64, plot_h: f64| -> f64 {
+                if plot_w <= 0.0 || plot_h <= 0.0 {
+                    return f64::MAX;
+                }
+                let ratio = plot_h / plot_w;
+                (ratio - target_ratio).abs()
+            };
+
+            // Left/Right: subtract legend width from available width
+            let lr_plot_width = base_available_width - (vertical_legend_width + legend_gap) as f64;
+            let lr_plot_height = base_available_height;
+            let lr_distance = ratio_distance(lr_plot_width, lr_plot_height);
+
+            // Top/Bottom: subtract legend height from available height
+            let tb_plot_width = base_available_width;
+            let tb_plot_height =
+                base_available_height - (horizontal_legend_height + legend_gap) as f64;
+            let tb_distance = ratio_distance(tb_plot_width, tb_plot_height);
+
+            // Choose the orientation that gives ratio closest to target
+            if lr_distance <= tb_distance {
+                // Vertical legend is better - choose Right as default
+                LegendPosition::Right
             } else {
-                0.0
+                // Horizontal legend is better - choose Bottom as default
+                LegendPosition::Bottom
             }
         } else {
-            0.0
+            self.legend_position
         };
 
-        // Calculate plot width, accounting for legend if present
-        let width_for_legend = if legend_width > 0.0 {
-            legend_width + legend_gap
+        // Calculate final legend dimensions based on chosen position
+        let (legend_width, legend_height) = if has_legend_items {
+            match legend_position {
+                LegendPosition::Left | LegendPosition::Right => {
+                    (vertical_legend_width, vertical_legend_height)
+                }
+                LegendPosition::Top | LegendPosition::Bottom => {
+                    (horizontal_legend_width, horizontal_legend_height)
+                }
+            }
         } else {
-            0.0
+            (0.0, 0.0)
         };
+
+        // Calculate plot dimensions, accounting for legend position
+        let width_for_legend = match legend_position {
+            LegendPosition::Left | LegendPosition::Right if has_legend_items => {
+                legend_width + legend_gap
+            }
+            _ => 0.0,
+        };
+        let height_for_legend = match legend_position {
+            LegendPosition::Top | LegendPosition::Bottom if has_legend_items => {
+                legend_height + legend_gap
+            }
+            _ => 0.0,
+        };
+
         let plot_width =
             (self.width as f64 - margin_left - margin_right - width_for_legend as f64).max(0.0);
-        let plot_height =
-            (self.height as f64 - title_height as f64 - margin_top - margin_bottom).max(0.0);
+        let plot_height = (self.height as f64
+            - title_height as f64
+            - margin_top
+            - margin_bottom
+            - height_for_legend as f64)
+            .max(0.0);
 
         // Calculate domains with padding - include all series in Y-axis range
         // Use user-provided ranges if set, otherwise auto-calculate from data
@@ -1176,9 +1313,9 @@ impl LineChart {
             }
         };
 
-        // Collect legend items if enabled (legend_width already calculated above)
+        // Collect legend items if enabled
         let mut legend_items = Vec::new();
-        if self.show_legend && legend_width > 0.0 {
+        if has_legend_items {
             // Add primary series to legend if it has a label
             if let Some(label) = &self.label {
                 legend_items.push((self.color, label.clone()));
@@ -1217,36 +1354,101 @@ impl LineChart {
             );
         }
 
-        // Add chart content and legend side-by-side
+        // Add chart content and legend based on position
         if !legend_items.is_empty() {
-            // Build vertical legend on the right
-            let mut legend_column = div().flex().flex_col().gap_2().p_2();
-
-            for (color, label) in legend_items {
-                legend_column = legend_column.child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .child(div().w(px(16.0)).h(px(3.0)).bg(rgb(color)))
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(self.theme.legend_text_color)
-                                .child(label),
-                        ),
-                );
-            }
-
-            // Horizontal layout: chart + legend
-            container = container.child(
+            // Build legend element (individual item for each series)
+            let legend_item = |color: u32, label: String| {
                 div()
                     .flex()
-                    .flex_row()
-                    .gap(px(20.0)) // 20px gap between graph and legend
-                    .child(chart_content)
-                    .child(div().w(px(legend_width)).child(legend_column)),
-            );
+                    .items_center()
+                    .gap_2()
+                    .child(div().w(px(16.0)).h(px(3.0)).bg(rgb(color)))
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(self.theme.legend_text_color)
+                            .child(label),
+                    )
+            };
+
+            match legend_position {
+                LegendPosition::Right => {
+                    // Vertical legend on the right (current default behavior)
+                    let mut legend_column = div().flex().flex_col().gap_2().p_2();
+                    for (color, label) in legend_items {
+                        legend_column = legend_column.child(legend_item(color, label));
+                    }
+
+                    container = container.child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .gap(px(legend_gap))
+                            .child(chart_content)
+                            .child(div().w(px(legend_width)).child(legend_column)),
+                    );
+                }
+                LegendPosition::Left => {
+                    // Vertical legend on the left
+                    let mut legend_column = div().flex().flex_col().gap_2().p_2();
+                    for (color, label) in legend_items {
+                        legend_column = legend_column.child(legend_item(color, label));
+                    }
+
+                    container = container.child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .gap(px(legend_gap))
+                            .child(div().w(px(legend_width)).child(legend_column))
+                            .child(chart_content),
+                    );
+                }
+                LegendPosition::Top => {
+                    // Horizontal legend above the chart
+                    let mut legend_row = div()
+                        .flex()
+                        .flex_row()
+                        .flex_wrap()
+                        .gap_4()
+                        .p_2()
+                        .justify_center();
+                    for (color, label) in legend_items {
+                        legend_row = legend_row.child(legend_item(color, label));
+                    }
+
+                    container = container.child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(legend_gap))
+                            .child(div().h(px(legend_height)).child(legend_row))
+                            .child(chart_content),
+                    );
+                }
+                LegendPosition::Bottom => {
+                    // Horizontal legend below the chart
+                    let mut legend_row = div()
+                        .flex()
+                        .flex_row()
+                        .flex_wrap()
+                        .gap_4()
+                        .p_2()
+                        .justify_center();
+                    for (color, label) in legend_items {
+                        legend_row = legend_row.child(legend_item(color, label));
+                    }
+
+                    container = container.child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(legend_gap))
+                            .child(chart_content)
+                            .child(div().h(px(legend_height)).child(legend_row)),
+                    );
+                }
+            }
         } else {
             // No legend, just add chart content
             container = container.child(div().relative().child(chart_content));
@@ -1295,6 +1497,9 @@ pub fn line(x: &[f64], y: &[f64]) -> LineChart {
         x_range: None,
         y_range: None,
         show_legend: false,
+        legend_position: LegendPosition::default(),
+        legend_position_explicit: false,
+        graph_ratio: 1.414, // √2 ≈ A4 paper aspect ratio
         theme: ChartTheme::default(),
         y2_label: None,
         y2_range: None,

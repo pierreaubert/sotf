@@ -17,9 +17,9 @@ gpui = { workspace=true, optional = true }
 gpui-ui-kit = { version = "0.1", path = "../gpui-ui-kit", optional = true }
 thiserror.workspace = true
 
-[[bin]]
+[[example]]
 name = "px-showcase"
-path = "bin/showcase.rs"
+path = "examples/showcase.rs"
 
 [[example]]
 name = "logscale_demo"
