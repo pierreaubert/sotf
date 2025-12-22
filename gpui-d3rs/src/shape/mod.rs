@@ -63,7 +63,10 @@ mod scatter;
 
 // Re-export existing chart rendering functions (GPUI only)
 #[cfg(feature = "gpui")]
-pub use bar::{render_bars, BarConfig, BarDatum};
+pub use bar::{
+    analyze_grouped_data, render_bars, render_grouped_bars, BarConfig, BarDatum, GroupedBarConfig,
+    GroupedBarDatum, GroupedBarMeta,
+};
 #[cfg(feature = "gpui")]
 pub use contour::{
     heat_color_scale, render_contour, render_contour_bands, render_heatmap, viridis_color_scale,

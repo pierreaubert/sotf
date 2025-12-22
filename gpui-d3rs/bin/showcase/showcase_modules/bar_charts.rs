@@ -2,6 +2,7 @@ use d3rs::axis::{render_axis, AxisConfig, DefaultAxisTheme};
 use d3rs::color::ColorScheme;
 use d3rs::grid::{render_grid, GridConfig};
 use d3rs::prelude::*;
+use d3rs::shape::{analyze_grouped_data, render_grouped_bars, GroupedBarConfig, GroupedBarDatum};
 use gpui::*;
 
 pub fn render(_app: &ShowcaseApp) -> Div {
@@ -28,6 +29,26 @@ pub fn render(_app: &ShowcaseApp) -> Div {
     ];
     let mixed_y_scale = LinearScale::new().domain(-30.0, 70.0).range(0.0, 250.0);
     let mixed_x_scale = LinearScale::new().domain(0.0, 5.0).range(0.0, 500.0);
+
+    // Grouped bar data - quarterly sales by product
+    let grouped_data = vec![
+        GroupedBarDatum::new("Q1", "Product A", 45.0),
+        GroupedBarDatum::new("Q1", "Product B", 60.0),
+        GroupedBarDatum::new("Q1", "Product C", 35.0),
+        GroupedBarDatum::new("Q2", "Product A", 55.0),
+        GroupedBarDatum::new("Q2", "Product B", 48.0),
+        GroupedBarDatum::new("Q2", "Product C", 52.0),
+        GroupedBarDatum::new("Q3", "Product A", 70.0),
+        GroupedBarDatum::new("Q3", "Product B", 65.0),
+        GroupedBarDatum::new("Q3", "Product C", 45.0),
+        GroupedBarDatum::new("Q4", "Product A", 85.0),
+        GroupedBarDatum::new("Q4", "Product B", 78.0),
+        GroupedBarDatum::new("Q4", "Product C", 68.0),
+    ];
+    let grouped_meta = analyze_grouped_data(&grouped_data);
+    let grouped_y_scale = LinearScale::new()
+        .domain(0.0, grouped_meta.max_value * 1.1)
+        .range(0.0, 250.0);
 
     div()
         .flex()
@@ -163,6 +184,77 @@ pub fn render(_app: &ShowcaseApp) -> Div {
                                     &AxisConfig::bottom().with_ticks(5),
                                     500.0,
                                     &theme,
+                                )),
+                        ),
+                ),
+        )
+        // Grouped bar chart
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .child(
+                    div()
+                        .text_sm()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .mb_2()
+                        .child("Grouped Bar Chart (Quarterly Sales by Product)"),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .child(render_axis(
+                            &grouped_y_scale,
+                            &AxisConfig::left().with_ticks(6),
+                            250.0,
+                            &theme,
+                        ))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .child(
+                                    div()
+                                        .w(px(500.0))
+                                        .h(px(250.0))
+                                        .relative()
+                                        .bg(rgb(0xf8f8f8))
+                                        .border_1()
+                                        .border_color(rgb(0xcccccc))
+                                        .child(render_grouped_bars(
+                                            &grouped_y_scale,
+                                            &grouped_data,
+                                            &grouped_meta,
+                                            500.0,
+                                            250.0,
+                                            &GroupedBarConfig::new()
+                                                .color_scheme(scheme.clone())
+                                                .group_gap(16.0)
+                                                .bar_gap(2.0)
+                                                .opacity(0.9),
+                                        )),
+                                )
+                                // Legend for grouped bars
+                                .child(div().flex().gap_4().mt_2().justify_center().children(
+                                    grouped_meta.series.iter().enumerate().map(|(i, name)| {
+                                        div()
+                                            .flex()
+                                            .items_center()
+                                            .gap_1()
+                                            .child(
+                                                div()
+                                                    .w(px(12.0))
+                                                    .h(px(12.0))
+                                                    .rounded(px(2.0))
+                                                    .bg(scheme.color(i).to_rgba()),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_xs()
+                                                    .text_color(rgb(0x666666))
+                                                    .child(name.clone()),
+                                            )
+                                    }),
                                 )),
                         ),
                 ),

@@ -83,8 +83,9 @@ pub mod prelude {
     pub use crate::scale::{LinearScale, LogScale, Scale};
     #[cfg(all(feature = "gpui", not(test)))]
     pub use crate::shape::{
-        render_bars, render_line, render_scatter, BarConfig, BarDatum, CurveType, LineConfig,
-        LinePoint, ScatterConfig, ScatterPoint,
+        analyze_grouped_data, render_bars, render_grouped_bars, render_line, render_scatter,
+        BarConfig, BarDatum, CurveType, GroupedBarConfig, GroupedBarDatum, GroupedBarMeta,
+        LineConfig, LinePoint, ScatterConfig, ScatterPoint,
     };
     #[cfg(all(feature = "gpui", not(test)))]
     pub use crate::surface::{
