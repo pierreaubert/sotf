@@ -17,45 +17,36 @@ use gpui_ui_kit::color_picker::{ColorPickerMode, ColorPickerView};
 
 #[gpui::test]
 async fn test_color_picker_renders(cx: &mut TestAppContext) {
-    let _window = cx.add_window(|_window, _cx| {
-        ColorPickerView::new("Test Color", Color::rgb(128, 64, 192))
-    });
+    let _window =
+        cx.add_window(|_window, _cx| ColorPickerView::new("Test Color", Color::rgb(128, 64, 192)));
 }
 
 #[gpui::test]
 async fn test_color_picker_with_different_colors(cx: &mut TestAppContext) {
     // Red
-    let _window = cx.add_window(|_window, _cx| {
-        ColorPickerView::new("Red", Color::rgb(255, 0, 0))
-    });
+    let _window = cx.add_window(|_window, _cx| ColorPickerView::new("Red", Color::rgb(255, 0, 0)));
 }
 
 #[gpui::test]
 async fn test_color_picker_with_green(cx: &mut TestAppContext) {
-    let _window = cx.add_window(|_window, _cx| {
-        ColorPickerView::new("Green", Color::rgb(0, 255, 0))
-    });
+    let _window =
+        cx.add_window(|_window, _cx| ColorPickerView::new("Green", Color::rgb(0, 255, 0)));
 }
 
 #[gpui::test]
 async fn test_color_picker_with_blue(cx: &mut TestAppContext) {
-    let _window = cx.add_window(|_window, _cx| {
-        ColorPickerView::new("Blue", Color::rgb(0, 0, 255))
-    });
+    let _window = cx.add_window(|_window, _cx| ColorPickerView::new("Blue", Color::rgb(0, 0, 255)));
 }
 
 #[gpui::test]
 async fn test_color_picker_with_white(cx: &mut TestAppContext) {
-    let _window = cx.add_window(|_window, _cx| {
-        ColorPickerView::new("White", Color::rgb(255, 255, 255))
-    });
+    let _window =
+        cx.add_window(|_window, _cx| ColorPickerView::new("White", Color::rgb(255, 255, 255)));
 }
 
 #[gpui::test]
 async fn test_color_picker_with_black(cx: &mut TestAppContext) {
-    let _window = cx.add_window(|_window, _cx| {
-        ColorPickerView::new("Black", Color::rgb(0, 0, 0))
-    });
+    let _window = cx.add_window(|_window, _cx| ColorPickerView::new("Black", Color::rgb(0, 0, 0)));
 }
 
 // ============================================================================
@@ -64,9 +55,8 @@ async fn test_color_picker_with_black(cx: &mut TestAppContext) {
 
 #[gpui::test]
 async fn test_color_picker_color_method(cx: &mut TestAppContext) {
-    let window = cx.add_window(|_window, _cx| {
-        ColorPickerView::new("Test", Color::rgb(100, 150, 200))
-    });
+    let window =
+        cx.add_window(|_window, _cx| ColorPickerView::new("Test", Color::rgb(100, 150, 200)));
 
     window
         .update(cx, |view, _window, _cx| {
@@ -80,9 +70,7 @@ async fn test_color_picker_color_method(cx: &mut TestAppContext) {
 
 #[gpui::test]
 async fn test_color_picker_set_color(cx: &mut TestAppContext) {
-    let window = cx.add_window(|_window, _cx| {
-        ColorPickerView::new("Test", Color::rgb(0, 0, 0))
-    });
+    let window = cx.add_window(|_window, _cx| ColorPickerView::new("Test", Color::rgb(0, 0, 0)));
 
     window
         .update(cx, |view, _window, _cx| {

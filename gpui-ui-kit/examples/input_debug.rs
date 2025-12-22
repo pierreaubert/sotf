@@ -84,10 +84,17 @@ impl Render for InputDebug {
                             .spacing(StackSpacing::Sm)
                             .child(Text::new("How to use:").weight(TextWeight::Bold))
                             .child(Text::new("1. Click on an input field to start editing"))
-                            .child(Text::new("2. Type to enter text (full cursor navigation supported)"))
+                            .child(Text::new(
+                                "2. Type to enter text (full cursor navigation supported)",
+                            ))
                             .child(Text::new("3. Press Enter to confirm your changes"))
-                            .child(Text::new("4. Press Escape to cancel and restore original value"))
-                            .child(Text::new("5. Emacs keybindings: Ctrl+A/E/K/U/W/H/D/F/B").muted(true)),
+                            .child(Text::new(
+                                "4. Press Escape to cancel and restore original value",
+                            ))
+                            .child(
+                                Text::new("5. Emacs keybindings: Ctrl+A/E/K/U/W/H/D/F/B")
+                                    .muted(true),
+                            ),
                     ),
             )
             // Basic input with value
@@ -96,7 +103,9 @@ impl Render for InputDebug {
                     .flex()
                     .flex_col()
                     .gap_2()
-                    .child(Text::new("Default Input (with initial value):").weight(TextWeight::Medium))
+                    .child(
+                        Text::new("Default Input (with initial value):").weight(TextWeight::Medium),
+                    )
                     .child({
                         let value = self.input1_value.clone();
                         let entity = entity.clone();
@@ -128,8 +137,7 @@ impl Render for InputDebug {
                     .child(
                         Text::new(format!(
                             "Confirmed: \"{}\" | Live: \"{}\"",
-                            self.input1_value,
-                            self.input1_live_text
+                            self.input1_value, self.input1_live_text
                         ))
                         .size(TextSize::Sm)
                         .muted(true),
@@ -219,7 +227,10 @@ impl Render for InputDebug {
                     .flex()
                     .flex_col()
                     .gap_2()
-                    .child(Text::new("Flushed Variant (bottom border only):").weight(TextWeight::Medium))
+                    .child(
+                        Text::new("Flushed Variant (bottom border only):")
+                            .weight(TextWeight::Medium),
+                    )
                     .child({
                         let value = self.input4_value.clone();
                         let entity = entity.clone();

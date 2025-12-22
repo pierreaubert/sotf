@@ -76,9 +76,7 @@ impl PlayerView {
                     HStack::new()
                         .spacing(StackSpacing::Md)
                         .align(StackAlign::Center)
-                        .child(
-                            Text::new("Level:").size(TextSize::Sm),
-                        )
+                        .child(Text::new("Level:").size(TextSize::Sm))
                         .child({
                             let view = cx.entity().clone();
                             NumberInput::new("signal_level")

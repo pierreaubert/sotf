@@ -175,16 +175,15 @@ impl Dialog {
             .bg(theme.backdrop);
 
         // Handle backdrop click
-        if close_on_backdrop
-            && let Some(ref handler) = on_close {
-                let handler: *const dyn Fn(&mut Window, &mut App) = handler.as_ref();
-                backdrop = backdrop.on_mouse_down(MouseButton::Left, move |_event, window, cx| {
-                    // Safety: handler is valid for the lifetime of the dialog
-                    unsafe {
-                        (*handler)(window, cx);
-                    }
-                });
-            }
+        if close_on_backdrop && let Some(ref handler) = on_close {
+            let handler: *const dyn Fn(&mut Window, &mut App) = handler.as_ref();
+            backdrop = backdrop.on_mouse_down(MouseButton::Left, move |_event, window, cx| {
+                // Safety: handler is valid for the lifetime of the dialog
+                unsafe {
+                    (*handler)(window, cx);
+                }
+            });
+        }
 
         // Dialog container
         let mut dialog = div()
@@ -228,26 +227,27 @@ impl Dialog {
             }
 
             if self.show_close_button
-                && let Some(ref handler) = on_close {
-                    let handler: *const dyn Fn(&mut Window, &mut App) = handler.as_ref();
-                    let close_color = theme.close;
-                    let close_hover = theme.close_hover;
-                    let close_hover_bg = theme.close_hover_bg;
-                    header = header.child(
-                        div()
-                            .id("dialog-close-btn")
-                            .px_2()
-                            .py_1()
-                            .rounded(px(3.0))
-                            .cursor_pointer()
-                            .text_color(close_color)
-                            .hover(move |s| s.bg(close_hover_bg).text_color(close_hover))
-                            .on_mouse_up(MouseButton::Left, move |_event, window, cx| unsafe {
-                                (*handler)(window, cx);
-                            })
-                            .child("×"),
-                    );
-                }
+                && let Some(ref handler) = on_close
+            {
+                let handler: *const dyn Fn(&mut Window, &mut App) = handler.as_ref();
+                let close_color = theme.close;
+                let close_hover = theme.close_hover;
+                let close_hover_bg = theme.close_hover_bg;
+                header = header.child(
+                    div()
+                        .id("dialog-close-btn")
+                        .px_2()
+                        .py_1()
+                        .rounded(px(3.0))
+                        .cursor_pointer()
+                        .text_color(close_color)
+                        .hover(move |s| s.bg(close_hover_bg).text_color(close_hover))
+                        .on_mouse_up(MouseButton::Left, move |_event, window, cx| unsafe {
+                            (*handler)(window, cx);
+                        })
+                        .child("×"),
+                );
+            }
 
             dialog = dialog.child(header);
         }

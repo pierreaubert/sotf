@@ -7,12 +7,14 @@
 //! - Busy/disabled states
 //! - WizardHeader and WizardNavigation sub-components
 
-use gpui::{Context, MouseButton, Modifiers, TestAppContext, VisualTestContext, Window, div, prelude::*};
-use gpui_ui_kit::wizard::{Wizard, WizardStep, WizardHeader, WizardNavigation, StepStatus};
+use gpui::{
+    Context, Modifiers, MouseButton, TestAppContext, VisualTestContext, Window, div, prelude::*,
+};
+use gpui_ui_kit::wizard::{StepStatus, Wizard, WizardHeader, WizardNavigation, WizardStep};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 // ============================================================================
 // Basic Rendering Tests
@@ -159,7 +161,10 @@ async fn test_wizard_navigation_callbacks(cx: &mut TestAppContext) {
         cx.simulate_mouse_up(center, MouseButton::Left, Modifiers::default());
         cx.run_until_parked();
 
-        assert!(next_count.load(Ordering::SeqCst) >= 1, "on_next should have been called");
+        assert!(
+            next_count.load(Ordering::SeqCst) >= 1,
+            "on_next should have been called"
+        );
     }
 }
 
@@ -210,7 +215,7 @@ impl Render for WizardNavigationTestView {
         let next_clicked = self.next_clicked.clone();
 
         div().size_full().child(
-            WizardNavigation::new(1, 3)  // Step 2 of 3
+            WizardNavigation::new(1, 3) // Step 2 of 3
                 .back_label("Previous")
                 .next_label("Continue")
                 .on_back(move |_step, _window, _cx| {
@@ -246,7 +251,10 @@ async fn test_wizard_navigation_buttons(cx: &mut TestAppContext) {
         cx.simulate_mouse_up(center, MouseButton::Left, Modifiers::default());
         cx.run_until_parked();
 
-        assert!(back_clicked.load(Ordering::SeqCst), "on_back should have been called");
+        assert!(
+            back_clicked.load(Ordering::SeqCst),
+            "on_back should have been called"
+        );
     }
 
     // Try clicking the next button
@@ -256,7 +264,10 @@ async fn test_wizard_navigation_buttons(cx: &mut TestAppContext) {
         cx.simulate_mouse_up(center, MouseButton::Left, Modifiers::default());
         cx.run_until_parked();
 
-        assert!(next_clicked.load(Ordering::SeqCst), "on_next should have been called");
+        assert!(
+            next_clicked.load(Ordering::SeqCst),
+            "on_next should have been called"
+        );
     }
 }
 
@@ -267,7 +278,7 @@ async fn test_wizard_navigation_first_step(cx: &mut TestAppContext) {
 
     impl Render for FirstStepView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div().child(WizardNavigation::new(0, 3))  // First step
+            div().child(WizardNavigation::new(0, 3)) // First step
         }
     }
 
@@ -284,7 +295,7 @@ impl Render for LastStepView {
         let finish_clicked = self.finish_clicked.clone();
 
         div().size_full().child(
-            WizardNavigation::new(2, 3)  // Last step (0-indexed)
+            WizardNavigation::new(2, 3) // Last step (0-indexed)
                 .on_finish(move |_window, _cx| {
                     finish_clicked.store(true, Ordering::SeqCst);
                 }),
@@ -311,7 +322,10 @@ async fn test_wizard_navigation_last_step_finish(cx: &mut TestAppContext) {
         cx.simulate_mouse_up(center, MouseButton::Left, Modifiers::default());
         cx.run_until_parked();
 
-        assert!(finish_clicked.load(Ordering::SeqCst), "on_finish should have been called");
+        assert!(
+            finish_clicked.load(Ordering::SeqCst),
+            "on_finish should have been called"
+        );
     }
 }
 
@@ -366,13 +380,11 @@ async fn test_wizard_step_options(cx: &mut TestAppContext) {
             div().child(
                 Wizard::new()
                     .steps(vec![
-                        WizardStep::new("step1", "Required")
-                            .description("This step is required"),
+                        WizardStep::new("step1", "Required").description("This step is required"),
                         WizardStep::new("step2", "Optional")
                             .description("This step can be skipped")
                             .can_skip(true),
-                        WizardStep::new("step3", "Disabled")
-                            .disabled(true),
+                        WizardStep::new("step3", "Disabled").disabled(true),
                     ])
                     .current_step(0),
             )

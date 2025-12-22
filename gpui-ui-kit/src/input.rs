@@ -582,7 +582,11 @@ impl RenderOnce for Input {
 
         // Get display state from edit_state
         let state = edit_state.borrow();
-        let selection_range = if editing { state.selection_range() } else { None };
+        let selection_range = if editing {
+            state.selection_range()
+        } else {
+            None
+        };
         let _cursor_pos = state.cursor; // TODO: use for cursor rendering
         let _is_dragging = state.is_dragging;
         // When editing, display the internal state.text; otherwise display props value
@@ -729,19 +733,18 @@ impl RenderOnce for Input {
             let edit_state_for_move = edit_state.clone();
             let edit_text_for_move = edit_text.clone();
 
-            input_wrapper =
-                input_wrapper.on_mouse_move(move |event, window, _cx| {
-                    let mut state = edit_state_for_move.borrow_mut();
-                    if state.is_dragging && state.editing {
-                        let text_len = edit_text_for_move.chars().count();
-                        let char_width = 8.0_f32;
-                        let move_x: f32 = event.position.x.into();
-                        let char_pos = ((move_x / char_width).round() as usize).min(text_len);
-                        state.update_selection(char_pos);
-                        drop(state);
-                        window.refresh();
-                    }
-                });
+            input_wrapper = input_wrapper.on_mouse_move(move |event, window, _cx| {
+                let mut state = edit_state_for_move.borrow_mut();
+                if state.is_dragging && state.editing {
+                    let text_len = edit_text_for_move.chars().count();
+                    let char_width = 8.0_f32;
+                    let move_x: f32 = event.position.x.into();
+                    let char_pos = ((move_x / char_width).round() as usize).min(text_len);
+                    state.update_selection(char_pos);
+                    drop(state);
+                    window.refresh();
+                }
+            });
 
             // Mouse up handler to end drag selection
             let edit_state_for_up = edit_state.clone();
@@ -975,11 +978,7 @@ impl RenderOnce for Input {
         };
 
         // Build the text element with partial selection support
-        let mut text_el = div()
-            .id(field_id)
-            .flex_1()
-            .flex()
-            .items_center();
+        let mut text_el = div().id(field_id).flex_1().flex().items_center();
 
         // Apply text size
         text_el = match self.size {
@@ -999,20 +998,16 @@ impl RenderOnce for Input {
                     let after: String = chars[sel_end..].iter().collect();
 
                     if !before.is_empty() {
-                        text_el = text_el.child(
-                            div().text_color(text_color).child(before)
-                        );
+                        text_el = text_el.child(div().text_color(text_color).child(before));
                     }
                     text_el = text_el.child(
                         div()
                             .bg(selection_bg)
                             .text_color(text_color)
-                            .child(selected)
+                            .child(selected),
                     );
                     if !after.is_empty() {
-                        text_el = text_el.child(
-                            div().text_color(text_color).child(after)
-                        );
+                        text_el = text_el.child(div().text_color(text_color).child(after));
                     }
                 } else {
                     // Cursor only, no selection

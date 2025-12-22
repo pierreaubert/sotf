@@ -1,7 +1,7 @@
-//! VolumeKnob - A simple circular volume knob with circular fill indicator
+//! VolumeKnob - A circular volume knob with path-painted fill indicator
 //!
 //! A visual volume control with:
-//! - Circular fill animation that slides up from bottom (stays circular, no square)
+//! - Path-painted circular fill that rises from bottom
 //! - Scroll wheel adjustment
 //! - Double-click to toggle mute
 //! - Keyboard support (requires focus - click to focus):
@@ -13,6 +13,7 @@
 
 use crate::theme::{Theme, ThemeExt};
 use gpui::*;
+use std::f32::consts::PI;
 
 /// Theme colors for volume knob styling
 #[derive(Debug, Clone)]
@@ -46,6 +47,199 @@ impl From<&Theme> for VolumeKnobTheme {
             background: theme.surface.into(),
             text: theme.text_primary.into(),
         }
+    }
+}
+
+/// Custom element that paints the volume knob fill using paths
+struct VolumeKnobFillElement {
+    size: Pixels,
+    value: f32,
+    bg_color: Hsla,
+    fill_color: Hsla,
+    ring_color: Hsla,
+}
+
+impl VolumeKnobFillElement {
+    fn new(size: Pixels, value: f32, bg_color: Hsla, fill_color: Hsla, ring_color: Hsla) -> Self {
+        Self {
+            size,
+            value,
+            bg_color,
+            fill_color,
+            ring_color,
+        }
+    }
+}
+
+impl IntoElement for VolumeKnobFillElement {
+    type Element = Self;
+
+    fn into_element(self) -> Self::Element {
+        self
+    }
+}
+
+impl Element for VolumeKnobFillElement {
+    type RequestLayoutState = ();
+    type PrepaintState = ();
+
+    fn id(&self) -> Option<ElementId> {
+        None
+    }
+
+    fn source_location(&self) -> Option<&'static std::panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, Self::RequestLayoutState) {
+        let layout_id = window.request_layout(
+            Style {
+                size: Size {
+                    width: self.size.into(),
+                    height: self.size.into(),
+                },
+                ..Default::default()
+            },
+            [],
+            cx,
+        );
+        (layout_id, ())
+    }
+
+    fn prepaint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        _bounds: Bounds<Pixels>,
+        _request_layout: &mut Self::RequestLayoutState,
+        _window: &mut Window,
+        _cx: &mut App,
+    ) -> Self::PrepaintState {
+    }
+
+    fn paint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        _request_layout: &mut Self::RequestLayoutState,
+        _prepaint: &mut Self::PrepaintState,
+        window: &mut Window,
+        _cx: &mut App,
+    ) {
+        // Extract bounds into f32 for calculations
+        let size_f32 = self.size.to_f64() as f32;
+        let origin_x = bounds.origin.x;
+        let origin_y = bounds.origin.y;
+        let radius = size_f32 / 2.0;
+
+        // Draw background circle
+        window.paint_quad(PaintQuad {
+            bounds,
+            corner_radii: Corners::all(px(radius)),
+            background: self.bg_color.into(),
+            border_widths: Edges::default(),
+            border_color: Hsla::transparent_black(),
+            border_style: BorderStyle::default(),
+        });
+
+        // Draw fill - a circular segment from bottom
+        if self.value > 0.001 {
+            // Calculate geometry in f32
+            let center_x = radius;
+            let center_y = radius;
+
+            // Calculate the y-coordinate of the "water line" (relative to element origin)
+            // At 0%: water_line_y = center_y + radius (bottom of circle)
+            // At 100%: water_line_y = center_y - radius (top of circle)
+            let water_line_y = center_y + radius - (self.value * 2.0 * radius);
+
+            // Only draw if the water line is within the circle
+            if water_line_y < center_y + radius {
+                // Calculate intersection points of horizontal line with circle
+                // Circle equation: (x - cx)^2 + (y - cy)^2 = r^2
+                // At y = water_line_y: (x - cx)^2 = r^2 - (water_line_y - cy)^2
+                let dy = water_line_y - center_y;
+                let dx_squared = radius * radius - dy * dy;
+
+                if dx_squared > 0.0 {
+                    let dx = dx_squared.sqrt();
+                    let left_x = center_x - dx;
+
+                    // Build a path for the filled portion using PathBuilder
+                    let mut builder = PathBuilder::fill();
+
+                    // Start at left intersection point
+                    builder.move_to(point(origin_x + px(left_x), origin_y + px(water_line_y)));
+
+                    // Draw arc from left to right along the bottom of the circle
+                    // We'll approximate with line segments for a smooth curve
+                    let start_angle = (dy / radius).asin();
+                    let end_angle = PI - start_angle;
+
+                    // Number of segments for smooth arc
+                    let segments = 32;
+                    for i in 1..=segments {
+                        let t = i as f32 / segments as f32;
+                        let angle = start_angle + t * (end_angle - start_angle);
+                        // Angle measured from right (0) going counter-clockwise
+                        // We want bottom arc, so we go from left intersection to right
+                        let arc_angle = PI - angle; // Convert to standard angle
+                        let x = center_x + radius * arc_angle.cos();
+                        let y = center_y + radius * arc_angle.sin();
+                        builder.line_to(point(origin_x + px(x), origin_y + px(y)));
+                    }
+
+                    // Close the path back to start
+                    builder.line_to(point(origin_x + px(left_x), origin_y + px(water_line_y)));
+
+                    if let Ok(path) = builder.build() {
+                        window.paint_path(path, self.fill_color);
+                    }
+                } else if self.value > 0.99 {
+                    // Nearly full - draw full circle
+                    let inset = px(1.0);
+                    window.paint_quad(PaintQuad {
+                        bounds: Bounds {
+                            origin: point(bounds.origin.x + inset, bounds.origin.y + inset),
+                            size: size(
+                                bounds.size.width - inset * 2.0,
+                                bounds.size.height - inset * 2.0,
+                            ),
+                        },
+                        corner_radii: Corners::all(px(radius - 1.0)),
+                        background: self.fill_color.into(),
+                        border_widths: Edges::default(),
+                        border_color: Hsla::transparent_black(),
+                        border_style: BorderStyle::default(),
+                    });
+                }
+            }
+        }
+
+        // Draw border ring
+        let ring_inset = px(3.0);
+        let ring_bounds = Bounds {
+            origin: point(bounds.origin.x + ring_inset, bounds.origin.y + ring_inset),
+            size: size(
+                bounds.size.width - ring_inset * 2.0,
+                bounds.size.height - ring_inset * 2.0,
+            ),
+        };
+        window.paint_quad(PaintQuad {
+            bounds: ring_bounds,
+            corner_radii: Corners::all(px(radius - 3.0)),
+            background: Hsla::transparent_black().into(),
+            border_widths: Edges::all(px(2.0)),
+            border_color: self.ring_color.opacity(0.3),
+            border_style: BorderStyle::default(),
+        });
     }
 }
 
@@ -206,11 +400,6 @@ impl RenderOnce for VolumeKnob {
             lighter
         };
 
-        // Calculate the fill height as a percentage of the circle
-        // At 0%, no fill visible
-        // At 100%, circle fully filled
-        let fill_height = self.size * display_value;
-
         // Capture values for closures
         let current_value = self.value;
         let current_muted = self.muted;
@@ -221,7 +410,7 @@ impl RenderOnce for VolumeKnob {
             .w(self.size)
             .h(self.size)
             .cursor_pointer()
-            .focusable(); // Make focusable for keyboard events
+            .focusable();
 
         // Convert handlers to Rc for sharing between closures
         let on_change_rc = self.on_change.map(std::rc::Rc::new);
@@ -258,7 +447,6 @@ impl RenderOnce for VolumeKnob {
             container = container.on_key_down(move |event, window, cx| {
                 match event.keystroke.key.as_str() {
                     "up" | "right" => {
-                        // Increase volume
                         if let Some(ref handler) = key_change {
                             let step = 0.05;
                             let new_value = (current_value + step).clamp(0.0, 1.0);
@@ -266,7 +454,6 @@ impl RenderOnce for VolumeKnob {
                         }
                     }
                     "down" | "left" => {
-                        // Decrease volume
                         if let Some(ref handler) = key_change {
                             let step = 0.05;
                             let new_value = (current_value - step).clamp(0.0, 1.0);
@@ -274,7 +461,6 @@ impl RenderOnce for VolumeKnob {
                         }
                     }
                     "m" => {
-                        // Toggle mute
                         if let Some(ref handler) = key_mute {
                             handler(!current_muted, window, cx);
                         }
@@ -285,37 +471,14 @@ impl RenderOnce for VolumeKnob {
         }
 
         container
-            // Background circle
-            .child(div().absolute().inset_0().rounded_full().bg(bg_color))
-            // Filled portion - use a circle that's clipped from bottom
-            // We create a full circle and move it up/down to show the fill level
-            .child(
-                div()
-                    .absolute()
-                    .inset_0()
-                    .rounded_full()
-                    .overflow_hidden()
-                    .child(
-                        // Inner circle that slides up from bottom
-                        div()
-                            .absolute()
-                            .left_0()
-                            .w(self.size)
-                            .h(self.size)
-                            .rounded_full()
-                            .bg(fill_color)
-                            .bottom(-(self.size - fill_height)),
-                    ),
-            )
-            // Border ring
-            .child(
-                div()
-                    .absolute()
-                    .inset(px(2.0))
-                    .rounded_full()
-                    .border_2()
-                    .border_color(ring_color.opacity(0.3)),
-            )
+            // Custom painted fill element
+            .child(div().absolute().inset_0().child(VolumeKnobFillElement::new(
+                self.size,
+                display_value,
+                bg_color,
+                fill_color,
+                ring_color,
+            )))
             // Label text in center
             .child(
                 div()

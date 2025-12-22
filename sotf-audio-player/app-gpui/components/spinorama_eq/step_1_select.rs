@@ -1,6 +1,6 @@
 use crate::components::graphs::speaker_graphs::{
-    render_speaker_preview_graph, render_spinorama_cea2034_graph, render_spinorama_horizontal_graph,
-    render_spinorama_pir_graph, render_spinorama_vertical_graph,
+    render_speaker_preview_graph, render_spinorama_cea2034_graph,
+    render_spinorama_horizontal_graph, render_spinorama_pir_graph, render_spinorama_vertical_graph,
 };
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -15,7 +15,10 @@ impl PlayerView {
     // Step 1: Select Speaker
     // ========================================================================
 
-    pub(crate) fn render_spinorama_select_speaker(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_spinorama_select_speaker(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
         let spinorama = &state.app.spinorama_eq_state;
@@ -42,7 +45,7 @@ impl PlayerView {
         let is_cea2034 = spinorama.selected_measurement == "CEA2034"
             || spinorama.selected_measurement == "CEA2034 Normalized";
 
-		VStack::new()
+        VStack::new()
 		    .spacing(StackSpacing::Lg)
 		    .child(
 			Text::new("Select Speaker")
@@ -335,7 +338,8 @@ impl PlayerView {
                                             )
                                         }),
                                 )
-                                // Measurement selection
+                            // Measurement selection
+/*
                                 .child(
                                     VStack::new()
                                         .spacing(StackSpacing::Sm)
@@ -398,7 +402,8 @@ impl PlayerView {
                                                     })),
                                             )
                                         }),
-                                )
+                        )
+*/
                                 // Phase data indicator
                                 .child(
                                     HStack::new()
@@ -414,15 +419,11 @@ impl PlayerView {
                                                 .color(if has_phase_data { theme.success } else { theme.text_muted }),
                                         ),
                                 )
-                                .child(
-                                    Text::new("Click 'Next' to configure optimization parameters.")
-                                        .size(TextSize::Sm)
-                                        .color(theme.text_secondary),
-                                ),
                         ),
                 )
             })
             // Preview chart showing input, target, and deviation curves (shown when measurement is selected)
+/*
             .when(selected_speaker.is_some(), |vstack| {
                 let theme = theme.clone();
                 vstack.child(
@@ -486,6 +487,7 @@ impl PlayerView {
                         ),
                 )
             })
+*/
             // CEA2034 Spinorama plot (shown only for CEA2034 measurements)
             .when(is_cea2034 && selected_speaker.is_some(), |vstack| {
                 let theme = theme.clone();
@@ -540,9 +542,8 @@ impl PlayerView {
                             .into_any_element()
                     } else if has_spinorama_curves {
                         // 2x2 grid of plots - calculate width based on app width
-                        // Account for: sidebar (~300px in expanded mode), padding (32px), gap between plots (16px)
-                        let available_width = (app_width - 300.0 - 32.0 - 16.0).max(600.0);
-                        let plot_width = (available_width / 2.0).max(280.0);
+                        let available_width = (app_width - 32.0 - 16.0).max(600.0);
+                        let plot_width = (available_width / 2.0).max(380.0);
                         let plot_height = 180.0;
 
                         div()

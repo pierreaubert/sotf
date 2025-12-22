@@ -32,7 +32,10 @@ impl App {
         if let Some((decade_start, decade_end)) = self.selected_decade {
             if self.selected_year.is_none() {
                 albums.retain(|album| {
-                    album.year.map(|y| y as i32).is_some_and(|y| y >= decade_start && y <= decade_end)
+                    album
+                        .year
+                        .map(|y| y as i32)
+                        .is_some_and(|y| y >= decade_start && y <= decade_end)
                 });
             }
         }
@@ -263,28 +266,51 @@ impl App {
 
     /// Scan for ReplayGain
     pub fn scan_replay_gain(&mut self) {
-        match self.replay_gain_manager.start_scan() {
-            Ok(msg) => {
-                self.toast_message = Some(ToastMessage::info(msg));
-            }
-            Err(e) => {
-                self.toast_message = Some(ToastMessage::error(format!(
-                    "Failed to start ReplayGain scan: {}",
-                    e
-                )));
-            }
+        if let Err(e) = self.replay_gain_manager.start_scan() {
+            self.toast_message = Some(ToastMessage::error(format!(
+                "Failed to start ReplayGain scan: {}",
+                e
+            )));
         }
     }
 
     /// Scan for Bliss audio analysis (tempo, features for similarity)
     pub fn scan_bliss(&mut self) {
-        match self.bliss_manager.start_scan() {
-            Ok(msg) => {
-                self.toast_message = Some(ToastMessage::info(msg));
+        if let Err(e) = self.bliss_manager.start_scan() {
+            self.toast_message = Some(ToastMessage::error(format!(
+                "Failed to start bliss analysis scan: {}",
+                e
+            )));
+        }
+    }
+
+    /// Compute waveforms for tracks
+    pub fn compute_waveform(&mut self) {
+        if let Err(e) = self.waveform_manager.start_scan() {
+            self.toast_message = Some(ToastMessage::error(format!(
+                "Failed to start waveform analysis: {}",
+                e
+            )));
+        }
+    }
+
+    /// Clean up database by removing tracks for files that no longer exist
+    pub fn clean_database(&mut self) {
+        match self.library.clean_database() {
+            Ok(removed) => {
+                if removed > 0 {
+                    self.toast_message = Some(ToastMessage::success(format!(
+                        "Removed {} missing tracks from database",
+                        removed
+                    )));
+                } else {
+                    self.toast_message =
+                        Some(ToastMessage::info("No missing tracks found in database"));
+                }
             }
             Err(e) => {
                 self.toast_message = Some(ToastMessage::error(format!(
-                    "Failed to start bliss analysis scan: {}",
+                    "Failed to clean database: {}",
                     e
                 )));
             }

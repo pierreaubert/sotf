@@ -124,29 +124,64 @@ impl PlayerView {
         );
 
         // Build sort tabs with Filter and Search
-        // Note: Icons don't set explicit color - they inherit from the Tabs component's
-        // icon_selected/icon_unselected theme colors for proper visibility on selection
+        // Icons use icon_with_color to receive the correct color at render time
+        // based on the tab's selection state (selected vs unselected)
         let sort_tabs = vec![
             TabItem::new("year", translations.library_years)
-                .custom_icon(Icon::new(IconName::Disc).size(IconSize::Lg))
+                .icon_with_color(|color| {
+                    Icon::new(IconName::Disc)
+                        .size(IconSize::Lg)
+                        .color(color)
+                        .into_any_element()
+                })
                 .badge(year_badge),
             TabItem::new("genre", translations.library_genres)
-                .custom_icon(Icon::new(IconName::Folder).size(IconSize::Lg))
+                .icon_with_color(|color| {
+                    Icon::new(IconName::Folder)
+                        .size(IconSize::Lg)
+                        .color(color)
+                        .into_any_element()
+                })
                 .badge(genres_count.to_string()),
             TabItem::new("artist", translations.library_artists)
-                .custom_icon(Icon::new(IconName::User).size(IconSize::Lg))
+                .icon_with_color(|color| {
+                    Icon::new(IconName::User)
+                        .size(IconSize::Lg)
+                        .color(color)
+                        .into_any_element()
+                })
                 .badge(artists_count.to_string()),
             TabItem::new("album", translations.library_albums)
-                .custom_icon(Icon::new(IconName::Album).size(IconSize::Lg))
+                .icon_with_color(|color| {
+                    Icon::new(IconName::Album)
+                        .size(IconSize::Lg)
+                        .color(color)
+                        .into_any_element()
+                })
                 .badge(albums_count.to_string()),
             TabItem::new("tracks", translations.library_tracks)
-                .custom_icon(Icon::new(IconName::Music).size(IconSize::Lg))
+                .icon_with_color(|color| {
+                    Icon::new(IconName::Music)
+                        .size(IconSize::Lg)
+                        .color(color)
+                        .into_any_element()
+                })
                 .badge(tracks_count.to_string()),
             TabItem::new("composer", translations.library_composers)
-                .custom_icon(Icon::new(IconName::PenTool).size(IconSize::Lg))
+                .icon_with_color(|color| {
+                    Icon::new(IconName::PenTool)
+                        .size(IconSize::Lg)
+                        .color(color)
+                        .into_any_element()
+                })
                 .badge(composers_count.to_string()),
             TabItem::new("filter", translations.library_stereo_multi)
-                .custom_icon(Icon::new(IconName::AudioWaveform).size(IconSize::Lg))
+                .icon_with_color(|color| {
+                    Icon::new(IconName::AudioWaveform)
+                        .size(IconSize::Lg)
+                        .color(color)
+                        .into_any_element()
+                })
                 .badge(format!(
                     "{}/{}/{}",
                     stereo_count,
@@ -154,7 +189,12 @@ impl PlayerView {
                     surround71_count + surround_plus_count
                 )),
             TabItem::new("search", translations.library_search)
-                .custom_icon(Icon::new(IconName::Search).size(IconSize::Lg))
+                .icon_with_color(|color| {
+                    Icon::new(IconName::Search)
+                        .size(IconSize::Lg)
+                        .color(color)
+                        .into_any_element()
+                })
                 .badge(translations.library_albums),
         ];
 
@@ -269,11 +309,8 @@ impl PlayerView {
             // Keyboard input is handled at the parent level in ui.rs via handle_search_input
             .when(is_search_mode, |el| {
                 el.child(
-                    div()
-                        .flex()
-                        .justify_center()
-                        .mb_2()
-                        .child(div().w_96().child(
+                    div().flex().justify_center().mb_2().child(
+                        div().w_96().child(
                             Input::new("search-input")
                                 .value(SharedString::from(search_query.clone()))
                                 .placeholder("Type to search albums, artists, tracks...")
@@ -281,8 +318,9 @@ impl PlayerView {
                                 .size(InputSize::Md)
                                 .bg_color(theme.surface)
                                 .text_color(theme.text_primary)
-                                .placeholder_color(theme.text_muted)
-                        ))
+                                .placeholder_color(theme.text_muted),
+                        ),
+                    ),
                 )
             })
             .child(
@@ -361,16 +399,13 @@ impl PlayerView {
                     year_counts,
                     theme,
                     cx,
-                ).into_any_element()
+                )
+                .into_any_element()
             }
             LibrarySortOrder::Album => {
                 // Album tab: letter filter bar + album grid with letter dividers
-                self.render_album_tab_content(
-                    selected_album_letter,
-                    album_letter_counts,
-                    theme,
-                    cx,
-                ).into_any_element()
+                self.render_album_tab_content(selected_album_letter, album_letter_counts, theme, cx)
+                    .into_any_element()
             }
             LibrarySortOrder::Artist => {
                 // Artist tab: letter filter bar + artist names (top 20) + album grid with artist dividers
@@ -381,7 +416,8 @@ impl PlayerView {
                     artist_counts,
                     theme,
                     cx,
-                ).into_any_element()
+                )
+                .into_any_element()
             }
             LibrarySortOrder::Composer => {
                 // Composer tab: letter filter bar + composer names (top 20) + album grid with composer dividers
@@ -392,16 +428,13 @@ impl PlayerView {
                     composer_counts,
                     theme,
                     cx,
-                ).into_any_element()
+                )
+                .into_any_element()
             }
             LibrarySortOrder::Tracks => {
                 // Tracks tab: track range filter bar + album grid with track count dividers
-                self.render_tracks_tab_content(
-                    selected_track_range,
-                    track_range_counts,
-                    theme,
-                    cx,
-                ).into_any_element()
+                self.render_tracks_tab_content(selected_track_range, track_range_counts, theme, cx)
+                    .into_any_element()
             }
             _ => {
                 // Genre tab: selection UI first, then albums with back button
@@ -411,7 +444,8 @@ impl PlayerView {
                     selected_genre,
                     genre_counts,
                     cx,
-                ).into_any_element()
+                )
+                .into_any_element()
             }
         }
     }
@@ -432,7 +466,14 @@ impl PlayerView {
             .flex_col()
             .child(
                 // Filter bar
-                self.render_year_filter_bar(selected_decade, selected_year, decade_counts, year_counts, theme.clone(), cx)
+                self.render_year_filter_bar(
+                    selected_decade,
+                    selected_year,
+                    decade_counts,
+                    year_counts,
+                    theme.clone(),
+                    cx,
+                ),
             )
             .child(
                 // Album grid
@@ -440,7 +481,7 @@ impl PlayerView {
                     .flex_1()
                     .min_h_0()
                     .overflow_hidden()
-                    .child(self.render_library_grid(cx))
+                    .child(self.render_library_grid(cx)),
             )
     }
 
@@ -465,12 +506,8 @@ impl PlayerView {
             .border_color(theme.border)
             .child(
                 // Decade buttons row
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .justify_center()
-                    .gap_1()
-                    .children(decade_counts.into_iter().map(|(start, end, count)| {
+                div().flex().flex_wrap().justify_center().gap_1().children(
+                    decade_counts.into_iter().map(|(start, end, count)| {
                         let is_selected = selected_decade == Some((start, end));
                         let label = format!("{}s ({})", start, count);
 
@@ -478,7 +515,11 @@ impl PlayerView {
                             SharedString::from(format!("decade-{}", start)),
                             SharedString::from(label),
                         )
-                        .variant(if is_selected { ButtonVariant::Primary } else { ButtonVariant::Secondary })
+                        .variant(if is_selected {
+                            ButtonVariant::Primary
+                        } else {
+                            ButtonVariant::Secondary
+                        })
                         .size(ButtonSize::Xs)
                         .theme(theme.to_button_theme())
                         .build()
@@ -499,7 +540,8 @@ impl PlayerView {
                                 cx.notify();
                             }),
                         )
-                    }))
+                    }),
+                ),
             )
             .when_some(selected_decade, |el, (decade_start, decade_end)| {
                 // Year buttons for selected decade
@@ -525,7 +567,11 @@ impl PlayerView {
                                 SharedString::from(format!("year-{}", year)),
                                 SharedString::from(label),
                             )
-                            .variant(if is_selected { ButtonVariant::Primary } else { ButtonVariant::Secondary })
+                            .variant(if is_selected {
+                                ButtonVariant::Primary
+                            } else {
+                                ButtonVariant::Secondary
+                            })
                             .size(ButtonSize::Xs)
                             .theme(theme.to_button_theme())
                             .build()
@@ -543,7 +589,7 @@ impl PlayerView {
                                     cx.notify();
                                 }),
                             )
-                        }))
+                        })),
                 )
             })
     }
@@ -562,7 +608,12 @@ impl PlayerView {
             .flex_col()
             .child(
                 // Letter filter bar
-                self.render_album_letter_filter_bar(selected_letter, letter_counts, theme.clone(), cx)
+                self.render_album_letter_filter_bar(
+                    selected_letter,
+                    letter_counts,
+                    theme.clone(),
+                    cx,
+                ),
             )
             .child(
                 // Album grid
@@ -570,7 +621,7 @@ impl PlayerView {
                     .flex_1()
                     .min_h_0()
                     .overflow_hidden()
-                    .child(self.render_library_grid(cx))
+                    .child(self.render_library_grid(cx)),
             )
     }
 
@@ -585,9 +636,13 @@ impl PlayerView {
         // Sort alphabetically, # at the end
         let mut letters: Vec<char> = letter_counts.keys().copied().collect();
         letters.sort_by(|a, b| {
-            if *a == '#' { std::cmp::Ordering::Greater }
-            else if *b == '#' { std::cmp::Ordering::Less }
-            else { a.cmp(b) }
+            if *a == '#' {
+                std::cmp::Ordering::Greater
+            } else if *b == '#' {
+                std::cmp::Ordering::Less
+            } else {
+                a.cmp(b)
+            }
         });
 
         div()
@@ -606,7 +661,11 @@ impl PlayerView {
                     SharedString::from(format!("letter-{}", letter)),
                     SharedString::from(letter.to_string()),
                 )
-                .variant(if is_selected { ButtonVariant::Primary } else { ButtonVariant::Secondary })
+                .variant(if is_selected {
+                    ButtonVariant::Primary
+                } else {
+                    ButtonVariant::Secondary
+                })
                 .size(ButtonSize::Xs)
                 .theme(theme.to_button_theme())
                 .build()
@@ -643,7 +702,14 @@ impl PlayerView {
             .flex_col()
             .child(
                 // Filter bar (letters + artist names)
-                self.render_artist_filter_bar(selected_letter, selected_artist, letter_counts, artist_counts, theme.clone(), cx)
+                self.render_artist_filter_bar(
+                    selected_letter,
+                    selected_artist,
+                    letter_counts,
+                    artist_counts,
+                    theme.clone(),
+                    cx,
+                ),
             )
             .child(
                 // Album grid
@@ -651,7 +717,7 @@ impl PlayerView {
                     .flex_1()
                     .min_h_0()
                     .overflow_hidden()
-                    .child(self.render_library_grid(cx))
+                    .child(self.render_library_grid(cx)),
             )
     }
 
@@ -668,9 +734,13 @@ impl PlayerView {
         // Sort letters alphabetically, # at the end
         let mut letters: Vec<char> = letter_counts.keys().copied().collect();
         letters.sort_by(|a, b| {
-            if *a == '#' { std::cmp::Ordering::Greater }
-            else if *b == '#' { std::cmp::Ordering::Less }
-            else { a.cmp(b) }
+            if *a == '#' {
+                std::cmp::Ordering::Greater
+            } else if *b == '#' {
+                std::cmp::Ordering::Less
+            } else {
+                a.cmp(b)
+            }
         });
 
         // Get artists for selected letter (top 20, sorted alphabetically)
@@ -706,39 +776,40 @@ impl PlayerView {
             .border_color(theme.border)
             .child(
                 // Letter buttons row
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .justify_center()
-                    .gap_1()
-                    .children(letters.into_iter().map(|letter| {
+                div().flex().flex_wrap().justify_center().gap_1().children(
+                    letters.into_iter().map(|letter| {
                         let is_selected = selected_letter == Some(letter);
 
                         Button::new(
                             SharedString::from(format!("artist-letter-{}", letter)),
                             SharedString::from(letter.to_string()),
                         )
-                        .variant(if is_selected { ButtonVariant::Primary } else { ButtonVariant::Ghost })
+                        .variant(if is_selected {
+                            ButtonVariant::Primary
+                        } else {
+                            ButtonVariant::Ghost
+                        })
                         .size(ButtonSize::Xs)
-                            .theme(theme.to_button_theme())
-                            .build()
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                    view.state.update(cx, |state, _cx| {
-                                        if state.app.selected_artist_letter == Some(letter) {
-                                            state.app.selected_artist_letter = None;
-                                            state.app.selected_artist = None;
-                                        } else {
-                                            state.app.selected_artist_letter = Some(letter);
-                                            state.app.selected_artist = None;
-                                        }
-                                        state.app.selected_album_index = 0;
-                                    });
-                                    cx.notify();
-                                }),
-                            )
-                    }))
+                        .theme(theme.to_button_theme())
+                        .build()
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                                view.state.update(cx, |state, _cx| {
+                                    if state.app.selected_artist_letter == Some(letter) {
+                                        state.app.selected_artist_letter = None;
+                                        state.app.selected_artist = None;
+                                    } else {
+                                        state.app.selected_artist_letter = Some(letter);
+                                        state.app.selected_artist = None;
+                                    }
+                                    state.app.selected_album_index = 0;
+                                });
+                                cx.notify();
+                            }),
+                        )
+                    }),
+                ),
             )
             // Artist names row (when a letter is selected)
             .when(!artists_for_letter.is_empty(), |el| {
@@ -758,26 +829,32 @@ impl PlayerView {
                                 SharedString::from(format!("artist-name-{}", artist.clone())),
                                 SharedString::from(format!("{} ({})", artist, count)),
                             )
-                            .variant(if is_selected { ButtonVariant::Primary } else { ButtonVariant::Secondary })
+                            .variant(if is_selected {
+                                ButtonVariant::Primary
+                            } else {
+                                ButtonVariant::Secondary
+                            })
                             .size(ButtonSize::Xs)
-                                .theme(theme.to_button_theme())
-                                .build()
-                                .on_mouse_up(
-                                    MouseButton::Left,
-                                    cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                        let artist_to_set = artist_clone.clone();
-                                        view.state.update(cx, |state, _cx| {
-                                            if state.app.selected_artist.as_ref() == Some(&artist_to_set) {
-                                                state.app.selected_artist = None;
-                                            } else {
-                                                state.app.selected_artist = Some(artist_to_set);
-                                            }
-                                            state.app.selected_album_index = 0;
-                                        });
-                                        cx.notify();
-                                    }),
-                                )
-                        }))
+                            .theme(theme.to_button_theme())
+                            .build()
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                                    let artist_to_set = artist_clone.clone();
+                                    view.state.update(cx, |state, _cx| {
+                                        if state.app.selected_artist.as_ref()
+                                            == Some(&artist_to_set)
+                                        {
+                                            state.app.selected_artist = None;
+                                        } else {
+                                            state.app.selected_artist = Some(artist_to_set);
+                                        }
+                                        state.app.selected_album_index = 0;
+                                    });
+                                    cx.notify();
+                                }),
+                            )
+                        })),
                 )
             })
     }
@@ -798,7 +875,14 @@ impl PlayerView {
             .flex_col()
             .child(
                 // Filter bar (letters + composer names)
-                self.render_composer_filter_bar(selected_letter, selected_composer, letter_counts, composer_counts, theme.clone(), cx)
+                self.render_composer_filter_bar(
+                    selected_letter,
+                    selected_composer,
+                    letter_counts,
+                    composer_counts,
+                    theme.clone(),
+                    cx,
+                ),
             )
             .child(
                 // Album grid
@@ -806,7 +890,7 @@ impl PlayerView {
                     .flex_1()
                     .min_h_0()
                     .overflow_hidden()
-                    .child(self.render_library_grid(cx))
+                    .child(self.render_library_grid(cx)),
             )
     }
 
@@ -823,9 +907,13 @@ impl PlayerView {
         // Sort letters alphabetically, # at the end
         let mut letters: Vec<char> = letter_counts.keys().copied().collect();
         letters.sort_by(|a, b| {
-            if *a == '#' { std::cmp::Ordering::Greater }
-            else if *b == '#' { std::cmp::Ordering::Less }
-            else { a.cmp(b) }
+            if *a == '#' {
+                std::cmp::Ordering::Greater
+            } else if *b == '#' {
+                std::cmp::Ordering::Less
+            } else {
+                a.cmp(b)
+            }
         });
 
         // Get composers for selected letter (top 20, sorted alphabetically)
@@ -861,19 +949,19 @@ impl PlayerView {
             .border_color(theme.border)
             .child(
                 // Letter buttons row
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .justify_center()
-                    .gap_1()
-                    .children(letters.into_iter().map(|letter| {
+                div().flex().flex_wrap().justify_center().gap_1().children(
+                    letters.into_iter().map(|letter| {
                         let is_selected = selected_letter == Some(letter);
 
                         Button::new(
                             SharedString::from(format!("composer-letter-{}", letter)),
                             SharedString::from(letter.to_string()),
                         )
-                        .variant(if is_selected { ButtonVariant::Primary } else { ButtonVariant::Ghost })
+                        .variant(if is_selected {
+                            ButtonVariant::Primary
+                        } else {
+                            ButtonVariant::Ghost
+                        })
                         .size(ButtonSize::Xs)
                         .theme(theme.to_button_theme())
                         .build()
@@ -893,7 +981,8 @@ impl PlayerView {
                                 cx.notify();
                             }),
                         )
-                    }))
+                    }),
+                ),
             )
             // Composer names row (when a letter is selected)
             .when(!composers_for_letter.is_empty(), |el| {
@@ -913,7 +1002,11 @@ impl PlayerView {
                                 SharedString::from(format!("composer-name-{}", composer.clone())),
                                 SharedString::from(format!("{} ({})", composer, count)),
                             )
-                            .variant(if is_selected { ButtonVariant::Primary } else { ButtonVariant::Secondary })
+                            .variant(if is_selected {
+                                ButtonVariant::Primary
+                            } else {
+                                ButtonVariant::Secondary
+                            })
                             .size(ButtonSize::Xs)
                             .theme(theme.to_button_theme())
                             .build()
@@ -922,7 +1015,9 @@ impl PlayerView {
                                 cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                                     let composer_to_set = composer_clone.clone();
                                     view.state.update(cx, |state, _cx| {
-                                        if state.app.selected_composer.as_ref() == Some(&composer_to_set) {
+                                        if state.app.selected_composer.as_ref()
+                                            == Some(&composer_to_set)
+                                        {
                                             state.app.selected_composer = None;
                                         } else {
                                             state.app.selected_composer = Some(composer_to_set);
@@ -932,7 +1027,7 @@ impl PlayerView {
                                     cx.notify();
                                 }),
                             )
-                        }))
+                        })),
                 )
             })
     }
@@ -951,7 +1046,12 @@ impl PlayerView {
             .flex_col()
             .child(
                 // Filter bar (track ranges)
-                self.render_tracks_filter_bar(selected_range, track_range_counts, theme.clone(), cx)
+                self.render_tracks_filter_bar(
+                    selected_range,
+                    track_range_counts,
+                    theme.clone(),
+                    cx,
+                ),
             )
             .child(
                 // Album grid
@@ -959,7 +1059,7 @@ impl PlayerView {
                     .flex_1()
                     .min_h_0()
                     .overflow_hidden()
-                    .child(self.render_library_grid(cx))
+                    .child(self.render_library_grid(cx)),
             )
     }
 
@@ -995,7 +1095,11 @@ impl PlayerView {
                     SharedString::from(format!("tracks-range-{}-{}", min, max)),
                     SharedString::from(label),
                 )
-                .variant(if is_selected { ButtonVariant::Primary } else { ButtonVariant::Ghost })
+                .variant(if is_selected {
+                    ButtonVariant::Primary
+                } else {
+                    ButtonVariant::Ghost
+                })
                 .size(ButtonSize::Xs)
                 .theme(theme.to_button_theme())
                 .build()
@@ -1106,11 +1210,19 @@ impl PlayerView {
 
         self.render_selection_grid(
             "Select a Genre",
-            genres.into_iter().map(|(genre, count)| {
-                let label = format!("{} ({})", genre, count);
-                let size = (80.0 + (count as f32).sqrt() * 20.0).min(250.0);
-                (format!("genre-{}", genre.clone()), label, size, SelectionAction::Genre(genre))
-            }).collect(),
+            genres
+                .into_iter()
+                .map(|(genre, count)| {
+                    let label = format!("{} ({})", genre, count);
+                    let size = (80.0 + (count as f32).sqrt() * 20.0).min(250.0);
+                    (
+                        format!("genre-{}", genre.clone()),
+                        label,
+                        size,
+                        SelectionAction::Genre(genre),
+                    )
+                })
+                .collect(),
             theme,
             cx,
         )
@@ -1163,28 +1275,27 @@ impl PlayerView {
                     .max_w(px(1000.0))
                     .justify_center()
                     .children(items.into_iter().map(|(id, label, size, action)| {
-                        Button::new(
-                            SharedString::from(id),
-                            SharedString::from(label),
-                        )
-                        .variant(ButtonVariant::Secondary)
-                        .size(ButtonSize::Md)
-                        .theme(theme.to_button_theme())
-                        .build()
-                        .w(px(size))
-                        .on_mouse_up(
-                            MouseButton::Left,
-                            cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                let action = action.clone();
-                                view.state.update(cx, |state, _cx| {
-                                    match action {
-                                        SelectionAction::Genre(g) => state.app.selected_genre = Some(g),
-                                    }
-                                    state.app.selected_album_index = 0;
-                                });
-                                cx.notify();
-                            }),
-                        )
+                        Button::new(SharedString::from(id), SharedString::from(label))
+                            .variant(ButtonVariant::Secondary)
+                            .size(ButtonSize::Md)
+                            .theme(theme.to_button_theme())
+                            .build()
+                            .w(px(size))
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                                    let action = action.clone();
+                                    view.state.update(cx, |state, _cx| {
+                                        match action {
+                                            SelectionAction::Genre(g) => {
+                                                state.app.selected_genre = Some(g)
+                                            }
+                                        }
+                                        state.app.selected_album_index = 0;
+                                    });
+                                    cx.notify();
+                                }),
+                            )
                     })),
             )
             .into_any_element()

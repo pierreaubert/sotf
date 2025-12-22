@@ -243,13 +243,13 @@ pub enum LibrarySortOrder {
 /// Channel filter options
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChannelFilter {
-    All,          // Show all albums
-    Mono,         // Only 1-channel albums
-    Stereo,       // Only 2-channel albums
-    Surround,     // 5.0/5.1 albums (5-6 channels)
-    Surround71,   // 7.1 albums (8 channels)
-    SurroundPlus, // More than 8 channels
-    Mixed,        // Only albums with mixed channel counts
+    All,           // Show all albums
+    Mono,          // Only 1-channel albums
+    Stereo,        // Only 2-channel albums
+    Surround,      // 5.0/5.1 albums (5-6 channels)
+    Surround71,    // 7.1 albums (8 channels)
+    SurroundPlus,  // More than 8 channels
+    Mixed,         // Only albums with mixed channel counts
     Specific(u32), // Only albums with specific channel count
 }
 
@@ -802,7 +802,10 @@ impl MusicLibrary {
         log::info!(
             "Scanning {} directories: {:?}",
             self.directories.len(),
-            self.directories.iter().map(|d| d.path.display().to_string()).collect::<Vec<_>>()
+            self.directories
+                .iter()
+                .map(|d| d.path.display().to_string())
+                .collect::<Vec<_>>()
         );
 
         for dir_info in &self.directories {
@@ -1085,74 +1088,70 @@ impl MusicLibrary {
 
                     match extract_metadata(path) {
                         Ok(metadata) => {
-                        let raw_album_title = metadata
-                            .album
-                            .clone()
-                            .unwrap_or_else(|| "Unknown Album".to_string());
+                            let raw_album_title = metadata
+                                .album
+                                .clone()
+                                .unwrap_or_else(|| "Unknown Album".to_string());
 
-                        let album_title = clean_album_title(&raw_album_title);
+                            let album_title = clean_album_title(&raw_album_title);
 
-                        // Albums are now keyed by title only - artist comes from tracks
-                        let normalized_title = normalize_album_key(&album_title);
+                            // Albums are now keyed by title only - artist comes from tracks
+                            let normalized_title = normalize_album_key(&album_title);
 
-                        // Include edition in key to separate versions
-                        let edition_key = metadata
-                            .edition
-                            .as_ref()
-                            .map(|e| normalize_album_key(e))
-                            .unwrap_or_default();
-                        let key = format!("{}|{}", normalized_title, edition_key);
+                            // Include edition in key to separate versions
+                            let edition_key = metadata
+                                .edition
+                                .as_ref()
+                                .map(|e| normalize_album_key(e))
+                                .unwrap_or_default();
+                            let key = format!("{}|{}", normalized_title, edition_key);
 
-                        let album = album_map.entry(key).or_insert_with(|| {
-                            // Capitalize first letter of each word for nice display
-                            let display_title = capitalize_words(&album_title);
+                            let album = album_map.entry(key).or_insert_with(|| {
+                                // Capitalize first letter of each word for nice display
+                                let display_title = capitalize_words(&album_title);
 
-                            Album {
-                                id: None,
-                                title: display_title,
-                                year: metadata.year,
-                                tracks: Vec::new(),
-                                album_art_path: None,
-                                album_art_thumbnail: None,
-                                play_count: 0,
+                                Album {
+                                    id: None,
+                                    title: display_title,
+                                    year: metadata.year,
+                                    tracks: Vec::new(),
+                                    album_art_path: None,
+                                    album_art_thumbnail: None,
+                                    play_count: 0,
+                                    edition: metadata.edition.clone(),
+                                    dynamic_range: None,
+                                }
+                            });
+
+                            let track = Track {
+                                path: path.to_path_buf(),
+                                title: metadata.title,
+                                artist: metadata.artist,
+                                track_number: metadata.track_number,
+                                duration_secs: metadata.duration_secs,
+                                channels: metadata.channels,
+                                sample_rate: metadata.sample_rate,
+                                bit_depth: metadata.bit_depth,
+                                replay_gain: None,
+                                replay_peak: None,
+                                album_gain: None,
+                                album_peak: None,
+                                waveform: None, // Will be computed separately
+                                genre: metadata.genre,
+                                composer: metadata.composer,
+                                disc_number: metadata.disc_number,
+                                conductor: metadata.conductor,
+                                performer: metadata.performer,
+                                isrc: metadata.isrc,
+                                album_artist: metadata.album_artist,
+                                ensemble: metadata.ensemble,
                                 edition: metadata.edition.clone(),
-                                dynamic_range: None,
-                            }
-                        });
+                            };
 
-                        let track = Track {
-                            path: path.to_path_buf(),
-                            title: metadata.title,
-                            artist: metadata.artist,
-                            track_number: metadata.track_number,
-                            duration_secs: metadata.duration_secs,
-                            channels: metadata.channels,
-                            sample_rate: metadata.sample_rate,
-                            bit_depth: metadata.bit_depth,
-                            replay_gain: None,
-                            replay_peak: None,
-                            album_gain: None,
-                            album_peak: None,
-                            waveform: None, // Will be computed separately
-                            genre: metadata.genre,
-                            composer: metadata.composer,
-                            disc_number: metadata.disc_number,
-                            conductor: metadata.conductor,
-                            performer: metadata.performer,
-                            isrc: metadata.isrc,
-                            album_artist: metadata.album_artist,
-                            ensemble: metadata.ensemble,
-                            edition: metadata.edition.clone(),
-                        };
-
-                        album.tracks.push(track);
+                            album.tracks.push(track);
                         }
                         Err(e) => {
-                            log::warn!(
-                                "Failed to extract metadata from {}: {}",
-                                path.display(),
-                                e
-                            );
+                            log::warn!("Failed to extract metadata from {}: {}", path.display(), e);
                         }
                     }
                 }

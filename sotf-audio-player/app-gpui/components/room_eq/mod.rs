@@ -14,7 +14,7 @@ use gpui::*;
 use gpui_ui_kit::{
     AutoEqConfig, AutoEqForm, AutoEqFormUiState, Button, ButtonSize, ButtonVariant, Card, HStack,
     StackAlign, StackSpacing, StepStatus, Text, TextSize, TextWeight, VStack, WizardHeader,
-    WizardStep,
+    WizardStep, WizardTheme,
 };
 
 impl PlayerView {
@@ -53,7 +53,12 @@ impl PlayerView {
     fn render_room_eq_header(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
+        let theme_id = state.app.theme_id;
         let current_step = state.app.room_eq_state.step;
+        let can_go_next = self.room_eq_can_advance(cx);
+        let is_busy = state.app.room_eq_state.is_optimizing();
+
+        let step_index = current_step.index();
 
         // Build wizard steps
         let steps = vec![
@@ -68,9 +73,9 @@ impl PlayerView {
         let step_statuses: Vec<StepStatus> = RoomEqStep::all()
             .iter()
             .map(|step| {
-                if step.index() < current_step.index() {
+                if step.index() < step_index {
                     StepStatus::Completed
-                } else if step.index() == current_step.index() {
+                } else if step.index() == step_index {
                     StepStatus::Active
                 } else {
                     StepStatus::NotVisited
@@ -78,11 +83,75 @@ impl PlayerView {
             })
             .collect();
 
+        let wizard_theme = WizardTheme::from(&theme.to_ui_kit_theme(theme_id));
+
         let wizard_header = WizardHeader::new()
             .title("Room EQ")
             .steps(steps)
             .step_statuses(step_statuses)
-            .current_step(current_step.index());
+            .current_step(step_index)
+            .theme(wizard_theme.clone());
+
+        let back_label = match current_step {
+            RoomEqStep::LoadData => "Close",
+            _ => "Back",
+        };
+        let next_label = match current_step {
+            RoomEqStep::Export => "Finish",
+            _ => "Next",
+        };
+
+        let navigation = HStack::new()
+            .spacing(StackSpacing::Md)
+            .child(
+                Button::new("back", back_label)
+                    .variant(ButtonVariant::Secondary)
+                    .size(ButtonSize::Md)
+                    .disabled(is_busy)
+                    .build()
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(|view, _, _, cx| {
+                            view.state
+                                .update(cx, |state, _| match state.app.room_eq_state.step {
+                                    RoomEqStep::LoadData => {
+                                        state.app.current_screen = state.app.last_screen;
+                                    }
+                                    _ => {
+                                        if let Some(prev) = state.app.room_eq_state.step.previous()
+                                        {
+                                            state.app.room_eq_state.step = prev;
+                                        }
+                                    }
+                                });
+                            cx.notify();
+                        }),
+                    ),
+            )
+            .child(
+                Button::new("next", next_label)
+                    .variant(ButtonVariant::Primary)
+                    .size(ButtonSize::Md)
+                    .disabled(!can_go_next || is_busy)
+                    .build()
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(|view, _, _, cx| {
+                            view.state
+                                .update(cx, |state, _| match state.app.room_eq_state.step {
+                                    RoomEqStep::Export => {
+                                        state.app.current_screen = state.app.last_screen;
+                                    }
+                                    _ => {
+                                        if let Some(next) = state.app.room_eq_state.step.next() {
+                                            state.app.room_eq_state.step = next;
+                                        }
+                                    }
+                                });
+                            cx.notify();
+                        }),
+                    ),
+            );
 
         div()
             .flex()
@@ -94,86 +163,7 @@ impl PlayerView {
             .border_b_1()
             .border_color(theme.border)
             .child(wizard_header)
-            .child(self.render_room_eq_nav_buttons(cx))
-    }
-
-    /// Render navigation buttons (Close/Back and Next/Finish)
-    fn render_room_eq_nav_buttons(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
-        let current_step = state.app.room_eq_state.step;
-        let can_go_next = self.room_eq_can_advance(cx);
-        let is_busy = state.app.room_eq_state.is_optimizing();
-        let _view = cx.entity().clone();
-
-        let back_label = match current_step {
-            RoomEqStep::LoadData => "Close",
-            _ => "Back",
-        };
-        let next_label = match current_step {
-            RoomEqStep::Export => "Finish",
-            _ => "Next",
-        };
-
-        HStack::new()
-            .spacing(StackSpacing::Md)
-            .child(
-                Button::new("back", back_label)
-                    .variant(ButtonVariant::Secondary)
-                    .size(ButtonSize::Md)
-                    .theme(theme.to_button_theme())
-                    .disabled(is_busy)
-                    .build()
-                    .on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(|this, _, _window, cx| {
-                            this.state.update(cx, |state, _| {
-                                match state.app.room_eq_state.step {
-                                    RoomEqStep::LoadData => {
-                                        // Go back to previous screen
-                                        state.app.current_screen = state.app.last_screen;
-                                    }
-                                    _ => {
-                                        // Go back to previous step
-                                        if let Some(prev) = state.app.room_eq_state.step.previous()
-                                        {
-                                            state.app.room_eq_state.step = prev;
-                                        }
-                                    }
-                                }
-                            });
-                            cx.notify();
-                        }),
-                    ),
-            )
-            .child(
-                Button::new("next", next_label)
-                    .variant(ButtonVariant::Secondary)
-                    .size(ButtonSize::Md)
-                    .theme(theme.to_button_theme())
-                    .disabled(!can_go_next || is_busy)
-                    .build()
-                    .on_mouse_up(
-                        MouseButton::Left,
-                        cx.listener(|this, _, _window, cx| {
-                            this.state.update(cx, |state, _| {
-                                match state.app.room_eq_state.step {
-                                    RoomEqStep::Export => {
-                                        // Finish - apply and go back
-                                        state.app.current_screen = state.app.last_screen;
-                                    }
-                                    _ => {
-                                        // Go to next step
-                                        if let Some(next) = state.app.room_eq_state.step.next() {
-                                            state.app.room_eq_state.step = next;
-                                        }
-                                    }
-                                }
-                            });
-                            cx.notify();
-                        }),
-                    ),
-            )
+            .child(navigation)
     }
 
     /// Map RoomEqStep to index
@@ -544,7 +534,11 @@ impl PlayerView {
                     .background(theme.surface)
                     .header_background(theme.background_secondary)
                     .border(theme.border)
-                    .header(Text::new("Optimizer Settings").color(theme.text_primary).weight(TextWeight::Semibold))
+                    .header(
+                        Text::new("Optimizer Settings")
+                            .color(theme.text_primary)
+                            .weight(TextWeight::Semibold),
+                    )
                     .content(autoeq_form),
             )
             .child(
@@ -552,7 +546,11 @@ impl PlayerView {
                     .background(theme.surface)
                     .header_background(theme.background_secondary)
                     .border(theme.border)
-                    .header(Text::new("Channel Configuration").color(theme.text_primary).weight(TextWeight::Semibold))
+                    .header(
+                        Text::new("Channel Configuration")
+                            .color(theme.text_primary)
+                            .weight(TextWeight::Semibold),
+                    )
                     .content(self.render_channel_config_list(cx)),
             )
     }
@@ -582,7 +580,11 @@ impl PlayerView {
                     .background(theme.surface)
                     .header_background(theme.background_secondary)
                     .border(theme.border)
-                    .header(Text::new("Optimization Progress").color(theme.text_primary).weight(TextWeight::Semibold))
+                    .header(
+                        Text::new("Optimization Progress")
+                            .color(theme.text_primary)
+                            .weight(TextWeight::Semibold),
+                    )
                     .content(
                         VStack::new()
                             .spacing(StackSpacing::Md)
@@ -674,13 +676,23 @@ impl PlayerView {
                     .background(theme.surface)
                     .header_background(theme.background_secondary)
                     .border(theme.border)
-                    .header(Text::new("Score Summary").color(theme.text_primary).weight(TextWeight::Semibold))
+                    .header(
+                        Text::new("Score Summary")
+                            .color(theme.text_primary)
+                            .weight(TextWeight::Semibold),
+                    )
                     .content(
                         VStack::new().spacing(StackSpacing::Sm).child(
                             HStack::new()
                                 .spacing(StackSpacing::Lg)
-                                .child(Text::new(format!("Before: {:.2}", pre_score)).color(theme.text_primary))
-                                .child(Text::new(format!("After: {:.2}", post_score)).color(theme.text_primary))
+                                .child(
+                                    Text::new(format!("Before: {:.2}", pre_score))
+                                        .color(theme.text_primary),
+                                )
+                                .child(
+                                    Text::new(format!("After: {:.2}", post_score))
+                                        .color(theme.text_primary),
+                                )
                                 .child(
                                     Text::new(format!(
                                         "Improvement: {:.2}",
@@ -702,7 +714,11 @@ impl PlayerView {
                     .background(theme.surface)
                     .header_background(theme.background_secondary)
                     .border(theme.border)
-                    .header(Text::new("Per-Channel Results").color(theme.text_primary).weight(TextWeight::Semibold))
+                    .header(
+                        Text::new("Per-Channel Results")
+                            .color(theme.text_primary)
+                            .weight(TextWeight::Semibold),
+                    )
                     .content(self.render_channel_results(cx)),
             )
     }

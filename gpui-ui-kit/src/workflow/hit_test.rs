@@ -130,28 +130,28 @@ impl HitTester {
         let node_screen_x = node.position.x * zoom + viewport.offset.x;
         let node_screen_y = node.position.y * zoom + viewport.offset.y;
 
-            // Fixed pixel sizes (not scaled) - must match WorkflowTheme defaults and node.rs
-            // node_header_height: 28.0 (py_1 + text_sm + py_1)
-            // node_content_padding: 8.0 (py_2)
-            // border: 2.0 (border_2)
-            let header_height = 28.0_f32 * zoom;
-            let padding = 8.0_f32 * zoom;
-            let border = 2.0_f32; // Border stays fixed width
-        
-            // Scaled node dimensions
-            let node_screen_width = node.width * zoom;
-            let node_screen_height = node.height * zoom;
-        
-            // Content area height (scaled node height minus fixed header)
-            let content_height = node_screen_height - header_height - 2.0 * border;
-            let available = content_height - 2.0 * padding;
-        
-            let y = if count == 0 {
-                node_screen_y + node_screen_height / 2.0
-            } else {
-                let spacing = available / count as f32;
-                node_screen_y + border + header_height + padding + spacing * (index as f32 + 0.5)
-            };
+        // Fixed pixel sizes (not scaled) - must match WorkflowTheme defaults and node.rs
+        // node_header_height: 28.0 (py_1 + text_sm + py_1)
+        // node_content_padding: 8.0 (py_2)
+        // border: 2.0 (border_2)
+        let header_height = 28.0_f32 * zoom;
+        let padding = 8.0_f32 * zoom;
+        let border = 2.0_f32; // Border stays fixed width
+
+        // Scaled node dimensions
+        let node_screen_width = node.width * zoom;
+        let node_screen_height = node.height * zoom;
+
+        // Content area height (scaled node height minus fixed header)
+        let content_height = node_screen_height - header_height - 2.0 * border;
+        let available = content_height - 2.0 * padding;
+
+        let y = if count == 0 {
+            node_screen_y + node_screen_height / 2.0
+        } else {
+            let spacing = available / count as f32;
+            node_screen_y + border + header_height + padding + spacing * (index as f32 + 0.5)
+        };
         // Ports are positioned at the content edge (inside the border)
         // Input ports: at left content edge (node_left + border)
         // Output ports: at right content edge (node_right - border)

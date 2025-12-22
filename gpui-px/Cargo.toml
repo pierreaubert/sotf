@@ -1,6 +1,6 @@
 [package]
 name = "gpui-px"
-version = "0.1.14"
+version = "0.1.15"
 authors.workspace = true
 edition.workspace = true
 license = "ISC"

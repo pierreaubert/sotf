@@ -187,7 +187,8 @@ fn test_gate_loopback_verification() {
     for i in second_half_start..second_half_end {
         second_half_sum_sq += captured_ch0[i] * captured_ch0[i];
     }
-    let second_half_rms = (second_half_sum_sq / (second_half_end - second_half_start) as f32).sqrt();
+    let second_half_rms =
+        (second_half_sum_sq / (second_half_end - second_half_start) as f32).sqrt();
 
     let first_half_db = 20.0 * first_half_rms.log10();
     let second_half_db = 20.0 * second_half_rms.log10();

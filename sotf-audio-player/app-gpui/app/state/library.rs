@@ -23,13 +23,13 @@ pub enum LibrarySortOrder {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ChannelFilter {
     #[default]
-    All,          // Show all albums
-    Mono,         // Only 1-channel albums
-    Stereo,       // Only 2-channel albums
-    Surround,     // 5.0/5.1 albums (5-6 channels)
-    Surround71,   // 7.1 albums (8 channels)
-    SurroundPlus, // More than 8 channels
-    Mixed,        // Only albums with mixed channel counts
+    All, // Show all albums
+    Mono,          // Only 1-channel albums
+    Stereo,        // Only 2-channel albums
+    Surround,      // 5.0/5.1 albums (5-6 channels)
+    Surround71,    // 7.1 albums (8 channels)
+    SurroundPlus,  // More than 8 channels
+    Mixed,         // Only albums with mixed channel counts
     Specific(u32), // Only albums with specific channel count
 }
 
@@ -134,9 +134,7 @@ impl LibraryState {
                 matches!(album.uniform_channel_count(), Some(5) | Some(6))
             }
             ChannelFilter::Surround71 => album.uniform_channel_count() == Some(8),
-            ChannelFilter::SurroundPlus => {
-                album.uniform_channel_count().is_some_and(|ch| ch > 8)
-            }
+            ChannelFilter::SurroundPlus => album.uniform_channel_count().is_some_and(|ch| ch > 8),
             ChannelFilter::Mixed => album.uniform_channel_count().is_none(),
             ChannelFilter::Specific(n) => album.uniform_channel_count() == Some(n),
         }

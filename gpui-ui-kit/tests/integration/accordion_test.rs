@@ -8,7 +8,9 @@
 //! - Disabled items
 //! - on_change callback
 
-use gpui::{Context, MouseButton, Modifiers, TestAppContext, VisualTestContext, Window, div, prelude::*};
+use gpui::{
+    Context, Modifiers, MouseButton, TestAppContext, VisualTestContext, Window, div, prelude::*,
+};
 use gpui_ui_kit::accordion::{Accordion, AccordionItem, AccordionMode, AccordionOrientation};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -97,7 +99,10 @@ async fn test_accordion_click_to_expand(cx: &mut TestAppContext) {
     cx.run_until_parked();
 
     // Initially nothing expanded
-    assert!(expanded.borrow().is_empty(), "Nothing should be expanded initially");
+    assert!(
+        expanded.borrow().is_empty(),
+        "Nothing should be expanded initially"
+    );
 
     // Click on first section header to expand
     if let Some(bounds) = cx.debug_bounds("accordion-header-section-a") {
@@ -106,7 +111,11 @@ async fn test_accordion_click_to_expand(cx: &mut TestAppContext) {
         cx.simulate_mouse_up(center, MouseButton::Left, Modifiers::default());
         cx.run_until_parked();
 
-        assert_eq!(change_count.load(Ordering::SeqCst), 1, "on_change should have been called");
+        assert_eq!(
+            change_count.load(Ordering::SeqCst),
+            1,
+            "on_change should have been called"
+        );
         // Note: The callback should have added "section-a" to expanded
     }
 }
@@ -128,7 +137,7 @@ async fn test_accordion_single_mode(cx: &mut TestAppContext) {
                         AccordionItem::new("s1", "Section 1").content("Content 1"),
                         AccordionItem::new("s2", "Section 2").content("Content 2"),
                     ])
-                    .expanded(vec!["s1".into()]),  // Only one expanded in single mode
+                    .expanded(vec!["s1".into()]), // Only one expanded in single mode
             )
         }
     }
@@ -154,7 +163,7 @@ async fn test_accordion_multiple_mode(cx: &mut TestAppContext) {
                         AccordionItem::new("m2", "Multi 2").content("Content 2"),
                         AccordionItem::new("m3", "Multi 3").content("Content 3"),
                     ])
-                    .expanded(vec!["m1".into(), "m3".into()]),  // Multiple expanded
+                    .expanded(vec!["m1".into(), "m3".into()]), // Multiple expanded
             )
         }
     }
@@ -277,8 +286,11 @@ async fn test_accordion_disabled_item(cx: &mut TestAppContext) {
         cx.run_until_parked();
 
         // on_change should NOT have been called for disabled item
-        assert_eq!(change_count.load(Ordering::SeqCst), 0,
-            "Disabled item should not trigger on_change");
+        assert_eq!(
+            change_count.load(Ordering::SeqCst),
+            0,
+            "Disabled item should not trigger on_change"
+        );
     }
 }
 
@@ -334,7 +346,7 @@ async fn test_accordion_item_api(cx: &mut TestAppContext) {
 
     assert_eq!(item.id(), "test-id");
 
-    let _ = cx;  // Satisfy async requirement
+    let _ = cx; // Satisfy async requirement
 }
 
 #[gpui::test]
@@ -431,7 +443,8 @@ impl Render for CollapseTestView {
 #[gpui::test]
 async fn test_accordion_collapse_expanded_item(cx: &mut TestAppContext) {
     // Start with item expanded
-    let expanded: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(vec!["collapse-test".to_string()]));
+    let expanded: Rc<RefCell<Vec<String>>> =
+        Rc::new(RefCell::new(vec!["collapse-test".to_string()]));
     let expanded_clone = expanded.clone();
 
     let window = cx.add_window(move |_window, _cx| CollapseTestView {
@@ -442,7 +455,10 @@ async fn test_accordion_collapse_expanded_item(cx: &mut TestAppContext) {
     cx.run_until_parked();
 
     // Initially expanded
-    assert!(!expanded.borrow().is_empty(), "Item should be expanded initially");
+    assert!(
+        !expanded.borrow().is_empty(),
+        "Item should be expanded initially"
+    );
 
     // Click to collapse
     if let Some(bounds) = cx.debug_bounds("accordion-header-collapse-test") {

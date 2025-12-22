@@ -11,7 +11,6 @@ use gpui_ui_kit::{
 };
 
 impl PlayerView {
-
     // ========================================================================
     // Step 2: Configure
     // ========================================================================
@@ -234,7 +233,8 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |strategy, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.strategy = strategy.to_string();
+                        state.app.spinorama_eq_state.optimizer_config.strategy =
+                            strategy.to_string();
                         state.app.spinorama_eq_state.dropdowns.strategy_open = false;
                     });
                 }
@@ -368,38 +368,41 @@ impl PlayerView {
                     ),
             )
             // Target curve selection (only shown when mode is FlatOnPir/Target)
-            .when(current_mode == SpinoramaOptimizationMode::FlatOnPir, |vstack| {
-                let current_curve = spinorama.optimizer_config.target_curve;
-                let theme = theme.clone();
+            .when(
+                current_mode == SpinoramaOptimizationMode::FlatOnPir,
+                |vstack| {
+                    let current_curve = spinorama.optimizer_config.target_curve;
+                    let theme = theme.clone();
 
-                vstack.child(
-                    Card::new()
-                        .background(theme.surface)
-                        .header_background(theme.background_secondary)
-                        .border(theme.border)
-                        .header(
-                            Text::new("Target Curve")
-                                .color(theme.text_primary)
-                                .weight(TextWeight::Semibold),
-                        )
-                        .content(
-                            VStack::new()
-                                .spacing(StackSpacing::Md)
-                                .child(
-                                    Text::new("Select which measurement curve to flatten.")
-                                        .size(TextSize::Sm)
-                                        .color(theme.text_secondary),
-                                )
-                                .child(
-                                    HStack::new()
-                                        .spacing(StackSpacing::Sm)
-                                        .children(
-                                            crate::app::types::SpinoramaTargetCurve::all().iter().map(|curve| {
+                    vstack.child(
+                        Card::new()
+                            .background(theme.surface)
+                            .header_background(theme.background_secondary)
+                            .border(theme.border)
+                            .header(
+                                Text::new("Target Curve")
+                                    .color(theme.text_primary)
+                                    .weight(TextWeight::Semibold),
+                            )
+                            .content(
+                                VStack::new()
+                                    .spacing(StackSpacing::Md)
+                                    .child(
+                                        Text::new("Select which measurement curve to flatten.")
+                                            .size(TextSize::Sm)
+                                            .color(theme.text_secondary),
+                                    )
+                                    .child(HStack::new().spacing(StackSpacing::Sm).children(
+                                        crate::app::types::SpinoramaTargetCurve::all().iter().map(
+                                            |curve| {
                                                 let is_selected = current_curve == *curve;
                                                 let curve_value = *curve;
 
                                                 Button::new(
-                                                    SharedString::from(format!("spinorama-curve-{:?}", curve)),
+                                                    SharedString::from(format!(
+                                                        "spinorama-curve-{:?}",
+                                                        curve
+                                                    )),
                                                     curve.short_name(),
                                                 )
                                                 .variant(if is_selected {
@@ -422,17 +425,18 @@ impl PlayerView {
                                                         cx.notify();
                                                     }),
                                                 )
-                                            }),
+                                            },
                                         ),
-                                )
-                                .child(
-                                    Text::new(current_curve.as_str())
-                                        .size(TextSize::Xs)
-                                        .color(theme.text_muted),
-                                ),
-                        ),
-                )
-            })
+                                    ))
+                                    .child(
+                                        Text::new(current_curve.as_str())
+                                            .size(TextSize::Xs)
+                                            .color(theme.text_muted),
+                                    ),
+                            ),
+                    )
+                },
+            )
             .child(autoeq_form)
             // Generate Speaker EQ card with progress
             .child(
@@ -515,7 +519,8 @@ impl PlayerView {
                                             })
                                             .when(is_failed, |el| {
                                                 el.child(
-                                                    Badge::new("Failed").variant(BadgeVariant::Error),
+                                                    Badge::new("Failed")
+                                                        .variant(BadgeVariant::Error),
                                                 )
                                             }),
                                     )
@@ -530,17 +535,15 @@ impl PlayerView {
                                                 ProgressVariant::Default
                                             }),
                                     )
-                                    .child(
-                                        Text::new(status_msg)
-                                            .size(TextSize::Sm)
-                                            .color(if is_completed {
-                                                theme.success
-                                            } else if is_failed {
-                                                theme.error
-                                            } else {
-                                                theme.text_secondary
-                                            }),
-                                    )
+                                    .child(Text::new(status_msg).size(TextSize::Sm).color(
+                                        if is_completed {
+                                            theme.success
+                                        } else if is_failed {
+                                            theme.error
+                                        } else {
+                                            theme.text_secondary
+                                        },
+                                    ))
                             })
                             .when_some(error_msg, |vstack, err| {
                                 vstack.child(Text::new(err).size(TextSize::Sm).color(theme.error))
@@ -555,10 +558,7 @@ impl PlayerView {
 
                 let iterations: Vec<f64> = history.iter().map(|&(i, _, _)| i as f64).collect();
                 let losses: Vec<f64> = history.iter().map(|&(_, loss, _)| loss).collect();
-                let scores: Vec<f64> = history
-                    .iter()
-                    .filter_map(|&(_, _, score)| score)
-                    .collect();
+                let scores: Vec<f64> = history.iter().filter_map(|&(_, _, score)| score).collect();
                 let has_scores = !scores.is_empty();
 
                 let current_loss = losses.last().copied().unwrap_or(0.0);
@@ -582,9 +582,7 @@ impl PlayerView {
                         .filter_map(|&(i, _, score)| score.map(|_| i as f64))
                         .collect();
                     // Set secondary axis label and range for score
-                    chart_builder = chart_builder
-                        .y2_label("Score")
-                        .y2_range(0.0, 10.0);
+                    chart_builder = chart_builder.y2_label("Score");
                     chart_builder
                         .add_series_y2_with_x(
                             &score_iterations,
@@ -633,5 +631,4 @@ impl PlayerView {
                 )
             })
     }
-
 }

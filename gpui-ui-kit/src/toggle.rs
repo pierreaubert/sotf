@@ -293,55 +293,58 @@ impl Toggle {
 
         // Label first if selected (for row layout)
         if let Some(label) = &self.label
-            && selected {
-                let label_el = match self.size {
-                    ToggleSize::Sm => div().text_xs(),
-                    ToggleSize::Md => div().text_sm(),
-                    ToggleSize::Lg => div(),
-                };
-                container = container.child(
-                    label_el
-                        .text_color(theme.label)
-                        .font_weight(FontWeight::MEDIUM)
-                        .child(label.clone()),
-                );
-            }
+            && selected
+        {
+            let label_el = match self.size {
+                ToggleSize::Sm => div().text_xs(),
+                ToggleSize::Md => div().text_sm(),
+                ToggleSize::Lg => div(),
+            };
+            container = container.child(
+                label_el
+                    .text_color(theme.label)
+                    .font_weight(FontWeight::MEDIUM)
+                    .child(label.clone()),
+            );
+        }
 
         container = container.child(track);
 
         // Label after track if not selected
         if let Some(label) = &self.label
-            && !selected {
-                let label_el = match self.size {
-                    ToggleSize::Sm => div().text_xs(),
-                    ToggleSize::Md => div().text_sm(),
-                    ToggleSize::Lg => div(),
-                };
-                container = container.child(label_el.text_color(theme.label).child(label.clone()));
-            }
+            && !selected
+        {
+            let label_el = match self.size {
+                ToggleSize::Sm => div().text_xs(),
+                ToggleSize::Md => div().text_sm(),
+                ToggleSize::Lg => div(),
+            };
+            container = container.child(label_el.text_color(theme.label).child(label.clone()));
+        }
 
         // Click and keyboard handlers
         if !self.disabled
-            && let Some(handler) = self.on_change {
-                let handler_rc = std::rc::Rc::new(handler);
-                let new_checked = !checked;
+            && let Some(handler) = self.on_change
+        {
+            let handler_rc = std::rc::Rc::new(handler);
+            let new_checked = !checked;
 
-                // Click handler
-                let handler_click = handler_rc.clone();
-                container = container.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
-                    handler_click(new_checked, window, cx);
+            // Click handler
+            let handler_click = handler_rc.clone();
+            container = container.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
+                handler_click(new_checked, window, cx);
+            });
+
+            // Keyboard handler (Space key when selected)
+            if selected {
+                let handler_key = handler_rc.clone();
+                container = container.on_key_down(move |event, window, cx| {
+                    if event.keystroke.key == "space" {
+                        handler_key(new_checked, window, cx);
+                    }
                 });
-
-                // Keyboard handler (Space key when selected)
-                if selected {
-                    let handler_key = handler_rc.clone();
-                    container = container.on_key_down(move |event, window, cx| {
-                        if event.keystroke.key == "space" {
-                            handler_key(new_checked, window, cx);
-                        }
-                    });
-                }
             }
+        }
 
         container
     }
@@ -447,26 +450,27 @@ impl Toggle {
 
         // Click and keyboard handlers
         if !self.disabled
-            && let Some(handler) = self.on_change {
-                let handler_rc = std::rc::Rc::new(handler);
-                let new_checked = !checked;
+            && let Some(handler) = self.on_change
+        {
+            let handler_rc = std::rc::Rc::new(handler);
+            let new_checked = !checked;
 
-                // Click handler
-                let handler_click = handler_rc.clone();
-                container = container.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
-                    handler_click(new_checked, window, cx);
+            // Click handler
+            let handler_click = handler_rc.clone();
+            container = container.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
+                handler_click(new_checked, window, cx);
+            });
+
+            // Keyboard handler (Space key when selected)
+            if selected {
+                let handler_key = handler_rc.clone();
+                container = container.on_key_down(move |event, window, cx| {
+                    if event.keystroke.key == "space" {
+                        handler_key(new_checked, window, cx);
+                    }
                 });
-
-                // Keyboard handler (Space key when selected)
-                if selected {
-                    let handler_key = handler_rc.clone();
-                    container = container.on_key_down(move |event, window, cx| {
-                        if event.keystroke.key == "space" {
-                            handler_key(new_checked, window, cx);
-                        }
-                    });
-                }
             }
+        }
 
         container
     }

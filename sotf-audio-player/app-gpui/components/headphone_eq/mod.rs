@@ -7,28 +7,19 @@
 //! 4. Save - Export format selection and save
 
 mod actions;
+mod step4_step;
 mod step_1_measurements;
 mod step_2_optimisation;
 mod step_3_listen;
-mod step4_step;
 
 use crate::app::types::{HeadphoneEqStep, PluginUpdateType};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, HStack, StackAlign, StackSpacing, Text, TextSize,
-    TextWeight, VStack,
+    Button, ButtonSize, ButtonVariant, HStack, StackSpacing, StepStatus, WizardHeader, WizardStep,
+    WizardTheme,
 };
-
-/// Target curve options for headphone EQ
-pub const TARGET_CURVE_OPTIONS: &[(&str, &str)] = &[
-    ("harman-over-ear-2018", "Harman Over-Ear 2018"),
-    ("harman-over-ear-2015", "Harman Over-Ear 2015"),
-    ("harman-over-ear-2013", "Harman Over-Ear 2013"),
-    ("harman-in-ear-2019", "Harman In-Ear 2019"),
-    ("custom", "Custom File..."),
-];
 
 impl PlayerView {
     // ========================================================================
@@ -103,130 +94,48 @@ impl PlayerView {
     fn render_headphone_eq_header(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
-        let current_step = state.app.headphone_eq_state.step;
-
-        // Helper function to build step indicator
-        let build_step_indicator =
-            |step: HeadphoneEqStep,
-             label: &'static str,
-             number: u8,
-             theme: &crate::theme::Theme| {
-                let is_active = current_step == step;
-                let is_past = current_step.index() > step.index();
-
-                let (bg_color, text_color, border_color) = if is_active {
-                    (theme.accent, theme.text_on_accent, theme.accent)
-                } else if is_past {
-                    (theme.success, theme.text_on_accent, theme.success)
-                } else {
-                    (theme.surface, theme.text_muted, theme.border)
-                };
-
-                HStack::new()
-                    .spacing(StackSpacing::Sm)
-                    .align(StackAlign::Center)
-                    .child(
-                        div()
-                            .w(px(28.0))
-                            .h(px(28.0))
-                            .rounded_full()
-                            .bg(bg_color)
-                            .border_2()
-                            .border_color(border_color)
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .child(
-                                Text::new(number.to_string())
-                                    .size(TextSize::Sm)
-                                    .weight(TextWeight::Bold)
-                                    .color(text_color),
-                            ),
-                    )
-                    .child(
-                        Text::new(label)
-                            .size(TextSize::Sm)
-                            .weight(if is_active {
-                                TextWeight::Bold
-                            } else {
-                                TextWeight::Normal
-                            })
-                            .color(if is_active {
-                                theme.text_primary
-                            } else {
-                                theme.text_muted
-                            }),
-                    )
-            };
-
-        // Build step connector
-        let connector = |from: HeadphoneEqStep, theme: &crate::theme::Theme| {
-            let is_completed = current_step.index() > from.index();
-            div().w(px(32.0)).h(px(2.0)).bg(if is_completed {
-                theme.success
-            } else {
-                theme.border
-            })
-        };
-
-        div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .px_6()
-            .py_4()
-            .bg(theme.background_secondary)
-            .border_b_1()
-            .border_color(theme.border)
-            .child(
-                HStack::new()
-                    .spacing(StackSpacing::Lg)
-                    .align(StackAlign::Center)
-                    .child(
-                        Text::new("Headphone EQ")
-                            .size(TextSize::Xl)
-                            .weight(TextWeight::Bold)
-                            .color(theme.text_primary),
-                    )
-                    .child(div().w(px(1.0)).h(px(24.0)).bg(theme.border))
-                    .child(build_step_indicator(
-                        HeadphoneEqStep::MeasurementTarget,
-                        "Measurement",
-                        1,
-                        &theme,
-                    ))
-                    .child(connector(HeadphoneEqStep::MeasurementTarget, &theme))
-                    .child(build_step_indicator(
-                        HeadphoneEqStep::Optimization,
-                        "Optimization",
-                        2,
-                        &theme,
-                    ))
-                    .child(connector(HeadphoneEqStep::Optimization, &theme))
-                    .child(build_step_indicator(
-                        HeadphoneEqStep::Listen,
-                        "Listen",
-                        3,
-                        &theme,
-                    ))
-                    .child(connector(HeadphoneEqStep::Listen, &theme))
-                    .child(build_step_indicator(
-                        HeadphoneEqStep::Save,
-                        "Save",
-                        4,
-                        &theme,
-                    )),
-            )
-            .child(self.render_headphone_eq_nav_buttons(cx))
-    }
-
-    /// Render navigation buttons (Close/Back and Next/Finish)
-    fn render_headphone_eq_nav_buttons(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.state.read(cx);
+        let theme_id = state.app.theme_id;
         let current_step = state.app.headphone_eq_state.step;
         let can_go_next = state.app.headphone_eq_state.can_advance();
         let is_busy = state.app.headphone_eq_state.is_optimizing();
-        let view = cx.entity().clone();
+
+        // Map current step to index
+        let step_index = match current_step {
+            HeadphoneEqStep::MeasurementTarget => 0,
+            HeadphoneEqStep::Optimization => 1,
+            HeadphoneEqStep::Listen => 2,
+            HeadphoneEqStep::Save => 3,
+        };
+
+        // Define steps
+        let steps = vec![
+            WizardStep::new("measure", "Measurement"),
+            WizardStep::new("optimize", "Optimization"),
+            WizardStep::new("listen", "Listen"),
+            WizardStep::new("save", "Save"),
+        ];
+
+        // Calculate statuses
+        let step_statuses: Vec<StepStatus> = (0..4)
+            .map(|i| {
+                if i < step_index {
+                    StepStatus::Completed
+                } else if i == step_index {
+                    StepStatus::Active
+                } else {
+                    StepStatus::NotVisited
+                }
+            })
+            .collect();
+
+        let wizard_theme = WizardTheme::from(&theme.to_ui_kit_theme(theme_id));
+
+        let header = WizardHeader::new()
+            .title("Headphone EQ")
+            .steps(steps)
+            .step_statuses(step_statuses)
+            .current_step(step_index)
+            .theme(wizard_theme.clone());
 
         let back_label = match current_step {
             HeadphoneEqStep::MeasurementTarget => "Close",
@@ -237,68 +146,72 @@ impl PlayerView {
             _ => "Next",
         };
 
-        HStack::new()
+        let navigation = HStack::new()
             .spacing(StackSpacing::Md)
             .child(
                 Button::new("back", back_label)
                     .variant(ButtonVariant::Secondary)
                     .size(ButtonSize::Md)
                     .disabled(is_busy)
-                    .on_click({
-                        let view = view.clone();
-                        move |_, cx| {
-                            view.update(cx, |this, cx| {
-                                this.state.update(cx, |state, _| {
-                                    match state.app.headphone_eq_state.step {
-                                        HeadphoneEqStep::MeasurementTarget => {
-                                            // Go back to previous screen
-                                            state.app.current_screen = state.app.last_screen;
-                                        }
-                                        _ => {
-                                            // Go back to previous step
-                                            if let Some(prev) =
-                                                state.app.headphone_eq_state.step.previous()
-                                            {
-                                                state.app.headphone_eq_state.step = prev;
-                                            }
+                    .build()
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(|view, _, _, cx| {
+                            view.state.update(cx, |state, _| {
+                                match state.app.headphone_eq_state.step {
+                                    HeadphoneEqStep::MeasurementTarget => {
+                                        state.app.current_screen = state.app.last_screen;
+                                    }
+                                    _ => {
+                                        if let Some(prev) =
+                                            state.app.headphone_eq_state.step.previous()
+                                        {
+                                            state.app.headphone_eq_state.step = prev;
                                         }
                                     }
-                                });
-                                cx.notify();
+                                }
                             });
-                        }
-                    }),
+                            cx.notify();
+                        }),
+                    ),
             )
             .child(
                 Button::new("next", next_label)
                     .variant(ButtonVariant::Primary)
                     .size(ButtonSize::Md)
                     .disabled(!can_go_next || is_busy)
-                    .on_click({
-                        let view = view.clone();
-                        move |_, cx| {
-                            view.update(cx, |this, cx| {
-                                this.state.update(cx, |state, _| {
-                                    match state.app.headphone_eq_state.step {
-                                        HeadphoneEqStep::Save => {
-                                            // Finish - go back
-                                            state.app.current_screen = state.app.last_screen;
-                                        }
-                                        _ => {
-                                            // Go to next step
-                                            if let Some(next) =
-                                                state.app.headphone_eq_state.step.next()
-                                            {
-                                                state.app.headphone_eq_state.step = next;
-                                            }
+                    .build()
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(|view, _, _, cx| {
+                            view.state.update(cx, |state, _| {
+                                match state.app.headphone_eq_state.step {
+                                    HeadphoneEqStep::Save => {
+                                        state.app.current_screen = state.app.last_screen;
+                                    }
+                                    _ => {
+                                        if let Some(next) = state.app.headphone_eq_state.step.next()
+                                        {
+                                            state.app.headphone_eq_state.step = next;
                                         }
                                     }
-                                });
-                                cx.notify();
+                                }
                             });
-                        }
-                    }),
-            )
-    }
+                            cx.notify();
+                        }),
+                    ),
+            );
 
+        div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .px_6()
+            .py_4()
+            .bg(theme.background_secondary)
+            .border_b_1()
+            .border_color(theme.border)
+            .child(header)
+            .child(navigation)
+    }
 }

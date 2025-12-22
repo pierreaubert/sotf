@@ -86,6 +86,57 @@ pub enum SettingsTab {
     AudioDevice,
 }
 
+/// Type of scan operation that can show a progress modal
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScanType {
+    /// Library scan for audio files
+    Library,
+    /// ReplayGain analysis
+    ReplayGain,
+    /// Bliss audio analysis for similarity
+    Bliss,
+    /// Waveform generation
+    Waveform,
+}
+
+impl ScanType {
+    pub fn title(&self) -> &'static str {
+        match self {
+            ScanType::Library => "Library Scan",
+            ScanType::ReplayGain => "ReplayGain Analysis",
+            ScanType::Bliss => "Bliss Audio Analysis",
+            ScanType::Waveform => "Waveform Generation",
+        }
+    }
+
+    pub fn description(&self) -> &'static str {
+        match self {
+            ScanType::Library => "Scanning directories for audio files...",
+            ScanType::ReplayGain => "Analyzing audio levels for normalization...",
+            ScanType::Bliss => "Extracting audio features for similarity...",
+            ScanType::Waveform => "Generating visual waveforms...",
+        }
+    }
+}
+
+/// State for the scan progress modal
+#[derive(Debug, Clone)]
+pub struct ScanProgressModal {
+    /// Which type of scan is active
+    pub scan_type: ScanType,
+    /// Whether the modal is visible (can be dismissed to run in background)
+    pub visible: bool,
+}
+
+impl ScanProgressModal {
+    pub fn new(scan_type: ScanType) -> Self {
+        Self {
+            scan_type,
+            visible: true,
+        }
+    }
+}
+
 /// Toast message type for color coding
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToastType {
@@ -1626,6 +1677,8 @@ pub struct HeadphoneEqDropdowns {
     pub algorithm_open: bool,
     pub peq_model_open: bool,
     pub export_format_open: bool,
+    pub loss_type_open: bool,
+    pub target_curve_open: bool,
     /// AutoEQ form editing state
     pub autoeq_editing_field: Option<AutoEqField>,
     /// AutoEQ form edit text
@@ -1641,6 +1694,10 @@ pub struct HeadphoneEqState {
     // === Step 1: Select Files ===
     /// Path to headphone measurement file (CSV)
     pub measurement_path: Option<String>,
+
+    // === Goals & Configuration ===
+    /// Loss function type ("flat" or "score")
+    pub loss_type: String,
     /// Target curve selection (preset name or "custom")
     pub target_preset: String,
     /// Path to custom target file (if target_preset == "custom")
@@ -1713,6 +1770,7 @@ impl Default for HeadphoneEqState {
         Self {
             step: HeadphoneEqStep::MeasurementTarget,
             measurement_path: None,
+            loss_type: "score".to_string(),
             target_preset: "harman-over-ear-2018".to_string(),
             custom_target_path: None,
             optimizer_config: HeadphoneEqOptimizerConfig::default(),
@@ -1968,7 +2026,7 @@ impl Default for SpinoramaOptimizerConfig {
             num_filters: 5,
             min_q: 0.5,
             max_q: 6.0,
-            min_db: -4.0,
+            min_db: -12.0,
             max_db: 4.0,
             min_freq: 60.0,
             max_freq: 160000.0,
@@ -1978,7 +2036,7 @@ impl Default for SpinoramaOptimizerConfig {
             de_f: 0.8,
             de_cr: 0.9,
             strategy: "currenttobest1bin".to_string(),
-            refine: true,
+            refine: false,
             local_algo: "cobyla".to_string(),
             smooth: false,
         }
@@ -2793,7 +2851,10 @@ mod tests {
             RoomEqAlgorithm::DifferentialEvolution.to_autoeq_string(),
             "autoeq:de"
         );
-        assert_eq!(RoomEqAlgorithm::NelderMead.to_autoeq_string(), "nelder-mead");
+        assert_eq!(
+            RoomEqAlgorithm::NelderMead.to_autoeq_string(),
+            "nelder-mead"
+        );
     }
 
     // ============================================================================
@@ -2821,10 +2882,7 @@ mod tests {
         let config = PlaybackDeviceConfig::default();
         assert_eq!(config.num_channels, 2);
         assert_eq!(config.sample_rate, 48000);
-        assert_eq!(
-            config.speaker_configuration,
-            SpeakerConfiguration::Stereo
-        );
+        assert_eq!(config.speaker_configuration, SpeakerConfiguration::Stereo);
         assert_eq!(config.channel_mappings.len(), 2);
     }
 

@@ -972,18 +972,14 @@ impl PlayerView {
                                     > = match &plugin.settings {
                                         sotf_audio_player::PluginSettings::SpectrumAnalyzer {
                                             ..
-                                        } => self
-                                            .state
-                                            .read(cx)
-                                            .app
-                                            .spectrum_info
-                                            .clone()
-                                            .map(|s| {
+                                        } => {
+                                            self.state.read(cx).app.spectrum_info.clone().map(|s| {
                                                 std::sync::Arc::new(s)
                                                     as std::sync::Arc<
                                                         dyn std::any::Any + Send + Sync,
                                                     >
-                                            }),
+                                            })
+                                        }
                                         _ => None,
                                     };
 

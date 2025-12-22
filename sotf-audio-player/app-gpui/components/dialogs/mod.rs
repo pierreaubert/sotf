@@ -784,4 +784,240 @@ impl PlayerView {
             .build()
             .min_w(px(260.0))
     }
+
+    /// Render the scan progress modal
+    pub(crate) fn render_scan_progress_modal(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let theme = state.app.theme.clone();
+
+        // Get the active modal info
+        let modal = match &state.app.scan_progress_modal {
+            Some(m) if m.visible => m.clone(),
+            _ => return div().into_any_element(),
+        };
+
+        // Get progress info based on scan type
+        let (progress, processed, total, succeeded, failed) = match modal.scan_type {
+            crate::app::types::ScanType::Library => {
+                let albums = state.app.scan_progress_albums;
+                let tracks = state.app.scan_progress_tracks;
+                // For library scan, we don't have a total count upfront
+                (0.0, tracks, 0usize, albums, 0usize)
+            }
+            crate::app::types::ScanType::ReplayGain => {
+                let mgr = &state.app.replay_gain_manager;
+                (
+                    mgr.progress(),
+                    mgr.processed,
+                    mgr.total,
+                    mgr.succeeded,
+                    mgr.failed,
+                )
+            }
+            crate::app::types::ScanType::Bliss => {
+                let mgr = &state.app.bliss_manager;
+                (
+                    mgr.progress(),
+                    mgr.processed,
+                    mgr.total,
+                    mgr.succeeded,
+                    mgr.failed,
+                )
+            }
+            crate::app::types::ScanType::Waveform => {
+                let mgr = &state.app.waveform_manager;
+                (
+                    mgr.progress(),
+                    mgr.processed,
+                    mgr.total,
+                    mgr.succeeded,
+                    mgr.failed,
+                )
+            }
+        };
+
+        let scan_type = modal.scan_type;
+        let is_library_scan = matches!(scan_type, crate::app::types::ScanType::Library);
+
+        // Check if scan is complete
+        let is_complete = match scan_type {
+            crate::app::types::ScanType::Library => !state.app.scan_in_progress,
+            crate::app::types::ScanType::ReplayGain => !state.app.replay_gain_manager.in_progress,
+            crate::app::types::ScanType::Bliss => !state.app.bliss_manager.in_progress,
+            crate::app::types::ScanType::Waveform => !state.app.waveform_manager.in_progress,
+        };
+
+        // Progress bar width (out of 100%)
+        let progress_width = if is_complete {
+            100.0
+        } else if is_library_scan {
+            // For library scan, show an indeterminate animation-like effect
+            50.0
+        } else {
+            progress.clamp(0.0, 100.0)
+        };
+
+        // Status text
+        let status_text = if is_complete {
+            if is_library_scan {
+                format!("Complete: {} albums, {} tracks found", succeeded, processed)
+            } else {
+                format!("Complete: {} succeeded, {} failed", succeeded, failed)
+            }
+        } else if is_library_scan {
+            format!("{} albums, {} tracks found", succeeded, processed)
+        } else if total > 0 {
+            format!(
+                "{} / {} processed ({} succeeded, {} failed)",
+                processed, total, succeeded, failed
+            )
+        } else {
+            "Initializing...".to_string()
+        };
+
+        div()
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(gpui::rgba(0x00000080))
+            .child(
+                div()
+                    .w(px(400.0))
+                    .bg(theme.surface)
+                    .border_1()
+                    .border_color(theme.border)
+                    .rounded_lg()
+                    .shadow_lg()
+                    .p_6()
+                    .flex()
+                    .flex_col()
+                    .gap_4()
+                    // Title
+                    .child(
+                        Text::new(scan_type.title())
+                            .size(TextSize::Lg)
+                            .weight(TextWeight::Bold)
+                            .color(theme.text_primary),
+                    )
+                    // Description
+                    .child(
+                        Text::new(scan_type.description())
+                            .size(TextSize::Sm)
+                            .color(theme.text_secondary),
+                    )
+                    // Progress bar
+                    .child(
+                        div()
+                            .w_full()
+                            .h(px(8.0))
+                            .bg(theme.background_secondary)
+                            .rounded_full()
+                            .overflow_hidden()
+                            .child(
+                                div()
+                                    .h_full()
+                                    // Calculate width as a fraction of the container
+                                    // 400px modal - 48px padding (24px each side) = 352px container
+                                    .w(px(352.0 * (progress_width / 100.0)))
+                                    .bg(theme.accent)
+                                    .rounded_full(),
+                            ),
+                    )
+                    // Status text
+                    .child(
+                        Text::new(status_text)
+                            .size(TextSize::Sm)
+                            .color(theme.text_muted),
+                    )
+                    // Buttons
+                    .child(
+                        HStack::new()
+                            .spacing(StackSpacing::Md)
+                            .justify(StackJustify::End)
+                            .when(!is_complete, |stack| {
+                                stack
+                                    .child(
+                                        gpui_ui_kit::Button::new("scan-cancel", "Cancel")
+                                            .variant(gpui_ui_kit::ButtonVariant::Secondary)
+                                            .size(gpui_ui_kit::ButtonSize::Md)
+                                            .theme(theme.to_button_theme())
+                                            .build()
+                                            .on_click(cx.listener(
+                                                move |view, _: &ClickEvent, _window, cx| {
+                                                    view.cancel_scan(scan_type, cx);
+                                                },
+                                            )),
+                                    )
+                                    .child(
+                                        gpui_ui_kit::Button::new("scan-background", "Background")
+                                            .variant(gpui_ui_kit::ButtonVariant::Secondary)
+                                            .size(gpui_ui_kit::ButtonSize::Md)
+                                            .theme(theme.to_button_theme())
+                                            .build()
+                                            .on_click(cx.listener(
+                                                move |view, _: &ClickEvent, _window, cx| {
+                                                    view.dismiss_scan_modal(cx);
+                                                },
+                                            )),
+                                    )
+                            })
+                            .child(
+                                gpui_ui_kit::Button::new("scan-done", "Done")
+                                    .variant(gpui_ui_kit::ButtonVariant::Primary)
+                                    .size(gpui_ui_kit::ButtonSize::Md)
+                                    .disabled(!is_complete)
+                                    .theme(theme.to_button_theme())
+                                    .build()
+                                    .on_click(cx.listener(
+                                        move |view, _: &ClickEvent, _window, cx| {
+                                            view.close_scan_modal(cx);
+                                        },
+                                    )),
+                            ),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    /// Cancel the active scan
+    fn cancel_scan(&mut self, scan_type: crate::app::types::ScanType, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            match scan_type {
+                crate::app::types::ScanType::Library => {
+                    state.app.cancel_library_scan();
+                }
+                crate::app::types::ScanType::ReplayGain => {
+                    state.app.replay_gain_manager.stop();
+                }
+                crate::app::types::ScanType::Bliss => {
+                    state.app.bliss_manager.stop();
+                }
+                crate::app::types::ScanType::Waveform => {
+                    state.app.waveform_manager.stop();
+                }
+            }
+            state.app.scan_progress_modal = None;
+        });
+        cx.notify();
+    }
+
+    /// Dismiss the scan modal but keep the scan running in background
+    fn dismiss_scan_modal(&mut self, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            if let Some(modal) = &mut state.app.scan_progress_modal {
+                modal.visible = false;
+            }
+        });
+        cx.notify();
+    }
+
+    /// Close the scan modal completely (used when scan is done)
+    fn close_scan_modal(&mut self, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            state.app.scan_progress_modal = None;
+        });
+        cx.notify();
+    }
 }

@@ -619,7 +619,10 @@ impl LineChart {
             (min, max)
         } else if self.y_scale_type == ScaleType::Log {
             // For log scale, use multiplicative padding
-            let min = primary_y_values.iter().copied().fold(f64::INFINITY, f64::min);
+            let min = primary_y_values
+                .iter()
+                .copied()
+                .fold(f64::INFINITY, f64::min);
             let max = primary_y_values
                 .iter()
                 .copied()
@@ -1549,7 +1552,9 @@ mod tests {
     #[test]
     fn test_line_range_frequency_response_use_case() {
         // Typical audio frequency response display: 20 Hz to 20 kHz on log scale
-        let x: Vec<f64> = (1..=100).map(|i| 20.0 * (1000.0_f64).powf(i as f64 / 100.0)).collect();
+        let x: Vec<f64> = (1..=100)
+            .map(|i| 20.0 * (1000.0_f64).powf(i as f64 / 100.0))
+            .collect();
         let y: Vec<f64> = x.iter().map(|_| 0.0).collect(); // flat response
         let result = line(&x, &y)
             .x_scale(ScaleType::Log)

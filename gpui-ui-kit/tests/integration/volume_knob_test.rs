@@ -10,7 +10,7 @@
 //! - Color overrides
 //! - Double-click mute toggle
 
-use gpui::{Context, TestAppContext, VisualTestContext, Window, div, px, prelude::*};
+use gpui::{Context, TestAppContext, VisualTestContext, Window, div, prelude::*, px};
 use gpui_ui_kit::volume_knob::{VolumeKnob, VolumeKnobTheme};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -29,7 +29,7 @@ impl Render for VolumeKnobTestView {
             VolumeKnob::new()
                 .id("test-volume-knob")
                 .value(0.7)
-                .label("VOL")
+                .label("VOL"),
         )
     }
 }
@@ -52,36 +52,11 @@ async fn test_volume_knob_value_range(cx: &mut TestAppContext) {
             div()
                 .flex()
                 .gap_4()
-                .child(
-                    VolumeKnob::new()
-                        .id("vol-0")
-                        .value(0.0)
-                        .label("0%")
-                )
-                .child(
-                    VolumeKnob::new()
-                        .id("vol-25")
-                        .value(0.25)
-                        .label("25%")
-                )
-                .child(
-                    VolumeKnob::new()
-                        .id("vol-50")
-                        .value(0.5)
-                        .label("50%")
-                )
-                .child(
-                    VolumeKnob::new()
-                        .id("vol-75")
-                        .value(0.75)
-                        .label("75%")
-                )
-                .child(
-                    VolumeKnob::new()
-                        .id("vol-100")
-                        .value(1.0)
-                        .label("100%")
-                )
+                .child(VolumeKnob::new().id("vol-0").value(0.0).label("0%"))
+                .child(VolumeKnob::new().id("vol-25").value(0.25).label("25%"))
+                .child(VolumeKnob::new().id("vol-50").value(0.5).label("50%"))
+                .child(VolumeKnob::new().id("vol-75").value(0.75).label("75%"))
+                .child(VolumeKnob::new().id("vol-100").value(1.0).label("100%"))
         }
     }
 
@@ -108,7 +83,7 @@ impl Render for VolumeChangeTestView {
                 .on_change(move |new_val, _window, _cx| {
                     *value_rc.borrow_mut() = new_val;
                     change_count.fetch_add(1, Ordering::SeqCst);
-                })
+                }),
         )
     }
 }
@@ -151,14 +126,14 @@ async fn test_volume_knob_muted(cx: &mut TestAppContext) {
                         .id("not-muted")
                         .value(0.7)
                         .muted(false)
-                        .label("ON")
+                        .label("ON"),
                 )
                 .child(
                     VolumeKnob::new()
                         .id("muted")
                         .value(0.7)
                         .muted(true)
-                        .label("MUTE")
+                        .label("MUTE"),
                 )
         }
     }
@@ -187,7 +162,7 @@ impl Render for MuteToggleTestView {
                 .on_mute_toggle(move |new_muted, _window, _cx| {
                     *muted_rc.borrow_mut() = new_muted;
                     toggle_count.fetch_add(1, Ordering::SeqCst);
-                })
+                }),
         )
     }
 }
@@ -229,35 +204,35 @@ async fn test_volume_knob_sizes(cx: &mut TestAppContext) {
                         .id("size-20")
                         .size(px(20.0))
                         .value(0.7)
-                        .label("XS")
+                        .label("XS"),
                 )
                 .child(
                     VolumeKnob::new()
                         .id("size-32")
                         .size(px(32.0))
                         .value(0.7)
-                        .label("S")
+                        .label("S"),
                 )
                 .child(
                     VolumeKnob::new()
                         .id("size-40")
                         .size(px(40.0))
                         .value(0.7)
-                        .label("M")
+                        .label("M"),
                 )
                 .child(
                     VolumeKnob::new()
                         .id("size-56")
                         .size(px(56.0))
                         .value(0.7)
-                        .label("L")
+                        .label("L"),
                 )
                 .child(
                     VolumeKnob::new()
                         .id("size-80")
                         .size(px(80.0))
                         .value(0.7)
-                        .label("XL")
+                        .label("XL"),
                 )
         }
     }
@@ -278,25 +253,15 @@ async fn test_volume_knob_labels(cx: &mut TestAppContext) {
             div()
                 .flex()
                 .gap_4()
-                .child(
-                    VolumeKnob::new()
-                        .id("label-vol")
-                        .value(0.7)
-                        .label("VOL")
-                )
+                .child(VolumeKnob::new().id("label-vol").value(0.7).label("VOL"))
                 .child(
                     VolumeKnob::new()
                         .id("label-master")
                         .value(0.8)
                         .size(px(50.0))
-                        .label("M")
+                        .label("M"),
                 )
-                .child(
-                    VolumeKnob::new()
-                        .id("label-empty")
-                        .value(0.5)
-                        .label("")
-                )
+                .child(VolumeKnob::new().id("label-empty").value(0.5).label(""))
         }
     }
 
@@ -314,7 +279,7 @@ async fn test_volume_knob_with_custom_theme(cx: &mut TestAppContext) {
     impl Render for ThemedView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
             let custom_theme = VolumeKnobTheme {
-                accent: gpui::hsla(0.1, 1.0, 0.5, 1.0),  // Orange
+                accent: gpui::hsla(0.1, 1.0, 0.5, 1.0), // Orange
                 muted: gpui::hsla(0.0, 0.0, 0.3, 1.0),
                 background: gpui::hsla(0.0, 0.0, 0.15, 1.0),
                 text: gpui::hsla(0.0, 0.0, 0.95, 1.0),
@@ -325,7 +290,7 @@ async fn test_volume_knob_with_custom_theme(cx: &mut TestAppContext) {
                     .id("themed-knob")
                     .theme(custom_theme)
                     .value(0.7)
-                    .label("THM")
+                    .label("THM"),
             )
         }
     }
@@ -350,22 +315,22 @@ async fn test_volume_knob_color_overrides(cx: &mut TestAppContext) {
                     VolumeKnob::new()
                         .id("accent-red")
                         .value(0.7)
-                        .accent_color(gpui::hsla(0.0, 1.0, 0.5, 1.0))  // Red
-                        .label("R")
+                        .accent_color(gpui::hsla(0.0, 1.0, 0.5, 1.0)) // Red
+                        .label("R"),
                 )
                 .child(
                     VolumeKnob::new()
                         .id("accent-green")
                         .value(0.7)
-                        .accent_color(gpui::hsla(0.33, 1.0, 0.4, 1.0))  // Green
-                        .label("G")
+                        .accent_color(gpui::hsla(0.33, 1.0, 0.4, 1.0)) // Green
+                        .label("G"),
                 )
                 .child(
                     VolumeKnob::new()
                         .id("accent-blue")
                         .value(0.7)
-                        .accent_color(gpui::hsla(0.6, 1.0, 0.5, 1.0))  // Blue
-                        .label("B")
+                        .accent_color(gpui::hsla(0.6, 1.0, 0.5, 1.0)) // Blue
+                        .label("B"),
                 )
         }
     }
@@ -384,8 +349,8 @@ async fn test_volume_knob_muted_color_override(cx: &mut TestAppContext) {
                     .id("muted-color-knob")
                     .value(0.7)
                     .muted(true)
-                    .muted_color(gpui::hsla(0.0, 1.0, 0.3, 1.0))  // Dark red when muted
-                    .label("MUTE")
+                    .muted_color(gpui::hsla(0.0, 1.0, 0.3, 1.0)) // Dark red when muted
+                    .label("MUTE"),
             )
         }
     }
@@ -403,8 +368,8 @@ async fn test_volume_knob_bg_color_override(cx: &mut TestAppContext) {
                 VolumeKnob::new()
                     .id("bg-color-knob")
                     .value(0.7)
-                    .bg_color(gpui::hsla(0.6, 0.3, 0.2, 1.0))  // Dark blue
-                    .label("BG")
+                    .bg_color(gpui::hsla(0.6, 0.3, 0.2, 1.0)) // Dark blue
+                    .label("BG"),
             )
         }
     }
@@ -422,8 +387,8 @@ async fn test_volume_knob_text_color_override(cx: &mut TestAppContext) {
                 VolumeKnob::new()
                     .id("text-color-knob")
                     .value(0.7)
-                    .text_color(gpui::hsla(0.1, 1.0, 0.5, 1.0))  // Orange text
-                    .label("TXT")
+                    .text_color(gpui::hsla(0.1, 1.0, 0.5, 1.0)) // Orange text
+                    .label("TXT"),
             )
         }
     }
@@ -441,12 +406,7 @@ async fn test_volume_knob_zero_value(cx: &mut TestAppContext) {
 
     impl Render for ZeroValueView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div().child(
-                VolumeKnob::new()
-                    .id("zero-value")
-                    .value(0.0)
-                    .label("0")
-            )
+            div().child(VolumeKnob::new().id("zero-value").value(0.0).label("0"))
         }
     }
 
@@ -459,12 +419,7 @@ async fn test_volume_knob_max_value(cx: &mut TestAppContext) {
 
     impl Render for MaxValueView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div().child(
-                VolumeKnob::new()
-                    .id("max-value")
-                    .value(1.0)
-                    .label("MAX")
-            )
+            div().child(VolumeKnob::new().id("max-value").value(1.0).label("MAX"))
         }
     }
 
@@ -480,8 +435,8 @@ async fn test_volume_knob_over_max_clamped(cx: &mut TestAppContext) {
             div().child(
                 VolumeKnob::new()
                     .id("over-max")
-                    .value(1.5)  // Over 1.0, should be clamped
-                    .label("CLAMP")
+                    .value(1.5) // Over 1.0, should be clamped
+                    .label("CLAMP"),
             )
         }
     }
@@ -498,8 +453,8 @@ async fn test_volume_knob_negative_clamped(cx: &mut TestAppContext) {
             div().child(
                 VolumeKnob::new()
                     .id("negative")
-                    .value(-0.5)  // Negative, should be clamped to 0
-                    .label("NEG")
+                    .value(-0.5) // Negative, should be clamped to 0
+                    .label("NEG"),
             )
         }
     }
@@ -530,11 +485,11 @@ async fn test_volume_knob_all_color_overrides(cx: &mut TestAppContext) {
                 VolumeKnob::new()
                     .id("all-overrides")
                     .value(0.7)
-                    .accent_color(gpui::hsla(0.8, 1.0, 0.5, 1.0))  // Purple
+                    .accent_color(gpui::hsla(0.8, 1.0, 0.5, 1.0)) // Purple
                     .muted_color(gpui::hsla(0.0, 0.5, 0.3, 1.0))
                     .bg_color(gpui::hsla(0.0, 0.0, 0.05, 1.0))
                     .text_color(gpui::hsla(0.8, 1.0, 0.8, 1.0))
-                    .label("ALL")
+                    .label("ALL"),
             )
         }
     }

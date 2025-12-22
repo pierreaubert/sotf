@@ -11,13 +11,13 @@
 //! - Clipboard operations (Cmd+C/V/X)
 
 use gpui::{
-    Context, MouseButton, Modifiers, TestAppContext, VisualTestContext, Window, div, prelude::*,
+    Context, Modifiers, MouseButton, TestAppContext, VisualTestContext, Window, div, prelude::*,
 };
 use gpui_ui_kit::input::Input;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 struct InputTestView;
 
@@ -62,9 +62,7 @@ async fn test_input_with_callback(cx: &mut TestAppContext) {
     let value = Rc::new(RefCell::new("initial".to_string()));
     let value_clone = value.clone();
 
-    let _window = cx.add_window(move |_window, _cx| InputWithCallbackView {
-        value: value_clone,
-    });
+    let _window = cx.add_window(move |_window, _cx| InputWithCallbackView { value: value_clone });
 
     // Verify initial value
     assert_eq!(*value.borrow(), "initial");
@@ -80,11 +78,7 @@ async fn test_input_configurations(cx: &mut TestAppContext) {
     impl Render for ConfigTestView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
             div()
-                .child(
-                    Input::new("small-input")
-                        .size(InputSize::Sm)
-                        .value("Small"),
-                )
+                .child(Input::new("small-input").size(InputSize::Sm).value("Small"))
                 .child(
                     Input::new("filled-input")
                         .variant(InputVariant::Filled)
@@ -127,17 +121,14 @@ impl Render for InputKeyboardTestView {
 
         let text_changes = self.text_changes.clone();
 
-        div()
-            .id("test-container")
-            .size_full()
-            .child(
-                Input::new("keyboard-test-input")
-                    .placeholder("Type here...")
-                    .value("")
-                    .on_text_change(move |text, _window, _cx| {
-                        text_changes.borrow_mut().push(text);
-                    }),
-            )
+        div().id("test-container").size_full().child(
+            Input::new("keyboard-test-input")
+                .placeholder("Type here...")
+                .value("")
+                .on_text_change(move |text, _window, _cx| {
+                    text_changes.borrow_mut().push(text);
+                }),
+        )
     }
 }
 
@@ -813,7 +804,11 @@ async fn test_input_ctrl_k_kills_to_end(cx: &mut TestAppContext) {
         if !changes.is_empty() {
             let last = changes.last().unwrap();
             // Should only have "AB" left
-            assert_eq!(last, "AB", "Ctrl+K should kill text after cursor, got: {}", last);
+            assert_eq!(
+                last, "AB",
+                "Ctrl+K should kill text after cursor, got: {}",
+                last
+            );
         }
     }
 }
@@ -851,7 +846,11 @@ async fn test_input_ctrl_u_kills_to_beginning(cx: &mut TestAppContext) {
         if !changes.is_empty() {
             let last = changes.last().unwrap();
             // Should only have "EF" left
-            assert_eq!(last, "EF", "Ctrl+U should kill text before cursor, got: {}", last);
+            assert_eq!(
+                last, "EF",
+                "Ctrl+U should kill text before cursor, got: {}",
+                last
+            );
         }
     }
 }

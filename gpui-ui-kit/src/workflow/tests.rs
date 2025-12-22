@@ -530,7 +530,9 @@ fn test_history_manager_clear_redo_on_new_action() {
     let node2 = WorkflowNodeData::new("N2", Position::new(100.0, 0.0));
 
     history.execute(
-        Box::new(AddNodeCommand { node: node1.clone() }),
+        Box::new(AddNodeCommand {
+            node: node1.clone(),
+        }),
         &mut graph,
     );
     history.undo(&mut graph);
@@ -538,7 +540,9 @@ fn test_history_manager_clear_redo_on_new_action() {
 
     // New action clears redo stack
     history.execute(
-        Box::new(AddNodeCommand { node: node2.clone() }),
+        Box::new(AddNodeCommand {
+            node: node2.clone(),
+        }),
         &mut graph,
     );
     assert!(!history.can_redo());
@@ -616,8 +620,14 @@ fn test_full_workflow_scenario() {
     // Add connections
     let conn1 = Connection::new(id1, 0, id2, 0);
     let conn2 = Connection::new(id2, 0, id3, 0);
-    history.execute(Box::new(AddConnectionCommand { connection: conn1 }), &mut graph);
-    history.execute(Box::new(AddConnectionCommand { connection: conn2 }), &mut graph);
+    history.execute(
+        Box::new(AddConnectionCommand { connection: conn1 }),
+        &mut graph,
+    );
+    history.execute(
+        Box::new(AddConnectionCommand { connection: conn2 }),
+        &mut graph,
+    );
 
     assert_eq!(graph.connections.len(), 2);
 

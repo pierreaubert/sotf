@@ -2,8 +2,8 @@
 
 use super::bezier::connection_path;
 use super::history::{
-    AddConnectionCommand, AddNodeCommand, HistoryManager, MoveNodesCommand, RemoveConnectionCommand,
-    RemoveNodeCommand,
+    AddConnectionCommand, AddNodeCommand, HistoryManager, MoveNodesCommand,
+    RemoveConnectionCommand, RemoveNodeCommand,
 };
 use super::hit_test::{HitTestResult, HitTester};
 use super::node::WorkflowNode;
@@ -89,15 +89,19 @@ impl WorkflowCanvas {
 
     /// Add a node at the given position
     pub fn add_node(&mut self, node: WorkflowNodeData) {
-        self.history.execute(
-            Box::new(AddNodeCommand { node }),
-            &mut self.state.graph,
-        );
+        self.history
+            .execute(Box::new(AddNodeCommand { node }), &mut self.state.graph);
     }
 
     /// Remove selected nodes
     pub fn remove_selected(&mut self) {
-        let selected: Vec<NodeId> = self.state.selection.selected_nodes.iter().copied().collect();
+        let selected: Vec<NodeId> = self
+            .state
+            .selection
+            .selected_nodes
+            .iter()
+            .copied()
+            .collect();
 
         for node_id in selected {
             if let Some(node) = self.state.graph.nodes.get(&node_id).cloned() {
@@ -272,7 +276,9 @@ impl WorkflowCanvas {
             {
                 let new_conn = Connection::new(new_from, conn.from_port, new_to, conn.to_port);
                 self.history.execute(
-                    Box::new(AddConnectionCommand { connection: new_conn }),
+                    Box::new(AddConnectionCommand {
+                        connection: new_conn,
+                    }),
                     &mut self.state.graph,
                 );
             }
@@ -332,9 +338,11 @@ impl WorkflowCanvas {
         let canvas_pos = self.state.viewport.screen_to_canvas(position.x, position.y);
 
         // Hit test uses screen coordinates for accurate port detection
-        let hit = self
-            .hit_tester
-            .hit_test_with_viewport(position, &self.state.graph, &self.state.viewport);
+        let hit = self.hit_tester.hit_test_with_viewport(
+            position,
+            &self.state.graph,
+            &self.state.viewport,
+        );
 
         match hit {
             HitTestResult::OutputPort(node_id, port_idx) => {
@@ -364,17 +372,16 @@ impl WorkflowCanvas {
                 }
 
                 // Start dragging
-                let dragging_nodes: Vec<NodeId> =
-                    self.state.selection.selected_nodes.iter().copied().collect();
+                let dragging_nodes: Vec<NodeId> = self
+                    .state
+                    .selection
+                    .selected_nodes
+                    .iter()
+                    .copied()
+                    .collect();
                 let original_positions: HashMap<NodeId, Position> = dragging_nodes
                     .iter()
-                    .filter_map(|id| {
-                        self.state
-                            .graph
-                            .nodes
-                            .get(id)
-                            .map(|n| (*id, n.position))
-                    })
+                    .filter_map(|id| self.state.graph.nodes.get(id).map(|n| (*id, n.position)))
                     .collect();
 
                 self.state.mode = InteractionMode::DraggingNodes;
@@ -461,11 +468,12 @@ impl WorkflowCanvas {
 
                     if !moves.is_empty() {
                         // Check if nodes actually moved
-                        let moved = moves.iter().any(|(_, old, new)| old.x != new.x || old.y != new.y);
+                        let moved = moves
+                            .iter()
+                            .any(|(_, old, new)| old.x != new.x || old.y != new.y);
                         if moved {
                             // Don't execute, just record (positions are already updated)
-                            self.history
-                                .record(Box::new(MoveNodesCommand { moves }));
+                            self.history.record(Box::new(MoveNodesCommand { moves }));
                         }
                     }
                 }
@@ -473,9 +481,11 @@ impl WorkflowCanvas {
             InteractionMode::CreatingConnection => {
                 if let Some(drag) = self.state.connection_drag.take() {
                     // Hit test uses screen coordinates for accurate port detection
-                    let hit = self
-                        .hit_tester
-                        .hit_test_with_viewport(position, &self.state.graph, &self.state.viewport);
+                    let hit = self.hit_tester.hit_test_with_viewport(
+                        position,
+                        &self.state.graph,
+                        &self.state.viewport,
+                    );
 
                     // Check if we dropped on a valid target port
                     let target = match (drag.is_output, hit) {
@@ -546,7 +556,10 @@ impl WorkflowCanvas {
         if let Some(menu_state) = &self.state.context_menu {
             // Position new node at the click location (converted to canvas coords)
             let click_pos = menu_state.position;
-            let canvas_pos = self.state.viewport.screen_to_canvas(click_pos.x, click_pos.y);
+            let canvas_pos = self
+                .state
+                .viewport
+                .screen_to_canvas(click_pos.x, click_pos.y);
 
             let node = match node_type.as_ref() {
                 "input" => WorkflowNodeData::new("Input Source", canvas_pos).with_ports(0, 1),
@@ -565,9 +578,7 @@ impl WorkflowCanvas {
     }
 
     fn handle_scroll(&mut self, delta: f32, position: Position, cx: &mut Context<Self>) {
-        self.state
-            .viewport
-            .zoom_at(delta, position.x, position.y);
+        self.state.viewport.zoom_at(delta, position.x, position.y);
         cx.notify();
     }
 
@@ -764,7 +775,12 @@ impl Render for WorkflowCanvas {
                 entity.update(cx, |this, _| {
                     this.canvas_origin = Position::new(origin_x, origin_y);
                 });
-                (connections.clone(), connection_drag.clone(), graph.clone(), bounds)
+                (
+                    connections.clone(),
+                    connection_drag.clone(),
+                    graph.clone(),
+                    bounds,
+                )
             },
             move |_, (connections, connection_drag, graph, bounds), window, _| {
                 // Use fresh bounds from callback - bounds.origin gives us the canvas element position
@@ -774,11 +790,7 @@ impl Render for WorkflowCanvas {
                 // Draw connections - positions are already in screen coordinates
                 // Shorten lines by port_radius at each end so they don't overlap ports
                 for (from_pos, to_pos, selected) in &connections {
-                    let color = if *selected {
-                        conn_selected
-                    } else {
-                        conn_color
-                    };
+                    let color = if *selected { conn_selected } else { conn_color };
 
                     draw_connection(
                         window,
@@ -915,12 +927,7 @@ impl Render for WorkflowCanvas {
             .bg(theme.canvas_background)
             .overflow_hidden()
             // Draw grid pattern (simplified)
-            .child(
-                div()
-                    .absolute()
-                    .inset_0()
-                    .bg(theme.canvas_background),
-            )
+            .child(div().absolute().inset_0().bg(theme.canvas_background))
             // Connections layer
             .child(connections_element)
             // Nodes layer
@@ -940,21 +947,27 @@ impl Render for WorkflowCanvas {
         // Note: event.position is in window coordinates, we subtract canvas_origin
         // to get coordinates relative to the canvas element
         result
-            .on_mouse_down(MouseButton::Left, cx.listener(|this, event: &MouseDownEvent, _window, cx| {
-                let x: f32 = event.position.x.into();
-                let y: f32 = event.position.y.into();
-                // Convert from window coordinates to canvas-element-relative coordinates
-                let pos = Position::new(x - this.canvas_origin.x, y - this.canvas_origin.y);
-                let shift = event.modifiers.shift;
-                this.handle_mouse_down(pos, shift, cx);
-            }))
-            .on_mouse_down(MouseButton::Right, cx.listener(|this, event: &MouseDownEvent, _window, cx| {
-                let x: f32 = event.position.x.into();
-                let y: f32 = event.position.y.into();
-                // Convert from window coordinates to canvas-element-relative coordinates
-                let pos = Position::new(x - this.canvas_origin.x, y - this.canvas_origin.y);
-                this.handle_right_click(pos, cx);
-            }))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, event: &MouseDownEvent, _window, cx| {
+                    let x: f32 = event.position.x.into();
+                    let y: f32 = event.position.y.into();
+                    // Convert from window coordinates to canvas-element-relative coordinates
+                    let pos = Position::new(x - this.canvas_origin.x, y - this.canvas_origin.y);
+                    let shift = event.modifiers.shift;
+                    this.handle_mouse_down(pos, shift, cx);
+                }),
+            )
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(|this, event: &MouseDownEvent, _window, cx| {
+                    let x: f32 = event.position.x.into();
+                    let y: f32 = event.position.y.into();
+                    // Convert from window coordinates to canvas-element-relative coordinates
+                    let pos = Position::new(x - this.canvas_origin.x, y - this.canvas_origin.y);
+                    this.handle_right_click(pos, cx);
+                }),
+            )
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _window, cx| {
                 let x: f32 = event.position.x.into();
                 let y: f32 = event.position.y.into();
@@ -962,13 +975,16 @@ impl Render for WorkflowCanvas {
                 let pos = Position::new(x - this.canvas_origin.x, y - this.canvas_origin.y);
                 this.handle_mouse_move(pos, cx);
             }))
-            .on_mouse_up(MouseButton::Left, cx.listener(|this, event: &MouseUpEvent, _window, cx| {
-                let x: f32 = event.position.x.into();
-                let y: f32 = event.position.y.into();
-                // Convert from window coordinates to canvas-element-relative coordinates
-                let pos = Position::new(x - this.canvas_origin.x, y - this.canvas_origin.y);
-                this.handle_mouse_up(pos, cx);
-            }))
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|this, event: &MouseUpEvent, _window, cx| {
+                    let x: f32 = event.position.x.into();
+                    let y: f32 = event.position.y.into();
+                    // Convert from window coordinates to canvas-element-relative coordinates
+                    let pos = Position::new(x - this.canvas_origin.x, y - this.canvas_origin.y);
+                    this.handle_mouse_up(pos, cx);
+                }),
+            )
             .on_scroll_wheel(cx.listener(|this, event: &ScrollWheelEvent, _window, cx| {
                 let delta = match event.delta {
                     ScrollDelta::Lines(lines) => lines.y,

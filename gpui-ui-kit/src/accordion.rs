@@ -264,7 +264,11 @@ impl Accordion {
             // Expand/collapse indicator (different for vertical vs horizontal)
             let indicator = if is_vertical {
                 if is_expanded { "▼" } else { "▶" }
-            } else if is_expanded { "▼" } else { "▲" };
+            } else if is_expanded {
+                "▼"
+            } else {
+                "▲"
+            };
             header = header.child(
                 div()
                     .text_xs()
@@ -275,17 +279,16 @@ impl Accordion {
             item_wrapper = item_wrapper.child(header);
 
             // Content (only if expanded)
-            if is_expanded
-                && let Some(content) = item.content {
-                    let content_div = div()
-                        .px_4()
-                        .py_3()
-                        .bg(theme.content_bg)
-                        .border_t_1()
-                        .border_color(theme.border);
+            if is_expanded && let Some(content) = item.content {
+                let content_div = div()
+                    .px_4()
+                    .py_3()
+                    .bg(theme.content_bg)
+                    .border_t_1()
+                    .border_color(theme.border);
 
-                    item_wrapper = item_wrapper.child(content_div.child(content));
-                }
+                item_wrapper = item_wrapper.child(content_div.child(content));
+            }
 
             container = container.child(item_wrapper);
         }
@@ -403,19 +406,18 @@ impl Accordion {
         for item in items.into_iter() {
             let is_expanded = expanded.contains(&item.id);
 
-            if is_expanded
-                && let Some(content) = item.content {
-                    let content_div = div()
-                        .flex_1()
-                        .px_4()
-                        .py_3()
-                        .bg(theme.content_bg)
-                        .border_r_1()
-                        .border_color(theme.border)
-                        .child(content);
+            if is_expanded && let Some(content) = item.content {
+                let content_div = div()
+                    .flex_1()
+                    .px_4()
+                    .py_3()
+                    .bg(theme.content_bg)
+                    .border_r_1()
+                    .border_color(theme.border)
+                    .child(content);
 
-                    content_container = content_container.child(content_div);
-                }
+                content_container = content_container.child(content_div);
+            }
         }
 
         container = container.child(content_container);

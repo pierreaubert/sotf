@@ -10,8 +10,10 @@
 //! - Disabled state
 //! - Callbacks: on_change, on_select, on_reset, on_drag_start
 
-use gpui::{Context, MouseButton, Modifiers, TestAppContext, VisualTestContext, Window, div, prelude::*};
-use gpui_ui_kit::potentiometer::{Potentiometer, PotentiometerSize, PotentiometerScale};
+use gpui::{
+    Context, Modifiers, MouseButton, TestAppContext, VisualTestContext, Window, div, prelude::*,
+};
+use gpui_ui_kit::potentiometer::{Potentiometer, PotentiometerScale, PotentiometerSize};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -123,7 +125,10 @@ async fn test_potentiometer_click_to_increment(cx: &mut TestAppContext) {
     cx.run_until_parked();
 
     // Initial value should be 50
-    assert!(((*value.borrow()) - 50.0).abs() < 0.01, "Initial value should be 50");
+    assert!(
+        ((*value.borrow()) - 50.0).abs() < 0.01,
+        "Initial value should be 50"
+    );
 
     // Click the potentiometer to increment (10% step = +10 on 0-100 range)
     if let Some(bounds) = cx.debug_bounds("change-test-pot") {
@@ -131,7 +136,11 @@ async fn test_potentiometer_click_to_increment(cx: &mut TestAppContext) {
         cx.simulate_mouse_down(center, MouseButton::Left, Modifiers::default());
         cx.run_until_parked();
 
-        assert_eq!(change_count.load(Ordering::SeqCst), 1, "on_change should have been called");
+        assert_eq!(
+            change_count.load(Ordering::SeqCst),
+            1,
+            "on_change should have been called"
+        );
         // Value should have increased by 10% (10 units on 0-100 range)
     }
 }
@@ -192,7 +201,11 @@ async fn test_potentiometer_on_select(cx: &mut TestAppContext) {
         cx.simulate_mouse_down(center, MouseButton::Left, Modifiers::default());
         cx.run_until_parked();
 
-        assert_eq!(select_count.load(Ordering::SeqCst), 1, "on_select should have been called");
+        assert_eq!(
+            select_count.load(Ordering::SeqCst),
+            1,
+            "on_select should have been called"
+        );
         assert!(*selected.borrow(), "Should be selected after click");
     }
 }
@@ -220,7 +233,7 @@ impl Render for PotResetTestView {
                 .max(100.0)
                 .label("Reset Test")
                 .on_reset(move |_window, _cx| {
-                    *value_rc.borrow_mut() = 50.0;  // Default value
+                    *value_rc.borrow_mut() = 50.0; // Default value
                     reset_count.fetch_add(1, Ordering::SeqCst);
                 }),
         )
@@ -229,7 +242,7 @@ impl Render for PotResetTestView {
 
 #[gpui::test]
 async fn test_potentiometer_double_click_reset(cx: &mut TestAppContext) {
-    let value = Rc::new(RefCell::new(75.0));  // Start not at default
+    let value = Rc::new(RefCell::new(75.0)); // Start not at default
     let reset_count = Arc::new(AtomicUsize::new(0));
 
     let value_clone = value.clone();
@@ -244,7 +257,10 @@ async fn test_potentiometer_double_click_reset(cx: &mut TestAppContext) {
     cx.run_until_parked();
 
     // Initial value is 75
-    assert!(((*value.borrow()) - 75.0).abs() < 0.01, "Initial value should be 75");
+    assert!(
+        ((*value.borrow()) - 75.0).abs() < 0.01,
+        "Initial value should be 75"
+    );
 
     // Double-click to reset (simulated via click with count=2 handled by component)
     // Note: Testing double-click requires the component's on_click handler to check click_count
@@ -292,7 +308,7 @@ async fn test_potentiometer_logarithmic_scale(cx: &mut TestAppContext) {
             div().child(
                 Potentiometer::new("log-pot")
                     .value(1000.0)
-                    .min(20.0)  // Must be > 0 for log scale
+                    .min(20.0) // Must be > 0 for log scale
                     .max(20000.0)
                     .scale(PotentiometerScale::Logarithmic)
                     .unit("Hz")
@@ -382,8 +398,11 @@ async fn test_potentiometer_disabled_state(cx: &mut TestAppContext) {
         cx.run_until_parked();
 
         // on_change should NOT have been called
-        assert_eq!(change_count.load(Ordering::SeqCst), 0,
-            "Disabled potentiometer should not trigger on_change");
+        assert_eq!(
+            change_count.load(Ordering::SeqCst),
+            0,
+            "Disabled potentiometer should not trigger on_change"
+        );
     }
 }
 
@@ -521,7 +540,10 @@ async fn test_potentiometer_drag_start(cx: &mut TestAppContext) {
         cx.simulate_mouse_down(center, MouseButton::Left, Modifiers::default());
         cx.run_until_parked();
 
-        assert!(drag_started.load(Ordering::SeqCst), "Drag should have started");
+        assert!(
+            drag_started.load(Ordering::SeqCst),
+            "Drag should have started"
+        );
         assert!(drag_y.borrow().is_some(), "Drag Y position should be set");
     }
 }
@@ -542,7 +564,7 @@ async fn test_potentiometer_with_custom_theme(cx: &mut TestAppContext) {
                 surface: gpui::rgba(0x1a1a1aff),
                 surface_hover: gpui::rgba(0x2a2a2aff),
                 knob_bg: gpui::rgba(0x333333ff),
-                accent: gpui::rgba(0xff6600ff),  // Orange accent
+                accent: gpui::rgba(0xff6600ff), // Orange accent
                 accent_muted: gpui::rgba(0xff660033),
                 border: gpui::rgba(0x444444ff),
                 text_secondary: gpui::rgba(0xaaaaaaff),
@@ -579,14 +601,14 @@ async fn test_potentiometer_value_clamping(cx: &mut TestAppContext) {
             div()
                 .child(
                     Potentiometer::new("pot-below-min")
-                        .value(-10.0)  // Below min
+                        .value(-10.0) // Below min
                         .min(0.0)
                         .max(100.0)
                         .label("Below Min"),
                 )
                 .child(
                     Potentiometer::new("pot-above-max")
-                        .value(200.0)  // Above max
+                        .value(200.0) // Above max
                         .min(0.0)
                         .max(100.0)
                         .label("Above Max"),

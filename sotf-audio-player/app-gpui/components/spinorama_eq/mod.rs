@@ -11,8 +11,8 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, HStack, StackAlign, StackSpacing, Text, TextSize,
-    TextWeight, VStack,
+    Button, ButtonSize, ButtonVariant, HStack, StackSpacing, StepStatus, WizardHeader, WizardStep,
+    WizardTheme,
 };
 use sotf_audio_player::autoeq::speaker::{
     CallbackConfig, MeasurementInput, SpeakerOptimizationCallback, SpeakerOptimizationConfig,
@@ -45,27 +45,32 @@ static SPINORAMA_PROGRESS: Mutex<Vec<(usize, f64, Option<f64>, f32)>> = Mutex::n
 
 // Global mutex for sharing preview curves result between threads
 // Format: Option<Result<PreviewCurves, error_string>>
-static SPINORAMA_PREVIEW: Mutex<Option<Result<sotf_audio_player::autoeq::speaker::PreviewCurves, String>>> = Mutex::new(None);
+static SPINORAMA_PREVIEW: Mutex<
+    Option<Result<sotf_audio_player::autoeq::speaker::PreviewCurves, String>>,
+> = Mutex::new(None);
 
 // Global mutex for sharing spinorama CEA2034 curves result between threads
-static SPINORAMA_CURVES: Mutex<Option<Result<crate::app::types::SpinoramaCurves, String>>> = Mutex::new(None);
+static SPINORAMA_CURVES: Mutex<Option<Result<crate::app::types::SpinoramaCurves, String>>> =
+    Mutex::new(None);
 
 /// Spawn a background thread to load CEA2034 spinorama curves for the plot.
-fn spawn_spinorama_curves_thread(
-    speaker: String,
-    version: String,
-) {
+fn spawn_spinorama_curves_thread(speaker: String, version: String) {
     // Clear previous result
     *SPINORAMA_CURVES.lock().unwrap() = None;
 
     std::thread::spawn(move || {
-        log::info!("Loading spinorama CEA2034 curves for {} / {}", speaker, version);
+        log::info!(
+            "Loading spinorama CEA2034 curves for {} / {}",
+            speaker,
+            version
+        );
         let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
         let result = rt.block_on(async {
             // Fetch CEA2034 measurement data
-            let plot_data = autoeq::read::fetch_measurement_plot_data(&speaker, &version, "CEA2034")
-                .await
-                .map_err(|e| format!("API error: {}", e))?;
+            let plot_data =
+                autoeq::read::fetch_measurement_plot_data(&speaker, &version, "CEA2034")
+                    .await
+                    .map_err(|e| format!("API error: {}", e))?;
 
             // Extract curves using original frequency grid
             let curves = autoeq::read::extract_cea2034_curves_original(&plot_data, "CEA2034")
@@ -82,7 +87,9 @@ fn spawn_spinorama_curves_thread(
                 .unwrap_or_else(|| vec![0.0; frequencies.len()]);
 
             // Try to fetch directivity data (SPL Horizontal and SPL Vertical)
-            let directivity = autoeq::read::fetch_directivity_data(&speaker, &version).await.ok();
+            let directivity = autoeq::read::fetch_directivity_data(&speaker, &version)
+                .await
+                .ok();
 
             let (horizontal_directivity, vertical_directivity) = if let Some(dir) = directivity {
                 let horizontal: Vec<crate::app::types::DirectivityCurve> = dir
@@ -105,7 +112,11 @@ fn spawn_spinorama_curves_thread(
                     .collect();
                 (horizontal, vertical)
             } else {
-                log::warn!("Directivity data not available for {} / {}", speaker, version);
+                log::warn!(
+                    "Directivity data not available for {} / {}",
+                    speaker,
+                    version
+                );
                 (Vec::new(), Vec::new())
             };
 
@@ -170,18 +181,32 @@ fn spawn_preview_curves_thread(
     std::thread::spawn(move || {
         log::info!(
             "Loading preview curves for {} / {} / {} / {}",
-            speaker, version, measurement, curve_name
+            speaker,
+            version,
+            measurement,
+            curve_name
         );
         let result = sotf_audio_player::autoeq::speaker::load_preview_curves(
-            &speaker, &version, &measurement, &curve_name,
+            &speaker,
+            &version,
+            &measurement,
+            &curve_name,
         );
         match &result {
             Ok(curves) => {
                 log::info!(
                     "Preview curves loaded: {} frequencies, input range [{:.1}, {:.1}] dB",
                     curves.frequencies.len(),
-                    curves.input_curve.iter().cloned().fold(f64::INFINITY, f64::min),
-                    curves.input_curve.iter().cloned().fold(f64::NEG_INFINITY, f64::max)
+                    curves
+                        .input_curve
+                        .iter()
+                        .cloned()
+                        .fold(f64::INFINITY, f64::min),
+                    curves
+                        .input_curve
+                        .iter()
+                        .cloned()
+                        .fold(f64::NEG_INFINITY, f64::max)
                 );
             }
             Err(e) => {
@@ -194,11 +219,7 @@ fn spawn_preview_curves_thread(
 
 /// Spawn a background task to check phase data availability for a speaker/version/measurement.
 /// This updates the state asynchronously when the result is ready.
-fn spawn_phase_data_check_thread(
-    speaker: String,
-    version: String,
-    measurement: String,
-) {
+fn spawn_phase_data_check_thread(speaker: String, version: String, measurement: String) {
     *PHASE_CHECK_RESULT.lock().unwrap() = None;
 
     let curve_name = "Estimated In-Room Response".to_string();
@@ -206,7 +227,8 @@ fn spawn_phase_data_check_thread(
     std::thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
         let has_phase = rt.block_on(async {
-            match autoeq::read::read_spinorama(&speaker, &version, &measurement, &curve_name).await {
+            match autoeq::read::read_spinorama(&speaker, &version, &measurement, &curve_name).await
+            {
                 Ok(curve) => curve.phase.is_some(),
                 Err(e) => {
                     log::warn!("Failed to fetch curve for phase check: {}", e);
@@ -297,11 +319,20 @@ impl PlayerView {
             let (speaker, version) = {
                 let state = self.state.read(cx);
                 (
-                    state.app.spinorama_eq_state.selected_speaker.clone().unwrap_or_default(),
+                    state
+                        .app
+                        .spinorama_eq_state
+                        .selected_speaker
+                        .clone()
+                        .unwrap_or_default(),
                     state.app.spinorama_eq_state.selected_version.clone(),
                 )
             };
-            log::info!("Auto-loading spinorama curves for {} / {}", speaker, version);
+            log::info!(
+                "Auto-loading spinorama curves for {} / {}",
+                speaker,
+                version
+            );
             self.state.update(cx, |state, _| {
                 state.app.spinorama_eq_state.loading_spinorama_curves = true;
             });
@@ -376,120 +407,41 @@ impl PlayerView {
     fn render_spinorama_header(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
-        let current_step = state.app.spinorama_eq_state.step;
-
-        // Helper function to build step indicator
-        let build_step_indicator =
-            |step: SpinoramaStep, label: &'static str, number: u8, theme: &crate::theme::Theme| {
-                let is_active = current_step == step;
-                let is_past = current_step.index() > step.index();
-
-                let (bg_color, text_color, border_color) = if is_active {
-                    (theme.accent, theme.text_on_accent, theme.accent)
-                } else if is_past {
-                    (theme.success, theme.text_on_accent, theme.success)
-                } else {
-                    (theme.surface, theme.text_muted, theme.border)
-                };
-
-                HStack::new()
-                    .spacing(StackSpacing::Sm)
-                    .align(StackAlign::Center)
-                    .child(
-                        div()
-                            .w(px(28.0))
-                            .h(px(28.0))
-                            .rounded_full()
-                            .bg(bg_color)
-                            .border_2()
-                            .border_color(border_color)
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .child(
-                                Text::new(number.to_string())
-                                    .size(TextSize::Sm)
-                                    .weight(TextWeight::Bold)
-                                    .color(text_color),
-                            ),
-                    )
-                    .child(
-                        Text::new(label)
-                            .size(TextSize::Sm)
-                            .weight(if is_active {
-                                TextWeight::Bold
-                            } else {
-                                TextWeight::Normal
-                            })
-                            .color(if is_active {
-                                theme.text_primary
-                            } else {
-                                theme.text_muted
-                            }),
-                    )
-            };
-
-        // Build step connector
-        let connector = |from: SpinoramaStep, theme: &crate::theme::Theme| {
-            let is_completed = current_step.index() > from.index();
-            div().w(px(32.0)).h(px(2.0)).bg(if is_completed {
-                theme.success
-            } else {
-                theme.border
-            })
-        };
-
-        div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .px_6()
-            .py_4()
-            .bg(theme.background_secondary)
-            .border_b_1()
-            .border_color(theme.border)
-            .child(
-                HStack::new()
-                    .spacing(StackSpacing::Lg)
-                    .align(StackAlign::Center)
-                    .child(
-                        Text::new("Spinorama EQ")
-                            .size(TextSize::Xl)
-                            .weight(TextWeight::Bold)
-                            .color(theme.text_primary),
-                    )
-                    .child(div().w(px(1.0)).h(px(24.0)).bg(theme.border))
-                    .child(build_step_indicator(
-                        SpinoramaStep::SelectSpeaker,
-                        "Select",
-                        1,
-                        &theme,
-                    ))
-                    .child(connector(SpinoramaStep::SelectSpeaker, &theme))
-                    .child(build_step_indicator(
-                        SpinoramaStep::Configure,
-                        "Configure",
-                        2,
-                        &theme,
-                    ))
-                    .child(connector(SpinoramaStep::Configure, &theme))
-                    .child(build_step_indicator(
-                        SpinoramaStep::Review,
-                        "Review",
-                        3,
-                        &theme,
-                    )),
-            )
-            .child(self.render_spinorama_nav_buttons(cx))
-    }
-
-    /// Render navigation buttons (Close/Back and Next/Finish)
-    fn render_spinorama_nav_buttons(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.state.read(cx);
+        let theme_id = state.app.theme_id;
         let current_step = state.app.spinorama_eq_state.step;
         let can_go_next = state.app.spinorama_eq_state.can_advance();
         let is_busy = state.app.spinorama_eq_state.is_optimizing();
-        let view = cx.entity().clone();
+
+        let step_index = current_step.index();
+
+        // Build step statuses
+        let step_statuses: Vec<StepStatus> = (0..3)
+            .map(|i| {
+                if i < step_index {
+                    StepStatus::Completed
+                } else if i == step_index {
+                    StepStatus::Active
+                } else {
+                    StepStatus::NotVisited
+                }
+            })
+            .collect();
+
+        // Build wizard steps
+        let steps = vec![
+            WizardStep::new("select", "Select"),
+            WizardStep::new("configure", "Configure"),
+            WizardStep::new("review", "Review"),
+        ];
+
+        let wizard_theme = WizardTheme::from(&theme.to_ui_kit_theme(theme_id));
+
+        let header = WizardHeader::new()
+            .title("Spinorama EQ")
+            .steps(steps)
+            .step_statuses(step_statuses)
+            .current_step(step_index)
+            .theme(wizard_theme.clone());
 
         let back_label = match current_step {
             SpinoramaStep::SelectSpeaker => "Close",
@@ -500,69 +452,73 @@ impl PlayerView {
             _ => "Next",
         };
 
-        HStack::new()
+        let navigation = HStack::new()
             .spacing(StackSpacing::Md)
             .child(
                 Button::new("back", back_label)
                     .variant(ButtonVariant::Secondary)
                     .size(ButtonSize::Md)
                     .disabled(is_busy)
-                    .on_click({
-                        let view = view.clone();
-                        move |_, cx| {
-                            view.update(cx, |this, cx| {
-                                this.state.update(cx, |state, _| {
-                                    match state.app.spinorama_eq_state.step {
-                                        SpinoramaStep::SelectSpeaker => {
-                                            // Go back to previous screen
-                                            state.app.current_screen = state.app.last_screen;
-                                        }
-                                        _ => {
-                                            // Go back to previous step
-                                            if let Some(prev) =
-                                                state.app.spinorama_eq_state.step.previous()
-                                            {
-                                                state.app.spinorama_eq_state.step = prev;
-                                            }
+                    .build()
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(|view, _, _, cx| {
+                            view.state.update(cx, |state, _| {
+                                match state.app.spinorama_eq_state.step {
+                                    SpinoramaStep::SelectSpeaker => {
+                                        state.app.current_screen = state.app.last_screen;
+                                    }
+                                    _ => {
+                                        if let Some(prev) =
+                                            state.app.spinorama_eq_state.step.previous()
+                                        {
+                                            state.app.spinorama_eq_state.step = prev;
                                         }
                                     }
-                                });
-                                cx.notify();
+                                }
                             });
-                        }
-                    }),
+                            cx.notify();
+                        }),
+                    ),
             )
             .child(
                 Button::new("next", next_label)
                     .variant(ButtonVariant::Primary)
                     .size(ButtonSize::Md)
                     .disabled(!can_go_next || is_busy)
-                    .on_click({
-                        let view = view.clone();
-                        move |_, cx| {
-                            view.update(cx, |this, cx| {
-                                this.state.update(cx, |state, _| {
-                                    match state.app.spinorama_eq_state.step {
-                                        SpinoramaStep::Review => {
-                                            // Finish - go back
-                                            state.app.current_screen = state.app.last_screen;
-                                        }
-                                        _ => {
-                                            // Go to next step
-                                            if let Some(next) =
-                                                state.app.spinorama_eq_state.step.next()
-                                            {
-                                                state.app.spinorama_eq_state.step = next;
-                                            }
+                    .build()
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(|view, _, _, cx| {
+                            view.state.update(cx, |state, _| {
+                                match state.app.spinorama_eq_state.step {
+                                    SpinoramaStep::Review => {
+                                        state.app.current_screen = state.app.last_screen;
+                                    }
+                                    _ => {
+                                        if let Some(next) = state.app.spinorama_eq_state.step.next()
+                                        {
+                                            state.app.spinorama_eq_state.step = next;
                                         }
                                     }
-                                });
-
-                                cx.notify();
+                                }
                             });
-                        }
-                    }),
-            )
+                            cx.notify();
+                        }),
+                    ),
+            );
+
+        div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .px_6()
+            .py_4()
+            .bg(theme.background_secondary)
+            .border_b_1()
+            .border_color(theme.border)
+            .child(header)
+            .child(navigation)
     }
 
     // ========================================================================
@@ -691,7 +647,11 @@ impl PlayerView {
                 if let Some(result) = result {
                     match result {
                         Ok(versions) => {
-                            log::info!("Fetched {} versions for {}", versions.len(), speaker_for_poll);
+                            log::info!(
+                                "Fetched {} versions for {}",
+                                versions.len(),
+                                speaker_for_poll
+                            );
                             let first_version = versions.first().cloned();
                             let selected_version = first_version.clone();
                             let _ = state_entity.update(cx, |state, cx| {
@@ -706,7 +666,11 @@ impl PlayerView {
                             // Fetch measurements for the selected version
                             if let Some(version) = selected_version {
                                 let _ = view.update(cx, |view, cx| {
-                                    view.fetch_spinorama_measurements(&speaker_for_poll, &version, cx);
+                                    view.fetch_spinorama_measurements(
+                                        &speaker_for_poll,
+                                        &version,
+                                        cx,
+                                    );
                                 });
                             }
                         }
@@ -727,8 +691,17 @@ impl PlayerView {
         .detach();
     }
 
-    fn fetch_spinorama_measurements(&mut self, speaker: &str, version: &str, cx: &mut Context<Self>) {
-        log::info!("Fetching measurements for speaker: {}, version: {}", speaker, version);
+    fn fetch_spinorama_measurements(
+        &mut self,
+        speaker: &str,
+        version: &str,
+        cx: &mut Context<Self>,
+    ) {
+        log::info!(
+            "Fetching measurements for speaker: {}, version: {}",
+            speaker,
+            version
+        );
 
         self.state.update(cx, |state, _cx| {
             state.app.spinorama_eq_state.loading_measurements = true;
@@ -778,19 +751,28 @@ impl PlayerView {
                 if let Some(result) = result {
                     match result {
                         Ok(measurements) => {
-                            log::info!("Fetched {} measurements for {}/{}", measurements.len(), speaker_for_poll, version_for_poll);
+                            log::info!(
+                                "Fetched {} measurements for {}/{}",
+                                measurements.len(),
+                                speaker_for_poll,
+                                version_for_poll
+                            );
                             let has_cea2034 = measurements.iter().any(|m| m == "CEA2034");
                             // Determine which measurement to auto-select
                             let selected_measurement = if has_cea2034 {
                                 "CEA2034".to_string()
                             } else {
-                                measurements.first().cloned().unwrap_or_else(|| "CEA2034".to_string())
+                                measurements
+                                    .first()
+                                    .cloned()
+                                    .unwrap_or_else(|| "CEA2034".to_string())
                             };
                             let measurement_for_phase = selected_measurement.clone();
                             let _ = state_entity.update(cx, |state, cx| {
                                 state.app.spinorama_eq_state.available_measurements = measurements;
                                 state.app.spinorama_eq_state.loading_measurements = false;
-                                state.app.spinorama_eq_state.selected_measurement = selected_measurement;
+                                state.app.spinorama_eq_state.selected_measurement =
+                                    selected_measurement;
                                 // Auto-load spinorama curves if CEA2034 is selected
                                 if has_cea2034 {
                                     state.app.spinorama_eq_state.loading_spinorama_curves = true;
@@ -799,10 +781,17 @@ impl PlayerView {
                             });
                             // Auto-load spinorama curves when CEA2034 is available
                             if has_cea2034 {
-                                spawn_spinorama_curves_thread(speaker_for_poll.clone(), version_for_poll.clone());
+                                spawn_spinorama_curves_thread(
+                                    speaker_for_poll.clone(),
+                                    version_for_poll.clone(),
+                                );
                             }
                             // Check for phase data availability
-                            spawn_phase_data_check_thread(speaker_for_poll.clone(), version_for_poll.clone(), measurement_for_phase);
+                            spawn_phase_data_check_thread(
+                                speaker_for_poll.clone(),
+                                version_for_poll.clone(),
+                                measurement_for_phase,
+                            );
                             // Continue polling for phase check and spinorama curves results
                             let mut phase_done = false;
                             let mut spinorama_done = !has_cea2034; // Skip if not CEA2034
@@ -813,7 +802,9 @@ impl PlayerView {
 
                                 // Check for phase result
                                 if !phase_done {
-                                    if let Some(has_phase) = PHASE_CHECK_RESULT.lock().unwrap().take() {
+                                    if let Some(has_phase) =
+                                        PHASE_CHECK_RESULT.lock().unwrap().take()
+                                    {
                                         let _ = state_entity.update(cx, |state, cx| {
                                             state.app.spinorama_eq_state.has_phase_data = has_phase;
                                             log::info!("Phase data availability: {}", has_phase);
@@ -831,16 +822,29 @@ impl PlayerView {
                                     };
                                     if let Some(result) = spinorama_result {
                                         let _ = state_entity.update(cx, |state, cx| {
-                                            state.app.spinorama_eq_state.loading_spinorama_curves = false;
+                                            state.app.spinorama_eq_state.loading_spinorama_curves =
+                                                false;
                                             match result {
                                                 Ok(curves) => {
-                                                    log::info!("Auto-loaded spinorama curves successfully");
-                                                    state.app.spinorama_eq_state.spinorama_curves = curves;
-                                                    state.app.spinorama_eq_state.spinorama_curves_error = None;
+                                                    log::info!(
+                                                        "Auto-loaded spinorama curves successfully"
+                                                    );
+                                                    state.app.spinorama_eq_state.spinorama_curves =
+                                                        curves;
+                                                    state
+                                                        .app
+                                                        .spinorama_eq_state
+                                                        .spinorama_curves_error = None;
                                                 }
                                                 Err(e) => {
-                                                    log::error!("Failed to auto-load spinorama curves: {}", e);
-                                                    state.app.spinorama_eq_state.spinorama_curves_error = Some(e);
+                                                    log::error!(
+                                                        "Failed to auto-load spinorama curves: {}",
+                                                        e
+                                                    );
+                                                    state
+                                                        .app
+                                                        .spinorama_eq_state
+                                                        .spinorama_curves_error = Some(e);
                                                 }
                                             }
                                             cx.notify();
@@ -920,10 +924,18 @@ impl PlayerView {
         // Check phase data and load preview for the new measurement
         if let Some(speaker_name) = speaker {
             let measurement_str = measurement.to_string();
-            let version_str = if version.is_empty() { "asr".to_string() } else { version.clone() };
+            let version_str = if version.is_empty() {
+                "asr".to_string()
+            } else {
+                version.clone()
+            };
 
             // Check phase data
-            spawn_phase_data_check_thread(speaker_name.clone(), version.clone(), measurement_str.clone());
+            spawn_phase_data_check_thread(
+                speaker_name.clone(),
+                version.clone(),
+                measurement_str.clone(),
+            );
 
             // Load preview curves
             let curve_name = if mode == SpinoramaOptimizationMode::FlatOnPir {
@@ -933,7 +945,8 @@ impl PlayerView {
             };
 
             // Check if this is a CEA2034 measurement (for spinorama curves loading)
-            let is_cea2034 = measurement_str == "CEA2034" || measurement_str == "CEA2034 Normalized";
+            let is_cea2034 =
+                measurement_str == "CEA2034" || measurement_str == "CEA2034 Normalized";
 
             // Set loading state
             self.state.update(cx, |state, _| {
@@ -992,10 +1005,14 @@ impl PlayerView {
                                 state.app.spinorama_eq_state.loading_preview = false;
                                 match result {
                                     Ok(curves) => {
-                                        state.app.spinorama_eq_state.preview_frequencies = curves.frequencies;
-                                        state.app.spinorama_eq_state.preview_input_curve = curves.input_curve;
-                                        state.app.spinorama_eq_state.preview_target_curve = curves.target_curve;
-                                        state.app.spinorama_eq_state.preview_deviation_curve = curves.deviation_curve;
+                                        state.app.spinorama_eq_state.preview_frequencies =
+                                            curves.frequencies;
+                                        state.app.spinorama_eq_state.preview_input_curve =
+                                            curves.input_curve;
+                                        state.app.spinorama_eq_state.preview_target_curve =
+                                            curves.target_curve;
+                                        state.app.spinorama_eq_state.preview_deviation_curve =
+                                            curves.deviation_curve;
                                         state.app.spinorama_eq_state.preview_error = None;
                                     }
                                     Err(e) => {
@@ -1024,7 +1041,8 @@ impl PlayerView {
                                         state.app.spinorama_eq_state.spinorama_curves_error = None;
                                     }
                                     Err(e) => {
-                                        state.app.spinorama_eq_state.spinorama_curves_error = Some(e);
+                                        state.app.spinorama_eq_state.spinorama_curves_error =
+                                            Some(e);
                                     }
                                 }
                                 cx.notify();
@@ -1056,7 +1074,15 @@ impl PlayerView {
             let config = spinorama.optimizer_config.clone();
             let mode = spinorama.optimizer_config.mode;
             let target_curve = spinorama.optimizer_config.target_curve;
-            (speaker, version, measurement, curve, config, mode, target_curve)
+            (
+                speaker,
+                version,
+                measurement,
+                curve,
+                config,
+                mode,
+                target_curve,
+            )
         };
 
         if speaker_name.is_empty() {
@@ -1119,15 +1145,23 @@ impl PlayerView {
 
         log::info!(
             "Spinorama optimization config: speaker={}, version={}, measurement={}, curve={}",
-            speaker_name, effective_version, effective_measurement, effective_curve_name
+            speaker_name,
+            effective_version,
+            effective_measurement,
+            effective_curve_name
         );
         log::info!(
             "Spinorama optimization mode: {:?}, loss={}, target_curve={:?}",
-            mode, loss, target_curve
+            mode,
+            loss,
+            target_curve
         );
         log::info!(
             "Spinorama optimization params: algo={}, maxeval={}, num_filters={}, population={}",
-            algo, optimizer_config.max_iter, optimizer_config.num_filters, optimizer_config.population
+            algo,
+            optimizer_config.max_iter,
+            optimizer_config.num_filters,
+            optimizer_config.population
         );
 
         let params = sotf_audio_player::autoeq::params::OptimizationParams {
@@ -1306,10 +1340,12 @@ impl PlayerView {
                         };
 
                         // Use parking_lot or std Mutex to share result
-                        SPINORAMA_RESULT
-                            .lock()
-                            .unwrap()
-                            .replace((true, Some(result), Some(opt_result), None));
+                        SPINORAMA_RESULT.lock().unwrap().replace((
+                            true,
+                            Some(result),
+                            Some(opt_result),
+                            None,
+                        ));
                     }
                     Err(e) => {
                         log::error!("Optimization failed: {}", e);

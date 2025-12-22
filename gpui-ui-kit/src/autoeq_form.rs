@@ -35,6 +35,16 @@ use crate::toggle::{Toggle, ToggleSize, ToggleTheme};
 // Constants - Algorithm and Model Options
 // ============================================================================
 
+/// Optimization type - determines which options are shown in the form
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum OptimizationType {
+    /// Speaker optimization - shows system type, speaker-specific target curves
+    #[default]
+    Speaker,
+    /// Headphone optimization - hides system type, shows Harman target curves
+    Headphone,
+}
+
 /// Optimization mode options
 pub const OPT_MODE_OPTIONS: &[(&str, &str)] = &[
     ("iir", "IIR (PEQ)"),
@@ -53,12 +63,27 @@ pub const FIR_PHASE_OPTIONS: &[(&str, &str)] = &[
 pub const LOSS_TYPE_OPTIONS: &[(&str, &str)] =
     &[("flat", "Flat Response"), ("score", "Preference Score")];
 
-/// Target curve options
-pub const TARGET_CURVE_OPTIONS: &[(&str, &str)] = &[
+/// Target curve options for headphones (Harman curves)
+pub const HEADPHONE_TARGET_CURVE_OPTIONS: &[(&str, &str)] = &[
     ("flat", "Flat"),
     ("harman-over-ear-2018", "Harman Over-Ear 2018"),
+    ("harman-over-ear-2015", "Harman Over-Ear 2015"),
+    ("harman-over-ear-2013", "Harman Over-Ear 2013"),
     ("harman-in-ear-2019", "Harman In-Ear 2019"),
-    ("custom", "Custom (File Path)"), // Represents a custom file path
+    ("custom", "Custom (File Path)"),
+];
+
+/// Base target curve options for speakers (always available)
+pub const SPEAKER_TARGET_CURVE_OPTIONS: &[(&str, &str)] =
+    &[("flat", "Flat (0 dB)"), ("custom", "Custom (Manual Entry)")];
+
+/// Spinorama curve options for speakers (available when spinorama data is loaded)
+pub const SPINORAMA_CURVE_OPTIONS: &[(&str, &str)] = &[
+    ("ON", "On-Axis (ON)"),
+    ("LW", "Listening Window (LW)"),
+    ("ER", "Early Reflections (ER)"),
+    ("SP", "Sound Power (SP)"),
+    ("PIR", "Predicted In-Room (PIR)"),
 ];
 
 /// System Type options
@@ -404,6 +429,10 @@ type ToggleCallback = Box<dyn Fn(bool, &mut Window, &mut App) + 'static>;
 /// 1. Goals & Configuration - system type, targets, and EQ mode
 /// 2. EQ Design Parameters - filter characteristics and frequency ranges
 /// 3. Optimization Fine Tuning - algorithm settings and DE parameters
+///
+/// The form adapts its options based on `optimization_type`:
+/// - **Speaker**: Shows system type, target curves include flat, custom, and spinorama curves
+/// - **Headphone**: Hides system type, target curves include Harman curves
 #[derive(IntoElement)]
 pub struct AutoEqForm {
     id: ElementId,
@@ -415,6 +444,10 @@ pub struct AutoEqForm {
     show_optimization_tuning: bool,
     theme: Option<AutoEqFormTheme>,
     allowed_opt_modes: Option<Vec<String>>,
+    /// Type of optimization (Speaker or Headphone) - affects which options are shown
+    optimization_type: OptimizationType,
+    /// Available spinorama curves for speaker mode (e.g., ["ON", "LW", "PIR"])
+    available_spinorama_curves: Vec<String>,
 
     // EQ Design callbacks
     on_opt_mode_change: Option<StringCallback>,
@@ -474,6 +507,8 @@ impl AutoEqForm {
             show_optimization_tuning: true,
             theme: None,
             allowed_opt_modes: None,
+            optimization_type: OptimizationType::default(),
+            available_spinorama_curves: Vec::new(),
             on_opt_mode_change: None,
             on_opt_mode_toggle: None,
             on_fir_taps_change: None,
@@ -560,6 +595,25 @@ impl AutoEqForm {
     /// Set allowed optimization modes (e.g., vec!["iir".to_string(), "fir".to_string()])
     pub fn allowed_opt_modes(mut self, modes: Vec<String>) -> Self {
         self.allowed_opt_modes = Some(modes);
+        self
+    }
+
+    /// Set the optimization type (Speaker or Headphone)
+    ///
+    /// This affects which options are shown in the Goals section:
+    /// - **Speaker**: Shows system type dropdown, target curves include flat, custom, and spinorama curves
+    /// - **Headphone**: Hides system type dropdown, target curves include Harman curves
+    pub fn optimization_type(mut self, opt_type: OptimizationType) -> Self {
+        self.optimization_type = opt_type;
+        self
+    }
+
+    /// Set available spinorama curves for speaker mode
+    ///
+    /// Only curves in this list will be shown in the target curve dropdown.
+    /// Common values: "ON", "LW", "ER", "SP", "PIR"
+    pub fn available_spinorama_curves(mut self, curves: Vec<String>) -> Self {
+        self.available_spinorama_curves = curves;
         self
     }
 
@@ -927,6 +981,8 @@ impl RenderOnce for AutoEqForm {
         let show_goals = self.show_goals;
         let show_eq_design = self.show_eq_design;
         let show_optimization_tuning = self.show_optimization_tuning;
+        let optimization_type = self.optimization_type;
+        let available_spinorama_curves = self.available_spinorama_curves;
 
         // Wrap callbacks in Rc for sharing
         let on_opt_mode_change_rc = self.on_opt_mode_change.map(std::rc::Rc::new);
@@ -993,33 +1049,35 @@ impl RenderOnce for AutoEqForm {
                     ),
             );
 
-            // System Type dropdown
-            let system_type_options: Vec<SelectOption> = SYSTEM_TYPE_OPTIONS
-                .iter()
-                .map(|(val, lbl)| SelectOption::new(*val, *lbl))
-                .collect();
+            // System Type dropdown - only shown for Speaker optimization
+            if optimization_type == OptimizationType::Speaker {
+                let system_type_options: Vec<SelectOption> = SYSTEM_TYPE_OPTIONS
+                    .iter()
+                    .map(|(val, lbl)| SelectOption::new(*val, *lbl))
+                    .collect();
 
-            let mut system_type_select = Select::new("autoeq-system-type")
-                .label("System Type")
-                .options(system_type_options)
-                .selected(&config.system_type)
-                .is_open(ui_state.system_type_open)
-                .disabled(disabled)
-                .theme(theme.select_theme.clone());
+                let mut system_type_select = Select::new("autoeq-system-type")
+                    .label("System Type")
+                    .options(system_type_options)
+                    .selected(&config.system_type)
+                    .is_open(ui_state.system_type_open)
+                    .disabled(disabled)
+                    .theme(theme.select_theme.clone());
 
-            if let Some(ref handler) = on_system_type_toggle_rc {
-                let h = handler.clone();
-                system_type_select =
-                    system_type_select.on_toggle(move |open, w, cx| h(open, w, cx));
+                if let Some(ref handler) = on_system_type_toggle_rc {
+                    let h = handler.clone();
+                    system_type_select =
+                        system_type_select.on_toggle(move |open, w, cx| h(open, w, cx));
+                }
+
+                if let Some(ref handler) = on_system_type_change_rc {
+                    let h = handler.clone();
+                    system_type_select =
+                        system_type_select.on_change(move |value, w, cx| h(value.as_ref(), w, cx));
+                }
+
+                goals_content = goals_content.child(system_type_select);
             }
-
-            if let Some(ref handler) = on_system_type_change_rc {
-                let h = handler.clone();
-                system_type_select =
-                    system_type_select.on_change(move |value, w, cx| h(value.as_ref(), w, cx));
-            }
-
-            goals_content = goals_content.child(system_type_select);
 
             // Loss Type dropdown
             let loss_type_options: Vec<SelectOption> = LOSS_TYPE_OPTIONS
@@ -1048,11 +1106,32 @@ impl RenderOnce for AutoEqForm {
 
             goals_content = goals_content.child(loss_type_select);
 
-            // Target Curve dropdown
-            let target_curve_options: Vec<SelectOption> = TARGET_CURVE_OPTIONS
-                .iter()
-                .map(|(val, lbl)| SelectOption::new(*val, *lbl))
-                .collect();
+            // Target Curve dropdown - options depend on optimization type
+            let target_curve_options: Vec<SelectOption> = match optimization_type {
+                OptimizationType::Headphone => {
+                    // Headphone: Harman curves
+                    HEADPHONE_TARGET_CURVE_OPTIONS
+                        .iter()
+                        .map(|(val, lbl)| SelectOption::new(*val, *lbl))
+                        .collect()
+                }
+                OptimizationType::Speaker => {
+                    // Speaker: flat, custom, plus available spinorama curves
+                    let mut options: Vec<SelectOption> = SPEAKER_TARGET_CURVE_OPTIONS
+                        .iter()
+                        .map(|(val, lbl)| SelectOption::new(*val, *lbl))
+                        .collect();
+
+                    // Add available spinorama curves
+                    for (val, lbl) in SPINORAMA_CURVE_OPTIONS {
+                        if available_spinorama_curves.iter().any(|c| c == *val) {
+                            options.push(SelectOption::new(*val, *lbl));
+                        }
+                    }
+
+                    options
+                }
+            };
 
             let mut target_curve_select = Select::new("autoeq-target-curve")
                 .label("Target Curve")
@@ -1419,7 +1498,8 @@ impl RenderOnce for AutoEqForm {
 
                 if let Some(ref handler) = on_spacing_weight_change_rc {
                     let h = handler.clone();
-                    spacing_weight_input = spacing_weight_input.on_change(move |v, w, cx| h(v, w, cx));
+                    spacing_weight_input =
+                        spacing_weight_input.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
                 let mut min_spacing_oct_input = NumberInput::new("autoeq-min-spacing-oct")
@@ -1436,7 +1516,8 @@ impl RenderOnce for AutoEqForm {
 
                 if let Some(ref handler) = on_min_spacing_oct_change_rc {
                     let h = handler.clone();
-                    min_spacing_oct_input = min_spacing_oct_input.on_change(move |v, w, cx| h(v, w, cx));
+                    min_spacing_oct_input =
+                        min_spacing_oct_input.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
                 eq_design_content = eq_design_content.child(
@@ -1771,7 +1852,8 @@ impl RenderOnce for AutoEqForm {
 
                 if let Some(ref handler) = on_smooth_n_change_rc {
                     let h = handler.clone();
-                    smooth_n_input = smooth_n_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
+                    smooth_n_input =
+                        smooth_n_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
                 }
 
                 opt_tuning_content = opt_tuning_content.child(smooth_n_input);

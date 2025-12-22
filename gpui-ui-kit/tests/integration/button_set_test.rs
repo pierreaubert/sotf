@@ -23,14 +23,11 @@ struct ButtonSetTestView;
 
 impl Render for ButtonSetTestView {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div().child(
-            ButtonSet::new("test-button-set")
-                .options(vec![
-                    ButtonSetOption::new("list", "List"),
-                    ButtonSetOption::new("grid", "Grid"),
-                    ButtonSetOption::new("table", "Table"),
-                ])
-        )
+        div().child(ButtonSet::new("test-button-set").options(vec![
+            ButtonSetOption::new("list", "List"),
+            ButtonSetOption::new("grid", "Grid"),
+            ButtonSetOption::new("table", "Table"),
+        ]))
     }
 }
 
@@ -59,7 +56,7 @@ async fn test_button_set_sizes(cx: &mut TestAppContext) {
                         .options(vec![
                             ButtonSetOption::new("a", "A"),
                             ButtonSetOption::new("b", "B"),
-                        ])
+                        ]),
                 )
                 .child(
                     ButtonSet::new("sm-button-set")
@@ -67,7 +64,7 @@ async fn test_button_set_sizes(cx: &mut TestAppContext) {
                         .options(vec![
                             ButtonSetOption::new("a", "A"),
                             ButtonSetOption::new("b", "B"),
-                        ])
+                        ]),
                 )
                 .child(
                     ButtonSet::new("md-button-set")
@@ -75,7 +72,7 @@ async fn test_button_set_sizes(cx: &mut TestAppContext) {
                         .options(vec![
                             ButtonSetOption::new("a", "A"),
                             ButtonSetOption::new("b", "B"),
-                        ])
+                        ]),
                 )
                 .child(
                     ButtonSet::new("lg-button-set")
@@ -83,7 +80,7 @@ async fn test_button_set_sizes(cx: &mut TestAppContext) {
                         .options(vec![
                             ButtonSetOption::new("a", "A"),
                             ButtonSetOption::new("b", "B"),
-                        ])
+                        ]),
                 )
         }
     }
@@ -143,7 +140,10 @@ async fn test_button_set_selection(cx: &mut TestAppContext) {
     cx.run_until_parked();
 
     // Initially nothing selected
-    assert!(selected.borrow().is_none(), "Nothing should be selected initially");
+    assert!(
+        selected.borrow().is_none(),
+        "Nothing should be selected initially"
+    );
 }
 
 #[gpui::test]
@@ -159,7 +159,7 @@ async fn test_button_set_preselected(cx: &mut TestAppContext) {
                         ButtonSetOption::new("b", "B"),
                         ButtonSetOption::new("c", "C"),
                     ])
-                    .selected("b")  // Pre-select B
+                    .selected("b"), // Pre-select B
             )
         }
     }
@@ -177,14 +177,11 @@ async fn test_button_set_disabled_option(cx: &mut TestAppContext) {
 
     impl Render for DisabledOptionView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div().child(
-                ButtonSet::new("disabled-option-button-set")
-                    .options(vec![
-                        ButtonSetOption::new("enabled", "Enabled"),
-                        ButtonSetOption::new("disabled", "Disabled").disabled(true),
-                        ButtonSetOption::new("also-enabled", "Also Enabled"),
-                    ])
-            )
+            div().child(ButtonSet::new("disabled-option-button-set").options(vec![
+                ButtonSetOption::new("enabled", "Enabled"),
+                ButtonSetOption::new("disabled", "Disabled").disabled(true),
+                ButtonSetOption::new("also-enabled", "Also Enabled"),
+            ]))
         }
     }
 
@@ -208,7 +205,7 @@ impl Render for DisabledOptionClickTestView {
                 ])
                 .on_change(move |_, _window, _cx| {
                     change_count.fetch_add(1, Ordering::SeqCst);
-                })
+                }),
         )
     }
 }
@@ -245,7 +242,7 @@ async fn test_button_set_disabled(cx: &mut TestAppContext) {
                         ButtonSetOption::new("a", "A"),
                         ButtonSetOption::new("b", "B"),
                     ])
-                    .disabled(true)
+                    .disabled(true),
             )
         }
     }
@@ -270,7 +267,7 @@ async fn test_button_set_with_icons(cx: &mut TestAppContext) {
                         ButtonSetOption::new("grid", "Grid").icon("📊"),
                         ButtonSetOption::new("table", "Table").icon("📑"),
                     ])
-                    .selected("grid")
+                    .selected("grid"),
             )
         }
     }
@@ -306,7 +303,7 @@ async fn test_button_set_with_custom_theme(cx: &mut TestAppContext) {
                         ButtonSetOption::new("b", "B"),
                         ButtonSetOption::new("c", "C"),
                     ])
-                    .selected("b")
+                    .selected("b"),
             )
         }
     }
@@ -326,10 +323,8 @@ async fn test_button_set_single_option(cx: &mut TestAppContext) {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
             div().child(
                 ButtonSet::new("single-option-set")
-                    .options(vec![
-                        ButtonSetOption::new("only", "Only Option"),
-                    ])
-                    .selected("only")
+                    .options(vec![ButtonSetOption::new("only", "Only Option")])
+                    .selected("only"),
             )
         }
     }
@@ -343,10 +338,7 @@ async fn test_button_set_empty(cx: &mut TestAppContext) {
 
     impl Render for EmptyView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div().child(
-                ButtonSet::new("empty-set")
-                    .options(vec![])
-            )
+            div().child(ButtonSet::new("empty-set").options(vec![]))
         }
     }
 
@@ -369,7 +361,7 @@ async fn test_button_set_many_options(cx: &mut TestAppContext) {
                         ButtonSetOption::new("5", "Five"),
                         ButtonSetOption::new("6", "Six"),
                     ])
-                    .selected("3")
+                    .selected("3"),
             )
         }
     }

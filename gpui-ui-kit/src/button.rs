@@ -183,9 +183,12 @@ impl Button {
                     theme.text_secondary,
                     theme.surface,
                 ),
-                ButtonVariant::Destructive => {
-                    (theme.error, rgb(0xe64545), theme.text_on_accent, theme.error)
-                }
+                ButtonVariant::Destructive => (
+                    theme.error,
+                    rgb(0xe64545),
+                    theme.text_on_accent,
+                    theme.error,
+                ),
                 ButtonVariant::Ghost => (
                     rgba(0x00000000),
                     theme.surface_hover,

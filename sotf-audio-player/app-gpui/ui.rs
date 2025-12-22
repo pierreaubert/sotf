@@ -1201,6 +1201,11 @@ impl PlayerView {
                     "Scan failed: {}",
                     e
                 )));
+            } else {
+                // Show progress modal
+                state.app.scan_progress_modal = Some(crate::app::types::ScanProgressModal::new(
+                    crate::app::types::ScanType::Library,
+                ));
             }
             // Save directories to config after successful scan
             if let Err(e) = state.app.save_config() {
@@ -1430,7 +1435,10 @@ impl PlayerView {
         event: &KeyDownEvent,
         cx: &mut Context<Self>,
     ) {
-        log::info!("[SPINORAMA] handle_spinorama_speaker_search_input called, key={}", event.keystroke.key);
+        log::info!(
+            "[SPINORAMA] handle_spinorama_speaker_search_input called, key={}",
+            event.keystroke.key
+        );
         // Handle text input for spinorama speaker search mode
         match event.keystroke.key.as_str() {
             "backspace" => {
@@ -2120,6 +2128,8 @@ impl Render for PlayerView {
             .when(input_mode == crate::app::InputMode::About, |div| {
                 div.child(self.render_about_dialog(cx))
             })
+            // Scan progress modal
+            .child(self.render_scan_progress_modal(cx))
             .child(self.render_toast(cx))
             .when(self.state.read(cx).app.context_menu.is_some(), |div| {
                 div.child(self.render_context_menu(cx))

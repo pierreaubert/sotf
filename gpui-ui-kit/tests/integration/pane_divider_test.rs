@@ -7,8 +7,10 @@
 //! - Drag start callback
 //! - Different collapse directions
 
-use gpui::{Context, MouseButton, Modifiers, TestAppContext, VisualTestContext, Window, div, prelude::*};
-use gpui_ui_kit::pane_divider::{PaneDivider, CollapseDirection};
+use gpui::{
+    Context, Modifiers, MouseButton, TestAppContext, VisualTestContext, Window, div, prelude::*,
+};
+use gpui_ui_kit::pane_divider::{CollapseDirection, PaneDivider};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -27,7 +29,10 @@ impl Render for VerticalDividerTestView {
             .w_full()
             .h(gpui::px(200.0))
             .child(div().w(gpui::px(100.0)).h_full().bg(gpui::rgb(0x333333)))
-            .child(PaneDivider::vertical("test-vertical-divider", CollapseDirection::Left))
+            .child(PaneDivider::vertical(
+                "test-vertical-divider",
+                CollapseDirection::Left,
+            ))
             .child(div().flex_1().h_full().bg(gpui::rgb(0x444444)))
     }
 }
@@ -47,7 +52,10 @@ impl Render for HorizontalDividerTestView {
             .w_full()
             .h(gpui::px(200.0))
             .child(div().w_full().h(gpui::px(80.0)).bg(gpui::rgb(0x333333)))
-            .child(PaneDivider::horizontal("test-horizontal-divider", CollapseDirection::Up))
+            .child(PaneDivider::horizontal(
+                "test-horizontal-divider",
+                CollapseDirection::Up,
+            ))
             .child(div().w_full().flex_1().bg(gpui::rgb(0x444444)))
     }
 }
@@ -72,18 +80,14 @@ async fn test_pane_divider_collapse_directions(cx: &mut TestAppContext) {
                 .flex_col()
                 .gap_4()
                 // Vertical dividers
-                .child(
-                    div()
-                        .flex()
-                        .h(gpui::px(50.0))
-                        .child(PaneDivider::vertical("divider-left", CollapseDirection::Left)),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .h(gpui::px(50.0))
-                        .child(PaneDivider::vertical("divider-right", CollapseDirection::Right)),
-                )
+                .child(div().flex().h(gpui::px(50.0)).child(PaneDivider::vertical(
+                    "divider-left",
+                    CollapseDirection::Left,
+                )))
+                .child(div().flex().h(gpui::px(50.0)).child(PaneDivider::vertical(
+                    "divider-right",
+                    CollapseDirection::Right,
+                )))
                 // Horizontal dividers
                 .child(
                     div()
@@ -97,7 +101,10 @@ async fn test_pane_divider_collapse_directions(cx: &mut TestAppContext) {
                         .flex()
                         .flex_col()
                         .w(gpui::px(100.0))
-                        .child(PaneDivider::horizontal("divider-down", CollapseDirection::Down)),
+                        .child(PaneDivider::horizontal(
+                            "divider-down",
+                            CollapseDirection::Down,
+                        )),
                 )
         }
     }
@@ -121,19 +128,15 @@ impl Render for DividerToggleTestView {
         let collapsed_rc = self.collapsed.clone();
         let toggle_count = self.toggle_count.clone();
 
-        div()
-            .flex()
-            .w_full()
-            .h(gpui::px(200.0))
-            .child(
-                PaneDivider::vertical("toggle-test-divider", CollapseDirection::Left)
-                    .collapsed(is_collapsed)
-                    .label("Sidebar")
-                    .on_toggle(move |new_collapsed, _window, _cx| {
-                        *collapsed_rc.borrow_mut() = new_collapsed;
-                        toggle_count.fetch_add(1, Ordering::SeqCst);
-                    }),
-            )
+        div().flex().w_full().h(gpui::px(200.0)).child(
+            PaneDivider::vertical("toggle-test-divider", CollapseDirection::Left)
+                .collapsed(is_collapsed)
+                .label("Sidebar")
+                .on_toggle(move |new_collapsed, _window, _cx| {
+                    *collapsed_rc.borrow_mut() = new_collapsed;
+                    toggle_count.fetch_add(1, Ordering::SeqCst);
+                }),
+        )
     }
 }
 
@@ -154,7 +157,10 @@ async fn test_pane_divider_double_click_to_collapse(cx: &mut TestAppContext) {
     cx.run_until_parked();
 
     // Initially not collapsed
-    assert!(!*collapsed.borrow(), "Divider should not be collapsed initially");
+    assert!(
+        !*collapsed.borrow(),
+        "Divider should not be collapsed initially"
+    );
 
     // Double-click to collapse
     if let Some(bounds) = cx.debug_bounds("toggle-test-divider") {
@@ -179,15 +185,11 @@ async fn test_pane_divider_collapsed_state(cx: &mut TestAppContext) {
 
     impl Render for CollapsedStateView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div()
-                .flex()
-                .w_full()
-                .h(gpui::px(200.0))
-                .child(
-                    PaneDivider::vertical("collapsed-divider", CollapseDirection::Left)
-                        .collapsed(true)
-                        .label("Sidebar"),
-                )
+            div().flex().w_full().h(gpui::px(200.0)).child(
+                PaneDivider::vertical("collapsed-divider", CollapseDirection::Left)
+                    .collapsed(true)
+                    .label("Sidebar"),
+            )
         }
     }
 
@@ -206,26 +208,23 @@ impl Render for CollapsedClickTestView {
         let collapsed_rc = self.collapsed.clone();
         let expand_clicked = self.expand_clicked.clone();
 
-        div()
-            .flex()
-            .size_full()
-            .child(
-                PaneDivider::vertical("collapsed-click-divider", CollapseDirection::Left)
-                    .collapsed(is_collapsed)
-                    .label("Panel")
-                    .on_toggle(move |new_collapsed, _window, _cx| {
-                        *collapsed_rc.borrow_mut() = new_collapsed;
-                        if !new_collapsed {
-                            expand_clicked.store(true, Ordering::SeqCst);
-                        }
-                    }),
-            )
+        div().flex().size_full().child(
+            PaneDivider::vertical("collapsed-click-divider", CollapseDirection::Left)
+                .collapsed(is_collapsed)
+                .label("Panel")
+                .on_toggle(move |new_collapsed, _window, _cx| {
+                    *collapsed_rc.borrow_mut() = new_collapsed;
+                    if !new_collapsed {
+                        expand_clicked.store(true, Ordering::SeqCst);
+                    }
+                }),
+        )
     }
 }
 
 #[gpui::test]
 async fn test_pane_divider_click_collapsed_to_expand(cx: &mut TestAppContext) {
-    let collapsed = Rc::new(RefCell::new(true));  // Start collapsed
+    let collapsed = Rc::new(RefCell::new(true)); // Start collapsed
     let expand_clicked = Arc::new(AtomicBool::new(false));
 
     let collapsed_clone = collapsed.clone();
@@ -249,7 +248,10 @@ async fn test_pane_divider_click_collapsed_to_expand(cx: &mut TestAppContext) {
         cx.run_until_parked();
 
         // Should have triggered expand (on_toggle with false)
-        assert!(expand_clicked.load(Ordering::SeqCst), "Should have triggered expand");
+        assert!(
+            expand_clicked.load(Ordering::SeqCst),
+            "Should have triggered expand"
+        );
     }
 }
 
@@ -268,16 +270,14 @@ impl Render for DividerDragTestView {
         let drag_started = self.drag_started.clone();
         let drag_position = self.drag_position.clone();
 
-        div()
-            .flex()
-            .size_full()
-            .child(
-                PaneDivider::vertical("drag-test-divider", CollapseDirection::Left)
-                    .on_drag_start(move |position, _window, _cx| {
-                        drag_started.store(true, Ordering::SeqCst);
-                        *drag_position.borrow_mut() = Some(position);
-                    }),
-            )
+        div().flex().size_full().child(
+            PaneDivider::vertical("drag-test-divider", CollapseDirection::Left).on_drag_start(
+                move |position, _window, _cx| {
+                    drag_started.store(true, Ordering::SeqCst);
+                    *drag_position.borrow_mut() = Some(position);
+                },
+            ),
+        )
     }
 }
 
@@ -303,8 +303,14 @@ async fn test_pane_divider_drag_start(cx: &mut TestAppContext) {
         cx.simulate_mouse_down(center, MouseButton::Left, Modifiers::default());
         cx.run_until_parked();
 
-        assert!(drag_started.load(Ordering::SeqCst), "Drag should have started");
-        assert!(drag_position.borrow().is_some(), "Drag position should be set");
+        assert!(
+            drag_started.load(Ordering::SeqCst),
+            "Drag should have started"
+        );
+        assert!(
+            drag_position.borrow().is_some(),
+            "Drag position should be set"
+        );
     }
 }
 
@@ -329,13 +335,10 @@ async fn test_pane_divider_with_custom_theme(cx: &mut TestAppContext) {
                 border: gpui::rgb(0x0055aa),
             };
 
-            div()
-                .flex()
-                .h(gpui::px(100.0))
-                .child(
-                    PaneDivider::vertical("themed-divider", CollapseDirection::Left)
-                        .theme(custom_theme),
-                )
+            div().flex().h(gpui::px(100.0)).child(
+                PaneDivider::vertical("themed-divider", CollapseDirection::Left)
+                    .theme(custom_theme),
+            )
         }
     }
 
@@ -356,33 +359,24 @@ async fn test_pane_divider_custom_sizes(cx: &mut TestAppContext) {
                 .flex()
                 .gap_4()
                 .child(
-                    div()
-                        .flex()
-                        .h(gpui::px(100.0))
-                        .child(
-                            PaneDivider::vertical("thin-divider", CollapseDirection::Left)
-                                .thickness(gpui::px(4.0)),
-                        ),
+                    div().flex().h(gpui::px(100.0)).child(
+                        PaneDivider::vertical("thin-divider", CollapseDirection::Left)
+                            .thickness(gpui::px(4.0)),
+                    ),
                 )
                 .child(
-                    div()
-                        .flex()
-                        .h(gpui::px(100.0))
-                        .child(
-                            PaneDivider::vertical("thick-divider", CollapseDirection::Left)
-                                .thickness(gpui::px(12.0)),
-                        ),
+                    div().flex().h(gpui::px(100.0)).child(
+                        PaneDivider::vertical("thick-divider", CollapseDirection::Left)
+                            .thickness(gpui::px(12.0)),
+                    ),
                 )
                 .child(
-                    div()
-                        .flex()
-                        .h(gpui::px(100.0))
-                        .child(
-                            PaneDivider::vertical("wide-collapsed", CollapseDirection::Left)
-                                .collapsed(true)
-                                .collapsed_size(gpui::px(40.0))
-                                .label("Wide"),
-                        ),
+                    div().flex().h(gpui::px(100.0)).child(
+                        PaneDivider::vertical("wide-collapsed", CollapseDirection::Left)
+                            .collapsed(true)
+                            .collapsed_size(gpui::px(40.0))
+                            .label("Wide"),
+                    ),
                 )
         }
     }
@@ -405,26 +399,19 @@ async fn test_pane_divider_with_label(cx: &mut TestAppContext) {
                 .gap_4()
                 // Collapsed vertical with label
                 .child(
-                    div()
-                        .flex()
-                        .h(gpui::px(200.0))
-                        .child(
-                            PaneDivider::vertical("labeled-v-divider", CollapseDirection::Left)
-                                .collapsed(true)
-                                .label("Navigation"),
-                        ),
+                    div().flex().h(gpui::px(200.0)).child(
+                        PaneDivider::vertical("labeled-v-divider", CollapseDirection::Left)
+                            .collapsed(true)
+                            .label("Navigation"),
+                    ),
                 )
                 // Collapsed horizontal with label
                 .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .w(gpui::px(200.0))
-                        .child(
-                            PaneDivider::horizontal("labeled-h-divider", CollapseDirection::Up)
-                                .collapsed(true)
-                                .label("Details"),
-                        ),
+                    div().flex().flex_col().w(gpui::px(200.0)).child(
+                        PaneDivider::horizontal("labeled-h-divider", CollapseDirection::Up)
+                            .collapsed(true)
+                            .label("Details"),
+                    ),
                 )
         }
     }

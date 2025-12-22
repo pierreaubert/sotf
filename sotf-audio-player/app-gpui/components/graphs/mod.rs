@@ -27,4 +27,3 @@ pub fn format_frequency(freq: f64) -> String {
         format!("{:.1} Hz", freq)
     }
 }
-

@@ -1,9 +1,11 @@
 use crate::components::graphs::common::{colors, rgba_to_u32, theme_to_chart_theme};
 use crate::theme::Theme;
 use crate::ui::PlayerView;
+use autoeq::plot::calculate_tonal_balance;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_px::{ScaleType, line};
+use ndarray::Array1;
 use sotf_audio_player::autoeq::SpeakerOptimizationResult;
 
 impl PlayerView {
@@ -15,41 +17,116 @@ impl PlayerView {
         available_width: f32,
     ) -> impl IntoElement {
         let gap = 8.0;
-        let graph_width = ((available_width - gap) / 2.0).max(800.0);
-        let graph_height = 300.0;
+        let graph_ratio = 0.75;
+        let graph_width = ((available_width - gap) / 2.0).max(600.0);
+        let legend_width = 150.0;
+        let graph_height = 300.0_f32.max((graph_width - legend_width) * graph_ratio);
 
         div()
             .flex()
             .flex_col()
             .w_full()
+            .gap_4()
+            // Row 1: CEA2034 with and without EQ
             .child(
-                // "On-Axis / Listening Window Response",
-                render_spinorama_main_response_plot(
-                    result,
-                    theme,
-                    graph_width,
-                    graph_height,
-                ),
-	    )
-            .gap_8()
-	    .child(
-		// "Filter Response",
-                render_speaker_filter_response_plot(
-                    result,
-                    theme,
-                    graph_width,
-                    graph_height,
-                ),
+                div()
+                    .flex()
+                    .flex_row()
+                    .gap_2()
+                    .child(render_cea2034_from_result(
+                        result,
+                        theme,
+                        graph_width,
+                        graph_height,
+                        false,
+                    ))
+                    .child(render_cea2034_from_result(
+                        result,
+                        theme,
+                        graph_width,
+                        graph_height,
+                        true,
+                    )),
             )
-            .gap_8()
+            // Row 2: Main Response | Filter Response
             .child(
-		// "Early Reflections",
-		render_spinorama_er_plot(result, theme, graph_width, graph_height),
+                div()
+                    .flex()
+                    .flex_row()
+                    .gap_2()
+                    .child(render_spinorama_main_response_plot(
+                        result,
+                        theme,
+                        graph_width,
+                        graph_height,
+                    ))
+                    .child(render_speaker_filter_response_plot(
+                        result,
+                        theme,
+                        graph_width,
+                        graph_height,
+                    )),
             )
-            .gap_8()
-	    .child(
-                // "Sound Power",
-                render_spinorama_sp_plot(result, theme, graph_width, graph_height),
+            // Row 3: Early Reflections | Sound Power
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .gap_2()
+                    .child(render_spinorama_er_plot(
+                        result,
+                        theme,
+                        graph_width,
+                        graph_height,
+                    ))
+                    .child(render_spinorama_sp_plot(
+                        result,
+                        theme,
+                        graph_width,
+                        graph_height,
+                    )),
+            )
+            // Row 4: Tonal Balance ON | Tonal Balance LW
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .gap_2()
+                    .child(render_tonal_balance_plot(
+                        result,
+                        "ON",
+                        theme,
+                        graph_width,
+                        graph_height,
+                    ))
+                    .child(render_tonal_balance_plot(
+                        result,
+                        "LW",
+                        theme,
+                        graph_width,
+                        graph_height,
+                    )),
+            )
+            // Row 5: Tonal Balance ER | Tonal Balance SP
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .gap_2()
+                    .child(render_tonal_balance_plot(
+                        result,
+                        "ER",
+                        theme,
+                        graph_width,
+                        graph_height,
+                    ))
+                    .child(render_tonal_balance_plot(
+                        result,
+                        "SP",
+                        theme,
+                        graph_width,
+                        graph_height,
+                    )),
             )
     }
 }
@@ -223,49 +300,6 @@ fn render_spinorama_sp_plot(
         .when_some(chart.ok(), |el, c| el.child(c))
 }
 
-/// Plot 6: Speaker Optimization Loss vs Iteration using gpui-px
-#[allow(dead_code)]
-fn render_speaker_optimization_loss_plot(
-    result: &SpeakerOptimizationResult,
-    theme: &Theme,
-    width: f32,
-    height: f32,
-    title: &str,
-) -> Div {
-    if result.optimization_history.is_empty() {
-        return div().child("No history available");
-    }
-
-    let chart_theme = theme_to_chart_theme(theme);
-
-    let iterations: Vec<f64> = result
-        .optimization_history
-        .iter()
-        .map(|&(i, _)| i as f64)
-        .collect();
-    let losses: Vec<f64> = result
-        .optimization_history
-        .iter()
-        .map(|&(_, loss)| loss)
-        .collect();
-
-    // Linear scale for iterations (default, no x_scale specified)
-    let chart = line(&iterations, &losses)
-        .title(title)
-        .label("Loss")
-        .color(rgba_to_u32(colors::deviation(theme)))
-        .stroke_width(2.0)
-        .theme(chart_theme)
-        .size(width, height)
-        .build();
-
-    div()
-        .w(px(width))
-        .flex()
-        .flex_col()
-        .when_some(chart.ok(), |el, c| el.child(c))
-}
-
 /// Render measurement preview graph showing On Axis measurement and optional target curve
 /// Used in spinorama_eq Step 1 (Select Speaker) for previewing the measurement before optimization
 pub fn render_speaker_preview_graph(
@@ -360,13 +394,7 @@ pub fn render_spinorama_cea2034_graph(
             1.5,
             0.8,
         )
-        .add_series(
-            &curves.sound_power,
-            Some("SP"),
-            SOUND_POWER_COLOR,
-            1.5,
-            0.8,
-        )
+        .add_series(&curves.sound_power, Some("SP"), SOUND_POWER_COLOR, 1.5, 0.8)
         // Secondary axis series (DI curves)
         .add_series_y2(
             &curves.early_reflections_di,
@@ -375,13 +403,7 @@ pub fn render_spinorama_cea2034_graph(
             1.5,
             0.9,
         )
-        .add_series_y2(
-            &curves.sound_power_di,
-            Some("SP DI"),
-            SPDI_COLOR,
-            1.5,
-            0.9,
-        )
+        .add_series_y2(&curves.sound_power_di, Some("SP DI"), SPDI_COLOR, 1.5, 0.9)
         .build();
 
     div()
@@ -454,7 +476,11 @@ pub fn render_spinorama_horizontal_graph(
 
     // Sort curves by angle
     let mut sorted_curves: Vec<_> = curves.horizontal_directivity.iter().collect();
-    sorted_curves.sort_by(|a, b| a.angle.partial_cmp(&b.angle).unwrap_or(std::cmp::Ordering::Equal));
+    sorted_curves.sort_by(|a, b| {
+        a.angle
+            .partial_cmp(&b.angle)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     // Use On Axis (0°) if available, otherwise first curve
     let base_curve = sorted_curves
@@ -528,7 +554,11 @@ pub fn render_spinorama_vertical_graph(
 
     // Sort curves by angle
     let mut sorted_curves: Vec<_> = curves.vertical_directivity.iter().collect();
-    sorted_curves.sort_by(|a, b| a.angle.partial_cmp(&b.angle).unwrap_or(std::cmp::Ordering::Equal));
+    sorted_curves.sort_by(|a, b| {
+        a.angle
+            .partial_cmp(&b.angle)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     // Use On Axis (0°) if available, otherwise first curve
     let base_curve = sorted_curves
@@ -566,6 +596,187 @@ pub fn render_spinorama_vertical_graph(
 
     let chart = chart_builder.build();
 
+    div()
+        .w(px(width))
+        .flex()
+        .flex_col()
+        .when_some(chart.ok(), |el, c| el.child(c))
+}
+
+/// Convert SpeakerOptimizationResult to SpinoramaCurves for rendering
+/// If corrected is true, applies the filter response to all curves
+fn result_to_spinorama_curves(
+    result: &SpeakerOptimizationResult,
+    corrected: bool,
+) -> SpinoramaCurves {
+    let apply_filter = |curve: &[f64]| -> Vec<f64> {
+        curve
+            .iter()
+            .zip(result.filter_response.iter())
+            .map(|(a, b)| a + b)
+            .collect()
+    };
+
+    if corrected {
+        SpinoramaCurves {
+            frequencies: result.frequencies.clone(),
+            on_axis: result.corrected_curve.clone(),
+            listening_window: apply_filter(&result.lw_curve),
+            early_reflections: apply_filter(&result.er_curve),
+            sound_power: apply_filter(&result.sp_curve),
+            early_reflections_di: result.er_di_curve.clone(),
+            sound_power_di: result.sp_di_curve.clone(),
+            estimated_in_room: vec![],
+            horizontal_directivity: vec![],
+            vertical_directivity: vec![],
+        }
+    } else {
+        SpinoramaCurves {
+            frequencies: result.frequencies.clone(),
+            on_axis: result.input_curve.clone(),
+            listening_window: result.lw_curve.clone(),
+            early_reflections: result.er_curve.clone(),
+            sound_power: result.sp_curve.clone(),
+            early_reflections_di: result.er_di_curve.clone(),
+            sound_power_di: result.sp_di_curve.clone(),
+            estimated_in_room: vec![],
+            horizontal_directivity: vec![],
+            vertical_directivity: vec![],
+        }
+    }
+}
+
+/// Render CEA2034 (Original or Corrected) - reuses render_spinorama_cea2034_graph
+fn render_cea2034_from_result(
+    result: &SpeakerOptimizationResult,
+    theme: &Theme,
+    width: f32,
+    height: f32,
+    corrected: bool,
+) -> Div {
+    let curves = result_to_spinorama_curves(result, corrected);
+    render_spinorama_cea2034_graph(&curves, theme, width, height)
+}
+
+/// Render Tonal Balance Trend Lines (Before vs After)
+fn render_tonal_balance_plot(
+    result: &SpeakerOptimizationResult,
+    curve_type: &str,
+    theme: &Theme,
+    width: f32,
+    height: f32,
+) -> Div {
+    let chart_theme = theme_to_chart_theme(theme);
+
+    // Select curve
+    let (original_curve, corrected_curve) = match curve_type {
+        "ON" => (result.input_curve.clone(), result.corrected_curve.clone()),
+        "LW" => (
+            // Use real LW curve
+            result.lw_curve.clone(),
+            result
+                .lw_curve
+                .iter()
+                .zip(result.filter_response.iter())
+                .map(|(a, b)| a + b)
+                .collect(),
+        ),
+        "ER" => (
+            result.er_curve.clone(),
+            result
+                .er_curve
+                .iter()
+                .zip(result.filter_response.iter())
+                .map(|(a, b)| a + b)
+                .collect(),
+        ),
+        "SP" => (
+            result.sp_curve.clone(),
+            result
+                .sp_curve
+                .iter()
+                .zip(result.filter_response.iter())
+                .map(|(a, b)| a + b)
+                .collect(),
+        ),
+        _ => (vec![], vec![]),
+    };
+
+    if original_curve.is_empty() {
+        return div().child("No data");
+    }
+
+    // Calculate trend lines
+    let freq_arr = Array1::from(result.frequencies.clone());
+    let orig_arr = Array1::from(original_curve.clone());
+    let corr_arr = Array1::from(corrected_curve.clone());
+
+    let orig_trend_params = calculate_tonal_balance(&freq_arr, &orig_arr, 20.0, 20000.0);
+    let corr_trend_params = calculate_tonal_balance(&freq_arr, &corr_arr, 20.0, 20000.0);
+
+    let mut chart_builder = line(&result.frequencies, &original_curve)
+        .x_scale(ScaleType::Log)
+        .x_range(20.0, 20000.0)
+        .y_range(-15.0, 5.0)
+        .label(&format!("{} Orig", curve_type))
+        .color(rgba_to_u32(colors::input(theme)))
+        .stroke_width(1.0)
+        .opacity(0.5)
+        .theme(chart_theme)
+        .size(width, height)
+        .add_series(
+            &corrected_curve,
+            Some(&format!("{} EQ", curve_type)),
+            rgba_to_u32(colors::corrected(theme)),
+            1.0,
+            0.5,
+        );
+
+    // Add trend lines
+    if let Some((slope, _)) = orig_trend_params {
+        // Calculate intercept manually to ensure line fits data
+        // Intercept b = mean(y) - slope * mean(x) where x is log10(freq)
+        let log_freqs: Vec<f64> = result.frequencies.iter().map(|f| f.log10()).collect();
+        let mean_x: f64 = log_freqs.iter().sum::<f64>() / log_freqs.len() as f64;
+        let mean_y: f64 = original_curve.iter().sum::<f64>() / original_curve.len() as f64;
+        let intercept = mean_y - slope * mean_x;
+
+        let trend: Vec<f64> = result
+            .frequencies
+            .iter()
+            .map(|f| slope * f.log10() + intercept)
+            .collect();
+        chart_builder = chart_builder.add_series(
+            &trend,
+            Some(&format!("Trend {:.2}", slope)),
+            rgba_to_u32(colors::input(theme)),
+            2.5,
+            1.0,
+        );
+    }
+
+    if let Some((slope, _)) = corr_trend_params {
+        // Calculate intercept manually
+        let log_freqs: Vec<f64> = result.frequencies.iter().map(|f| f.log10()).collect();
+        let mean_x: f64 = log_freqs.iter().sum::<f64>() / log_freqs.len() as f64;
+        let mean_y: f64 = corrected_curve.iter().sum::<f64>() / corrected_curve.len() as f64;
+        let intercept = mean_y - slope * mean_x;
+
+        let trend: Vec<f64> = result
+            .frequencies
+            .iter()
+            .map(|f| slope * f.log10() + intercept)
+            .collect();
+        chart_builder = chart_builder.add_series(
+            &trend,
+            Some(&format!("Trend {:.2}", slope)),
+            rgba_to_u32(colors::corrected(theme)),
+            2.5,
+            1.0,
+        );
+    }
+
+    let chart = chart_builder.build();
     div()
         .w(px(width))
         .flex()

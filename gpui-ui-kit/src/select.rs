@@ -352,12 +352,14 @@ impl Select {
                         "enter" if currently_open => {
                             // Select highlighted option
                             if let Some(idx) = current_highlight
-                                && idx < options_clone.len() && !options_clone[idx].disabled {
-                                    if let Some(ref change_handler) = change_rc {
-                                        change_handler(&options_clone[idx].value, window, cx);
-                                    }
-                                    toggle_rc(false, window, cx);
+                                && idx < options_clone.len()
+                                && !options_clone[idx].disabled
+                            {
+                                if let Some(ref change_handler) = change_rc {
+                                    change_handler(&options_clone[idx].value, window, cx);
                                 }
+                                toggle_rc(false, window, cx);
+                            }
                         }
                         "down" | "up" if currently_open => {
                             // Navigate options
@@ -475,9 +477,8 @@ impl Select {
                     // Add click handler for ALL non-disabled options
                     let change_handler = on_change_rc.clone();
                     let toggle_handler = on_toggle_rc.clone();
-                    option_el = option_el.on_mouse_down(
-                        MouseButton::Left,
-                        move |_event, window, cx| {
+                    option_el =
+                        option_el.on_mouse_down(MouseButton::Left, move |_event, window, cx| {
                             // Call change handler if provided
                             if let Some(ref handler) = change_handler {
                                 handler(&option_value, window, cx);
@@ -486,8 +487,7 @@ impl Select {
                             if let Some(ref handler) = toggle_handler {
                                 handler(false, window, cx);
                             }
-                        },
-                    );
+                        });
                 }
 
                 option_el = option_el.child(option.label.clone());

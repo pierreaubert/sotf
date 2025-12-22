@@ -171,6 +171,9 @@ pub struct App {
     pub scan_progress_tracks: usize,
     pub scan_progress_albums: usize,
 
+    // Scan progress modal (for library, bliss, waveform, replaygain scans)
+    pub scan_progress_modal: Option<crate::app::types::ScanProgressModal>,
+
     // Last loaded plugin preset name (for config persistence)
     pub last_loaded_preset: Option<String>,
 
@@ -380,6 +383,7 @@ impl App {
             scan_in_progress: false,
             scan_progress_tracks: 0,
             scan_progress_albums: 0,
+            scan_progress_modal: None,
             last_loaded_preset: None,
             context_menu: None,
             theme_id: ThemeId::default(),
@@ -475,16 +479,18 @@ impl App {
                         // Set sample rates
                         self.recording_state.playback_config.available_sample_rates =
                             device.available_sample_rates.clone();
-                        
+
                         let rates = &device.available_sample_rates;
                         let default_rate = if rates.contains(&48000) {
                             48000
                         } else if rates.contains(&44100) {
                             44100
                         } else {
-                            device.default_config.as_ref().map(|c| c.sample_rate).unwrap_or(
-                                rates.first().copied().unwrap_or(48000)
-                            )
+                            device
+                                .default_config
+                                .as_ref()
+                                .map(|c| c.sample_rate)
+                                .unwrap_or(rates.first().copied().unwrap_or(48000))
                         };
                         self.recording_state.playback_config.sample_rate = default_rate;
                     }
@@ -508,16 +514,18 @@ impl App {
                         // Set sample rates
                         self.recording_state.recording_config.available_sample_rates =
                             device.available_sample_rates.clone();
-                        
+
                         let rates = &device.available_sample_rates;
                         let default_rate = if rates.contains(&48000) {
                             48000
                         } else if rates.contains(&44100) {
                             44100
                         } else {
-                            device.default_config.as_ref().map(|c| c.sample_rate).unwrap_or(
-                                rates.first().copied().unwrap_or(48000)
-                            )
+                            device
+                                .default_config
+                                .as_ref()
+                                .map(|c| c.sample_rate)
+                                .unwrap_or(rates.first().copied().unwrap_or(48000))
                         };
                         self.recording_state.recording_config.sample_rate = default_rate;
                     }
@@ -788,7 +796,11 @@ impl App {
                 // Count by first letter
                 if let Some(first_char) = album_artist.chars().next() {
                     let letter = first_char.to_ascii_uppercase();
-                    let key = if letter.is_ascii_alphabetic() { letter } else { '#' };
+                    let key = if letter.is_ascii_alphabetic() {
+                        letter
+                    } else {
+                        '#'
+                    };
                     *artist_letter_counts.entry(key).or_insert(0) += 1;
                 }
             }
@@ -807,7 +819,11 @@ impl App {
                         // Count by first letter
                         if let Some(first_char) = composer.chars().next() {
                             let letter = first_char.to_ascii_uppercase();
-                            let key = if letter.is_ascii_alphabetic() { letter } else { '#' };
+                            let key = if letter.is_ascii_alphabetic() {
+                                letter
+                            } else {
+                                '#'
+                            };
                             *composer_letter_counts.entry(key).or_insert(0) += 1;
                         }
                     }
@@ -872,7 +888,9 @@ impl App {
     }
 
     /// Build decade counts from year counts
-    fn build_decade_counts(year_counts: &std::collections::HashMap<i32, usize>) -> Vec<(i32, i32, usize)> {
+    fn build_decade_counts(
+        year_counts: &std::collections::HashMap<i32, usize>,
+    ) -> Vec<(i32, i32, usize)> {
         use std::collections::HashMap;
 
         let mut decade_map: HashMap<i32, usize> = HashMap::new();

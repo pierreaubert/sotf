@@ -219,8 +219,9 @@ impl PlayerView {
                 state.app.pending_plugin_update =
                     Some(crate::app::types::PluginUpdateType::Structural);
 
-                state.app.toast_message =
-                    Some(crate::app::types::ToastMessage::success("Applied Headphone EQ"));
+                state.app.toast_message = Some(crate::app::types::ToastMessage::success(
+                    "Applied Headphone EQ",
+                ));
                 cx.notify();
             } else {
                 state.app.toast_message = Some(crate::app::types::ToastMessage::warning(

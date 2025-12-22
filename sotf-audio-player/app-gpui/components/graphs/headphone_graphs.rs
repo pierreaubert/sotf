@@ -3,7 +3,7 @@ use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_px::{line, ScaleType};
+use gpui_px::{ScaleType, line};
 
 impl PlayerView {
     /// Render the optimization result graphs in a 2x2 grid
@@ -22,24 +22,32 @@ impl PlayerView {
             .flex()
             .flex_row()
             .flex_col()
-	    .items_center()
-	    .justify_between()
+            .items_center()
+            .justify_between()
             .w_full()
-            .child(
-                render_response_comparison_plot(result, theme, graph_width, graph_height)
-            )
+            .child(render_response_comparison_plot(
+                result,
+                theme,
+                graph_width,
+                graph_height,
+            ))
             .gap_8()
-            .child(
-                render_filter_response_plot(result, theme, graph_width, graph_height),
-	    )
+            .child(render_filter_response_plot(
+                result,
+                theme,
+                graph_width,
+                graph_height,
+            ))
             .gap_8()
-            .child(
-                render_filter_vs_deviation_plot(result, theme, graph_width, graph_height),
-            )
+            .child(render_filter_vs_deviation_plot(
+                result,
+                theme,
+                graph_width,
+                graph_height,
+            ))
             .gap_8()
-            .child(
-                render_error_plot(result, theme, graph_width, graph_height),
-            )
+            .child(render_error_plot(result, theme, graph_width, graph_height))
+            .gap_8()
     }
 }
 
@@ -65,7 +73,8 @@ fn render_filter_response_plot(
     // Start with the sum (combined filter response) as the primary series
     let mut chart_builder = line(&freqs, &sum_response)
         .x_scale(ScaleType::Log)
-	.title("Filter Response")
+        .y_range(-10.0, 10.0)
+        .title("Filter Response")
         .label("Sum")
         .stroke_width(2.0)
         .theme(chart_theme)
@@ -76,15 +85,14 @@ fn render_filter_response_plot(
         for (i, curve_data) in individual.iter().enumerate() {
             let (_, curve): (Vec<f64>, Vec<f64>) = curve_data.iter().cloned().unzip();
             let freq = result.biquads.get(i).map(|b| b.freq).unwrap_or(0.0);
-	    let label = format!("F{} {}", i + 1, freq.floor());
-            chart_builder =
-                chart_builder.add_series(
-		    &curve,
-		    Some(label),
-		    rgba_to_u32(colors::filter(theme)),
-		    1.5,
-		    1.0
-		);
+            let label = format!("F{} {}", i + 1, freq.floor());
+            chart_builder = chart_builder.add_series(
+                &curve,
+                Some(label),
+                rgba_to_u32(colors::filter(theme)),
+                1.5,
+                1.0,
+            );
         }
     }
 
@@ -110,10 +118,11 @@ fn render_filter_vs_deviation_plot(
 
     let chart = line(&freqs, &deviation)
         .x_scale(ScaleType::Log)
-	.x_label("Frequency (Hz)")
-	.y_label("Amplitude (dB SPL)")
+        .x_label("Frequency (Hz)")
+        .y_label("Amplitude (dB SPL)")
+        .y_range(-10.0, 10.0)
         .label("Deviation")
-	.title("Filter Response v.s. Deviation")
+        .title("Filter Response v.s. Deviation")
         .stroke_width(2.0)
         .theme(chart_theme)
         .size(width, height)
@@ -190,14 +199,14 @@ fn render_response_comparison_plot(
     let (_, corrected) = unzip_response(result.corrected_response.as_ref());
     let chart = line(&freqs, &original)
         .x_scale(ScaleType::Log)
-	.title("Original v.s. Corrected v.s. Target")
+        .title("Original v.s. Corrected v.s. Target")
         .label("Original")
         .stroke_width(1.5)
         .theme(chart_theme)
         .size(width, height)
-	.x_label("Frequency (Hz)")
-	.y_label("Amplitude (dB SPL)")
-	.y_range(-10.0, 10.0)
+        .x_label("Frequency (Hz)")
+        .y_label("Amplitude (dB SPL)")
+        .y_range(-10.0, 10.0)
         .add_series(
             &target,
             Some("Target"),

@@ -4,8 +4,8 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
     AutoEqConfig, AutoEqForm, AutoEqFormUiState, Badge, BadgeVariant, Button, ButtonSize,
-    ButtonVariant, Card, Progress, ProgressSize, ProgressVariant, StackSpacing, Text, TextSize,
-    TextWeight, VStack,
+    ButtonVariant, Card, OptimizationType, Progress, ProgressSize, ProgressVariant, StackSpacing,
+    Text, TextSize, TextWeight, VStack,
 };
 
 impl PlayerView {
@@ -13,7 +13,10 @@ impl PlayerView {
     // Step 2: Optimization (EQ Design, Fine Tuning, Generate)
     // ========================================================================
 
-    pub(crate) fn render_headphone_eq_optimization(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_headphone_eq_optimization(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
         let headphone_eq = &state.app.headphone_eq_state;
@@ -31,8 +34,8 @@ impl PlayerView {
             max_freq: config.max_freq,
             peq_model: "pk".to_string(),
             algo: match config.algorithm {
-                crate::app::types::RoomEqAlgorithm::Cobyla => "nlopt:cobyla",
                 crate::app::types::RoomEqAlgorithm::DifferentialEvolution => "autoeq:de",
+                crate::app::types::RoomEqAlgorithm::Cobyla => "nlopt:cobyla",
                 crate::app::types::RoomEqAlgorithm::NelderMead => "nlopt:neldermead",
             }
             .to_string(),
@@ -44,6 +47,9 @@ impl PlayerView {
             refine: false,
             local_algo: "cobyla".to_string(),
             smooth: false,
+            // Goals - use headphone_eq_state values
+            loss_type: headphone_eq.loss_type.clone(),
+            target_curve: headphone_eq.target_preset.clone(),
             ..Default::default()
         };
 
@@ -51,7 +57,9 @@ impl PlayerView {
         let autoeq_ui_state = AutoEqFormUiState {
             algo_open: headphone_eq.dropdowns.algorithm_open,
             peq_model_open: headphone_eq.dropdowns.peq_model_open,
-            strategy_open: false,
+            loss_type_open: headphone_eq.dropdowns.loss_type_open,
+            target_curve_open: headphone_eq.dropdowns.target_curve_open,
+            strategy_open: true,
             local_algo_open: false,
             ..Default::default()
         };
@@ -60,16 +68,51 @@ impl PlayerView {
         let autoeq_form = AutoEqForm::new("headphone-eq-optimizer-form")
             .config(autoeq_config)
             .ui_state(autoeq_ui_state)
-            .show_goals(false)
+            .optimization_type(OptimizationType::Headphone)
+            .show_goals(true)
             .show_optimization_tuning(true)
+            .on_loss_type_change({
+                let state = self.state.clone();
+                move |loss_type, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.headphone_eq_state.loss_type = loss_type.to_string();
+                        state.app.headphone_eq_state.dropdowns.loss_type_open = false;
+                    });
+                }
+            })
+            .on_loss_type_toggle({
+                let state = self.state.clone();
+                move |open, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.headphone_eq_state.dropdowns.loss_type_open = open;
+                    });
+                }
+            })
+            .on_target_curve_change({
+                let state = self.state.clone();
+                move |target, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.headphone_eq_state.target_preset = target.to_string();
+                        state.app.headphone_eq_state.dropdowns.target_curve_open = false;
+                    });
+                }
+            })
+            .on_target_curve_toggle({
+                let state = self.state.clone();
+                move |open, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.headphone_eq_state.dropdowns.target_curve_open = open;
+                    });
+                }
+            })
             .on_algo_change({
                 let state = self.state.clone();
                 move |algo, _window, cx| {
                     use crate::app::types::RoomEqAlgorithm;
                     state.update(cx, |state, _cx| {
                         state.app.headphone_eq_state.optimizer_config.algorithm = match algo {
-                            "nlopt:cobyla" => RoomEqAlgorithm::Cobyla,
                             "autoeq:de" => RoomEqAlgorithm::DifferentialEvolution,
+                            "nlopt:cobyla" => RoomEqAlgorithm::Cobyla,
                             "nlopt:neldermead" => RoomEqAlgorithm::NelderMead,
                             _ => RoomEqAlgorithm::Cobyla,
                         };
@@ -271,7 +314,8 @@ impl PlayerView {
                                             })
                                             .when(is_failed, |el| {
                                                 el.child(
-                                                    Badge::new("Failed").variant(BadgeVariant::Error),
+                                                    Badge::new("Failed")
+                                                        .variant(BadgeVariant::Error),
                                                 )
                                             }),
                                     )
@@ -286,21 +330,17 @@ impl PlayerView {
                                                 ProgressVariant::Default
                                             }),
                                     )
-                                    .child(
-                                        Text::new(status_msg)
-                                            .size(TextSize::Sm)
-                                            .color(if is_completed {
-                                                theme.success
-                                            } else if is_failed {
-                                                theme.error
-                                            } else {
-                                                theme.text_secondary
-                                            }),
-                                    )
+                                    .child(Text::new(status_msg).size(TextSize::Sm).color(
+                                        if is_completed {
+                                            theme.success
+                                        } else if is_failed {
+                                            theme.error
+                                        } else {
+                                            theme.text_secondary
+                                        },
+                                    ))
                             })
                     }),
             )
     }
-
-
 }

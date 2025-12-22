@@ -4352,14 +4352,18 @@ mod tests {
         assert_eq!(items.len(), 4);
 
         // First should be Artist A (expanded)
-        assert!(matches!(&items[0], TreeItem::Artist { name, expanded } if name == "Artist A" && *expanded));
+        assert!(
+            matches!(&items[0], TreeItem::Artist { name, expanded } if name == "Artist A" && *expanded)
+        );
 
         // Next two should be albums
         assert!(matches!(&items[1], TreeItem::Album { .. }));
         assert!(matches!(&items[2], TreeItem::Album { .. }));
 
         // Last should be Artist B (collapsed)
-        assert!(matches!(&items[3], TreeItem::Artist { name, expanded } if name == "Artist B" && !*expanded));
+        assert!(
+            matches!(&items[3], TreeItem::Artist { name, expanded } if name == "Artist B" && !*expanded)
+        );
     }
 
     #[test]
@@ -4591,7 +4595,11 @@ mod tests {
         // Go back should go to last track of first album
         let path = app.previous_track();
         assert!(path.is_some());
-        assert!(path.unwrap().to_string_lossy().contains("album1/track1.flac"));
+        assert!(
+            path.unwrap()
+                .to_string_lossy()
+                .contains("album1/track1.flac")
+        );
         assert_eq!(app.current_queue_index, Some(0));
     }
 }

@@ -7,7 +7,6 @@ use gpui_ui_kit::{
 };
 
 impl PlayerView {
-
     // ========================================================================
     // Step 4: Review
     // ========================================================================
@@ -43,7 +42,7 @@ impl PlayerView {
                         .border(theme_for_graphs.border)
                         .header(Text::new("Frequency Response").color(theme_for_graphs.text_primary).weight(TextWeight::Semibold))
                         .content(
-                            self.render_speaker_optimization_result_graphs(&full_res, &theme_for_graphs, 700.0)
+                            self.render_speaker_optimization_result_graphs(&full_res, &theme_for_graphs, 1200.0)
                         ),
                 )
             })
@@ -311,5 +310,4 @@ impl PlayerView {
                 )
             })
     }
-
 }

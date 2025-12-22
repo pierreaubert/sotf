@@ -206,27 +206,28 @@ impl Checkbox {
 
         // Event handlers
         if !self.disabled
-            && let Some(handler) = self.on_change {
-                let handler_rc = std::rc::Rc::new(handler);
-                let new_checked = !checked;
+            && let Some(handler) = self.on_change
+        {
+            let handler_rc = std::rc::Rc::new(handler);
+            let new_checked = !checked;
 
-                // Mouse click handler
-                let click_handler = handler_rc.clone();
-                container = container.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
-                    click_handler(new_checked, window, cx);
-                });
+            // Mouse click handler
+            let click_handler = handler_rc.clone();
+            container = container.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
+                click_handler(new_checked, window, cx);
+            });
 
-                // Keyboard handler (Space or Enter)
-                let key_handler = handler_rc.clone();
-                container = container.on_key_down(move |event, window, cx| {
-                    match event.keystroke.key.as_str() {
-                        "space" | " " | "enter" => {
-                            key_handler(new_checked, window, cx);
-                        }
-                        _ => {}
+            // Keyboard handler (Space or Enter)
+            let key_handler = handler_rc.clone();
+            container = container.on_key_down(move |event, window, cx| {
+                match event.keystroke.key.as_str() {
+                    "space" | " " | "enter" => {
+                        key_handler(new_checked, window, cx);
                     }
-                });
-            }
+                    _ => {}
+                }
+            });
+        }
 
         container
     }

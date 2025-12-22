@@ -8,8 +8,8 @@
 //! - Error handling
 
 use hound::{SampleFormat, WavSpec, WavWriter};
-use sotf_audio::decoder::{AudioDecoder, AudioFormat, DecodedAudio, create_decoder, probe_file};
 use sotf_audio::AudioSpec;
+use sotf_audio::decoder::{AudioDecoder, AudioFormat, DecodedAudio, create_decoder, probe_file};
 use std::path::Path;
 use tempfile::NamedTempFile;
 
@@ -232,7 +232,11 @@ fn test_probe_wav_file() {
     let wav_file = create_wav_file(48000, 2, 16, 1.0, 440.0);
 
     let result = probe_file(wav_file.path());
-    assert!(result.is_ok(), "Failed to probe WAV file: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to probe WAV file: {:?}",
+        result.err()
+    );
 
     let (format, spec) = result.unwrap();
     assert_eq!(format, AudioFormat::Wav);

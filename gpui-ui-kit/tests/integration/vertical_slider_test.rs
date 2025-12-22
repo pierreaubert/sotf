@@ -13,8 +13,8 @@
 //! - Theme customization
 
 use gpui::{Context, TestAppContext, VisualTestContext, Window, div, prelude::*};
-use gpui_ui_kit::vertical_slider::{VerticalSlider, VerticalSliderSize, VerticalSliderTheme};
 use gpui_ui_kit::scale::Scale;
+use gpui_ui_kit::vertical_slider::{VerticalSlider, VerticalSliderSize, VerticalSliderTheme};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -33,7 +33,7 @@ impl Render for VerticalSliderTestView {
                 .value(50.0)
                 .min(0.0)
                 .max(100.0)
-                .label("Volume")
+                .label("Volume"),
         )
     }
 }
@@ -60,19 +60,19 @@ async fn test_vertical_slider_sizes(cx: &mut TestAppContext) {
                     VerticalSlider::new("sm-slider")
                         .size(VerticalSliderSize::Sm)
                         .value(50.0)
-                        .label("Small")
+                        .label("Small"),
                 )
                 .child(
                     VerticalSlider::new("md-slider")
                         .size(VerticalSliderSize::Md)
                         .value(50.0)
-                        .label("Medium")
+                        .label("Medium"),
                 )
                 .child(
                     VerticalSlider::new("lg-slider")
                         .size(VerticalSliderSize::Lg)
                         .value(50.0)
-                        .label("Large")
+                        .label("Large"),
                 )
         }
     }
@@ -90,7 +90,7 @@ async fn test_vertical_slider_custom_height(cx: &mut TestAppContext) {
                 VerticalSlider::new("custom-height")
                     .height(200.0)
                     .value(50.0)
-                    .label("Custom Height")
+                    .label("Custom Height"),
             )
         }
     }
@@ -122,7 +122,7 @@ impl Render for SliderChangeTestView {
                 .on_change(move |new_val, _window, _cx| {
                     *value_rc.borrow_mut() = new_val;
                     change_count.fetch_add(1, Ordering::SeqCst);
-                })
+                }),
         )
     }
 }
@@ -163,7 +163,7 @@ async fn test_vertical_slider_linear_scale(cx: &mut TestAppContext) {
                     .value(50.0)
                     .min(0.0)
                     .max(100.0)
-                    .label("Linear")
+                    .label("Linear"),
             )
         }
     }
@@ -184,7 +184,7 @@ async fn test_vertical_slider_logarithmic_scale(cx: &mut TestAppContext) {
                     .min(20.0)
                     .max(20000.0)
                     .unit("Hz")
-                    .label("Frequency")
+                    .label("Frequency"),
             )
         }
     }
@@ -212,7 +212,7 @@ async fn test_vertical_slider_with_ticks(cx: &mut TestAppContext) {
                         .value(50.0)
                         .min(0.0)
                         .max(100.0)
-                        .label("Linear Ticks")
+                        .label("Linear Ticks"),
                 )
                 .child(
                     VerticalSlider::new("ticks-log")
@@ -221,7 +221,7 @@ async fn test_vertical_slider_with_ticks(cx: &mut TestAppContext) {
                         .value(1000.0)
                         .min(20.0)
                         .max(20000.0)
-                        .label("Log Ticks")
+                        .label("Log Ticks"),
                 )
         }
     }
@@ -246,13 +246,13 @@ async fn test_vertical_slider_selected(cx: &mut TestAppContext) {
                     VerticalSlider::new("not-selected")
                         .value(50.0)
                         .selected(false)
-                        .label("Not Selected")
+                        .label("Not Selected"),
                 )
                 .child(
                     VerticalSlider::new("selected")
                         .value(50.0)
                         .selected(true)
-                        .label("Selected")
+                        .label("Selected"),
                 )
         }
     }
@@ -274,7 +274,7 @@ impl Render for SelectCallbackTestView {
                 .value(50.0)
                 .on_select(move |_window, _cx| {
                     select_count.fetch_add(1, Ordering::SeqCst);
-                })
+                }),
         )
     }
 }
@@ -306,7 +306,7 @@ async fn test_vertical_slider_disabled(cx: &mut TestAppContext) {
                 VerticalSlider::new("disabled-slider")
                     .value(50.0)
                     .disabled(true)
-                    .label("Disabled")
+                    .label("Disabled"),
             )
         }
     }
@@ -333,7 +333,7 @@ async fn test_vertical_slider_units(cx: &mut TestAppContext) {
                         .min(-60.0)
                         .max(12.0)
                         .unit("dB")
-                        .label("Gain")
+                        .label("Gain"),
                 )
                 .child(
                     VerticalSlider::new("unit-hz")
@@ -342,7 +342,7 @@ async fn test_vertical_slider_units(cx: &mut TestAppContext) {
                         .max(20000.0)
                         .unit("Hz")
                         .scale(Scale::Logarithmic)
-                        .label("Freq")
+                        .label("Freq"),
                 )
                 .child(
                     VerticalSlider::new("unit-percent")
@@ -350,7 +350,7 @@ async fn test_vertical_slider_units(cx: &mut TestAppContext) {
                         .min(0.0)
                         .max(1.0)
                         .unit("%")
-                        .label("Mix")
+                        .label("Mix"),
                 )
                 .child(
                     VerticalSlider::new("unit-ratio")
@@ -358,7 +358,7 @@ async fn test_vertical_slider_units(cx: &mut TestAppContext) {
                         .min(1.0)
                         .max(20.0)
                         .unit(":1")
-                        .label("Ratio")
+                        .label("Ratio"),
                 )
         }
     }
@@ -385,7 +385,7 @@ async fn test_vertical_slider_shortcut_key(cx: &mut TestAppContext) {
                         .min(-12.0)
                         .max(12.0)
                         .shortcut_key('g')
-                        .label("Gain")
+                        .label("Gain"),
                 )
                 .child(
                     VerticalSlider::new("shortcut-f")
@@ -393,7 +393,7 @@ async fn test_vertical_slider_shortcut_key(cx: &mut TestAppContext) {
                         .min(20.0)
                         .max(20000.0)
                         .shortcut_key('f')
-                        .label("Frequency")
+                        .label("Frequency"),
                 )
         }
     }
@@ -419,7 +419,7 @@ impl Render for DragCallbackTestView {
                 .value(50.0)
                 .on_drag_start(move |_y, _value, _window, _cx| {
                     drag_started.store(true, Ordering::SeqCst);
-                })
+                }),
         )
     }
 }
@@ -455,7 +455,7 @@ impl Render for ResetCallbackTestView {
                 .value(75.0)
                 .on_reset(move |_window, _cx| {
                     reset_count.fetch_add(1, Ordering::SeqCst);
-                })
+                }),
         )
     }
 }
@@ -501,7 +501,7 @@ async fn test_vertical_slider_with_custom_theme(cx: &mut TestAppContext) {
                 VerticalSlider::new("themed-slider")
                     .theme(custom_theme)
                     .value(50.0)
-                    .label("Themed")
+                    .label("Themed"),
             )
         }
     }
@@ -524,17 +524,17 @@ async fn test_vertical_slider_value_clamping(cx: &mut TestAppContext) {
                 .gap_4()
                 .child(
                     VerticalSlider::new("over-max")
-                        .value(150.0)  // Over max
+                        .value(150.0) // Over max
                         .min(0.0)
                         .max(100.0)
-                        .label("Over Max")
+                        .label("Over Max"),
                 )
                 .child(
                     VerticalSlider::new("under-min")
-                        .value(-50.0)  // Under min
+                        .value(-50.0) // Under min
                         .min(0.0)
                         .max(100.0)
-                        .label("Under Min")
+                        .label("Under Min"),
                 )
         }
     }
@@ -552,8 +552,8 @@ async fn test_vertical_slider_zero_range(cx: &mut TestAppContext) {
                 VerticalSlider::new("zero-range")
                     .value(50.0)
                     .min(50.0)
-                    .max(50.0)  // Same as min
-                    .label("Zero Range")
+                    .max(50.0) // Same as min
+                    .label("Zero Range"),
             )
         }
     }
@@ -573,7 +573,7 @@ async fn test_vertical_slider_negative_range(cx: &mut TestAppContext) {
                     .min(-60.0)
                     .max(12.0)
                     .unit("dB")
-                    .label("Gain")
+                    .label("Gain"),
             )
         }
     }
@@ -595,7 +595,7 @@ async fn test_vertical_slider_large_range(cx: &mut TestAppContext) {
                     .scale(Scale::Logarithmic)
                     .with_ticks()
                     .unit("Hz")
-                    .label("Wide Range")
+                    .label("Wide Range"),
             )
         }
     }
@@ -620,7 +620,7 @@ async fn test_vertical_slider_all_features(cx: &mut TestAppContext) {
                     .label("Frequency")
                     .shortcut_key('f')
                     .size(VerticalSliderSize::Lg)
-                    .selected(true)
+                    .selected(true),
             )
         }
     }

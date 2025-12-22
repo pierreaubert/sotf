@@ -1106,9 +1106,9 @@ impl Theme {
                     b: 1.0,
                     a: 0.083,
                 }, // rgba(0xffffff15) = 21/255 ≈ 8.3%
-                secondary_line: rgba(0xbab0ac), // Gray
-                directivity_er: rgba(0xe15759), // Red-pink
-                directivity_sp: rgba(0x89b5b1), // Teal
+                secondary_line: rgba(0xbab0ac),  // Gray
+                directivity_er: rgba(0xe15759),  // Red-pink
+                directivity_sp: rgba(0x89b5b1),  // Teal
             },
             band_colors: vec![
                 rgba(0x5c77a5), // Blue
@@ -1353,8 +1353,10 @@ impl Theme {
     pub fn to_toggle_theme(&self) -> gpui_ui_kit::ToggleTheme {
         gpui_ui_kit::ToggleTheme {
             checked_bg: self.accent,
-            unchecked_bg: self.border,
+            unchecked_bg: self.surface,
             knob: self.text_primary,
+            knob_on_checked: self.text_on_accent,
+            track_border: self.border,
             label: self.text_secondary,
             accent: self.accent,
             accent_muted: self.accent_muted,

@@ -788,40 +788,39 @@ impl RenderOnce for VerticalSlider {
             }
 
             // Keyboard navigation when selected
-            if selected
-                && let Some(ref handler_rc) = on_change_rc {
-                    let handler_key = handler_rc.clone();
-                    let reset_key = on_reset_rc.clone();
-                    container = container.on_key_down(move |event, window, cx| {
-                        match event.keystroke.key.as_str() {
-                            // Arrow Up or Right - increase value (scale-aware)
-                            "up" | "right" => {
-                                let new_value = scale.step_value(value, min, max, 1.0, 0.05);
-                                handler_key(new_value, window, cx);
-                            }
-                            // Arrow Down or Left - decrease value (scale-aware)
-                            "down" | "left" => {
-                                let new_value = scale.step_value(value, min, max, -1.0, 0.05);
-                                handler_key(new_value, window, cx);
-                            }
-                            // Home - set to minimum
-                            "home" => {
-                                handler_key(min, window, cx);
-                            }
-                            // End - set to maximum
-                            "end" => {
-                                handler_key(max, window, cx);
-                            }
-                            // Escape - reset to default
-                            "escape" => {
-                                if let Some(ref reset_handler) = reset_key {
-                                    reset_handler(window, cx);
-                                }
-                            }
-                            _ => {}
+            if selected && let Some(ref handler_rc) = on_change_rc {
+                let handler_key = handler_rc.clone();
+                let reset_key = on_reset_rc.clone();
+                container = container.on_key_down(move |event, window, cx| {
+                    match event.keystroke.key.as_str() {
+                        // Arrow Up or Right - increase value (scale-aware)
+                        "up" | "right" => {
+                            let new_value = scale.step_value(value, min, max, 1.0, 0.05);
+                            handler_key(new_value, window, cx);
                         }
-                    });
-                }
+                        // Arrow Down or Left - decrease value (scale-aware)
+                        "down" | "left" => {
+                            let new_value = scale.step_value(value, min, max, -1.0, 0.05);
+                            handler_key(new_value, window, cx);
+                        }
+                        // Home - set to minimum
+                        "home" => {
+                            handler_key(min, window, cx);
+                        }
+                        // End - set to maximum
+                        "end" => {
+                            handler_key(max, window, cx);
+                        }
+                        // Escape - reset to default
+                        "escape" => {
+                            if let Some(ref reset_handler) = reset_key {
+                                reset_handler(window, cx);
+                            }
+                        }
+                        _ => {}
+                    }
+                });
+            }
         }
 
         // Label with keyboard shortcut

@@ -8,7 +8,9 @@
 //! - Highlighted option tracking
 //! - Size variants
 
-use gpui::{Context, MouseButton, Modifiers, TestAppContext, VisualTestContext, Window, div, prelude::*};
+use gpui::{
+    Context, Modifiers, MouseButton, TestAppContext, VisualTestContext, Window, div, prelude::*,
+};
 use gpui_ui_kit::select::{Select, SelectOption, SelectSize};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -126,7 +128,11 @@ async fn test_select_click_to_open(cx: &mut TestAppContext) {
         cx.simulate_mouse_down(center, MouseButton::Left, Modifiers::default());
         cx.run_until_parked();
 
-        assert_eq!(toggle_count.load(Ordering::SeqCst), 1, "Toggle should have been called once");
+        assert_eq!(
+            toggle_count.load(Ordering::SeqCst),
+            1,
+            "Toggle should have been called once"
+        );
         assert!(*is_open.borrow(), "Select should be open after click");
     }
 }
@@ -193,7 +199,10 @@ async fn test_select_option_selection(cx: &mut TestAppContext) {
     cx.run_until_parked();
 
     // Initially nothing selected
-    assert!(selected.borrow().is_none(), "Nothing should be selected initially");
+    assert!(
+        selected.borrow().is_none(),
+        "Nothing should be selected initially"
+    );
 
     // Open the dropdown
     if let Some(bounds) = cx.debug_bounds("selection-test-select") {
@@ -224,7 +233,7 @@ async fn test_select_with_disabled_options(cx: &mut TestAppContext) {
                         SelectOption::new("disabled", "Disabled Option").disabled(true),
                         SelectOption::new("also-enabled", "Also Enabled"),
                     ])
-                    .is_open(true),  // Show dropdown for visual testing
+                    .is_open(true), // Show dropdown for visual testing
             )
         }
     }
@@ -392,8 +401,11 @@ async fn test_select_disabled_state(cx: &mut TestAppContext) {
         cx.run_until_parked();
 
         // Toggle should NOT have been called because the select is disabled
-        assert_eq!(toggle_count.load(Ordering::SeqCst), 0,
-            "Disabled select should not trigger on_toggle");
+        assert_eq!(
+            toggle_count.load(Ordering::SeqCst),
+            0,
+            "Disabled select should not trigger on_toggle"
+        );
     }
 }
 
@@ -414,7 +426,7 @@ async fn test_select_with_preselected_value(cx: &mut TestAppContext) {
                         SelectOption::new("green", "Green"),
                         SelectOption::new("blue", "Blue"),
                     ])
-                    .selected("green"),  // Pre-select "Green"
+                    .selected("green"), // Pre-select "Green"
             )
         }
     }
@@ -435,7 +447,7 @@ async fn test_select_shows_selected_label(cx: &mut TestAppContext) {
                         SelectOption::new("val1", "Display Label 1"),
                         SelectOption::new("val2", "Display Label 2"),
                     ])
-                    .selected("val1"),  // Shows "Display Label 1" not "val1"
+                    .selected("val1"), // Shows "Display Label 1" not "val1"
             )
         }
     }

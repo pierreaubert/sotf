@@ -562,35 +562,35 @@ impl RenderOnce for NumberInput {
             let formatted_value =
                 Self::format_value_str(current_value, decimals, unit_clone.as_ref());
 
-            value_field =
-                value_field
-                    .cursor_text()
-                    .on_mouse_down(MouseButton::Left, move |event, window, cx| {
-                        // Focus the input
-                        window.focus(&focus_handle_for_click, cx);
+            value_field = value_field.cursor_text().on_mouse_down(
+                MouseButton::Left,
+                move |event, window, cx| {
+                    // Focus the input
+                    window.focus(&focus_handle_for_click, cx);
 
-                        let mut state = edit_state_for_click.borrow_mut();
+                    let mut state = edit_state_for_click.borrow_mut();
 
-                        // Double-click: select all
-                        if event.click_count == 2 {
-                            if state.editing {
-                                state.select_all();
-                            } else {
-                                *state = NumberEditState::new(&formatted_value);
-                            }
-                            drop(state);
-                            window.refresh();
-                            return;
-                        }
-
-                        // Single click: start editing if not already
-                        if !state.editing {
-                            *state = NumberEditState::new(&formatted_value);
+                    // Double-click: select all
+                    if event.click_count == 2 {
+                        if state.editing {
+                            state.select_all();
                         } else {
-                            // Clear selection on single click while editing
-                            state.text_selected = false;
+                            *state = NumberEditState::new(&formatted_value);
                         }
-                    });
+                        drop(state);
+                        window.refresh();
+                        return;
+                    }
+
+                    // Single click: start editing if not already
+                    if !state.editing {
+                        *state = NumberEditState::new(&formatted_value);
+                    } else {
+                        // Clear selection on single click while editing
+                        state.text_selected = false;
+                    }
+                },
+            );
 
             // Keyboard handling
             let edit_state_for_key = edit_state.clone();
@@ -719,17 +719,16 @@ impl RenderOnce for NumberInput {
         input_row = input_row.child(inc_button);
 
         // Scroll wheel on the whole input
-        if !disabled
-            && let Some(ref handler_rc) = on_change_rc {
-                let handler_scroll = handler_rc.clone();
-                input_row = input_row.on_scroll_wheel(move |event, window, cx| {
-                    let delta = event.delta.pixel_delta(px(20.0)).y;
-                    let scroll_up = delta < px(0.0);
-                    let change = if scroll_up { step } else { -step };
-                    let new_value = (current_value + change).clamp(min, max);
-                    handler_scroll(new_value, window, cx);
-                });
-            }
+        if !disabled && let Some(ref handler_rc) = on_change_rc {
+            let handler_scroll = handler_rc.clone();
+            input_row = input_row.on_scroll_wheel(move |event, window, cx| {
+                let delta = event.delta.pixel_delta(px(20.0)).y;
+                let scroll_up = delta < px(0.0);
+                let change = if scroll_up { step } else { -step };
+                let new_value = (current_value + change).clamp(min, max);
+                handler_scroll(new_value, window, cx);
+            });
+        }
 
         container.child(input_row)
     }

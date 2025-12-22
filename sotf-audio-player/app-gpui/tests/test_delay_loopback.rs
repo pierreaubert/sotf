@@ -185,11 +185,7 @@ fn test_delay_loopback_verification() {
     );
 
     // Verify we got a significant signal
-    assert!(
-        max_val > 0.1,
-        "Peak amplitude too low: {:.4}",
-        max_val
-    );
+    assert!(max_val > 0.1, "Peak amplitude too low: {:.4}", max_val);
 
     println!("Test PASSED: Delay plugin verified.");
 }

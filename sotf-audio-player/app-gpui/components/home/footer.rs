@@ -171,10 +171,22 @@ impl PlayerView {
         let show_track_info = window_width >= BREAKPOINT_HIDE_TRACK_INFO;
         let show_studio_device = window_width >= BREAKPOINT_HIDE_STUDIO_DEVICE;
 
-        VStack::new()
-            .spacing(StackSpacing::None)
+        // Footer height
+        let footer_height = 100.0;
+
+        div()
+            .flex()
+            .flex_row()
+            .h(px(footer_height))
+            .bg(bg_surface)
+            .border_t_1()
+            .border_color(border_color)
+            // Album art aligned to left corner with window-matching rounded corners
+            .when(show_track_info, |el| {
+                el.child(self.render_footer_album_art(footer_height, cx))
+            })
+            // Main content area with padding
             .child(
-                // Main footer content: responsive three-section layout
                 HStack::new()
                     .spacing(StackSpacing::None)
                     .justify(if show_track_info {
@@ -183,26 +195,79 @@ impl PlayerView {
                         StackJustify::Center
                     })
                     .align(StackAlign::Center)
-                    // Left section: Track info (hidden on narrow screens)
+                    // Left section: Track info text (hidden on narrow screens)
                     .when(show_track_info, |el| {
-                        el.child(self.render_footer_left(&translations, cx))
+                        el.child(self.render_footer_track_info(&translations, cx))
                     })
                     // Center section: Transport + waveform
                     .child(self.render_footer_center(show_waveform, cx))
                     // Right section: Device + Volume (partially hidden on narrow screens)
                     .child(self.render_footer_right(&translations, show_studio_device, cx))
                     .build()
-                    .h(px(100.0))
+                    .flex_1()
+                    .h_full()
                     .px_4(),
             )
-            .build()
-            .bg(bg_surface)
-            .border_t_1()
-            .border_color(border_color)
     }
 
-    /// Left section: Album artwork + track info
-    fn render_footer_left(
+    /// Album artwork aligned to left corner with window-matching rounded corners
+    fn render_footer_album_art(
+        &self,
+        footer_height: f32,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let theme = &state.app.theme;
+
+        // Get album art path from current queue item
+        let album_art_path = if let Some(queue_idx) = state.app.current_queue_index {
+            if let Some(item) = state.app.queue.get(queue_idx) {
+                item.album.album_art_path.clone()
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let surface_hover = theme.surface_hover;
+        let text_muted = theme.text_muted;
+
+        // Window corner radius (macOS default is ~10px)
+        let window_radius = 10.0;
+
+        // Album art is square, matching footer height
+        let art_size = footer_height;
+
+        let art_div = div()
+            .w(px(art_size))
+            .h(px(art_size))
+            // Only round bottom-left corner to match window
+            .rounded_bl(px(window_radius))
+            .bg(surface_hover)
+            .overflow_hidden()
+            .flex_shrink_0();
+
+        if let Some(art_path) = album_art_path {
+            art_div.child(
+                img(art_path)
+                    .w_full()
+                    .h_full()
+                    .object_fit(gpui::ObjectFit::Cover),
+            )
+        } else {
+            art_div
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_color(text_muted)
+                .text_3xl()
+                .child("♪")
+        }
+    }
+
+    /// Track info text (title, album, artist) - displayed next to album art
+    fn render_footer_track_info(
         &self,
         translations: &crate::i18n::Translations,
         cx: &mut Context<Self>,
@@ -211,129 +276,90 @@ impl PlayerView {
         let theme = &state.app.theme;
         let no_track_label = translations.playback_no_track;
 
-        // Get current track info and album art from queue
-        let (title, album_name, artist, album_art_path) =
-            if let Some(queue_idx) = state.app.current_queue_index {
-                if let Some(item) = state.app.queue.get(queue_idx) {
-                    let track_title = item
-                        .current_track()
-                        .and_then(|t| t.title.clone())
-                        .unwrap_or_else(|| "Unknown Track".to_string());
+        // Get current track info from queue
+        let (title, album_name, artist) = if let Some(queue_idx) = state.app.current_queue_index {
+            if let Some(item) = state.app.queue.get(queue_idx) {
+                let track_title = item
+                    .current_track()
+                    .and_then(|t| t.title.clone())
+                    .unwrap_or_else(|| "Unknown Track".to_string());
 
-                    (
-                        track_title,
-                        item.album.title.clone(),
-                        item.album.artist(),
-                        item.album.album_art_path.clone(),
-                    )
-                } else {
-                    (String::new(), String::new(), String::new(), None)
-                }
+                (track_title, item.album.title.clone(), item.album.artist())
             } else {
-                (String::new(), String::new(), String::new(), None)
-            };
+                (String::new(), String::new(), String::new())
+            }
+        } else {
+            (String::new(), String::new(), String::new())
+        };
 
         let text_primary = theme.text_primary;
         let text_secondary = theme.text_secondary;
         let text_muted = theme.text_muted;
-        let surface_hover = theme.surface_hover;
 
-        HStack::new()
-            .spacing(StackSpacing::Md)
-            .align(StackAlign::Center)
-            // Album artwork (64x64)
-            .child({
-                let art_div = div()
-                    .w(px(96.0))
-                    .h(px(96.0))
-                    .rounded_md()
-                    .bg(surface_hover)
-                    .overflow_hidden();
+        let title_raw = if title.is_empty() {
+            no_track_label.to_string()
+        } else {
+            title.clone()
+        };
 
-                if let Some(art_path) = album_art_path {
-                    art_div.child(
-                        img(art_path)
-                            .w_full()
-                            .h_full()
-                            .object_fit(gpui::ObjectFit::Cover),
-                    )
-                } else {
-                    art_div
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .text_color(text_muted)
-                        .text_xl()
-                        .child("♪")
-                }
-            })
-            // Track info
-            .child({
-                let title_raw = if title.is_empty() {
-                    no_track_label.to_string()
-                } else {
-                    title.clone()
-                };
+        // Truncate track title if too long (max 30 characters)
+        let title_text = if title_raw.chars().count() > 30 {
+            title_raw.chars().take(30).collect::<String>() + "..."
+        } else {
+            title_raw
+        };
 
-                // Truncate track title if too long (max 30 characters)
-                let title_text = if title_raw.chars().count() > 30 {
-                    title_raw.chars().take(30).collect::<String>() + "..."
-                } else {
-                    title_raw
-                };
+        // Truncate album name if too long (max 35 characters)
+        let album_text = if album_name.chars().count() > 35 {
+            album_name.chars().take(35).collect::<String>() + "..."
+        } else {
+            album_name.clone()
+        };
 
-                // Truncate album name if too long (max 35 characters)
-                let album_text = if album_name.chars().count() > 35 {
-                    album_name.chars().take(35).collect::<String>() + "..."
-                } else {
-                    album_name.clone()
-                };
+        // Truncate artist name if too long (max 35 characters)
+        let artist_text = if artist.chars().count() > 35 {
+            artist.chars().take(35).collect::<String>() + "..."
+        } else {
+            artist.clone()
+        };
 
-                // Truncate artist name if too long (max 35 characters)
-                let artist_text = if artist.chars().count() > 35 {
-                    artist.chars().take(35).collect::<String>() + "..."
-                } else {
-                    artist.clone()
-                };
-
-                VStack::new()
-                    .spacing(StackSpacing::Xs)
-                    .align(StackAlign::Start)
-                    // Title (11px equivalent)
-                    .child(
-                        div()
-                            .text_sm()
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(text_primary)
-                            .overflow_hidden()
-                            .text_ellipsis()
-                            .whitespace_nowrap()
-                            .child(title_text),
-                    )
-                    // Album (9px equivalent)
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(text_secondary)
-                            .overflow_hidden()
-                            .text_ellipsis()
-                            .whitespace_nowrap()
-                            .child(album_text),
-                    )
-                    // Artist (9px equivalent)
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(text_muted)
-                            .overflow_hidden()
-                            .text_ellipsis()
-                            .whitespace_nowrap()
-                            .child(artist_text),
-                    )
-            })
+        VStack::new()
+            .spacing(StackSpacing::Xs)
+            .align(StackAlign::Start)
+            // Title
+            .child(
+                div()
+                    .text_sm()
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(text_primary)
+                    .overflow_hidden()
+                    .text_ellipsis()
+                    .whitespace_nowrap()
+                    .child(title_text),
+            )
+            // Album
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(text_secondary)
+                    .overflow_hidden()
+                    .text_ellipsis()
+                    .whitespace_nowrap()
+                    .child(album_text),
+            )
+            // Artist
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(text_muted)
+                    .overflow_hidden()
+                    .text_ellipsis()
+                    .whitespace_nowrap()
+                    .child(artist_text),
+            )
             .build()
-            .min_w(px(250.0))
-            .max_w(px(350.0))
+            .min_w(px(150.0))
+            .max_w(px(250.0))
     }
 
     /// Center section: Transport controls + waveform + time

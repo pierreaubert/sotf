@@ -1004,6 +1004,8 @@ pub fn {}() -> EditorTheme {{
             badge_bg: self.surface_hover.to_rgba(),
             close_color: self.text_muted.to_rgba(),
             close_hover_color: self.text_primary.to_rgba(),
+            icon_selected: None,
+            icon_unselected: None,
         }
     }
 }

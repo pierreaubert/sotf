@@ -123,9 +123,11 @@ impl PlayerView {
         };
         let view = cx.entity().clone();
 
-        let device_label = VStack::new()
-            .spacing(StackSpacing::Sm)
-            .child(Text::new("Output Device").size(TextSize::Sm).weight(TextWeight::Semibold));
+        let device_label = VStack::new().spacing(StackSpacing::Sm).child(
+            Text::new("Output Device")
+                .size(TextSize::Sm)
+                .weight(TextWeight::Semibold),
+        );
 
         // Sample rate dropdown row
         let sample_rate_row = self
@@ -140,9 +142,7 @@ impl PlayerView {
             HStack::new()
                 .spacing(StackSpacing::Md)
                 .align(StackAlign::Center)
-                .child(
-                    Text::new("Number of channels:").size(TextSize::Sm),
-                )
+                .child(Text::new("Number of channels:").size(TextSize::Sm))
                 .child({
                     let view = view.clone();
                     NumberInput::new("playback_channel_count")
@@ -1099,7 +1099,7 @@ impl PlayerView {
                                             "recording_interface_{}",
                                             idx
                                         )))
-                                        .value(interface_ch  as f64)
+                                        .value(interface_ch as f64)
                                         .min(1.0)
                                         .max(16.0)
                                         .step(1.0)

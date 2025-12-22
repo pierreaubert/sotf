@@ -106,8 +106,12 @@ fn test_matrix_swap_channels_loopback_verification() {
         let t = i as f64 / sample_rate;
         let left = (t * left_freq * 2.0 * std::f64::consts::PI).sin() * 0.5;
         let right = (t * right_freq * 2.0 * std::f64::consts::PI).sin() * 0.5;
-        writer.write_sample((left * i16::MAX as f64) as i16).unwrap();
-        writer.write_sample((right * i16::MAX as f64) as i16).unwrap();
+        writer
+            .write_sample((left * i16::MAX as f64) as i16)
+            .unwrap();
+        writer
+            .write_sample((right * i16::MAX as f64) as i16)
+            .unwrap();
     }
     writer.finalize().unwrap();
 
@@ -162,10 +166,7 @@ fn test_matrix_swap_channels_loopback_verification() {
     let left_rms = (left_sum_sq / (end_idx - start_idx) as f32).sqrt();
     let right_rms = (right_sum_sq / (end_idx - start_idx) as f32).sqrt();
 
-    println!(
-        "Left RMS: {:.4}, Right RMS: {:.4}",
-        left_rms, right_rms
-    );
+    println!("Left RMS: {:.4}, Right RMS: {:.4}", left_rms, right_rms);
 
     // Both channels should have signal (swapped)
     assert!(
@@ -253,8 +254,12 @@ fn test_matrix_mono_sum_loopback_verification() {
         let t = i as f64 / sample_rate;
         let left = (t * 440.0 * 2.0 * std::f64::consts::PI).sin() * 0.8;
         let right = 0.0; // Silent right channel
-        writer.write_sample((left * i16::MAX as f64) as i16).unwrap();
-        writer.write_sample((right * i16::MAX as f64) as i16).unwrap();
+        writer
+            .write_sample((left * i16::MAX as f64) as i16)
+            .unwrap();
+        writer
+            .write_sample((right * i16::MAX as f64) as i16)
+            .unwrap();
     }
     writer.finalize().unwrap();
 
@@ -307,10 +312,7 @@ fn test_matrix_mono_sum_loopback_verification() {
     let left_rms = (left_sum_sq / (end_idx - start_idx) as f32).sqrt();
     let right_rms = (right_sum_sq / (end_idx - start_idx) as f32).sqrt();
 
-    println!(
-        "Left RMS: {:.4}, Right RMS: {:.4}",
-        left_rms, right_rms
-    );
+    println!("Left RMS: {:.4}, Right RMS: {:.4}", left_rms, right_rms);
 
     // Both channels should have signal (mono sum)
     assert!(

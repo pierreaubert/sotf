@@ -93,7 +93,8 @@ pub use toast::{Toast, ToastContainer, ToastPosition, ToastVariant};
 // Form
 pub use autoeq_form::{
     ALGORITHM_OPTIONS, AutoEqConfig, AutoEqForm, AutoEqFormTheme, AutoEqFormUiState,
-    DE_STRATEGY_OPTIONS, LOCAL_ALGO_OPTIONS, PEQ_MODEL_OPTIONS, ParamLimits,
+    DE_STRATEGY_OPTIONS, HEADPHONE_TARGET_CURVE_OPTIONS, LOCAL_ALGO_OPTIONS, OptimizationType,
+    PEQ_MODEL_OPTIONS, ParamLimits, SPEAKER_TARGET_CURVE_OPTIONS, SPINORAMA_CURVE_OPTIONS,
 };
 pub use checkbox::{Checkbox, CheckboxSize};
 pub use color::Color;
@@ -135,7 +136,7 @@ pub use theme::{Theme, ThemeExt, ThemeState, ThemeVariant};
 
 // Workflow canvas
 pub use workflow::{
-    CanvasState, Command, Connection, ConnectionId, HitTestResult, HitTester, HistoryManager,
+    CanvasState, Command, Connection, ConnectionId, HistoryManager, HitTestResult, HitTester,
     NodeContent, NodeId, Port, PortDirection, Position, SelectionState, ViewportState,
     WorkflowCanvas, WorkflowGraph, WorkflowNode, WorkflowNodeData, WorkflowTheme,
 };

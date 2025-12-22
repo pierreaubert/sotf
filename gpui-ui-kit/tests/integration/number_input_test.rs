@@ -17,7 +17,9 @@
 //! - Scroll wheel
 //! - Theme customization
 
-use gpui::{Context, MouseButton, Modifiers, TestAppContext, VisualTestContext, Window, div, prelude::*};
+use gpui::{
+    Context, Modifiers, MouseButton, TestAppContext, VisualTestContext, Window, div, prelude::*,
+};
 use gpui_ui_kit::number_input::{NumberInput, NumberInputSize, NumberInputTheme};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -36,7 +38,7 @@ impl Render for NumberInputTestView {
             NumberInput::new("test-number-input")
                 .value(50.0)
                 .min(0.0)
-                .max(100.0)
+                .max(100.0),
         )
     }
 }
@@ -63,17 +65,17 @@ async fn test_number_input_sizes(cx: &mut TestAppContext) {
                 .child(
                     NumberInput::new("sm-input")
                         .size(NumberInputSize::Sm)
-                        .value(10.0)
+                        .value(10.0),
                 )
                 .child(
                     NumberInput::new("md-input")
                         .size(NumberInputSize::Md)
-                        .value(50.0)
+                        .value(50.0),
                 )
                 .child(
                     NumberInput::new("lg-input")
                         .size(NumberInputSize::Lg)
-                        .value(100.0)
+                        .value(100.0),
                 )
         }
     }
@@ -106,7 +108,7 @@ impl Render for NumberInputChangeTestView {
                 .on_change(move |new_val, _window, _cx| {
                     *value_rc.borrow_mut() = new_val;
                     change_count.fetch_add(1, Ordering::SeqCst);
-                })
+                }),
         )
     }
 }
@@ -157,7 +159,7 @@ impl Render for NumberInputButtonTestView {
                 .on_change(move |new_val, _window, _cx| {
                     *value_rc.borrow_mut() = new_val;
                     change_count.fetch_add(1, Ordering::SeqCst);
-                })
+                }),
         )
     }
 }
@@ -193,8 +195,16 @@ async fn test_number_input_increment_button_click(cx: &mut TestAppContext) {
 
         // Value should have increased by step (5.0)
         let new_value = *value.borrow();
-        assert_eq!(new_value, 55.0, "Value should be 55.0 after clicking +, got {}", new_value);
-        assert_eq!(change_count.load(Ordering::SeqCst), 1, "on_change should have been called once");
+        assert_eq!(
+            new_value, 55.0,
+            "Value should be 55.0 after clicking +, got {}",
+            new_value
+        );
+        assert_eq!(
+            change_count.load(Ordering::SeqCst),
+            1,
+            "on_change should have been called once"
+        );
     }
 }
 
@@ -229,8 +239,16 @@ async fn test_number_input_decrement_button_click(cx: &mut TestAppContext) {
 
         // Value should have decreased by step (5.0)
         let new_value = *value.borrow();
-        assert_eq!(new_value, 45.0, "Value should be 45.0 after clicking -, got {}", new_value);
-        assert_eq!(change_count.load(Ordering::SeqCst), 1, "on_change should have been called once");
+        assert_eq!(
+            new_value, 45.0,
+            "Value should be 45.0 after clicking -, got {}",
+            new_value
+        );
+        assert_eq!(
+            change_count.load(Ordering::SeqCst),
+            1,
+            "on_change should have been called once"
+        );
     }
 }
 
@@ -263,8 +281,16 @@ async fn test_number_input_multiple_button_clicks(cx: &mut TestAppContext) {
 
         // Value should have increased by 15 (3 * 5.0)
         let new_value = *value.borrow();
-        assert_eq!(new_value, 65.0, "Value should be 65.0 after 3 clicks on +, got {}", new_value);
-        assert_eq!(change_count.load(Ordering::SeqCst), 3, "on_change should have been called 3 times");
+        assert_eq!(
+            new_value, 65.0,
+            "Value should be 65.0 after 3 clicks on +, got {}",
+            new_value
+        );
+        assert_eq!(
+            change_count.load(Ordering::SeqCst),
+            3,
+            "on_change should have been called 3 times"
+        );
     }
 }
 
@@ -280,9 +306,9 @@ async fn test_number_input_min_max_bounds(cx: &mut TestAppContext) {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
             div().child(
                 NumberInput::new("bounds-input")
-                    .value(150.0)  // Over max, should be clamped
+                    .value(150.0) // Over max, should be clamped
                     .min(0.0)
-                    .max(100.0)
+                    .max(100.0),
             )
         }
     }
@@ -320,7 +346,7 @@ async fn test_number_input_respects_min_bound(cx: &mut TestAppContext) {
                     .on_change(move |new_val, _window, _cx| {
                         *value_rc.borrow_mut() = new_val;
                         change_count.fetch_add(1, Ordering::SeqCst);
-                    })
+                    }),
             )
         }
     }
@@ -342,7 +368,11 @@ async fn test_number_input_respects_min_bound(cx: &mut TestAppContext) {
         cx.run_until_parked();
 
         let new_value = *value.borrow();
-        assert_eq!(new_value, 0.0, "Value should be clamped to min (0.0), got {}", new_value);
+        assert_eq!(
+            new_value, 0.0,
+            "Value should be clamped to min (0.0), got {}",
+            new_value
+        );
     }
 }
 
@@ -376,7 +406,7 @@ async fn test_number_input_respects_max_bound(cx: &mut TestAppContext) {
                     .on_change(move |new_val, _window, _cx| {
                         *value_rc.borrow_mut() = new_val;
                         change_count.fetch_add(1, Ordering::SeqCst);
-                    })
+                    }),
             )
         }
     }
@@ -398,7 +428,11 @@ async fn test_number_input_respects_max_bound(cx: &mut TestAppContext) {
         cx.run_until_parked();
 
         let new_value = *value.borrow();
-        assert_eq!(new_value, 100.0, "Value should be clamped to max (100.0), got {}", new_value);
+        assert_eq!(
+            new_value, 100.0,
+            "Value should be clamped to max (100.0), got {}",
+            new_value
+        );
     }
 }
 
@@ -413,7 +447,7 @@ async fn test_number_input_negative_range(cx: &mut TestAppContext) {
                     .value(-30.0)
                     .min(-60.0)
                     .max(12.0)
-                    .unit("dB")
+                    .unit("dB"),
             )
         }
     }
@@ -439,26 +473,26 @@ async fn test_number_input_step_size(cx: &mut TestAppContext) {
                     NumberInput::new("step-1")
                         .value(50.0)
                         .step(1.0)
-                        .label("Step 1")
+                        .label("Step 1"),
                 )
                 .child(
                     NumberInput::new("step-5")
                         .value(50.0)
                         .step(5.0)
-                        .label("Step 5")
+                        .label("Step 5"),
                 )
                 .child(
                     NumberInput::new("step-10")
                         .value(50.0)
                         .step(10.0)
-                        .label("Step 10")
+                        .label("Step 10"),
                 )
                 .child(
                     NumberInput::new("step-0.1")
                         .value(0.5)
                         .step(0.1)
                         .decimals(1)
-                        .label("Step 0.1")
+                        .label("Step 0.1"),
                 )
         }
     }
@@ -484,25 +518,25 @@ async fn test_number_input_decimals(cx: &mut TestAppContext) {
                     NumberInput::new("decimals-0")
                         .value(12.34567)
                         .decimals(0)
-                        .label("0 decimals")
+                        .label("0 decimals"),
                 )
                 .child(
                     NumberInput::new("decimals-1")
                         .value(12.34567)
                         .decimals(1)
-                        .label("1 decimal")
+                        .label("1 decimal"),
                 )
                 .child(
                     NumberInput::new("decimals-2")
                         .value(12.34567)
                         .decimals(2)
-                        .label("2 decimals")
+                        .label("2 decimals"),
                 )
                 .child(
                     NumberInput::new("decimals-3")
                         .value(12.34567)
                         .decimals(3)
-                        .label("3 decimals")
+                        .label("3 decimals"),
                 )
         }
     }
@@ -528,26 +562,26 @@ async fn test_number_input_units(cx: &mut TestAppContext) {
                     NumberInput::new("unit-hz")
                         .value(1000.0)
                         .unit("Hz")
-                        .label("Frequency")
+                        .label("Frequency"),
                 )
                 .child(
                     NumberInput::new("unit-db")
                         .value(-6.0)
                         .unit("dB")
                         .decimals(1)
-                        .label("Gain")
+                        .label("Gain"),
                 )
                 .child(
                     NumberInput::new("unit-percent")
                         .value(75.0)
                         .unit("%")
-                        .label("Amount")
+                        .label("Amount"),
                 )
                 .child(
                     NumberInput::new("unit-ms")
                         .value(100.0)
                         .unit("ms")
-                        .label("Delay")
+                        .label("Delay"),
                 )
         }
     }
@@ -568,7 +602,7 @@ async fn test_number_input_with_label(cx: &mut TestAppContext) {
             div().child(
                 NumberInput::new("labeled-input")
                     .value(42.0)
-                    .label("Answer to Everything")
+                    .label("Answer to Everything"),
             )
         }
     }
@@ -590,7 +624,7 @@ async fn test_number_input_disabled(cx: &mut TestAppContext) {
                 NumberInput::new("disabled-input")
                     .value(50.0)
                     .disabled(true)
-                    .label("Disabled")
+                    .label("Disabled"),
             )
         }
     }
@@ -614,7 +648,7 @@ impl Render for DisabledCallbackTestView {
                 .width(150.0)
                 .on_change(move |_, _window, _cx| {
                     change_count.fetch_add(1, Ordering::SeqCst);
-                })
+                }),
         )
     }
 }
@@ -646,8 +680,11 @@ async fn test_number_input_disabled_no_callback(cx: &mut TestAppContext) {
     }
 
     // Change count should remain 0 since input is disabled
-    assert_eq!(change_count.load(Ordering::SeqCst), 0,
-        "Disabled input should not trigger callbacks");
+    assert_eq!(
+        change_count.load(Ordering::SeqCst),
+        0,
+        "Disabled input should not trigger callbacks"
+    );
 }
 
 // ============================================================================
@@ -676,7 +713,7 @@ impl Render for NumberInputEditTestView {
                 .on_change(move |new_val, _window, _cx| {
                     *value_rc.borrow_mut() = new_val;
                     change_count.fetch_add(1, Ordering::SeqCst);
-                })
+                }),
         )
     }
 }
@@ -715,7 +752,11 @@ async fn test_number_input_click_to_edit(cx: &mut TestAppContext) {
 
         // Value should have changed to 123
         let new_value = *value.borrow();
-        assert_eq!(new_value, 123.0, "Value should be 123.0 after editing, got {}", new_value);
+        assert_eq!(
+            new_value, 123.0,
+            "Value should be 123.0 after editing, got {}",
+            new_value
+        );
     }
 }
 
@@ -758,7 +799,11 @@ async fn test_number_input_double_click_selects_all(cx: &mut TestAppContext) {
 
         // Value should be 999 (replaced the selected "50")
         let new_value = *value.borrow();
-        assert_eq!(new_value, 999.0, "Value should be 999.0 after double-click and type, got {}", new_value);
+        assert_eq!(
+            new_value, 999.0,
+            "Value should be 999.0 after double-click and type, got {}",
+            new_value
+        );
     }
 }
 
@@ -797,9 +842,16 @@ async fn test_number_input_escape_cancels_edit(cx: &mut TestAppContext) {
 
         // Value should remain unchanged (50)
         let new_value = *value.borrow();
-        assert_eq!(new_value, 50.0, "Value should still be 50.0 after Escape, got {}", new_value);
-        assert_eq!(change_count.load(Ordering::SeqCst), 0,
-            "on_change should not have been called on Escape");
+        assert_eq!(
+            new_value, 50.0,
+            "Value should still be 50.0 after Escape, got {}",
+            new_value
+        );
+        assert_eq!(
+            change_count.load(Ordering::SeqCst),
+            0,
+            "on_change should not have been called on Escape"
+        );
     }
 }
 
@@ -872,7 +924,7 @@ async fn test_number_input_with_custom_theme(cx: &mut TestAppContext) {
                 NumberInput::new("themed-input")
                     .theme(custom_theme)
                     .value(42.0)
-                    .label("Themed Input")
+                    .label("Themed Input"),
             )
         }
     }
@@ -898,13 +950,13 @@ async fn test_number_input_fixed_width(cx: &mut TestAppContext) {
                     NumberInput::new("narrow-input")
                         .value(10.0)
                         .width(80.0)
-                        .label("Narrow")
+                        .label("Narrow"),
                 )
                 .child(
                     NumberInput::new("wide-input")
                         .value(10.0)
                         .width(200.0)
-                        .label("Wide")
+                        .label("Wide"),
                 )
         }
     }
@@ -926,7 +978,7 @@ async fn test_number_input_zero_value(cx: &mut TestAppContext) {
                 NumberInput::new("zero-input")
                     .value(0.0)
                     .min(-100.0)
-                    .max(100.0)
+                    .max(100.0),
             )
         }
     }
@@ -945,7 +997,7 @@ async fn test_number_input_large_values(cx: &mut TestAppContext) {
                     .value(1000000.0)
                     .min(0.0)
                     .max(10000000.0)
-                    .step(1000.0)
+                    .step(1000.0),
             )
         }
     }
@@ -965,7 +1017,7 @@ async fn test_number_input_small_step(cx: &mut TestAppContext) {
                     .min(0.0)
                     .max(1.0)
                     .step(0.01)
-                    .decimals(2)
+                    .decimals(2),
             )
         }
     }

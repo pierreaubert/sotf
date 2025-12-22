@@ -213,6 +213,7 @@ pub struct SpeakerOptimizationResult {
     pub output_path: String,
 
     // Spinorama specific curves
+    pub lw_curve: Vec<f64>,    // Listening Window
     pub er_curve: Vec<f64>,    // Early Reflections
     pub sp_curve: Vec<f64>,    // Sound Power
     pub er_di_curve: Vec<f64>, // Early Reflections Directivity Index
@@ -251,6 +252,7 @@ struct ResultCurves {
     error_curve: Vec<f64>,
     corrected_curve: Vec<f64>,
     individual_filter_responses: Vec<Vec<f64>>,
+    lw_curve: Vec<f64>,
     er_curve: Vec<f64>,
     sp_curve: Vec<f64>,
     er_di_curve: Vec<f64>,
@@ -383,7 +385,10 @@ fn load_spinorama_measurement(
         tokio::runtime::Runtime::new().map_err(|e| format!("Failed to create runtime: {}", e))?;
 
     rt.block_on(load_spinorama_measurement_async(
-        speaker, version, measurement, curve_name,
+        speaker,
+        version,
+        measurement,
+        curve_name,
     ))
 }
 
@@ -447,7 +452,11 @@ fn create_interval_callback(
                         ndarray::Array1::from(compute_filter_response(&frequencies, &biquads))
                     };
                     // Compute the actual speaker score
-                    Some(autoeq::loss::speaker_score_loss(sd, &freq_array, &peq_response))
+                    Some(autoeq::loss::speaker_score_loss(
+                        sd,
+                        &freq_array,
+                        &peq_response,
+                    ))
                 } else if loss_type == autoeq::LossType::HeadphoneScore {
                     // For headphone score, we can estimate from loss
                     // The loss is the negative preference rating
@@ -1118,7 +1127,11 @@ fn compute_result_curves(
         .collect();
 
     // Spinorama curves
-    let (er_curve, sp_curve, er_di_curve, sp_di_curve) = if let Some(spin) = spin_data {
+    let (lw_curve, er_curve, sp_curve, er_di_curve, sp_di_curve) = if let Some(spin) = spin_data {
+        let lw = spin
+            .get("Listening Window")
+            .map(|c| c.spl.iter().copied().collect())
+            .unwrap_or_else(|| vec![0.0; n]);
         let er = spin
             .get("Early Reflections")
             .map(|c| c.spl.iter().copied().collect())
@@ -1140,9 +1153,15 @@ fn compute_result_curves(
             .map(|(on, sp_val)| on - sp_val)
             .collect();
 
-        (er, sp, er_di, sp_di)
+        (lw, er, sp, er_di, sp_di)
     } else {
-        (vec![0.0; n], vec![0.0; n], vec![0.0; n], vec![0.0; n])
+        (
+            vec![0.0; n],
+            vec![0.0; n],
+            vec![0.0; n],
+            vec![0.0; n],
+            vec![0.0; n],
+        )
     };
 
     ResultCurves {
@@ -1154,6 +1173,7 @@ fn compute_result_curves(
         error_curve: error_vec,
         corrected_curve: corrected_vec,
         individual_filter_responses,
+        lw_curve,
         er_curve,
         sp_curve,
         er_di_curve,
@@ -1298,7 +1318,8 @@ fn optimize_single_driver_full(
     let spin_data_interpolated = spin_data.as_ref().map(|spin| {
         spin.iter()
             .map(|(name, curve)| {
-                let interpolated = autoeq::normalize_and_interpolate_response(&standard_freq, curve);
+                let interpolated =
+                    autoeq::normalize_and_interpolate_response(&standard_freq, curve);
                 (name.clone(), interpolated)
             })
             .collect::<HashMap<String, autoeq::Curve>>()
@@ -1346,6 +1367,7 @@ fn optimize_single_driver_full(
         corrected_curve: curves.corrected_curve,
         individual_filter_responses: curves.individual_filter_responses,
         output_path: String::new(),
+        lw_curve: curves.lw_curve,
         er_curve: curves.er_curve,
         sp_curve: curves.sp_curve,
         er_di_curve: curves.er_di_curve,
@@ -1409,6 +1431,7 @@ fn optimize_multidriver_full(
         corrected_curve: curves.corrected_curve,
         individual_filter_responses: curves.individual_filter_responses,
         output_path: String::new(),
+        lw_curve: curves.lw_curve,
         er_curve: curves.er_curve,
         sp_curve: curves.sp_curve,
         er_di_curve: curves.er_di_curve,
@@ -1469,6 +1492,7 @@ fn optimize_multisub_full(
         corrected_curve: curves.corrected_curve,
         individual_filter_responses: curves.individual_filter_responses,
         output_path: String::new(),
+        lw_curve: curves.lw_curve,
         er_curve: curves.er_curve,
         sp_curve: curves.sp_curve,
         er_di_curve: curves.er_di_curve,
@@ -1538,6 +1562,7 @@ fn optimize_dba_full(
         corrected_curve: curves.corrected_curve,
         individual_filter_responses: curves.individual_filter_responses,
         output_path: String::new(),
+        lw_curve: curves.lw_curve,
         er_curve: curves.er_curve,
         sp_curve: curves.sp_curve,
         er_di_curve: curves.er_di_curve,
@@ -1592,8 +1617,8 @@ pub fn load_preview_curves(
     curve_name: &str,
 ) -> Result<PreviewCurves, String> {
     // Create runtime for blocking API call
-    let rt = tokio::runtime::Runtime::new()
-        .map_err(|e| format!("Failed to create runtime: {}", e))?;
+    let rt =
+        tokio::runtime::Runtime::new().map_err(|e| format!("Failed to create runtime: {}", e))?;
 
     rt.block_on(async {
         load_preview_curves_async(speaker, version, measurement, curve_name).await
@@ -1702,8 +1727,9 @@ pub async fn load_preview_curves_async(
         crossover_type: "linkwitzriley4".to_string(),
     };
 
-    let target_curve = autoeq::workflow::build_target_curve(&args, &standard_freq, &input_normalized)
-        .map_err(|e| e.to_string())?;
+    let target_curve =
+        autoeq::workflow::build_target_curve(&args, &standard_freq, &input_normalized)
+            .map_err(|e| e.to_string())?;
 
     // Compute deviation = target - input
     let frequencies: Vec<f64> = standard_freq.iter().copied().collect();
@@ -1749,6 +1775,7 @@ fn generate_dummy_result() -> SpeakerOptimizationResult {
         corrected_curve: input_curve.clone(),
         individual_filter_responses: Vec::new(),
         output_path: "/tmp/speaker_eq.txt".to_string(),
+        lw_curve: input_curve.clone(),
         er_curve: input_curve.iter().map(|v| v - 3.0).collect(),
         sp_curve: input_curve.iter().map(|v| v - 5.0).collect(),
         er_di_curve: vec![3.0; n],

@@ -107,8 +107,12 @@ fn test_channel_mute_loopback_verification() {
         let t = i as f64 / sample_rate;
         let left = (t * left_freq * 2.0 * std::f64::consts::PI).sin() * 0.5;
         let right = (t * right_freq * 2.0 * std::f64::consts::PI).sin() * 0.5;
-        writer.write_sample((left * i16::MAX as f64) as i16).unwrap();
-        writer.write_sample((right * i16::MAX as f64) as i16).unwrap();
+        writer
+            .write_sample((left * i16::MAX as f64) as i16)
+            .unwrap();
+        writer
+            .write_sample((right * i16::MAX as f64) as i16)
+            .unwrap();
     }
     writer.finalize().unwrap();
 
@@ -254,8 +258,12 @@ fn test_channel_solo_loopback_verification() {
         let t = i as f64 / sample_rate;
         let left = (t * left_freq * 2.0 * std::f64::consts::PI).sin() * 0.5;
         let right = (t * right_freq * 2.0 * std::f64::consts::PI).sin() * 0.5;
-        writer.write_sample((left * i16::MAX as f64) as i16).unwrap();
-        writer.write_sample((right * i16::MAX as f64) as i16).unwrap();
+        writer
+            .write_sample((left * i16::MAX as f64) as i16)
+            .unwrap();
+        writer
+            .write_sample((right * i16::MAX as f64) as i16)
+            .unwrap();
     }
     writer.finalize().unwrap();
 

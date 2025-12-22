@@ -82,8 +82,10 @@ impl WorkflowDebug {
             canvas.add_node_notify(node, cx);
         });
 
-        self.status_message =
-            format!("Added node '{}' with {} inputs, {} outputs", name, inputs, outputs);
+        self.status_message = format!(
+            "Added node '{}' with {} inputs, {} outputs",
+            name, inputs, outputs
+        );
         cx.notify();
     }
 
@@ -170,15 +172,10 @@ impl Render for WorkflowDebug {
                             .items_center()
                             .gap_4()
                             .child(Heading::h2("Workflow Canvas Debug"))
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(theme.text_muted)
-                                    .child(format!(
-                                        "Nodes: {} | Connections: {} | Selected: {}",
-                                        node_count, connection_count, selected_count
-                                    )),
-                            ),
+                            .child(div().text_sm().text_color(theme.text_muted).child(format!(
+                                "Nodes: {} | Connections: {} | Selected: {}",
+                                node_count, connection_count, selected_count
+                            ))),
                     )
                     .child(
                         div()

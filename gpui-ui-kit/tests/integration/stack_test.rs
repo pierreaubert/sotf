@@ -12,7 +12,7 @@
 //! - Overflow handling
 //! - Size constraints
 
-use gpui::{Context, Rgba, TestAppContext, Window, div, px, prelude::*};
+use gpui::{Context, Rgba, TestAppContext, Window, div, prelude::*, px};
 use gpui_ui_kit::stack::{
     Divider, HStack, Spacer, StackAlign, StackJustify, StackOverflow, StackSize, StackSpacing,
     VStack,
@@ -51,43 +51,43 @@ async fn test_vstack_with_spacing(cx: &mut TestAppContext) {
                     VStack::new()
                         .spacing(StackSpacing::None)
                         .child(div().child("No space"))
-                        .child(div().child("Between"))
+                        .child(div().child("Between")),
                 )
                 .child(
                     VStack::new()
                         .spacing(StackSpacing::Xs)
                         .child(div().child("XS"))
-                        .child(div().child("Space"))
+                        .child(div().child("Space")),
                 )
                 .child(
                     VStack::new()
                         .spacing(StackSpacing::Sm)
                         .child(div().child("SM"))
-                        .child(div().child("Space"))
+                        .child(div().child("Space")),
                 )
                 .child(
                     VStack::new()
                         .spacing(StackSpacing::Md)
                         .child(div().child("MD"))
-                        .child(div().child("Space"))
+                        .child(div().child("Space")),
                 )
                 .child(
                     VStack::new()
                         .spacing(StackSpacing::Lg)
                         .child(div().child("LG"))
-                        .child(div().child("Space"))
+                        .child(div().child("Space")),
                 )
                 .child(
                     VStack::new()
                         .spacing(StackSpacing::Xl)
                         .child(div().child("XL"))
-                        .child(div().child("Space"))
+                        .child(div().child("Space")),
                 )
                 .child(
                     VStack::new()
                         .spacing(StackSpacing::Xxl)
                         .child(div().child("XXL"))
-                        .child(div().child("Space"))
+                        .child(div().child("Space")),
                 )
         }
     }
@@ -124,25 +124,25 @@ async fn test_vstack_alignment(cx: &mut TestAppContext) {
                     VStack::new()
                         .align(StackAlign::Start)
                         .width(StackSize::Fixed(px(100.0)))
-                        .child(div().child("Start"))
+                        .child(div().child("Start")),
                 )
                 .child(
                     VStack::new()
                         .align(StackAlign::Center)
                         .width(StackSize::Fixed(px(100.0)))
-                        .child(div().child("Center"))
+                        .child(div().child("Center")),
                 )
                 .child(
                     VStack::new()
                         .align(StackAlign::End)
                         .width(StackSize::Fixed(px(100.0)))
-                        .child(div().child("End"))
+                        .child(div().child("End")),
                 )
                 .child(
                     VStack::new()
                         .align(StackAlign::Stretch)
                         .width(StackSize::Fixed(px(100.0)))
-                        .child(div().child("Stretch"))
+                        .child(div().child("Stretch")),
                 )
         }
     }
@@ -164,28 +164,28 @@ async fn test_vstack_justify(cx: &mut TestAppContext) {
                         .justify(StackJustify::Start)
                         .height(StackSize::Fixed(px(200.0)))
                         .child(div().child("Start"))
-                        .child(div().child("Justify"))
+                        .child(div().child("Justify")),
                 )
                 .child(
                     VStack::new()
                         .justify(StackJustify::Center)
                         .height(StackSize::Fixed(px(200.0)))
                         .child(div().child("Center"))
-                        .child(div().child("Justify"))
+                        .child(div().child("Justify")),
                 )
                 .child(
                     VStack::new()
                         .justify(StackJustify::End)
                         .height(StackSize::Fixed(px(200.0)))
                         .child(div().child("End"))
-                        .child(div().child("Justify"))
+                        .child(div().child("Justify")),
                 )
                 .child(
                     VStack::new()
                         .justify(StackJustify::SpaceBetween)
                         .height(StackSize::Fixed(px(200.0)))
                         .child(div().child("Space"))
-                        .child(div().child("Between"))
+                        .child(div().child("Between")),
                 )
         }
     }
@@ -207,13 +207,9 @@ async fn test_vstack_size_options(cx: &mut TestAppContext) {
                     VStack::new()
                         .width(StackSize::Fixed(px(100.0)))
                         .height(StackSize::Full)
-                        .child(div().child("Fixed width, full height"))
+                        .child(div().child("Fixed width, full height")),
                 )
-                .child(
-                    VStack::new()
-                        .full()
-                        .child(div().child("Full size"))
-                )
+                .child(VStack::new().full().child(div().child("Full size")))
         }
     }
 
@@ -229,16 +225,8 @@ async fn test_vstack_flex_properties(cx: &mut TestAppContext) {
             div()
                 .flex()
                 .h(px(300.0))
-                .child(
-                    VStack::new()
-                        .flex_1()
-                        .child(div().child("Flex 1"))
-                )
-                .child(
-                    VStack::new()
-                        .grow(2.0)
-                        .child(div().child("Grow 2"))
-                )
+                .child(VStack::new().flex_1().child(div().child("Flex 1")))
+                .child(VStack::new().grow(2.0).child(div().child("Grow 2")))
         }
     }
 
@@ -260,14 +248,14 @@ async fn test_vstack_overflow(cx: &mut TestAppContext) {
                         .height(StackSize::Fixed(px(50.0)))
                         .child(div().child("Hidden overflow"))
                         .child(div().child("More content"))
-                        .child(div().child("Even more"))
+                        .child(div().child("Even more")),
                 )
                 .child(
                     VStack::new()
                         .overflow(StackOverflow::Visible)
                         .height(StackSize::Fixed(px(50.0)))
                         .child(div().child("Visible overflow"))
-                        .child(div().child("More content"))
+                        .child(div().child("More content")),
                 )
         }
     }
@@ -300,8 +288,7 @@ async fn test_vstack_children_method(cx: &mut TestAppContext) {
     impl Render for ChildrenView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
             let items = vec!["A", "B", "C", "D"];
-            VStack::new()
-                .children(items.iter().map(|item| div().child(*item)))
+            VStack::new().children(items.iter().map(|item| div().child(*item)))
         }
     }
 
@@ -376,21 +363,21 @@ async fn test_hstack_alignment(cx: &mut TestAppContext) {
                         .align(StackAlign::Start)
                         .height(StackSize::Fixed(px(60.0)))
                         .child(div().h(px(20.0)).child("Start"))
-                        .child(div().h(px(40.0)).child("Align"))
+                        .child(div().h(px(40.0)).child("Align")),
                 )
                 .child(
                     HStack::new()
                         .align(StackAlign::Center)
                         .height(StackSize::Fixed(px(60.0)))
                         .child(div().h(px(20.0)).child("Center"))
-                        .child(div().h(px(40.0)).child("Align"))
+                        .child(div().h(px(40.0)).child("Align")),
                 )
                 .child(
                     HStack::new()
                         .align(StackAlign::End)
                         .height(StackSize::Fixed(px(60.0)))
                         .child(div().h(px(20.0)).child("End"))
-                        .child(div().h(px(40.0)).child("Align"))
+                        .child(div().h(px(40.0)).child("Align")),
                 )
         }
     }
@@ -413,14 +400,14 @@ async fn test_hstack_justify(cx: &mut TestAppContext) {
                         .justify(StackJustify::SpaceAround)
                         .width(StackSize::Full)
                         .child(div().child("Space"))
-                        .child(div().child("Around"))
+                        .child(div().child("Around")),
                 )
                 .child(
                     HStack::new()
                         .justify(StackJustify::SpaceEvenly)
                         .width(StackSize::Full)
                         .child(div().child("Space"))
-                        .child(div().child("Evenly"))
+                        .child(div().child("Evenly")),
                 )
         }
     }
@@ -659,16 +646,14 @@ async fn test_nested_stacks(cx: &mut TestAppContext) {
                 .child(
                     HStack::new()
                         .child(div().child("A"))
-                        .child(div().child("B"))
+                        .child(div().child("B")),
                 )
                 .child(
-                    HStack::new()
-                        .child(div().child("C"))
-                        .child(
-                            VStack::new()
-                                .child(div().child("D1"))
-                                .child(div().child("D2"))
-                        )
+                    HStack::new().child(div().child("C")).child(
+                        VStack::new()
+                            .child(div().child("D1"))
+                            .child(div().child("D2")),
+                    ),
                 )
         }
     }
@@ -687,12 +672,12 @@ async fn test_stack_fraction_size(cx: &mut TestAppContext) {
                 .child(
                     VStack::new()
                         .width(StackSize::Fraction(0.3))
-                        .child(div().child("30%"))
+                        .child(div().child("30%")),
                 )
                 .child(
                     VStack::new()
                         .width(StackSize::Fraction(0.7))
-                        .child(div().child("70%"))
+                        .child(div().child("70%")),
                 )
         }
     }

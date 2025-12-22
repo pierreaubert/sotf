@@ -7,7 +7,7 @@
 //! - Various audio formats and configurations
 
 use hound::{SampleFormat, WavSpec, WavWriter};
-use sotf_audio::replaygain::{analyze_file, ReplayGainInfo};
+use sotf_audio::replaygain::{ReplayGainInfo, analyze_file};
 use tempfile::NamedTempFile;
 
 // ============================================================================

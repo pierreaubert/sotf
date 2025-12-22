@@ -437,9 +437,7 @@ impl Tabs {
                 if let Some(factory) = icon_factory {
                     // Create the icon with the correct color at render time
                     let icon_element = factory(icon_color);
-                    tab_el = tab_el.child(
-                        div().flex().items_center().child(icon_element),
-                    );
+                    tab_el = tab_el.child(div().flex().items_center().child(icon_element));
                 } else if let Some(custom_icon) = custom_icon {
                     tab_el = tab_el.child(
                         div()

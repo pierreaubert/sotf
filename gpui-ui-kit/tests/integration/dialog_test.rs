@@ -25,7 +25,7 @@ impl Render for DialogTestView {
         div().size_full().child(
             Dialog::new("test-dialog")
                 .title("Test Dialog")
-                .content(div().child("Dialog content goes here"))
+                .content(div().child("Dialog content goes here")),
         )
     }
 }
@@ -49,7 +49,7 @@ async fn test_dialog_size_sm(cx: &mut TestAppContext) {
                 Dialog::new("sm-dialog")
                     .size(DialogSize::Sm)
                     .title("Small Dialog")
-                    .content("Small content")
+                    .content("Small content"),
             )
         }
     }
@@ -67,7 +67,7 @@ async fn test_dialog_size_md(cx: &mut TestAppContext) {
                 Dialog::new("md-dialog")
                     .size(DialogSize::Md)
                     .title("Medium Dialog")
-                    .content("Medium content")
+                    .content("Medium content"),
             )
         }
     }
@@ -85,7 +85,7 @@ async fn test_dialog_size_lg(cx: &mut TestAppContext) {
                 Dialog::new("lg-dialog")
                     .size(DialogSize::Lg)
                     .title("Large Dialog")
-                    .content("Large content")
+                    .content("Large content"),
             )
         }
     }
@@ -103,7 +103,7 @@ async fn test_dialog_size_xl(cx: &mut TestAppContext) {
                 Dialog::new("xl-dialog")
                     .size(DialogSize::Xl)
                     .title("Extra Large Dialog")
-                    .content("Extra large content")
+                    .content("Extra large content"),
             )
         }
     }
@@ -121,7 +121,7 @@ async fn test_dialog_size_full(cx: &mut TestAppContext) {
                 Dialog::new("full-dialog")
                     .size(DialogSize::Full)
                     .title("Full Width Dialog")
-                    .content("Full width content")
+                    .content("Full width content"),
             )
         }
     }
@@ -140,23 +140,21 @@ async fn test_dialog_with_rich_content(cx: &mut TestAppContext) {
     impl Render for RichContentView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
             div().size_full().child(
-                Dialog::new("rich-dialog")
-                    .title("Rich Content")
-                    .content(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_4()
-                            .child(div().child("Paragraph 1"))
-                            .child(div().child("Paragraph 2"))
-                            .child(
-                                div()
-                                    .flex()
-                                    .gap_2()
-                                    .child(div().bg(gpui::rgb(0xff0000)).size(gpui::px(20.0)))
-                                    .child(div().bg(gpui::rgb(0x00ff00)).size(gpui::px(20.0)))
-                            )
-                    )
+                Dialog::new("rich-dialog").title("Rich Content").content(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_4()
+                        .child(div().child("Paragraph 1"))
+                        .child(div().child("Paragraph 2"))
+                        .child(
+                            div()
+                                .flex()
+                                .gap_2()
+                                .child(div().bg(gpui::rgb(0xff0000)).size(gpui::px(20.0)))
+                                .child(div().bg(gpui::rgb(0x00ff00)).size(gpui::px(20.0))),
+                        ),
+                ),
             )
         }
     }
@@ -173,7 +171,7 @@ async fn test_dialog_with_child_alias(cx: &mut TestAppContext) {
             div().size_full().child(
                 Dialog::new("child-alias-dialog")
                     .title("Using child()")
-                    .child(div().child("Content via child() method"))
+                    .child(div().child("Content via child() method")),
             )
         }
     }
@@ -201,8 +199,8 @@ async fn test_dialog_with_footer(cx: &mut TestAppContext) {
                             .gap_2()
                             .justify_end()
                             .child(div().px_4().py_2().bg(gpui::rgb(0x444444)).child("Cancel"))
-                            .child(div().px_4().py_2().bg(gpui::rgb(0x007acc)).child("OK"))
-                    )
+                            .child(div().px_4().py_2().bg(gpui::rgb(0x007acc)).child("OK")),
+                    ),
             )
         }
     }
@@ -231,7 +229,7 @@ async fn test_dialog_with_close_button(cx: &mut TestAppContext) {
                     .show_close_button(true)
                     .on_close(move |_window, _cx| {
                         close_count.fetch_add(1, Ordering::SeqCst);
-                    })
+                    }),
             )
         }
     }
@@ -254,7 +252,7 @@ async fn test_dialog_without_close_button(cx: &mut TestAppContext) {
                 Dialog::new("no-close-btn-dialog")
                     .title("No Close Button")
                     .content("Close button hidden")
-                    .show_close_button(false)
+                    .show_close_button(false),
             )
         }
     }
@@ -283,7 +281,7 @@ async fn test_dialog_close_on_backdrop(cx: &mut TestAppContext) {
                     .close_on_backdrop(true)
                     .on_close(move |_window, _cx| {
                         close_triggered.store(true, Ordering::SeqCst);
-                    })
+                    }),
             )
         }
     }
@@ -306,7 +304,7 @@ async fn test_dialog_no_close_on_backdrop(cx: &mut TestAppContext) {
                 Dialog::new("no-backdrop-close-dialog")
                     .title("Backdrop Disabled")
                     .content("Clicking backdrop won't close")
-                    .close_on_backdrop(false)
+                    .close_on_backdrop(false),
             )
         }
     }
@@ -335,10 +333,9 @@ async fn test_dialog_with_custom_theme(cx: &mut TestAppContext) {
                 close_hover_bg: gpui::rgb(0x444444),
             };
 
-            div().size_full().child(
-                Dialog::new("themed-dialog")
-                    .build_with_theme(&custom_theme)
-            )
+            div()
+                .size_full()
+                .child(Dialog::new("themed-dialog").build_with_theme(&custom_theme))
         }
     }
 
@@ -355,10 +352,9 @@ async fn test_dialog_no_title(cx: &mut TestAppContext) {
 
     impl Render for NoTitleView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div().size_full().child(
-                Dialog::new("no-title-dialog")
-                    .content("Content without title")
-            )
+            div()
+                .size_full()
+                .child(Dialog::new("no-title-dialog").content("Content without title"))
         }
     }
 
@@ -374,7 +370,7 @@ async fn test_dialog_long_title(cx: &mut TestAppContext) {
             div().size_full().child(
                 Dialog::new("long-title-dialog")
                     .title("This is a very long dialog title that might need to wrap or truncate")
-                    .content("Content")
+                    .content("Content"),
             )
         }
     }
@@ -388,10 +384,9 @@ async fn test_dialog_empty_content(cx: &mut TestAppContext) {
 
     impl Render for EmptyContentView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div().size_full().child(
-                Dialog::new("empty-content-dialog")
-                    .title("Empty Content Dialog")
-            )
+            div()
+                .size_full()
+                .child(Dialog::new("empty-content-dialog").title("Empty Content Dialog"))
         }
     }
 

@@ -284,4 +284,21 @@ impl WaveformScanManager {
             }
         }
     }
+
+    /// Stop the current scan
+    pub fn stop(&mut self) {
+        if let Some(scanner) = &self.scanner {
+            scanner.stop();
+        }
+        self.in_progress = false;
+        self.scanner = None;
+    }
+
+    /// Get progress as a percentage
+    pub fn progress(&self) -> f32 {
+        if self.total == 0 {
+            return 0.0;
+        }
+        (self.processed as f32 / self.total as f32) * 100.0
+    }
 }

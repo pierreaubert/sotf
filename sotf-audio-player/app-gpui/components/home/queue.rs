@@ -627,7 +627,9 @@ impl PlayerView {
                 // Strip common prefix from track title if present
                 let title_stripped = if let Some(ref prefix) = prefix_to_strip {
                     if title_raw.starts_with(prefix) {
-                        title_raw[prefix.len()..].trim_start_matches(&[' ', ':', '-', '.'][..]).to_string()
+                        title_raw[prefix.len()..]
+                            .trim_start_matches(&[' ', ':', '-', '.'][..])
+                            .to_string()
                     } else {
                         title_raw
                     }
