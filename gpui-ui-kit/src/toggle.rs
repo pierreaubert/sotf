@@ -76,8 +76,12 @@ pub struct ToggleTheme {
     pub checked_bg: Rgba,
     /// Background when unchecked
     pub unchecked_bg: Rgba,
-    /// Knob/thumb color
+    /// Knob/thumb color when unchecked
     pub knob: Rgba,
+    /// Knob/thumb color when checked (for contrast on light backgrounds)
+    pub knob_on_checked: Rgba,
+    /// Track border color (for visibility on dark backgrounds)
+    pub track_border: Rgba,
     /// Label text color
     pub label: Rgba,
     /// Selected state accent color
@@ -100,6 +104,8 @@ impl Default for ToggleTheme {
             checked_bg: rgba(0x007accff),
             unchecked_bg: rgba(0x3a3a3aff),
             knob: rgba(0xffffffff),
+            knob_on_checked: rgba(0xffffffff),
+            track_border: rgba(0x3a3a3aff),
             label: rgba(0xccccccff),
             accent: rgba(0x007accff),
             accent_muted: rgba(0x007acc33),
@@ -115,8 +121,10 @@ impl From<&Theme> for ToggleTheme {
     fn from(theme: &Theme) -> Self {
         Self {
             checked_bg: theme.accent,
-            unchecked_bg: theme.border,
+            unchecked_bg: theme.muted,
             knob: theme.text_primary,
+            knob_on_checked: theme.background,
+            track_border: theme.border,
             label: theme.text_secondary,
             accent: theme.accent,
             accent_muted: theme.accent_muted,
@@ -258,15 +266,17 @@ impl Toggle {
             container = container.opacity(0.5).cursor_not_allowed();
         }
 
-        // Track
+        // Track - with border for visibility on dark backgrounds
         let mut track = div()
             .relative()
             .w(track_width)
             .h(track_height)
             .rounded_full()
-            .bg(track_bg);
+            .bg(track_bg)
+            .border_1()
+            .border_color(theme.track_border);
 
-        // Knob
+        // Knob - always same color, just moves position
         let knob = div()
             .absolute()
             .top(knob_offset)
@@ -275,7 +285,9 @@ impl Toggle {
             .h(knob_size)
             .rounded_full()
             .bg(theme.knob)
-            .shadow_sm();
+            .shadow_md()
+            .border_1()
+            .border_color(theme.track_border);
 
         track = track.child(knob);
 

@@ -9,6 +9,8 @@ use gpui_ui_kit::accordion::AccordionOrientation;
 use gpui_ui_kit::i18n::{I18nExt, TranslationKey};
 use gpui_ui_kit::menu::{Menu, MenuItem};
 use gpui_ui_kit::theme::ThemeExt;
+use gpui_ui_kit::wizard::StepStatus;
+use gpui_ui_kit::workflow::{WorkflowCanvas, WorkflowGraph};
 use gpui_ui_kit::*;
 
 /// Section identifiers for navigation
@@ -34,6 +36,8 @@ pub enum ShowcaseSection {
     Tooltips,
     Potentiometer,
     Accordion,
+    Wizard,
+    Workflow,
 }
 
 impl ShowcaseSection {
@@ -58,6 +62,8 @@ impl ShowcaseSection {
             ShowcaseSection::Tooltips,
             ShowcaseSection::Potentiometer,
             ShowcaseSection::Accordion,
+            ShowcaseSection::Wizard,
+            ShowcaseSection::Workflow,
         ]
     }
 
@@ -82,6 +88,8 @@ impl ShowcaseSection {
             ShowcaseSection::Tooltips => "Tooltips",
             ShowcaseSection::Potentiometer => "Potentiometer",
             ShowcaseSection::Accordion => "Accordion",
+            ShowcaseSection::Wizard => "Wizard",
+            ShowcaseSection::Workflow => "Workflow",
         }
     }
 
@@ -106,6 +114,8 @@ impl ShowcaseSection {
             ShowcaseSection::Tooltips => "💡",
             ShowcaseSection::Potentiometer => "🎛️",
             ShowcaseSection::Accordion => "🪗",
+            ShowcaseSection::Wizard => "🧙",
+            ShowcaseSection::Workflow => "🕸️",
         }
     }
 }
@@ -158,6 +168,12 @@ pub struct Showcase {
     accordion_vertical_multiple: Vec<SharedString>,
     accordion_horizontal_single: Vec<SharedString>,
     accordion_side_single: Vec<SharedString>,
+    // Wizard state
+    wizard_step: usize,
+    wizard_statuses: Vec<StepStatus>,
+    // Workflow state
+    workflow_canvas: Entity<WorkflowCanvas>,
+    workflow_node_counter: usize,
     // Pane divider states
     pane_left_collapsed: bool,
     pane_left_width: f32,
@@ -174,6 +190,10 @@ pub struct Showcase {
 
 impl Showcase {
     fn new(cx: &mut Context<Self>) -> Self {
+        // Initialize Workflow canvas
+        let graph = WorkflowGraph::new();
+        let workflow_canvas = cx.new(|cx| WorkflowCanvas::with_graph(graph, cx));
+
         Self {
             toggle_on: true,
             toggle_lg: false,
@@ -210,6 +230,16 @@ impl Showcase {
             accordion_vertical_multiple: vec!["v-multi-1".into(), "v-multi-2".into()],
             accordion_horizontal_single: vec!["h-single-1".into()],
             accordion_side_single: vec!["side-single-1".into(), "side-single-2".into()],
+            wizard_step: 0,
+            wizard_statuses: vec![
+                StepStatus::Active,
+                StepStatus::NotVisited,
+                StepStatus::NotVisited,
+                StepStatus::NotVisited,
+                StepStatus::NotVisited,
+            ],
+            workflow_canvas,
+            workflow_node_counter: 0,
             pane_left_collapsed: false,
             pane_left_width: 200.0,
             pane_dragging_left: false,
@@ -340,6 +370,8 @@ impl Render for Showcase {
                 self.render_potentiometer_section(cx).into_any_element()
             }
             ShowcaseSection::Accordion => self.render_accordion_section(cx).into_any_element(),
+            ShowcaseSection::Wizard => self.render_wizard_section(cx).into_any_element(),
+            ShowcaseSection::Workflow => self.render_workflow_section(cx).into_any_element(),
         };
 
         div()
@@ -513,6 +545,8 @@ include!("includes/render_tabs.inc.rs");
 include!("includes/render_text.inc.rs");
 include!("includes/render_toast.inc.rs");
 include!("includes/render_tooltip.inc.rs");
+include!("includes/render_wizard.inc.rs");
+include!("includes/render_workflow.inc.rs");
 
 fn main() {
     MiniApp::run(

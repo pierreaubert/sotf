@@ -90,6 +90,7 @@ impl From<&Theme> for WizardTheme {
 }
 
 /// A single step in the wizard
+#[derive(Clone)]
 pub struct WizardStep {
     /// Unique identifier for this step
     pub id: SharedString,

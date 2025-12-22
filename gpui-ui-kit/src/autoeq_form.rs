@@ -1669,6 +1669,8 @@ impl RenderOnce for AutoEqForm {
                 checked_bg: theme.toggle_checked_bg,
                 unchecked_bg: theme.toggle_unchecked_bg,
                 knob: theme.toggle_knob,
+                knob_on_checked: theme.card_bg,
+                track_border: theme.border,
                 label: theme.label_color,
                 accent: theme.accent,
                 accent_muted: theme.accent,

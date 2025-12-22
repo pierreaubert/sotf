@@ -532,12 +532,11 @@ impl WorkflowCanvas {
     fn handle_right_click(&mut self, position: Position, cx: &mut Context<Self>) {
         // Show context menu at click position
         // position is in screen coordinates relative to canvas element
-        // We need to convert it to absolute window coordinates for the overlay
-        let window_x = position.x + self.canvas_origin.x;
-        let window_y = position.y + self.canvas_origin.y;
+        // Since the menu is rendered as a child of the relative canvas div,
+        // we can use the relative position directly.
 
         self.state.context_menu = Some(ContextMenuState {
-            position: Position::new(window_x, window_y),
+            position,
             visible: true,
         });
         cx.notify();
@@ -546,10 +545,7 @@ impl WorkflowCanvas {
     fn handle_add_node_menu(&mut self, node_type: &SharedString, cx: &mut Context<Self>) {
         if let Some(menu_state) = &self.state.context_menu {
             // Position new node at the click location (converted to canvas coords)
-            let click_pos = Position::new(
-                menu_state.position.x - self.canvas_origin.x,
-                menu_state.position.y - self.canvas_origin.y,
-            );
+            let click_pos = menu_state.position;
             let canvas_pos = self.state.viewport.screen_to_canvas(click_pos.x, click_pos.y);
 
             let node = match node_type.as_ref() {
@@ -904,6 +900,8 @@ impl Render for WorkflowCanvas {
                     .absolute()
                     .left(px(menu_state.position.x))
                     .top(px(menu_state.position.y))
+                    // Stop propagation so clicking the menu doesn't trigger canvas click (which clears the menu)
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .child(menu),
             )
         } else {

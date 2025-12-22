@@ -95,12 +95,17 @@ pub enum TabVariant {
     VerticalCard,
 }
 
+/// Factory function type for creating icons with a specific color
+pub type IconFactory = Box<dyn Fn(Rgba) -> AnyElement + 'static>;
+
 /// A single tab item
 pub struct TabItem {
     id: SharedString,
     label: SharedString,
     icon: Option<SharedString>,
     custom_icon: Option<AnyElement>,
+    /// Icon factory that creates the icon with the given color at render time
+    icon_factory: Option<IconFactory>,
     badge: Option<SharedString>,
     disabled: bool,
     closeable: bool,
@@ -114,6 +119,7 @@ impl TabItem {
             label: label.into(),
             icon: None,
             custom_icon: None,
+            icon_factory: None,
             badge: None,
             disabled: false,
             closeable: false,
@@ -127,8 +133,21 @@ impl TabItem {
     }
 
     /// Add a custom icon element (e.g., SVG)
+    /// Note: If the icon needs to change color based on selection state,
+    /// use `icon_with_color` instead.
     pub fn custom_icon(mut self, icon: impl IntoElement) -> Self {
         self.custom_icon = Some(icon.into_any_element());
+        self
+    }
+
+    /// Add an icon that will be created with the correct color at render time.
+    /// The factory function receives the icon color (based on selection state)
+    /// and should return the icon element with that color applied.
+    pub fn icon_with_color<F>(mut self, factory: F) -> Self
+    where
+        F: Fn(Rgba) -> AnyElement + 'static,
+    {
+        self.icon_factory = Some(Box::new(factory));
         self
     }
 
@@ -250,6 +269,7 @@ impl Tabs {
             let label = tab.label;
             let icon = tab.icon;
             let custom_icon = tab.custom_icon;
+            let icon_factory = tab.icon_factory;
             let badge = tab.badge;
             let disabled = tab.disabled;
             let closeable = tab.closeable;
@@ -413,7 +433,14 @@ impl Tabs {
                 } else {
                     theme.icon_unselected.unwrap_or(theme.accent)
                 };
-                if let Some(custom_icon) = custom_icon {
+                // Prefer icon_factory (creates icon with explicit color) over custom_icon
+                if let Some(factory) = icon_factory {
+                    // Create the icon with the correct color at render time
+                    let icon_element = factory(icon_color);
+                    tab_el = tab_el.child(
+                        div().flex().items_center().child(icon_element),
+                    );
+                } else if let Some(custom_icon) = custom_icon {
                     tab_el = tab_el.child(
                         div()
                             .flex()
