@@ -16,6 +16,20 @@ functional chaining style, gpui-d3rs uses Rust's builder patterns
 and type system to provide a safe, performant, and ergonomic API
 for creating interactive visualizations.
 
+## Examples
+
+Two showcases are provided that demonstrate the capabilities of the library. Here are few examples:
+
+| Lines | IsoLines |
+| :---: | :---: |
+| ![lines](./docs/examples/spin-cea2034.png) | ![iso lines](./docs/examples/spin-isolines.png) |
+| Contour 3d | Contour 3d |
+| :---: | :---: |
+| ![lines](./docs/examples/spin-contour3d-v1.png) | ![iso lines](./docs/examples/spin-contour3d-v2.png) |
+| Radar | Polar |
+| :---: | :---: |
+| ![lines](./docs/examples/spin-radar.png) | ![iso lines](./docs/examples/spin-polar.png) |
+
 ## Features
 
 ### Core Modules
