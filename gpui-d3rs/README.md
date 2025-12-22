@@ -22,13 +22,13 @@ Two showcases are provided that demonstrate the capabilities of the library. Her
 
 | Lines | IsoLines |
 | :---: | :---: |
-| ![lines](./docs/examples/spin-cea2034.png) | ![iso lines](./docs/examples/spin-isolines.png) |
+| ![lines](./docs/images/spin-cea2034.png) | ![iso lines](./docs/images/spin-isolines.png) |
 | Contour 3d | Contour 3d |
 | :---: | :---: |
-| ![lines](./docs/examples/spin-contour3d-v1.png) | ![iso lines](./docs/examples/spin-contour3d-v2.png) |
+| ![lines](./docs/images/spin-contour3d-v1.png) | ![iso lines](./docs/images/spin-contour3d-v2.png) |
 | Radar | Polar |
 | :---: | :---: |
-| ![lines](./docs/examples/spin-radar.png) | ![iso lines](./docs/examples/spin-polar.png) |
+| ![lines](./docs/images/spin-radar.png) | ![iso lines](./docs/images/spin-polar.png) |
 
 ## Features
 
