@@ -26,7 +26,6 @@ impl PlayerView {
         // Use ratios for panel widths (layout will compute actual sizes)
         let queue_list_ratio = state.app.queue_list_ratio;
         let meters_ratio = state.app.meters_panel_ratio;
-        let lufs_ratio = state.app.lufs_panel_ratio;
         let meter_display_mode = state.app.meter_display_mode;
 
         let queue_collapsed = queue_list_ratio < 0.05;

@@ -10,7 +10,6 @@ pub mod plugins;
 pub mod recording;
 mod room_eq;
 mod settings;
-mod speaker_diy;
 mod spinorama_eq;
 pub use plugins::{
     LevelMeterElement, MeterColors, MeterData, SpectrumColors, SpectrumElement, get_param_count,

@@ -17,8 +17,8 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, HStack, StackSpacing, StepStatus, WizardHeader, WizardStep,
-    WizardTheme,
+    Button, ButtonSize, ButtonTheme, ButtonVariant, HStack, StackSpacing, StepStatus, WizardHeader,
+    WizardStep, WizardTheme,
 };
 
 impl PlayerView {
@@ -128,7 +128,9 @@ impl PlayerView {
             })
             .collect();
 
-        let wizard_theme = WizardTheme::from(&theme.to_ui_kit_theme(theme_id));
+        let ui_kit_theme = theme.to_ui_kit_theme(theme_id);
+        let wizard_theme = WizardTheme::from(&ui_kit_theme);
+        let button_theme = ButtonTheme::from(&ui_kit_theme);
 
         let header = WizardHeader::new()
             .title("Headphone EQ")
@@ -153,6 +155,7 @@ impl PlayerView {
                     .variant(ButtonVariant::Secondary)
                     .size(ButtonSize::Md)
                     .disabled(is_busy)
+                    .theme(button_theme.clone())
                     .build()
                     .on_mouse_up(
                         MouseButton::Left,
@@ -180,6 +183,7 @@ impl PlayerView {
                     .variant(ButtonVariant::Primary)
                     .size(ButtonSize::Md)
                     .disabled(!can_go_next || is_busy)
+                    .theme(button_theme.clone())
                     .build()
                     .on_mouse_up(
                         MouseButton::Left,

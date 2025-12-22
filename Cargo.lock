@@ -3345,7 +3345,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-d3rs"
-version = "0.1.14"
+version = "0.1.15"
 dependencies = [
  "approx",
  "autoeq",
@@ -3370,7 +3370,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-px"
-version = "0.1.15"
+version = "0.1.16"
 dependencies = [
  "gpui",
  "gpui-d3rs",
@@ -3391,7 +3391,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-ui-kit"
-version = "0.1.16"
+version = "0.1.17"
 dependencies = [
  "gpui",
  "serde",

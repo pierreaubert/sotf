@@ -2,8 +2,8 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, Card, HStack, StackSpacing, Text, TextSize, TextWeight,
-    VStack,
+    Button, ButtonSize, ButtonTheme, ButtonVariant, Card, HStack, StackSpacing, Text, TextSize,
+    TextWeight, VStack,
 };
 
 impl PlayerView {
@@ -14,6 +14,8 @@ impl PlayerView {
     pub(crate) fn render_headphone_eq_save(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
+        let theme_id = state.app.theme_id;
+        let button_theme = ButtonTheme::from(&theme.to_ui_kit_theme(theme_id));
         let headphone_eq = &state.app.headphone_eq_state;
         let result = headphone_eq.result.as_ref();
         let export_format = headphone_eq.export_format.clone();
@@ -47,7 +49,8 @@ impl PlayerView {
                                             .size(TextSize::Sm)
                                             .color(theme.text_secondary),
                                     )
-                                    .child(
+                                    .child({
+                                        let button_theme = button_theme.clone();
                                         HStack::new()
                                             .spacing(StackSpacing::Sm)
                                             .wrap(true)
@@ -70,6 +73,7 @@ impl PlayerView {
                                                             ButtonVariant::Secondary
                                                         })
                                                         .size(ButtonSize::Sm)
+                                                        .theme(button_theme.clone())
                                                         .build()
                                                         .on_mouse_up(
                                                             MouseButton::Left,
@@ -91,8 +95,8 @@ impl PlayerView {
                                                         )
                                                     },
                                                 ),
-                                            ),
-                                    ),
+                                            )
+                                    }),
                             ),
                     )
                     .child(
@@ -109,6 +113,7 @@ impl PlayerView {
                                             .variant(ButtonVariant::Primary)
                                             .size(ButtonSize::Lg)
                                             .full_width(true)
+                                            .theme(button_theme.clone())
                                             .build()
                                             .on_mouse_up(
                                                 MouseButton::Left,

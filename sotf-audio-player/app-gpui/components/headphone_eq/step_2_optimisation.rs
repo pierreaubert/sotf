@@ -4,8 +4,8 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
     AutoEqConfig, AutoEqForm, AutoEqFormUiState, Badge, BadgeVariant, Button, ButtonSize,
-    ButtonVariant, Card, OptimizationType, Progress, ProgressSize, ProgressVariant, StackSpacing,
-    Text, TextSize, TextWeight, VStack,
+    ButtonTheme, ButtonVariant, Card, OptimizationType, Progress, ProgressSize, ProgressVariant,
+    StackSpacing, Text, TextSize, TextWeight, VStack,
 };
 
 impl PlayerView {
@@ -19,6 +19,8 @@ impl PlayerView {
     ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
+        let theme_id = state.app.theme_id;
+        let button_theme = ButtonTheme::from(&theme.to_ui_kit_theme(theme_id));
         let headphone_eq = &state.app.headphone_eq_state;
 
         // Build AutoEqConfig from our HeadphoneEqOptimizerConfig
@@ -32,21 +34,22 @@ impl PlayerView {
             max_q: config.max_q,
             min_freq: config.min_freq,
             max_freq: config.max_freq,
-            peq_model: "pk".to_string(),
+            peq_model: config.peq_model.clone(),
             algo: match config.algorithm {
                 crate::app::types::RoomEqAlgorithm::DifferentialEvolution => "autoeq:de",
                 crate::app::types::RoomEqAlgorithm::Cobyla => "nlopt:cobyla",
                 crate::app::types::RoomEqAlgorithm::NelderMead => "nlopt:neldermead",
             }
             .to_string(),
-            population: 80,
+            population: config.population,
             maxeval: config.max_iter,
-            de_f: 0.8,
-            de_cr: 0.9,
-            strategy: "currenttobest1bin".to_string(),
-            refine: false,
-            local_algo: "cobyla".to_string(),
-            smooth: false,
+            de_f: config.de_f,
+            de_cr: config.de_cr,
+            strategy: config.strategy.clone(),
+            tolerance: config.tolerance,
+            refine: config.refine,
+            local_algo: config.local_algo.clone(),
+            smooth: config.smooth,
             // Goals - use headphone_eq_state values
             loss_type: headphone_eq.loss_type.clone(),
             target_curve: headphone_eq.target_preset.clone(),
@@ -59,8 +62,8 @@ impl PlayerView {
             peq_model_open: headphone_eq.dropdowns.peq_model_open,
             loss_type_open: headphone_eq.dropdowns.loss_type_open,
             target_curve_open: headphone_eq.dropdowns.target_curve_open,
-            strategy_open: true,
-            local_algo_open: false,
+            strategy_open: headphone_eq.dropdowns.strategy_open,
+            local_algo_open: headphone_eq.dropdowns.local_algo_open,
             ..Default::default()
         };
 
@@ -130,8 +133,9 @@ impl PlayerView {
             })
             .on_peq_model_change({
                 let state = self.state.clone();
-                move |_model, _window, cx| {
+                move |model, _window, cx| {
                     state.update(cx, |state, _cx| {
+                        state.app.headphone_eq_state.optimizer_config.peq_model = model.to_string();
                         state.app.headphone_eq_state.dropdowns.peq_model_open = false;
                     });
                 }
@@ -141,6 +145,96 @@ impl PlayerView {
                 move |open, _window, cx| {
                     state.update(cx, |state, _cx| {
                         state.app.headphone_eq_state.dropdowns.peq_model_open = open;
+                    });
+                }
+            })
+            .on_population_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.headphone_eq_state.optimizer_config.population = value;
+                    });
+                }
+            })
+            .on_de_f_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.headphone_eq_state.optimizer_config.de_f = value;
+                    });
+                }
+            })
+            .on_de_cr_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.headphone_eq_state.optimizer_config.de_cr = value;
+                    });
+                }
+            })
+            .on_strategy_change({
+                let state = self.state.clone();
+                move |strategy, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.headphone_eq_state.optimizer_config.strategy = strategy.to_string();
+                        state.app.headphone_eq_state.dropdowns.strategy_open = false;
+                    });
+                }
+            })
+            .on_strategy_toggle({
+                let state = self.state.clone();
+                move |open, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.headphone_eq_state.dropdowns.strategy_open = open;
+                    });
+                }
+            })
+            .on_tolerance_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.headphone_eq_state.optimizer_config.tolerance = value;
+                    });
+                }
+            })
+            .on_refine_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.headphone_eq_state.optimizer_config.refine = value;
+                    });
+                }
+            })
+            .on_local_algo_change({
+                let state = self.state.clone();
+                move |algo, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.headphone_eq_state.optimizer_config.local_algo = algo.to_string();
+                        state.app.headphone_eq_state.dropdowns.local_algo_open = false;
+                    });
+                }
+            })
+            .on_local_algo_toggle({
+                let state = self.state.clone();
+                move |open, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.headphone_eq_state.dropdowns.local_algo_open = open;
+                    });
+                }
+            })
+            .on_smooth_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.headphone_eq_state.optimizer_config.smooth = value;
+                    });
+                }
+            })
+            .on_smooth_n_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.headphone_eq_state.optimizer_config.smooth_n = value;
                     });
                 }
             })
@@ -269,6 +363,7 @@ impl PlayerView {
                                 .size(ButtonSize::Lg)
                                 .full_width(true)
                                 .disabled(is_optimizing)
+                                .theme(button_theme.clone())
                                 .build()
                                 .when(!is_optimizing, |btn| {
                                     btn.on_mouse_up(

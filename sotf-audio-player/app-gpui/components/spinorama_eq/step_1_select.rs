@@ -1,6 +1,6 @@
 use crate::components::graphs::speaker_graphs::{
-    render_speaker_preview_graph, render_spinorama_cea2034_graph,
-    render_spinorama_horizontal_graph, render_spinorama_pir_graph, render_spinorama_vertical_graph,
+    render_spinorama_cea2034_graph, render_spinorama_horizontal_graph, render_spinorama_pir_graph,
+    render_spinorama_vertical_graph,
 };
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -29,14 +29,6 @@ impl PlayerView {
         let suggestions = spinorama.speaker_suggestions.clone();
         let is_loading = spinorama.loading_speakers;
 
-        // Preview curves data (On Axis and optional target)
-        let preview_loading = spinorama.loading_preview;
-        let preview_error = spinorama.preview_error.clone();
-        let preview_frequencies = spinorama.preview_frequencies.clone();
-        let preview_on_axis = spinorama.preview_input_curve.clone();
-        let preview_target = spinorama.preview_target_curve.clone();
-        let has_preview = !preview_frequencies.is_empty();
-
         // Spinorama CEA2034 curves data
         let spinorama_curves = spinorama.spinorama_curves.clone();
         let spinorama_curves_loading = spinorama.loading_spinorama_curves;
@@ -46,115 +38,117 @@ impl PlayerView {
             || spinorama.selected_measurement == "CEA2034 Normalized";
 
         VStack::new()
-		    .spacing(StackSpacing::Lg)
-		    .child(
-			Text::new("Select Speaker")
-			    .color(theme.text_primary)
-			    .weight(TextWeight::Bold)
-			    .size(TextSize::Lg),
-		    )
-		    .child(
-			Text::new("Search for your speaker model from spinorama.org measurements.")
-			    .size(TextSize::Sm)
-			    .color(theme.text_secondary),
-		    )
-		    .child(
-			Card::new()
-			    .background(theme.surface)
-			    .header_background(theme.background_secondary)
-			    .border(theme.border)
-			    .header(
-				Text::new("Speaker Search")
-				    .color(theme.text_primary)
-				    .weight(TextWeight::Semibold),
-			    )
-			    .content(
-				VStack::new()
-				    .spacing(StackSpacing::Md)
-				    .child(
-					Text::new(
-					    "Type your speaker brand and model to search the database.",
-					)
-					    .size(TextSize::Sm)
-					    .color(theme.text_secondary),
-				    )
-				// Input handles focus and keyboard internally
-				    .child({
-					let state_for_start = self.state.clone();
-					let state_for_text = self.state.clone();
-					let state_for_end = self.state.clone();
-					Input::new("speaker-search")
-					    .placeholder("Type to search speakers...")
-					    .value(SharedString::from(search_query.clone()))
-					    .size(InputSize::Md)
-					    .icon_left("🔍")
-					    .bg_color(theme.surface)
-					    .text_color(theme.text_primary)
-					    .placeholder_color(theme.text_muted)
-					    .on_edit_start({
-						move |_window, cx| {
-						    log::info!("[SPINORAMA] on_edit_start: entering SpinoramaSpeakerSearch mode");
-						    state_for_start.update(cx, |state, _cx| {
-							state.app.input_mode = crate::app::InputMode::SpinoramaSpeakerSearch;
-						    });
-						}
-					    })
-					    .on_text_change({
-						move |text, _window, cx| {
-						    log::info!("[SPINORAMA] on_text_change: {}", text);
-						    state_for_text.update(cx, |state, _cx| {
-							state.app.spinorama_eq_state.speaker_search = text;
-							state.app.spinorama_eq_state.update_suggestions();
-						    });
-						}
-					    })
-					    .on_edit_end({
-						move |_result, _window, cx| {
-						    state_for_end.update(cx, |state, _cx| {
-							state.app.input_mode = crate::app::InputMode::Normal;
-						    });
-						}
-					    })
-				    })
-				    .child(
-					HStack::new()
-					    .spacing(StackSpacing::Sm)
-					    .child(
-						Button::new("refresh-speakers", "⟳ Refresh")
-						    .variant(ButtonVariant::Secondary)
-						    .size(ButtonSize::Sm)
-						    .disabled(is_loading)
-						    .build()
-						    .on_mouse_up(
-							MouseButton::Left,
-							cx.listener(|view, _, _, cx| {
-							    view.fetch_spinorama_speakers(cx);
-							}),
-						    ),
-					    )
-					    .when(is_loading, |hstack| {
-						hstack.child(
-						    Text::new("Loading...")
-							.size(TextSize::Sm)
-							.color(theme.text_muted),
-						)
-					    })
-					    .when(
-						!is_loading && !spinorama.available_speakers.is_empty(),
-						|hstack| {
-						    hstack.child(
-							Text::new(format!(
-							    "{} speakers",
-							    spinorama.available_speakers.len()
-							))
-							    .size(TextSize::Sm)
-							    .color(theme.text_muted),
-						    )
-						},
-					    )
-				    ),
-			    ),
-		    )
+            .spacing(StackSpacing::Lg)
+            .child(
+                Text::new("Select Speaker")
+                    .color(theme.text_primary)
+                    .weight(TextWeight::Bold)
+                    .size(TextSize::Lg),
+            )
+            .child(
+                Text::new("Search for your speaker model from spinorama.org measurements.")
+                    .size(TextSize::Sm)
+                    .color(theme.text_secondary),
+            )
+            .child(
+                Card::new()
+                    .background(theme.surface)
+                    .header_background(theme.background_secondary)
+                    .border(theme.border)
+                    .header(
+                        Text::new("Speaker Search")
+                            .color(theme.text_primary)
+                            .weight(TextWeight::Semibold),
+                    )
+                    .content(
+                        VStack::new()
+                            .spacing(StackSpacing::Md)
+                            .child(
+                                Text::new(
+                                    "Type your speaker brand and model to search the database.",
+                                )
+                                .size(TextSize::Sm)
+                                .color(theme.text_secondary),
+                            )
+                            // Input handles focus and keyboard internally
+                            .child({
+                                let state_for_start = self.state.clone();
+                                let state_for_text = self.state.clone();
+                                let state_for_end = self.state.clone();
+                                Input::new("speaker-search")
+                                    .placeholder("Type to search speakers...")
+                                    .value(SharedString::from(search_query.clone()))
+                                    .size(InputSize::Md)
+                                    .icon_left("🔍")
+                                    .bg_color(theme.surface)
+                                    .text_color(theme.text_primary)
+                                    .placeholder_color(theme.text_muted)
+                                    .on_edit_start({
+                                        move |_window, cx| {
+                                            log::info!("[SPINORAMA] on_edit_start: entering SpinoramaSpeakerSearch mode");
+                                            state_for_start.update(cx, |state, _cx| {
+                                                state.app.input_mode =
+                                                    crate::app::InputMode::SpinoramaSpeakerSearch;
+                                            });
+                                        }
+                                    })
+                                    .on_text_change({
+                                        move |text, _window, cx| {
+                                            log::info!("[SPINORAMA] on_text_change: {}", text);
+                                            state_for_text.update(cx, |state, _cx| {
+                                                state.app.spinorama_eq_state.speaker_search = text;
+                                                state.app.spinorama_eq_state.update_suggestions();
+                                            });
+                                        }
+                                    })
+                                    .on_edit_end({
+                                        move |_result, _window, cx| {
+                                            state_for_end.update(cx, |state, _cx| {
+                                                state.app.input_mode =
+                                                    crate::app::InputMode::Normal;
+                                            });
+                                        }
+                                    })
+                            })
+                            .child(
+                                HStack::new()
+                                    .spacing(StackSpacing::Sm)
+                                    .child(
+                                        Button::new("refresh-speakers", "⟳ Refresh")
+                                            .variant(ButtonVariant::Secondary)
+                                            .size(ButtonSize::Sm)
+                                            .disabled(is_loading)
+                                            .build()
+                                            .on_mouse_up(
+                                                MouseButton::Left,
+                                                cx.listener(|view, _, _, cx| {
+                                                    view.fetch_spinorama_speakers(cx);
+                                                }),
+                                            ),
+                                    )
+                                    .when(is_loading, |hstack| {
+                                        hstack.child(
+                                            Text::new("Loading...")
+                                                .size(TextSize::Sm)
+                                                .color(theme.text_muted),
+                                        )
+                                    })
+                                    .when(
+                                        !is_loading && !spinorama.available_speakers.is_empty(),
+                                        |hstack| {
+                                            hstack.child(
+                                                Text::new(format!(
+                                                    "{} speakers",
+                                                    spinorama.available_speakers.len()
+                                                ))
+                                                .size(TextSize::Sm)
+                                                .color(theme.text_muted),
+                                            )
+                                        },
+                                    ),
+                            ),
+                    ),
+            )
             // Speaker suggestions list
             .child(
                 Card::new()
@@ -245,14 +239,11 @@ impl PlayerView {
                             })),
                     ),
             )
-            // Selected speaker display with version and measurement selection
+            // Selected speaker display with version selection
             .when_some(selected_speaker.clone(), |vstack, speaker| {
                 let available_versions = spinorama.available_versions.clone();
-                let available_measurements = spinorama.available_measurements.clone();
                 let selected_version = spinorama.selected_version.clone();
-                let selected_measurement = spinorama.selected_measurement.clone();
                 let loading_versions = spinorama.loading_versions;
-                let loading_measurements = spinorama.loading_measurements;
                 let has_phase_data = spinorama.has_phase_data;
 
                 vstack.child(
@@ -291,119 +282,89 @@ impl PlayerView {
                                                     .color(theme.text_muted),
                                             )
                                         })
-                                        .when(!loading_versions && available_versions.is_empty(), |vs| {
-                                            vs.child(
-                                                Text::new("No versions available")
-                                                    .size(TextSize::Sm)
-                                                    .color(theme.text_muted),
-                                            )
-                                        })
-                                        .when(!loading_versions && !available_versions.is_empty(), |vs| {
-                                            vs.child(
-                                                HStack::new()
-                                                    .spacing(StackSpacing::Sm)
-                                                    .wrap(true)
-                                                    .children(available_versions.iter().map(|version| {
-                                                        let is_selected = selected_version == *version;
-                                                        let version_clone = version.clone();
-                                                        let accent = theme.accent;
-                                                        let surface = theme.surface;
-                                                        let text_primary = theme.text_primary;
-                                                        let text_on_accent = theme.text_on_accent;
-                                                        let surface_hover = theme.surface_hover;
-
-                                                        div()
-                                                            .id(SharedString::from(format!("version-{}", version)))
-                                                            .px_3()
-                                                            .py_1()
-                                                            .rounded_md()
-                                                            .cursor_pointer()
-                                                            .bg(if is_selected { accent } else { surface })
-                                                            .border_1()
-                                                            .border_color(if is_selected { accent } else { theme.border })
-                                                            .text_color(if is_selected { text_on_accent } else { text_primary })
-                                                            .text_sm()
-                                                            .hover(|s| s.bg(if is_selected { accent } else { surface_hover }))
-                                                            .on_mouse_down(
-                                                                MouseButton::Left,
-                                                                cx.listener({
-                                                                    let version_clone = version_clone.clone();
-                                                                    move |view, _, _, cx| {
-                                                                        view.select_spinorama_version(&version_clone, cx);
-                                                                    }
-                                                                }),
-                                                            )
-                                                            .child(version_clone)
-                                                    })),
-                                            )
-                                        }),
-                                )
-                            // Measurement selection
-/*
-                                .child(
-                                    VStack::new()
-                                        .spacing(StackSpacing::Sm)
-                                        .child(
-                                            Text::new("Measurement")
-                                                .size(TextSize::Sm)
-                                                .weight(TextWeight::Semibold)
-                                                .color(theme.text_primary),
+                                        .when(
+                                            !loading_versions && available_versions.is_empty(),
+                                            |vs| {
+                                                vs.child(
+                                                    Text::new("No versions available")
+                                                        .size(TextSize::Sm)
+                                                        .color(theme.text_muted),
+                                                )
+                                            },
                                         )
-                                        .when(loading_measurements, |vs| {
-                                            vs.child(
-                                                Text::new("Loading measurements...")
-                                                    .size(TextSize::Sm)
-                                                    .color(theme.text_muted),
-                                            )
-                                        })
-                                        .when(!loading_measurements && available_measurements.is_empty(), |vs| {
-                                            vs.child(
-                                                Text::new("No measurements available")
-                                                    .size(TextSize::Sm)
-                                                    .color(theme.text_muted),
-                                            )
-                                        })
-                                        .when(!loading_measurements && !available_measurements.is_empty(), |vs| {
-                                            vs.child(
-                                                HStack::new()
-                                                    .spacing(StackSpacing::Sm)
-                                                    .wrap(true)
-                                                    .children(available_measurements.iter().map(|measurement| {
-                                                        let is_selected = selected_measurement == *measurement;
-                                                        let measurement_clone = measurement.clone();
-                                                        let accent = theme.accent;
-                                                        let surface = theme.surface;
-                                                        let text_primary = theme.text_primary;
-                                                        let text_on_accent = theme.text_on_accent;
-                                                        let surface_hover = theme.surface_hover;
+                                        .when(
+                                            !loading_versions && !available_versions.is_empty(),
+                                            |vs| {
+                                                vs.child(
+                                                    HStack::new()
+                                                        .spacing(StackSpacing::Sm)
+                                                        .wrap(true)
+                                                        .children(available_versions.iter().map(
+                                                            |version| {
+                                                                let is_selected =
+                                                                    selected_version == *version;
+                                                                let version_clone = version.clone();
+                                                                let accent = theme.accent;
+                                                                let surface = theme.surface;
+                                                                let text_primary =
+                                                                    theme.text_primary;
+                                                                let text_on_accent =
+                                                                    theme.text_on_accent;
+                                                                let surface_hover =
+                                                                    theme.surface_hover;
 
-                                                        div()
-                                                            .id(SharedString::from(format!("measurement-{}", measurement)))
-                                                            .px_3()
-                                                            .py_1()
-                                                            .rounded_md()
-                                                            .cursor_pointer()
-                                                            .bg(if is_selected { accent } else { surface })
-                                                            .border_1()
-                                                            .border_color(if is_selected { accent } else { theme.border })
-                                                            .text_color(if is_selected { text_on_accent } else { text_primary })
-                                                            .text_sm()
-                                                            .hover(|s| s.bg(if is_selected { accent } else { surface_hover }))
-                                                            .on_mouse_down(
-                                                                MouseButton::Left,
-                                                                cx.listener({
-                                                                    let measurement_clone = measurement_clone.clone();
-                                                                    move |view, _, _, cx| {
-                                                                        view.select_spinorama_measurement(&measurement_clone, cx);
-                                                                    }
-                                                                }),
-                                                            )
-                                                            .child(measurement_clone)
-                                                    })),
-                                            )
-                                        }),
-                        )
-*/
+                                                                div()
+                                                                    .id(SharedString::from(
+                                                                        format!(
+                                                                            "version-{}",
+                                                                            version
+                                                                        ),
+                                                                    ))
+                                                                    .px_3()
+                                                                    .py_1()
+                                                                    .rounded_md()
+                                                                    .cursor_pointer()
+                                                                    .bg(if is_selected {
+                                                                        accent
+                                                                    } else {
+                                                                        surface
+                                                                    })
+                                                                    .border_1()
+                                                                    .border_color(if is_selected {
+                                                                        accent
+                                                                    } else {
+                                                                        theme.border
+                                                                    })
+                                                                    .text_color(if is_selected {
+                                                                        text_on_accent
+                                                                    } else {
+                                                                        text_primary
+                                                                    })
+                                                                    .text_sm()
+                                                                    .hover(|s| {
+                                                                        s.bg(if is_selected {
+                                                                            accent
+                                                                        } else {
+                                                                            surface_hover
+                                                                        })
+                                                                    })
+                                                                    .on_mouse_down(
+                                                                        MouseButton::Left,
+                                                                        cx.listener({
+                                                                            let version_clone =
+                                                                                version_clone.clone();
+                                                                            move |view, _, _, cx| {
+                                                                                view.select_spinorama_version(&version_clone, cx);
+                                                                            }
+                                                                        }),
+                                                                    )
+                                                                    .child(version_clone)
+                                                            },
+                                                        )),
+                                                )
+                                            },
+                                        ),
+                                )
                                 // Phase data indicator
                                 .child(
                                     HStack::new()
@@ -414,80 +375,22 @@ impl PlayerView {
                                                 .color(theme.text_muted),
                                         )
                                         .child(
-                                            Text::new(if has_phase_data { "Available" } else { "Not Available" })
-                                                .size(TextSize::Xs)
-                                                .color(if has_phase_data { theme.success } else { theme.text_muted }),
-                                        ),
-                                )
-                        ),
-                )
-            })
-            // Preview chart showing input, target, and deviation curves (shown when measurement is selected)
-/*
-            .when(selected_speaker.is_some(), |vstack| {
-                let theme = theme.clone();
-                vstack.child(
-                    Card::new()
-                        .background(theme.surface)
-                        .header_background(theme.background_secondary)
-                        .border(theme.border)
-                        .header(
-                            Text::new("Measurement Preview")
-                                .color(theme.text_primary)
-                                .weight(TextWeight::Semibold),
-                        )
-                        .content(
-                            if preview_loading {
-                                VStack::new()
-                                    .spacing(StackSpacing::Md)
-                                    .align(StackAlign::Center)
-                                    .child(
-                                        Text::new("Loading preview curves...")
-                                            .size(TextSize::Sm)
-                                            .color(theme.text_secondary),
-                                    )
-                                    .child(Progress::new(0.0).size(ProgressSize::Md))
-                                    .into_any_element()
-                            } else if let Some(err) = preview_error {
-                                VStack::new()
-                                    .spacing(StackSpacing::Md)
-                                    .child(
-                                        Text::new("Failed to load preview")
-                                            .size(TextSize::Sm)
-                                            .color(theme.error),
-                                    )
-                                    .child(
-                                        Text::new(err)
+                                            Text::new(if has_phase_data {
+                                                "Available"
+                                            } else {
+                                                "Not Available"
+                                            })
                                             .size(TextSize::Xs)
-                                            .color(theme.text_muted),
-                                    )
-                                    .into_any_element()
-                            } else if has_preview {
-                                // Show On Axis curve and target if available
-                                let target_ref = if preview_target.is_empty() {
-                                    None
-                                } else {
-                                    Some(preview_target.as_slice())
-                                };
-                                render_speaker_preview_graph(
-                                    &preview_frequencies,
-                                    &preview_on_axis,
-                                    target_ref,
-                                    &theme,
-                                    550.0,
-                                    150.0,
-                                )
-                                .into_any_element()
-                            } else {
-                                Text::new("Select a measurement to see preview curves")
-                                    .size(TextSize::Sm)
-                                    .color(theme.text_muted)
-                                    .into_any_element()
-                            },
+                                            .color(if has_phase_data {
+                                                theme.success
+                                            } else {
+                                                theme.text_muted
+                                            }),
+                                        ),
+                                ),
                         ),
                 )
             })
-*/
             // CEA2034 Spinorama plot (shown only for CEA2034 measurements)
             .when(is_cea2034 && selected_speaker.is_some(), |vstack| {
                 let theme = theme.clone();

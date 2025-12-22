@@ -15,9 +15,6 @@ use gpui_ui_kit::{
 impl PlayerView {
     /// Render the capture step UI
     pub(crate) fn render_recording_capture_step(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
-
         VStack::new()
             .spacing(StackSpacing::Lg)
             .child(
@@ -42,7 +39,6 @@ impl PlayerView {
     /// Render signal configuration section
     fn render_signal_config_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
         let signal_level_db = state.app.recording_state.signal_level_db;
         let _ = state;
 

@@ -37,7 +37,6 @@ impl PlayerView {
     /// Render the config step UI
     pub(crate) fn render_recording_config_step(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
         let expanded_sections = state.app.recording_state.config_accordion_expanded.clone();
         let view = cx.entity().clone();
 

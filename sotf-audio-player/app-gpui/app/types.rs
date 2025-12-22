@@ -1651,12 +1651,32 @@ pub struct HeadphoneEqOptimizerConfig {
     pub max_iter: usize,
     /// Loss function
     pub loss: String,
+    /// PEQ filter model (pk, hp-pk, ls-pk-hs, etc.)
+    pub peq_model: String,
+    /// Population size for DE
+    pub population: usize,
+    /// DE mutation factor (F)
+    pub de_f: f64,
+    /// DE crossover rate (CR)
+    pub de_cr: f64,
+    /// DE strategy
+    pub strategy: String,
+    /// Tolerance for convergence
+    pub tolerance: f64,
+    /// Enable local refinement after global optimization
+    pub refine: bool,
+    /// Local refinement algorithm
+    pub local_algo: String,
+    /// Enable smoothing of input curve
+    pub smooth: bool,
+    /// Smoothing window size
+    pub smooth_n: usize,
 }
 
 impl Default for HeadphoneEqOptimizerConfig {
     fn default() -> Self {
         Self {
-            algorithm: RoomEqAlgorithm::Cobyla,
+            algorithm: RoomEqAlgorithm::DifferentialEvolution,
             num_filters: 10,
             min_q: 0.5,
             max_q: 10.0,
@@ -1666,6 +1686,16 @@ impl Default for HeadphoneEqOptimizerConfig {
             max_freq: 20000.0,
             max_iter: 10000,
             loss: "headphone-score".to_string(),
+            peq_model: "pk".to_string(),
+            population: 80,
+            de_f: 0.8,
+            de_cr: 0.9,
+            strategy: "currenttobest1bin".to_string(),
+            tolerance: 1e-3,
+            refine: false,
+            local_algo: "cobyla".to_string(),
+            smooth: false,
+            smooth_n: 1,
         }
     }
 }
@@ -1679,6 +1709,8 @@ pub struct HeadphoneEqDropdowns {
     pub export_format_open: bool,
     pub loss_type_open: bool,
     pub target_curve_open: bool,
+    pub strategy_open: bool,
+    pub local_algo_open: bool,
     /// AutoEQ form editing state
     pub autoeq_editing_field: Option<AutoEqField>,
     /// AutoEQ form edit text

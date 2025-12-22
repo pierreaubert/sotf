@@ -1,11 +1,9 @@
 use crate::components::graphs::common::{colors, rgba_to_u32, theme_to_chart_theme};
 use crate::theme::Theme;
 use crate::ui::PlayerView;
-use autoeq::plot::calculate_tonal_balance;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_px::{ScaleType, line};
-use ndarray::Array1;
+use gpui_px::{BarTheme, LegendPosition, ScaleType, bar, line};
 use sotf_audio_player::autoeq::SpeakerOptimizationResult;
 
 impl PlayerView {
@@ -26,13 +24,13 @@ impl PlayerView {
             .flex()
             .flex_col()
             .w_full()
-            .gap_4()
+            .gap_8()
             // Row 1: CEA2034 with and without EQ
             .child(
                 div()
                     .flex()
                     .flex_row()
-                    .gap_2()
+                    .gap_4()
                     .child(render_cea2034_from_result(
                         result,
                         theme,
@@ -49,11 +47,12 @@ impl PlayerView {
                     )),
             )
             // Row 2: Main Response | Filter Response
+            .gap_4()
             .child(
                 div()
                     .flex()
                     .flex_row()
-                    .gap_2()
+                    .gap_4()
                     .child(render_spinorama_main_response_plot(
                         result,
                         theme,
@@ -68,11 +67,12 @@ impl PlayerView {
                     )),
             )
             // Row 3: Early Reflections | Sound Power
+            .gap_4()
             .child(
                 div()
                     .flex()
                     .flex_row()
-                    .gap_2()
+                    .gap_4()
                     .child(render_spinorama_er_plot(
                         result,
                         theme,
@@ -87,11 +87,12 @@ impl PlayerView {
                     )),
             )
             // Row 4: Tonal Balance ON | Tonal Balance LW
+            .gap_4()
             .child(
                 div()
                     .flex()
                     .flex_row()
-                    .gap_2()
+                    .gap_4()
                     .child(render_tonal_balance_plot(
                         result,
                         "ON",
@@ -108,11 +109,12 @@ impl PlayerView {
                     )),
             )
             // Row 5: Tonal Balance ER | Tonal Balance SP
+            .gap_4()
             .child(
                 div()
                     .flex()
                     .flex_row()
-                    .gap_2()
+                    .gap_4()
                     .child(render_tonal_balance_plot(
                         result,
                         "ER",
@@ -128,6 +130,7 @@ impl PlayerView {
                         graph_height,
                     )),
             )
+            .gap_4()
     }
 }
 
@@ -148,6 +151,7 @@ fn render_spinorama_main_response_plot(
         .stroke_width(1.5)
         .theme(chart_theme)
         .size(width, height)
+	.legend_position(LegendPosition::Bottom)
         .add_series(
             &result.target_curve,
             Some("Target"),
@@ -184,6 +188,7 @@ fn render_speaker_filter_response_plot(
     let mut chart_builder = line(&result.frequencies, &result.filter_response)
         .x_scale(ScaleType::Log)
         .label("Total")
+	.legend_position(LegendPosition::Bottom)
         .color(rgba_to_u32(colors::filter(theme)))
         .stroke_width(2.5)
         .theme(chart_theme)
@@ -243,6 +248,7 @@ fn render_spinorama_er_plot(
         .stroke_width(1.5)
         .theme(chart_theme)
         .size(width, height)
+	.legend_position(LegendPosition::Bottom)
         .add_series(
             &er_corrected,
             Some("Corrected ER"),
@@ -284,6 +290,7 @@ fn render_spinorama_sp_plot(
         .stroke_width(1.5)
         .theme(chart_theme)
         .size(width, height)
+	.legend_position(LegendPosition::Bottom)
         .add_series(
             &sp_corrected,
             Some("Corrected SP"),
@@ -379,6 +386,7 @@ pub fn render_spinorama_cea2034_graph(
         .stroke_width(2.0)
         .theme(chart_theme)
         .size(width, height)
+	.legend_position(LegendPosition::Bottom)
         // Primary axis series (SPL curves)
         .add_series(
             &curves.listening_window,
@@ -438,6 +446,7 @@ pub fn render_spinorama_pir_graph(
         .stroke_width(2.0)
         .theme(chart_theme)
         .size(width, height)
+	.legend_position(LegendPosition::Bottom)
         .build();
 
     div()
@@ -498,6 +507,7 @@ pub fn render_spinorama_horizontal_graph(
         .y_label("SPL (dB)")
         .y_range(-40.0, 10.0)
         .label(&format!("{:.0}°", base.angle))
+	.legend_position(LegendPosition::Bottom)
         .color(angle_colors[0])
         .stroke_width(2.0)
         .theme(chart_theme)
@@ -579,6 +589,7 @@ pub fn render_spinorama_vertical_graph(
         .color(angle_colors[0])
         .stroke_width(2.0)
         .theme(chart_theme)
+	.legend_position(LegendPosition::Bottom)
         .size(width, height);
 
     // Add other curves
@@ -706,20 +717,61 @@ fn render_tonal_balance_plot(
         return div().child("No data");
     }
 
-    // Calculate trend lines
-    let freq_arr = Array1::from(result.frequencies.clone());
-    let orig_arr = Array1::from(original_curve.clone());
-    let corr_arr = Array1::from(corrected_curve.clone());
+    // Manual linear regression helper
+    let calculate_trend = |freqs: &[f64], values: &[f64]| -> Option<(f64, f64)> {
+        let min_freq = 100.0;
+        let max_freq = 10000.0;
+        let mut sum_x = 0.0;
+        let mut sum_y = 0.0;
+        let mut sum_xy = 0.0;
+        let mut sum_xx = 0.0;
+        let mut count = 0.0;
 
-    let orig_trend_params = calculate_tonal_balance(&freq_arr, &orig_arr, 20.0, 20000.0);
-    let corr_trend_params = calculate_tonal_balance(&freq_arr, &corr_arr, 20.0, 20000.0);
+        for (i, &f) in freqs.iter().enumerate() {
+            if f >= min_freq && f <= max_freq {
+                if let Some(&y) = values.get(i) {
+                    let x = f.log10();
+                    sum_x += x;
+                    sum_y += y;
+                    sum_xy += x * y;
+                    sum_xx += x * x;
+                    count += 1.0;
+                }
+            }
+        }
+
+        if count < 2.0 {
+            return None;
+        }
+
+        let mean_x = sum_x / count;
+        let mean_y = sum_y / count;
+
+        let denominator = sum_xx - count * mean_x * mean_x;
+        if denominator.abs() < 1e-10 {
+            return None;
+        }
+
+        let slope = (sum_xy - count * mean_x * mean_y) / denominator;
+        let intercept = mean_y - slope * mean_x;
+
+        Some((slope, intercept))
+    };
+
+    let orig_trend = calculate_trend(&result.frequencies, &original_curve);
+    let corr_trend = calculate_trend(&result.frequencies, &corrected_curve);
+
+    // CEA2034 standard colors for consistency
+    const BLUE: u32 = 0x1f77b4;
+    const ORANGE: u32 = 0xff7f0e;
 
     let mut chart_builder = line(&result.frequencies, &original_curve)
         .x_scale(ScaleType::Log)
         .x_range(20.0, 20000.0)
         .y_range(-15.0, 5.0)
         .label(&format!("{} Orig", curve_type))
-        .color(rgba_to_u32(colors::input(theme)))
+        .legend_position(LegendPosition::Bottom)
+        .color(BLUE)
         .stroke_width(1.0)
         .opacity(0.5)
         .theme(chart_theme)
@@ -727,20 +779,77 @@ fn render_tonal_balance_plot(
         .add_series(
             &corrected_curve,
             Some(&format!("{} EQ", curve_type)),
-            rgba_to_u32(colors::corrected(theme)),
+            ORANGE,
             1.0,
             0.5,
         );
 
-    // Add trend lines
-    if let Some((slope, _)) = orig_trend_params {
-        // Calculate intercept manually to ensure line fits data
-        // Intercept b = mean(y) - slope * mean(x) where x is log10(freq)
-        let log_freqs: Vec<f64> = result.frequencies.iter().map(|f| f.log10()).collect();
-        let mean_x: f64 = log_freqs.iter().sum::<f64>() / log_freqs.len() as f64;
-        let mean_y: f64 = original_curve.iter().sum::<f64>() / original_curve.len() as f64;
-        let intercept = mean_y - slope * mean_x;
+    // Histogram calculation
+    let mut hist_chart = None;
+    if let (Some((slope_orig, int_orig)), Some((slope_corr, int_corr))) = (orig_trend, corr_trend) {
+        let calculate_histogram =
+            |freqs: &[f64], values: &[f64], slope: f64, intercept: f64| -> Vec<f64> {
+                let min_freq = 100.0;
+                let max_freq = 10000.0;
+                // Bins: [0, 0.5), [0.5, 1.0), ... [3.5, 4.0), [4.0, inf)
+                let mut bins = vec![0.0; 9];
 
+                for (i, &f) in freqs.iter().enumerate() {
+                    if f >= min_freq && f <= max_freq {
+                        if let Some(&y) = values.get(i) {
+                            let trend_y = slope * f.log10() + intercept;
+                            let deviation = (y - trend_y).abs();
+
+                            let bin_idx = (deviation / 0.5).floor() as usize;
+                            if bin_idx < 8 {
+                                bins[bin_idx] += 1.0;
+                            } else {
+                                bins[8] += 1.0; // Overflow bin
+                            }
+                        }
+                    }
+                }
+                bins
+            };
+
+        let hist_orig = calculate_histogram(
+            &result.frequencies,
+            &original_curve,
+            slope_orig,
+            int_orig,
+        );
+        let hist_corr = calculate_histogram(
+            &result.frequencies,
+            &corrected_curve,
+            slope_corr,
+            int_corr,
+        );
+
+        let labels = vec![
+            "0-0.5", "0.5-1", "1-1.5", "1.5-2", "2-2.5", "2.5-3", "3-3.5", "3.5-4", ">4",
+        ];
+
+        let bar_theme = BarTheme {
+            plot_background: theme.surface,
+            title_color: theme.text_primary,
+            legend_text_color: theme.text_secondary,
+        };
+
+        // Use a grouped bar chart
+        let chart = bar(&labels, &hist_orig)
+            .color(BLUE)
+            .label("Original")
+            .theme(bar_theme)
+            .size(width, height / 2.0)
+            .bar_gap(4.0)
+            .opacity(0.8)
+            .legend_position(LegendPosition::Bottom)
+            .add_series(&hist_corr, Some("Corrected"), ORANGE, 0.8);
+
+        hist_chart = chart.build().ok();
+    }
+
+    if let Some((slope, intercept)) = orig_trend {
         let trend: Vec<f64> = result
             .frequencies
             .iter()
@@ -749,19 +858,13 @@ fn render_tonal_balance_plot(
         chart_builder = chart_builder.add_series(
             &trend,
             Some(&format!("Trend {:.2}", slope)),
-            rgba_to_u32(colors::input(theme)),
+            BLUE,
             2.5,
             1.0,
         );
     }
 
-    if let Some((slope, _)) = corr_trend_params {
-        // Calculate intercept manually
-        let log_freqs: Vec<f64> = result.frequencies.iter().map(|f| f.log10()).collect();
-        let mean_x: f64 = log_freqs.iter().sum::<f64>() / log_freqs.len() as f64;
-        let mean_y: f64 = corrected_curve.iter().sum::<f64>() / corrected_curve.len() as f64;
-        let intercept = mean_y - slope * mean_x;
-
+    if let Some((slope, intercept)) = corr_trend {
         let trend: Vec<f64> = result
             .frequencies
             .iter()
@@ -770,7 +873,7 @@ fn render_tonal_balance_plot(
         chart_builder = chart_builder.add_series(
             &trend,
             Some(&format!("Trend {:.2}", slope)),
-            rgba_to_u32(colors::corrected(theme)),
+            ORANGE,
             2.5,
             1.0,
         );
@@ -782,4 +885,6 @@ fn render_tonal_balance_plot(
         .flex()
         .flex_col()
         .when_some(chart.ok(), |el, c| el.child(c))
+	.gap_2()
+        .when_some(hist_chart, |el, c| el.child(c))
 }

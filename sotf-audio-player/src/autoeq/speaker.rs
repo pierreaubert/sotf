@@ -1314,13 +1314,31 @@ fn optimize_single_driver_full(
     // Normalize input curve
     let input_normalized = autoeq::normalize_and_interpolate_response(&standard_freq, &input_curve);
 
-    // Interpolate spin_data curves to standard frequency grid
+    // Calculate normalization offset to apply to other curves
+    // We interpolate the raw input curve to the standard grid, then compare with normalized
+    let input_interpolated_raw = interpolate_spl(standard_freq.as_slice().unwrap(), &input_curve);
+    let normalization_offset = calculate_offset(
+        input_normalized.spl.as_slice().unwrap(),
+        &input_interpolated_raw,
+    );
+
+    // Interpolate spin_data curves to standard frequency grid applying the SAME offset
+    // This preserves the relative levels between curves (e.g. SP < LW)
     let spin_data_interpolated = spin_data.as_ref().map(|spin| {
         spin.iter()
             .map(|(name, curve)| {
-                let interpolated =
-                    autoeq::normalize_and_interpolate_response(&standard_freq, curve);
-                (name.clone(), interpolated)
+                let interpolated_spl = interpolate_spl(standard_freq.as_slice().unwrap(), curve);
+                let offset_spl: Vec<f64> = interpolated_spl
+                    .iter()
+                    .map(|v| v + normalization_offset)
+                    .collect();
+
+                let curve_obj = autoeq::Curve {
+                    freq: ndarray::Array1::from(standard_freq.clone()),
+                    spl: ndarray::Array1::from(offset_spl),
+                    phase: None,
+                };
+                (name.clone(), curve_obj)
             })
             .collect::<HashMap<String, autoeq::Curve>>()
     });
@@ -1787,4 +1805,65 @@ fn generate_dummy_result() -> SpeakerOptimizationResult {
         driver_gains: None,
         driver_delays: None,
     }
+}
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/// Interpolate SPL curve to target frequencies using linear interpolation (log-freq x-axis)
+fn interpolate_spl(target_freq: &[f64], source_curve: &autoeq::Curve) -> Vec<f64> {
+    if source_curve.freq.is_empty() {
+        return vec![0.0; target_freq.len()];
+    }
+
+    let src_freq = &source_curve.freq;
+    let src_spl = &source_curve.spl;
+
+    // Convert to Vec for binary_search (assuming src_freq is sorted)
+    // ndarray 1D is usually contiguous, but let's be safe
+    let src_freq_vec: Vec<f64> = src_freq.iter().copied().collect();
+    let src_spl_vec: Vec<f64> = src_spl.iter().copied().collect();
+
+    target_freq
+        .iter()
+        .map(|&f| {
+            // Find index in src_freq
+            match src_freq_vec.binary_search_by(|probe| {
+                probe.partial_cmp(&f).unwrap_or(std::cmp::Ordering::Equal)
+            }) {
+                Ok(idx) => src_spl_vec[idx],
+                Err(idx) => {
+                    if idx == 0 {
+                        src_spl_vec[0]
+                    } else if idx >= src_freq_vec.len() {
+                        *src_spl_vec.last().unwrap()
+                    } else {
+                        // Linear interpolation on log10(freq)
+                        let f0 = src_freq_vec[idx - 1];
+                        let f1 = src_freq_vec[idx];
+                        let s0 = src_spl_vec[idx - 1];
+                        let s1 = src_spl_vec[idx];
+
+                        let t = (f.log10() - f0.log10()) / (f1.log10() - f0.log10());
+                        s0 + t * (s1 - s0)
+                    }
+                }
+            }
+        })
+        .collect()
+}
+
+/// Calculate average offset between two curves
+fn calculate_offset(normalized: &[f64], original: &[f64]) -> f64 {
+    let count = normalized.len().min(original.len());
+    if count == 0 {
+        return 0.0;
+    }
+    let sum_diff: f64 = normalized
+        .iter()
+        .zip(original.iter())
+        .map(|(n, o)| n - o)
+        .sum();
+    sum_diff / count as f64
 }

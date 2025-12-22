@@ -27,26 +27,6 @@ impl PlayerView {
         .detach();
     }
 
-    pub(crate) fn browse_headphone_eq_target(&mut self, cx: &mut Context<Self>) {
-        let state_entity = self.state.clone();
-        cx.spawn(async move |_, cx| {
-            let file = rfd::AsyncFileDialog::new()
-                .add_filter("CSV Files", &["csv", "txt"])
-                .set_title("Select Custom Target Curve")
-                .pick_file()
-                .await;
-
-            if let Some(file) = file {
-                let path = file.path().to_string_lossy().to_string();
-                let _ = state_entity.update(&mut cx.clone(), |state, _| {
-                    state.app.headphone_eq_state.custom_target_path = Some(path);
-                    state.app.headphone_eq_state.target_preset = "custom".to_string();
-                });
-            }
-        })
-        .detach();
-    }
-
     pub(crate) fn start_headphone_eq_optimization(&mut self, cx: &mut Context<Self>) {
         let state = self.state.read(cx);
         let measurement_path = state.app.headphone_eq_state.measurement_path.clone();
@@ -90,7 +70,7 @@ impl PlayerView {
             let result = cx
                 .background_executor()
                 .spawn(async move {
-                    // Construct params
+                    // Construct params - use all config fields
                     let params = OptimizationParams {
                         num_filters: config.num_filters,
                         min_q: config.min_q,
@@ -102,7 +82,17 @@ impl PlayerView {
                         maxeval: config.max_iter,
                         loss: config.loss,
                         algo: config.algorithm.to_autoeq_string().to_string(),
-                        // Fill defaults for others
+                        peq_model: config.peq_model,
+                        population: config.population,
+                        de_f: config.de_f,
+                        de_cr: config.de_cr,
+                        strategy: config.strategy,
+                        tolerance: config.tolerance,
+                        refine: config.refine,
+                        local_algo: config.local_algo,
+                        smooth: config.smooth,
+                        smooth_n: config.smooth_n,
+                        // Fill defaults for others (sample_rate, spacing params, adaptive weights)
                         ..OptimizationParams::headphone_defaults()
                     };
 
