@@ -30,6 +30,33 @@
 //!         println!("Current text: {}", text);
 //!     })
 //! ```
+//!
+//! # Thread-Local State Pattern
+//!
+//! This component uses `thread_local!` storage to persist focus handles and
+//! edit state across renders. This is necessary because GPUI's `RenderOnce`
+//! components are recreated on each render, but we need state to persist:
+//!
+//! - **Focus handles**: Must be the same instance across renders or focus is lost
+//! - **Edit state**: Cursor position, text, and selection must persist during editing
+//!
+//! ## Memory Considerations
+//!
+//! The thread-local `HashMap` entries grow as new element IDs are used and are
+//! never automatically cleaned up. For most applications this is fine because:
+//! - Element IDs are typically static or part of a bounded set
+//! - The stored data is small (FocusHandle, EditState)
+//!
+//! If you have dynamic element IDs (e.g., from a virtualized list), consider:
+//! 1. Using a stable ID scheme that reuses IDs
+//! 2. Calling `cleanup_input_state(id)` when components are removed
+//!
+//! ## Cleanup Function
+//!
+//! To manually clean up state for a removed element:
+//! ```rust,ignore
+//! cleanup_input_state(&element_id);
+//! ```
 
 use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::*;
@@ -51,6 +78,25 @@ thread_local! {
 // across renders. Without this, every re-render would reset the editing state.
 thread_local! {
     static EDIT_STATES: RefCell<HashMap<ElementId, Rc<RefCell<EditState>>>> = RefCell::new(HashMap::new());
+}
+
+/// Clean up thread-local state for an Input element.
+///
+/// Call this when removing an Input with a dynamic element ID to prevent
+/// memory leaks. For static element IDs, cleanup is not necessary.
+///
+/// # Example
+/// ```rust,ignore
+/// // When removing a dynamically-created Input
+/// cleanup_input_state(&ElementId::Name(format!("input-{}", item_id).into()));
+/// ```
+pub fn cleanup_input_state(id: &ElementId) {
+    FOCUS_HANDLES.with(|handles| {
+        handles.borrow_mut().remove(id);
+    });
+    EDIT_STATES.with(|states| {
+        states.borrow_mut().remove(id);
+    });
 }
 
 /// Theme colors for input styling
@@ -131,6 +177,16 @@ pub enum InputSize {
     Md,
     /// Large input
     Lg,
+}
+
+impl From<crate::ComponentSize> for InputSize {
+    fn from(size: crate::ComponentSize) -> Self {
+        match size {
+            crate::ComponentSize::Xs | crate::ComponentSize::Sm => Self::Sm,
+            crate::ComponentSize::Md => Self::Md,
+            crate::ComponentSize::Lg | crate::ComponentSize::Xl => Self::Lg,
+        }
+    }
 }
 
 /// Input visual variant
@@ -301,9 +357,20 @@ impl EditState {
             return;
         }
         if self.cursor > 0 {
-            let mut chars: Vec<char> = self.text.chars().collect();
-            chars.remove(self.cursor - 1);
-            self.text = chars.into_iter().collect();
+            // Find byte positions for character before cursor
+            let byte_pos = self
+                .text
+                .char_indices()
+                .nth(self.cursor - 1)
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            let next_byte = self
+                .text
+                .char_indices()
+                .nth(self.cursor)
+                .map(|(i, _)| i)
+                .unwrap_or(self.text.len());
+            self.text.replace_range(byte_pos..next_byte, "");
             self.cursor -= 1;
         }
     }
@@ -314,19 +381,33 @@ impl EditState {
         }
         let len = self.text.chars().count();
         if self.cursor < len {
-            let mut chars: Vec<char> = self.text.chars().collect();
-            chars.remove(self.cursor);
-            self.text = chars.into_iter().collect();
+            // Find byte positions for character at cursor
+            let byte_pos = self
+                .text
+                .char_indices()
+                .nth(self.cursor)
+                .map(|(i, _)| i)
+                .unwrap_or(self.text.len());
+            let next_byte = self
+                .text
+                .char_indices()
+                .nth(self.cursor + 1)
+                .map(|(i, _)| i)
+                .unwrap_or(self.text.len());
+            self.text.replace_range(byte_pos..next_byte, "");
         }
     }
 
     fn insert_text(&mut self, char_text: &str) {
         self.delete_selection();
-        let mut chars: Vec<char> = self.text.chars().collect();
-        for (i, c) in char_text.chars().enumerate() {
-            chars.insert(self.cursor + i, c);
-        }
-        self.text = chars.into_iter().collect();
+        // Find byte position for insertion
+        let byte_pos = self
+            .text
+            .char_indices()
+            .nth(self.cursor)
+            .map(|(i, _)| i)
+            .unwrap_or(self.text.len());
+        self.text.insert_str(byte_pos, char_text);
         self.cursor += char_text.chars().count();
     }
 

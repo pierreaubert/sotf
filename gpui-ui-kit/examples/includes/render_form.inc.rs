@@ -156,7 +156,7 @@ impl Showcase {
                                 .value(slider_value)
                                 .min(0.0)
                                 .max(1.0)
-                                .size(SliderSize::Medium)
+                                .size(SliderSize::Md)
                                 .on_change({
                                     let entity = entity.clone();
                                     move |value, _window, cx| {

@@ -14,6 +14,33 @@
 //!
 //! The component handles its own editing state internally - just provide
 //! an `on_change` callback to receive value updates.
+//!
+//! # Thread-Local State Pattern
+//!
+//! This component uses `thread_local!` storage to persist focus handles and
+//! edit state across renders. This is necessary because GPUI's `RenderOnce`
+//! components are recreated on each render, but we need state to persist:
+//!
+//! - **Focus handles**: Must be the same instance across renders or focus is lost
+//! - **Edit state**: Cursor position, text, and selection must persist during editing
+//!
+//! ## Memory Considerations
+//!
+//! The thread-local `HashMap` entries grow as new element IDs are used and are
+//! never automatically cleaned up. For most applications this is fine because:
+//! - Element IDs are typically static or part of a bounded set
+//! - The stored data is small (FocusHandle, EditState)
+//!
+//! If you have dynamic element IDs (e.g., from a virtualized list), consider:
+//! 1. Using a stable ID scheme that reuses IDs
+//! 2. Calling `cleanup_number_input_state(id)` when components are removed
+//!
+//! ## Cleanup Function
+//!
+//! To manually clean up state for a removed element:
+//! ```rust,ignore
+//! cleanup_number_input_state(&element_id);
+//! ```
 
 use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::*;
@@ -30,6 +57,25 @@ thread_local! {
 // Thread-local registry for edit state, keyed by element ID.
 thread_local! {
     static NUMBER_INPUT_EDIT_STATES: RefCell<HashMap<ElementId, Rc<RefCell<NumberEditState>>>> = RefCell::new(HashMap::new());
+}
+
+/// Clean up thread-local state for a NumberInput element.
+///
+/// Call this when removing a NumberInput with a dynamic element ID to prevent
+/// memory leaks. For static element IDs, cleanup is not necessary.
+///
+/// # Example
+/// ```rust,ignore
+/// // When removing a dynamically-created NumberInput
+/// cleanup_number_input_state(&ElementId::Name(format!("input-{}", item_id).into()));
+/// ```
+pub fn cleanup_number_input_state(id: &ElementId) {
+    NUMBER_INPUT_FOCUS_HANDLES.with(|handles| {
+        handles.borrow_mut().remove(id);
+    });
+    NUMBER_INPUT_EDIT_STATES.with(|states| {
+        states.borrow_mut().remove(id);
+    });
 }
 
 /// Internal editing state for the number input
@@ -66,9 +112,22 @@ impl NumberEditState {
             self.cursor = 0;
             self.text_selected = false;
         } else if self.cursor > 0 {
-            let mut chars: Vec<char> = self.text.chars().collect();
-            chars.remove(self.cursor - 1);
-            self.text = chars.into_iter().collect();
+            // Find byte position of character before cursor
+            // Since we only allow ASCII input, cursor == byte position
+            // but we handle it correctly for safety
+            let byte_pos = self
+                .text
+                .char_indices()
+                .nth(self.cursor - 1)
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            let next_byte = self
+                .text
+                .char_indices()
+                .nth(self.cursor)
+                .map(|(i, _)| i)
+                .unwrap_or(self.text.len());
+            self.text.replace_range(byte_pos..next_byte, "");
             self.cursor -= 1;
         }
     }
@@ -81,15 +140,26 @@ impl NumberEditState {
         } else {
             let len = self.text.chars().count();
             if self.cursor < len {
-                let mut chars: Vec<char> = self.text.chars().collect();
-                chars.remove(self.cursor);
-                self.text = chars.into_iter().collect();
+                // Find byte positions for character at cursor
+                let byte_pos = self
+                    .text
+                    .char_indices()
+                    .nth(self.cursor)
+                    .map(|(i, _)| i)
+                    .unwrap_or(self.text.len());
+                let next_byte = self
+                    .text
+                    .char_indices()
+                    .nth(self.cursor + 1)
+                    .map(|(i, _)| i)
+                    .unwrap_or(self.text.len());
+                self.text.replace_range(byte_pos..next_byte, "");
             }
         }
     }
 
     fn insert_char(&mut self, ch: char) {
-        // Only allow valid numeric characters
+        // Only allow valid numeric characters (all ASCII, so 1 byte each)
         if !ch.is_ascii_digit() && ch != '.' && ch != '-' && ch != '+' {
             return;
         }
@@ -100,9 +170,14 @@ impl NumberEditState {
             self.text_selected = false;
         }
 
-        let mut chars: Vec<char> = self.text.chars().collect();
-        chars.insert(self.cursor, ch);
-        self.text = chars.into_iter().collect();
+        // Find byte position for insertion
+        let byte_pos = self
+            .text
+            .char_indices()
+            .nth(self.cursor)
+            .map(|(i, _)| i)
+            .unwrap_or(self.text.len());
+        self.text.insert(byte_pos, ch);
         self.cursor += 1;
     }
 
@@ -203,6 +278,16 @@ pub enum NumberInputSize {
     Lg,
 }
 
+impl From<crate::ComponentSize> for NumberInputSize {
+    fn from(size: crate::ComponentSize) -> Self {
+        match size {
+            crate::ComponentSize::Xs | crate::ComponentSize::Sm => Self::Sm,
+            crate::ComponentSize::Md => Self::Md,
+            crate::ComponentSize::Lg | crate::ComponentSize::Xl => Self::Lg,
+        }
+    }
+}
+
 impl NumberInputSize {
     fn height(&self) -> f32 {
         match self {
@@ -285,13 +370,35 @@ impl NumberInput {
     }
 
     /// Set the minimum value
+    ///
+    /// # Panics
+    /// Panics if min > max after this call
     pub fn min(mut self, min: f64) -> Self {
         self.min = min;
         self
     }
 
     /// Set the maximum value
+    ///
+    /// # Panics
+    /// Panics if min > max after this call
     pub fn max(mut self, max: f64) -> Self {
+        self.max = max;
+        self
+    }
+
+    /// Set both min and max values at once
+    ///
+    /// # Panics
+    /// Panics if min > max
+    pub fn range(mut self, min: f64, max: f64) -> Self {
+        assert!(
+            min <= max,
+            "NumberInput range invalid: min ({}) > max ({})",
+            min,
+            max
+        );
+        self.min = min;
         self.max = max;
         self
     }

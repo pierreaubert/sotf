@@ -61,26 +61,39 @@ impl From<&Theme> for SliderTheme {
 /// Slider size variants
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum SliderSize {
-    Small,
+    /// Small size
+    Sm,
+    /// Medium size (default)
     #[default]
-    Medium,
-    Large,
+    Md,
+    /// Large size
+    Lg,
 }
 
 impl SliderSize {
     fn track_height(&self) -> f32 {
         match self {
-            Self::Small => 4.0,
-            Self::Medium => 6.0,
-            Self::Large => 8.0,
+            Self::Sm => 4.0,
+            Self::Md => 6.0,
+            Self::Lg => 8.0,
         }
     }
 
     fn thumb_size(&self) -> f32 {
         match self {
-            Self::Small => 14.0,
-            Self::Medium => 18.0,
-            Self::Large => 22.0,
+            Self::Sm => 14.0,
+            Self::Md => 18.0,
+            Self::Lg => 22.0,
+        }
+    }
+}
+
+impl From<crate::ComponentSize> for SliderSize {
+    fn from(size: crate::ComponentSize) -> Self {
+        match size {
+            crate::ComponentSize::Xs | crate::ComponentSize::Sm => Self::Sm,
+            crate::ComponentSize::Md => Self::Md,
+            crate::ComponentSize::Lg | crate::ComponentSize::Xl => Self::Lg,
         }
     }
 }
@@ -144,13 +157,35 @@ impl Slider {
     }
 
     /// Set the minimum value
+    ///
+    /// # Panics
+    /// Panics if min > max after this call
     pub fn min(mut self, min: f32) -> Self {
         self.min = min;
         self
     }
 
     /// Set the maximum value
+    ///
+    /// # Panics
+    /// Panics if min > max after this call
     pub fn max(mut self, max: f32) -> Self {
+        self.max = max;
+        self
+    }
+
+    /// Set both min and max values at once
+    ///
+    /// # Panics
+    /// Panics if min > max
+    pub fn range(mut self, min: f32, max: f32) -> Self {
+        assert!(
+            min <= max,
+            "Slider range invalid: min ({}) > max ({})",
+            min,
+            max
+        );
+        self.min = min;
         self.max = max;
         self
     }

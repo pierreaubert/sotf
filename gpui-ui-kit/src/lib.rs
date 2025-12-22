@@ -28,6 +28,7 @@ pub mod toast;
 
 // Shared utilities
 pub mod scale;
+pub mod size;
 
 // Form components
 pub mod autoeq_form;
@@ -99,8 +100,8 @@ pub use autoeq_form::{
 pub use checkbox::{Checkbox, CheckboxSize};
 pub use color::Color;
 pub use color_picker::{ColorPickerMode, ColorPickerView};
-pub use input::{Input, InputSize, InputVariant};
-pub use number_input::{NumberInput, NumberInputSize, NumberInputTheme};
+pub use input::{Input, InputSize, InputVariant, cleanup_input_state};
+pub use number_input::{NumberInput, NumberInputSize, NumberInputTheme, cleanup_number_input_state};
 pub use potentiometer::{Potentiometer, PotentiometerScale, PotentiometerSize, PotentiometerTheme};
 pub use select::{Select, SelectOption, SelectSize, SelectTheme};
 pub use slider::{Slider, SliderSize, SliderTheme};
@@ -140,3 +141,6 @@ pub use workflow::{
     NodeContent, NodeId, Port, PortDirection, Position, SelectionState, ViewportState,
     WorkflowCanvas, WorkflowGraph, WorkflowNode, WorkflowNodeData, WorkflowTheme,
 };
+
+// Shared size definitions
+pub use size::ComponentSize;
