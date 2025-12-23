@@ -16,7 +16,8 @@
 //! - Linear or logarithmic scale
 
 use crate::scale::Scale;
-use crate::theme::{Theme, ThemeExt};
+use crate::theme::ThemeExt;
+use crate::ComponentTheme;
 use gpui::prelude::*;
 use gpui::*;
 
@@ -25,71 +26,41 @@ use gpui::*;
 pub type VerticalSliderScale = Scale;
 
 /// Theme colors for vertical slider styling
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, ComponentTheme)]
 pub struct VerticalSliderTheme {
     /// Background color of the slider container
+    #[theme(default = 0x2a2a2aff, from = surface)]
     pub surface: Rgba,
     /// Surface hover color
+    #[theme(default = 0x3a3a3aff, from = surface_hover)]
     pub surface_hover: Rgba,
     /// Track background color
+    #[theme(default = 0x1a1a1aff, from = muted)]
     pub track_bg: Rgba,
     /// Fill color (accent)
+    #[theme(default = 0x007accff, from = accent)]
     pub accent: Rgba,
     /// Accent muted (for selection background)
+    #[theme(default = 0x007acc33, from_expr = "Rgba { r: theme.accent.r, g: theme.accent.g, b: theme.accent.b, a: 0.2 }")]
     pub accent_muted: Rgba,
     /// Border color
+    #[theme(default = 0x3a3a3aff, from = border)]
     pub border: Rgba,
     /// Label text color
+    #[theme(default = 0xaaaaaaff, from = text_secondary)]
     pub text_secondary: Rgba,
     /// Value text color
+    #[theme(default = 0xffffffff, from = text_primary)]
     pub text_primary: Rgba,
     /// Muted text color (for scale markers)
+    #[theme(default = 0x888888ff, from = text_muted)]
     pub text_muted: Rgba,
     /// Text on accent background
+    #[theme(default = 0xffffffff, from = text_primary)]
     pub text_on_accent: Rgba,
     /// Background secondary (for value badge)
+    #[theme(default = 0x2a2a2aff, from = surface)]
     pub background_secondary: Rgba,
-}
-
-impl Default for VerticalSliderTheme {
-    fn default() -> Self {
-        Self {
-            surface: rgba(0x2a2a2aff),
-            surface_hover: rgba(0x3a3a3aff),
-            track_bg: rgba(0x1a1a1aff),
-            accent: rgba(0x007accff),
-            accent_muted: rgba(0x007acc33),
-            border: rgba(0x3a3a3aff),
-            text_secondary: rgba(0xaaaaaaff),
-            text_primary: rgba(0xffffffff),
-            text_muted: rgba(0x888888ff),
-            text_on_accent: rgba(0xffffffff),
-            background_secondary: rgba(0x2a2a2aff),
-        }
-    }
-}
-
-impl From<&Theme> for VerticalSliderTheme {
-    fn from(theme: &Theme) -> Self {
-        Self {
-            surface: theme.surface,
-            surface_hover: theme.surface_hover,
-            track_bg: theme.muted,
-            accent: theme.accent,
-            accent_muted: Rgba {
-                r: theme.accent.r,
-                g: theme.accent.g,
-                b: theme.accent.b,
-                a: 0.2,
-            },
-            border: theme.border,
-            text_secondary: theme.text_secondary,
-            text_primary: theme.text_primary,
-            text_muted: theme.text_muted,
-            text_on_accent: theme.text_primary,
-            background_secondary: theme.surface,
-        }
-    }
 }
 
 /// Vertical slider size variants

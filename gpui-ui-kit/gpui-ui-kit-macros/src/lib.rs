@@ -24,6 +24,9 @@ use syn::punctuated::Punctuated;
 /// - `default_f32 = 0.5` - f32 literal for Default impl
 /// - `from_expr = "0.5"` - constant value for From impl
 ///
+/// For arbitrary default expressions (Option types, nested themes, etc.):
+/// - `default_expr = "None"` - arbitrary expression for Default impl
+///
 /// # Example
 ///
 /// ```ignore
@@ -39,6 +42,9 @@ use syn::punctuated::Punctuated;
 ///
 ///     #[theme(default_f32 = 0.5, from_expr = "0.5")]
 ///     pub disabled_opacity: f32,
+///
+///     #[theme(default_expr = "None", from_expr = "None")]
+///     pub optional_color: Option<Rgba>,
 /// }
 /// ```
 #[proc_macro_derive(ComponentTheme, attributes(theme))]
@@ -69,6 +75,7 @@ pub fn derive_component_theme(input: TokenStream) -> TokenStream {
 
         let mut default_value: Option<u32> = None;
         let mut default_f32: Option<f64> = None;
+        let mut default_expr_str: Option<String> = None;
         let mut from_field: Option<syn::Ident> = None;
         let mut from_expr: Option<String> = None;
 
@@ -102,6 +109,13 @@ pub fn derive_component_theme(input: TokenStream) -> TokenStream {
                                 }
                             }
                         }
+                        "default_expr" => {
+                            if let Expr::Lit(lit) = &nv.value {
+                                if let Lit::Str(s) = &lit.lit {
+                                    default_expr_str = Some(s.value());
+                                }
+                            }
+                        }
                         "from" => {
                             if let Expr::Path(path) = &nv.value {
                                 from_field = path.path.get_ident().cloned();
@@ -122,7 +136,14 @@ pub fn derive_component_theme(input: TokenStream) -> TokenStream {
         }
 
         // Generate Default field based on type
-        if let Some(f32_val) = default_f32 {
+        if let Some(expr_str) = default_expr_str {
+            // Arbitrary expression (for Option types, nested themes, etc.)
+            let expr: syn::Expr = syn::parse_str(&expr_str)
+                .expect(&format!("Failed to parse default_expr for field `{}`", field_name));
+            default_fields.push(quote! {
+                #field_name: #expr
+            });
+        } else if let Some(f32_val) = default_f32 {
             // f32 field
             default_fields.push(quote! {
                 #field_name: #f32_val as f32
@@ -142,7 +163,7 @@ pub fn derive_component_theme(input: TokenStream) -> TokenStream {
             });
         } else {
             panic!(
-                "Field `{}` is missing `default` or `default_f32` in #[theme(...)]",
+                "Field `{}` is missing `default`, `default_f32`, or `default_expr` in #[theme(...)]",
                 field_name
             );
         }

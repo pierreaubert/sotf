@@ -3,6 +3,7 @@
 //! Provides a flexible button component with different visual styles.
 
 use crate::theme::{ThemeExt, glow_shadow};
+use crate::ComponentTheme;
 use gpui::prelude::*;
 use gpui::*;
 
@@ -48,34 +49,27 @@ impl From<crate::ComponentSize> for ButtonSize {
 }
 
 /// Theme colors for button styling
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, ComponentTheme)]
 pub struct ButtonTheme {
+    #[theme(default = 0x007acc, from = accent)]
     pub accent: Rgba,
+    #[theme(default = 0x0098ff, from = accent_hover)]
     pub accent_hover: Rgba,
+    #[theme(default = 0x3c3c3c, from = surface)]
     pub surface: Rgba,
+    #[theme(default = 0x4a4a4a, from = surface_hover)]
     pub surface_hover: Rgba,
+    #[theme(default = 0xffffff, from = text_primary)]
     pub text_primary: Rgba,
+    #[theme(default = 0xcccccc, from = text_secondary)]
     pub text_secondary: Rgba,
     /// Text color for Primary variant buttons (on accent background)
+    #[theme(default = 0xffffff, from = text_primary)]
     pub text_on_accent: Rgba,
+    #[theme(default = 0xcc3333, from = error)]
     pub error: Rgba,
+    #[theme(default = 0x555555, from = border)]
     pub border: Rgba,
-}
-
-impl Default for ButtonTheme {
-    fn default() -> Self {
-        Self {
-            accent: rgb(0x007acc),
-            accent_hover: rgb(0x0098ff),
-            surface: rgb(0x3c3c3c),
-            surface_hover: rgb(0x4a4a4a),
-            text_primary: rgb(0xffffff),
-            text_secondary: rgb(0xcccccc),
-            text_on_accent: rgb(0xffffff),
-            error: rgb(0xcc3333),
-            border: rgb(0x555555),
-        }
-    }
 }
 
 /// A styled button component

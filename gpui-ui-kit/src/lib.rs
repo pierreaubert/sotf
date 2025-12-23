@@ -31,18 +31,18 @@ pub mod scale;
 pub mod size;
 
 // Form components
-pub mod autoeq_form;
+pub mod autoeq;
 pub mod checkbox;
 pub mod color;
 pub mod color_picker;
 pub mod input;
 pub mod number_input;
-pub mod potentiometer;
 pub mod select;
 pub mod slider;
 pub mod toggle;
-pub mod vertical_slider;
-pub mod volume_knob;
+
+// audio
+pub mod audio;
 
 // Data display
 pub mod avatar;
@@ -92,7 +92,7 @@ pub use alert::{Alert, AlertVariant, InlineAlert};
 pub use toast::{Toast, ToastContainer, ToastPosition, ToastVariant};
 
 // Form
-pub use autoeq_form::{
+pub use autoeq::{
     ALGORITHM_OPTIONS, AutoEqConfig, AutoEqForm, AutoEqFormTheme, AutoEqFormUiState,
     DE_STRATEGY_OPTIONS, HEADPHONE_TARGET_CURVE_OPTIONS, LOCAL_ALGO_OPTIONS, OptimizationType,
     PEQ_MODEL_OPTIONS, ParamLimits, SPEAKER_TARGET_CURVE_OPTIONS, SPINORAMA_CURVE_OPTIONS,
@@ -102,14 +102,14 @@ pub use color::Color;
 pub use color_picker::{ColorPickerMode, ColorPickerView};
 pub use input::{Input, InputSize, InputVariant, cleanup_input_state};
 pub use number_input::{NumberInput, NumberInputSize, NumberInputTheme, cleanup_number_input_state};
-pub use potentiometer::{Potentiometer, PotentiometerScale, PotentiometerSize, PotentiometerTheme};
+pub use audio::potentiometer::{Potentiometer, PotentiometerScale, PotentiometerSize, PotentiometerTheme};
 pub use select::{Select, SelectOption, SelectSize, SelectTheme};
 pub use slider::{Slider, SliderSize, SliderTheme};
 pub use toggle::{Toggle, ToggleSize, ToggleStyle, ToggleTheme};
-pub use vertical_slider::{
+pub use audio::vertical_slider::{
     VerticalSlider, VerticalSliderScale, VerticalSliderSize, VerticalSliderTheme,
 };
-pub use volume_knob::{VolumeKnob, VolumeKnobTheme};
+pub use audio::volume_knob::{VolumeKnob, VolumeKnobTheme};
 
 // Data display
 pub use avatar::{Avatar, AvatarGroup, AvatarShape, AvatarSize, AvatarStatus};

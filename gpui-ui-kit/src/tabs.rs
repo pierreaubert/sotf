@@ -2,83 +2,56 @@
 //!
 //! Provides a horizontal tab bar with content panels and theming support.
 
-use crate::theme::{Theme, ThemeExt, glow_shadow};
+use crate::theme::{ThemeExt, glow_shadow};
+use crate::ComponentTheme;
 use gpui::prelude::*;
 use gpui::*;
 
 /// Theme colors for tabs styling
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, ComponentTheme)]
 pub struct TabsTheme {
     /// Background color for the container (Pills variant)
+    #[theme(default = 0x2a2a2aff, from = surface)]
     pub container_bg: Rgba,
     /// Border color for the container (Underline variant)
+    #[theme(default = 0x3a3a3aff, from = border)]
     pub container_border: Rgba,
     /// Background color for selected tab
+    #[theme(default = 0x3a3a3aff, from = surface_hover)]
     pub selected_bg: Rgba,
     /// Background color for selected tab on hover
+    #[theme(default = 0x4a4a4aff, from = surface_hover)]
     pub selected_hover_bg: Rgba,
     /// Background color for unselected tab on hover
+    #[theme(default = 0x2a2a2aff, from = surface)]
     pub hover_bg: Rgba,
     /// Accent color (underline, selected pill)
+    #[theme(default = 0x007accff, from = accent)]
     pub accent: Rgba,
     /// Text color for selected tab
+    #[theme(default = 0xffffffff, from = text_primary)]
     pub text_selected: Rgba,
     /// Text color for unselected tab
+    #[theme(default = 0x888888ff, from = text_muted)]
     pub text_unselected: Rgba,
     /// Text color on hover
+    #[theme(default = 0xccccccff, from = text_secondary)]
     pub text_hover: Rgba,
     /// Badge background color
+    #[theme(default = 0x555555ff, from = muted)]
     pub badge_bg: Rgba,
     /// Close button color
+    #[theme(default = 0x888888ff, from = text_muted)]
     pub close_color: Rgba,
     /// Close button hover color
+    #[theme(default = 0xffffffff, from = text_primary)]
     pub close_hover_color: Rgba,
     /// Icon color for selected tab (defaults to text_selected if not set)
+    #[theme(default_expr = "None", from_expr = "None")]
     pub icon_selected: Option<Rgba>,
     /// Icon color for unselected tab (defaults to accent if not set)
+    #[theme(default_expr = "None", from_expr = "None")]
     pub icon_unselected: Option<Rgba>,
-}
-
-impl Default for TabsTheme {
-    fn default() -> Self {
-        Self {
-            container_bg: rgba(0x2a2a2aff),
-            container_border: rgba(0x3a3a3aff),
-            selected_bg: rgba(0x3a3a3aff),
-            selected_hover_bg: rgba(0x4a4a4aff),
-            hover_bg: rgba(0x2a2a2aff),
-            accent: rgba(0x007accff),
-            text_selected: rgba(0xffffffff),
-            text_unselected: rgba(0x888888ff),
-            text_hover: rgba(0xccccccff),
-            badge_bg: rgba(0x555555ff),
-            close_color: rgba(0x888888ff),
-            close_hover_color: rgba(0xffffffff),
-            icon_selected: None,
-            icon_unselected: None,
-        }
-    }
-}
-
-impl From<&Theme> for TabsTheme {
-    fn from(theme: &Theme) -> Self {
-        Self {
-            container_bg: theme.surface,
-            container_border: theme.border,
-            selected_bg: theme.surface_hover,
-            selected_hover_bg: theme.surface_hover,
-            hover_bg: theme.surface,
-            accent: theme.accent,
-            text_selected: theme.text_primary,
-            text_unselected: theme.text_muted,
-            text_hover: theme.text_secondary,
-            badge_bg: theme.muted,
-            close_color: theme.text_muted,
-            close_hover_color: theme.text_primary,
-            icon_selected: None,
-            icon_unselected: None,
-        }
-    }
 }
 
 /// Tab visual variant

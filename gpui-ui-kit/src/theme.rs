@@ -340,22 +340,3 @@ pub fn glow_shadow(color: Rgba) -> Vec<BoxShadow> {
     ]
 }
 
-// Conversions to component themes
-use crate::button::ButtonTheme;
-
-impl From<&Theme> for ButtonTheme {
-    fn from(theme: &Theme) -> Self {
-        ButtonTheme {
-            accent: theme.accent,
-            accent_hover: theme.accent_hover,
-            surface: theme.surface,
-            surface_hover: theme.surface_hover,
-            text_primary: theme.text_primary,
-            text_secondary: theme.text_secondary,
-            // For generic themes, use text_primary as fallback for text on accent backgrounds
-            text_on_accent: theme.text_primary,
-            error: theme.error,
-            border: theme.border,
-        }
-    }
-}
