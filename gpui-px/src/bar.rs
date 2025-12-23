@@ -354,6 +354,7 @@ impl BarChart {
                 LegendPosition::Top | LegendPosition::Bottom => {
                     (horizontal_legend_width, horizontal_legend_height)
                 }
+                LegendPosition::Hidden => (0.0, 0.0),
             }
         } else {
             (0.0, 0.0)
@@ -703,6 +704,9 @@ impl BarChart {
                             .child(chart_content)
                             .child(div().h(px(legend_height)).child(legend_row)),
                     );
+                }
+                LegendPosition::Hidden => {
+                    container = container.child(div().relative().child(chart_content));
                 }
             }
         } else {

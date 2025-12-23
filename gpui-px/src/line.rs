@@ -27,6 +27,8 @@ pub enum LegendPosition {
     Top,
     /// Legend below the chart
     Bottom,
+    /// Legend is hidden
+    Hidden,
 }
 
 /// Theme for chart styling
@@ -701,6 +703,7 @@ impl LineChart {
                 LegendPosition::Top | LegendPosition::Bottom => {
                     (horizontal_legend_width, horizontal_legend_height)
                 }
+                LegendPosition::Hidden => (0.0, 0.0),
             }
         } else {
             (0.0, 0.0)
@@ -1447,6 +1450,10 @@ impl LineChart {
                             .child(chart_content)
                             .child(div().h(px(legend_height)).child(legend_row)),
                     );
+                }
+                LegendPosition::Hidden => {
+                    // No legend, just add chart content
+                    container = container.child(div().relative().child(chart_content));
                 }
             }
         } else {

@@ -1,6 +1,6 @@
 [package]
 name = "gpui-px"
-version = "0.1.16"
+version = "0.1.17"
 authors.workspace = true
 edition.workspace = true
 license = "ISC"
@@ -25,3 +25,14 @@ path = "examples/showcase.rs"
 name = "logscale_demo"
 path = "examples/logscale_demo.rs"
 required-features = ["gpui"]
+
+[[example]]
+name = "spinorama_demo"
+path = "examples/spinorama_demo.rs"
+required-features = ["gpui"]
+
+[dev-dependencies]
+autoeq = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+reqwest = { workspace = true }
+urlencoding = { workspace = true }
