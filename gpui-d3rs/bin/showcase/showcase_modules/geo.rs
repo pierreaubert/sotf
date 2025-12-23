@@ -1,6 +1,6 @@
 use d3rs::geo::{
     ConicEqualArea, Equirectangular, GeoPath, Graticule, Mercator, Orthographic, Projection,
-    Rotation, Stereographic,
+    Stereographic,
 };
 use gpui::*;
 
@@ -488,34 +488,15 @@ fn project_point(
     rotation_lon: f64,
     rotation_lat: f64,
 ) -> Option<(f64, f64)> {
-    // Apply rotation to the longitude/latitude
-    // NOTE: d3rs::geo::rotate is a trait method, but here we do it manually or via Rotation helper if accessible.
-    // However, the previous project_point implementation did simple addition, which is WRONG for latitude.
-    // The previous implementation was:
-    // let rotated_lon = lon + rotation_lon;
-    // let rotated_lat = lat + rotation_lat;
-
-    // Now we use the proper Rotation helper from d3rs
-    let rot = Rotation::new().angles(rotation_lon, rotation_lat, 0.0);
-    let (rotated_lon, rotated_lat) = rot.rotate(lon, lat);
-
     // Check if point is visible (especially for azimuthal projections)
-    match proj_type {
-        GeoProjectionType::Orthographic | GeoProjectionType::Stereographic => {
-            // Simple visibility check for azimuthal projections
-            // This is a rough approximation. True check uses clipping.
-            // For Orthographic, clip if cos(c) < 0 where c is distance from center.
-            // Here we just check if it's "behind" the globe broadly.
-            // A point is visible if dot product of normal and view vector > 0.
-            // For simplicity, let's trust d3rs projection might return values, but we need to filter NaNs.
-
-            // The previous check was:
-            // let lon_diff = rotated_lon.to_radians().cos();
-            // let lat_cos = rotated_lat.to_radians().cos();
-            // if lon_diff * lat_cos < 0.0 { return None; }
-        }
-        _ => {}
-    }
+    // For Orthographic/Stereographic, we need to check visibility relative to the rotation center.
+    // Since we are now using the projection's internal rotation, we can use the projection's capabilities
+    // if it exposed visibility checking. However, d3rs `project` just returns coords.
+    //
+    // For Orthographic, the clipping logic in `render_cities` handles the "behind the globe" check
+    // based on distance from center, which works reasonably well for centered globes.
+    //
+    // For now, we delegate visibility filtering to the caller or accept that points might wrap around.
 
     let scale = match proj_type {
         GeoProjectionType::Mercator => map_height / 3.0,
@@ -527,36 +508,40 @@ fn project_point(
 
     let (x, y) = match proj_type {
         GeoProjectionType::Mercator => {
-            let proj = Mercator::new().scale(scale).translate(center_x, center_y);
-            // We already rotated the point, so we project directly?
-            // NO, `projejct` expects unrotated if the projection itself handles rotation.
-            // But here we rotated MANUALLY above. So we project the rotated coords.
-            proj.project(rotated_lon, rotated_lat)
+            let proj = Mercator::new()
+                .scale(scale)
+                .translate(center_x, center_y)
+                .rotate(rotation_lon, rotation_lat, 0.0);
+            proj.project(lon, lat)
         }
         GeoProjectionType::Equirectangular => {
             let proj = Equirectangular::new()
                 .scale(scale)
-                .translate(center_x, center_y);
-            proj.project(rotated_lon, rotated_lat)
+                .translate(center_x, center_y)
+                .rotate(rotation_lon, rotation_lat, 0.0);
+            proj.project(lon, lat)
         }
         GeoProjectionType::Orthographic => {
             let proj = Orthographic::new()
                 .scale(scale)
-                .translate(center_x, center_y);
-            proj.project(rotated_lon, rotated_lat)
+                .translate(center_x, center_y)
+                .rotate(rotation_lon, rotation_lat, 0.0);
+            proj.project(lon, lat)
         }
         GeoProjectionType::Stereographic => {
             let proj = Stereographic::new()
                 .scale(scale)
-                .translate(center_x, center_y);
-            proj.project(rotated_lon, rotated_lat)
+                .translate(center_x, center_y)
+                .rotate(rotation_lon, rotation_lat, 0.0);
+            proj.project(lon, lat)
         }
         GeoProjectionType::ConicEqualArea => {
             let proj = ConicEqualArea::new()
                 .scale(scale)
                 .translate(center_x, center_y + 50.0)
-                .center(0.0, 30.0);
-            proj.project(rotated_lon, rotated_lat)
+                .center(0.0, 30.0)
+                .rotate(rotation_lon, rotation_lat, 0.0);
+            proj.project(lon, lat)
         }
     };
 
