@@ -18,55 +18,35 @@
 //!     })
 //! ```
 
-use crate::theme::{Theme, ThemeExt, glow_shadow};
+use crate::theme::{ThemeExt, glow_shadow};
+use crate::ComponentTheme;
 use gpui::prelude::*;
 use gpui::*;
 
 /// Theme colors for button set styling
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, ComponentTheme)]
 pub struct ButtonSetTheme {
     /// Background color for unselected buttons
+    #[theme(default = 0x3c3c3cff, from = surface)]
     pub bg: Rgba,
     /// Background color on hover
+    #[theme(default = 0x4a4a4aff, from = surface_hover)]
     pub bg_hover: Rgba,
     /// Background color for selected button
+    #[theme(default = 0x007accff, from = accent)]
     pub bg_selected: Rgba,
     /// Text color for unselected buttons
+    #[theme(default = 0xccccccff, from = text_secondary)]
     pub text_color: Rgba,
     /// Text color for selected button
+    #[theme(default = 0xffffffff, from = text_primary)]
     pub text_color_selected: Rgba,
     /// Border color
+    #[theme(default = 0x555555ff, from = border)]
     pub border: Rgba,
     /// Border color for selected button
+    #[theme(default = 0x007accff, from = accent)]
     pub border_selected: Rgba,
-}
-
-impl Default for ButtonSetTheme {
-    fn default() -> Self {
-        Self {
-            bg: rgba(0x3c3c3cff),
-            bg_hover: rgba(0x4a4a4aff),
-            bg_selected: rgba(0x007accff),
-            text_color: rgba(0xccccccff),
-            text_color_selected: rgba(0xffffffff),
-            border: rgba(0x555555ff),
-            border_selected: rgba(0x007accff),
-        }
-    }
-}
-
-impl From<&Theme> for ButtonSetTheme {
-    fn from(theme: &Theme) -> Self {
-        Self {
-            bg: theme.surface,
-            bg_hover: theme.surface_hover,
-            bg_selected: theme.accent,
-            text_color: theme.text_secondary,
-            text_color_selected: theme.text_primary,
-            border: theme.border,
-            border_selected: theme.accent,
-        }
-    }
 }
 
 /// Button set size variants
@@ -81,6 +61,17 @@ pub enum ButtonSetSize {
     Md,
     /// Large
     Lg,
+}
+
+impl From<crate::ComponentSize> for ButtonSetSize {
+    fn from(size: crate::ComponentSize) -> Self {
+        match size {
+            crate::ComponentSize::Xs => Self::Xs,
+            crate::ComponentSize::Sm => Self::Sm,
+            crate::ComponentSize::Md => Self::Md,
+            crate::ComponentSize::Lg | crate::ComponentSize::Xl => Self::Lg,
+        }
+    }
 }
 
 /// An option in the button set

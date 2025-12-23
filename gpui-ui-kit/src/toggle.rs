@@ -9,7 +9,8 @@
 //! - Optional label
 //! - Two visual styles: Sliding (iOS-style) and Segmented ([OFF|ON])
 
-use crate::theme::{Theme, ThemeExt};
+use crate::theme::ThemeExt;
+use crate::ComponentTheme;
 use gpui::prelude::*;
 use gpui::*;
 
@@ -59,6 +60,16 @@ impl ToggleSize {
     }
 }
 
+impl From<crate::ComponentSize> for ToggleSize {
+    fn from(size: crate::ComponentSize) -> Self {
+        match size {
+            crate::ComponentSize::Xs | crate::ComponentSize::Sm => Self::Sm,
+            crate::ComponentSize::Md => Self::Md,
+            crate::ComponentSize::Lg | crate::ComponentSize::Xl => Self::Lg,
+        }
+    }
+}
+
 /// Toggle visual style
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ToggleStyle {
@@ -70,70 +81,44 @@ pub enum ToggleStyle {
 }
 
 /// Theme colors for toggle styling
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, ComponentTheme)]
 pub struct ToggleTheme {
     /// Background when checked
+    #[theme(default = 0x007accff, from = accent)]
     pub checked_bg: Rgba,
     /// Background when unchecked
+    #[theme(default = 0x3a3a3aff, from = muted)]
     pub unchecked_bg: Rgba,
     /// Knob/thumb color when unchecked
+    #[theme(default = 0xffffffff, from = text_primary)]
     pub knob: Rgba,
     /// Knob/thumb color when checked (for contrast on light backgrounds)
+    #[theme(default = 0xffffffff, from = background)]
     pub knob_on_checked: Rgba,
     /// Track border color (for visibility on dark backgrounds)
+    #[theme(default = 0x3a3a3aff, from = border)]
     pub track_border: Rgba,
     /// Label text color
+    #[theme(default = 0xccccccff, from = text_secondary)]
     pub label: Rgba,
     /// Selected state accent color
+    #[theme(default = 0x007accff, from = accent)]
     pub accent: Rgba,
     /// Selected state background
+    #[theme(default = 0x007acc33, from = accent_muted)]
     pub accent_muted: Rgba,
     /// Success color for ON state (segmented style)
+    #[theme(default = 0x22c55eff, from = success)]
     pub success: Rgba,
     /// Border color
+    #[theme(default = 0x3a3a3aff, from = border)]
     pub border: Rgba,
     /// Text on accent background
+    #[theme(default = 0xffffffff, from = text_primary)]
     pub text_on_accent: Rgba,
     /// Muted text color
+    #[theme(default = 0x888888ff, from = text_muted)]
     pub text_muted: Rgba,
-}
-
-impl Default for ToggleTheme {
-    fn default() -> Self {
-        Self {
-            checked_bg: rgba(0x007accff),
-            unchecked_bg: rgba(0x3a3a3aff),
-            knob: rgba(0xffffffff),
-            knob_on_checked: rgba(0xffffffff),
-            track_border: rgba(0x3a3a3aff),
-            label: rgba(0xccccccff),
-            accent: rgba(0x007accff),
-            accent_muted: rgba(0x007acc33),
-            success: rgba(0x22c55eff),
-            border: rgba(0x3a3a3aff),
-            text_on_accent: rgba(0xffffffff),
-            text_muted: rgba(0x888888ff),
-        }
-    }
-}
-
-impl From<&Theme> for ToggleTheme {
-    fn from(theme: &Theme) -> Self {
-        Self {
-            checked_bg: theme.accent,
-            unchecked_bg: theme.muted,
-            knob: theme.text_primary,
-            knob_on_checked: theme.background,
-            track_border: theme.border,
-            label: theme.text_secondary,
-            accent: theme.accent,
-            accent_muted: theme.accent_muted,
-            success: theme.success,
-            border: theme.border,
-            text_on_accent: theme.text_primary,
-            text_muted: theme.text_muted,
-        }
-    }
 }
 
 /// A toggle switch component with optional selection highlighting

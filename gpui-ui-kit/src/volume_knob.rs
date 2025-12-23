@@ -11,56 +11,39 @@
 //! - Mute state support
 //! - Customizable colors and theme support
 
-use crate::theme::{Theme, ThemeExt};
+use crate::theme::ThemeExt;
+use crate::ComponentTheme;
 use gpui::*;
 use std::f32::consts::PI;
 
 /// Theme colors for volume knob styling
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, ComponentTheme)]
 pub struct VolumeKnobTheme {
     /// Accent color (ring and fill when active)
-    pub accent: Hsla,
+    #[theme(default = 0x808080ff, from = accent)]
+    pub accent: Rgba,
     /// Color when muted
-    pub muted: Hsla,
+    #[theme(default = 0x4d4d4dff, from = text_muted)]
+    pub muted: Rgba,
     /// Background color
-    pub background: Hsla,
+    #[theme(default = 0x1a1a1aff, from = surface)]
+    pub background: Rgba,
     /// Text color for label
-    pub text: Hsla,
-}
-
-impl Default for VolumeKnobTheme {
-    fn default() -> Self {
-        Self {
-            accent: hsla(0.0, 0.0, 0.5, 1.0),
-            muted: hsla(0.0, 0.0, 0.3, 1.0),
-            background: hsla(0.0, 0.0, 0.1, 1.0),
-            text: hsla(0.0, 0.0, 0.9, 1.0),
-        }
-    }
-}
-
-impl From<&Theme> for VolumeKnobTheme {
-    fn from(theme: &Theme) -> Self {
-        Self {
-            accent: theme.accent.into(),
-            muted: theme.text_muted.into(),
-            background: theme.surface.into(),
-            text: theme.text_primary.into(),
-        }
-    }
+    #[theme(default = 0xe6e6e6ff, from = text_primary)]
+    pub text: Rgba,
 }
 
 /// Custom element that paints the volume knob fill using paths
 struct VolumeKnobFillElement {
     size: Pixels,
     value: f32,
-    bg_color: Hsla,
-    fill_color: Hsla,
-    ring_color: Hsla,
+    bg_color: Rgba,
+    fill_color: Rgba,
+    ring_color: Rgba,
 }
 
 impl VolumeKnobFillElement {
-    fn new(size: Pixels, value: f32, bg_color: Hsla, fill_color: Hsla, ring_color: Hsla) -> Self {
+    fn new(size: Pixels, value: f32, bg_color: Rgba, fill_color: Rgba, ring_color: Rgba) -> Self {
         Self {
             size,
             value,
@@ -139,13 +122,21 @@ impl Element for VolumeKnobFillElement {
         let origin_y = bounds.origin.y;
         let radius = size_f32 / 2.0;
 
+        // Transparent color for borders we don't want to render
+        let transparent = Rgba {
+            r: 0.0,
+            g: 0.0,
+            b: 0.0,
+            a: 0.0,
+        };
+
         // Draw background circle
         window.paint_quad(PaintQuad {
             bounds,
             corner_radii: Corners::all(px(radius)),
             background: self.bg_color.into(),
             border_widths: Edges::default(),
-            border_color: Hsla::transparent_black(),
+            border_color: transparent.into(),
             border_style: BorderStyle::default(),
         });
 
@@ -216,7 +207,7 @@ impl Element for VolumeKnobFillElement {
                         corner_radii: Corners::all(px(radius - 1.0)),
                         background: self.fill_color.into(),
                         border_widths: Edges::default(),
-                        border_color: Hsla::transparent_black(),
+                        border_color: transparent.into(),
                         border_style: BorderStyle::default(),
                     });
                 }
@@ -232,12 +223,19 @@ impl Element for VolumeKnobFillElement {
                 bounds.size.height - ring_inset * 2.0,
             ),
         };
+        // Create ring color with 30% opacity
+        let ring_with_opacity = Rgba {
+            r: self.ring_color.r,
+            g: self.ring_color.g,
+            b: self.ring_color.b,
+            a: self.ring_color.a * 0.3,
+        };
         window.paint_quad(PaintQuad {
             bounds: ring_bounds,
             corner_radii: Corners::all(px(radius - 3.0)),
-            background: Hsla::transparent_black().into(),
+            background: transparent.into(),
             border_widths: Edges::all(px(2.0)),
-            border_color: self.ring_color.opacity(0.3),
+            border_color: ring_with_opacity.into(),
             border_style: BorderStyle::default(),
         });
     }
@@ -254,13 +252,13 @@ pub struct VolumeKnob {
     /// Optional theme (uses global theme if not set)
     theme: Option<VolumeKnobTheme>,
     /// Override: accent color
-    accent_color: Option<Hsla>,
+    accent_color: Option<Rgba>,
     /// Override: muted color
-    muted_color: Option<Hsla>,
+    muted_color: Option<Rgba>,
     /// Override: background color
-    bg_color: Option<Hsla>,
+    bg_color: Option<Rgba>,
     /// Override: text color
-    text_color: Option<Hsla>,
+    text_color: Option<Rgba>,
     on_change: Option<Box<dyn Fn(f32, &mut Window, &mut App) + 'static>>,
     on_mute_toggle: Option<Box<dyn Fn(bool, &mut Window, &mut App) + 'static>>,
 }
@@ -318,25 +316,25 @@ impl VolumeKnob {
     }
 
     /// Override accent color (ring and fill when active)
-    pub fn accent_color(mut self, color: impl Into<Hsla>) -> Self {
+    pub fn accent_color(mut self, color: impl Into<Rgba>) -> Self {
         self.accent_color = Some(color.into());
         self
     }
 
     /// Override muted color
-    pub fn muted_color(mut self, color: impl Into<Hsla>) -> Self {
+    pub fn muted_color(mut self, color: impl Into<Rgba>) -> Self {
         self.muted_color = Some(color.into());
         self
     }
 
     /// Override background color
-    pub fn bg_color(mut self, color: impl Into<Hsla>) -> Self {
+    pub fn bg_color(mut self, color: impl Into<Rgba>) -> Self {
         self.bg_color = Some(color.into());
         self
     }
 
     /// Override text color
-    pub fn text_color(mut self, color: impl Into<Hsla>) -> Self {
+    pub fn text_color(mut self, color: impl Into<Rgba>) -> Self {
         self.text_color = Some(color.into());
         self
     }
@@ -394,10 +392,11 @@ impl RenderOnce for VolumeKnob {
         let fill_color = if self.muted {
             muted_color
         } else {
-            // Lighten the background color by increasing lightness
-            let mut lighter = bg_color;
+            // Lighten the background color by converting to Hsla, increasing lightness,
+            // then converting back to Rgba
+            let mut lighter: Hsla = bg_color.into();
             lighter.l = (lighter.l + 0.15).min(1.0);
-            lighter
+            lighter.into()
         };
 
         // Capture values for closures

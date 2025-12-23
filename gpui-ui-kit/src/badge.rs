@@ -64,6 +64,16 @@ pub enum BadgeSize {
     Lg,
 }
 
+impl From<crate::ComponentSize> for BadgeSize {
+    fn from(size: crate::ComponentSize) -> Self {
+        match size {
+            crate::ComponentSize::Xs | crate::ComponentSize::Sm => Self::Sm,
+            crate::ComponentSize::Md => Self::Md,
+            crate::ComponentSize::Lg | crate::ComponentSize::Xl => Self::Lg,
+        }
+    }
+}
+
 /// A badge component
 #[derive(IntoElement)]
 pub struct Badge {

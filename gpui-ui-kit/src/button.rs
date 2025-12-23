@@ -36,6 +36,17 @@ pub enum ButtonSize {
     Lg,
 }
 
+impl From<crate::ComponentSize> for ButtonSize {
+    fn from(size: crate::ComponentSize) -> Self {
+        match size {
+            crate::ComponentSize::Xs => Self::Xs,
+            crate::ComponentSize::Sm => Self::Sm,
+            crate::ComponentSize::Md => Self::Md,
+            crate::ComponentSize::Lg | crate::ComponentSize::Xl => Self::Lg,
+        }
+    }
+}
+
 /// Theme colors for button styling
 #[derive(Debug, Clone)]
 pub struct ButtonTheme {

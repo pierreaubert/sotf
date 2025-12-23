@@ -2,45 +2,26 @@
 //!
 //! Collapsible content sections with support for both vertical and horizontal orientations.
 
-use crate::theme::{Theme, ThemeExt, glow_shadow};
+use crate::theme::{ThemeExt, glow_shadow};
+use crate::ComponentTheme;
 use gpui::prelude::*;
 use gpui::*;
 
 /// Theme colors for accordion styling
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, ComponentTheme)]
 pub struct AccordionTheme {
+    #[theme(default = 0x252525, from = muted)]
     pub header_bg: Rgba,
+    #[theme(default = 0x2a2a2a, from = surface_hover)]
     pub header_hover_bg: Rgba,
+    #[theme(default = 0x1e1e1e, from = background)]
     pub content_bg: Rgba,
+    #[theme(default = 0x3a3a3a, from = border)]
     pub border: Rgba,
+    #[theme(default = 0xffffff, from = text_primary)]
     pub title_color: Rgba,
+    #[theme(default = 0x888888, from = text_muted)]
     pub indicator_color: Rgba,
-}
-
-impl Default for AccordionTheme {
-    fn default() -> Self {
-        Self {
-            header_bg: rgb(0x252525),
-            header_hover_bg: rgb(0x2a2a2a),
-            content_bg: rgb(0x1e1e1e),
-            border: rgb(0x3a3a3a),
-            title_color: rgb(0xffffff),
-            indicator_color: rgb(0x888888),
-        }
-    }
-}
-
-impl From<&Theme> for AccordionTheme {
-    fn from(theme: &Theme) -> Self {
-        Self {
-            header_bg: theme.muted,
-            header_hover_bg: theme.surface_hover,
-            content_bg: theme.background,
-            border: theme.border,
-            title_color: theme.text_primary,
-            indicator_color: theme.text_muted,
-        }
-    }
 }
 
 /// A single accordion item

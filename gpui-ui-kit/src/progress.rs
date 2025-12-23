@@ -56,6 +56,17 @@ impl ProgressSize {
     }
 }
 
+impl From<crate::ComponentSize> for ProgressSize {
+    fn from(size: crate::ComponentSize) -> Self {
+        match size {
+            crate::ComponentSize::Xs => Self::Xs,
+            crate::ComponentSize::Sm => Self::Sm,
+            crate::ComponentSize::Md => Self::Md,
+            crate::ComponentSize::Lg | crate::ComponentSize::Xl => Self::Lg,
+        }
+    }
+}
+
 /// A progress bar component
 pub struct Progress {
     value: f32,

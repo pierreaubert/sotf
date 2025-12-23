@@ -37,6 +37,18 @@ impl AvatarSize {
     }
 }
 
+impl From<crate::ComponentSize> for AvatarSize {
+    fn from(size: crate::ComponentSize) -> Self {
+        match size {
+            crate::ComponentSize::Xs => Self::Xs,
+            crate::ComponentSize::Sm => Self::Sm,
+            crate::ComponentSize::Md => Self::Md,
+            crate::ComponentSize::Lg => Self::Lg,
+            crate::ComponentSize::Xl => Self::Xl,
+        }
+    }
+}
+
 /// Avatar shape
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AvatarShape {

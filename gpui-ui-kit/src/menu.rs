@@ -2,63 +2,41 @@
 //!
 //! Provides a complete menu system for application navigation and context menus.
 
-use crate::theme::{Theme, ThemeExt, glow_shadow};
+use crate::theme::{ThemeExt, glow_shadow};
+use crate::ComponentTheme;
 use gpui::prelude::*;
 use gpui::*;
 
 /// Theme colors for menu styling
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, ComponentTheme)]
 pub struct MenuTheme {
     /// Menu background color
+    #[theme(default = 0x2a2a2aff, from = surface)]
     pub background: Rgba,
     /// Menu border color
+    #[theme(default = 0x444444ff, from = border)]
     pub border: Rgba,
     /// Separator color
+    #[theme(default = 0x3a3a3aff, from = border)]
     pub separator: Rgba,
     /// Normal item text color
+    #[theme(default = 0xccccccff, from = text_secondary)]
     pub text: Rgba,
     /// Hovered item text color
+    #[theme(default = 0xffffffff, from = text_primary)]
     pub text_hover: Rgba,
     /// Disabled item text color
+    #[theme(default = 0x666666ff, from = text_muted)]
     pub text_disabled: Rgba,
     /// Shortcut text color
+    #[theme(default = 0x777777ff, from = text_muted)]
     pub text_shortcut: Rgba,
     /// Item hover background color
+    #[theme(default = 0x3a3a3aff, from = surface_hover)]
     pub hover_bg: Rgba,
     /// Danger item hover background (for destructive actions like Quit)
+    #[theme(default = 0xdc2626ff, from = error)]
     pub danger_hover_bg: Rgba,
-}
-
-impl Default for MenuTheme {
-    fn default() -> Self {
-        Self {
-            background: rgba(0x2a2a2aff),
-            border: rgba(0x444444ff),
-            separator: rgba(0x3a3a3aff),
-            text: rgba(0xccccccff),
-            text_hover: rgba(0xffffffff),
-            text_disabled: rgba(0x666666ff),
-            text_shortcut: rgba(0x777777ff),
-            hover_bg: rgba(0x3a3a3aff),
-            danger_hover_bg: rgba(0xdc2626ff),
-        }
-    }
-}
-
-impl From<&Theme> for MenuTheme {
-    fn from(theme: &Theme) -> Self {
-        Self {
-            background: theme.surface,
-            border: theme.border,
-            separator: theme.border,
-            text: theme.text_secondary,
-            text_hover: theme.text_primary,
-            text_disabled: theme.text_muted,
-            text_shortcut: theme.text_muted,
-            hover_bg: theme.surface_hover,
-            danger_hover_bg: theme.error,
-        }
-    }
 }
 
 /// A single menu item

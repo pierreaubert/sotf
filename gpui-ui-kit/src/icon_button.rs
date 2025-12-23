@@ -3,71 +3,47 @@
 //! A button that displays only an icon, with optional tooltip.
 //! Supports both text/emoji icons and custom child elements (like SVG icons).
 
-use crate::theme::{Theme, ThemeExt, glow_shadow};
+use crate::theme::{ThemeExt, glow_shadow};
+use crate::ComponentTheme;
 use gpui::prelude::*;
 use gpui::*;
 
 /// Theme colors for icon button styling
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, ComponentTheme)]
 pub struct IconButtonTheme {
     /// Background color for ghost variant
+    #[theme(default = 0x00000000, from_expr = "gpui::rgba(0x00000000)")]
     pub ghost_bg: Rgba,
     /// Background color on hover for ghost variant
+    #[theme(default = 0x3a3a3aff, from = surface_hover)]
     pub ghost_hover_bg: Rgba,
     /// Background color when selected
+    #[theme(default = 0x3a3a3aff, from = surface_hover)]
     pub selected_bg: Rgba,
     /// Background color on hover when selected
+    #[theme(default = 0x4a4a4aff, from = muted)]
     pub selected_hover_bg: Rgba,
     /// Filled variant background
+    #[theme(default = 0x3a3a3aff, from = surface)]
     pub filled_bg: Rgba,
     /// Filled variant hover background
+    #[theme(default = 0x4a4a4aff, from = surface_hover)]
     pub filled_hover_bg: Rgba,
     /// Accent color (for filled selected, outline border)
+    #[theme(default = 0x007accff, from = accent)]
     pub accent: Rgba,
     /// Accent hover color
+    #[theme(default = 0x0098ffff, from = accent)]
     pub accent_hover: Rgba,
     /// Default text/icon color
+    #[theme(default = 0xccccccff, from = text_secondary)]
     pub text: Rgba,
     /// Text color when selected or on accent background
+    #[theme(default = 0xffffffff, from = text_primary)]
     pub text_on_accent: Rgba,
     /// Border color for outline variant
+    #[theme(default = 0x555555ff, from = border)]
     pub border: Rgba,
-}
-
-impl Default for IconButtonTheme {
-    fn default() -> Self {
-        Self {
-            ghost_bg: rgba(0x00000000),
-            ghost_hover_bg: rgba(0x3a3a3aff),
-            selected_bg: rgba(0x3a3a3aff),
-            selected_hover_bg: rgba(0x4a4a4aff),
-            filled_bg: rgba(0x3a3a3aff),
-            filled_hover_bg: rgba(0x4a4a4aff),
-            accent: rgba(0x007accff),
-            accent_hover: rgba(0x0098ffff),
-            text: rgba(0xccccccff),
-            text_on_accent: rgba(0xffffffff),
-            border: rgba(0x555555ff),
-        }
-    }
-}
-
-impl From<&Theme> for IconButtonTheme {
-    fn from(theme: &Theme) -> Self {
-        Self {
-            ghost_bg: rgba(0x00000000),
-            ghost_hover_bg: theme.surface_hover,
-            selected_bg: theme.surface_hover,
-            selected_hover_bg: theme.muted,
-            filled_bg: theme.surface,
-            filled_hover_bg: theme.surface_hover,
-            accent: theme.accent,
-            accent_hover: theme.accent,
-            text: theme.text_secondary,
-            text_on_accent: theme.text_primary,
-            border: theme.border,
-        }
-    }
 }
 
 /// IconButton size variants
@@ -98,6 +74,18 @@ impl IconButtonSize {
             IconButtonSize::Lg => px(32.0),
             IconButtonSize::Xl => px(48.0),
             IconButtonSize::Custom(size) => px(*size as f32),
+        }
+    }
+}
+
+impl From<crate::ComponentSize> for IconButtonSize {
+    fn from(size: crate::ComponentSize) -> Self {
+        match size {
+            crate::ComponentSize::Xs => Self::Xs,
+            crate::ComponentSize::Sm => Self::Sm,
+            crate::ComponentSize::Md => Self::Md,
+            crate::ComponentSize::Lg => Self::Lg,
+            crate::ComponentSize::Xl => Self::Xl,
         }
     }
 }

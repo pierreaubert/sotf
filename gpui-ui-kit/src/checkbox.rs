@@ -7,47 +7,29 @@
 //! - Mouse support: click to toggle
 //! - Indeterminate state support
 
-use crate::theme::{Theme, ThemeExt};
+use crate::theme::ThemeExt;
+use crate::ComponentTheme;
 use gpui::prelude::*;
 use gpui::*;
 
 /// Theme colors for checkbox styling
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, ComponentTheme)]
 pub struct CheckboxTheme {
     /// Background when checked
+    #[theme(default = 0x007acc, from = accent)]
     pub checked_bg: Rgba,
     /// Border when unchecked
+    #[theme(default = 0x555555, from = border)]
     pub unchecked_border: Rgba,
     /// Check mark color
+    #[theme(default = 0xffffff, from = text_primary)]
     pub check_color: Rgba,
     /// Label color
+    #[theme(default = 0xcccccc, from = text_secondary)]
     pub label: Rgba,
     /// Hover border color
+    #[theme(default = 0x007acc, from = accent)]
     pub hover_border: Rgba,
-}
-
-impl Default for CheckboxTheme {
-    fn default() -> Self {
-        Self {
-            checked_bg: rgb(0x007acc),
-            unchecked_border: rgb(0x555555),
-            check_color: rgb(0xffffff),
-            label: rgb(0xcccccc),
-            hover_border: rgb(0x007acc),
-        }
-    }
-}
-
-impl From<&Theme> for CheckboxTheme {
-    fn from(theme: &Theme) -> Self {
-        Self {
-            checked_bg: theme.accent,
-            unchecked_border: theme.border,
-            check_color: theme.text_primary,
-            label: theme.text_secondary,
-            hover_border: theme.accent,
-        }
-    }
 }
 
 /// Checkbox size variants
@@ -68,6 +50,16 @@ impl CheckboxSize {
             CheckboxSize::Sm => px(14.0),
             CheckboxSize::Md => px(18.0),
             CheckboxSize::Lg => px(22.0),
+        }
+    }
+}
+
+impl From<crate::ComponentSize> for CheckboxSize {
+    fn from(size: crate::ComponentSize) -> Self {
+        match size {
+            crate::ComponentSize::Xs | crate::ComponentSize::Sm => Self::Sm,
+            crate::ComponentSize::Md => Self::Md,
+            crate::ComponentSize::Lg | crate::ComponentSize::Xl => Self::Lg,
         }
     }
 }

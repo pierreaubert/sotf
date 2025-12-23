@@ -144,3 +144,6 @@ pub use workflow::{
 
 // Shared size definitions
 pub use size::ComponentSize;
+
+// Derive macros for theme generation
+pub use gpui_ui_kit_macros::ComponentTheme;

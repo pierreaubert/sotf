@@ -8,54 +8,34 @@
 //!   - Arrow Down/Left: decrease value
 //! - Value snapping with step parameter
 
-use crate::theme::{Theme, ThemeExt};
+use crate::theme::ThemeExt;
+use crate::ComponentTheme;
 use gpui::*;
 
 /// Theme colors for slider styling
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, ComponentTheme)]
 pub struct SliderTheme {
     /// Track background color (unfilled portion)
+    #[theme(default = 0x3e3e3eff, from = border)]
     pub track: Rgba,
     /// Fill color (active portion)
+    #[theme(default = 0x007accff, from = accent)]
     pub fill: Rgba,
     /// Thumb/handle color
+    #[theme(default = 0xffffffff, from = text_primary)]
     pub thumb: Rgba,
     /// Thumb hover color
+    #[theme(default = 0xe0e0e0ff, from = text_secondary)]
     pub thumb_hover: Rgba,
     /// Thumb active (dragging) color
+    #[theme(default = 0x007accff, from = accent)]
     pub thumb_active: Rgba,
     /// Label text color
+    #[theme(default = 0xccccccff, from = text_secondary)]
     pub label: Rgba,
     /// Value text color
+    #[theme(default = 0x999999ff, from = text_muted)]
     pub value: Rgba,
-}
-
-impl Default for SliderTheme {
-    fn default() -> Self {
-        Self {
-            track: rgba(0x3e3e3eff),
-            fill: rgba(0x007accff),
-            thumb: rgba(0xffffffff),
-            thumb_hover: rgba(0xe0e0e0ff),
-            thumb_active: rgba(0x007accff),
-            label: rgba(0xccccccff),
-            value: rgba(0x999999ff),
-        }
-    }
-}
-
-impl From<&Theme> for SliderTheme {
-    fn from(theme: &Theme) -> Self {
-        Self {
-            track: theme.border,
-            fill: theme.accent,
-            thumb: theme.text_primary,
-            thumb_hover: theme.text_secondary,
-            thumb_active: theme.accent,
-            label: theme.text_secondary,
-            value: theme.text_muted,
-        }
-    }
 }
 
 /// Slider size variants

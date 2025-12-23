@@ -15,85 +15,57 @@
 use gpui::prelude::*;
 use gpui::{deferred, *};
 
-use crate::theme::{Theme, ThemeExt};
+use crate::theme::ThemeExt;
+use crate::ComponentTheme;
 
 /// Theme colors for select styling
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, ComponentTheme)]
 pub struct SelectTheme {
     /// Trigger background color
+    #[theme(default = 0x1e1e1eff, from = surface)]
     pub trigger_bg: Rgba,
     /// Trigger border color
+    #[theme(default = 0x3a3a3aff, from = border)]
     pub trigger_border: Rgba,
     /// Trigger border color on hover
+    #[theme(default = 0x007accff, from = accent)]
     pub trigger_border_hover: Rgba,
     /// Trigger border color when focused/open
+    #[theme(default = 0x007accff, from = accent)]
     pub trigger_border_focused: Rgba,
     /// Dropdown background color
+    #[theme(default = 0x2a2a2aff, from = surface)]
     pub dropdown_bg: Rgba,
     /// Dropdown border color
+    #[theme(default = 0x3a3a3aff, from = border)]
     pub dropdown_border: Rgba,
     /// Selected option background
+    #[theme(default = 0x007accff, from = accent)]
     pub selected_bg: Rgba,
     /// Option hover background
+    #[theme(default = 0x3a3a3aff, from = surface_hover)]
     pub option_hover_bg: Rgba,
     /// Label text color
+    #[theme(default = 0xccccccff, from = text_secondary)]
     pub label_color: Rgba,
     /// Text color for selected value
+    #[theme(default = 0xffffffff, from = text_primary)]
     pub text_color: Rgba,
     /// Placeholder text color
+    #[theme(default = 0x666666ff, from = text_muted)]
     pub placeholder_color: Rgba,
     /// Option text color
+    #[theme(default = 0xccccccff, from = text_secondary)]
     pub option_text_color: Rgba,
     /// Selected option text color
+    #[theme(default = 0xffffffff, from = text_primary)]
     pub selected_text_color: Rgba,
     /// Disabled text color
+    #[theme(default = 0x666666ff, from = text_muted)]
     pub disabled_color: Rgba,
     /// Arrow/chevron color
+    #[theme(default = 0x666666ff, from = text_muted)]
     pub arrow_color: Rgba,
-}
-
-impl Default for SelectTheme {
-    fn default() -> Self {
-        Self {
-            trigger_bg: rgba(0x1e1e1eff),
-            trigger_border: rgba(0x3a3a3aff),
-            trigger_border_hover: rgba(0x007accff),
-            trigger_border_focused: rgba(0x007accff),
-            dropdown_bg: rgba(0x2a2a2aff),
-            dropdown_border: rgba(0x3a3a3aff),
-            selected_bg: rgba(0x007accff),
-            option_hover_bg: rgba(0x3a3a3aff),
-            label_color: rgba(0xccccccff),
-            text_color: rgba(0xffffffff),
-            placeholder_color: rgba(0x666666ff),
-            option_text_color: rgba(0xccccccff),
-            selected_text_color: rgba(0xffffffff),
-            disabled_color: rgba(0x666666ff),
-            arrow_color: rgba(0x666666ff),
-        }
-    }
-}
-
-impl From<&Theme> for SelectTheme {
-    fn from(theme: &Theme) -> Self {
-        Self {
-            trigger_bg: theme.surface,
-            trigger_border: theme.border,
-            trigger_border_hover: theme.accent,
-            trigger_border_focused: theme.accent,
-            dropdown_bg: theme.surface,
-            dropdown_border: theme.border,
-            selected_bg: theme.accent,
-            option_hover_bg: theme.surface_hover,
-            label_color: theme.text_secondary,
-            text_color: theme.text_primary,
-            placeholder_color: theme.text_muted,
-            option_text_color: theme.text_secondary,
-            selected_text_color: theme.text_primary,
-            disabled_color: theme.text_muted,
-            arrow_color: theme.text_muted,
-        }
-    }
 }
 
 /// Select size variants
@@ -106,6 +78,16 @@ pub enum SelectSize {
     Md,
     /// Large
     Lg,
+}
+
+impl From<crate::ComponentSize> for SelectSize {
+    fn from(size: crate::ComponentSize) -> Self {
+        match size {
+            crate::ComponentSize::Xs | crate::ComponentSize::Sm => Self::Sm,
+            crate::ComponentSize::Md => Self::Md,
+            crate::ComponentSize::Lg | crate::ComponentSize::Xl => Self::Lg,
+        }
+    }
 }
 
 /// A select option

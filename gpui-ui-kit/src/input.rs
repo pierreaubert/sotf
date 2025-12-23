@@ -58,7 +58,8 @@
 //! cleanup_input_state(&element_id);
 //! ```
 
-use crate::theme::{Theme, ThemeExt};
+use crate::theme::ThemeExt;
+use crate::ComponentTheme;
 use gpui::prelude::*;
 use gpui::*;
 use std::cell::RefCell;
@@ -100,71 +101,41 @@ pub fn cleanup_input_state(id: &ElementId) {
 }
 
 /// Theme colors for input styling
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, ComponentTheme)]
 pub struct InputTheme {
     /// Background color
+    #[theme(default = 0x1e1e1e, from = background)]
     pub background: Rgba,
     /// Filled variant background
+    #[theme(default = 0x2a2a2a, from = surface)]
     pub filled_bg: Rgba,
     /// Text color
+    #[theme(default = 0xffffff, from = text_primary)]
     pub text: Rgba,
     /// Placeholder color
+    #[theme(default = 0x666666, from = text_muted)]
     pub placeholder: Rgba,
     /// Label color
+    #[theme(default = 0xcccccc, from = text_secondary)]
     pub label: Rgba,
     /// Border color
+    #[theme(default = 0x3a3a3a, from = border)]
     pub border: Rgba,
     /// Border hover color
+    #[theme(default = 0x007acc, from = accent)]
     pub border_hover: Rgba,
     /// Border focus color
+    #[theme(default = 0x007acc, from = accent)]
     pub border_focus: Rgba,
     /// Error color
+    #[theme(default = 0xcc3333, from = error)]
     pub error: Rgba,
     /// Cursor color
+    #[theme(default = 0x007acc, from = accent)]
     pub cursor: Rgba,
     /// Selection background
+    #[theme(default = 0x007acc44, from_expr = "Rgba { r: theme.accent.r, g: theme.accent.g, b: theme.accent.b, a: 0.3 }")]
     pub selection_bg: Rgba,
-}
-
-impl Default for InputTheme {
-    fn default() -> Self {
-        Self {
-            background: rgb(0x1e1e1e),
-            filled_bg: rgb(0x2a2a2a),
-            text: rgb(0xffffff),
-            placeholder: rgb(0x666666),
-            label: rgb(0xcccccc),
-            border: rgb(0x3a3a3a),
-            border_hover: rgb(0x007acc),
-            border_focus: rgb(0x007acc),
-            error: rgb(0xcc3333),
-            cursor: rgb(0x007acc),
-            selection_bg: rgba(0x007acc44),
-        }
-    }
-}
-
-impl From<&Theme> for InputTheme {
-    fn from(theme: &Theme) -> Self {
-        Self {
-            background: theme.background,
-            filled_bg: theme.surface,
-            text: theme.text_primary,
-            placeholder: theme.text_muted,
-            label: theme.text_secondary,
-            border: theme.border,
-            border_hover: theme.accent,
-            border_focus: theme.accent,
-            error: theme.error,
-            cursor: theme.accent,
-            selection_bg: Rgba {
-                r: theme.accent.r,
-                g: theme.accent.g,
-                b: theme.accent.b,
-                a: 0.3,
-            },
-        }
-    }
 }
 
 /// Input size variants

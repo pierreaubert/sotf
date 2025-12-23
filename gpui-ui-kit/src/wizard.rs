@@ -10,7 +10,8 @@
 
 use crate::button::{Button, ButtonSize, ButtonVariant};
 use crate::progress::{Progress, ProgressSize, ProgressVariant};
-use crate::theme::{Theme, ThemeExt};
+use crate::theme::ThemeExt;
+use crate::ComponentTheme;
 use gpui::prelude::*;
 use gpui::*;
 
@@ -31,62 +32,38 @@ pub enum StepStatus {
 }
 
 /// Theme colors for wizard styling
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, ComponentTheme)]
 pub struct WizardTheme {
     /// Background color for step indicators
+    #[theme(default = 0x2a2a2aff, from = surface)]
     pub step_bg: Rgba,
     /// Background color for completed step
+    #[theme(default = 0x22c55eff, from = success)]
     pub step_completed_bg: Rgba,
     /// Background color for active step
+    #[theme(default = 0x007accff, from = accent)]
     pub step_active_bg: Rgba,
     /// Background color for error step
+    #[theme(default = 0xef4444ff, from = error)]
     pub step_error_bg: Rgba,
     /// Text color for step numbers
+    #[theme(default = 0xffffffff, from = text_primary)]
     pub step_text: Rgba,
     /// Text color for step labels
+    #[theme(default = 0x888888ff, from = text_muted)]
     pub label_text: Rgba,
     /// Text color for active step label
+    #[theme(default = 0xffffffff, from = text_primary)]
     pub label_active_text: Rgba,
     /// Connector line color
+    #[theme(default = 0x3a3a3aff, from = border)]
     pub connector_color: Rgba,
     /// Connector color for completed steps
+    #[theme(default = 0x22c55eff, from = success)]
     pub connector_completed_color: Rgba,
     /// Border color for steps
+    #[theme(default = 0x3a3a3aff, from = border)]
     pub step_border: Rgba,
-}
-
-impl Default for WizardTheme {
-    fn default() -> Self {
-        Self {
-            step_bg: rgba(0x2a2a2aff),
-            step_completed_bg: rgba(0x22c55eff),
-            step_active_bg: rgba(0x007accff),
-            step_error_bg: rgba(0xef4444ff),
-            step_text: rgba(0xffffffff),
-            label_text: rgba(0x888888ff),
-            label_active_text: rgba(0xffffffff),
-            connector_color: rgba(0x3a3a3aff),
-            connector_completed_color: rgba(0x22c55eff),
-            step_border: rgba(0x3a3a3aff),
-        }
-    }
-}
-
-impl From<&Theme> for WizardTheme {
-    fn from(theme: &Theme) -> Self {
-        Self {
-            step_bg: theme.surface,
-            step_completed_bg: theme.success,
-            step_active_bg: theme.accent,
-            step_error_bg: theme.error,
-            step_text: theme.text_primary,
-            label_text: theme.text_muted,
-            label_active_text: theme.text_primary,
-            connector_color: theme.border,
-            connector_completed_color: theme.success,
-            step_border: theme.border,
-        }
-    }
 }
 
 /// A single step in the wizard

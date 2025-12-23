@@ -14,76 +14,47 @@
 //! - Rotating indicator dot
 //! - Tick marks with major (labeled) and minor (unlabeled) ticks
 
-use crate::theme::{Theme, ThemeExt};
+use crate::theme::ThemeExt;
+use crate::ComponentTheme;
 use gpui::prelude::*;
 use gpui::*;
 
 /// Theme colors for potentiometer styling
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, ComponentTheme)]
 pub struct PotentiometerTheme {
     /// Background color of the container
+    #[theme(default = 0x2a2a2aff, from = surface)]
     pub surface: Rgba,
     /// Surface hover color
+    #[theme(default = 0x3a3a3aff, from = surface_hover)]
     pub surface_hover: Rgba,
     /// Knob background color
+    #[theme(default = 0x1a1a1aff, from = muted)]
     pub knob_bg: Rgba,
     /// Accent color
+    #[theme(default = 0x007accff, from = accent)]
     pub accent: Rgba,
     /// Accent muted (for selection background)
+    #[theme(default = 0x007acc33, from_expr = "Rgba { r: theme.accent.r, g: theme.accent.g, b: theme.accent.b, a: 0.2 }")]
     pub accent_muted: Rgba,
     /// Border color
+    #[theme(default = 0x3a3a3aff, from = border)]
     pub border: Rgba,
     /// Label text color
+    #[theme(default = 0xaaaaaaff, from = text_secondary)]
     pub text_secondary: Rgba,
     /// Value text color
+    #[theme(default = 0xffffffff, from = text_primary)]
     pub text_primary: Rgba,
     /// Muted text color (for indicator when not selected)
+    #[theme(default = 0x888888ff, from = text_muted)]
     pub text_muted: Rgba,
     /// Text on accent background
+    #[theme(default = 0xffffffff, from = text_primary)]
     pub text_on_accent: Rgba,
     /// Background secondary (for value badge)
+    #[theme(default = 0x2a2a2aff, from = surface)]
     pub background_secondary: Rgba,
-}
-
-impl Default for PotentiometerTheme {
-    fn default() -> Self {
-        Self {
-            surface: rgba(0x2a2a2aff),
-            surface_hover: rgba(0x3a3a3aff),
-            knob_bg: rgba(0x1a1a1aff),
-            accent: rgba(0x007accff),
-            accent_muted: rgba(0x007acc33),
-            border: rgba(0x3a3a3aff),
-            text_secondary: rgba(0xaaaaaaff),
-            text_primary: rgba(0xffffffff),
-            text_muted: rgba(0x888888ff),
-            text_on_accent: rgba(0xffffffff),
-            background_secondary: rgba(0x2a2a2aff),
-        }
-    }
-}
-
-impl From<&Theme> for PotentiometerTheme {
-    fn from(theme: &Theme) -> Self {
-        Self {
-            surface: theme.surface,
-            surface_hover: theme.surface_hover,
-            knob_bg: theme.muted,
-            accent: theme.accent,
-            accent_muted: Rgba {
-                r: theme.accent.r,
-                g: theme.accent.g,
-                b: theme.accent.b,
-                a: 0.2,
-            },
-            border: theme.border,
-            text_secondary: theme.text_secondary,
-            text_primary: theme.text_primary,
-            text_muted: theme.text_muted,
-            text_on_accent: theme.text_primary,
-            background_secondary: theme.surface,
-        }
-    }
 }
 
 /// Potentiometer size variants
@@ -96,6 +67,16 @@ pub enum PotentiometerSize {
     Md,
     /// Large size
     Lg,
+}
+
+impl From<crate::ComponentSize> for PotentiometerSize {
+    fn from(size: crate::ComponentSize) -> Self {
+        match size {
+            crate::ComponentSize::Xs | crate::ComponentSize::Sm => Self::Sm,
+            crate::ComponentSize::Md => Self::Md,
+            crate::ComponentSize::Lg | crate::ComponentSize::Xl => Self::Lg,
+        }
+    }
 }
 
 /// Scale type for potentiometer value mapping

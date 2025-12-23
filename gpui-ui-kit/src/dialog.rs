@@ -2,59 +2,38 @@
 //!
 //! A modal dialog with backdrop, title, content, and footer sections.
 
-use crate::theme::{Theme, ThemeExt};
+use crate::theme::ThemeExt;
+use crate::ComponentTheme;
 use gpui::prelude::*;
 use gpui::*;
 
 /// Theme colors for dialog styling
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, ComponentTheme)]
 pub struct DialogTheme {
     /// Backdrop background
+    #[theme(default = 0x000000aa, from_expr = "gpui::rgba(0x00000088)")]
     pub backdrop: Rgba,
     /// Dialog background
+    #[theme(default = 0x1e1e1e, from = surface)]
     pub background: Rgba,
     /// Border color
+    #[theme(default = 0x007acc, from = accent)]
     pub border: Rgba,
     /// Header border
+    #[theme(default = 0x3a3a3a, from = border)]
     pub header_border: Rgba,
     /// Title text color
+    #[theme(default = 0xffffff, from = text_primary)]
     pub title: Rgba,
     /// Close button text
+    #[theme(default = 0x888888, from = text_muted)]
     pub close: Rgba,
     /// Close button hover
+    #[theme(default = 0xffffff, from = text_primary)]
     pub close_hover: Rgba,
     /// Close button hover background
+    #[theme(default = 0x3a3a3a, from = surface_hover)]
     pub close_hover_bg: Rgba,
-}
-
-impl Default for DialogTheme {
-    fn default() -> Self {
-        Self {
-            backdrop: rgba(0x000000aa),
-            background: rgb(0x1e1e1e),
-            border: rgb(0x007acc),
-            header_border: rgb(0x3a3a3a),
-            title: rgb(0xffffff),
-            close: rgb(0x888888),
-            close_hover: rgb(0xffffff),
-            close_hover_bg: rgb(0x3a3a3a),
-        }
-    }
-}
-
-impl From<&Theme> for DialogTheme {
-    fn from(theme: &Theme) -> Self {
-        Self {
-            backdrop: rgba(0x00000088),
-            background: theme.surface,
-            border: theme.accent,
-            header_border: theme.border,
-            title: theme.text_primary,
-            close: theme.text_muted,
-            close_hover: theme.text_primary,
-            close_hover_bg: theme.surface_hover,
-        }
-    }
 }
 
 /// Dialog size variants

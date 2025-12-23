@@ -6,6 +6,7 @@
 //! - Double-click to toggle collapse
 //! - Drag to resize (via parent tracking mouse state)
 
+use crate::ComponentTheme;
 use gpui::prelude::*;
 use gpui::*;
 
@@ -60,33 +61,26 @@ impl CollapseDirection {
 }
 
 /// Theme for the pane divider
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, ComponentTheme)]
 pub struct PaneDividerTheme {
     /// Background color of the divider
+    #[theme(default = 0x2d2d2d, from = surface)]
     pub background: Rgba,
     /// Background color when hovered
+    #[theme(default = 0x3a3a3a, from = surface_hover)]
     pub background_hover: Rgba,
     /// Background color when collapsed
+    #[theme(default = 0x252525, from = muted)]
     pub background_collapsed: Rgba,
     /// Arrow/text color
+    #[theme(default = 0x808080, from = text_muted)]
     pub foreground: Rgba,
     /// Arrow/text color when hovered
+    #[theme(default = 0xcccccc, from = text_secondary)]
     pub foreground_hover: Rgba,
     /// Border color
+    #[theme(default = 0x3a3a3a, from = border)]
     pub border: Rgba,
-}
-
-impl Default for PaneDividerTheme {
-    fn default() -> Self {
-        Self {
-            background: rgb(0x2d2d2d),
-            background_hover: rgb(0x3a3a3a),
-            background_collapsed: rgb(0x252525),
-            foreground: rgb(0x808080),
-            foreground_hover: rgb(0xcccccc),
-            border: rgb(0x3a3a3a),
-        }
-    }
 }
 
 /// Interactive pane divider with collapse support

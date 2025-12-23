@@ -44,6 +44,18 @@ impl SpinnerSize {
     }
 }
 
+impl From<crate::ComponentSize> for SpinnerSize {
+    fn from(size: crate::ComponentSize) -> Self {
+        match size {
+            crate::ComponentSize::Xs => Self::Xs,
+            crate::ComponentSize::Sm => Self::Sm,
+            crate::ComponentSize::Md => Self::Md,
+            crate::ComponentSize::Lg => Self::Lg,
+            crate::ComponentSize::Xl => Self::Xl,
+        }
+    }
+}
+
 /// A spinner/loading indicator component
 /// Note: True animation requires GPUI animation support
 pub struct Spinner {

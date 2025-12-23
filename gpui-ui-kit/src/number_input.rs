@@ -42,7 +42,8 @@
 //! cleanup_number_input_state(&element_id);
 //! ```
 
-use crate::theme::{Theme, ThemeExt};
+use crate::theme::ThemeExt;
+use crate::ComponentTheme;
 use gpui::prelude::*;
 use gpui::*;
 use std::cell::RefCell;
@@ -208,62 +209,38 @@ impl NumberEditState {
 }
 
 /// Theme colors for number input styling
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, ComponentTheme)]
 pub struct NumberInputTheme {
     /// Background color
+    #[theme(default = 0x1e1e1eff, from = background)]
     pub background: Rgba,
     /// Text color
+    #[theme(default = 0xffffffff, from = text_primary)]
     pub text: Rgba,
     /// Button background
+    #[theme(default = 0x2a2a2aff, from = surface)]
     pub button_bg: Rgba,
     /// Button hover background
+    #[theme(default = 0x3a3a3aff, from = surface_hover)]
     pub button_hover: Rgba,
     /// Button active (pressed) background
+    #[theme(default = 0x007accff, from = accent)]
     pub button_active: Rgba,
     /// Button text color
+    #[theme(default = 0xccccccff, from = text_secondary)]
     pub button_text: Rgba,
     /// Border color
+    #[theme(default = 0x3a3a3aff, from = border)]
     pub border: Rgba,
     /// Border focus color
+    #[theme(default = 0x007accff, from = accent)]
     pub border_focus: Rgba,
     /// Label color
+    #[theme(default = 0xaaaaaaff, from = text_secondary)]
     pub label: Rgba,
     /// Disabled opacity
+    #[theme(default_f32 = 0.5, from_expr = "0.5")]
     pub disabled_opacity: f32,
-}
-
-impl Default for NumberInputTheme {
-    fn default() -> Self {
-        Self {
-            background: rgba(0x1e1e1eff),
-            text: rgba(0xffffffff),
-            button_bg: rgba(0x2a2a2aff),
-            button_hover: rgba(0x3a3a3aff),
-            button_active: rgba(0x007accff),
-            button_text: rgba(0xccccccff),
-            border: rgba(0x3a3a3aff),
-            border_focus: rgba(0x007accff),
-            label: rgba(0xaaaaaaff),
-            disabled_opacity: 0.5,
-        }
-    }
-}
-
-impl From<&Theme> for NumberInputTheme {
-    fn from(theme: &Theme) -> Self {
-        Self {
-            background: theme.background,
-            text: theme.text_primary,
-            button_bg: theme.surface,
-            button_hover: theme.surface_hover,
-            button_active: theme.accent,
-            button_text: theme.text_secondary,
-            border: theme.border,
-            border_focus: theme.accent,
-            label: theme.text_secondary,
-            disabled_opacity: 0.5,
-        }
-    }
 }
 
 /// Number input size variants

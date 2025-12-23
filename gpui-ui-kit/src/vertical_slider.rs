@@ -130,6 +130,16 @@ impl VerticalSliderSize {
     }
 }
 
+impl From<crate::ComponentSize> for VerticalSliderSize {
+    fn from(size: crate::ComponentSize) -> Self {
+        match size {
+            crate::ComponentSize::Xs | crate::ComponentSize::Sm => Self::Sm,
+            crate::ComponentSize::Md => Self::Md,
+            crate::ComponentSize::Lg | crate::ComponentSize::Xl => Self::Lg,
+        }
+    }
+}
+
 /// Information about a tick mark
 #[derive(Debug, Clone)]
 struct TickMark {
