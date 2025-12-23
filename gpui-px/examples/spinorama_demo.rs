@@ -3,7 +3,9 @@
 //! This demo fetches speaker data from spinorama.org and displays CEA2034 plots
 //! using the high-level gpui-px charting API.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use autoeq::read::{
@@ -13,7 +15,9 @@ use autoeq::read::{
 use autoeq::{Curve, DirectivityData};
 use gpui::prelude::FluentBuilder;
 use gpui::*;
-use gpui_px::{heatmap, line, ColorScale, LegendPosition, ScaleType};
+use gpui_px::{
+    heatmap, line, surface3d, ColorScale, Colormap, LegendPosition, ScaleType, Surface3DState,
+};
 use gpui_ui_kit::{MiniApp, MiniAppConfig, SelectOption, Spinner, SpinnerSize};
 use tokio::runtime::Runtime;
 
@@ -47,6 +51,7 @@ enum PlotSection {
     HorizontalSPL,
     VerticalSPL,
     Contour,
+    Surface3D,
 }
 
 impl PlotSection {
@@ -56,6 +61,7 @@ impl PlotSection {
             PlotSection::HorizontalSPL,
             PlotSection::VerticalSPL,
             PlotSection::Contour,
+            PlotSection::Surface3D,
         ]
     }
 
@@ -65,6 +71,7 @@ impl PlotSection {
             PlotSection::HorizontalSPL => "Horizontal SPL",
             PlotSection::VerticalSPL => "Vertical SPL",
             PlotSection::Contour => "Contour",
+            PlotSection::Surface3D => "Surface 3D",
         }
     }
 }
@@ -109,6 +116,13 @@ struct SpinoramaApp {
     speaker_dropdown_open: bool,
     version_dropdown_open: bool,
     section_dropdown_open: bool,
+    // 3D Surface interaction state
+    surface3d_state: Rc<RefCell<Surface3DState>>,
+    surface3d_dragging: bool,
+    surface3d_last_mouse: Option<Point<Pixels>>,
+    // Colormap selection
+    selected_colormap: Colormap,
+    colormap_dropdown_open: bool,
 }
 
 impl SpinoramaApp {
@@ -136,6 +150,13 @@ impl SpinoramaApp {
             speaker_dropdown_open: false,
             version_dropdown_open: false,
             section_dropdown_open: false,
+            // Initialize 3D surface state with good defaults for spinorama viewing
+            surface3d_state: Rc::new(RefCell::new(Surface3DState::new(3.5, 60.0, 25.0))),
+            surface3d_dragging: false,
+            surface3d_last_mouse: None,
+            // Colormap selection (Turbo is good default for spinorama)
+            selected_colormap: Colormap::Turbo,
+            colormap_dropdown_open: false,
         };
 
         // Start loading speakers list
@@ -420,6 +441,21 @@ impl SpinoramaApp {
                         section_dropdown_open,
                         cx,
                     )),
+            )
+            // Colormap select (only for Surface3D and Contour)
+            .when(
+                self.current_section == PlotSection::Surface3D
+                    || self.current_section == PlotSection::Contour,
+                |el: Div| {
+                    el.child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .child(div().text_sm().text_color(rgb(0xcccccc)).child("Colormap:"))
+                            .child(self.render_colormap_dropdown(cx)),
+                    )
+                },
             )
             // Loading indicator
             .when(is_loading_data, |el: Div| {
@@ -742,6 +778,103 @@ impl SpinoramaApp {
             })
     }
 
+    fn render_colormap_dropdown(&mut self, cx: &mut Context<Self>) -> Stateful<Div> {
+        let entity = cx.entity().clone();
+        let entity_for_toggle = cx.entity().clone();
+        let is_open = self.colormap_dropdown_open;
+
+        let colormaps = [
+            (Colormap::Turbo, "Turbo"),
+            (Colormap::Viridis, "Viridis"),
+            (Colormap::Plasma, "Plasma"),
+            (Colormap::Inferno, "Inferno"),
+            (Colormap::CoolWarm, "CoolWarm"),
+        ];
+
+        let current_label = colormaps
+            .iter()
+            .find(|(c, _)| *c == self.selected_colormap)
+            .map(|(_, l)| *l)
+            .unwrap_or("Turbo");
+
+        div()
+            .relative()
+            .id("colormap-dropdown-container")
+            .child(
+                div()
+                    .id("colormap-select")
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .px_3()
+                    .py_2()
+                    .min_w(px(120.0))
+                    .bg(rgb(0x2a2a2a))
+                    .border_1()
+                    .border_color(rgb(0x3a3a3a))
+                    .rounded_md()
+                    .cursor_pointer()
+                    .text_sm()
+                    .hover(|s| s.border_color(rgb(0x007acc)))
+                    .child(div().text_color(rgb(0xffffff)).child(current_label))
+                    .child(div().text_xs().text_color(rgb(0x666666)).child("v"))
+                    .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
+                        entity_for_toggle.update(cx, |this, cx| {
+                            this.colormap_dropdown_open = !this.colormap_dropdown_open;
+                            this.speaker_dropdown_open = false;
+                            this.version_dropdown_open = false;
+                            this.section_dropdown_open = false;
+                            cx.notify();
+                        });
+                    }),
+            )
+            .when(is_open, |el: Stateful<Div>| {
+                el.child(
+                    deferred(
+                        div()
+                            .id("colormap-dropdown")
+                            .absolute()
+                            .top_full()
+                            .left_0()
+                            .mt_1()
+                            .w(px(140.0))
+                            .bg(rgb(0x2a2a2a))
+                            .border_1()
+                            .border_color(rgb(0x3a3a3a))
+                            .rounded_md()
+                            .shadow_lg()
+                            .py_1()
+                            .children(colormaps.into_iter().enumerate().map(|(i, (cmap, label))| {
+                                let is_selected = self.selected_colormap == cmap;
+                                let entity = entity.clone();
+
+                                div()
+                                    .id(ElementId::NamedInteger("colormap-opt".into(), i as u64))
+                                    .px_3()
+                                    .py(px(6.0))
+                                    .cursor_pointer()
+                                    .text_sm()
+                                    .when(is_selected, |el: Stateful<Div>| {
+                                        el.bg(rgb(0x007acc)).text_color(rgb(0xffffff))
+                                    })
+                                    .when(!is_selected, |el: Stateful<Div>| {
+                                        el.text_color(rgb(0xcccccc)).hover(|s| s.bg(rgb(0x3a3a3a)))
+                                    })
+                                    .child(label)
+                                    .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
+                                        entity.update(cx, |this, cx| {
+                                            this.selected_colormap = cmap;
+                                            this.colormap_dropdown_open = false;
+                                            cx.notify();
+                                        });
+                                    })
+                            })),
+                    )
+                    .with_priority(1),
+                )
+            })
+    }
+
     fn render_content(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let content: Div = match self.data_load_state {
             LoadState::Idle => self.render_welcome(),
@@ -752,6 +885,7 @@ impl SpinoramaApp {
                 PlotSection::HorizontalSPL => self.render_directivity_plot("horizontal", cx),
                 PlotSection::VerticalSPL => self.render_directivity_plot("vertical", cx),
                 PlotSection::Contour => self.render_contour_plot(cx),
+                PlotSection::Surface3D => self.render_surface3d_plot(cx),
             },
         };
 
@@ -768,6 +902,7 @@ impl SpinoramaApp {
                 this.speaker_dropdown_open = false;
                 this.version_dropdown_open = false;
                 this.section_dropdown_open = false;
+                this.colormap_dropdown_open = false;
             }))
     }
 
@@ -983,7 +1118,7 @@ impl SpinoramaApp {
             (0.255, 0.267, 0.529), // Purple-blue
             (0.165, 0.471, 0.557), // Teal
             (0.133, 0.659, 0.518), // Green-teal
-            (0.478, 0.820, 0.318), // Light green
+            (0.478, 0.820, 0.319), // Light green
             (0.992, 0.906, 0.145), // Yellow
         ];
 
@@ -1262,7 +1397,7 @@ impl SpinoramaApp {
             .x(&sample_freqs)
             .y(&angle_values)
             .x_scale(ScaleType::Log)
-            .color_scale(ColorScale::Viridis)
+            .color_scale(colormap_to_color_scale(self.selected_colormap))
             .size(900.0, 500.0)
             .build()
         {
@@ -1320,6 +1455,237 @@ impl SpinoramaApp {
                         .child(format!("Chart error: {}", e)),
                 ),
         }
+    }
+
+    fn render_surface3d_plot(&mut self, cx: &mut Context<Self>) -> Div {
+        let Some(ref directivity) = self.directivity_data else {
+            return div()
+                .flex()
+                .items_center()
+                .justify_center()
+                .h_full()
+                .child(
+                    div()
+                        .text_base()
+                        .text_color(rgb(0x666666))
+                        .child("No directivity data available for 3D surface plot."),
+                );
+        };
+
+        let curves = &directivity.horizontal;
+
+        if curves.is_empty() {
+            return div()
+                .flex()
+                .items_center()
+                .justify_center()
+                .h_full()
+                .child(
+                    div()
+                        .text_base()
+                        .text_color(rgb(0x666666))
+                        .child("No horizontal directivity data available for 3D surface plot."),
+                );
+        }
+
+        // Build a 2D grid from directivity data
+        // X axis: frequency (log spaced samples)
+        // Y axis: angle
+        // Z: SPL values
+
+        // Sample frequencies logarithmically from 100Hz to 20kHz
+        let num_freq_samples = 80;
+        let freq_min = 100.0_f64;
+        let freq_max = 20000.0_f64;
+        let log_min = freq_min.log10();
+        let log_max = freq_max.log10();
+
+        let sample_freqs: Vec<f64> = (0..num_freq_samples)
+            .map(|i| {
+                let t = i as f64 / (num_freq_samples - 1) as f64;
+                10_f64.powf(log_min + t * (log_max - log_min))
+            })
+            .collect();
+
+        // Get angle values from curves
+        let angle_values: Vec<f64> = curves.iter().map(|c| c.angle).collect();
+        let num_angles = curves.len();
+
+        // Build the Z data grid (angles x frequencies)
+        // Data is in row-major order: z[row * width + col] where row 0 is at the bottom
+        let mut z_data: Vec<f64> = Vec::with_capacity(num_angles * num_freq_samples);
+
+        for curve in curves {
+            for &target_freq in &sample_freqs {
+                // Find the closest frequency in the curve data and interpolate
+                let spl = interpolate_spl_at_freq(
+                    curve.freq.as_slice().unwrap(),
+                    curve.spl.as_slice().unwrap(),
+                    target_freq,
+                );
+                z_data.push(spl);
+            }
+        }
+
+        // Find SPL range for info display
+        let spl_min = z_data.iter().copied().fold(f64::INFINITY, f64::min);
+        let spl_max = z_data.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+
+        let angle_min = curves.first().map(|c| c.angle).unwrap_or(-60.0);
+        let angle_max = curves.last().map(|c| c.angle).unwrap_or(60.0);
+
+        // Build 3D surface with proper axis configuration and shared state for interaction
+        match surface3d(&z_data, num_freq_samples, num_angles)
+            .title(format!(
+                "Horizontal 3D Surface - {}",
+                self.selected_speaker.as_deref().unwrap_or("Unknown")
+            ))
+            .x(&sample_freqs)
+            .y(&angle_values)
+            .x_log(true)
+            .x_label("Frequency (Hz)")
+            .y_label("Angle (°)")
+            .z_label("SPL (dB)")
+            .colormap(self.selected_colormap)
+            .wireframe(false)
+            .size(900.0, 600.0)
+            .with_state(self.surface3d_state.clone())
+            .build()
+        {
+            Ok(element) => {
+                let state = self.surface3d_state.clone();
+
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_6()
+                    .child(
+                        // Wrap the 3D surface in a container with mouse event handlers
+                        div()
+                            .id("surface3d-container")
+                            .cursor(CursorStyle::PointingHand)
+                            .child(element)
+                            // Mouse drag for rotation
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(move |view, event: &MouseDownEvent, _window, _cx| {
+                                    if event.click_count == 2 {
+                                        // Double click - reset view
+                                        let mut state = view.surface3d_state.borrow_mut();
+                                        state.controls.reset();
+                                        state.update_camera();
+                                    } else {
+                                        view.surface3d_dragging = true;
+                                        view.surface3d_last_mouse = Some(event.position);
+                                    }
+                                }),
+                            )
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(|view, _event: &MouseUpEvent, _window, _cx| {
+                                    view.surface3d_dragging = false;
+                                }),
+                            )
+                            .on_mouse_move(cx.listener(
+                                move |view, event: &MouseMoveEvent, _window, cx| {
+                                    if view.surface3d_dragging {
+                                        if let Some(last) = view.surface3d_last_mouse {
+                                            let dx: f32 = (event.position.x - last.x).into();
+                                            let dy: f32 = (event.position.y - last.y).into();
+
+                                            let mut state = view.surface3d_state.borrow_mut();
+                                            state.controls.rotate(dx, dy);
+                                            state.update_camera();
+                                            cx.notify();
+                                        }
+                                        view.surface3d_last_mouse = Some(event.position);
+                                    }
+                                },
+                            ))
+                            // Scroll wheel for zoom
+                            .on_scroll_wheel(cx.listener({
+                                let state = state.clone();
+                                move |_view, event: &ScrollWheelEvent, _window, cx| {
+                                    let delta = match event.delta {
+                                        ScrollDelta::Lines(lines) => lines.y * 0.5,
+                                        ScrollDelta::Pixels(pixels) => {
+                                            let py: f32 = pixels.y.into();
+                                            py * 0.01
+                                        }
+                                    };
+                                    let mut state = state.borrow_mut();
+                                    state.controls.zoom(delta);
+                                    state.update_camera();
+                                    cx.notify();
+                                }
+                            })),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .gap_4()
+                            .p_4()
+                            .bg(rgb(0xf5f5f5))
+                            .rounded_md()
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(rgb(0x666666))
+                                    .child(format!(
+                                        "X: Frequency ({:.0} Hz - {:.0} Hz, log scale)",
+                                        freq_min, freq_max
+                                    )),
+                            )
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(rgb(0x666666))
+                                    .child(format!(
+                                        "Y: Angle ({:.0}° to {:.0}°)",
+                                        angle_min, angle_max
+                                    )),
+                            )
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(rgb(0x666666))
+                                    .child(format!(
+                                        "Z: SPL range ({:.1} dB to {:.1} dB)",
+                                        spl_min, spl_max
+                                    )),
+                            )
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(rgb(0x888888))
+                                    .child("Drag to rotate • Scroll to zoom • Double-click to reset"),
+                            ),
+                    )
+            }
+            Err(e) => div()
+                .flex()
+                .items_center()
+                .justify_center()
+                .h_full()
+                .child(
+                    div()
+                        .text_base()
+                        .text_color(rgb(0xd32f2f))
+                        .child(format!("Chart error: {}", e)),
+                ),
+        }
+    }
+}
+
+/// Convert Colormap (3D) to ColorScale (2D heatmap)
+fn colormap_to_color_scale(colormap: Colormap) -> ColorScale {
+    match colormap {
+        Colormap::Viridis => ColorScale::Viridis,
+        Colormap::Plasma => ColorScale::Plasma,
+        Colormap::Inferno => ColorScale::Inferno,
+        Colormap::Turbo => ColorScale::Inferno, // Turbo not available in ColorScale, use Inferno
+        Colormap::CoolWarm => ColorScale::Coolwarm,
     }
 }
 

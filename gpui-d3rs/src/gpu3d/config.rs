@@ -29,6 +29,93 @@ impl Colormap {
             Colormap::CoolWarm => 4,
         }
     }
+
+    /// Get RGB color at position t (0.0 to 1.0) for colorbar rendering
+    /// Uses the same polynomial approximations as the GPU shader for consistency
+    pub fn color_at(&self, t: f32) -> (f32, f32, f32) {
+        let t = t.clamp(0.0, 1.0);
+        match self {
+            Colormap::Viridis => {
+                // Polynomial approximation matching shader
+                let t2 = t * t;
+                let t3 = t2 * t;
+                let t4 = t3 * t;
+                let t5 = t4 * t;
+                let t6 = t5 * t;
+
+                let r = (0.2777 + 0.1050 * t - 0.3308 * t2 - 4.6342 * t3
+                    + 6.2282 * t4 + 4.7763 * t5 - 5.4354 * t6)
+                    .clamp(0.0, 1.0);
+                let g = (0.0054 + 0.6387 * t + 0.3143 * t2 - 5.7991 * t3
+                    + 14.1799 * t4 - 13.7451 * t5 + 4.6456 * t6)
+                    .clamp(0.0, 1.0);
+                let b = (0.3340 + 0.2383 * t + 0.5287 * t2 - 19.3324 * t3
+                    + 56.6905 * t4 - 65.3530 * t5 + 26.3124 * t6)
+                    .clamp(0.0, 1.0);
+                (r, g, b)
+            }
+            Colormap::Plasma => {
+                // Polynomial approximation matching shader
+                let t2 = t * t;
+                let t3 = t2 * t;
+                let t4 = t3 * t;
+                let t5 = t4 * t;
+
+                let r = (0.0504 + 1.3656 * t + 0.4324 * t2 - 6.8475 * t3 + 5.5523 * t4 - 0.5571 * t5)
+                    .clamp(0.0, 1.0);
+                let g = (0.0298 + 0.0099 * t + 2.2891 * t2 - 6.4044 * t3 + 5.4343 * t4 - 1.3609 * t5)
+                    .clamp(0.0, 1.0);
+                let b = (0.5280 + 1.8654 * t - 6.4178 * t2 + 10.0276 * t3 - 6.5861 * t4 + 1.5724 * t5)
+                    .clamp(0.0, 1.0);
+                (r, g, b)
+            }
+            Colormap::Inferno => {
+                // Polynomial approximation matching shader
+                let t2 = t * t;
+                let t3 = t2 * t;
+                let t4 = t3 * t;
+                let t5 = t4 * t;
+
+                let r = (0.0002 + 0.4366 * t + 4.1934 * t2 - 13.6829 * t3 + 16.1821 * t4 - 6.1307 * t5)
+                    .clamp(0.0, 1.0);
+                let g = (0.0003 + 0.0888 * t + 3.5044 * t2 - 8.7954 * t3 + 8.4731 * t4 - 2.2655 * t5)
+                    .clamp(0.0, 1.0);
+                let b = (0.0139 + 2.0252 * t - 6.4560 * t2 + 10.8598 * t3 - 9.6524 * t4 + 3.2059 * t5)
+                    .clamp(0.0, 1.0);
+                (r, g, b)
+            }
+            Colormap::Turbo => {
+                // Polynomial approximation matching shader
+                let r = (0.13572
+                    + t * (4.6153 + t * (-42.6592 + t * (138.5676 + t * (-152.3494 + t * 59.2859)))))
+                    .clamp(0.0, 1.0);
+                let g = (0.09140
+                    + t * (2.2537 + t * (0.6487 + t * (-23.3910 + t * (38.3522 - t * 18.0858)))))
+                    .clamp(0.0, 1.0);
+                let b = (0.10667
+                    + t * (12.5925 + t * (-60.5820 + t * (109.7316 + t * (-88.2949 + t * 26.7236)))))
+                    .clamp(0.0, 1.0);
+                (r, g, b)
+            }
+            Colormap::CoolWarm => {
+                // Matching shader implementation
+                let mid = 0.5;
+                if t < mid {
+                    let s = t / mid;
+                    let r = 0.23 + (0.87 - 0.23) * s;
+                    let g = 0.30 + (0.87 - 0.30) * s;
+                    let b = 0.75 + (0.87 - 0.75) * s;
+                    (r, g, b)
+                } else {
+                    let s = (t - mid) / (1.0 - mid);
+                    let r = 0.87 + (0.71 - 0.87) * s;
+                    let g = 0.87 + (0.02 - 0.87) * s;
+                    let b = 0.87 + (0.15 - 0.87) * s;
+                    (r, g, b)
+                }
+            }
+        }
+    }
 }
 
 /// Type of 3D surface plot

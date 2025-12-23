@@ -180,7 +180,7 @@ pub use contour::{ContourChart, contour};
 pub use error::ChartError;
 pub use heatmap::{HeatmapChart, heatmap};
 pub use isoline::{IsolineChart, isoline};
-pub use line::{ChartTheme, LegendPosition, LineChart, line};
+pub use line::{ChartTheme, LegendClickCallback, LegendPosition, LineChart, line};
 pub use pie::{PieChart, donut, pie};
 pub use scatter::{ScatterChart, ScatterTheme, scatter};
 pub use surface3d::{Surface3DChart, surface3d};
@@ -188,6 +188,7 @@ pub use treemap::{TilingMethod, Treemap, TreemapNode, treemap};
 
 // Re-export d3rs types users might need
 pub use d3rs::color::D3Color;
+pub use d3rs::gpu3d::{Colormap, Surface3DState};
 pub use d3rs::shape::CurveType;
 
 // ============================================================================

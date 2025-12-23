@@ -13,7 +13,9 @@ use d3rs::scale::{LinearScale, LogScale};
 use d3rs::shape::{CurveType, LineConfig, LinePoint, render_line};
 use d3rs::text::{VectorFontConfig, render_vector_text};
 use gpui::prelude::*;
-use gpui::{AnyElement, IntoElement, Rgba, div, px, rgb};
+use gpui::{AnyElement, App, ElementId, IntoElement, Rgba, Window, div, px, rgb};
+use std::collections::HashSet;
+use std::rc::Rc;
 
 /// Position of the legend relative to the chart
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -175,8 +177,11 @@ struct LineSeries {
     use_secondary_axis: bool,
 }
 
+/// Callback type for legend click events
+pub type LegendClickCallback = Rc<dyn Fn(usize, &mut Window, &mut App)>;
+
 /// Line chart builder.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct LineChart {
     x: Vec<f64>,
     // Primary series (backwards compatible)
@@ -209,6 +214,22 @@ pub struct LineChart {
     // Secondary Y-axis settings
     y2_label: Option<String>,
     y2_range: Option<[f64; 2]>,
+    /// Set of hidden series indices (0 = primary series, 1+ = additional series)
+    hidden_series: HashSet<usize>,
+    /// Callback when a legend item is clicked (receives series index)
+    on_legend_click: Option<LegendClickCallback>,
+}
+
+impl std::fmt::Debug for LineChart {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LineChart")
+            .field("x_len", &self.x.len())
+            .field("y_len", &self.y.len())
+            .field("series_count", &self.series.len())
+            .field("title", &self.title)
+            .field("hidden_series", &self.hidden_series)
+            .finish()
+    }
 }
 
 impl LineChart {
@@ -541,6 +562,61 @@ impl LineChart {
         self
     }
 
+    /// Set which series are hidden (not rendered).
+    ///
+    /// Series are indexed starting from 0 (primary series), then 1, 2, etc. for
+    /// additional series added via `add_series()`.
+    ///
+    /// Hidden series still appear in the legend (grayed out) and can be toggled
+    /// back on by clicking if `on_legend_click` is set.
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// use gpui_px::line;
+    ///
+    /// let chart = line(&[1.0, 2.0], &[1.0, 2.0])
+    ///     .hidden_series(&[1, 2]) // Hide series 1 and 2
+    ///     .build();
+    /// ```
+    pub fn hidden_series(mut self, indices: &[usize]) -> Self {
+        self.hidden_series = indices.iter().copied().collect();
+        self
+    }
+
+    /// Set callback for when a legend item is clicked.
+    ///
+    /// The callback receives the series index (0 = primary, 1+ = additional series).
+    /// Use this to implement toggle visibility by updating `hidden_series` and re-rendering.
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// use gpui_px::line;
+    /// use std::rc::Rc;
+    /// use std::cell::RefCell;
+    ///
+    /// let hidden = Rc::new(RefCell::new(std::collections::HashSet::new()));
+    /// let hidden_clone = hidden.clone();
+    ///
+    /// let chart = line(&[1.0, 2.0], &[1.0, 2.0])
+    ///     .on_legend_click(move |index, _window, _cx| {
+    ///         let mut set = hidden_clone.borrow_mut();
+    ///         if set.contains(&index) {
+    ///             set.remove(&index);
+    ///         } else {
+    ///             set.insert(index);
+    ///         }
+    ///         // Trigger re-render here
+    ///     })
+    ///     .build();
+    /// ```
+    pub fn on_legend_click<F>(mut self, callback: F) -> Self
+    where
+        F: Fn(usize, &mut Window, &mut App) + 'static,
+    {
+        self.on_legend_click = Some(Rc::new(callback));
+        self
+    }
+
     /// Set the target aspect ratio for the graph area.
     ///
     /// The ratio is defined as `height / width`. Default is `1.414` (≈ √2, similar to A4 paper).
@@ -793,6 +869,9 @@ impl LineChart {
         };
 
         // Create data points for primary series
+        // Check if primary series is hidden
+        let primary_hidden = self.hidden_series.contains(&0);
+
         let primary_data: Vec<LinePoint> = self
             .x
             .iter()
@@ -809,9 +888,15 @@ impl LineChart {
             .show_points(self.show_points);
 
         // Prepare additional series data and configs, separating primary and secondary axis series
+        // Skip hidden series
         let mut series_data_configs: Vec<(Vec<LinePoint>, LineConfig)> = Vec::new();
         let mut secondary_series_data_configs: Vec<(Vec<LinePoint>, LineConfig)> = Vec::new();
-        for series in &self.series {
+        for (i, series) in self.series.iter().enumerate() {
+            // Series index is i+1 (primary is 0)
+            if self.hidden_series.contains(&(i + 1)) {
+                continue; // Skip hidden series
+            }
+
             // Use custom X values if provided, otherwise use primary X values
             let x_values = series.x.as_ref().unwrap_or(&self.x);
             let series_points: Vec<LinePoint> = x_values
@@ -883,13 +968,15 @@ impl LineChart {
                     ));
                 }
 
-                // Render primary series on top
-                plot_area = plot_area.child(render_line(
-                    &x_scale,
-                    &y_scale,
-                    &primary_data,
-                    &primary_config,
-                ));
+                // Render primary series on top (if not hidden)
+                if !primary_hidden {
+                    plot_area = plot_area.child(render_line(
+                        &x_scale,
+                        &y_scale,
+                        &primary_data,
+                        &primary_config,
+                    ));
+                }
 
                 // Render secondary axis series using secondary Y scale
                 for (series_data, series_config) in &secondary_series_data_configs {
@@ -996,13 +1083,15 @@ impl LineChart {
                     ));
                 }
 
-                // Render primary series on top
-                plot_area = plot_area.child(render_line(
-                    &x_scale,
-                    &y_scale,
-                    &primary_data,
-                    &primary_config,
-                ));
+                // Render primary series on top (if not hidden)
+                if !primary_hidden {
+                    plot_area = plot_area.child(render_line(
+                        &x_scale,
+                        &y_scale,
+                        &primary_data,
+                        &primary_config,
+                    ));
+                }
 
                 // Render secondary axis series using secondary Y scale
                 for (series_data, series_config) in &secondary_series_data_configs {
@@ -1113,13 +1202,15 @@ impl LineChart {
                     ));
                 }
 
-                // Render primary series on top
-                plot_area = plot_area.child(render_line(
-                    &x_scale,
-                    &y_scale,
-                    &primary_data,
-                    &primary_config,
-                ));
+                // Render primary series on top (if not hidden)
+                if !primary_hidden {
+                    plot_area = plot_area.child(render_line(
+                        &x_scale,
+                        &y_scale,
+                        &primary_data,
+                        &primary_config,
+                    ));
+                }
 
                 // Render secondary axis series using secondary Y scale
                 for (series_data, series_config) in &secondary_series_data_configs {
@@ -1229,13 +1320,15 @@ impl LineChart {
                     ));
                 }
 
-                // Render primary series on top
-                plot_area = plot_area.child(render_line(
-                    &x_scale,
-                    &y_scale,
-                    &primary_data,
-                    &primary_config,
-                ));
+                // Render primary series on top (if not hidden)
+                if !primary_hidden {
+                    plot_area = plot_area.child(render_line(
+                        &x_scale,
+                        &y_scale,
+                        &primary_data,
+                        &primary_config,
+                    ));
+                }
 
                 // Render secondary axis series using secondary Y scale
                 for (series_data, series_config) in &secondary_series_data_configs {
@@ -1317,17 +1410,18 @@ impl LineChart {
         };
 
         // Collect legend items if enabled
-        let mut legend_items = Vec::new();
+        // Collect legend items: (series_index, color, label)
+        let mut legend_items: Vec<(usize, u32, String)> = Vec::new();
         if has_legend_items {
-            // Add primary series to legend if it has a label
+            // Add primary series to legend if it has a label (index 0)
             if let Some(label) = &self.label {
-                legend_items.push((self.color, label.clone()));
+                legend_items.push((0, self.color, label.clone()));
             }
 
-            // Add all additional series to legend
-            for series in &self.series {
+            // Add all additional series to legend (index 1, 2, ...)
+            for (i, series) in self.series.iter().enumerate() {
                 if let Some(label) = &series.label {
-                    legend_items.push((series.color, label.clone()));
+                    legend_items.push((i + 1, series.color, label.clone()));
                 }
             }
         }
@@ -1359,27 +1453,62 @@ impl LineChart {
 
         // Add chart content and legend based on position
         if !legend_items.is_empty() {
-            // Build legend element (individual item for each series)
-            let legend_item = |color: u32, label: String| {
-                div()
+            // Build interactive legend element
+            let hidden_series = self.hidden_series.clone();
+            let on_click = self.on_legend_click.clone();
+            let legend_text_color = self.theme.legend_text_color;
+
+            let build_legend_item = move |series_idx: usize, color: u32, label: String| {
+                let is_hidden = hidden_series.contains(&series_idx);
+                let callback = on_click.clone();
+
+                // Base item div with ID for click handling
+                let mut item = div()
+                    .id(ElementId::NamedInteger("legend-item".into(), series_idx as u64))
                     .flex()
                     .items_center()
                     .gap_2()
-                    .child(div().w(px(16.0)).h(px(3.0)).bg(rgb(color)))
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(self.theme.legend_text_color)
-                            .child(label),
-                    )
+                    .rounded_sm()
+                    .px_1()
+                    .cursor_pointer();
+
+                // Add hover effect
+                item = item.hover(|s| s.bg(gpui::rgba(0x00000010)));
+
+                // Color swatch - grayed out if hidden
+                let swatch_color = if is_hidden {
+                    gpui::rgba(0xccccccff)
+                } else {
+                    rgb(color)
+                };
+                item = item.child(div().w(px(16.0)).h(px(3.0)).bg(swatch_color));
+
+                // Label - with strikethrough and faded if hidden
+                let label_color = if is_hidden {
+                    gpui::rgba(0x00000040)
+                } else {
+                    legend_text_color
+                };
+                let label_div = div().text_xs().text_color(label_color).child(label);
+                item = item.child(label_div);
+
+                // Add click handler if callback provided
+                if let Some(cb) = callback {
+                    item = item.on_mouse_down(gpui::MouseButton::Left, move |_, window, cx| {
+                        cb(series_idx, window, cx);
+                    });
+                }
+
+                item
             };
 
             match legend_position {
                 LegendPosition::Right => {
                     // Vertical legend on the right (current default behavior)
                     let mut legend_column = div().flex().flex_col().gap_2().p_2();
-                    for (color, label) in legend_items {
-                        legend_column = legend_column.child(legend_item(color, label));
+                    for (idx, color, label) in legend_items {
+                        legend_column =
+                            legend_column.child(build_legend_item(idx, color, label.clone()));
                     }
 
                     container = container.child(
@@ -1394,8 +1523,9 @@ impl LineChart {
                 LegendPosition::Left => {
                     // Vertical legend on the left
                     let mut legend_column = div().flex().flex_col().gap_2().p_2();
-                    for (color, label) in legend_items {
-                        legend_column = legend_column.child(legend_item(color, label));
+                    for (idx, color, label) in legend_items {
+                        legend_column =
+                            legend_column.child(build_legend_item(idx, color, label.clone()));
                     }
 
                     container = container.child(
@@ -1416,8 +1546,8 @@ impl LineChart {
                         .gap_4()
                         .p_2()
                         .justify_center();
-                    for (color, label) in legend_items {
-                        legend_row = legend_row.child(legend_item(color, label));
+                    for (idx, color, label) in legend_items {
+                        legend_row = legend_row.child(build_legend_item(idx, color, label.clone()));
                     }
 
                     container = container.child(
@@ -1438,8 +1568,8 @@ impl LineChart {
                         .gap_4()
                         .p_2()
                         .justify_center();
-                    for (color, label) in legend_items {
-                        legend_row = legend_row.child(legend_item(color, label));
+                    for (idx, color, label) in legend_items {
+                        legend_row = legend_row.child(build_legend_item(idx, color, label.clone()));
                     }
 
                     container = container.child(
@@ -1510,6 +1640,8 @@ pub fn line(x: &[f64], y: &[f64]) -> LineChart {
         theme: ChartTheme::default(),
         y2_label: None,
         y2_range: None,
+        hidden_series: HashSet::new(),
+        on_legend_click: None,
     }
 }
 

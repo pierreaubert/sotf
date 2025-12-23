@@ -280,7 +280,7 @@ impl Element for Surface3DElement {
                     let mut y = screen_pos.y + f32::from(bounds.origin.y);
 
                     let font_size = 10.0;
-                    let color = gpui::rgba(0x000000ff); // Black text
+                    let color = gpui::rgba(0xffffffff); // White text for dark backgrounds
 
                     // Simple alignment adjustment
                     if align_right {
@@ -338,7 +338,7 @@ impl Element for Surface3DElement {
                         builder.move_to(p1);
                         builder.line_to(p2);
                         if let Ok(path) = builder.build() {
-                            window.paint_path(path, gpui::rgba(0x000000ff));
+                            window.paint_path(path, gpui::rgba(0xffffffff));
                         }
                     }
 
@@ -386,7 +386,7 @@ impl Element for Surface3DElement {
                             screen_y,
                             font_size,
                             1.0,
-                            gpui::rgba(0x000000ff),
+                            gpui::rgba(0xffffffff),
                             0.0, // Always upright (face camera)
                         );
                     }
@@ -527,11 +527,31 @@ impl Element for Surface3DElement {
             }
 
             // SPL Labels (Y axis)
-            let spl_ticks = self
-                .data
-                .z_ticks
-                .clone()
-                .unwrap_or_else(|| vec![-40.0, -30.0, -20.0, -10.0, 0.0, 10.0]);
+            // Generate dynamic ticks based on actual data range
+            let spl_ticks = self.data.z_ticks.clone().unwrap_or_else(|| {
+                let z_min = self.data.z_min;
+                let z_max = self.data.z_max;
+                let range = z_max - z_min;
+                // Choose step size based on range
+                let step = if range > 40.0 {
+                    10.0
+                } else if range > 20.0 {
+                    5.0
+                } else if range > 10.0 {
+                    2.0
+                } else {
+                    1.0
+                };
+                // Generate ticks aligned to step size, within data range
+                let start = (z_min / step).ceil() * step;
+                let mut ticks = Vec::new();
+                let mut tick = start;
+                while tick <= z_max + 0.01 {
+                    ticks.push(tick);
+                    tick += step;
+                }
+                ticks
+            });
             for spl in spl_ticks {
                 let y = self.data.normalize_z(spl) - 0.5;
                 let pos = glam::Vec3::new(best_y_x, y, best_y_z);
@@ -579,7 +599,7 @@ impl Element for Surface3DElement {
                         builder.move_to(p1);
                         builder.line_to(p2);
                         if let Ok(path) = builder.build() {
-                            window.paint_path(path, gpui::rgba(0x000000ff));
+                            window.paint_path(path, gpui::rgba(0xffffffff));
                         }
                     }
 
@@ -622,7 +642,7 @@ impl Element for Surface3DElement {
                             screen_y,
                             font_size,
                             1.0,
-                            gpui::rgba(0x000000ff),
+                            gpui::rgba(0xffffffff),
                             0.0,
                         );
                     }
@@ -684,6 +704,107 @@ impl Element for Surface3DElement {
                 let label = format!("{}°", el);
 
                 draw_tick_and_label(window, pos, tick_vec, label);
+            }
+        }
+
+        // Draw colorbar legend if enabled
+        if self.config.show_colorbar {
+            let colorbar_width: f32 = 20.0;
+            let colorbar_height: f32 = height * 0.6;
+            let colorbar_x = f32::from(bounds.origin.x) + width - colorbar_width - 50.0;
+            let colorbar_y = f32::from(bounds.origin.y) + (height - colorbar_height) / 2.0;
+            let num_segments = 50;
+
+            // Get Z range from data
+            let (z_min, z_max) = (self.data.z_min, self.data.z_max);
+
+            // Draw colorbar segments
+            for i in 0..num_segments {
+                let t = i as f32 / num_segments as f32;
+                let segment_height = colorbar_height / num_segments as f32;
+                let y = colorbar_y + colorbar_height - (t + 1.0 / num_segments as f32) * colorbar_height;
+
+                // Get color from colormap
+                let color = self.config.colormap.color_at(1.0 - t);
+                let rgba = gpui::rgba(
+                    ((color.0 * 255.0) as u32) << 24
+                        | ((color.1 * 255.0) as u32) << 16
+                        | ((color.2 * 255.0) as u32) << 8
+                        | 0xFF,
+                );
+
+                window.paint_quad(gpui::PaintQuad {
+                    bounds: gpui::Bounds::new(
+                        gpui::point(px(colorbar_x), px(y)),
+                        gpui::size(px(colorbar_width), px(segment_height + 1.0)),
+                    ),
+                    corner_radii: gpui::Corners::default(),
+                    background: rgba.into(),
+                    border_widths: gpui::Edges::default(),
+                    border_color: gpui::transparent_black(),
+                    border_style: Default::default(),
+                });
+            }
+
+            // Draw border around colorbar
+            let mut builder = gpui::PathBuilder::stroke(px(1.0));
+            builder.move_to(gpui::point(px(colorbar_x), px(colorbar_y)));
+            builder.line_to(gpui::point(px(colorbar_x + colorbar_width), px(colorbar_y)));
+            builder.line_to(gpui::point(
+                px(colorbar_x + colorbar_width),
+                px(colorbar_y + colorbar_height),
+            ));
+            builder.line_to(gpui::point(px(colorbar_x), px(colorbar_y + colorbar_height)));
+            builder.line_to(gpui::point(px(colorbar_x), px(colorbar_y)));
+            if let Ok(path) = builder.build() {
+                window.paint_path(path, gpui::rgba(0xffffffff));
+            }
+
+            // Draw tick labels for colorbar
+            let num_ticks = 5;
+            let font_size = 9.0;
+            for i in 0..=num_ticks {
+                let t = i as f64 / num_ticks as f64;
+                let value = z_min + t * (z_max - z_min);
+                let y = colorbar_y + colorbar_height * (1.0 - t as f32);
+
+                // Draw tick line
+                let mut builder = gpui::PathBuilder::stroke(px(1.0));
+                builder.move_to(gpui::point(px(colorbar_x + colorbar_width), px(y)));
+                builder.line_to(gpui::point(px(colorbar_x + colorbar_width + 4.0), px(y)));
+                if let Ok(path) = builder.build() {
+                    window.paint_path(path, gpui::rgba(0xffffffff));
+                }
+
+                // Draw label
+                let label = format!("{:.0}", value);
+                paint_vector_text_at(
+                    window,
+                    &label,
+                    colorbar_x + colorbar_width + 6.0,
+                    y - font_size / 2.0,
+                    font_size,
+                    1.0,
+                    gpui::rgba(0xffffffff),
+                    0.0,
+                );
+            }
+
+            // Draw colorbar title (Z label)
+            if let Some(ref z_label) = self.data.z_label {
+                let label_x = colorbar_x + colorbar_width / 2.0;
+                let label_y = colorbar_y - 15.0;
+                let text_width = measure_text_width(z_label, 10.0);
+                paint_vector_text_at(
+                    window,
+                    z_label,
+                    label_x - text_width / 2.0,
+                    label_y,
+                    10.0,
+                    1.0,
+                    gpui::rgba(0xffffffff),
+                    0.0,
+                );
             }
         }
     }

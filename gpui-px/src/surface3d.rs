@@ -5,10 +5,12 @@ use crate::{
     DEFAULT_HEIGHT, DEFAULT_TITLE_FONT_SIZE, DEFAULT_WIDTH, TITLE_AREA_HEIGHT, validate_data_array,
     validate_dimensions, validate_grid_dimensions, validate_monotonic, validate_positive,
 };
-use d3rs::gpu3d::{Colormap, Surface3DConfig, Surface3DElement, SurfaceData};
+use d3rs::gpu3d::{Colormap, Surface3DConfig, Surface3DElement, Surface3DState, SurfaceData};
 use d3rs::text::{VectorFontConfig, render_vector_text};
 use gpui::prelude::*;
 use gpui::{IntoElement, div, hsla, px};
+use std::cell::RefCell;
+use std::rc::Rc;
 
 /// Surface 3D chart builder.
 #[derive(Clone)]
@@ -30,6 +32,8 @@ pub struct Surface3DChart {
     x_label: Option<String>,
     y_label: Option<String>,
     z_label: Option<String>,
+    /// External state for camera/interaction control
+    external_state: Option<Rc<RefCell<Surface3DState>>>,
 }
 
 impl std::fmt::Debug for Surface3DChart {
@@ -124,6 +128,15 @@ impl Surface3DChart {
     /// Set Z-axis label.
     pub fn z_label(mut self, label: impl Into<String>) -> Self {
         self.z_label = Some(label.into());
+        self
+    }
+
+    /// Set external state for camera/interaction control.
+    ///
+    /// When external state is provided, mouse interaction handlers on the parent
+    /// view can update this state to control camera rotation, zoom, and pan.
+    pub fn with_state(mut self, state: Rc<RefCell<Surface3DState>>) -> Self {
+        self.external_state = Some(state);
         self
     }
 
@@ -239,13 +252,20 @@ impl Surface3DChart {
             );
         }
 
-        // Add surface element
+        // Add surface element with optional external state
+        let element = Surface3DElement::new(data, config);
+        let element = if let Some(state) = self.external_state {
+            element.with_state(state)
+        } else {
+            element
+        };
+
         container = container.child(
             div()
                 .w(px(self.width))
                 .h(px(plot_height))
                 .relative()
-                .child(Surface3DElement::new(data, config)),
+                .child(element),
         );
 
         Ok(container)
@@ -294,5 +314,6 @@ pub fn surface3d(z: &[f64], grid_width: usize, grid_height: usize) -> Surface3DC
         x_label: None,
         y_label: None,
         z_label: None,
+        external_state: None,
     }
 }
