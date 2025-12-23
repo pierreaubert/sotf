@@ -48,6 +48,7 @@ pub enum InputMode {
     LoadApoFile,
     LoadSofaFile,
     Help,
+    HelpSupport,
     KeyboardShortcuts,
     About,
     EditingParam,

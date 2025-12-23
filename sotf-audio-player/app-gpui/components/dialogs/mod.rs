@@ -31,7 +31,7 @@ impl PlayerView {
         let keybindings = get_keybindings_for_screen(state.app.current_screen);
 
         Dialog::new("help-modal")
-            .title(format!("Help - {} Screen", screen_name))
+            .title(format!("Keyboard Shortcuts - {} Screen", screen_name))
             .size(DialogSize::Full)
             .content(
                 VStack::new()
@@ -50,7 +50,8 @@ impl PlayerView {
                     ))
                     .child(self.render_keybinding_row("+/=", "Increase volume", &theme))
                     .child(self.render_keybinding_row("-/_", "Decrease volume", &theme))
-                    .child(self.render_keybinding_row("?", "Show this help", &theme))
+                    .child(self.render_keybinding_row("?", "Show keyboard shortcuts", &theme))
+                    .child(self.render_keybinding_row("Shift-?", "Show help & support", &theme))
                     .child(div().h_4()) // Spacer
                     // Screen-specific keybindings section
                     .child(
@@ -119,6 +120,136 @@ impl PlayerView {
             )
             .footer(
                 Text::new("Press ESC to close")
+                    .size(TextSize::Xs)
+                    .muted(true),
+            )
+    }
+
+    pub(crate) fn render_help_support_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let theme = state.app.theme.clone();
+
+        Dialog::new("help-support-dialog")
+            .title("Help & Support")
+            .size(DialogSize::Md)
+            .content(
+                VStack::new()
+                    .spacing(StackSpacing::Lg)
+                    .align(StackAlign::Center)
+                    // Links section
+                    .child(
+                        VStack::new()
+                            .spacing(StackSpacing::Md)
+                            .align(StackAlign::Start)
+                            .child(
+                                div()
+                                    .id("link-new-features")
+                                    .flex()
+                                    .items_center()
+                                    .gap_3()
+                                    .p_3()
+                                    .w_full()
+                                    .rounded_md()
+                                    .bg(theme.surface_hover)
+                                    .cursor_pointer()
+                                    .hover(|s| s.bg(theme.accent_muted))
+                                    .child(
+                                        Text::new("🚀")
+                                            .size(TextSize::Xl),
+                                    )
+                                    .child(
+                                        VStack::new()
+                                            .spacing(StackSpacing::Xs)
+                                            .child(
+                                                Text::new("Request New Features")
+                                                    .size(TextSize::Md)
+                                                    .weight(TextWeight::Semibold)
+                                                    .color(theme.text_primary),
+                                            )
+                                            .child(
+                                                Text::new("Share your ideas for new features")
+                                                    .size(TextSize::Sm)
+                                                    .color(theme.text_secondary),
+                                            ),
+                                    )
+                                    .on_click(|_, _window, cx| {
+                                        cx.open_url("https://github.com/pierreaubert/sotf/discussions/117");
+                                    }),
+                            )
+                            .child(
+                                div()
+                                    .id("link-report-bugs")
+                                    .flex()
+                                    .items_center()
+                                    .gap_3()
+                                    .p_3()
+                                    .w_full()
+                                    .rounded_md()
+                                    .bg(theme.surface_hover)
+                                    .cursor_pointer()
+                                    .hover(|s| s.bg(theme.accent_muted))
+                                    .child(
+                                        Text::new("🐛")
+                                            .size(TextSize::Xl),
+                                    )
+                                    .child(
+                                        VStack::new()
+                                            .spacing(StackSpacing::Xs)
+                                            .child(
+                                                Text::new("Report Bugs")
+                                                    .size(TextSize::Md)
+                                                    .weight(TextWeight::Semibold)
+                                                    .color(theme.text_primary),
+                                            )
+                                            .child(
+                                                Text::new("Help us fix issues you encounter")
+                                                    .size(TextSize::Sm)
+                                                    .color(theme.text_secondary),
+                                            ),
+                                    )
+                                    .on_click(|_, _window, cx| {
+                                        cx.open_url("https://github.com/pierreaubert/sotf/discussions/116");
+                                    }),
+                            )
+                            .child(
+                                div()
+                                    .id("link-github")
+                                    .flex()
+                                    .items_center()
+                                    .gap_3()
+                                    .p_3()
+                                    .w_full()
+                                    .rounded_md()
+                                    .bg(theme.surface_hover)
+                                    .cursor_pointer()
+                                    .hover(|s| s.bg(theme.accent_muted))
+                                    .child(
+                                        Text::new("📦")
+                                            .size(TextSize::Xl),
+                                    )
+                                    .child(
+                                        VStack::new()
+                                            .spacing(StackSpacing::Xs)
+                                            .child(
+                                                Text::new("GitHub Repository")
+                                                    .size(TextSize::Md)
+                                                    .weight(TextWeight::Semibold)
+                                                    .color(theme.text_primary),
+                                            )
+                                            .child(
+                                                Text::new("View source code and documentation")
+                                                    .size(TextSize::Sm)
+                                                    .color(theme.text_secondary),
+                                            ),
+                                    )
+                                    .on_click(|_, _window, cx| {
+                                        cx.open_url("https://github.com/pierreaubert/sotf");
+                                    }),
+                            ),
+                    ),
+            )
+            .footer(
+                Text::new("Press ESC or Shift-? to close")
                     .size(TextSize::Xs)
                     .muted(true),
             )

@@ -379,6 +379,7 @@ impl PlayerView {
             WizardStep::new("select", "Select"),
             WizardStep::new("configure", "Optimize"),
             WizardStep::new("review", "Review"),
+            WizardStep::new("export", "Export"),
         ];
 
         let wizard_theme = WizardTheme::from(&theme.to_ui_kit_theme(theme_id));

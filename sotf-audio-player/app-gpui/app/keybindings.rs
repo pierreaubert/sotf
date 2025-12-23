@@ -150,6 +150,7 @@ fn default_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("/", actions::ToggleSearch, None),
         KeyBinding::new("t", actions::ToggleLibraryView, Some("PlayerView")),
         KeyBinding::new("?", actions::ToggleHelp, None),
+        KeyBinding::new("shift-?", actions::ToggleHelpSupport, None),
         // Sort and filter cycling
         KeyBinding::new("s", actions::CycleSortOrder, Some("PlayerView")),
         KeyBinding::new("c", actions::CycleChannelFilter, Some("PlayerView")),
@@ -214,6 +215,7 @@ fn vim_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("/", actions::ToggleSearch, None),
         KeyBinding::new("g v", actions::ToggleLibraryView, None),
         KeyBinding::new("?", actions::ToggleHelp, None),
+        KeyBinding::new("shift-?", actions::ToggleHelpSupport, None),
         KeyBinding::new("F1", actions::ToggleHelp, None),
         // Sort and filter
         KeyBinding::new("o s", actions::CycleSortOrder, None),
@@ -281,6 +283,7 @@ fn emacs_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("/", actions::ToggleSearch, None),
         KeyBinding::new("ctrl-x v", actions::ToggleLibraryView, None),
         KeyBinding::new("ctrl-h", actions::ToggleHelp, None),
+        KeyBinding::new("ctrl-shift-h", actions::ToggleHelpSupport, None),
         KeyBinding::new("F1", actions::ToggleHelp, None),
         // Sort and filter - Emacs style
         KeyBinding::new("alt-s", actions::CycleSortOrder, None),
@@ -348,6 +351,7 @@ fn vscode_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("/", actions::ToggleSearch, None),
         KeyBinding::new("ctrl-shift-e", actions::ToggleLibraryView, None),
         KeyBinding::new("ctrl-shift-?", actions::ToggleHelp, None),
+        KeyBinding::new("ctrl-alt-?", actions::ToggleHelpSupport, None),
         KeyBinding::new("F1", actions::ToggleHelp, None),
         // Sort and filter
         KeyBinding::new("ctrl-shift-s", actions::CycleSortOrder, None),

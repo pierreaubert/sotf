@@ -268,142 +268,206 @@ pub(crate) fn render_channel_result_card(
         })
 }
 
-/// Render the frequency response comparison graph
+/// Render the frequency response comparison graph with tonal balance histogram
 fn render_response_comparison_graph(
     original: &[(f64, f64)],
     corrected: &[(f64, f64)],
     theme: &crate::theme::Theme,
 ) -> impl IntoElement {
-    use d3rs::color::D3Color;
-    use d3rs::scale::{LinearScale, LogScale, Scale};
-    use d3rs::shape::{LineConfig, LinePoint, render_line};
+    use crate::components::graphs::common::theme_to_chart_theme;
+    use gpui_px::{BarTheme, LegendPosition, ScaleType, bar, line};
 
-    const GRAPH_WIDTH: f32 = 400.0;
-    const GRAPH_HEIGHT: f32 = 150.0;
-    const Y_AXIS_WIDTH: f32 = 32.0;
-    const X_AXIS_HEIGHT: f32 = 16.0;
-    const MIN_FREQ: f64 = 20.0;
-    const MAX_FREQ: f64 = 20000.0;
+    const GRAPH_WIDTH: f32 = 800.0;
+    const GRAPH_HEIGHT: f32 = 600.0;
 
-    // Calculate dB range
-    let all_values: Vec<f64> = original
-        .iter()
-        .chain(corrected.iter())
-        .map(|(_, db)| *db)
-        .collect();
-    let min_db = all_values
-        .iter()
-        .copied()
-        .fold(f64::INFINITY, f64::min)
-        .max(-24.0);
-    let max_db = all_values
-        .iter()
-        .copied()
-        .fold(f64::NEG_INFINITY, f64::max)
-        .min(24.0);
+    // CEA2034 standard colors for consistency
+    const BLUE: u32 = 0x1f77b4;
+    const ORANGE: u32 = 0xff7f0e;
 
-    // Add padding
-    let range = max_db - min_db;
-    let padding = range * 0.1;
-    let min_db = ((min_db - padding) / 6.0).floor() * 6.0;
-    let max_db = ((max_db + padding) / 6.0).ceil() * 6.0;
+    // Convert (freq, db) pairs to separate vectors
+    let frequencies: Vec<f64> = original.iter().map(|(f, _)| *f).collect();
+    let original_values: Vec<f64> = original.iter().map(|(_, db)| *db).collect();
+    let corrected_values: Vec<f64> = corrected.iter().map(|(_, db)| *db).collect();
 
-    let freq_scale = LogScale::new()
-        .domain(MIN_FREQ, MAX_FREQ)
-        .range(0.0, GRAPH_WIDTH as f64);
-    let db_scale = LinearScale::new()
-        .domain(min_db, max_db)
-        .range(GRAPH_HEIGHT as f64, 0.0);
+    if frequencies.is_empty() {
+        return div().child(
+            Text::new("No data available")
+                .size(TextSize::Sm)
+                .color(theme.text_muted),
+        ).into_any_element();
+    }
 
-    // Create line points
-    let original_points: Vec<LinePoint> = original
-        .iter()
-        .map(|(f, db)| LinePoint::new(*f, *db))
-        .collect();
-    let corrected_points: Vec<LinePoint> = corrected
-        .iter()
-        .map(|(f, db)| LinePoint::new(*f, *db))
-        .collect();
+    let chart_theme = theme_to_chart_theme(theme);
 
-    let original_config = LineConfig::new()
-        .stroke_width(1.5)
-        .stroke_color(D3Color::from_rgba(theme.text_muted));
-    let corrected_config = LineConfig::new()
+    // Manual linear regression helper
+    let calculate_trend = |freqs: &[f64], values: &[f64]| -> Option<(f64, f64)> {
+        let min_freq = 100.0;
+        let max_freq = 10000.0;
+        let mut sum_x = 0.0;
+        let mut sum_y = 0.0;
+        let mut sum_xy = 0.0;
+        let mut sum_xx = 0.0;
+        let mut count = 0.0;
+
+        for (i, &f) in freqs.iter().enumerate() {
+            if f >= min_freq && f <= max_freq {
+                if let Some(&y) = values.get(i) {
+                    let x = f.log10();
+                    sum_x += x;
+                    sum_y += y;
+                    sum_xy += x * y;
+                    sum_xx += x * x;
+                    count += 1.0;
+                }
+            }
+        }
+
+        if count < 2.0 {
+            return None;
+        }
+
+        let mean_x = sum_x / count;
+        let mean_y = sum_y / count;
+
+        let denominator = sum_xx - count * mean_x * mean_x;
+        if denominator.abs() < 1e-10 {
+            return None;
+        }
+
+        let slope = (sum_xy - count * mean_x * mean_y) / denominator;
+        let intercept = mean_y - slope * mean_x;
+
+        Some((slope, intercept))
+    };
+
+    let orig_trend = calculate_trend(&frequencies, &original_values);
+    let corr_trend = calculate_trend(&frequencies, &corrected_values);
+
+    // Build line chart
+    let mut chart_builder = line(&frequencies, &original_values)
+        .x_scale(ScaleType::Log)
+        .x_range(20.0, 20000.0)
+        .y_range(-15.0, 5.0)
+        .y_label("SPL (dB)")
+        .label("Original")
+        .legend_position(LegendPosition::Bottom)
+        .color(BLUE)
         .stroke_width(2.0)
-        .stroke_color(D3Color::from_rgba(theme.info));
+        .opacity(1.0)
+        .theme(chart_theme.clone())
+        .size(GRAPH_WIDTH, GRAPH_HEIGHT)
+        .add_series(
+            &corrected_values,
+            Some("Corrected"),
+            ORANGE,
+            2.0,
+            1.0,
+        );
 
-    let original_line = render_line(&freq_scale, &db_scale, &original_points, &original_config);
-    let corrected_line = render_line(&freq_scale, &db_scale, &corrected_points, &corrected_config);
+    // Add trend lines if calculated
+    if let Some((slope, intercept)) = orig_trend {
+        let trend: Vec<f64> = frequencies
+            .iter()
+            .map(|f| slope * f.log10() + intercept)
+            .collect();
+        chart_builder = chart_builder.add_series(
+            &trend,
+            Some(&format!("{:.2} dB/oct", slope)),
+            BLUE,
+            1.5,
+            0.6,
+        );
+    }
+
+    if let Some((slope, intercept)) = corr_trend {
+        let trend: Vec<f64> = frequencies
+            .iter()
+            .map(|f| slope * f.log10() + intercept)
+            .collect();
+        chart_builder = chart_builder.add_series(
+            &trend,
+            Some(&format!("{:.2} dB/oct", slope)),
+            ORANGE,
+            1.5,
+            0.6,
+        );
+    }
+
+    let line_chart = chart_builder.build();
+
+    // Build histogram if we have trend data
+    let hist_chart = if let (Some((slope_orig, int_orig)), Some((slope_corr, int_corr))) = (orig_trend, corr_trend) {
+        let calculate_histogram =
+            |freqs: &[f64], values: &[f64], slope: f64, intercept: f64| -> Vec<f64> {
+                let min_freq = 100.0;
+                let max_freq = 10000.0;
+                // Bins: [0, 0.5), [0.5, 1.0), ... [3.5, 4.0), [4.0, inf)
+                let mut bins = vec![0.0; 9];
+
+                for (i, &f) in freqs.iter().enumerate() {
+                    if f >= min_freq && f <= max_freq {
+                        if let Some(&y) = values.get(i) {
+                            let trend_y = slope * f.log10() + intercept;
+                            let deviation = (y - trend_y).abs();
+
+                            let bin_idx = (deviation / 0.5).floor() as usize;
+                            if bin_idx < 8 {
+                                bins[bin_idx] += 1.0;
+                            } else {
+                                bins[8] += 1.0; // Overflow bin
+                            }
+                        }
+                    }
+                }
+                bins
+            };
+
+        let hist_orig = calculate_histogram(
+            &frequencies,
+            &original_values,
+            slope_orig,
+            int_orig,
+        );
+        let hist_corr = calculate_histogram(
+            &frequencies,
+            &corrected_values,
+            slope_corr,
+            int_corr,
+        );
+
+        let labels = vec![
+            "0-0.5", "0.5-1", "1-1.5", "1.5-2", "2-2.5", "2.5-3", "3-3.5", "3.5-4", ">4",
+        ];
+
+        let bar_theme = BarTheme {
+            plot_background: theme.surface,
+            title_color: theme.text_primary,
+            legend_text_color: theme.text_secondary,
+        };
+
+        bar(&labels, &hist_orig)
+            .color(BLUE)
+            .label("Original")
+            .theme(bar_theme)
+            .size(GRAPH_WIDTH, GRAPH_HEIGHT / 2.0)
+            .bar_gap(4.0)
+            .opacity(0.8)
+            .legend_position(LegendPosition::Bottom)
+            .add_series(&hist_corr, Some("Corrected"), ORANGE, 0.8)
+            .build()
+            .ok()
+    } else {
+        None
+    };
 
     div()
-        .w(px(GRAPH_WIDTH + Y_AXIS_WIDTH))
-        .h(px(GRAPH_HEIGHT + X_AXIS_HEIGHT + 24.0))
+        .w(px(GRAPH_WIDTH))
         .flex()
         .flex_col()
-        .child(
-            div()
-                .flex()
-                // Graph area
-                .child(
-                    div()
-                        .w(px(GRAPH_WIDTH))
-                        .h(px(GRAPH_HEIGHT))
-                        .bg(theme.background)
-                        .rounded_md()
-                        .border_1()
-                        .border_color(theme.border)
-                        .relative()
-                        .overflow_hidden()
-                        // Zero line
-                        .when(min_db <= 0.0 && max_db >= 0.0, |el| {
-                            let zero_y = db_scale.scale(0.0) as f32;
-                            el.child(
-                                div()
-                                    .absolute()
-                                    .top(px(zero_y))
-                                    .left_0()
-                                    .right_0()
-                                    .h(px(1.0))
-                                    .bg(theme.text_muted)
-                                    .opacity(0.3),
-                            )
-                        })
-                        .child(original_line)
-                        .child(corrected_line),
-                ),
-        )
-        // Legend
-        .child(
-            div()
-                .flex()
-                .gap_4()
-                .justify_center()
-                .pt_2()
-                .child(
-                    div()
-                        .flex()
-                        .gap_1()
-                        .items_center()
-                        .child(div().w(px(12.0)).h(px(2.0)).bg(theme.text_muted))
-                        .child(
-                            Text::new("Original")
-                                .size(TextSize::Xs)
-                                .color(theme.text_muted),
-                        ),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .gap_1()
-                        .items_center()
-                        .child(div().w(px(12.0)).h(px(2.0)).bg(theme.info))
-                        .child(
-                            Text::new("Corrected")
-                                .size(TextSize::Xs)
-                                .color(theme.text_muted),
-                        ),
-                ),
-        )
+        .gap_2()
+        .when_some(line_chart.ok(), |el, c| el.child(c))
+        .when_some(hist_chart, |el, c| el.child(c))
+        .into_any_element()
 }
 
 /// Render the EQ filter table

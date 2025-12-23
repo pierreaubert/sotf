@@ -623,6 +623,23 @@ impl PlayerView {
         cx.notify();
     }
 
+    fn toggle_help_support(
+        &mut self,
+        _: &ToggleHelpSupport,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.state.update(cx, |state, _cx| {
+            use crate::app::InputMode;
+            if state.app.input_mode == InputMode::HelpSupport {
+                state.app.input_mode = InputMode::Normal;
+            } else {
+                state.app.input_mode = InputMode::HelpSupport;
+            }
+        });
+        cx.notify();
+    }
+
     fn about(&mut self, _: &About, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             use crate::app::InputMode;
@@ -1909,6 +1926,7 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::toggle_search))
             .on_action(cx.listener(Self::toggle_library_view))
             .on_action(cx.listener(Self::toggle_help))
+            .on_action(cx.listener(Self::toggle_help_support))
             .on_action(cx.listener(Self::about))
             .on_action(cx.listener(Self::cycle_sort_order))
             .on_action(cx.listener(Self::set_sort_artist))
@@ -2137,6 +2155,9 @@ impl Render for PlayerView {
             )
             .when(input_mode == crate::app::InputMode::About, |div| {
                 div.child(self.render_about_dialog(cx))
+            })
+            .when(input_mode == crate::app::InputMode::HelpSupport, |div| {
+                div.child(self.render_help_support_dialog(cx))
             })
             // Scan progress modal
             .child(self.render_scan_progress_modal(cx))

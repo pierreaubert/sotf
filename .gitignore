@@ -23,6 +23,8 @@ mutants.out
 .jekyll-cache
 .jekyll-metadata
 _site
+/README.html
+/README_files
 
 # MCP and Agents
 /.chunkhound

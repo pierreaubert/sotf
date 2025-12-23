@@ -28,6 +28,49 @@ impl PlayerView {
                     .size(TextSize::Sm)
                     .color(theme.text_secondary),
             )
+            // Optimization completed success card
+            .when(is_completed, |div| {
+                div.child(
+                    Card::new()
+                        .background(theme.surface)
+                        .header_background(theme.background_secondary)
+                        .border(theme.success)
+                        .content(
+                            VStack::new()
+                                .spacing(StackSpacing::Sm)
+                                .child(
+                                    HStack::new()
+                                        .spacing(StackSpacing::Sm)
+                                        .align(StackAlign::Center)
+                                        .child(
+                                            Text::new("✓")
+                                                .weight(TextWeight::Bold)
+                                                .size(TextSize::Md)
+                                                .color(theme.success),
+                                        )
+                                        .child(
+                                            Text::new("Optimization Completed")
+                                                .weight(TextWeight::Bold)
+                                                .size(TextSize::Md)
+                                                .color(theme.text_primary),
+                                        ),
+                                )
+                                .child(
+                                    Text::new(status_msg.clone())
+                                        .size(TextSize::Sm)
+                                        .color(theme.text_secondary),
+                                )
+                                .child(
+                                    Text::new("Click Next to review the results.")
+                                        .size(TextSize::Sm)
+                                        .weight(TextWeight::Semibold)
+                                        .color(theme.text_secondary),
+                                ),
+                        )
+                        .into_any_element()
+                        .into_any(),
+                )
+            })
             .child(
                 Card::new()
                     .background(theme.surface)
@@ -420,11 +463,12 @@ impl PlayerView {
                     }
                     Err(e) => {
                         log::error!("Channel {} optimization failed: {}", channel_name, e);
-                        let _ = state_clone.update(&mut cx.clone(), |state, _| {
+                        let _ = state_clone.update(&mut cx.clone(), |state, cx| {
                             state.app.room_eq_state.optimization_status =
                                 OptimizationStatus::Failed;
                             state.app.room_eq_state.error_message =
                                 Some(format!("Task error for {}: {}", channel_name, e));
+                            cx.notify();
                         });
                         return;
                     }
@@ -449,7 +493,7 @@ impl PlayerView {
                 avg_post
             );
 
-            let _ = state_clone.update(&mut cx.clone(), |state, _| {
+            let _ = state_clone.update(&mut cx.clone(), |state, cx| {
                 state.app.room_eq_state.optimization_status = OptimizationStatus::Completed;
                 state.app.room_eq_state.status_message = format!(
                     "Optimization complete! Score: {:.2} -> {:.2}",
@@ -505,6 +549,7 @@ impl PlayerView {
 
                 // Advance to review step
                 state.app.room_eq_state.step = crate::app::types::RoomEqStep::Review;
+                cx.notify();
             });
         })
         .detach();

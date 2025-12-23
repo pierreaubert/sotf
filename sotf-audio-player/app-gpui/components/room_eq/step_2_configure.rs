@@ -60,7 +60,7 @@ impl PlayerView {
             .on_algo_change({
                 let state = self.state.clone();
                 move |algo, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state.app.room_eq_state.optimizer_config.algorithm = match algo {
                             "nlopt:cobyla" => RoomEqAlgorithm::Cobyla,
                             "autoeq:de" => RoomEqAlgorithm::DifferentialEvolution,
@@ -68,96 +68,108 @@ impl PlayerView {
                             _ => RoomEqAlgorithm::Cobyla,
                         };
                         state.app.room_eq_state.dropdowns.algorithm_open = false;
+                        cx.notify();
                     });
                 }
             })
             .on_algo_toggle({
                 let state = self.state.clone();
                 move |open, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state.app.room_eq_state.dropdowns.algorithm_open = open;
+                        cx.notify();
                     });
                 }
             })
             .on_peq_model_change({
                 let state = self.state.clone();
                 move |_model, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         // PEQ model is stored in autoeq_config.peq_model which is read-only display
                         // The actual model selection doesn't need to be stored separately
                         state.app.room_eq_state.dropdowns.peq_model_open = false;
+                        cx.notify();
                     });
                 }
             })
             .on_peq_model_toggle({
                 let state = self.state.clone();
                 move |open, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state.app.room_eq_state.dropdowns.peq_model_open = open;
+                        cx.notify();
                     });
                 }
             })
             .on_num_filters_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state.app.room_eq_state.optimizer_config.num_filters = value;
+                        cx.notify();
                     });
                 }
             })
             .on_min_q_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state.app.room_eq_state.optimizer_config.min_q = value;
+                        cx.notify();
                     });
                 }
             })
             .on_max_q_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state.app.room_eq_state.optimizer_config.max_q = value;
+                        cx.notify();
                     });
                 }
             })
             .on_min_db_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state.app.room_eq_state.optimizer_config.min_db = value;
+                        cx.notify();
                     });
                 }
             })
             .on_max_db_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state.app.room_eq_state.optimizer_config.max_db = value;
+                        cx.notify();
                     });
                 }
             })
             .on_min_freq_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state.app.room_eq_state.optimizer_config.min_freq = value;
+                        cx.notify();
                     });
                 }
             })
             .on_max_freq_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state.app.room_eq_state.optimizer_config.max_freq = value;
+                        cx.notify();
                     });
                 }
             })
             .on_maxeval_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state.app.room_eq_state.optimizer_config.max_iter = value;
+                        cx.notify();
                     });
                 }
             });

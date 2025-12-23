@@ -13,6 +13,8 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
         let error_message = state.app.room_eq_state.error_message.clone();
+        let status_message = state.app.room_eq_state.status_message.clone();
+        let has_measurements = state.app.room_eq_state.has_measurements();
 
         // Check if there are valid recordings in the recording state
         let has_recording_session_data = state
@@ -36,6 +38,25 @@ impl PlayerView {
                 .size(TextSize::Sm)
                 .color(theme.text_secondary),
             )
+            // Success message display (simple inline)
+            .when(has_measurements && !status_message.is_empty(), |div| {
+                div.child(
+                    HStack::new()
+                        .spacing(StackSpacing::Sm)
+                        .align(StackAlign::Center)
+                        .child(
+                            Text::new("✓")
+                                .weight(TextWeight::Bold)
+                                .size(TextSize::Sm)
+                                .color(theme.success),
+                        )
+                        .child(
+                            Text::new(status_message.clone())
+                                .size(TextSize::Sm)
+                                .color(theme.text_primary),
+                        ),
+                )
+            })
             // Error message display
             .when(error_message.is_some(), |div| {
                 div.child(
@@ -106,7 +127,8 @@ impl PlayerView {
                             )
                             .child(if has_recording_session_data {
                                 Button::new("load_from_recording", "Load from Recording")
-                                    .variant(ButtonVariant::Secondary)
+                                    .variant(ButtonVariant::Primary)
+                                    .size(ButtonSize::Lg)
                                     .theme(theme.to_button_theme())
                                     .build()
                                     .on_mouse_up(
@@ -118,6 +140,7 @@ impl PlayerView {
                             } else {
                                 Button::new("go_to_recording", "Go to Recording")
                                     .variant(ButtonVariant::Primary)
+                                    .size(ButtonSize::Lg)
                                     .theme(theme.to_button_theme())
                                     .build()
                                     .on_mouse_up(
@@ -148,8 +171,9 @@ impl PlayerView {
                                     .color(theme.text_secondary),
                             )
                             .child(
-                                Button::new("load_from_file", "Browse...")
-                                    .variant(ButtonVariant::Secondary)
+                                Button::new("load_from_file", "Import from File")
+                                    .variant(ButtonVariant::Primary)
+                                    .size(ButtonSize::Lg)
                                     .theme(theme.to_button_theme())
                                     .build()
                                     .on_mouse_up(

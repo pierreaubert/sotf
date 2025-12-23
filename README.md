@@ -2,9 +2,26 @@
 
 # SotF: an automatic eq for your speakers or headsets
 
-The software either an app or a cli helps you to get better sound from your speakers or your headsets. It is also a toolkit with many components helping to build audio related applications: mathematical crates to do DSP or BEM, graphical crates to do GUI, audio crates to do audio, and so on.
+The software helps you to get better sound from your speakers or your headsets. It can run as a TUI app (in a terminal) or a classical UI.
+What can you do with it?
+- play music :)
+- add audio plugins to customise the experience, an EQ, an upmixer for spatial audio or a binaral rendered? a limiter or a compressor?
+- create an EQ for your headphone!
+- create an EQ for anechoic speaker measurements that you find on AudioScienceReview or ErinsAudioCorner (among others)
+- create an room optimiser for your room, from simple to use to you are in control of every steps: a state of the art optimiser.
+- compare one EQ with another. Customise to taste. Which one do you prefer?
 
 *Sound of the Future* or *SotF* in short comes from the song from [Giorgio Moroder](https://en.wikipedia.org/wiki/Giorgio_Moroder) made popular by [Daft Punk](https://en.wikipedia.org/wiki/Daft_Punk). You can find many versions on Youtube. Here is an [official one](https://youtu.be/zhl-Cs1-sG4?si=H4hgakoEdQn-HMH6&t=73).
+
+## A picture is worth a thousand words.
+
+### Player
+
+![sotf](./docs/images/sotf-0.5.3-light.png)
+
+## How to use?
+
+Download a release from our [repo](https://github.com/pierreaubert/sotf) on Github. If you like it, star the directory please.
 
 ## Install
 
@@ -131,4 +148,10 @@ Status:
 sotf-macos-hal crate builds a HAL (Audio Driver on MacOS) such that you can redirect all your music to this driver and benefit from corrected sounds all the time.
 
 Status: experimental for HAL and ok for confbar.
+
+## More pictures
+
+### Upmixer
+
+![Upmixer 2.0->5.1.4](./docs/images/upmixer.png)
 
