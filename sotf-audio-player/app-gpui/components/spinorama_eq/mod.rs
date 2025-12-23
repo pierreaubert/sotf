@@ -24,6 +24,7 @@ use std::sync::Mutex;
 mod step_1_select;
 mod step_2_configure;
 mod step_3_review;
+mod step_4_export;
 
 // Global for sharing optimization result between threads
 // Format: (success, result, full_result, error_message)
@@ -330,6 +331,7 @@ impl PlayerView {
             }
             SpinoramaStep::Configure => self.render_spinorama_configure(cx).into_any_element(),
             SpinoramaStep::Review => self.render_spinorama_review(cx).into_any_element(),
+            SpinoramaStep::Export => self.render_spinorama_export(cx).into_any_element(),
         };
 
         div()

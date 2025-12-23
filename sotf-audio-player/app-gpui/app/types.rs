@@ -1850,8 +1850,10 @@ pub enum SpinoramaStep {
     SelectSpeaker,
     /// Step 2: Configure and run optimization
     Configure,
-    /// Step 3: Review and apply results
+    /// Step 3: Review results and visualizations
     Review,
+    /// Step 4: Apply to playback and export
+    Export,
 }
 
 impl SpinoramaStep {
@@ -1861,6 +1863,7 @@ impl SpinoramaStep {
             SpinoramaStep::SelectSpeaker,
             SpinoramaStep::Configure,
             SpinoramaStep::Review,
+            SpinoramaStep::Export,
         ]
     }
 
@@ -1870,6 +1873,7 @@ impl SpinoramaStep {
             SpinoramaStep::SelectSpeaker => 0,
             SpinoramaStep::Configure => 1,
             SpinoramaStep::Review => 2,
+            SpinoramaStep::Export => 3,
         }
     }
 
@@ -1879,6 +1883,7 @@ impl SpinoramaStep {
             SpinoramaStep::SelectSpeaker => "Select",
             SpinoramaStep::Configure => "Configure",
             SpinoramaStep::Review => "Review",
+            SpinoramaStep::Export => "Export",
         }
     }
 
@@ -1887,7 +1892,8 @@ impl SpinoramaStep {
         match self {
             SpinoramaStep::SelectSpeaker => Some(SpinoramaStep::Configure),
             SpinoramaStep::Configure => Some(SpinoramaStep::Review),
-            SpinoramaStep::Review => None,
+            SpinoramaStep::Review => Some(SpinoramaStep::Export),
+            SpinoramaStep::Export => None,
         }
     }
 
@@ -1897,6 +1903,7 @@ impl SpinoramaStep {
             SpinoramaStep::SelectSpeaker => None,
             SpinoramaStep::Configure => Some(SpinoramaStep::SelectSpeaker),
             SpinoramaStep::Review => Some(SpinoramaStep::Configure),
+            SpinoramaStep::Export => Some(SpinoramaStep::Review),
         }
     }
 }
@@ -2344,6 +2351,7 @@ impl SpinoramaEqState {
             // Configure step now includes optimization - must complete before advancing
             SpinoramaStep::Configure => self.optimization_status == OptimizationStatus::Completed,
             SpinoramaStep::Review => self.result.is_some(),
+            SpinoramaStep::Export => true, // Always can proceed (or stay) from export
         }
     }
 
