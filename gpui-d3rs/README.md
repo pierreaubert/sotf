@@ -378,7 +378,7 @@ cargo clippy --all-targets
 | d3-array | ✅ Complete | Statistics, binning, transformations |
 | d3-axis | ✅ Complete | All four orientations, custom formatting |
 | d3-brush | ✅ Complete | 1D and 2D brushes |
-| d3-chord | ❌ Not planned | Specialized layout |
+| d3-chord |  ✅ Complete | Specialized layout |
 | d3-color | ✅ Complete | RGB, HSL with interpolation |
 | d3-contour | ✅ Complete | Marching squares, density estimation |
 | d3-delaunay | ✅ Complete | Delaunay triangulation, Voronoi |
@@ -420,8 +420,8 @@ Legend: ✅ Complete | 🚧 Planned | ❌ Not needed/planned
 - [x] Brush and zoom interactions
 - [x] Array utilities and data manipulation
 - [x] Interpolation (numeric, color, transform, zoom)
-- [ ] Force-directed layouts
-- [o] Hierarchical layouts (tree, treemap, partition)
+- [x] Force-directed layouts
+- [x] Hierarchical layouts (tree, treemap, partition)
 - [x] Additional color schemes
 - [ ] Time formatting
 - [ ] Documentation improvements

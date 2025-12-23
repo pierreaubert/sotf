@@ -163,14 +163,11 @@ impl Stack {
         series.sort_by_key(|s| s.index);
 
         // Compute stacked values
+        // Use series.data which was populated before reordering with the correct column values
         for j in 0..n {
             let mut y0 = 0.0;
             for series in &mut series {
-                let value = data
-                    .get(j)
-                    .and_then(|row| row.get(series.index))
-                    .copied()
-                    .unwrap_or(0.0);
+                let value = series.data.get(j).copied().unwrap_or(0.0);
                 series.values[j] = [y0, y0 + value];
                 y0 += value;
             }
@@ -464,6 +461,31 @@ mod tests {
 
         // Largest sum should be first
         assert!(result[0].key == "B");
+    }
+
+    #[test]
+    fn test_stack_order_preserves_data_values() {
+        // Test that reordering uses correct data values, not reordered indices
+        let data = vec![vec![10.0, 100.0, 1.0]]; // A=10, B=100, C=1
+
+        let keys = vec!["A".to_string(), "B".to_string(), "C".to_string()];
+        let result = Stack::new()
+            .keys(keys)
+            .order(StackOrder::Descending) // Order: B(100), A(10), C(1)
+            .generate(&data);
+
+        // After descending order: B first, then A, then C
+        assert_eq!(result[0].key, "B");
+        assert_eq!(result[1].key, "A");
+        assert_eq!(result[2].key, "C");
+
+        // Verify the stacked values use correct data
+        // B: [0, 100]
+        assert_eq!(result[0].values[0], [0.0, 100.0]);
+        // A: [100, 110]
+        assert_eq!(result[1].values[0], [100.0, 110.0]);
+        // C: [110, 111]
+        assert_eq!(result[2].values[0], [110.0, 111.0]);
     }
 
     #[test]

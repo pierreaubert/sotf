@@ -290,6 +290,10 @@ where
 
                 // Convert ring points to screen coordinates using the scale
                 // This properly handles log scales by using scale.scale()
+                // Use actual min/max for proper handling of inverted scales
+                let x_range_lo = x_range_min.min(x_range_max);
+                let y_range_lo = y_range_min.min(y_range_max);
+
                 let screen_points: Vec<Point<Pixels>> = ring
                     .points
                     .iter()
@@ -300,9 +304,10 @@ where
                         let y_scaled = self.y_scale.scale(p.y);
 
                         // Normalize to 0-1 based on range
-                        let x_norm = ((x_scaled - x_range_min) / x_range_span) as f32;
-                        // Invert Y for screen coordinates (0 at top, 1 at bottom)
-                        let y_norm = 1.0 - ((y_scaled - y_range_min) / y_range_span) as f32;
+                        // Y scale is already inverted (high values at top=0, low at bottom=height)
+                        // so no additional inversion needed here
+                        let x_norm = ((x_scaled - x_range_lo) / x_range_span) as f32;
+                        let y_norm = ((y_scaled - y_range_lo) / y_range_span) as f32;
 
                         let screen_x = origin_x + x_norm * width;
                         let screen_y = origin_y + y_norm * height;
@@ -1100,11 +1105,16 @@ where
                 let y1_scaled = self.y_scale.scale(y1_data);
 
                 // Normalize to 0-1 based on range
-                let x0_norm = ((x0_scaled - x_range_min) / x_range_span) as f32;
-                let x1_norm = ((x1_scaled - x_range_min) / x_range_span) as f32;
-                // Invert Y for screen coordinates (0 at top, 1 at bottom)
-                let y0_norm = 1.0 - ((y0_scaled - y_range_min) / y_range_span) as f32;
-                let y1_norm = 1.0 - ((y1_scaled - y_range_min) / y_range_span) as f32;
+                // Use actual min/max for proper handling of inverted scales
+                let x_range_lo = x_range_min.min(x_range_max);
+                let y_range_lo = y_range_min.min(y_range_max);
+
+                let x0_norm = ((x0_scaled - x_range_lo) / x_range_span) as f32;
+                let x1_norm = ((x1_scaled - x_range_lo) / x_range_span) as f32;
+                // Y scale is already inverted (high values at top=0, low at bottom=height)
+                // so no additional inversion needed here
+                let y0_norm = ((y0_scaled - y_range_lo) / y_range_span) as f32;
+                let y1_norm = ((y1_scaled - y_range_lo) / y_range_span) as f32;
 
                 // Convert to screen pixels
                 let screen_x0 = origin_x + x0_norm.min(x1_norm) * width;
