@@ -1214,17 +1214,7 @@ impl From<CrossoverType> for sotf_audio_player::room_eq::CrossoverType {
     }
 }
 
-impl From<RoomEqAlgorithm> for sotf_audio_player::room_eq::Algorithm {
-    fn from(val: RoomEqAlgorithm) -> Self {
-        match val {
-            RoomEqAlgorithm::Cobyla => sotf_audio_player::room_eq::Algorithm::Cobyla,
-            RoomEqAlgorithm::DifferentialEvolution => {
-                sotf_audio_player::room_eq::Algorithm::DifferentialEvolution
-            }
-            RoomEqAlgorithm::NelderMead => sotf_audio_player::room_eq::Algorithm::NelderMead,
-        }
-    }
-}
+// Algorithm conversion removed - Algorithm type no longer exported from library
 
 /// Optimizer configuration for Room EQ
 #[derive(Debug, Clone, Serialize, Deserialize)]

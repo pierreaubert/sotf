@@ -447,7 +447,8 @@ impl PlayerView {
                         // 2x2 grid of plots - calculate width based on app width
                         let available_width = (app_width - 32.0 - 16.0).max(600.0);
                         let plot_width = (available_width / 2.0).max(380.0);
-                        let plot_height = 180.0;
+			// ratio + space for legend and axis
+                        let plot_height = plot_width / 1.5 + 80.0;
 
                         div()
                             .flex()

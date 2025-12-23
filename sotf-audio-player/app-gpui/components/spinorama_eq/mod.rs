@@ -941,32 +941,30 @@ impl PlayerView {
             optimizer_config.population
         );
 
-        let params = sotf_audio_player::autoeq::params::OptimizationParams {
-            num_filters: optimizer_config.num_filters,
-            sample_rate: 48000,
-            min_db: optimizer_config.min_db,
-            max_db: optimizer_config.max_db,
-            min_q: optimizer_config.min_q,
-            max_q: optimizer_config.max_q,
-            min_freq: optimizer_config.min_freq,
-            max_freq: optimizer_config.max_freq,
-            maxeval: optimizer_config.max_iter,
-            population: optimizer_config.population,
-            de_f: optimizer_config.de_f,
-            de_cr: optimizer_config.de_cr,
-            strategy: optimizer_config.strategy.clone(),
-            refine: optimizer_config.refine,
-            local_algo: optimizer_config.local_algo.clone(),
-            smooth: optimizer_config.smooth,
-            peq_model: optimizer_config.peq_model.clone(),
-            // Set very small tolerances to prevent early convergence - run full maxeval iterations
-            tolerance: 1e-10,
-            abs_tolerance: 1e-10,
-            loss,
-            algo,
-            curve_name: effective_curve_name.clone(),
-            ..Default::default()
-        };
+        // Build Args using library defaults
+        let mut params = autoeq::Args::speaker_defaults();
+        params.num_filters = optimizer_config.num_filters;
+        params.sample_rate = 48000.0;
+        params.min_db = optimizer_config.min_db;
+        params.max_db = optimizer_config.max_db;
+        params.min_q = optimizer_config.min_q;
+        params.max_q = optimizer_config.max_q;
+        params.min_freq = optimizer_config.min_freq;
+        params.max_freq = optimizer_config.max_freq;
+        params.maxeval = optimizer_config.max_iter;
+        params.population = optimizer_config.population;
+        params.recombination = optimizer_config.de_cr;
+        params.strategy = optimizer_config.strategy.clone();
+        params.refine = optimizer_config.refine;
+        params.local_algo = optimizer_config.local_algo.clone();
+        params.smooth = optimizer_config.smooth;
+        params.peq_model = sotf_audio_player::autoeq::parse_peq_model(&optimizer_config.peq_model);
+        // Set very small tolerances to prevent early convergence - run full maxeval iterations
+        params.tolerance = 1e-10;
+        params.atolerance = 1e-10;
+        params.loss = sotf_audio_player::autoeq::parse_loss_type(&loss);
+        params.algo = algo;
+        params.curve_name = effective_curve_name.clone();
 
         // Run optimization in background thread (blocking tokio runtime)
         std::thread::spawn(move || {
@@ -982,7 +980,7 @@ impl PlayerView {
                 driver_measurements: Vec::new(),
                 crossover_type: None,
                 crossover_freq_hints: Vec::new(),
-                params: params.clone(),
+                args: params.clone(),
                 callback_config: Some(CallbackConfig {
                     interval: 25,
                     include_biquads: true,
@@ -1020,35 +1018,34 @@ impl PlayerView {
             // Run the actual optimization
             log::info!("Running speaker optimization for: {}", speaker_name);
             log::info!(
-                "OptimizationParams: algo={}, maxeval={}, population={}, num_filters={}",
-                config.params.algo,
-                config.params.maxeval,
-                config.params.population,
-                config.params.num_filters
+                "Args: algo={}, maxeval={}, population={}, num_filters={}",
+                config.args.algo,
+                config.args.maxeval,
+                config.args.population,
+                config.args.num_filters
             );
             log::info!(
-                "OptimizationParams: strategy={}, de_f={}, de_cr={}, refine={}, local_algo={}",
-                config.params.strategy,
-                config.params.de_f,
-                config.params.de_cr,
-                config.params.refine,
-                config.params.local_algo
+                "Args: strategy={}, recombination={}, refine={}, local_algo={}",
+                config.args.strategy,
+                config.args.recombination,
+                config.args.refine,
+                config.args.local_algo
             );
             log::info!(
-                "OptimizationParams: tolerance={}, abs_tolerance={}, smooth={}, peq_model={}",
-                config.params.tolerance,
-                config.params.abs_tolerance,
-                config.params.smooth,
-                config.params.peq_model
+                "Args: tolerance={}, atolerance={}, smooth={}, peq_model={:?}",
+                config.args.tolerance,
+                config.args.atolerance,
+                config.args.smooth,
+                config.args.peq_model
             );
             log::info!(
-                "OptimizationParams: min_db={}, max_db={}, min_q={}, max_q={}, min_freq={}, max_freq={}",
-                config.params.min_db,
-                config.params.max_db,
-                config.params.min_q,
-                config.params.max_q,
-                config.params.min_freq,
-                config.params.max_freq
+                "Args: min_db={}, max_db={}, min_q={}, max_q={}, min_freq={}, max_freq={}",
+                config.args.min_db,
+                config.args.max_db,
+                config.args.min_q,
+                config.args.max_q,
+                config.args.min_freq,
+                config.args.max_freq
             );
             let result = sotf_audio_player::autoeq::speaker::run_speaker_optimization_with_callback(
                 &config,

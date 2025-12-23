@@ -1,15 +1,20 @@
-//! Optimization parameter types and defaults
+//! Optimization parameter types and UI helpers
 //!
-//! Centralized optimization constants reused for headphone, room EQ, and speaker optimization
+//! This module provides:
+//! - Re-export of autoeq::Args for optimization parameters
+//! - UI dropdown options for algorithm selection, loss functions, etc.
+//! - Parameter limits for UI validation
 
 use serde::{Deserialize, Serialize};
 
-/// Complete set of optimization parameters
+// Re-export Args from autoeq for direct use
+pub use autoeq::Args as OptimizationParams;
+
+/// Wrapper around autoeq::Args with serde support for UI state persistence
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OptimizationParams {
-    // EQ Design Parameters
+pub struct OptimizationParamsSerializable {
     pub num_filters: usize,
-    pub sample_rate: u32,
+    pub sample_rate: f64,
     pub min_db: f64,
     pub max_db: f64,
     pub min_q: f64,
@@ -19,121 +24,114 @@ pub struct OptimizationParams {
     pub peq_model: String,
     pub min_spacing_oct: f64,
     pub spacing_weight: f64,
-
-    // Algorithm Parameters
     pub algo: String,
     pub population: usize,
     pub maxeval: usize,
-
-    // DE-specific Parameters
-    pub de_f: f64,
-    pub de_cr: f64,
     pub strategy: String,
+    pub de_cr: f64,
     pub adaptive_weight_f: f64,
     pub adaptive_weight_cr: f64,
-
-    // Tolerance Parameters
     pub tolerance: f64,
     pub abs_tolerance: f64,
-
-    // Refinement Parameters
     pub refine: bool,
     pub local_algo: String,
-
-    // Smoothing Parameters
     pub smooth: bool,
     pub smooth_n: usize,
-
-    // Loss Function
     pub loss: String,
-
-    // Curve Selection (for speakers)
     pub curve_name: String,
 }
 
-impl Default for OptimizationParams {
+impl Default for OptimizationParamsSerializable {
     fn default() -> Self {
+        let args = autoeq::Args::speaker_defaults();
+        Self::from(&args)
+    }
+}
+
+impl From<&autoeq::Args> for OptimizationParamsSerializable {
+    fn from(args: &autoeq::Args) -> Self {
         Self {
-            // Core EQ Parameters
-            num_filters: 5,
-            sample_rate: 48000,
-            min_db: -12.0,
-            max_db: 12.0,
-            min_q: 0.5,
-            max_q: 10.0,
-            min_freq: 20.0,
-            max_freq: 20000.0,
-            peq_model: "pk".to_string(),
-            min_spacing_oct: 0.5,
-            spacing_weight: 20.0,
-
-            // Algorithm Parameters
-            algo: "autoeq:de".to_string(),
-            population: 50,
-            maxeval: 2000,
-
-            // DE-specific Parameters
-            de_f: 0.8,
-            de_cr: 0.9,
-            strategy: "currenttobest1bin".to_string(),
-            adaptive_weight_f: 0.8,
-            adaptive_weight_cr: 0.7,
-
-            // Tolerance Parameters
-            tolerance: 1e-3,
-            abs_tolerance: 1e-4,
-
-            // Refinement Parameters
-            refine: false,
-            local_algo: "cobyla".to_string(),
-
-            // Smoothing Parameters
-            smooth: true,
-            smooth_n: 1,
-
-            // Loss Function
-            loss: "speaker-flat".to_string(),
-
-            // Curve Selection
-            curve_name: "Listening Window".to_string(),
+            num_filters: args.num_filters,
+            sample_rate: args.sample_rate,
+            min_db: args.min_db,
+            max_db: args.max_db,
+            min_q: args.min_q,
+            max_q: args.max_q,
+            min_freq: args.min_freq,
+            max_freq: args.max_freq,
+            peq_model: format!("{:?}", args.peq_model).to_lowercase(),
+            min_spacing_oct: args.min_spacing_oct,
+            spacing_weight: args.spacing_weight,
+            algo: args.algo.clone(),
+            population: args.population,
+            maxeval: args.maxeval,
+            strategy: args.strategy.clone(),
+            de_cr: args.recombination,
+            adaptive_weight_f: args.adaptive_weight_f,
+            adaptive_weight_cr: args.adaptive_weight_cr,
+            tolerance: args.tolerance,
+            abs_tolerance: args.atolerance,
+            refine: args.refine,
+            local_algo: args.local_algo.clone(),
+            smooth: args.smooth,
+            smooth_n: args.smooth_n,
+            loss: format!("{:?}", args.loss).to_lowercase().replace('_', "-"),
+            curve_name: args.curve_name.clone(),
         }
     }
 }
 
-impl OptimizationParams {
-    /// Get defaults for headphone optimization
-    pub fn headphone_defaults() -> Self {
-        Self {
-            loss: "headphone-score".to_string(),
-            num_filters: 7,
-            min_db: -12.0,
-            max_db: 12.0,
-            min_q: 0.5,
-            max_q: 10.0,
-            ..Default::default()
-        }
-    }
-
-    /// Get defaults for speaker optimization
-    pub fn speaker_defaults() -> Self {
-        Self {
-            loss: "speaker-flat".to_string(),
-            curve_name: "Listening Window".to_string(),
-            ..Default::default()
-        }
-    }
-
-    /// Get defaults for room EQ optimization
-    pub fn roomeq_defaults() -> Self {
-        Self {
-            loss: "speaker-flat".to_string(),
-            num_filters: 10,
-            min_freq: 20.0,
-            max_freq: 500.0, // Room EQ typically focuses on low frequencies
-            ..Default::default()
-        }
+impl OptimizationParamsSerializable {
+    /// Convert to autoeq::Args
+    pub fn to_args(&self) -> autoeq::Args {
+        let mut args = autoeq::Args::speaker_defaults();
+        args.num_filters = self.num_filters;
+        args.sample_rate = self.sample_rate;
+        args.min_db = self.min_db;
+        args.max_db = self.max_db;
+        args.min_q = self.min_q;
+        args.max_q = self.max_q;
+        args.min_freq = self.min_freq;
+        args.max_freq = self.max_freq;
+        args.peq_model = match self.peq_model.as_str() {
+            "hp-pk" | "hppk" => autoeq::PeqModel::HpPk,
+            "hp-pk-lp" | "hppklp" => autoeq::PeqModel::HpPkLp,
+            "ls-pk" | "lspk" => autoeq::PeqModel::LsPk,
+            "ls-pk-hs" | "lspkhs" => autoeq::PeqModel::LsPkHs,
+            "free-pk-free" | "freepkfree" => autoeq::PeqModel::FreePkFree,
+            "free" => autoeq::PeqModel::Free,
+            _ => autoeq::PeqModel::Pk,
+        };
+        args.min_spacing_oct = self.min_spacing_oct;
+        args.spacing_weight = self.spacing_weight;
+        args.algo = self.algo.clone();
+        args.population = self.population;
+        args.maxeval = self.maxeval;
+        args.strategy = self.strategy.clone();
+        args.recombination = self.de_cr;
+        args.adaptive_weight_f = self.adaptive_weight_f;
+        args.adaptive_weight_cr = self.adaptive_weight_cr;
+        args.tolerance = self.tolerance;
+        args.atolerance = self.abs_tolerance;
+        args.refine = self.refine;
+        args.local_algo = self.local_algo.clone();
+        args.smooth = self.smooth;
+        args.smooth_n = self.smooth_n;
+        args.loss = match self.loss.as_str() {
+            "speaker-flat" | "speakerflat" => autoeq::LossType::SpeakerFlat,
+            "speaker-score" | "speakerscore" => autoeq::LossType::SpeakerScore,
+            "headphone-flat" | "headphoneflat" => autoeq::LossType::HeadphoneFlat,
+            "headphone-score" | "headphonescore" => autoeq::LossType::HeadphoneScore,
+            _ => autoeq::LossType::SpeakerFlat,
+        };
+        args.curve_name = self.curve_name.clone();
+        args
     }
 }
+
+// ============================================================================
+// Parameter Limits for UI Validation
+// ============================================================================
 
 /// Parameter limits for UI validation
 pub struct ParamLimits {
@@ -199,6 +197,10 @@ impl ParamLimits {
         step: 1.0,
     };
 }
+
+// ============================================================================
+// UI Dropdown Options
+// ============================================================================
 
 /// Algorithm options for dropdown
 pub const ALGORITHM_OPTIONS: &[(&str, &str)] = &[
@@ -275,4 +277,32 @@ pub fn get_export_extension(format: &str) -> &'static str {
         .find(|(id, _, _)| *id == format)
         .map(|(_, _, ext)| *ext)
         .unwrap_or(".json")
+}
+
+// ============================================================================
+// Helper Functions for UI Config Conversion
+// ============================================================================
+
+/// Convert loss string to LossType
+pub fn parse_loss_type(loss: &str) -> autoeq::LossType {
+    match loss {
+        "speaker-flat" | "speakerflat" => autoeq::LossType::SpeakerFlat,
+        "speaker-score" | "speakerscore" => autoeq::LossType::SpeakerScore,
+        "headphone-flat" | "headphoneflat" => autoeq::LossType::HeadphoneFlat,
+        "headphone-score" | "headphonescore" => autoeq::LossType::HeadphoneScore,
+        _ => autoeq::LossType::SpeakerFlat,
+    }
+}
+
+/// Convert PEQ model string to PeqModel
+pub fn parse_peq_model(model: &str) -> autoeq::PeqModel {
+    match model {
+        "hp-pk" | "hppk" => autoeq::PeqModel::HpPk,
+        "hp-pk-lp" | "hppklp" => autoeq::PeqModel::HpPkLp,
+        "ls-pk" | "lspk" => autoeq::PeqModel::LsPk,
+        "ls-pk-hs" | "lspkhs" => autoeq::PeqModel::LsPkHs,
+        "free-pk-free" | "freepkfree" => autoeq::PeqModel::FreePkFree,
+        "free" => autoeq::PeqModel::Free,
+        _ => autoeq::PeqModel::Pk,
+    }
 }

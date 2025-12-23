@@ -1,27 +1,24 @@
 //! Speaker EQ optimization
 //!
-//! Provides the optimization logic and result types for speaker equalization.
-//! This module contains the business logic that can be used by any frontend (GPUI, TUI, etc.)
-//!
-//! Supports:
-//! - CSV and Spinorama API data sources
-//! - Single-driver, multi-driver (crossover), multi-sub, and DBA configurations
-//! - Real-time progress callbacks with configurable intervals
+//! Provides thin wrappers around the autoeq library for speaker equalization.
+//! Most functionality is delegated to the library.
 
-use super::params::OptimizationParams;
 use super::types::{CrossoverType, SpeakerConfigType};
-use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 
-// Re-export CallbackAction for user convenience
+// Re-export types from autoeq for convenience
 pub use autoeq::de::CallbackAction;
+pub use autoeq::{
+    Cea2034Data, OptimizationOutput, ProgressCallbackConfig, ProgressUpdate, SpeakerOptResult,
+    VisualizationCurves,
+};
 
 // ============================================================================
-// Progress and Callback Types
+// Progress and Callback Types (thin wrappers for backward compatibility)
 // ============================================================================
 
 /// Data passed to the optimization callback at each interval
+/// This wraps autoeq::ProgressUpdate with additional stage information
 #[derive(Debug, Clone)]
 pub struct SpeakerOptimizationProgress {
     /// Current iteration number
@@ -29,7 +26,6 @@ pub struct SpeakerOptimizationProgress {
     /// Current loss/objective value
     pub loss: f64,
     /// Optional score value (higher is better, e.g., Harman score)
-    /// Only available when using score-based loss functions like speaker-score
     pub score: Option<f64>,
     /// Convergence metric (population standard deviation)
     pub convergence: f64,
@@ -43,6 +39,22 @@ pub struct SpeakerOptimizationProgress {
     pub stage: OptimizationStage,
     /// Total iterations expected (maxeval)
     pub max_iterations: usize,
+}
+
+impl From<&ProgressUpdate> for SpeakerOptimizationProgress {
+    fn from(update: &ProgressUpdate) -> Self {
+        Self {
+            iteration: update.iteration,
+            loss: update.loss,
+            score: update.score,
+            convergence: update.convergence,
+            current_params: update.params.clone(),
+            current_biquads: update.biquads.clone(),
+            current_filter_response: update.filter_response.clone(),
+            stage: OptimizationStage::Eq,
+            max_iterations: update.max_iterations,
+        }
+    }
 }
 
 /// Stage of the optimization process
@@ -82,6 +94,17 @@ impl Default for CallbackConfig {
     }
 }
 
+impl From<&CallbackConfig> for ProgressCallbackConfig {
+    fn from(cfg: &CallbackConfig) -> Self {
+        Self {
+            interval: cfg.interval,
+            include_biquads: cfg.include_biquads,
+            include_filter_response: cfg.include_filter_response,
+            frequencies: Vec::new(),
+        }
+    }
+}
+
 // ============================================================================
 // Input Configuration Types
 // ============================================================================
@@ -115,8 +138,8 @@ pub struct SpeakerOptimizationConfig {
     pub crossover_type: Option<CrossoverType>,
     /// Initial crossover frequency hints (optional)
     pub crossover_freq_hints: Vec<f64>,
-    /// Optimization parameters
-    pub params: OptimizationParams,
+    /// Optimization arguments (use Args::speaker_defaults() as base)
+    pub args: autoeq::Args,
     /// Callback configuration
     pub callback_config: Option<CallbackConfig>,
     /// Target curve (optional - defaults to flat or curve-name-specific)
@@ -131,7 +154,7 @@ impl Default for SpeakerOptimizationConfig {
             driver_measurements: Vec::new(),
             crossover_type: None,
             crossover_freq_hints: Vec::new(),
-            params: OptimizationParams::speaker_defaults(),
+            args: autoeq::Args::speaker_defaults(),
             callback_config: Some(CallbackConfig::default()),
             target: None,
         }
@@ -141,39 +164,25 @@ impl Default for SpeakerOptimizationConfig {
 /// Extended speaker config types including multi-sub and DBA
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SpeakerConfigTypeExt {
-    /// Single measurement (simple speaker)
     #[default]
     Single,
-    /// Multiple drivers with crossover
     MultiDriver,
-    /// Multiple subwoofers (gain + delay optimization)
     MultiSub,
-    /// Double Bass Array
     Dba,
 }
 
 /// Extended configuration for speaker optimization including multi-sub and DBA
 #[derive(Debug, Clone)]
 pub struct SpeakerOptimizationConfigExt {
-    /// Speaker configuration type
     pub config_type: SpeakerConfigTypeExt,
-    /// Main measurement (for single-driver)
     pub main_measurement: Option<MeasurementInput>,
-    /// Driver measurements (for multi-driver/multi-sub, ordered low to high frequency)
     pub driver_measurements: Vec<MeasurementInput>,
-    /// Front array measurements (for DBA)
     pub front_measurements: Vec<MeasurementInput>,
-    /// Rear array measurements (for DBA)
     pub rear_measurements: Vec<MeasurementInput>,
-    /// Crossover type (for multi-driver)
     pub crossover_type: Option<CrossoverType>,
-    /// Initial crossover frequency hints (optional)
     pub crossover_freq_hints: Vec<f64>,
-    /// Optimization parameters
-    pub params: OptimizationParams,
-    /// Callback configuration
+    pub args: autoeq::Args,
     pub callback_config: Option<CallbackConfig>,
-    /// Target curve (optional)
     pub target: Option<MeasurementInput>,
 }
 
@@ -187,7 +196,7 @@ impl Default for SpeakerOptimizationConfigExt {
             rear_measurements: Vec::new(),
             crossover_type: None,
             crossover_freq_hints: Vec::new(),
-            params: OptimizationParams::speaker_defaults(),
+            args: autoeq::Args::speaker_defaults(),
             callback_config: Some(CallbackConfig::default()),
             target: None,
         }
@@ -203,21 +212,23 @@ impl Default for SpeakerOptimizationConfigExt {
 pub struct SpeakerOptimizationResult {
     pub biquads: Vec<autoeq_iir::Biquad>,
     pub frequencies: Vec<f64>,
-    pub input_curve: Vec<f64>,     // On-axis or listening window
-    pub target_curve: Vec<f64>,    // Calculated target
-    pub deviation_curve: Vec<f64>, // Input - Target
-    pub filter_response: Vec<f64>, // Sum of biquads
-    pub error_curve: Vec<f64>,     // Deviation + Filter
-    pub corrected_curve: Vec<f64>, // Input + Filter
+    pub input_curve: Vec<f64>,
+    pub target_curve: Vec<f64>,
+    pub deviation_curve: Vec<f64>,
+    pub filter_response: Vec<f64>,
+    pub error_curve: Vec<f64>,
+    pub corrected_curve: Vec<f64>,
     pub individual_filter_responses: Vec<Vec<f64>>,
     pub output_path: String,
 
-    // Spinorama specific curves
-    pub lw_curve: Vec<f64>,    // Listening Window
-    pub er_curve: Vec<f64>,    // Early Reflections
-    pub sp_curve: Vec<f64>,    // Sound Power
-    pub er_di_curve: Vec<f64>, // Early Reflections Directivity Index
-    pub sp_di_curve: Vec<f64>, // Sound Power Directivity Index
+    // Spinorama specific curves (from CEA2034 data)
+    pub on_axis_curve: Vec<f64>,
+    pub lw_curve: Vec<f64>,
+    pub er_curve: Vec<f64>,
+    pub sp_curve: Vec<f64>,
+    pub pir_curve: Vec<f64>,
+    pub er_di_curve: Vec<f64>,
+    pub sp_di_curve: Vec<f64>,
 
     pub optimization_history: Vec<(usize, f64)>,
     pub initial_loss: f64,
@@ -229,955 +240,58 @@ pub struct SpeakerOptimizationResult {
     pub driver_delays: Option<Vec<f64>>,
 }
 
-/// Internal result from multi-driver optimization
-#[derive(Debug, Clone)]
-struct MultiDriverResult {
-    gains: Vec<f64>,
-    delays: Vec<f64>,
-    crossover_freqs: Vec<f64>,
-    combined_curve: autoeq::Curve,
-    biquads: Vec<autoeq_iir::Biquad>,
-    history: Vec<(usize, f64)>,
-    pre_score: f64,
-    post_score: f64,
-}
+impl From<SpeakerOptResult> for SpeakerOptimizationResult {
+    fn from(result: SpeakerOptResult) -> Self {
+        let n = result.curves.frequencies.len();
 
-/// Internal result for curves computation
-struct ResultCurves {
-    frequencies: Vec<f64>,
-    input_curve: Vec<f64>,
-    target_curve: Vec<f64>,
-    deviation_curve: Vec<f64>,
-    filter_response: Vec<f64>,
-    error_curve: Vec<f64>,
-    corrected_curve: Vec<f64>,
-    individual_filter_responses: Vec<Vec<f64>>,
-    lw_curve: Vec<f64>,
-    er_curve: Vec<f64>,
-    sp_curve: Vec<f64>,
-    er_di_curve: Vec<f64>,
-    sp_di_curve: Vec<f64>,
-}
-
-// ============================================================================
-// Data Loading Functions
-// ============================================================================
-
-/// Load measurement from any supported source
-fn load_measurement(input: &MeasurementInput) -> Result<autoeq::Curve, String> {
-    match input {
-        MeasurementInput::CsvFile(path) => load_csv_measurement(path),
-        MeasurementInput::Spinorama {
-            speaker,
-            version,
-            measurement,
-            curve_name,
-        } => {
-            let (curve, _) = load_spinorama_measurement(speaker, version, measurement, curve_name)?;
-            Ok(curve)
-        }
-        MeasurementInput::Curve(curve) => Ok(curve.clone()),
-    }
-}
-
-/// Load measurement from any supported source, including spin data
-fn load_measurement_with_spin(
-    input: &MeasurementInput,
-) -> Result<(autoeq::Curve, Option<HashMap<String, autoeq::Curve>>), String> {
-    match input {
-        MeasurementInput::CsvFile(path) => {
-            let curve = load_csv_measurement(path)?;
-            Ok((curve, None))
-        }
-        MeasurementInput::Spinorama {
-            speaker,
-            version,
-            measurement,
-            curve_name,
-        } => load_spinorama_measurement(speaker, version, measurement, curve_name),
-        MeasurementInput::Curve(curve) => Ok((curve.clone(), None)),
-    }
-}
-
-/// Load measurement from any supported source, including spin data (async version)
-async fn load_measurement_with_spin_async(
-    input: &MeasurementInput,
-) -> Result<(autoeq::Curve, Option<HashMap<String, autoeq::Curve>>), String> {
-    match input {
-        MeasurementInput::CsvFile(path) => {
-            let curve = load_csv_measurement(path)?;
-            Ok((curve, None))
-        }
-        MeasurementInput::Spinorama {
-            speaker,
-            version,
-            measurement,
-            curve_name,
-        } => load_spinorama_measurement_async(speaker, version, measurement, curve_name).await,
-        MeasurementInput::Curve(curve) => Ok((curve.clone(), None)),
-    }
-}
-
-/// Load measurement from CSV file
-fn load_csv_measurement(path: &std::path::Path) -> Result<autoeq::Curve, String> {
-    autoeq::read::read_curve_from_csv(&path.to_path_buf())
-        .map_err(|e| format!("Failed to read CSV: {}", e))
-}
-
-/// Load measurement from Spinorama API (async version)
-async fn load_spinorama_measurement_async(
-    speaker: &str,
-    version: &str,
-    measurement: &str,
-    curve_name: &str,
-) -> Result<(autoeq::Curve, Option<HashMap<String, autoeq::Curve>>), String> {
-    // Handle Estimated In-Room Response specially - it's computed from CEA2034 curves
-    // This can be requested either as measurement="Estimated In-Room Response" or
-    // as measurement="CEA2034" with curve_name="Estimated In-Room Response"
-    if measurement == "Estimated In-Room Response"
-        || (measurement == "CEA2034" && curve_name == "Estimated In-Room Response")
-    {
-        let plot_data = autoeq::read::fetch_measurement_plot_data(speaker, version, "CEA2034")
-            .await
-            .map_err(|e| format!("API error: {}", e))?;
-
-        let curves = autoeq::read::extract_cea2034_curves_original(&plot_data, "CEA2034")
-            .map_err(|e| format!("Spin data error: {}", e))?;
-
-        let pir_curve = curves
-            .get("Estimated In-Room Response")
-            .ok_or("PIR curve not found in CEA2034 data")?
-            .clone();
-
-        Ok((pir_curve, Some(curves)))
-    } else {
-        let curve = autoeq::read::read_spinorama(speaker, version, measurement, curve_name)
-            .await
-            .map_err(|e| format!("API error: {}", e))?;
-
-        // Extract spin data if CEA2034 (still need the full plot data for this)
-        let spin_data = if measurement == "CEA2034" {
-            let plot_data =
-                autoeq::read::fetch_measurement_plot_data(speaker, version, measurement)
-                    .await
-                    .map_err(|e| format!("API error: {}", e))?;
-            Some(
-                autoeq::read::extract_cea2034_curves_original(&plot_data, "CEA2034")
-                    .map_err(|e| format!("Spin data error: {}", e))?,
+        // Extract spin data curves if available
+        let (on_axis, lw, er, sp, pir, er_di, sp_di) = if let Some(ref spin) = result.spin_data {
+            (
+                spin.on_axis.spl.iter().copied().collect(),
+                spin.listening_window.spl.iter().copied().collect(),
+                spin.early_reflections.spl.iter().copied().collect(),
+                spin.sound_power.spl.iter().copied().collect(),
+                spin.estimated_in_room.spl.iter().copied().collect(),
+                spin.er_di.spl.iter().copied().collect(),
+                spin.sp_di.spl.iter().copied().collect(),
             )
         } else {
-            None
+            (
+                vec![0.0; n],
+                vec![0.0; n],
+                vec![0.0; n],
+                vec![0.0; n],
+                vec![0.0; n],
+                vec![0.0; n],
+                vec![0.0; n],
+            )
         };
 
-        Ok((curve, spin_data))
-    }
-}
-
-/// Load measurement from Spinorama API (sync version, creates runtime if needed)
-fn load_spinorama_measurement(
-    speaker: &str,
-    version: &str,
-    measurement: &str,
-    curve_name: &str,
-) -> Result<(autoeq::Curve, Option<HashMap<String, autoeq::Curve>>), String> {
-    // Create a new runtime for blocking API call
-    let rt =
-        tokio::runtime::Runtime::new().map_err(|e| format!("Failed to create runtime: {}", e))?;
-
-    rt.block_on(load_spinorama_measurement_async(
-        speaker,
-        version,
-        measurement,
-        curve_name,
-    ))
-}
-
-// ============================================================================
-// Callback Infrastructure
-// ============================================================================
-
-/// Create an interval-based callback wrapper that converts DE callback to user callback
-fn create_interval_callback(
-    mut user_callback: SpeakerOptimizationCallback,
-    interval: usize,
-    stage: OptimizationStage,
-    max_iterations: usize,
-    sample_rate: f64,
-    peq_model: autoeq::cli::PeqModel,
-    include_biquads: bool,
-    include_filter_response: bool,
-    frequencies: Vec<f64>,
-    loss_type: autoeq::LossType,
-    speaker_score_data: Option<autoeq::loss::SpeakerLossData>,
-) -> Box<dyn FnMut(&autoeq::de::DEIntermediate) -> CallbackAction + Send> {
-    let mut last_reported_iter = 0usize;
-    let freq_array = ndarray::Array1::from(frequencies.clone());
-
-    Box::new(
-        move |intermediate: &autoeq::de::DEIntermediate| -> CallbackAction {
-            // Check if we should report
-            if intermediate.iter == 0
-                || intermediate.iter.saturating_sub(last_reported_iter) >= interval
-            {
-                last_reported_iter = intermediate.iter;
-
-                // Decode current params to biquads if requested
-                let current_biquads = if include_biquads {
-                    decode_params_to_biquads(&intermediate.x.to_vec(), sample_rate, peq_model)
-                } else {
-                    Vec::new()
-                };
-
-                // Compute filter response if requested
-                let current_filter_response =
-                    if include_filter_response && !current_biquads.is_empty() {
-                        compute_filter_response(&frequencies, &current_biquads)
-                    } else {
-                        Vec::new()
-                    };
-
-                // Compute score whenever speaker_score_data is available (CEA2034 data)
-                // This allows showing the score even when using flat loss with a target curve
-                let score = if let Some(ref sd) = speaker_score_data {
-                    // Compute PEQ response at frequencies
-                    let peq_response = if !current_biquads.is_empty() {
-                        ndarray::Array1::from(current_filter_response.clone())
-                    } else {
-                        // Decode and compute response
-                        let biquads = decode_params_to_biquads(
-                            &intermediate.x.to_vec(),
-                            sample_rate,
-                            peq_model,
-                        );
-                        ndarray::Array1::from(compute_filter_response(&frequencies, &biquads))
-                    };
-                    // Compute the actual speaker score
-                    Some(autoeq::loss::speaker_score_loss(
-                        sd,
-                        &freq_array,
-                        &peq_response,
-                    ))
-                } else if loss_type == autoeq::LossType::HeadphoneScore {
-                    // For headphone score, we can estimate from loss
-                    // The loss is the negative preference rating
-                    Some(intermediate.fun)
-                } else {
-                    None
-                };
-
-                let progress = SpeakerOptimizationProgress {
-                    iteration: intermediate.iter,
-                    loss: intermediate.fun,
-                    score,
-                    convergence: intermediate.convergence,
-                    current_params: intermediate.x.to_vec(),
-                    current_biquads,
-                    current_filter_response,
-                    stage,
-                    max_iterations,
-                };
-
-                user_callback(&progress)
-            } else {
-                CallbackAction::Continue
-            }
-        },
-    )
-}
-
-/// Decode optimizer parameters to biquad filters
-fn decode_params_to_biquads(
-    params: &[f64],
-    sample_rate: f64,
-    peq_model: autoeq::cli::PeqModel,
-) -> Vec<autoeq_iir::Biquad> {
-    let peq = autoeq::x2peq::x2peq(params, sample_rate, peq_model);
-    peq.into_iter().map(|(_, b)| b).collect()
-}
-
-/// Compute filter response at given frequencies
-fn compute_filter_response(frequencies: &[f64], biquads: &[autoeq_iir::Biquad]) -> Vec<f64> {
-    frequencies
-        .iter()
-        .map(|&freq| biquads.iter().map(|b| b.log_result(freq)).sum())
-        .collect()
-}
-
-// ============================================================================
-// Args Builder
-// ============================================================================
-
-/// Build autoeq::Args from OptimizationParams
-fn build_autoeq_args(params: &OptimizationParams) -> autoeq::Args {
-    autoeq::Args {
-        num_filters: params.num_filters,
-        sample_rate: params.sample_rate as f64,
-        loss: match params.loss.as_str() {
-            "speaker-flat" => autoeq::LossType::SpeakerFlat,
-            "speaker-score" => autoeq::LossType::SpeakerScore,
-            "headphone-flat" => autoeq::LossType::HeadphoneFlat,
-            "headphone-score" => autoeq::LossType::HeadphoneScore,
-            _ => autoeq::LossType::SpeakerFlat,
-        },
-        algo: params.algo.clone(),
-        population: params.population,
-        maxeval: params.maxeval,
-        strategy: params.strategy.clone(),
-        min_db: params.min_db,
-        max_db: params.max_db,
-        min_q: params.min_q,
-        max_q: params.max_q,
-        min_freq: params.min_freq,
-        max_freq: params.max_freq,
-        min_spacing_oct: params.min_spacing_oct,
-        spacing_weight: params.spacing_weight,
-        smooth: params.smooth,
-        smooth_n: params.smooth_n,
-        refine: params.refine,
-        local_algo: params.local_algo.clone(),
-        tolerance: params.tolerance,
-        atolerance: params.abs_tolerance,
-        recombination: params.de_cr,
-        adaptive_weight_f: params.adaptive_weight_f,
-        adaptive_weight_cr: params.adaptive_weight_cr,
-        peq_model: match params.peq_model.as_str() {
-            "hp-pk" => autoeq::cli::PeqModel::HpPk,
-            "hp-pk-lp" => autoeq::cli::PeqModel::HpPkLp,
-            "ls-pk" => autoeq::cli::PeqModel::LsPk,
-            "ls-pk-hs" => autoeq::cli::PeqModel::LsPkHs,
-            "free-pk-free" => autoeq::cli::PeqModel::FreePkFree,
-            "free" => autoeq::cli::PeqModel::Free,
-            _ => autoeq::cli::PeqModel::Pk,
-        },
-        curve: None,
-        target: None,
-        output: None,
-        speaker: None,
-        version: None,
-        measurement: None,
-        curve_name: params.curve_name.clone(),
-        peq_model_list: false,
-        algo_list: false,
-        strategy_list: false,
-        no_parallel: false,
-        parallel_threads: 0,
-        seed: None,
-        qa: None,
-        driver1: None,
-        driver2: None,
-        driver3: None,
-        driver4: None,
-        crossover_type: "linkwitzriley4".to_string(),
-    }
-}
-
-// ============================================================================
-// Single-Driver Optimization
-// ============================================================================
-
-/// Optimize a single-driver speaker
-fn optimize_single_driver(
-    curve: &autoeq::Curve,
-    target: &autoeq::Curve,
-    spin_data: &Option<HashMap<String, autoeq::Curve>>,
-    params: &OptimizationParams,
-    callback_config: &Option<CallbackConfig>,
-    mut callback: Option<SpeakerOptimizationCallback>,
-) -> Result<(Vec<autoeq_iir::Biquad>, Vec<(usize, f64)>, f64, f64), String> {
-    // Build autoeq::Args from OptimizationParams
-    let args = build_autoeq_args(params);
-
-    log::info!(
-        "optimize_single_driver: loss_type={:?}, curve_name={}, has_spin_data={}",
-        args.loss,
-        params.curve_name,
-        spin_data.is_some()
-    );
-
-    // Create deviation curve (target - input)
-    let deviation_curve = autoeq::Curve {
-        freq: target.freq.clone(),
-        spl: &target.spl - &curve.spl,
-        phase: None,
-    };
-
-    // Setup objective data
-    let (objective_data, _use_cea) =
-        autoeq::workflow::setup_objective_data(&args, curve, target, &deviation_curve, spin_data)
-            .map_err(|e| e.to_string())?;
-
-    // Create callback if configured
-    let frequencies: Vec<f64> = curve.freq.iter().copied().collect();
-    let history = Arc::new(Mutex::new(Vec::new()));
-    let history_ref = history.clone();
-
-    let peq_model = args.peq_model;
-    let sample_rate = args.sample_rate;
-    let maxeval = args.maxeval;
-    let loss_type = args.loss;
-    // Clone speaker score data for the callback (if available)
-    let speaker_score_data = objective_data.speaker_score_data.clone();
-    log::info!(
-        "optimize_single_driver: speaker_score_data available={}",
-        speaker_score_data.is_some()
-    );
-
-    let de_callback: Box<dyn FnMut(&autoeq::de::DEIntermediate) -> CallbackAction + Send> =
-        if let (Some(cfg), Some(user_cb)) = (callback_config, callback.take()) {
-            // Wrap user callback with interval logic
-            let mut interval_cb = create_interval_callback(
-                user_cb,
-                cfg.interval,
-                OptimizationStage::Eq,
-                maxeval,
-                sample_rate,
-                peq_model,
-                cfg.include_biquads,
-                cfg.include_filter_response,
-                frequencies.clone(),
-                loss_type,
-                speaker_score_data,
-            );
-
-            // Combine with history recording
-            Box::new(move |intermediate| {
-                if let Ok(mut h) = history_ref.lock() {
-                    h.push((intermediate.iter, intermediate.fun));
-                }
-                interval_cb(intermediate)
-            })
-        } else {
-            // Just record history
-            Box::new(move |intermediate| {
-                if let Ok(mut h) = history_ref.lock() {
-                    h.push((intermediate.iter, intermediate.fun));
-                }
-                CallbackAction::Continue
-            })
-        };
-
-    // Run optimization
-    let filter_params =
-        autoeq::workflow::perform_optimization_with_callback(&args, &objective_data, de_callback)
-            .map_err(|e| format!("Optimization failed: {}", e))?;
-
-    // Convert to biquads
-    let peq = autoeq::x2peq::x2peq(&filter_params, args.sample_rate, args.peq_model);
-    let biquads: Vec<autoeq_iir::Biquad> = peq.into_iter().map(|(_, b)| b).collect();
-
-    // Get history
-    let history_vec = history
-        .lock()
-        .map_err(|_| "Failed to lock history")?
-        .clone();
-    let initial_loss = history_vec.first().map(|x| x.1).unwrap_or(0.0);
-    let final_loss = history_vec.last().map(|x| x.1).unwrap_or(0.0);
-
-    Ok((biquads, history_vec, initial_loss, final_loss))
-}
-
-// ============================================================================
-// Multi-Driver Optimization
-// ============================================================================
-
-/// Convert CrossoverType to autoeq's CrossoverType
-fn convert_crossover_type(ct: &CrossoverType) -> autoeq::loss::CrossoverType {
-    match ct {
-        CrossoverType::Butterworth12 => autoeq::loss::CrossoverType::Butterworth2,
-        CrossoverType::LR12 => autoeq::loss::CrossoverType::LinkwitzRiley2,
-        CrossoverType::LR24 => autoeq::loss::CrossoverType::LinkwitzRiley4,
-        CrossoverType::LR48 => autoeq::loss::CrossoverType::LinkwitzRiley4, // LR48 not available, fallback to LR24
-    }
-}
-
-/// Optimize multi-driver speaker with crossover
-fn optimize_multidriver(
-    driver_curves: Vec<autoeq::Curve>,
-    crossover_type: CrossoverType,
-    params: &OptimizationParams,
-    callback_config: &Option<CallbackConfig>,
-    mut callback: Option<SpeakerOptimizationCallback>,
-) -> Result<MultiDriverResult, String> {
-    let n_drivers = driver_curves.len();
-    if n_drivers < 2 {
-        return Err("Multi-driver optimization requires at least 2 drivers".to_string());
-    }
-
-    // Create driver measurements
-    let driver_measurements: Vec<autoeq::loss::DriverMeasurement> = driver_curves
-        .iter()
-        .map(|c| {
-            autoeq::loss::DriverMeasurement::new(c.freq.clone(), c.spl.clone(), c.phase.clone())
-        })
-        .collect();
-
-    // Create DriversLossData
-    let autoeq_crossover_type = convert_crossover_type(&crossover_type);
-    let drivers_data =
-        autoeq::loss::DriversLossData::new(driver_measurements, autoeq_crossover_type);
-
-    // Optimize crossover
-    let crossover_result = autoeq::workflow::optimize_drivers_crossover(
-        drivers_data.clone(),
-        params.min_freq,
-        params.max_freq,
-        params.sample_rate as f64,
-        &params.algo,
-        params.maxeval,
-        params.min_db,
-        params.max_db,
-    )
-    .map_err(|e| format!("Crossover optimization failed: {}", e))?;
-
-    // Compute combined curve using optimized parameters
-    let combined_curve = compute_combined_driver_curve(
-        &driver_curves,
-        &crossover_result.gains,
-        &crossover_result.delays,
-        &crossover_result.crossover_freqs,
-        &crossover_type,
-        params.sample_rate as f64,
-    );
-
-    // Now optimize EQ on the combined curve
-    let standard_freq = autoeq::read::create_log_frequency_grid(200, 20.0, 20000.0);
-    let combined_normalized =
-        autoeq::normalize_and_interpolate_response(&standard_freq, &combined_curve);
-
-    // Build target curve (flat)
-    let target = autoeq::Curve {
-        freq: combined_normalized.freq.clone(),
-        spl: ndarray::Array1::zeros(combined_normalized.freq.len()),
-        phase: None,
-    };
-
-    let (biquads, history, _initial, final_loss) = optimize_single_driver(
-        &combined_normalized,
-        &target,
-        &None,
-        params,
-        callback_config,
-        callback.take(),
-    )?;
-
-    Ok(MultiDriverResult {
-        gains: crossover_result.gains,
-        delays: crossover_result.delays,
-        crossover_freqs: crossover_result.crossover_freqs,
-        combined_curve: combined_normalized,
-        biquads,
-        history,
-        pre_score: crossover_result.pre_objective,
-        post_score: final_loss,
-    })
-}
-
-/// Compute combined driver curve with gains, delays, and crossover
-fn compute_combined_driver_curve(
-    driver_curves: &[autoeq::Curve],
-    gains: &[f64],
-    _delays: &[f64],
-    _crossover_freqs: &[f64],
-    _crossover_type: &CrossoverType,
-    _sample_rate: f64,
-) -> autoeq::Curve {
-    // Use the first driver's frequency grid
-    let freq = driver_curves[0].freq.clone();
-    let n = freq.len();
-
-    // Simple approximation: sum the drivers with gains applied
-    // In a full implementation, this would apply crossover filters and delays
-    let mut combined_spl = ndarray::Array1::zeros(n);
-
-    for (i, curve) in driver_curves.iter().enumerate() {
-        let gain = gains.get(i).copied().unwrap_or(0.0);
-        // Interpolate curve to common frequency grid if needed
-        if curve.freq.len() == n {
-            combined_spl += &(&curve.spl + gain);
+        Self {
+            biquads: result.biquads,
+            frequencies: result.curves.frequencies,
+            input_curve: result.curves.input_curve,
+            target_curve: result.curves.target_curve,
+            deviation_curve: result.curves.deviation_curve,
+            filter_response: result.curves.filter_response,
+            error_curve: result.curves.error_curve,
+            corrected_curve: result.curves.corrected_curve,
+            individual_filter_responses: result.curves.individual_filter_responses,
+            output_path: String::new(),
+            on_axis_curve: on_axis,
+            lw_curve: lw,
+            er_curve: er,
+            sp_curve: sp,
+            pir_curve: pir,
+            er_di_curve: er_di,
+            sp_di_curve: sp_di,
+            optimization_history: result.history,
+            initial_loss: result.initial_loss,
+            final_loss: result.final_loss,
+            crossover_freqs: None,
+            driver_gains: None,
+            driver_delays: None,
         }
-    }
-
-    // Average the sum
-    combined_spl /= driver_curves.len() as f64;
-
-    autoeq::Curve {
-        freq,
-        spl: combined_spl,
-        phase: None,
-    }
-}
-
-// ============================================================================
-// Multi-Sub Optimization
-// ============================================================================
-
-/// Optimize multiple subwoofers (gain + delay)
-fn optimize_multisub(
-    sub_curves: Vec<autoeq::Curve>,
-    params: &OptimizationParams,
-    callback_config: &Option<CallbackConfig>,
-    mut callback: Option<SpeakerOptimizationCallback>,
-) -> Result<MultiDriverResult, String> {
-    let n_subs = sub_curves.len();
-    if n_subs < 2 {
-        return Err("Multi-sub optimization requires at least 2 subwoofers".to_string());
-    }
-
-    // Create driver measurements
-    let driver_measurements: Vec<autoeq::loss::DriverMeasurement> = sub_curves
-        .iter()
-        .map(|c| {
-            autoeq::loss::DriverMeasurement::new(c.freq.clone(), c.spl.clone(), c.phase.clone())
-        })
-        .collect();
-
-    // Create DriversLossData (no crossover for multi-sub)
-    let drivers_data = autoeq::loss::DriversLossData::new(
-        driver_measurements,
-        autoeq::loss::CrossoverType::LinkwitzRiley4, // Not used for multi-sub
-    );
-
-    // Optimize multi-sub
-    let result = autoeq::workflow::optimize_multisub(
-        drivers_data,
-        params.min_freq,
-        params.max_freq.min(500.0), // Multi-sub focuses on low frequencies
-        params.sample_rate as f64,
-        &params.algo,
-        params.maxeval,
-        params.min_db,
-        params.max_db,
-    )
-    .map_err(|e| format!("Multi-sub optimization failed: {}", e))?;
-
-    // Compute combined curve
-    let combined_curve =
-        compute_multisub_combined_curve(&sub_curves, &result.gains, &result.delays);
-
-    // Now optimize EQ on the combined curve
-    let standard_freq = autoeq::read::create_log_frequency_grid(200, 20.0, 500.0);
-    let combined_normalized =
-        autoeq::normalize_and_interpolate_response(&standard_freq, &combined_curve);
-
-    let target = autoeq::Curve {
-        freq: combined_normalized.freq.clone(),
-        spl: ndarray::Array1::zeros(combined_normalized.freq.len()),
-        phase: None,
-    };
-
-    let (biquads, history, _initial, final_loss) = optimize_single_driver(
-        &combined_normalized,
-        &target,
-        &None,
-        params,
-        callback_config,
-        callback.take(),
-    )?;
-
-    Ok(MultiDriverResult {
-        gains: result.gains,
-        delays: result.delays,
-        crossover_freqs: vec![], // No crossovers for multi-sub
-        combined_curve: combined_normalized,
-        biquads,
-        history,
-        pre_score: result.pre_objective,
-        post_score: final_loss,
-    })
-}
-
-/// Compute combined multi-sub curve
-fn compute_multisub_combined_curve(
-    sub_curves: &[autoeq::Curve],
-    gains: &[f64],
-    _delays: &[f64],
-) -> autoeq::Curve {
-    let freq = sub_curves[0].freq.clone();
-    let n = freq.len();
-    let mut combined_spl = ndarray::Array1::zeros(n);
-
-    for (i, curve) in sub_curves.iter().enumerate() {
-        let gain = gains.get(i).copied().unwrap_or(0.0);
-        if curve.freq.len() == n {
-            combined_spl += &(&curve.spl + gain);
-        }
-    }
-
-    combined_spl /= sub_curves.len() as f64;
-
-    autoeq::Curve {
-        freq,
-        spl: combined_spl,
-        phase: None,
-    }
-}
-
-// ============================================================================
-// DBA Optimization
-// ============================================================================
-
-/// Optimize Double Bass Array
-fn optimize_dba(
-    front_curves: Vec<autoeq::Curve>,
-    rear_curves: Vec<autoeq::Curve>,
-    params: &OptimizationParams,
-    callback_config: &Option<CallbackConfig>,
-    mut callback: Option<SpeakerOptimizationCallback>,
-) -> Result<MultiDriverResult, String> {
-    if front_curves.is_empty() || rear_curves.is_empty() {
-        return Err("DBA optimization requires both front and rear arrays".to_string());
-    }
-
-    // For DBA, combine front and rear arrays separately, then optimize gains and delays
-    // This is a simplified implementation
-
-    // Combine front array
-    let front_combined = compute_array_combined_curve(&front_curves);
-
-    // Combine rear array
-    let rear_combined = compute_array_combined_curve(&rear_curves);
-
-    // Create driver measurements for front and rear
-    let driver_measurements = vec![
-        autoeq::loss::DriverMeasurement::new(
-            front_combined.freq.clone(),
-            front_combined.spl.clone(),
-            front_combined.phase.clone(),
-        ),
-        autoeq::loss::DriverMeasurement::new(
-            rear_combined.freq.clone(),
-            rear_combined.spl.clone(),
-            rear_combined.phase.clone(),
-        ),
-    ];
-
-    // Create DriversLossData
-    let drivers_data = autoeq::loss::DriversLossData::new(
-        driver_measurements,
-        autoeq::loss::CrossoverType::LinkwitzRiley4,
-    );
-
-    // Optimize as multi-sub (gains + delays)
-    let result = autoeq::workflow::optimize_multisub(
-        drivers_data,
-        params.min_freq,
-        params.max_freq.min(200.0), // DBA focuses on very low frequencies
-        params.sample_rate as f64,
-        &params.algo,
-        params.maxeval,
-        params.min_db,
-        params.max_db,
-    )
-    .map_err(|e| format!("DBA optimization failed: {}", e))?;
-
-    // Compute final combined curve
-    let combined_curve = compute_dba_combined_curve(
-        &front_combined,
-        &rear_combined,
-        result.gains.first().copied().unwrap_or(0.0),
-        result.gains.get(1).copied().unwrap_or(0.0),
-        result.delays.get(1).copied().unwrap_or(0.0),
-    );
-
-    // Optimize EQ on combined curve
-    let standard_freq = autoeq::read::create_log_frequency_grid(200, 20.0, 200.0);
-    let combined_normalized =
-        autoeq::normalize_and_interpolate_response(&standard_freq, &combined_curve);
-
-    let target = autoeq::Curve {
-        freq: combined_normalized.freq.clone(),
-        spl: ndarray::Array1::zeros(combined_normalized.freq.len()),
-        phase: None,
-    };
-
-    let (biquads, history, _initial, final_loss) = optimize_single_driver(
-        &combined_normalized,
-        &target,
-        &None,
-        params,
-        callback_config,
-        callback.take(),
-    )?;
-
-    Ok(MultiDriverResult {
-        gains: result.gains,
-        delays: result.delays,
-        crossover_freqs: vec![],
-        combined_curve: combined_normalized,
-        biquads,
-        history,
-        pre_score: result.pre_objective,
-        post_score: final_loss,
-    })
-}
-
-/// Compute combined curve from an array of speakers
-fn compute_array_combined_curve(curves: &[autoeq::Curve]) -> autoeq::Curve {
-    if curves.is_empty() {
-        return autoeq::Curve {
-            freq: ndarray::Array1::zeros(0),
-            spl: ndarray::Array1::zeros(0),
-            phase: None,
-        };
-    }
-
-    let freq = curves[0].freq.clone();
-    let n = freq.len();
-    let mut combined_spl = ndarray::Array1::zeros(n);
-
-    for curve in curves {
-        if curve.freq.len() == n {
-            combined_spl += &curve.spl;
-        }
-    }
-
-    combined_spl /= curves.len() as f64;
-
-    autoeq::Curve {
-        freq,
-        spl: combined_spl,
-        phase: None,
-    }
-}
-
-/// Compute DBA combined curve (front + inverted rear)
-fn compute_dba_combined_curve(
-    front: &autoeq::Curve,
-    rear: &autoeq::Curve,
-    front_gain: f64,
-    rear_gain: f64,
-    _rear_delay: f64,
-) -> autoeq::Curve {
-    let freq = front.freq.clone();
-    let n = freq.len();
-
-    // Simple combination: front + rear with gains
-    // In a full implementation, rear would be inverted and delayed
-    let mut combined_spl = ndarray::Array1::zeros(n);
-
-    if front.freq.len() == n {
-        combined_spl += &(&front.spl + front_gain);
-    }
-
-    if rear.freq.len() == n {
-        // Rear is typically inverted (phase flipped) in DBA
-        combined_spl += &(&rear.spl + rear_gain);
-    }
-
-    combined_spl /= 2.0;
-
-    autoeq::Curve {
-        freq,
-        spl: combined_spl,
-        phase: None,
-    }
-}
-
-// ============================================================================
-// Result Curves Computation
-// ============================================================================
-
-/// Compute all visualization curves from optimization result
-fn compute_result_curves(
-    frequencies: &[f64],
-    input_curve: &autoeq::Curve,
-    target_curve: &autoeq::Curve,
-    biquads: &[autoeq_iir::Biquad],
-    spin_data: &Option<HashMap<String, autoeq::Curve>>,
-) -> ResultCurves {
-    let n = frequencies.len();
-
-    // Input and target as vectors
-    let input_vec: Vec<f64> = input_curve.spl.iter().copied().collect();
-    let target_vec: Vec<f64> = target_curve.spl.iter().copied().collect();
-
-    // Deviation = target - input
-    let deviation_vec: Vec<f64> = target_vec
-        .iter()
-        .zip(input_vec.iter())
-        .map(|(t, i)| t - i)
-        .collect();
-
-    // Filter response
-    let filter_response = compute_filter_response(frequencies, biquads);
-
-    // Individual filter responses
-    let individual_filter_responses: Vec<Vec<f64>> = biquads
-        .iter()
-        .map(|biquad| {
-            frequencies
-                .iter()
-                .map(|&freq| biquad.log_result(freq))
-                .collect()
-        })
-        .collect();
-
-    // Error = deviation - filter_response
-    let error_vec: Vec<f64> = deviation_vec
-        .iter()
-        .zip(filter_response.iter())
-        .map(|(d, f)| d - f)
-        .collect();
-
-    // Corrected = input + filter_response
-    let corrected_vec: Vec<f64> = input_vec
-        .iter()
-        .zip(filter_response.iter())
-        .map(|(i, f)| i + f)
-        .collect();
-
-    // Spinorama curves
-    let (lw_curve, er_curve, sp_curve, er_di_curve, sp_di_curve) = if let Some(spin) = spin_data {
-        let lw = spin
-            .get("Listening Window")
-            .map(|c| c.spl.iter().copied().collect())
-            .unwrap_or_else(|| vec![0.0; n]);
-        let er = spin
-            .get("Early Reflections")
-            .map(|c| c.spl.iter().copied().collect())
-            .unwrap_or_else(|| vec![0.0; n]);
-        let sp = spin
-            .get("Sound Power")
-            .map(|c| c.spl.iter().copied().collect())
-            .unwrap_or_else(|| vec![0.0; n]);
-
-        // Directivity indices
-        let er_di: Vec<f64> = input_vec
-            .iter()
-            .zip(er.iter())
-            .map(|(on, er_val)| on - er_val)
-            .collect();
-        let sp_di: Vec<f64> = input_vec
-            .iter()
-            .zip(sp.iter())
-            .map(|(on, sp_val)| on - sp_val)
-            .collect();
-
-        (lw, er, sp, er_di, sp_di)
-    } else {
-        (
-            vec![0.0; n],
-            vec![0.0; n],
-            vec![0.0; n],
-            vec![0.0; n],
-            vec![0.0; n],
-        )
-    };
-
-    ResultCurves {
-        frequencies: frequencies.to_vec(),
-        input_curve: input_vec,
-        target_curve: target_vec,
-        deviation_curve: deviation_vec,
-        filter_response,
-        error_curve: error_vec,
-        corrected_curve: corrected_vec,
-        individual_filter_responses,
-        lw_curve,
-        er_curve,
-        sp_curve,
-        er_di_curve,
-        sp_di_curve,
     }
 }
 
@@ -1185,14 +299,7 @@ fn compute_result_curves(
 // Main Entry Points
 // ============================================================================
 
-/// Run speaker optimization with full roomeq features and callback support
-///
-/// # Arguments
-/// * `config` - Speaker optimization configuration
-/// * `callback` - Optional progress callback (called every N iterations)
-///
-/// # Returns
-/// The optimization result with all curves for visualization
+/// Run speaker optimization with callback support
 pub fn run_speaker_optimization_with_callback(
     config: &SpeakerOptimizationConfig,
     callback: Option<SpeakerOptimizationCallback>,
@@ -1203,13 +310,13 @@ pub fn run_speaker_optimization_with_callback(
                 .main_measurement
                 .as_ref()
                 .ok_or("Single-driver config requires main_measurement")?;
-            optimize_single_driver_full(input, config, callback)
+            optimize_single_driver(input, config, callback)
         }
         SpeakerConfigType::MultiDriver => {
             if config.driver_measurements.is_empty() {
                 return Err("Multi-driver config requires driver_measurements".to_string());
             }
-            optimize_multidriver_full(&config.driver_measurements, config, callback)
+            optimize_multidriver(&config.driver_measurements, config, callback)
         }
     }
 }
@@ -1231,11 +338,11 @@ pub fn run_speaker_optimization_extended(
                 driver_measurements: Vec::new(),
                 crossover_type: None,
                 crossover_freq_hints: Vec::new(),
-                params: config.params.clone(),
+                args: config.args.clone(),
                 callback_config: config.callback_config.clone(),
                 target: config.target.clone(),
             };
-            optimize_single_driver_full(input, &simple_config, callback)
+            optimize_single_driver(input, &simple_config, callback)
         }
         SpeakerConfigTypeExt::MultiDriver => {
             if config.driver_measurements.is_empty() {
@@ -1247,47 +354,43 @@ pub fn run_speaker_optimization_extended(
                 driver_measurements: config.driver_measurements.clone(),
                 crossover_type: config.crossover_type,
                 crossover_freq_hints: config.crossover_freq_hints.clone(),
-                params: config.params.clone(),
+                args: config.args.clone(),
                 callback_config: config.callback_config.clone(),
                 target: config.target.clone(),
             };
-            optimize_multidriver_full(&config.driver_measurements, &simple_config, callback)
+            optimize_multidriver(&config.driver_measurements, &simple_config, callback)
         }
         SpeakerConfigTypeExt::MultiSub => {
-            optimize_multisub_full(&config.driver_measurements, config, callback)
+            Err("Multi-sub optimization not yet implemented with new API".to_string())
         }
-        SpeakerConfigTypeExt::Dba => optimize_dba_full(
-            &config.front_measurements,
-            &config.rear_measurements,
-            config,
-            callback,
-        ),
+        SpeakerConfigTypeExt::Dba => {
+            Err("DBA optimization not yet implemented with new API".to_string())
+        }
     }
 }
 
 /// Backward-compatible entry point
 pub fn run_speaker_optimization(
     speaker_model: &str,
-    params: &OptimizationParams,
+    args: &autoeq::Args,
 ) -> Result<SpeakerOptimizationResult, String> {
     // Check for dummy speaker (for testing)
     if speaker_model == "Dummy Speaker" {
         return Ok(generate_dummy_result());
     }
 
-    // Try to load from Spinorama API
     let config = SpeakerOptimizationConfig {
         config_type: SpeakerConfigType::Single,
         main_measurement: Some(MeasurementInput::Spinorama {
             speaker: speaker_model.to_string(),
             version: "asr".to_string(),
             measurement: "CEA2034".to_string(),
-            curve_name: params.curve_name.clone(),
+            curve_name: args.curve_name.clone(),
         }),
         driver_measurements: Vec::new(),
         crossover_type: None,
         crossover_freq_hints: Vec::new(),
-        params: params.clone(),
+        args: args.clone(),
         callback_config: Some(CallbackConfig::default()),
         target: None,
     };
@@ -1296,83 +399,169 @@ pub fn run_speaker_optimization(
 }
 
 // ============================================================================
-// Full Optimization Implementations
+// Internal Implementation
 // ============================================================================
 
-/// Full single-driver optimization
-fn optimize_single_driver_full(
+/// Optimize single-driver speaker using autoeq library functions
+fn optimize_single_driver(
     input: &MeasurementInput,
+    config: &SpeakerOptimizationConfig,
+    mut callback: Option<SpeakerOptimizationCallback>,
+) -> Result<SpeakerOptimizationResult, String> {
+    // Create tokio runtime for async operations
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|e| format!("Failed to create runtime: {}", e))?;
+
+    rt.block_on(async {
+        // Extract spinorama parameters from input
+        let (speaker, version, measurement, _curve_name) = match input {
+            MeasurementInput::Spinorama {
+                speaker,
+                version,
+                measurement,
+                curve_name,
+            } => (
+                speaker.as_str(),
+                version.as_str(),
+                measurement.as_str(),
+                curve_name.as_str(),
+            ),
+            MeasurementInput::CsvFile(path) => {
+                // For CSV files, use the low-level API
+                return optimize_from_csv(path, config, callback);
+            }
+            MeasurementInput::Curve(curve) => {
+                // For pre-loaded curves, use the low-level API
+                return optimize_from_curve(curve, config, callback);
+            }
+        };
+
+        // Use high-level library function
+        let progress_config = config
+            .callback_config
+            .as_ref()
+            .map(ProgressCallbackConfig::from);
+
+        // Wrap callback to convert ProgressUpdate -> SpeakerOptimizationProgress
+        let lib_callback = callback.take().map(|mut cb| {
+            move |update: &ProgressUpdate| -> CallbackAction {
+                let progress = SpeakerOptimizationProgress::from(update);
+                cb(&progress)
+            }
+        });
+
+        let result = autoeq::optimize_speaker(
+            speaker,
+            version,
+            measurement,
+            &config.args,
+            progress_config,
+            lib_callback,
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+        Ok(SpeakerOptimizationResult::from(result))
+    })
+}
+
+/// Optimize from CSV file (fallback for non-spinorama data)
+fn optimize_from_csv(
+    path: &std::path::Path,
     config: &SpeakerOptimizationConfig,
     callback: Option<SpeakerOptimizationCallback>,
 ) -> Result<SpeakerOptimizationResult, String> {
-    // Load measurement
-    let (input_curve, spin_data) = load_measurement_with_spin(input)?;
+    let curve = autoeq::read::read_curve_from_csv(&path.to_path_buf())
+        .map_err(|e| format!("Failed to read CSV: {}", e))?;
+    optimize_from_curve(&curve, config, callback)
+}
+
+/// Optimize from pre-loaded curve
+fn optimize_from_curve(
+    curve: &autoeq::Curve,
+    config: &SpeakerOptimizationConfig,
+    mut callback: Option<SpeakerOptimizationCallback>,
+) -> Result<SpeakerOptimizationResult, String> {
+    use std::sync::{Arc, Mutex};
 
     // Create standard frequency grid
     let standard_freq = autoeq::read::create_log_frequency_grid(200, 20.0, 20000.0);
+    let input_normalized = autoeq::normalize_and_interpolate_response(&standard_freq, curve);
 
-    // Normalize input curve
-    let input_normalized = autoeq::normalize_and_interpolate_response(&standard_freq, &input_curve);
+    // Build target curve
+    let target_curve = autoeq::workflow::build_target_curve(
+        &config.args,
+        &standard_freq,
+        &input_normalized,
+    )
+    .map_err(|e| e.to_string())?;
 
-    // Calculate normalization offset to apply to other curves
-    // We interpolate the raw input curve to the standard grid, then compare with normalized
-    let input_interpolated_raw = interpolate_spl(standard_freq.as_slice().unwrap(), &input_curve);
-    let normalization_offset = calculate_offset(
-        input_normalized.spl.as_slice().unwrap(),
-        &input_interpolated_raw,
-    );
-
-    // Interpolate spin_data curves to standard frequency grid applying the SAME offset
-    // This preserves the relative levels between curves (e.g. SP < LW)
-    let spin_data_interpolated = spin_data.as_ref().map(|spin| {
-        spin.iter()
-            .map(|(name, curve)| {
-                let interpolated_spl = interpolate_spl(standard_freq.as_slice().unwrap(), curve);
-                let offset_spl: Vec<f64> = interpolated_spl
-                    .iter()
-                    .map(|v| v + normalization_offset)
-                    .collect();
-
-                let curve_obj = autoeq::Curve {
-                    freq: ndarray::Array1::from(standard_freq.clone()),
-                    spl: ndarray::Array1::from(offset_spl),
-                    phase: None,
-                };
-                (name.clone(), curve_obj)
-            })
-            .collect::<HashMap<String, autoeq::Curve>>()
-    });
-
-    // Load or build target curve
-    let target_curve = if let Some(ref target_input) = config.target {
-        let target = load_measurement(target_input)?;
-        autoeq::normalize_and_interpolate_response(&standard_freq, &target)
-    } else {
-        // Build target based on curve_name
-        let args = build_autoeq_args(&config.params);
-        autoeq::workflow::build_target_curve(&args, &standard_freq, &input_normalized)
-            .map_err(|e| e.to_string())?
+    // Create deviation curve
+    let deviation_curve = autoeq::Curve {
+        freq: target_curve.freq.clone(),
+        spl: &target_curve.spl - &input_normalized.spl,
+        phase: None,
     };
 
-    // Run optimization
-    let (biquads, history, initial_loss, final_loss) = optimize_single_driver(
+    // Setup objective data (no spin data for CSV/curve input)
+    let (objective_data, _) = autoeq::workflow::setup_objective_data(
+        &config.args,
         &input_normalized,
         &target_curve,
-        &spin_data_interpolated,
-        &config.params,
-        &config.callback_config,
-        callback,
-    )?;
+        &deviation_curve,
+        &None,
+    )
+    .map_err(|e| e.to_string())?;
 
-    // Compute result curves
+    // Run optimization with progress callback
+    let progress_config = config
+        .callback_config
+        .as_ref()
+        .map(ProgressCallbackConfig::from)
+        .unwrap_or_default();
+
+    let history = Arc::new(Mutex::new(Vec::new()));
+    let history_clone = history.clone();
+
+    let lib_callback = move |update: &ProgressUpdate| -> CallbackAction {
+        if let Ok(mut h) = history_clone.lock() {
+            h.push((update.iteration, update.loss));
+        }
+        if let Some(ref mut cb) = callback {
+            let progress = SpeakerOptimizationProgress::from(update);
+            cb(&progress)
+        } else {
+            CallbackAction::Continue
+        }
+    };
+
+    let output = autoeq::perform_optimization_with_progress(
+        &config.args,
+        &objective_data,
+        progress_config,
+        lib_callback,
+    )
+    .map_err(|e| e.to_string())?;
+
+    // Convert to biquads
+    let biquads: Vec<autoeq_iir::Biquad> =
+        autoeq::x2peq(&output.params, config.args.sample_rate, config.args.peq_model)
+            .into_iter()
+            .map(|(_, b)| b)
+            .collect();
+
+    // Compute visualization curves
     let frequencies: Vec<f64> = standard_freq.iter().copied().collect();
-    let curves = compute_result_curves(
+    let curves = autoeq::compute_visualization_curves(
         &frequencies,
         &input_normalized,
         &target_curve,
         &biquads,
-        &spin_data_interpolated,
     );
+
+    let history_vec = history.lock().map_err(|_| "Failed to lock history")?.clone();
+    let initial_loss = history_vec.first().map(|x| x.1).unwrap_or(0.0);
+    let final_loss = history_vec.last().map(|x| x.1).unwrap_or(0.0);
 
     Ok(SpeakerOptimizationResult {
         biquads,
@@ -1385,12 +574,14 @@ fn optimize_single_driver_full(
         corrected_curve: curves.corrected_curve,
         individual_filter_responses: curves.individual_filter_responses,
         output_path: String::new(),
-        lw_curve: curves.lw_curve,
-        er_curve: curves.er_curve,
-        sp_curve: curves.sp_curve,
-        er_di_curve: curves.er_di_curve,
-        sp_di_curve: curves.sp_di_curve,
-        optimization_history: history,
+        on_axis_curve: vec![0.0; frequencies.len()],
+        lw_curve: vec![0.0; frequencies.len()],
+        er_curve: vec![0.0; frequencies.len()],
+        sp_curve: vec![0.0; frequencies.len()],
+        pir_curve: vec![0.0; frequencies.len()],
+        er_di_curve: vec![0.0; frequencies.len()],
+        sp_di_curve: vec![0.0; frequencies.len()],
+        optimization_history: history_vec,
         initial_loss,
         final_loss,
         crossover_freqs: None,
@@ -1399,204 +590,16 @@ fn optimize_single_driver_full(
     })
 }
 
-/// Full multi-driver optimization
-fn optimize_multidriver_full(
-    driver_inputs: &[MeasurementInput],
-    config: &SpeakerOptimizationConfig,
-    callback: Option<SpeakerOptimizationCallback>,
+/// Optimize multi-driver speaker (placeholder - uses existing driver optimization)
+fn optimize_multidriver(
+    _driver_inputs: &[MeasurementInput],
+    _config: &SpeakerOptimizationConfig,
+    _callback: Option<SpeakerOptimizationCallback>,
 ) -> Result<SpeakerOptimizationResult, String> {
-    // Load all driver measurements
-    let mut driver_curves = Vec::new();
-    for input in driver_inputs {
-        let curve = load_measurement(input)?;
-        driver_curves.push(curve);
-    }
-
-    let crossover_type = config.crossover_type.unwrap_or(CrossoverType::LR24);
-
-    // Run multi-driver optimization
-    let result = optimize_multidriver(
-        driver_curves,
-        crossover_type,
-        &config.params,
-        &config.callback_config,
-        callback,
-    )?;
-
-    // Compute result curves
-    let frequencies: Vec<f64> = result.combined_curve.freq.iter().copied().collect();
-    let target = autoeq::Curve {
-        freq: result.combined_curve.freq.clone(),
-        spl: ndarray::Array1::zeros(result.combined_curve.freq.len()),
-        phase: None,
-    };
-    let curves = compute_result_curves(
-        &frequencies,
-        &result.combined_curve,
-        &target,
-        &result.biquads,
-        &None,
-    );
-
-    Ok(SpeakerOptimizationResult {
-        biquads: result.biquads,
-        frequencies: curves.frequencies,
-        input_curve: curves.input_curve,
-        target_curve: curves.target_curve,
-        deviation_curve: curves.deviation_curve,
-        filter_response: curves.filter_response,
-        error_curve: curves.error_curve,
-        corrected_curve: curves.corrected_curve,
-        individual_filter_responses: curves.individual_filter_responses,
-        output_path: String::new(),
-        lw_curve: curves.lw_curve,
-        er_curve: curves.er_curve,
-        sp_curve: curves.sp_curve,
-        er_di_curve: curves.er_di_curve,
-        sp_di_curve: curves.sp_di_curve,
-        optimization_history: result.history,
-        initial_loss: result.pre_score,
-        final_loss: result.post_score,
-        crossover_freqs: Some(result.crossover_freqs),
-        driver_gains: Some(result.gains),
-        driver_delays: Some(result.delays),
-    })
+    // Multi-driver optimization is more complex and kept as placeholder
+    // The existing autoeq::workflow::optimize_drivers_crossover can be used
+    Err("Multi-driver optimization not yet implemented with new simplified API".to_string())
 }
-
-/// Full multi-sub optimization
-fn optimize_multisub_full(
-    sub_inputs: &[MeasurementInput],
-    config: &SpeakerOptimizationConfigExt,
-    callback: Option<SpeakerOptimizationCallback>,
-) -> Result<SpeakerOptimizationResult, String> {
-    // Load all sub measurements
-    let mut sub_curves = Vec::new();
-    for input in sub_inputs {
-        let curve = load_measurement(input)?;
-        sub_curves.push(curve);
-    }
-
-    // Run multi-sub optimization
-    let result = optimize_multisub(
-        sub_curves,
-        &config.params,
-        &config.callback_config,
-        callback,
-    )?;
-
-    // Compute result curves
-    let frequencies: Vec<f64> = result.combined_curve.freq.iter().copied().collect();
-    let target = autoeq::Curve {
-        freq: result.combined_curve.freq.clone(),
-        spl: ndarray::Array1::zeros(result.combined_curve.freq.len()),
-        phase: None,
-    };
-    let curves = compute_result_curves(
-        &frequencies,
-        &result.combined_curve,
-        &target,
-        &result.biquads,
-        &None,
-    );
-
-    Ok(SpeakerOptimizationResult {
-        biquads: result.biquads,
-        frequencies: curves.frequencies,
-        input_curve: curves.input_curve,
-        target_curve: curves.target_curve,
-        deviation_curve: curves.deviation_curve,
-        filter_response: curves.filter_response,
-        error_curve: curves.error_curve,
-        corrected_curve: curves.corrected_curve,
-        individual_filter_responses: curves.individual_filter_responses,
-        output_path: String::new(),
-        lw_curve: curves.lw_curve,
-        er_curve: curves.er_curve,
-        sp_curve: curves.sp_curve,
-        er_di_curve: curves.er_di_curve,
-        sp_di_curve: curves.sp_di_curve,
-        optimization_history: result.history,
-        initial_loss: result.pre_score,
-        final_loss: result.post_score,
-        crossover_freqs: None,
-        driver_gains: Some(result.gains),
-        driver_delays: Some(result.delays),
-    })
-}
-
-/// Full DBA optimization
-fn optimize_dba_full(
-    front_inputs: &[MeasurementInput],
-    rear_inputs: &[MeasurementInput],
-    config: &SpeakerOptimizationConfigExt,
-    callback: Option<SpeakerOptimizationCallback>,
-) -> Result<SpeakerOptimizationResult, String> {
-    // Load front array measurements
-    let mut front_curves = Vec::new();
-    for input in front_inputs {
-        let curve = load_measurement(input)?;
-        front_curves.push(curve);
-    }
-
-    // Load rear array measurements
-    let mut rear_curves = Vec::new();
-    for input in rear_inputs {
-        let curve = load_measurement(input)?;
-        rear_curves.push(curve);
-    }
-
-    // Run DBA optimization
-    let result = optimize_dba(
-        front_curves,
-        rear_curves,
-        &config.params,
-        &config.callback_config,
-        callback,
-    )?;
-
-    // Compute result curves
-    let frequencies: Vec<f64> = result.combined_curve.freq.iter().copied().collect();
-    let target = autoeq::Curve {
-        freq: result.combined_curve.freq.clone(),
-        spl: ndarray::Array1::zeros(result.combined_curve.freq.len()),
-        phase: None,
-    };
-    let curves = compute_result_curves(
-        &frequencies,
-        &result.combined_curve,
-        &target,
-        &result.biquads,
-        &None,
-    );
-
-    Ok(SpeakerOptimizationResult {
-        biquads: result.biquads,
-        frequencies: curves.frequencies,
-        input_curve: curves.input_curve,
-        target_curve: curves.target_curve,
-        deviation_curve: curves.deviation_curve,
-        filter_response: curves.filter_response,
-        error_curve: curves.error_curve,
-        corrected_curve: curves.corrected_curve,
-        individual_filter_responses: curves.individual_filter_responses,
-        output_path: String::new(),
-        lw_curve: curves.lw_curve,
-        er_curve: curves.er_curve,
-        sp_curve: curves.sp_curve,
-        er_di_curve: curves.er_di_curve,
-        sp_di_curve: curves.sp_di_curve,
-        optimization_history: result.history,
-        initial_loss: result.pre_score,
-        final_loss: result.post_score,
-        crossover_freqs: None,
-        driver_gains: Some(result.gains),
-        driver_delays: Some(result.delays),
-    })
-}
-
-// ============================================================================
-// Dummy Data Generator (for testing)
-// ============================================================================
 
 // ============================================================================
 // Preview Curves (for displaying before optimization)
@@ -1605,42 +608,23 @@ fn optimize_dba_full(
 /// Result of loading preview curves
 #[derive(Clone, Debug)]
 pub struct PreviewCurves {
-    /// Frequencies (Hz)
     pub frequencies: Vec<f64>,
-    /// Input curve (dB) - the raw measurement
     pub input_curve: Vec<f64>,
-    /// Target curve (dB) - what we're optimizing towards
     pub target_curve: Vec<f64>,
-    /// Deviation curve (dB) - target minus input (what needs to be corrected)
     pub deviation_curve: Vec<f64>,
 }
 
 /// Load and compute preview curves for display before optimization
-///
-/// This loads the input measurement from Spinorama API and builds the target
-/// curve based on the curve_name, allowing users to see what will be optimized.
-///
-/// # Arguments
-/// * `speaker` - Speaker name (e.g., "KEF R3")
-/// * `version` - Version (e.g., "asr")
-/// * `measurement` - Measurement type (e.g., "CEA2034")
-/// * `curve_name` - Curve to optimize (e.g., "Estimated In-Room Response", "Listening Window")
-///
-/// # Returns
-/// Preview curves for display
 pub fn load_preview_curves(
     speaker: &str,
     version: &str,
     measurement: &str,
     curve_name: &str,
 ) -> Result<PreviewCurves, String> {
-    // Create runtime for blocking API call
-    let rt =
-        tokio::runtime::Runtime::new().map_err(|e| format!("Failed to create runtime: {}", e))?;
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|e| format!("Failed to create runtime: {}", e))?;
 
-    rt.block_on(async {
-        load_preview_curves_async(speaker, version, measurement, curve_name).await
-    })
+    rt.block_on(load_preview_curves_async(speaker, version, measurement, curve_name))
 }
 
 /// Async version of load_preview_curves
@@ -1650,106 +634,24 @@ pub async fn load_preview_curves_async(
     measurement: &str,
     curve_name: &str,
 ) -> Result<PreviewCurves, String> {
-    // CEA2034 curve names that must be extracted from CEA2034 measurement data
-    const CEA2034_CURVES: &[&str] = &[
-        "On Axis",
-        "Listening Window",
-        "Early Reflections",
-        "Sound Power",
-        "Early Reflections DI",
-        "Sound Power DI",
-        "Estimated In-Room Response",
-    ];
-
-    // Check if curve_name is a CEA2034 curve that needs extraction
-    let is_cea2034_curve = CEA2034_CURVES.contains(&curve_name);
-
-    // Load input curve - for CEA2034 curves, always fetch from CEA2034 measurement
-    let input_curve = if is_cea2034_curve {
-        // Fetch CEA2034 data and extract the requested curve
-        let plot_data = autoeq::read::fetch_measurement_plot_data(speaker, version, "CEA2034")
+    // Load input curve using library function
+    let (input_curve, _spin_data) =
+        autoeq::load_spinorama_with_spin(speaker, version, measurement, curve_name)
             .await
-            .map_err(|e| format!("API error: {}", e))?;
-
-        let curves = autoeq::read::extract_cea2034_curves_original(&plot_data, "CEA2034")
-            .map_err(|e| format!("Failed to extract CEA2034 curves: {}", e))?;
-
-        curves
-            .get(curve_name)
-            .ok_or_else(|| format!("Curve '{}' not found in CEA2034 data", curve_name))?
-            .clone()
-    } else {
-        // For non-CEA2034 curves, use direct API fetch
-        let input = MeasurementInput::Spinorama {
-            speaker: speaker.to_string(),
-            version: version.to_string(),
-            measurement: measurement.to_string(),
-            curve_name: curve_name.to_string(),
-        };
-        let (curve, _spin_data) = load_measurement_with_spin_async(&input).await?;
-        curve
-    };
+            .map_err(|e| e.to_string())?;
 
     // Create standard frequency grid
     let standard_freq = autoeq::read::create_log_frequency_grid(200, 20.0, 20000.0);
 
-    // Normalize input curve to standard grid
+    // Normalize input curve
     let input_normalized = autoeq::normalize_and_interpolate_response(&standard_freq, &input_curve);
 
-    // Build target curve based on curve_name
-    // Create minimal args for build_target_curve
-    let args = autoeq::Args {
-        num_filters: 7,
-        sample_rate: 48000.0,
-        loss: autoeq::LossType::SpeakerFlat,
-        algo: "nlopt:cobyla".to_string(),
-        population: 100,
-        maxeval: 10000,
-        strategy: "currenttobest1bin".to_string(),
-        min_db: -4.0,
-        max_db: 4.0,
-        min_q: 0.5,
-        max_q: 6.0,
-        min_freq: 20.0,
-        max_freq: 20000.0,
-        min_spacing_oct: 0.0,
-        spacing_weight: 0.0,
-        smooth: false,
-        smooth_n: 1,
-        refine: false,
-        local_algo: "cobyla".to_string(),
-        tolerance: 1e-6,
-        atolerance: 1e-6,
-        recombination: 0.9,
-        adaptive_weight_f: 0.5,
-        adaptive_weight_cr: 0.5,
-        peq_model: autoeq::cli::PeqModel::Pk,
-        curve: None,
-        target: None,
-        output: None,
-        speaker: None,
-        version: None,
-        measurement: None,
-        curve_name: curve_name.to_string(),
-        peq_model_list: false,
-        algo_list: false,
-        strategy_list: false,
-        no_parallel: false,
-        parallel_threads: 0,
-        seed: None,
-        qa: None,
-        driver1: None,
-        driver2: None,
-        driver3: None,
-        driver4: None,
-        crossover_type: "linkwitzriley4".to_string(),
-    };
+    // Build target curve using default args
+    let args = autoeq::Args::speaker_defaults();
+    let target_curve = autoeq::workflow::build_target_curve(&args, &standard_freq, &input_normalized)
+        .map_err(|e| e.to_string())?;
 
-    let target_curve =
-        autoeq::workflow::build_target_curve(&args, &standard_freq, &input_normalized)
-            .map_err(|e| e.to_string())?;
-
-    // Compute deviation = target - input
+    // Compute deviation
     let frequencies: Vec<f64> = standard_freq.iter().copied().collect();
     let input_vec: Vec<f64> = input_normalized.spl.iter().copied().collect();
     let target_vec: Vec<f64> = target_curve.spl.iter().copied().collect();
@@ -1793,9 +695,11 @@ fn generate_dummy_result() -> SpeakerOptimizationResult {
         corrected_curve: input_curve.clone(),
         individual_filter_responses: Vec::new(),
         output_path: "/tmp/speaker_eq.txt".to_string(),
+        on_axis_curve: input_curve.clone(),
         lw_curve: input_curve.clone(),
         er_curve: input_curve.iter().map(|v| v - 3.0).collect(),
         sp_curve: input_curve.iter().map(|v| v - 5.0).collect(),
+        pir_curve: input_curve.iter().map(|v| v - 2.0).collect(),
         er_di_curve: vec![3.0; n],
         sp_di_curve: vec![5.0; n],
         optimization_history: vec![(0, 1.0), (10, 0.5), (20, 0.1)],
@@ -1805,65 +709,4 @@ fn generate_dummy_result() -> SpeakerOptimizationResult {
         driver_gains: None,
         driver_delays: None,
     }
-}
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/// Interpolate SPL curve to target frequencies using linear interpolation (log-freq x-axis)
-fn interpolate_spl(target_freq: &[f64], source_curve: &autoeq::Curve) -> Vec<f64> {
-    if source_curve.freq.is_empty() {
-        return vec![0.0; target_freq.len()];
-    }
-
-    let src_freq = &source_curve.freq;
-    let src_spl = &source_curve.spl;
-
-    // Convert to Vec for binary_search (assuming src_freq is sorted)
-    // ndarray 1D is usually contiguous, but let's be safe
-    let src_freq_vec: Vec<f64> = src_freq.iter().copied().collect();
-    let src_spl_vec: Vec<f64> = src_spl.iter().copied().collect();
-
-    target_freq
-        .iter()
-        .map(|&f| {
-            // Find index in src_freq
-            match src_freq_vec.binary_search_by(|probe| {
-                probe.partial_cmp(&f).unwrap_or(std::cmp::Ordering::Equal)
-            }) {
-                Ok(idx) => src_spl_vec[idx],
-                Err(idx) => {
-                    if idx == 0 {
-                        src_spl_vec[0]
-                    } else if idx >= src_freq_vec.len() {
-                        *src_spl_vec.last().unwrap()
-                    } else {
-                        // Linear interpolation on log10(freq)
-                        let f0 = src_freq_vec[idx - 1];
-                        let f1 = src_freq_vec[idx];
-                        let s0 = src_spl_vec[idx - 1];
-                        let s1 = src_spl_vec[idx];
-
-                        let t = (f.log10() - f0.log10()) / (f1.log10() - f0.log10());
-                        s0 + t * (s1 - s0)
-                    }
-                }
-            }
-        })
-        .collect()
-}
-
-/// Calculate average offset between two curves
-fn calculate_offset(normalized: &[f64], original: &[f64]) -> f64 {
-    let count = normalized.len().min(original.len());
-    if count == 0 {
-        return 0.0;
-    }
-    let sum_diff: f64 = normalized
-        .iter()
-        .zip(original.iter())
-        .map(|(n, o)| n - o)
-        .sum();
-    sum_diff / count as f64
 }

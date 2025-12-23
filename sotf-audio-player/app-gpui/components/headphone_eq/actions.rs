@@ -1,6 +1,5 @@
 use crate::ui::PlayerView;
 use gpui::*;
-use sotf_audio_player::autoeq::OptimizationParams;
 use sotf_audio_player::plugins::{EQFilter, PluginSettings, PluginType};
 
 impl PlayerView {
@@ -70,31 +69,27 @@ impl PlayerView {
             let result = cx
                 .background_executor()
                 .spawn(async move {
-                    // Construct params - use all config fields
-                    let params = OptimizationParams {
-                        num_filters: config.num_filters,
-                        min_q: config.min_q,
-                        max_q: config.max_q,
-                        min_db: config.min_db,
-                        max_db: config.max_db,
-                        min_freq: config.min_freq,
-                        max_freq: config.max_freq,
-                        maxeval: config.max_iter,
-                        loss: config.loss,
-                        algo: config.algorithm.to_autoeq_string().to_string(),
-                        peq_model: config.peq_model,
-                        population: config.population,
-                        de_f: config.de_f,
-                        de_cr: config.de_cr,
-                        strategy: config.strategy,
-                        tolerance: config.tolerance,
-                        refine: config.refine,
-                        local_algo: config.local_algo,
-                        smooth: config.smooth,
-                        smooth_n: config.smooth_n,
-                        // Fill defaults for others (sample_rate, spacing params, adaptive weights)
-                        ..OptimizationParams::headphone_defaults()
-                    };
+                    // Construct params using library defaults and override specific fields
+                    let mut params = autoeq::Args::headphone_defaults();
+                    params.num_filters = config.num_filters;
+                    params.min_q = config.min_q;
+                    params.max_q = config.max_q;
+                    params.min_db = config.min_db;
+                    params.max_db = config.max_db;
+                    params.min_freq = config.min_freq;
+                    params.max_freq = config.max_freq;
+                    params.maxeval = config.max_iter;
+                    params.loss = sotf_audio_player::autoeq::parse_loss_type(&config.loss);
+                    params.algo = config.algorithm.to_autoeq_string().to_string();
+                    params.peq_model = sotf_audio_player::autoeq::parse_peq_model(&config.peq_model);
+                    params.population = config.population;
+                    params.recombination = config.de_cr;
+                    params.strategy = config.strategy.clone();
+                    params.tolerance = config.tolerance;
+                    params.refine = config.refine;
+                    params.local_algo = config.local_algo.clone();
+                    params.smooth = config.smooth;
+                    params.smooth_n = config.smooth_n;
 
                     sotf_audio_player::autoeq::headphone::run_headphone_optimization(
                         &measurement_path,

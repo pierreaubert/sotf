@@ -111,9 +111,8 @@ impl PlayerView {
             ChannelOptResult, EqFilterConfig, OptimizationStatus, SpeakerConfigType,
         };
         use sotf_audio_player::room_eq::{
-            CallbackAction, CallbackConfig, MeasurementInput, OptimizationParams,
-            SpeakerOptimizationConfig, SpeakerOptimizationProgress,
-            run_speaker_optimization_with_callback,
+            CallbackAction, CallbackConfig, MeasurementInput, SpeakerOptimizationConfig,
+            SpeakerOptimizationProgress, run_speaker_optimization_with_callback,
         };
 
         log::info!("Starting room EQ optimization with new speaker optimization");
@@ -194,36 +193,35 @@ impl PlayerView {
                         }
                     };
 
+                    // Build args using library defaults
+                    let mut args = autoeq::Args::speaker_defaults();
+                    args.num_filters = room_eq.optimizer_config.num_filters;
+                    args.sample_rate = 48000.0;
+                    args.min_db = room_eq.optimizer_config.min_db;
+                    args.max_db = room_eq.optimizer_config.max_db;
+                    args.min_q = room_eq.optimizer_config.min_q;
+                    args.max_q = room_eq.optimizer_config.max_q;
+                    args.min_freq = room_eq.optimizer_config.min_freq;
+                    args.max_freq = room_eq.optimizer_config.max_freq;
+                    args.algo = match room_eq.optimizer_config.algorithm {
+                        crate::app::types::RoomEqAlgorithm::Cobyla => "nlopt:cobyla".to_string(),
+                        crate::app::types::RoomEqAlgorithm::DifferentialEvolution => {
+                            "autoeq:de".to_string()
+                        }
+                        crate::app::types::RoomEqAlgorithm::NelderMead => {
+                            "nlopt:neldermead".to_string()
+                        }
+                    };
+                    args.maxeval = room_eq.optimizer_config.max_iter;
+                    args.loss = autoeq::LossType::SpeakerFlat;
+
                     let speaker_config = SpeakerOptimizationConfig {
                         config_type,
                         main_measurement: Some(MeasurementInput::Curve(main_curve)),
                         driver_measurements,
                         crossover_type: Some(crossover_type),
                         crossover_freq_hints: Vec::new(),
-                        params: OptimizationParams {
-                            num_filters: room_eq.optimizer_config.num_filters,
-                            sample_rate: 48000,
-                            min_db: room_eq.optimizer_config.min_db,
-                            max_db: room_eq.optimizer_config.max_db,
-                            min_q: room_eq.optimizer_config.min_q,
-                            max_q: room_eq.optimizer_config.max_q,
-                            min_freq: room_eq.optimizer_config.min_freq,
-                            max_freq: room_eq.optimizer_config.max_freq,
-                            algo: match room_eq.optimizer_config.algorithm {
-                                crate::app::types::RoomEqAlgorithm::Cobyla => {
-                                    "nlopt:cobyla".to_string()
-                                }
-                                crate::app::types::RoomEqAlgorithm::DifferentialEvolution => {
-                                    "autoeq:de".to_string()
-                                }
-                                crate::app::types::RoomEqAlgorithm::NelderMead => {
-                                    "nlopt:neldermead".to_string()
-                                }
-                            },
-                            maxeval: room_eq.optimizer_config.max_iter,
-                            loss: "speaker-flat".to_string(),
-                            ..OptimizationParams::speaker_defaults()
-                        },
+                        args,
                         callback_config: Some(CallbackConfig {
                             interval: 25, // Report every 25 iterations
                             include_biquads: true,
@@ -240,28 +238,26 @@ impl PlayerView {
                 })
                 .collect();
 
-            let opt_params = OptimizationParams {
-                num_filters: room_eq.optimizer_config.num_filters,
-                sample_rate: 48000,
-                min_db: room_eq.optimizer_config.min_db,
-                max_db: room_eq.optimizer_config.max_db,
-                min_q: room_eq.optimizer_config.min_q,
-                max_q: room_eq.optimizer_config.max_q,
-                min_freq: room_eq.optimizer_config.min_freq,
-                max_freq: room_eq.optimizer_config.max_freq,
-                algo: match room_eq.optimizer_config.algorithm {
-                    crate::app::types::RoomEqAlgorithm::Cobyla => "nlopt:cobyla".to_string(),
-                    crate::app::types::RoomEqAlgorithm::DifferentialEvolution => {
-                        "autoeq:de".to_string()
-                    }
-                    crate::app::types::RoomEqAlgorithm::NelderMead => {
-                        "nlopt:neldermead".to_string()
-                    }
-                },
-                maxeval: room_eq.optimizer_config.max_iter,
-                loss: "speaker-flat".to_string(),
-                ..OptimizationParams::speaker_defaults()
+            let mut opt_params = autoeq::Args::speaker_defaults();
+            opt_params.num_filters = room_eq.optimizer_config.num_filters;
+            opt_params.sample_rate = 48000.0;
+            opt_params.min_db = room_eq.optimizer_config.min_db;
+            opt_params.max_db = room_eq.optimizer_config.max_db;
+            opt_params.min_q = room_eq.optimizer_config.min_q;
+            opt_params.max_q = room_eq.optimizer_config.max_q;
+            opt_params.min_freq = room_eq.optimizer_config.min_freq;
+            opt_params.max_freq = room_eq.optimizer_config.max_freq;
+            opt_params.algo = match room_eq.optimizer_config.algorithm {
+                crate::app::types::RoomEqAlgorithm::Cobyla => "nlopt:cobyla".to_string(),
+                crate::app::types::RoomEqAlgorithm::DifferentialEvolution => {
+                    "autoeq:de".to_string()
+                }
+                crate::app::types::RoomEqAlgorithm::NelderMead => {
+                    "nlopt:neldermead".to_string()
+                }
             };
+            opt_params.maxeval = room_eq.optimizer_config.max_iter;
+            opt_params.loss = autoeq::LossType::SpeakerFlat;
 
             (configs, opt_params)
         };

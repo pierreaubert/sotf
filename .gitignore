@@ -24,7 +24,7 @@ mutants.out
 .jekyll-metadata
 _site
 
-# MCP
+# MCP and Agents
 /.chunkhound
 autoeq_*.html
 autoeq_*.png

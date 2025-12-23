@@ -5,6 +5,7 @@ members = [
     "gpui-px",
     "gpui-themes",
     "gpui-ui-kit",
+    "gpui-ui-kit/gpui-ui-kit-macros",
     "sotf-audio-engine",
     "sotf-audio-player",
     "sotf-audio-player/app-tui",
@@ -90,9 +91,9 @@ spec_math = "0.1.6"
 
 math-iir-fir = { version = "0.2" }
 math-differential-evolution = { version = "0.2" }
-autoeq-env = { version = "0.2" }
-autoeq-cea2034 = { version = "0.2.191" }
-autoeq = { version = "0.2.255" }
+autoeq-env = { path = "../autoeq/autoeq-env" }
+autoeq-cea2034 = { path = "../autoeq/autoeq-cea2034" }
+autoeq = { path = "../autoeq/autoeq" }
 
 gpui-au = { path = "gpui-au", version = "0.5" }
 gpui-d3rs = { path = "gpui-d3rs", version = "0.1" }

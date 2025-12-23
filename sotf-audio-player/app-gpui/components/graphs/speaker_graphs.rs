@@ -66,26 +66,6 @@ impl PlayerView {
                         graph_height,
                     )),
             )
-            // Row 3: Early Reflections | Sound Power
-            .gap_4()
-            .child(
-                div()
-                    .flex()
-                    .flex_row()
-                    .gap_4()
-                    .child(render_spinorama_er_plot(
-                        result,
-                        theme,
-                        graph_width,
-                        graph_height,
-                    ))
-                    .child(render_spinorama_sp_plot(
-                        result,
-                        theme,
-                        graph_width,
-                        graph_height,
-                    )),
-            )
             // Row 4: Tonal Balance ON | Tonal Balance LW
             .gap_4()
             .child(
@@ -628,29 +608,31 @@ fn result_to_spinorama_curves(
             .collect()
     };
 
+    // Use actual On Axis curve from CEA2034 data, not input_curve
+    // (input_curve could be PIR, ER, etc. when those curves are being optimized)
     if corrected {
         SpinoramaCurves {
             frequencies: result.frequencies.clone(),
-            on_axis: result.corrected_curve.clone(),
+            on_axis: apply_filter(&result.on_axis_curve),
             listening_window: apply_filter(&result.lw_curve),
             early_reflections: apply_filter(&result.er_curve),
             sound_power: apply_filter(&result.sp_curve),
             early_reflections_di: result.er_di_curve.clone(),
             sound_power_di: result.sp_di_curve.clone(),
-            estimated_in_room: vec![],
+            estimated_in_room: apply_filter(&result.pir_curve),
             horizontal_directivity: vec![],
             vertical_directivity: vec![],
         }
     } else {
         SpinoramaCurves {
             frequencies: result.frequencies.clone(),
-            on_axis: result.input_curve.clone(),
+            on_axis: result.on_axis_curve.clone(),
             listening_window: result.lw_curve.clone(),
             early_reflections: result.er_curve.clone(),
             sound_power: result.sp_curve.clone(),
             early_reflections_di: result.er_di_curve.clone(),
             sound_power_di: result.sp_di_curve.clone(),
-            estimated_in_room: vec![],
+            estimated_in_room: result.pir_curve.clone(),
             horizontal_directivity: vec![],
             vertical_directivity: vec![],
         }
@@ -679,37 +661,23 @@ fn render_tonal_balance_plot(
 ) -> Div {
     let chart_theme = theme_to_chart_theme(theme);
 
-    // Select curve
+    let apply_filter = |curve: &[f64]| -> Vec<f64> {
+        curve
+            .iter()
+            .zip(result.filter_response.iter())
+            .map(|(a, b)| a + b)
+            .collect()
+    };
+
+    // Select curve - use actual On Axis curve for "ON", not input_curve
     let (original_curve, corrected_curve) = match curve_type {
-        "ON" => (result.input_curve.clone(), result.corrected_curve.clone()),
-        "LW" => (
-            // Use real LW curve
-            result.lw_curve.clone(),
-            result
-                .lw_curve
-                .iter()
-                .zip(result.filter_response.iter())
-                .map(|(a, b)| a + b)
-                .collect(),
+        "ON" => (
+            result.on_axis_curve.clone(),
+            apply_filter(&result.on_axis_curve),
         ),
-        "ER" => (
-            result.er_curve.clone(),
-            result
-                .er_curve
-                .iter()
-                .zip(result.filter_response.iter())
-                .map(|(a, b)| a + b)
-                .collect(),
-        ),
-        "SP" => (
-            result.sp_curve.clone(),
-            result
-                .sp_curve
-                .iter()
-                .zip(result.filter_response.iter())
-                .map(|(a, b)| a + b)
-                .collect(),
-        ),
+        "LW" => (result.lw_curve.clone(), apply_filter(&result.lw_curve)),
+        "ER" => (result.er_curve.clone(), apply_filter(&result.er_curve)),
+        "SP" => (result.sp_curve.clone(), apply_filter(&result.sp_curve)),
         _ => (vec![], vec![]),
     };
 
@@ -770,10 +738,11 @@ fn render_tonal_balance_plot(
         .x_range(20.0, 20000.0)
         .y_range(-15.0, 5.0)
         .label(&format!("{} Orig", curve_type))
+        .y_label("SPL (dB)")
         .legend_position(LegendPosition::Bottom)
         .color(BLUE)
-        .stroke_width(1.0)
-        .opacity(0.5)
+        .stroke_width(2.0)
+        .opacity(1.0)
         .theme(chart_theme)
         .size(width, height)
         .add_series(
@@ -838,13 +807,13 @@ fn render_tonal_balance_plot(
         // Use a grouped bar chart
         let chart = bar(&labels, &hist_orig)
             .color(BLUE)
-            .label("Original")
+            .label(&format!("{} Original", curve_type))
             .theme(bar_theme)
             .size(width, height / 2.0)
             .bar_gap(4.0)
             .opacity(0.8)
             .legend_position(LegendPosition::Bottom)
-            .add_series(&hist_corr, Some("Corrected"), ORANGE, 0.8);
+            .add_series(&hist_corr, Some(&format!("{} Corrected", curve_type)), ORANGE, 0.8);
 
         hist_chart = chart.build().ok();
     }
@@ -857,7 +826,7 @@ fn render_tonal_balance_plot(
             .collect();
         chart_builder = chart_builder.add_series(
             &trend,
-            Some(&format!("Trend {:.2}", slope)),
+            Some(&format!("{:.2} dB/oct", slope)),
             BLUE,
             2.5,
             1.0,
@@ -872,7 +841,7 @@ fn render_tonal_balance_plot(
             .collect();
         chart_builder = chart_builder.add_series(
             &trend,
-            Some(&format!("Trend {:.2}", slope)),
+            Some(&format!("{:.2} dB/oct", slope)),
             ORANGE,
             2.5,
             1.0,

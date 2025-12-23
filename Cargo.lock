@@ -626,8 +626,44 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7cb6c5f4a034cf088aec5436932e4ccae9155278e790b1c6856fec73e23a690e"
 dependencies = [
  "anyhow",
- "autoeq-cea2034",
- "autoeq-env",
+ "autoeq-cea2034 0.2.191 (registry+https://github.com/rust-lang/crates.io-index)",
+ "autoeq-env 0.2.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "build_html",
+ "chrono",
+ "clap 4.5.53",
+ "csv",
+ "env_logger 0.11.8",
+ "hound",
+ "log",
+ "math-differential-evolution",
+ "math-iir-fir",
+ "metaheuristics-nature",
+ "ndarray 0.17.1",
+ "nlopt",
+ "num-complex",
+ "num_cpus",
+ "plotly",
+ "rand 0.9.2",
+ "rand_chacha 0.9.0",
+ "rayon",
+ "reqwest",
+ "rustfft",
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
+ "strsim 0.11.1",
+ "thiserror 2.0.17",
+ "tokio",
+ "urlencoding",
+]
+
+[[package]]
+name = "autoeq"
+version = "0.2.257"
+dependencies = [
+ "anyhow",
+ "autoeq-cea2034 0.2.191",
+ "autoeq-env 0.2.4",
  "build_html",
  "chrono",
  "clap 4.5.53",
@@ -660,12 +696,29 @@ dependencies = [
 [[package]]
 name = "autoeq-cea2034"
 version = "0.2.191"
+dependencies = [
+ "ndarray 0.17.1",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "autoeq-cea2034"
+version = "0.2.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a08a4df587aa03ba44f02fe6781d1f5922ecf405d833c4a9fecc7fec7d361981"
 dependencies = [
  "ndarray 0.17.1",
  "serde",
  "tokio",
+]
+
+[[package]]
+name = "autoeq-env"
+version = "0.2.4"
+dependencies = [
+ "chrono",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
@@ -3345,11 +3398,11 @@ dependencies = [
 
 [[package]]
 name = "gpui-d3rs"
-version = "0.1.15"
+version = "0.1.17"
 dependencies = [
  "approx",
- "autoeq",
- "autoeq-cea2034",
+ "autoeq 0.2.255",
+ "autoeq-cea2034 0.2.191 (registry+https://github.com/rust-lang/crates.io-index)",
  "bytemuck",
  "delaunator",
  "fontdue",
@@ -3370,17 +3423,21 @@ dependencies = [
 
 [[package]]
 name = "gpui-px"
-version = "0.1.16"
+version = "0.1.17"
 dependencies = [
+ "autoeq 0.2.257",
  "gpui",
  "gpui-d3rs",
  "gpui-ui-kit",
+ "reqwest",
  "thiserror 2.0.17",
+ "tokio",
+ "urlencoding",
 ]
 
 [[package]]
 name = "gpui-themes"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "gpui",
  "gpui-ui-kit",
@@ -3391,12 +3448,22 @@ dependencies = [
 
 [[package]]
 name = "gpui-ui-kit"
-version = "0.1.17"
+version = "0.1.18"
 dependencies = [
  "gpui",
+ "gpui-ui-kit-macros",
  "serde",
  "serde_json",
  "uuid",
+]
+
+[[package]]
+name = "gpui-ui-kit-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.111",
 ]
 
 [[package]]
@@ -7349,7 +7416,7 @@ dependencies = [
 name = "sotf-audio-engine"
 version = "0.5.5"
 dependencies = [
- "autoeq-env",
+ "autoeq-env 0.2.4",
  "chrono",
  "clap 4.5.53",
  "cpal",
@@ -7405,9 +7472,9 @@ name = "sotf-audio-player"
 version = "0.5.5"
 dependencies = [
  "anyhow",
- "autoeq",
- "autoeq-cea2034",
- "autoeq-env",
+ "autoeq 0.2.257",
+ "autoeq-cea2034 0.2.191",
+ "autoeq-env 0.2.4",
  "bliss-audio",
  "chrono",
  "clap 4.5.53",
@@ -7467,7 +7534,7 @@ dependencies = [
 name = "sotf-audio-plugins"
 version = "0.5.5"
 dependencies = [
- "autoeq-env",
+ "autoeq-env 0.2.4",
  "chrono",
  "clap 4.5.53",
  "cpal",
@@ -7533,7 +7600,7 @@ name = "sotf-gpui"
 version = "0.5.5"
 dependencies = [
  "anyhow",
- "autoeq",
+ "autoeq 0.2.257",
  "chrono",
  "clap 4.5.53",
  "cpal",
