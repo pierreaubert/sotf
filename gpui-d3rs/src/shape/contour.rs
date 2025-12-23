@@ -774,6 +774,9 @@ where
         let (y_range_min, y_range_max) = self.y_scale.range();
         let x_range_span = (x_range_max - x_range_min).abs();
         let y_range_span = (y_range_max - y_range_min).abs();
+        // Use actual min/max for proper handling of inverted scales
+        let x_range_lo = x_range_min.min(x_range_max);
+        let y_range_lo = y_range_min.min(y_range_max);
 
         // Paint each band (from lowest to highest value for proper layering)
         for band in self.bands.iter() {
@@ -794,9 +797,10 @@ where
                         let y_scaled = self.y_scale.scale(p.y);
 
                         // Normalize to 0-1 based on range
-                        let x_norm = ((x_scaled - x_range_min) / x_range_span) as f32;
-                        // Invert Y for screen coordinates (0 at top, 1 at bottom)
-                        let y_norm = 1.0 - ((y_scaled - y_range_min) / y_range_span) as f32;
+                        // Y scale is already inverted (high values at top=0, low at bottom=height)
+                        // so no additional inversion needed here
+                        let x_norm = ((x_scaled - x_range_lo) / x_range_span) as f32;
+                        let y_norm = ((y_scaled - y_range_lo) / y_range_span) as f32;
 
                         let screen_x = origin_x + x_norm * width;
                         let screen_y = origin_y + y_norm * height;
