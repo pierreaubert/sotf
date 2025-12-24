@@ -15,10 +15,6 @@ name = "hal-loopback"
 path = "bin/test_loopback.rs"
 
 [dependencies]
-# Core Audio integration (required)
-coreaudio-sys = "0.2"
-core-foundation = "0.9"
-core-foundation-sys = "0.8"
 libc = "0.2"
 
 # Lock-free ring buffer (required)
@@ -32,6 +28,12 @@ anyhow = "1.0"
 
 # audio
 crossbeam = "0.8"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Core Audio integration (macOS only)
+coreaudio-sys = "0.2"
+core-foundation = "0.9"
+core-foundation-sys = "0.8"
 
 [dev-dependencies]
 tempfile = "3.23"
