@@ -292,13 +292,8 @@ cross-static-macos:
 	@echo "Building macOS binaries..."
 	@echo "Note: macOS binaries cannot be fully static due to Apple's security policies"
 	@echo "      System frameworks (CoreAudio, etc.) will be dynamically linked"
-	cargo build --release --target x86_64-apple-darwin --bin sotf-tui
-	cargo build --release --target aarch64-apple-darwin --bin sotf-tui
-	@echo "Creating universal binary (Intel + Apple Silicon)..."
-	lipo -create \
-		target/x86_64-apple-darwin/release/sotf-tui \
-		target/aarch64-apple-darwin/release/sotf-tui \
-		-output target/sotf-tui-macos-universal
+	RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --target aarch64-apple-darwin --bin sotf-tui
+	RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --target aarch64-apple-darwin --bin sotf-gpui
 	@echo "✓ Done! Universal binary at: target/sotf-tui-macos-universal"
 
 # Build static binary for current platform
@@ -321,6 +316,7 @@ build-static-local:
 		fi
 	elif [ "$(uname)" = "Darwin" ]; then
 		cargo build --release --bin sotf-tui
+		cargo build --release --bin sotf-gpui
 		echo "✓ Built: target/release/sotf-tui"
 		echo "Note: macOS binaries have limited static linking due to Apple restrictions"
 	else
