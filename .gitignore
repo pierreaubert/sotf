@@ -1,6 +1,5 @@
 # rust
 /target
-/docs
 /coverage
 mutants.out
 
