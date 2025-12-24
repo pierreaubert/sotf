@@ -9,7 +9,7 @@ license = { workspace = true }
 [lib]
 crate-type = ["staticlib", "cdylib"]
 
-[dependencies]
+[target.'cfg(target_os = "macos")'.dependencies]
 sotf-audio-plugins = { workspace = true }
 sotf-audio-engine = { workspace = true }
 math-iir-fir = { workspace = true }
@@ -17,5 +17,5 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }
 
-[build-dependencies]
+[target.'cfg(target_os = "macos")'.build-dependencies]
 cbindgen = { workspace = true }

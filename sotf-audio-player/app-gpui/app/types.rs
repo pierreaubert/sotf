@@ -53,6 +53,8 @@ pub enum InputMode {
     About,
     EditingParam,
     SpinoramaSpeakerSearch,
+    /// Modal shown on startup when library is empty
+    EmptyLibraryPrompt,
 }
 
 /// Active menu dropdown (if any)

@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "gpui-au",
+    "gpui-au",          # macOS only
     "gpui-d3rs",
     "gpui-px",
     "gpui-themes",
@@ -13,7 +13,21 @@ members = [
     "sotf-audio-midi",
     "sotf-audio-plugins",
     "sotf-audio-plugins/src-ffi",
-    "sotf-hal",
+    "sotf-hal",         # macOS only
+]
+default_members = [
+    "gpui-d3rs",
+    "gpui-px",
+    "gpui-themes",
+    "gpui-ui-kit",
+    "gpui-ui-kit/gpui-ui-kit-macros",
+    "sotf-audio-engine",
+    "sotf-audio-player",
+    "sotf-audio-player/app-tui",
+    "sotf-audio-player/app-gpui",
+    "sotf-audio-midi",
+    "sotf-audio-plugins",
+    "sotf-audio-plugins/src-ffi",
 ]
 resolver = "3"
 
@@ -95,7 +109,7 @@ autoeq-env = { path = "../autoeq/autoeq-env" }
 autoeq-cea2034 = { path = "../autoeq/autoeq-cea2034" }
 autoeq = { path = "../autoeq/autoeq" }
 
-gpui-au = { path = "gpui-au", version = "0.5" }
+gpui-au = { path = "gpui-au", version = "0.5" }  # macOS only
 gpui-d3rs = { path = "gpui-d3rs", version = "0.1" }
 gpui-px = { path = "gpui-px", version = "0.1" }
 gpui-themes = { path = "gpui-themes", version = "0.1" }
@@ -105,7 +119,7 @@ sotf-audio-engine = { path = "sotf-audio-engine", version = "0.5", default-featu
 sotf-audio-midi = { path = "sotf-audio-midi", version = "0.5" }
 sotf-audio-player = { path = "sotf-audio-player", version = "0.5" }
 sotf-audio-plugins = { path = "sotf-audio-plugins", version = "0.5", default-features = false }
-sotf-hal = { path = "sotf-hal", version = "0.2" }
+sotf-hal = { path = "sotf-hal", version = "0.2" }  # macOS only
 sotf-head-scanner = { path = "sotf-head-scanner", version = "0.1" }
 
 # audio

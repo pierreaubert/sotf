@@ -10,7 +10,6 @@
 pub mod actions;
 pub mod common;
 pub mod editing;
-pub mod graph;
 pub mod level_meters;
 pub mod theme;
 pub mod ticks;

@@ -49,8 +49,11 @@ impl PlayerView {
                 let result = this.update(cx, |view, cx| {
                     view.update_playback_state(cx);
 
-                    // Update waveform scanner
+                    // Update waveform scanner and check startup database state
                     view.state.update(cx, |state, _| {
+                        // Perform deferred database check on first update
+                        state.app.check_library_on_startup();
+
                         state.app.waveform_manager.update();
                         state.app.replay_gain_manager.update();
                         state.app.bliss_manager.update();
@@ -2159,6 +2162,10 @@ impl Render for PlayerView {
             .when(input_mode == crate::app::InputMode::HelpSupport, |div| {
                 div.child(self.render_help_support_dialog(cx))
             })
+            .when(
+                input_mode == crate::app::InputMode::EmptyLibraryPrompt,
+                |div| div.child(self.render_empty_library_prompt(cx)),
+            )
             // Scan progress modal
             .child(self.render_scan_progress_modal(cx))
             .child(self.render_toast(cx))

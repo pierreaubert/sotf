@@ -14,26 +14,26 @@ crate-type = ["cdylib", "lib"]
 name = "hal-loopback"
 path = "bin/test_loopback.rs"
 
-[dependencies]
+# This crate is macOS-only (Core Audio HAL driver)
+[target.'cfg(target_os = "macos")'.dependencies]
 libc = "0.2"
 
-# Lock-free ring buffer (required)
+# Lock-free ring buffer
 rb = "0.4"
 
-# Logging and error handling (required)
+# Logging and error handling
 log = "0.4"
 env_logger = "0.10"
 thiserror = "1.0"
 anyhow = "1.0"
 
-# audio
+# Audio
 crossbeam = "0.8"
 
-[target.'cfg(target_os = "macos")'.dependencies]
-# Core Audio integration (macOS only)
+# Core Audio integration
 coreaudio-sys = "0.2"
 core-foundation = "0.9"
 core-foundation-sys = "0.8"
 
-[dev-dependencies]
+[target.'cfg(target_os = "macos")'.dev-dependencies]
 tempfile = "3.23"

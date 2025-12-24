@@ -118,6 +118,9 @@ pub struct SpecialNode {
     pub node_type: SpecialNodeType,
     pub position: NodePosition,
     pub channels: usize,
+    /// Optional label (e.g., device name for Input/Output nodes)
+    #[serde(default)]
+    pub label: Option<String>,
 }
 
 impl SpecialNode {
@@ -127,6 +130,37 @@ impl SpecialNode {
             node_type,
             position,
             channels,
+            label: None,
+        }
+    }
+
+    /// Create a special node with a label (e.g., device name)
+    pub fn with_label(
+        node_type: SpecialNodeType,
+        position: NodePosition,
+        channels: usize,
+        label: String,
+    ) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            node_type,
+            position,
+            channels,
+            label: Some(label),
+        }
+    }
+
+    /// Get display name for this node
+    pub fn display_name(&self) -> String {
+        if let Some(label) = &self.label {
+            label.clone()
+        } else {
+            match self.node_type {
+                SpecialNodeType::Input => "Audio Input".to_string(),
+                SpecialNodeType::Output => "Audio Output".to_string(),
+                SpecialNodeType::Split => "Split".to_string(),
+                SpecialNodeType::Merge => "Merge".to_string(),
+            }
         }
     }
 
@@ -208,6 +242,20 @@ impl PluginGraph {
         channels: usize,
     ) -> GraphNodeId {
         let node = SpecialNode::new(node_type, position, channels);
+        let id = node.id;
+        self.special_nodes.insert(id, node);
+        id
+    }
+
+    /// Add a special node with a label (e.g., device name) at the given position
+    pub fn add_special_node_with_label(
+        &mut self,
+        node_type: SpecialNodeType,
+        position: NodePosition,
+        channels: usize,
+        label: String,
+    ) -> GraphNodeId {
+        let node = SpecialNode::with_label(node_type, position, channels, label);
         let id = node.id;
         self.special_nodes.insert(id, node);
         id

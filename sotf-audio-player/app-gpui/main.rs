@@ -145,18 +145,14 @@ fn main() {
             },
             |_, cx| {
                 // Create application state
+                // Note: Database loading is deferred to after UI renders via check_library_on_startup()
                 let app_state = cx.new(|_cx| {
                     let mut app = App::new();
-
-                    // Load from database
-                    if let Err(e) = app.load_library_from_database() {
-                        log::warn!("Failed to load library from database: {}", e);
-                    }
 
                     // Load output devices
                     app.load_audio_devices();
 
-                    // Load configuration
+                    // Load configuration (directories, theme, etc.)
                     if let Err(e) = app.load_config() {
                         log::warn!("Could not load saved configuration: {}", e);
                     }

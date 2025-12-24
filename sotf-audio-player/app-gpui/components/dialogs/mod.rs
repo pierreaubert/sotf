@@ -255,6 +255,113 @@ impl PlayerView {
             )
     }
 
+    /// Render modal for empty library prompt shown on startup
+    pub(crate) fn render_empty_library_prompt(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let theme = state.app.theme.clone();
+
+        Dialog::new("empty-library-prompt")
+            .title("Welcome to SotF Player")
+            .size(DialogSize::Md)
+            .content(
+                VStack::new()
+                    .spacing(StackSpacing::Lg)
+                    .align(StackAlign::Center)
+                    .child(
+                        div()
+                            .w(px(80.0))
+                            .h(px(80.0))
+                            .rounded_xl()
+                            .overflow_hidden()
+                            .child(
+                                img("sotf.jpg")
+                                    .w_full()
+                                    .h_full()
+                                    .object_fit(ObjectFit::Cover),
+                            ),
+                    )
+                    .child(
+                        VStack::new()
+                            .spacing(StackSpacing::Md)
+                            .align(StackAlign::Center)
+                            .child(
+                                Text::new("Your music library is empty")
+                                    .size(TextSize::Lg)
+                                    .weight(TextWeight::Semibold)
+                                    .color(theme.text_primary),
+                            )
+                            .child(
+                                Text::new("Would you like to add some music folders to scan?")
+                                    .size(TextSize::Md)
+                                    .color(theme.text_secondary),
+                            ),
+                    )
+                    .child(
+                        HStack::new()
+                            .spacing(StackSpacing::Md)
+                            .justify(StackJustify::Center)
+                            .child(
+                                div()
+                                    .id("empty-library-no")
+                                    .px_4()
+                                    .py_2()
+                                    .rounded_md()
+                                    .bg(theme.surface_hover)
+                                    .cursor_pointer()
+                                    .hover(|s| s.bg(theme.border))
+                                    .child(
+                                        Text::new("Not Now")
+                                            .size(TextSize::Md)
+                                            .color(theme.text_secondary),
+                                    )
+                                    .on_click({
+                                        let state = self.state.clone();
+                                        move |_, _window, cx| {
+                                            state.update(cx, |state, _| {
+                                                state.app.input_mode =
+                                                    crate::app::InputMode::Normal;
+                                            });
+                                        }
+                                    }),
+                            )
+                            .child(
+                                div()
+                                    .id("empty-library-yes")
+                                    .px_4()
+                                    .py_2()
+                                    .rounded_md()
+                                    .bg(theme.accent)
+                                    .cursor_pointer()
+                                    .hover(|s| s.bg(theme.accent_muted))
+                                    .child(
+                                        Text::new("Add Music Folders")
+                                            .size(TextSize::Md)
+                                            .weight(TextWeight::Semibold)
+                                            .color(theme.text_on_accent),
+                                    )
+                                    .on_click({
+                                        let state = self.state.clone();
+                                        move |_, _window, cx| {
+                                            state.update(cx, |state, _| {
+                                                // Navigate to Settings > Library tab
+                                                state.app.input_mode =
+                                                    crate::app::InputMode::Normal;
+                                                state.app.current_screen = Screen::Settings;
+                                                state.app.active_settings_tab =
+                                                    crate::app::SettingsTab::Library;
+                                            });
+                                        }
+                                    }),
+                            ),
+                    ),
+            )
+            .footer(
+                Text::new("Press ESC to skip")
+                    .size(TextSize::Xs)
+                    .muted(true),
+            )
+    }
+
     fn render_keybinding_row(
         &self,
         key: &str,

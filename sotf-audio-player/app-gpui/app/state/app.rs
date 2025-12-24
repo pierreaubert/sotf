@@ -274,6 +274,10 @@ pub struct App {
     pub rack_detail_collapsed: bool, // Horizontal divider between rack and detail
     pub input_meter_collapsed: bool, // Left meter panel
     pub output_meter_collapsed: bool, // Right meter panel
+
+    // Startup database check state
+    /// Whether we've performed the initial database check on startup
+    pub startup_db_check_done: bool,
 }
 
 /// GPUI-compatible state wrapper
@@ -439,6 +443,7 @@ impl App {
             rack_detail_collapsed: false,
             input_meter_collapsed: false,
             output_meter_collapsed: false,
+            startup_db_check_done: false,
         };
 
         // Initialize default stereo meter layout so meters are visible before audio starts
@@ -455,6 +460,33 @@ impl App {
         // Invalidate cached stats since library content changed
         self.invalidate_library_stats();
         Ok(())
+    }
+
+    /// Perform the initial database check on startup.
+    /// Called from the UI update loop after the first render.
+    /// Shows appropriate modal/toast based on database state.
+    pub fn check_library_on_startup(&mut self) {
+        // Only run once
+        if self.startup_db_check_done {
+            return;
+        }
+        self.startup_db_check_done = true;
+
+        // Try to load from database
+        if let Err(e) = self.load_library_from_database() {
+            log::warn!("Failed to load library from database: {}", e);
+        }
+
+        // Check if library is empty
+        if self.library.albums.is_empty() {
+            // Show modal prompting to scan for music
+            self.input_mode = InputMode::EmptyLibraryPrompt;
+        } else {
+            // Show toast with album count
+            let album_count = self.library.albums.len();
+            let message = format!("Loaded {} albums from database", album_count);
+            self.toast_message = Some(ToastMessage::info(message));
+        }
     }
 
     /// Update directory scan times from database

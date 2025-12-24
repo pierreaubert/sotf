@@ -169,11 +169,18 @@ impl PlayerView {
                             div()
                                 .p_2()
                                 .child(
-                                    Button::new("magic-radio-btn", "Magic Radio")
-                                        .full_width(true)
-                                        .on_click(|_, cx| {
-                                            cx.dispatch_action(&crate::app::actions::FillQueueMagic);
-                                        }),
+                                    div()
+                                        .on_mouse_up(
+                                            MouseButton::Left,
+                                            move |_event, _window, cx| {
+                                                log::info!("[Queue] Magic Radio button clicked");
+                                                cx.dispatch_action(&crate::app::actions::FillQueueMagic);
+                                            },
+                                        )
+                                        .child(
+                                            Button::new("magic-radio-btn", "Magic Radio")
+                                                .full_width(true)
+                                        ),
                                 ),
                         ),
                 )

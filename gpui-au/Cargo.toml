@@ -6,7 +6,8 @@ edition = "2021"
 [lib]
 crate-type = ["staticlib", "cdylib"]
 
-[dependencies]
+# This crate is macOS-only (Audio Unit plugin)
+[target.'cfg(target_os = "macos")'.dependencies]
 parking_lot = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }
@@ -22,7 +23,6 @@ gpui-ui-kit = { path = "../gpui-ui-kit" }
 # Embed assets
 rust-embed = "8"
 
-[target.'cfg(target_os = "macos")'.dependencies]
 # Low-level macOS bindings for NSView extraction
 objc = { workspace = true }
 cocoa = { workspace = true }

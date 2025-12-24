@@ -32,6 +32,8 @@ pub struct WorkflowCanvas {
     focus_handle: FocusHandle,
     /// Clipboard for copy/paste
     clipboard: Option<String>,
+    /// Custom context menu items (if None, uses default menu)
+    custom_menu_items: Option<Vec<MenuItem>>,
 }
 
 impl WorkflowCanvas {
@@ -44,6 +46,7 @@ impl WorkflowCanvas {
             canvas_origin: Position::new(0.0, 0.0),
             focus_handle: cx.focus_handle(),
             clipboard: None,
+            custom_menu_items: None,
         }
     }
 
@@ -57,12 +60,19 @@ impl WorkflowCanvas {
             canvas_origin: Position::new(0.0, 0.0),
             focus_handle: cx.focus_handle(),
             clipboard: None,
+            custom_menu_items: None,
         }
     }
 
     /// Set custom theme
     pub fn set_theme(&mut self, theme: WorkflowTheme) {
         self.theme = Some(theme);
+    }
+
+    /// Set custom context menu items
+    /// These will replace the default menu items when right-clicking on the canvas
+    pub fn set_menu_items(&mut self, items: Vec<MenuItem>) {
+        self.custom_menu_items = Some(items);
     }
 
     // === Public API ===
@@ -892,16 +902,23 @@ impl Render for WorkflowCanvas {
         // Build context menu
         let context_menu = if let Some(menu_state) = &self.state.context_menu {
             let entity = cx.entity().clone();
-            let menu = Menu::new(vec![
-                MenuItem::new("process", "Process Node"),
-                MenuItem::new("input", "Input Node").with_icon("→"),
-                MenuItem::new("filter", "Filter Node").with_icon("⚡"),
-                MenuItem::new("transform", "Transform Node").with_icon("🔄"),
-                MenuItem::new("mix", "Mix Node").with_icon("🔀"),
-                MenuItem::separator(),
-                MenuItem::new("output", "Output Node").with_icon("🔊"),
-            ])
-            .on_select(move |id, _window, cx| {
+
+            // Use custom menu items if provided, otherwise use defaults
+            let menu_items = if let Some(custom_items) = &self.custom_menu_items {
+                custom_items.clone()
+            } else {
+                vec![
+                    MenuItem::new("process", "Process Node"),
+                    MenuItem::new("input", "Input Node").with_icon("→"),
+                    MenuItem::new("filter", "Filter Node").with_icon("⚡"),
+                    MenuItem::new("transform", "Transform Node").with_icon("🔄"),
+                    MenuItem::new("mix", "Mix Node").with_icon("🔀"),
+                    MenuItem::separator(),
+                    MenuItem::new("output", "Output Node").with_icon("🔊"),
+                ]
+            };
+
+            let menu = Menu::new(menu_items).on_select(move |id, _window, cx| {
                 entity.update(cx, |this, cx| {
                     this.handle_add_node_menu(id, cx);
                 });
