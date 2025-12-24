@@ -398,6 +398,159 @@ impl PluginGraph {
             .filter(|node| node.plugin.enabled)
             .collect())
     }
+
+    // =========================================================================
+    // I/O Node Helpers
+    // =========================================================================
+
+    /// Get the Input special node (if it exists)
+    pub fn input_node(&self) -> Option<&SpecialNode> {
+        self.special_nodes
+            .values()
+            .find(|n| matches!(n.node_type, SpecialNodeType::Input))
+    }
+
+    /// Get the Output special node (if it exists)
+    pub fn output_node(&self) -> Option<&SpecialNode> {
+        self.special_nodes
+            .values()
+            .find(|n| matches!(n.node_type, SpecialNodeType::Output))
+    }
+
+    /// Get the Input node ID (if it exists)
+    pub fn input_node_id(&self) -> Option<GraphNodeId> {
+        self.input_node().map(|n| n.id)
+    }
+
+    /// Get the Output node ID (if it exists)
+    pub fn output_node_id(&self) -> Option<GraphNodeId> {
+        self.output_node().map(|n| n.id)
+    }
+
+    /// Get mutable reference to Input special node
+    pub fn input_node_mut(&mut self) -> Option<&mut SpecialNode> {
+        self.special_nodes
+            .values_mut()
+            .find(|n| matches!(n.node_type, SpecialNodeType::Input))
+    }
+
+    /// Get mutable reference to Output special node
+    pub fn output_node_mut(&mut self) -> Option<&mut SpecialNode> {
+        self.special_nodes
+            .values_mut()
+            .find(|n| matches!(n.node_type, SpecialNodeType::Output))
+    }
+
+    // =========================================================================
+    // LoudnessMonitor Detection
+    // =========================================================================
+
+    /// Check if a LoudnessMonitor plugin is connected (directly or transitively) from the Input node
+    /// Uses BFS forward from Input to find any LoudnessMonitor in the signal path
+    pub fn has_loudness_monitor_at_input(&self) -> bool {
+        let Some(input_id) = self.input_node_id() else {
+            return false;
+        };
+
+        // BFS forward from Input node
+        let mut visited = HashSet::new();
+        let mut queue = VecDeque::new();
+        queue.push_back(input_id);
+
+        while let Some(current) = queue.pop_front() {
+            if visited.insert(current) {
+                // Check if this node is a LoudnessMonitor
+                if let Some(node) = self.nodes.get(&current) {
+                    if matches!(node.plugin.plugin_type(), PluginType::LoudnessMonitor) {
+                        return true;
+                    }
+                }
+
+                // Add all nodes that this node connects to
+                for conn in &self.connections {
+                    if conn.from_node == current {
+                        queue.push_back(conn.to_node);
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Check if a LoudnessMonitor plugin is connected (directly or transitively) to the Output node
+    /// Uses BFS backward from Output to find any LoudnessMonitor in the signal path
+    pub fn has_loudness_monitor_at_output(&self) -> bool {
+        let Some(output_id) = self.output_node_id() else {
+            return false;
+        };
+
+        // BFS backward from Output node
+        let mut visited = HashSet::new();
+        let mut queue = VecDeque::new();
+        queue.push_back(output_id);
+
+        while let Some(current) = queue.pop_front() {
+            if visited.insert(current) {
+                // Check if this node is a LoudnessMonitor
+                if let Some(node) = self.nodes.get(&current) {
+                    if matches!(node.plugin.plugin_type(), PluginType::LoudnessMonitor) {
+                        return true;
+                    }
+                }
+
+                // Add all nodes that connect TO this node (backward search)
+                for conn in &self.connections {
+                    if conn.to_node == current {
+                        queue.push_back(conn.from_node);
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    // =========================================================================
+    // Channel Flow Computation
+    // =========================================================================
+
+    /// Get the channel count at the Input node
+    pub fn input_channel_count(&self) -> usize {
+        self.input_node().map(|n| n.channels).unwrap_or(2)
+    }
+
+    /// Compute the channel count at the Output node by walking the signal path
+    /// Returns (input_channels, output_channels)
+    pub fn compute_channel_flow(&self) -> (usize, usize) {
+        let input_channels = self.input_channel_count();
+        let mut current_channels = input_channels;
+
+        // Walk the graph in topological order to compute output channels
+        if let Ok(sorted) = self.topological_sort() {
+            for node_id in sorted {
+                if let Some(plugin_node) = self.nodes.get(&node_id) {
+                    // Only enabled plugins affect channel count
+                    if plugin_node.plugin.enabled {
+                        match plugin_node.plugin.plugin_type() {
+                            PluginType::Upmixer => {
+                                // Upmixer increases channels (stereo to surround)
+                                // Default to 6 channels (5.1), but could be configured
+                                current_channels = plugin_node.output_channels;
+                            }
+                            PluginType::BinauralDecoder => {
+                                // Binaural decoder reduces to stereo
+                                current_channels = 2;
+                            }
+                            _ => {
+                                // Most plugins pass through unchanged
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        (input_channels, current_channels)
+    }
 }
 
 /// UI-only selection state (not persisted)

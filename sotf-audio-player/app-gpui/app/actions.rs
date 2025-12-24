@@ -67,6 +67,7 @@ actions!(
         Cancel,
         RemoveItem,
         ClearQueue,
+        FillQueueMagic,
         MovePluginUp,
         MovePluginDown,
         TogglePlugin,

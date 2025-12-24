@@ -1,6 +1,6 @@
 //! Plugin Graph Screen
 //!
-//! Main screen for the 2D plugin graph view with nodes and connections.
+//! Full-screen view with signal chain rack strip at top and workflow canvas below.
 //! Uses the WorkflowCanvas from gpui-ui-kit for pan/zoom, connections, and hit testing.
 
 use gpui::prelude::*;
@@ -8,11 +8,32 @@ use gpui::*;
 use gpui_ui_kit::workflow::{
     Position, WorkflowCanvas, WorkflowGraph, WorkflowNodeData, WorkflowTheme,
 };
-use sotf_audio_player::{NodePosition, PluginGraph, PluginType};
+use sotf_audio_player::{PluginGraph, PluginType};
 
 use crate::app::types::PluginUpdateType;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
+
+/// Drag information for plugin reordering
+#[derive(Clone)]
+pub struct PluginDragInfo {
+    pub source_index: usize,
+    pub name: String,
+    pub color: Rgba,
+}
+
+impl Render for PluginDragInfo {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .px_2()
+            .py_1()
+            .bg(self.color)
+            .rounded_md()
+            .text_sm()
+            .text_color(rgb(0xffffff))
+            .child(self.name.clone())
+    }
+}
 
 impl PlayerView {
     /// Ensure the WorkflowCanvas entity exists, creating it if needed
@@ -41,20 +62,15 @@ impl PlayerView {
         }
     }
 
-    /// Render the plugin graph screen using WorkflowCanvas from gpui-ui-kit
+    /// Render the plugin graph screen with signal chain strip and workflow canvas
     pub(crate) fn render_plugin_graph_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         // Ensure the canvas entity exists
         self.ensure_workflow_canvas(cx);
 
-        // Extract state
         let (theme, workflow_canvas) = {
             let state = self.state.read(cx);
             (state.app.theme.clone(), state.app.workflow_canvas.clone())
         };
-
-        // Pre-render sub-components
-        let header = self.render_graph_header(cx).into_any_element();
-        let palette = self.render_graph_palette(cx).into_any_element();
 
         div()
             .id("plugin-graph-screen")
@@ -62,299 +78,303 @@ impl PlayerView {
             .flex_col()
             .size_full()
             .bg(theme.background)
-            // Header
-            .child(header)
-            // Main content area
+            // Signal chain rack strip at top
+            .child(self.render_graph_rack_strip(cx))
+            // Workflow canvas fills remaining space
             .child(
                 div()
-                    .flex()
                     .flex_1()
-                    .overflow_hidden()
-                    // Sidebar palette
-                    .child(palette)
-                    // Canvas area - render the WorkflowCanvas entity
-                    .child(
-                        div()
-                            .flex_1()
-                            .size_full()
-                            .relative()
-                            .when_some(workflow_canvas, |el, canvas| el.child(canvas)),
-                    ),
+                    .size_full()
+                    .relative()
+                    .when_some(workflow_canvas, |el, canvas| el.child(canvas)),
             )
     }
 
-    /// Render the graph header with controls
-    fn render_graph_header(&self, cx: &mut Context<Self>) -> Div {
-        let (theme, node_count, connection_count, zoom_pct) = {
+    /// Render the signal chain rack strip (like ui_rack but without +Add button)
+    fn render_graph_rack_strip(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let (plugins_data, selected_idx, theme) = {
             let state = self.state.read(cx);
+            let plugins: Vec<_> = state
+                .app
+                .plugin_chain
+                .plugins()
+                .iter()
+                .map(|p| {
+                    (
+                        p.plugin_type().clone(),
+                        p.enabled,
+                        p.plugin_type().name().to_string(),
+                    )
+                })
+                .collect();
             (
+                plugins,
+                state.app.selected_plugin_index,
                 state.app.theme.clone(),
-                state
-                    .app
-                    .plugin_graph
-                    .as_ref()
-                    .map(|g| g.nodes.len())
-                    .unwrap_or(0),
-                state
-                    .app
-                    .plugin_graph
-                    .as_ref()
-                    .map(|g| g.connections.len())
-                    .unwrap_or(0),
-                state
-                    .app
-                    .plugin_graph
-                    .as_ref()
-                    .map(|g| g.canvas_zoom * 100.0)
-                    .unwrap_or(100.0),
             )
         };
 
+        // Pre-compute static data for plugin modules
+        let modules_info: Vec<_> = plugins_data
+            .iter()
+            .enumerate()
+            .map(|(idx, (pt, enabled, name))| {
+                (
+                    idx,
+                    plugin_color(pt, &theme),
+                    plugin_icon(pt),
+                    name.clone(),
+                    *enabled,
+                    selected_idx == idx,
+                    pt.clone(),
+                )
+            })
+            .collect();
+
+        let is_empty = plugins_data.is_empty();
+        let plugin_count = plugins_data.len();
+
         div()
             .flex()
-            .justify_between()
-            .items_center()
-            .px_4()
-            .py_2()
+            .flex_col()
             .bg(theme.background_secondary)
             .border_b_1()
             .border_color(theme.border)
+            // Header - just title and count, no +Add button
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap_3()
+                    .px_4()
+                    .py_2()
+                    .gap_2()
                     .child(
                         div()
                             .text_sm()
                             .font_weight(FontWeight::BOLD)
                             .text_color(theme.text_primary)
-                            .child("PLUGIN GRAPH"),
+                            .child("SIGNAL CHAIN"),
                     )
-                    .child(div().text_xs().text_color(theme.text_muted).child(format!(
-                        "{} nodes, {} connections",
-                        node_count, connection_count
-                    ))),
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(theme.text_muted)
+                            .child(format!("{} plugins", plugin_count)),
+                    ),
             )
+            // Plugin modules strip
             .child(
                 div()
+                    .id("plugin-rack-graph")
                     .flex()
                     .items_center()
-                    .gap_2()
-                    // Zoom controls
-                    .child(
-                        div()
-                            .id("zoom-out")
-                            .px_2()
-                            .py_1()
-                            .rounded_md()
-                            .bg(theme.surface)
-                            .text_sm()
-                            .text_color(theme.text_secondary)
-                            .cursor_pointer()
-                            .hover(|s| s.bg(theme.surface_hover))
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                                    view.state.update(cx, |state, _cx| {
-                                        if let Some(ref mut graph) = state.app.plugin_graph {
-                                            graph.canvas_zoom =
-                                                (graph.canvas_zoom - 0.1).clamp(0.5, 2.0);
-                                        }
-                                    });
-                                    cx.notify();
-                                }),
-                            )
-                            .child("-"),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(theme.text_muted)
-                            .child(format!("{:.0}%", zoom_pct)),
-                    )
-                    .child(
-                        div()
-                            .id("zoom-in")
-                            .px_2()
-                            .py_1()
-                            .rounded_md()
-                            .bg(theme.surface)
-                            .text_sm()
-                            .text_color(theme.text_secondary)
-                            .cursor_pointer()
-                            .hover(|s| s.bg(theme.surface_hover))
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                                    view.state.update(cx, |state, _cx| {
-                                        if let Some(ref mut graph) = state.app.plugin_graph {
-                                            graph.canvas_zoom =
-                                                (graph.canvas_zoom + 0.1).clamp(0.5, 2.0);
-                                        }
-                                    });
-                                    cx.notify();
-                                }),
-                            )
-                            .child("+"),
-                    )
-                    // Reset view
-                    .child(
-                        div()
-                            .id("reset-view")
-                            .px_2()
-                            .py_1()
-                            .rounded_md()
-                            .bg(theme.surface)
-                            .text_xs()
-                            .text_color(theme.text_secondary)
-                            .cursor_pointer()
-                            .hover(|s| s.bg(theme.surface_hover))
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                                    view.state.update(cx, |state, _cx| {
-                                        if let Some(ref mut graph) = state.app.plugin_graph {
-                                            graph.canvas_offset = (0.0, 0.0);
-                                            graph.canvas_zoom = 1.0;
-                                        }
-                                    });
-                                    cx.notify();
-                                }),
-                            )
-                            .child("Reset"),
-                    ),
+                    .gap_3()
+                    .px_4()
+                    .py_3()
+                    .overflow_x_scroll()
+                    .min_h(px(140.0))
+                    .children(modules_info.into_iter().map(
+                        |(idx, color, icon, name, enabled, is_selected, plugin_type)| {
+                            let theme_c = theme.clone();
+                            let drag_info = PluginDragInfo {
+                                source_index: idx,
+                                name: name.clone(),
+                                color,
+                            };
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_1()
+                                // Connection line before
+                                .child(div().w(px(20.0)).h(px(2.0)).bg(if enabled {
+                                    theme_c.accent
+                                } else {
+                                    theme_c.text_muted
+                                }))
+                                // Plugin module box
+                                .child(
+                                    div()
+                                        .id(("plugin-module-graph", idx))
+                                        .group("plugin-module-graph")
+                                        .w(px(80.0))
+                                        .h(px(90.0))
+                                        .flex()
+                                        .flex_col()
+                                        .rounded_lg()
+                                        .border_2()
+                                        .border_color(if is_selected {
+                                            color
+                                        } else {
+                                            theme_c.border
+                                        })
+                                        .bg(theme_c.surface)
+                                        .when(!enabled, |d| d.opacity(0.6))
+                                        .shadow_md()
+                                        .cursor_grab()
+                                        .hover(|s| s.border_color(color))
+                                        .drag_over::<PluginDragInfo>(|style, _, _, _| {
+                                            style
+                                                .bg(rgba(0x3b82f640))
+                                                .border_color(rgb(0x3b82f6))
+                                        })
+                                        .on_drop(cx.listener(
+                                            move |view, info: &PluginDragInfo, _window, cx| {
+                                                let source = info.source_index;
+                                                let target = idx;
+                                                if source != target {
+                                                    view.state.update(cx, |state, _cx| {
+                                                        state.app.plugin_chain.move_plugin(source, target);
+                                                        state.app.selected_plugin_index = target;
+                                                        state.app.pending_plugin_update =
+                                                            Some(PluginUpdateType::Structural);
+                                                        state.app.update_level_meter_groups();
+                                                    });
+                                                    cx.notify();
+                                                }
+                                            },
+                                        ))
+                                        .on_drag(drag_info, |info, _position, _window, cx| {
+                                            cx.new(|_| info.clone())
+                                        })
+                                        .on_mouse_up(
+                                            MouseButton::Left,
+                                            cx.listener(
+                                                move |view, _: &MouseUpEvent, _window, cx| {
+                                                    view.state.update(cx, |state, _cx| {
+                                                        state.app.selected_plugin_index = idx
+                                                    });
+                                                    cx.notify();
+                                                },
+                                            ),
+                                        )
+                                        // Top bar with color
+                                        .child(div().h(px(4.0)).w_full().bg(color).rounded_t_md())
+                                        // Remove button (X)
+                                        .child(
+                                            div()
+                                                .absolute()
+                                                .top(px(8.0))
+                                                .right(px(4.0))
+                                                .w(px(12.0))
+                                                .h(px(12.0))
+                                                .rounded_full()
+                                                .bg(theme_c.error)
+                                                .flex()
+                                                .items_center()
+                                                .justify_center()
+                                                .text_xs()
+                                                .text_color(rgb(0xffffff))
+                                                .cursor_pointer()
+                                                .opacity(0.0)
+                                                .group_hover("plugin-module-graph", |s| s.opacity(1.0))
+                                                .hover(|s| s.bg(theme_c.error))
+                                                .on_mouse_up(
+                                                    MouseButton::Left,
+                                                    cx.listener(
+                                                        move |view, _e: &MouseUpEvent, _, cx| {
+                                                            cx.stop_propagation();
+                                                            view.state.update(cx, |state, _cx| {
+                                                                state.app.plugin_chain.remove_plugin(idx);
+                                                                if state.app.selected_plugin_index
+                                                                    >= state.app.plugin_chain.len()
+                                                                    && state.app.plugin_chain.len() > 0
+                                                                {
+                                                                    state.app.selected_plugin_index =
+                                                                        state.app.plugin_chain.len() - 1;
+                                                                }
+                                                                state.app.pending_plugin_update =
+                                                                    Some(PluginUpdateType::Structural);
+                                                                state.app.update_level_meter_groups();
+                                                            });
+                                                            cx.notify();
+                                                        },
+                                                    ),
+                                                )
+                                                .child("×"),
+                                        )
+                                        // Power indicator
+                                        .child(
+                                            div()
+                                                .absolute()
+                                                .top(px(8.0))
+                                                .left(px(4.0))
+                                                .w(px(12.0))
+                                                .h(px(12.0))
+                                                .rounded_full()
+                                                .flex()
+                                                .items_center()
+                                                .justify_center()
+                                                .cursor_pointer()
+                                                .on_mouse_up(
+                                                    MouseButton::Left,
+                                                    cx.listener(
+                                                        move |view, _e: &MouseUpEvent, _, cx| {
+                                                            cx.stop_propagation();
+                                                            view.state.update(cx, |state, _cx| {
+                                                                state.app.plugin_chain.toggle_plugin(idx);
+                                                                state.app.pending_plugin_update =
+                                                                    Some(PluginUpdateType::Structural);
+                                                                state.app.update_level_meter_groups();
+                                                            });
+                                                            cx.notify();
+                                                        },
+                                                    ),
+                                                )
+                                                .bg(if enabled {
+                                                    theme_c.success
+                                                } else {
+                                                    theme_c.error
+                                                })
+                                                .text_size(px(8.0))
+                                                .text_color(rgb(0xffffff))
+                                                .child(if enabled { "●" } else { "○" }),
+                                        )
+                                        // Icon
+                                        .child(
+                                            div()
+                                                .flex_1()
+                                                .flex()
+                                                .items_center()
+                                                .justify_center()
+                                                .text_xl()
+                                                .text_color(color)
+                                                .child(icon),
+                                        )
+                                        // Name
+                                        .child(
+                                            div()
+                                                .px_2()
+                                                .pb_2()
+                                                .text_xs()
+                                                .text_color(theme_c.text_primary)
+                                                .font_weight(FontWeight::MEDIUM)
+                                                .text_align(TextAlign::Center)
+                                                .overflow_hidden()
+                                                .text_ellipsis()
+                                                .child(short_name(&plugin_type)),
+                                        ),
+                                )
+                                // Connection line after
+                                .child(div().w(px(20.0)).h(px(2.0)).bg(if enabled {
+                                    theme_c.accent
+                                } else {
+                                    theme_c.text_muted
+                                }))
+                        },
+                    ))
+                    // Empty state
+                    .when(is_empty, |d| {
+                        d.child(
+                            div()
+                                .flex_1()
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .text_color(theme.text_muted)
+                                .child("Drag plugins from the canvas to add them"),
+                        )
+                    }),
             )
-    }
-
-    /// Render the sidebar palette with draggable plugin types
-    fn render_graph_palette(&self, cx: &mut Context<Self>) -> Div {
-        let theme = self.state.read(cx).app.theme.clone();
-
-        let plugin_categories: Vec<(&str, Vec<(PluginType, String)>)> = vec![
-            (
-                "Effects",
-                vec![
-                    (PluginType::EQ, PluginType::EQ.name().to_string()),
-                    (PluginType::Gain, PluginType::Gain.name().to_string()),
-                    (
-                        PluginType::Compressor,
-                        PluginType::Compressor.name().to_string(),
-                    ),
-                    (PluginType::Limiter, PluginType::Limiter.name().to_string()),
-                    (PluginType::Gate, PluginType::Gate.name().to_string()),
-                ],
-            ),
-            (
-                "Spatial",
-                vec![
-                    (PluginType::Upmixer, PluginType::Upmixer.name().to_string()),
-                    (
-                        PluginType::BinauralDecoder,
-                        PluginType::BinauralDecoder.name().to_string(),
-                    ),
-                    (
-                        PluginType::Convolution,
-                        PluginType::Convolution.name().to_string(),
-                    ),
-                ],
-            ),
-            (
-                "Monitor",
-                vec![
-                    (
-                        PluginType::LoudnessCompensation,
-                        PluginType::LoudnessCompensation.name().to_string(),
-                    ),
-                    (
-                        PluginType::LoudnessMonitor,
-                        PluginType::LoudnessMonitor.name().to_string(),
-                    ),
-                    (
-                        PluginType::SpectrumAnalyzer,
-                        PluginType::SpectrumAnalyzer.name().to_string(),
-                    ),
-                    (
-                        PluginType::ChannelMuteSolo,
-                        PluginType::ChannelMuteSolo.name().to_string(),
-                    ),
-                ],
-            ),
-        ];
-
-        div()
-            .flex()
-            .flex_col()
-            .w(px(160.0))
-            .bg(theme.background_secondary)
-            .border_r_1()
-            .border_color(theme.border)
-            .py_2()
-            .child(
-                div()
-                    .px_3()
-                    .py_1()
-                    .text_xs()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(theme.text_muted)
-                    .child("PLUGINS"),
-            )
-            .children(plugin_categories.into_iter().map(|(category, plugins)| {
-                let theme = theme.clone();
-                div()
-                    .flex()
-                    .flex_col()
-                    .px_2()
-                    .py_1()
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(theme.text_muted)
-                            .px_1()
-                            .py_1()
-                            .child(category),
-                    )
-                    .children(plugins.into_iter().map(|(pt, name)| {
-                        let theme = theme.clone();
-                        let color = plugin_color(&pt, &theme);
-                        let pt_clone = pt.clone();
-                        let pt_debug = format!("{:?}", pt);
-
-                        div()
-                            .id(SharedString::from(format!("palette-{}", pt_debug)))
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            .px_2()
-                            .py_1()
-                            .rounded_md()
-                            .cursor_grab()
-                            .hover(|s| s.bg(theme.surface_hover))
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                    // Add node to center of view
-                                    view.state.update(cx, |state, _cx| {
-                                        let graph = state
-                                            .app
-                                            .plugin_graph
-                                            .get_or_insert_with(PluginGraph::new);
-                                        let offset = graph.canvas_offset;
-                                        let zoom = graph.canvas_zoom;
-                                        // Place at center of viewport
-                                        let x = (400.0 - offset.0) / zoom;
-                                        let y = (300.0 - offset.1) / zoom;
-                                        graph.add_plugin_node(&pt_clone, NodePosition::new(x, y));
-                                        state.app.pending_plugin_update =
-                                            Some(PluginUpdateType::Structural);
-                                    });
-                                    cx.notify();
-                                }),
-                            )
-                            .child(div().w(px(8.0)).h(px(8.0)).rounded_full().bg(color))
-                            .child(div().text_xs().text_color(theme.text_secondary).child(name))
-                    }))
-            }))
     }
 }
 
@@ -387,8 +407,6 @@ fn build_workflow_graph(plugin_graph: &Option<PluginGraph>) -> WorkflowGraph {
 
         workflow_graph.add_node(workflow_node);
     }
-
-    // TODO: Convert connections when ID mapping is implemented
 
     workflow_graph
 }
@@ -442,7 +460,11 @@ fn create_workflow_theme(theme: &Theme) -> WorkflowTheme {
     }
 }
 
-// Plugin color scheme for different types
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/// Get plugin color based on type
 fn plugin_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
     match plugin_type {
         PluginType::EQ => theme.plugin_colors.eq,
@@ -457,5 +479,41 @@ fn plugin_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
         PluginType::LoudnessMonitor => theme.plugin_colors.monitor,
         PluginType::SpectrumAnalyzer => theme.plugin_colors.spectrum,
         PluginType::ChannelMuteSolo => theme.plugin_colors.mute_solo,
+    }
+}
+
+/// Get plugin icon based on type
+fn plugin_icon(plugin_type: &PluginType) -> &'static str {
+    match plugin_type {
+        PluginType::EQ => "〰",
+        PluginType::Gain => "🔊",
+        PluginType::Upmixer => "🔀",
+        PluginType::Compressor => "📉",
+        PluginType::Limiter => "🛑",
+        PluginType::Gate => "🚪",
+        PluginType::LoudnessCompensation => "👂",
+        PluginType::BinauralDecoder => "🎧",
+        PluginType::Convolution => "🌊",
+        PluginType::LoudnessMonitor => "📊",
+        PluginType::SpectrumAnalyzer => "📈",
+        PluginType::ChannelMuteSolo => "🎚",
+    }
+}
+
+/// Get short name for plugin type
+fn short_name(plugin_type: &PluginType) -> &'static str {
+    match plugin_type {
+        PluginType::EQ => "EQ",
+        PluginType::Gain => "Gain",
+        PluginType::Upmixer => "Upmix",
+        PluginType::Compressor => "Comp",
+        PluginType::Limiter => "Limit",
+        PluginType::Gate => "Gate",
+        PluginType::LoudnessCompensation => "Loud",
+        PluginType::BinauralDecoder => "Bin",
+        PluginType::Convolution => "Conv",
+        PluginType::LoudnessMonitor => "Mon",
+        PluginType::SpectrumAnalyzer => "Spectr",
+        PluginType::ChannelMuteSolo => "Mix",
     }
 }

@@ -8,8 +8,8 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui::{InteractiveElement, Styled};
 use gpui_ui_kit::{
-    CollapseDirection, PaneDivider, PaneDividerTheme, StackSpacing, Text, TextSize, TextWeight,
-    VStack,
+    Button, CollapseDirection, PaneDivider, PaneDividerTheme, StackSpacing, Text, TextSize,
+    TextWeight, VStack,
 };
 
 use crate::app::types::MeterDisplayMode;
@@ -164,6 +164,17 @@ impl PlayerView {
                                                 )
                                         })
                                 })),
+                        )
+                        .child(
+                            div()
+                                .p_2()
+                                .child(
+                                    Button::new("magic-radio-btn", "Magic Radio")
+                                        .full_width(true)
+                                        .on_click(|_, cx| {
+                                            cx.dispatch_action(&crate::app::actions::FillQueueMagic);
+                                        }),
+                                ),
                         ),
                 )
             })

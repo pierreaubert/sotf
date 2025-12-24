@@ -26,11 +26,15 @@ use crate::app::types::{
     SpinoramaEqState, ToastMessage,
 };
 
-/// Mapping between workflow NodeIds and plugin indices
+/// Mapping between workflow NodeIds and plugin indices / special nodes
 #[derive(Clone, Default, Debug)]
 pub struct WorkflowNodeMapping {
     pub node_to_plugin: HashMap<NodeId, usize>,
     pub plugin_to_node: HashMap<usize, NodeId>,
+    /// Workflow node ID for the Input special node
+    pub input_node_id: Option<NodeId>,
+    /// Workflow node ID for the Output special node
+    pub output_node_id: Option<NodeId>,
 }
 
 #[derive(Debug)]

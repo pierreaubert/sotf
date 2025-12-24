@@ -191,4 +191,77 @@ impl App {
                 !self.expanded_queue_items[self.selected_queue_index];
         }
     }
+
+    /// Fill queue with "magic" recommendations (1h of music)
+    /// Uses bliss audio features to find songs similar to queue or listening history
+    pub fn fill_queue_magic(&mut self) -> Result<usize, String> {
+        log::info!("[App] Starting fill_queue_magic...");
+        let db = match self.library.get_database() {
+            Some(db) => db,
+            None => {
+                log::error!("[App] fill_queue_magic: Database not available");
+                return Err("Database not available".to_string());
+            }
+        };
+
+        // Collect current queue paths
+        let current_queue_paths: Vec<PathBuf> = self
+            .queue
+            .iter()
+            .flat_map(|item| {
+                item.album
+                    .tracks
+                    .iter()
+                    .map(|t| t.path.clone())
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        
+        log::info!("[App] fill_queue_magic: Found {} existing tracks in queue", current_queue_paths.len());
+
+        // Get recommendations (target 1 hour = 3600 seconds)
+        let recommendations = sotf_audio_player::recommendation::recommend_tracks(
+            db,
+            &current_queue_paths,
+            3600,
+        )
+        .map_err(|e| format!("Recommendation error: {}", e))?;
+
+        log::info!("[App] fill_queue_magic: Received {} recommendations", recommendations.len());
+
+        if recommendations.is_empty() {
+            return Ok(0);
+        }
+
+        let mut added_count = 0;
+
+        // Add recommended tracks to queue
+        for path in recommendations {
+            // Find the album containing this track
+            // We search in the loaded library albums
+            // Note: This linear search might be slow for very large libraries.
+            // Optimization: Build a map of path -> album_index if needed.
+            let found_album = self.library.albums.iter().find(|album| {
+                album.tracks.iter().any(|t| t.path == path)
+            });
+
+            if let Some(album) = found_album {
+                // Clone the album and keep only the recommended track
+                let mut single_track_album: sotf_audio_player::Album = album.clone();
+                single_track_album.tracks.retain(|t| t.path == path);
+
+                if !single_track_album.tracks.is_empty() {
+                    self.queue.push(QueueItem::new(single_track_album));
+                    self.expanded_queue_items.push(false);
+                    added_count += 1;
+                }
+            } else {
+                log::warn!("[App] fill_queue_magic: Could not find album for recommended track: {:?}", path);
+            }
+        }
+        
+        log::info!("[App] fill_queue_magic: Added {} tracks to queue", added_count);
+
+        Ok(added_count)
+    }
 }

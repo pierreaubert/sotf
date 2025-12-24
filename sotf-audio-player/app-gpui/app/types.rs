@@ -62,6 +62,7 @@ pub enum ActiveMenu {
     File,
     Show,
     Help,
+    AddPlugin, // Plugin rack "Add" menu
 }
 
 /// Layout mode based on window height

@@ -1715,6 +1715,54 @@ impl MusicDatabase {
         }
     }
 
+    /// Get all tracks that have bliss analysis data
+    /// Returns a vector of (path, analysis, duration_secs) tuples
+    pub fn get_all_bliss_features(
+        &self,
+    ) -> SqlResult<Vec<(PathBuf, crate::bliss::BlissAnalysis, u64)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT path, bliss_features, duration_secs FROM tracks WHERE bliss_features IS NOT NULL",
+        )?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                let path = PathBuf::from(row.get::<_, String>(0)?);
+                let features_blob: Vec<u8> = row.get(1)?;
+                let duration: u64 = row.get::<_, Option<i64>>(2)?.unwrap_or(0) as u64;
+                Ok((path, features_blob, duration))
+            })?
+            .collect::<SqlResult<Vec<_>>>()?;
+
+        let mut results = Vec::with_capacity(rows.len());
+        for (path, blob, duration) in rows {
+            if let Some(analysis) = crate::bliss::BlissAnalysis::from_bytes(&blob) {
+                results.push((path, analysis, duration));
+            }
+        }
+
+        Ok(results)
+    }
+
+    /// Get top tracks by play count
+    pub fn get_top_tracks_by_play_count(&self, limit: usize) -> SqlResult<Vec<PathBuf>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT track_path, COUNT(*) as count
+             FROM play_history
+             GROUP BY track_path
+             ORDER BY count DESC
+             LIMIT ?1",
+        )?;
+
+        let paths = stmt
+            .query_map(params![limit as i64], |row| {
+                let path_str: String = row.get(0)?;
+                Ok(PathBuf::from(path_str))
+            })?
+            .collect::<SqlResult<Vec<_>>>()?;
+
+        Ok(paths)
+    }
+
     /// Get all track paths from the database
     pub fn get_all_track_paths(&self) -> SqlResult<Vec<PathBuf>> {
         let mut stmt = self.conn.prepare("SELECT path FROM tracks")?;

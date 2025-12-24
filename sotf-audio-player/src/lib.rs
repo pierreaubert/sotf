@@ -11,8 +11,9 @@ pub mod autoeq;
 /// - ReplayGain scanning (`replay_gain_scanner`)
 /// - Waveform scanning (`waveform_scanner`)
 /// - Bliss audio analysis (`bliss`)
-/// - AutoEQ optimization (`autoeq`, also aliased as `room_eq` for backward compatibility)
+/// - Music recommendation engine (`recommendation`)
 pub mod bliss;
+pub mod recommendation;
 pub mod config;
 pub mod database;
 pub mod library;
