@@ -285,9 +285,9 @@ bundle_dylibs() {
 fix_dylib_references() {
     local dylib="$1"
 
-    # Get all non-system dependencies
+    # Get all non-system dependencies (including @rpath references)
     local deps
-    deps=$(otool -L "$dylib" | tail -n +2 | awk '{print $1}' | grep -v "^/System" | grep -v "^/usr/lib" | grep -v "@executable_path" | grep -v "@rpath" || true)
+    deps=$(otool -L "$dylib" | tail -n +2 | awk '{print $1}' | grep -v "^/System" | grep -v "^/usr/lib" | grep -v "@executable_path" || true)
 
     for dep in $deps; do
         local dep_name
