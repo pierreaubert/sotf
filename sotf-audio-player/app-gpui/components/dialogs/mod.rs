@@ -107,7 +107,7 @@ impl PlayerView {
                                     .color(theme.text_primary),
                             )
                             .child(
-                                Text::new("Version 0.1.0")
+                                Text::new(format!("Version {}", env!("CARGO_PKG_VERSION")))
                                     .size(TextSize::Sm)
                                     .color(theme.text_secondary),
                             )

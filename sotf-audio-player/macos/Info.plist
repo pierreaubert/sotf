@@ -10,7 +10,7 @@
     <key>CFBundleDisplayName</key>
     <string>SotF Player</string>
     <key>CFBundleExecutable</key>
-    <string>sotf-gpui</string>
+    <string>SotF</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
 

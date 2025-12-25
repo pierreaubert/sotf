@@ -16,6 +16,7 @@ impl PlayerView {
         let theme_id = state.app.theme_id;
         let language = state.app.language;
         let theme = state.app.theme.clone();
+        let translations = state.app.translations.clone();
 
         div()
             .flex()
@@ -32,7 +33,7 @@ impl PlayerView {
                             .text_sm()
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(theme.text_primary)
-                            .child("Theme"),
+                            .child(translations.settings_theme),
                     )
                     .child({
                         let mut container = div().flex().flex_wrap().gap_4();
@@ -46,6 +47,7 @@ impl PlayerView {
                                 preview_theme,
                                 is_selected,
                                 theme.clone(),
+                                translations.settings_active,
                                 cx,
                             ));
                         }
@@ -63,7 +65,7 @@ impl PlayerView {
                         div()
                             .text_sm()
                             .font_weight(FontWeight::SEMIBOLD)
-                            .child("Language"),
+                            .child(translations.settings_language),
                     )
                     .child({
                         let button_theme = theme.to_button_theme();
@@ -109,6 +111,7 @@ impl PlayerView {
         preview_theme: crate::theme::Theme,
         is_selected: bool,
         current_theme: crate::theme::Theme,
+        active_label: &'static str,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         div()
@@ -245,7 +248,7 @@ impl PlayerView {
                                 .text_xs()
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .text_color(current_theme.text_on_accent)
-                                .child("✓ Active"),
+                                .child(format!("✓ {}", active_label)),
                         ),
                 )
             })

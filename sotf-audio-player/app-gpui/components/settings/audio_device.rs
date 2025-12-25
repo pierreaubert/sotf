@@ -14,11 +14,12 @@ impl PlayerView {
     ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
+        let translations = state.app.translations.clone();
 
         VStack::new()
             .spacing(StackSpacing::Md)
             .child(
-                Text::new("Audio Output Devices")
+                Text::new(translations.devices_title)
                     .size(TextSize::Sm)
                     .weight(TextWeight::Semibold),
             )
@@ -117,7 +118,7 @@ impl PlayerView {
                                                 )
                                                 .when(is_default, |stack| {
                                                     stack.child(
-                                                        Badge::new("✓ Default")
+                                                        Badge::new(format!("✓ {}", translations.settings_default_badge))
                                                             .variant(BadgeVariant::Success),
                                                     )
                                                 }),

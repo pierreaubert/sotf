@@ -9,7 +9,7 @@ use super::hit_test::{HitTestResult, HitTester};
 use super::node::WorkflowNode;
 use super::state::{
     BoxSelection, CanvasState, Connection, ConnectionDrag, ContextMenuState, InteractionMode,
-    NodeDragState, NodeId, Position, SelectionState, ViewportState, WorkflowGraph,
+    LinkType, NodeDragState, NodeId, Position, SelectionState, ViewportState, WorkflowGraph,
     WorkflowNodeData,
 };
 use super::theme::WorkflowTheme;
@@ -17,6 +17,9 @@ use crate::menu::{Menu, MenuItem};
 use crate::theme::ThemeExt;
 use gpui::*;
 use std::collections::HashMap;
+
+/// Callback type for node double-click events
+pub type NodeDoubleClickCallback = Box<dyn Fn(NodeId, &mut Window, &mut App) + 'static>;
 
 /// Workflow canvas component
 ///
@@ -34,6 +37,8 @@ pub struct WorkflowCanvas {
     clipboard: Option<String>,
     /// Custom context menu items (if None, uses default menu)
     custom_menu_items: Option<Vec<MenuItem>>,
+    /// Callback for node double-click
+    on_node_double_click: Option<NodeDoubleClickCallback>,
 }
 
 impl WorkflowCanvas {
@@ -47,6 +52,7 @@ impl WorkflowCanvas {
             focus_handle: cx.focus_handle(),
             clipboard: None,
             custom_menu_items: None,
+            on_node_double_click: None,
         }
     }
 
@@ -61,6 +67,7 @@ impl WorkflowCanvas {
             focus_handle: cx.focus_handle(),
             clipboard: None,
             custom_menu_items: None,
+            on_node_double_click: None,
         }
     }
 
@@ -73,6 +80,14 @@ impl WorkflowCanvas {
     /// These will replace the default menu items when right-clicking on the canvas
     pub fn set_menu_items(&mut self, items: Vec<MenuItem>) {
         self.custom_menu_items = Some(items);
+    }
+
+    /// Set callback for node double-click events
+    pub fn set_on_node_double_click(
+        &mut self,
+        callback: impl Fn(NodeId, &mut Window, &mut App) + 'static,
+    ) {
+        self.on_node_double_click = Some(Box::new(callback));
     }
 
     // === Public API ===
@@ -562,6 +577,25 @@ impl WorkflowCanvas {
         cx.notify();
     }
 
+    fn handle_double_click(&mut self, position: Position, window: &mut Window, cx: &mut App) {
+        // position is in screen coordinates (relative to canvas element)
+        // Convert to canvas coordinates for hit testing
+        let canvas_pos = self
+            .state
+            .viewport
+            .screen_to_canvas(position.x, position.y);
+
+        // Hit test to find what was double-clicked
+        let hit_result = self.hit_tester.hit_test(canvas_pos, &self.state.graph);
+
+        // If a node was double-clicked and we have a callback, call it
+        if let HitTestResult::Node(node_id) = hit_result {
+            if let Some(ref callback) = self.on_node_double_click {
+                callback(node_id, window, cx);
+            }
+        }
+    }
+
     fn handle_add_node_menu(&mut self, node_type: &SharedString, cx: &mut Context<Self>) {
         if let Some(menu_state) = &self.state.context_menu {
             // Position new node at the click location (converted to canvas coords)
@@ -758,7 +792,8 @@ impl Render for WorkflowCanvas {
                 let from_pos = port_screen_position(from_node, conn.from_port, false, &viewport);
                 let to_pos = port_screen_position(to_node, conn.to_port, true, &viewport);
                 let selected = self.state.selection.is_connection_selected(conn.id);
-                Some((from_pos, to_pos, selected))
+                let link_type = conn.link_type;
+                Some((from_pos, to_pos, selected, link_type))
             })
             .collect();
 
@@ -768,8 +803,9 @@ impl Render for WorkflowCanvas {
         let conn_color = theme.connection_color;
         let conn_selected = theme.connection_selected;
         let conn_preview = theme.connection_preview;
-        // Scale connection width
-        let conn_width = scaled_theme.connection_width;
+        // Scale connection widths
+        let conn_width_fat = scaled_theme.connection_width;
+        let conn_width_thin = scaled_theme.connection_width_thin;
         // Port radius for shortening connection lines
         let port_radius = scaled_theme.port_radius;
 
@@ -799,15 +835,19 @@ impl Render for WorkflowCanvas {
 
                 // Draw connections - positions are already in screen coordinates
                 // Shorten lines by port_radius at each end so they don't overlap ports
-                for (from_pos, to_pos, selected) in &connections {
+                for (from_pos, to_pos, selected, link_type) in &connections {
                     let color = if *selected { conn_selected } else { conn_color };
+                    let width = match link_type {
+                        LinkType::Fat => conn_width_fat,
+                        LinkType::Thin => conn_width_thin,
+                    };
 
                     draw_connection(
                         window,
                         *from_pos,
                         *to_pos,
                         color,
-                        conn_width,
+                        width,
                         port_radius,
                         origin_x,
                         origin_y,
@@ -836,12 +876,13 @@ impl Render for WorkflowCanvas {
                     };
 
                     // For preview, only shorten the port end (not the mouse cursor end)
+                    // Use fat width for preview (new connections default to fat)
                     draw_connection_preview(
                         window,
                         from,
                         to,
                         conn_preview,
-                        conn_width,
+                        conn_width_fat,
                         port_radius,
                         drag.is_output,
                         origin_x,
@@ -966,13 +1007,19 @@ impl Render for WorkflowCanvas {
         result
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(|this, event: &MouseDownEvent, _window, cx| {
+                cx.listener(|this, event: &MouseDownEvent, window, cx| {
                     let x: f32 = event.position.x.into();
                     let y: f32 = event.position.y.into();
                     // Convert from window coordinates to canvas-element-relative coordinates
                     let pos = Position::new(x - this.canvas_origin.x, y - this.canvas_origin.y);
-                    let shift = event.modifiers.shift;
-                    this.handle_mouse_down(pos, shift, cx);
+
+                    // Handle double-click on nodes
+                    if event.click_count == 2 {
+                        this.handle_double_click(pos, window, cx);
+                    } else {
+                        let shift = event.modifiers.shift;
+                        this.handle_mouse_down(pos, shift, cx);
+                    }
                 }),
             )
             .on_mouse_down(

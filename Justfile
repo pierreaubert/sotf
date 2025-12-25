@@ -65,7 +65,7 @@ prod-sotf-player: prod-sotf-tui prod-sotf-gpui
 	cargo build --release --bin sotf-player
 
 prod-sotf-gpui:
-	cargo build --release --bin sotf-gpui -p sotf-gpui
+	cargo build --release --bin SotF -p sotf-gpui
 
 prod-sotf-tui:
 	cargo build --release --bin sotf-tui -p sotf-tui
@@ -81,7 +81,7 @@ tui:
 	cargo run --release --bin sotf-tui -p sotf-tui
 
 gpui:
-	cargo run --release --bin sotf-gpui -p sotf-gpui
+	cargo run --release --bin SotF -p sotf-gpui
 
 gpui-release-macos:
 	#!/usr/bin/env bash
@@ -298,7 +298,7 @@ cross-static-macos:
 	@echo "Note: macOS binaries cannot be fully static due to Apple's security policies"
 	@echo "      System frameworks (CoreAudio, etc.) will be dynamically linked"
 	RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --target aarch64-apple-darwin --bin sotf-tui
-	RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --target aarch64-apple-darwin --bin sotf-gpui
+	RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --target aarch64-apple-darwin --bin SotF -p sotf-gpui
 	@echo "✓ Done! Universal binary at: target/sotf-tui-macos-universal"
 
 # Build static binary for current platform
@@ -322,8 +322,8 @@ build-static-local:
 	elif [ "$(uname)" = "Darwin" ]; then
 		RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --bin sotf-tui --target-dir ./target-static
 		echo "✓ Built: target-static/release/sotf-tui"
-		RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --bin sotf-gpui  --target-dir ./target-static
-		echo "✓ Built: target-static/release/sotf-gpui"
+		RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --bin SotF -p sotf-gpui --target-dir ./target-static
+		echo "✓ Built: target-static/release/SotF"
 		echo "Note: macOS binaries have limited static linking due to Apple restrictions"
 	else
 		echo "❌ Unsupported platform: $(uname)"

@@ -79,10 +79,15 @@ pub struct Toast {
     variant: ToastVariant,
     closeable: bool,
     on_close: Option<Box<dyn Fn(&mut Window, &mut App) + 'static>>,
+    /// Duration in seconds before auto-dismiss (None = no auto-dismiss, default = 5.0)
+    duration_secs: Option<f32>,
 }
 
 impl Toast {
-    /// Create a new toast with a message
+    /// Default duration for auto-dismiss in seconds
+    pub const DEFAULT_DURATION_SECS: f32 = 5.0;
+
+    /// Create a new toast with a message (auto-dismisses after 5 seconds by default)
     pub fn new(id: impl Into<ElementId>, message: impl Into<SharedString>) -> Self {
         Self {
             id: id.into(),
@@ -91,6 +96,7 @@ impl Toast {
             variant: ToastVariant::default(),
             closeable: true,
             on_close: None,
+            duration_secs: Some(Self::DEFAULT_DURATION_SECS),
         }
     }
 
@@ -116,6 +122,28 @@ impl Toast {
     pub fn on_close(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
         self.on_close = Some(Box::new(handler));
         self
+    }
+
+    /// Set the auto-dismiss duration in seconds (None = no auto-dismiss)
+    pub fn duration_secs(mut self, duration: Option<f32>) -> Self {
+        self.duration_secs = duration;
+        self
+    }
+
+    /// Make this toast persistent (no auto-dismiss)
+    pub fn persistent(mut self) -> Self {
+        self.duration_secs = None;
+        self
+    }
+
+    /// Get the duration in seconds (for timer management)
+    pub fn get_duration_secs(&self) -> Option<f32> {
+        self.duration_secs
+    }
+
+    /// Get the duration in milliseconds (for timer management)
+    pub fn get_duration_ms(&self) -> Option<u64> {
+        self.duration_secs.map(|s| (s * 1000.0) as u64)
     }
 
     /// Build the toast into an element with theme

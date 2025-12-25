@@ -118,6 +118,8 @@ pub struct App {
     // Workflow canvas (for WorkflowCanvas from gpui-ui-kit)
     pub workflow_canvas: Option<Entity<WorkflowCanvas>>,
     pub workflow_node_mapping: Option<WorkflowNodeMapping>,
+    /// The node ID being edited in the plugin modal (if any)
+    pub editing_plugin_node: Option<gpui_ui_kit::workflow::NodeId>,
 
     // Playback state
     pub is_playing: bool,
@@ -362,6 +364,7 @@ impl App {
             graph_node_drag: None,
             workflow_canvas: None,
             workflow_node_mapping: None,
+            editing_plugin_node: None,
             is_playing: false,
             current_queue_index: None,
             volume: 0.1, // Start at 10% volume

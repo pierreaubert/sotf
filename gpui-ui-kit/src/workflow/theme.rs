@@ -51,8 +51,10 @@ pub struct WorkflowTheme {
     pub connection_color: Rgba,
     /// Connection line color when selected
     pub connection_selected: Rgba,
-    /// Connection line width
+    /// Connection line width for fat links (all channels)
     pub connection_width: f32,
+    /// Connection line width for thin links (single channel)
+    pub connection_width_thin: f32,
     /// Connection preview color (while dragging)
     pub connection_preview: Rgba,
 
@@ -105,7 +107,8 @@ impl WorkflowTheme {
             // Connections
             connection_color: theme.text_secondary,
             connection_selected: theme.accent,
-            connection_width: 2.0,
+            connection_width: 4.0,       // Fat links (all channels)
+            connection_width_thin: 1.5,  // Thin links (single channel)
             connection_preview: Rgba {
                 r: theme.accent.r,
                 g: theme.accent.g,
@@ -137,6 +140,7 @@ impl WorkflowTheme {
         scaled.node_content_padding *= factor;
         scaled.port_radius *= factor;
         scaled.connection_width *= factor;
+        scaled.connection_width_thin *= factor;
         scaled
     }
 }

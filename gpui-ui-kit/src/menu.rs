@@ -204,7 +204,7 @@ impl Menu {
         let mut menu = div()
             .id("menu-container")
             .min_w(min_width)
-            .max_h(px(400.0))
+            .max_h(px(600.0))
             .bg(theme.background)
             .border_1()
             .border_color(theme.border)

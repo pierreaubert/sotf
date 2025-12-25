@@ -13,6 +13,7 @@ impl PlayerView {
     ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
+        let translations = state.app.translations.clone();
         let scan_in_progress = state.app.scan_in_progress;
         let scan_progress_tracks = state.app.scan_progress_tracks;
         let scan_progress_albums = state.app.scan_progress_albums;
@@ -42,17 +43,17 @@ impl PlayerView {
                     .border_color(theme.border)
                     .child(
                          div().flex().flex_col()
-                            .child(div().text_xs().text_color(theme.text_secondary).child("TOTAL ALBUMS"))
+                            .child(div().text_xs().text_color(theme.text_secondary).child(translations.settings_total_albums))
                             .child(div().text_xl().font_weight(FontWeight::BOLD).child(format!("{}", album_count)))
                     )
                     .child(
                          div().flex().flex_col()
-                            .child(div().text_xs().text_color(theme.text_secondary).child("TOTAL TRACKS"))
+                            .child(div().text_xs().text_color(theme.text_secondary).child(translations.settings_total_tracks))
                             .child(div().text_xl().font_weight(FontWeight::BOLD).child(format!("{}", track_count)))
                     )
                      .child(
                          div().flex().flex_col()
-                            .child(div().text_xs().text_color(theme.text_secondary).child("DIRECTORIES"))
+                            .child(div().text_xs().text_color(theme.text_secondary).child(translations.settings_directories))
                             .child(div().text_xl().font_weight(FontWeight::BOLD).child(format!("{}", directories.len())))
                     )
             )
@@ -62,9 +63,9 @@ impl PlayerView {
                     .flex()
                     .justify_between()
                     .items_center()
-                    .child(div().text_sm().font_weight(FontWeight::BOLD).child("Managed Directories"))
+                    .child(div().text_sm().font_weight(FontWeight::BOLD).child(translations.settings_managed_directories))
                     .child(
-                         Button::new("add-directory-btn", "Add Directory")
+                         Button::new("add-directory-btn", translations.directories_add)
                             .variant(ButtonVariant::Secondary)
                             .size(ButtonSize::Sm)
                             .theme(theme.to_button_theme())
@@ -121,12 +122,12 @@ impl PlayerView {
                                             .gap_4()
                                             .text_xs()
                                             .text_color(theme.text_secondary)
-                                            .child(format!("{} albums", dir.album_count))
-                                            .child(format!("{} tracks", dir.file_count))
+                                            .child(format!("{} {}", dir.album_count, translations.library_albums.to_lowercase()))
+                                            .child(format!("{} {}", dir.file_count, translations.library_tracks.to_lowercase()))
                                         )
                                 )
                                 .child(
-                                     Button::new(("remove-btn", idx), "Remove")
+                                     Button::new(("remove-btn", idx), translations.settings_remove)
                                         .variant(ButtonVariant::Ghost)
                                         .size(ButtonSize::Sm)
                                         .theme(theme.to_button_theme())
@@ -153,12 +154,12 @@ impl PlayerView {
                     .flex()
                     .flex_col()
                     .gap_3()
-                    .child(div().text_sm().font_weight(FontWeight::BOLD).child("Library Actions"))
+                    .child(div().text_sm().font_weight(FontWeight::BOLD).child(translations.settings_library_actions))
                     .child(
                         HStack::new()
                         .spacing(StackSpacing::Md)
                         .child(
-                            Button::new("scan-btn", if scan_in_progress { "Scanning..." } else { "Scan Library" })
+                            Button::new("scan-btn", if scan_in_progress { translations.library_scanning } else { translations.library_scan })
                                 .variant(ButtonVariant::Secondary)
                                 .size(ButtonSize::Md)
                                 .disabled(scan_in_progress)
@@ -169,7 +170,7 @@ impl PlayerView {
                                 }))
                         )
                         .child(
-                             Button::new("rescan-btn", "Rescan All")
+                             Button::new("rescan-btn", translations.settings_rescan_all)
                                 .variant(ButtonVariant::Secondary)
                                 .size(ButtonSize::Md)
                                 .disabled(scan_in_progress)
@@ -198,7 +199,7 @@ impl PlayerView {
                     .flex()
                     .flex_col()
                     .gap_3()
-                    .child(div().text_sm().font_weight(FontWeight::BOLD).child("ReplayGain"))
+                    .child(div().text_sm().font_weight(FontWeight::BOLD).child(translations.settings_replaygain))
                     .child(
                         div()
                         .flex()
@@ -217,12 +218,12 @@ impl PlayerView {
                                         .flex()
                                         .flex_1()
                                         .flex_col()
-                                        .child(div().text_sm().font_weight(FontWeight::BOLD).child("Enable ReplayGain"))
-                                        .child(div().text_xs().text_color(theme.text_secondary).child("Automatically adjust volume to a standard level"))
+                                        .child(div().text_sm().font_weight(FontWeight::BOLD).child(translations.settings_enable_replaygain))
+                                        .child(div().text_xs().text_color(theme.text_secondary).child(translations.settings_replaygain_desc))
                                 )
                                 .child(
                                     // Toggle switch (simulated with button for now or use Checkbox if available)
-                                    Button::new("replay-gain-toggle", if state.app.replay_gain_enabled { "On" } else { "Off" })
+                                    Button::new("replay-gain-toggle", if state.app.replay_gain_enabled { translations.settings_on } else { translations.settings_off })
                                         .variant(if state.app.replay_gain_enabled { ButtonVariant::Primary } else { ButtonVariant::Secondary })
                                         .size(ButtonSize::Sm)
                                         .theme(theme.to_button_theme())
@@ -244,14 +245,14 @@ impl PlayerView {
                                         .flex()
                                         .flex_1()
                                         .flex_col()
-                                        .child(div().text_sm().font_weight(FontWeight::BOLD).child("Mode"))
-                                        .child(div().text_xs().text_color(theme.text_secondary).child("Track (per-song) or Album (per-work) normalization"))
+                                        .child(div().text_sm().font_weight(FontWeight::BOLD).child(translations.settings_mode))
+                                        .child(div().text_xs().text_color(theme.text_secondary).child(translations.settings_mode_desc))
                                 )
                                 .child(
                                     HStack::new()
                                         .spacing(StackSpacing::Sm)
                                         .child(
-                                            Button::new("rg-mode-track", "Track")
+                                            Button::new("rg-mode-track", translations.settings_track)
                                                 .variant(if state.app.replay_gain_mode == ReplayGainMode::Track { ButtonVariant::Primary } else { ButtonVariant::Ghost })
                                                 .size(ButtonSize::Sm)
                                                 .theme(theme.to_button_theme())
@@ -264,7 +265,7 @@ impl PlayerView {
                                                 }))
                                         )
                                         .child(
-                                            Button::new("rg-mode-album", "Album")
+                                            Button::new("rg-mode-album", translations.settings_album)
                                                 .variant(if state.app.replay_gain_mode == ReplayGainMode::Album { ButtonVariant::Primary } else { ButtonVariant::Ghost })
                                                 .size(ButtonSize::Sm)
                                                 .theme(theme.to_button_theme())
@@ -287,11 +288,11 @@ impl PlayerView {
                                         .flex()
                                         .flex_1()
                                         .flex_col()
-                                        .child(div().text_sm().font_weight(FontWeight::BOLD).child("Compute ReplayGain"))
-                                        .child(div().text_xs().text_color(theme.text_secondary).child("Analyze and tag tracks lacking ReplayGain data"))
+                                        .child(div().text_sm().font_weight(FontWeight::BOLD).child(translations.settings_compute_replaygain))
+                                        .child(div().text_xs().text_color(theme.text_secondary).child(translations.settings_compute_replaygain_desc))
                                 )
                                 .child(
-                                     Button::new("replaygain-scan-btn", "Compute")
+                                     Button::new("replaygain-scan-btn", translations.settings_compute)
                                         .variant(ButtonVariant::Secondary)
                                         .size(ButtonSize::Sm)
                                         .disabled(scan_in_progress) // Also disable if library scan is running
@@ -322,7 +323,7 @@ impl PlayerView {
                     .flex()
                     .flex_col()
                     .gap_3()
-                    .child(div().text_sm().font_weight(FontWeight::BOLD).child("Audio Analysis"))
+                    .child(div().text_sm().font_weight(FontWeight::BOLD).child(translations.settings_audio_analysis))
                     .child(
                         div()
                         .flex()
@@ -341,11 +342,11 @@ impl PlayerView {
                                         .flex()
                                         .flex_1()
                                         .flex_col()
-                                        .child(div().text_sm().font_weight(FontWeight::BOLD).child("Compute Bliss Analysis"))
-                                        .child(div().text_xs().text_color(theme.text_secondary).child("Extract tempo, spectral features for music similarity"))
+                                        .child(div().text_sm().font_weight(FontWeight::BOLD).child(translations.settings_compute_bliss))
+                                        .child(div().text_xs().text_color(theme.text_secondary).child(translations.settings_compute_bliss_desc))
                                 )
                                 .child(
-                                     Button::new("bliss-scan-btn", "Compute")
+                                     Button::new("bliss-scan-btn", translations.settings_compute)
                                         .variant(ButtonVariant::Secondary)
                                         .size(ButtonSize::Sm)
                                         .disabled(scan_in_progress)
@@ -376,11 +377,11 @@ impl PlayerView {
                                         .flex()
                                         .flex_1()
                                         .flex_col()
-                                        .child(div().text_sm().font_weight(FontWeight::BOLD).child("Compute Waveform"))
-                                        .child(div().text_xs().text_color(theme.text_secondary).child("Generate visual waveforms for tracks"))
+                                        .child(div().text_sm().font_weight(FontWeight::BOLD).child(translations.settings_compute_waveform))
+                                        .child(div().text_xs().text_color(theme.text_secondary).child(translations.settings_compute_waveform_desc))
                                 )
                                 .child(
-                                     Button::new("waveform-scan-btn", "Compute")
+                                     Button::new("waveform-scan-btn", translations.settings_compute)
                                         .variant(ButtonVariant::Secondary)
                                         .size(ButtonSize::Sm)
                                         .disabled(scan_in_progress)
@@ -411,7 +412,7 @@ impl PlayerView {
                     .flex()
                     .flex_col()
                     .gap_3()
-                    .child(div().text_sm().font_weight(FontWeight::BOLD).child("Database Maintenance"))
+                    .child(div().text_sm().font_weight(FontWeight::BOLD).child(translations.settings_database_maintenance))
                     .child(
                         div()
                         .flex()
@@ -430,11 +431,11 @@ impl PlayerView {
                                         .flex()
                                         .flex_1()
                                         .flex_col()
-                                        .child(div().text_sm().font_weight(FontWeight::BOLD).child("Clean Database"))
-                                        .child(div().text_xs().text_color(theme.text_secondary).child("Remove entries for files that no longer exist on disk"))
+                                        .child(div().text_sm().font_weight(FontWeight::BOLD).child(translations.settings_clean_database))
+                                        .child(div().text_xs().text_color(theme.text_secondary).child(translations.settings_clean_database_desc))
                                 )
                                 .child(
-                                     Button::new("clean-db-btn", "Clean")
+                                     Button::new("clean-db-btn", translations.settings_clean)
                                         .variant(ButtonVariant::Secondary)
                                         .size(ButtonSize::Sm)
                                         .disabled(scan_in_progress)
@@ -461,10 +462,10 @@ impl PlayerView {
                         .flex()
                         .items_center()
                         .gap_3()
-                        .child(div().text_sm().child("Scanning in progress..."))
+                        .child(div().text_sm().child(translations.settings_scanning_in_progress))
                         .child(
                             div().text_xs().text_color(theme.text_secondary)
-                            .child(format!("{} tracks, {} albums found so far", scan_progress_tracks, scan_progress_albums))
+                            .child(translations.settings_scan_progress.replace("{}", &scan_progress_tracks.to_string()).replacen("{}", &scan_progress_albums.to_string(), 1))
                         )
                 )
             })

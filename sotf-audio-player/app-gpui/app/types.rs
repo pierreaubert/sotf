@@ -55,6 +55,8 @@ pub enum InputMode {
     SpinoramaSpeakerSearch,
     /// Modal shown on startup when library is empty
     EmptyLibraryPrompt,
+    /// Modal for editing a plugin node in the graph view
+    EditingPluginNode,
 }
 
 /// Active menu dropdown (if any)

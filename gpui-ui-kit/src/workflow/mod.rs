@@ -29,7 +29,7 @@ pub use node::{NodeContent, WorkflowNode};
 pub use port::{Port, PortDirection};
 pub use state::{
     BoxSelection, CanvasState, Connection, ConnectionDrag, ConnectionId, InteractionMode,
-    NodeDragState, NodeId, Position, SelectionState, ViewportState, WorkflowGraph,
+    LinkType, NodeDragState, NodeId, Position, SelectionState, ViewportState, WorkflowGraph,
     WorkflowNodeData,
 };
 pub use theme::WorkflowTheme;

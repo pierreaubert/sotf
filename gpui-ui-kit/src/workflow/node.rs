@@ -140,6 +140,24 @@ impl RenderOnce for WorkflowNode {
             .unwrap_or_else(|| WorkflowTheme::from_theme(&cx.theme()));
         let node_id = self.node_id;
 
+        // Calculate header height based on title length
+        // Allow 2 lines for long titles
+        let title_len = self.data.title.len();
+        let chars_per_line = (self.data.width / 8.0) as usize; // Approximate chars that fit per line
+        let needs_two_lines = title_len > chars_per_line;
+        let header_height = if needs_two_lines {
+            theme.node_header_height * 1.6 // Taller header for 2 lines
+        } else {
+            theme.node_header_height
+        };
+
+        // Adjust node height if title needs more space
+        let adjusted_height = if needs_two_lines {
+            self.data.height.max(header_height + 40.0) // Ensure minimum space for ports
+        } else {
+            self.data.height
+        };
+
         // Build input ports with scaled theme
         let input_ports: Vec<_> = (0..self.data.input_count)
             .map(|i| {
@@ -179,7 +197,7 @@ impl RenderOnce for WorkflowNode {
             .left(px(self.data.position.x))
             .top(px(self.data.position.y))
             .w(px(self.data.width))
-            .min_h(px(self.data.height))
+            .min_h(px(adjusted_height))
             .bg(theme.node_background)
             .border_2()
             .border_color(border_color)
@@ -204,33 +222,37 @@ impl RenderOnce for WorkflowNode {
             })
             // Node structure
             .child(
-                // Header - fixed height, text can wrap to 2 lines or be clipped
+                // Header - height adjusts for long text (up to 2 lines)
                 div()
                     .w_full()
-                    .h(px(theme.node_header_height))
-                    .overflow_hidden()
+                    .min_h(px(header_height))
                     .px_2()
                     .py_1()
                     .bg(theme.node_header)
                     .rounded_t(px(theme.node_border_radius - 2.0))
                     .text_size(px(theme.node_header_height * 0.45)) // Scale text with header
-                    .line_height(px(theme.node_header_height * 0.5))
+                    .line_height(px(theme.node_header_height * 0.55))
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(theme.node_text)
+                    // Allow text to wrap, limit to 2 lines with ellipsis
+                    .overflow_hidden()
+                    .text_ellipsis()
                     .child(self.data.title.clone()),
             )
             // Content area with ports
-            .child(
+            .child({
+                // Calculate content height using adjusted values
+                let content_height = adjusted_height - header_height - 4.0;
+                let padding = theme.node_content_padding;
+                let available = (content_height - 2.0 * padding).max(0.0);
+
                 div()
                     .w_full()
                     .flex()
                     .flex_row()
-                    .min_h(px(self.data.height - theme.node_header_height - 4.0))
+                    .min_h(px(content_height))
                     // Input ports column - use relative positioning to match hit_test.rs
                     .child({
-                        let content_height = self.data.height - theme.node_header_height - 4.0;
-                        let padding = theme.node_content_padding;
-                        let available = content_height - 2.0 * padding;
                         let input_count = self.data.input_count;
 
                         div()
@@ -264,9 +286,6 @@ impl RenderOnce for WorkflowNode {
                     )
                     // Output ports column - use relative positioning to match hit_test.rs
                     .child({
-                        let content_height = self.data.height - theme.node_header_height - 4.0;
-                        let padding = theme.node_content_padding;
-                        let available = content_height - 2.0 * padding;
                         let output_count = self.data.output_count;
 
                         div()
@@ -286,7 +305,7 @@ impl RenderOnce for WorkflowNode {
                                     .top(px(y - theme.port_radius))
                                     .child(port)
                             }))
-                    }),
-            )
+                    })
+            })
     }
 }

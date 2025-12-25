@@ -86,7 +86,7 @@ name = "sotf_audio_player_gpui"
 path = "lib.rs"
 
 [[bin]]
-name = "sotf-gpui"
+name = "SotF"
 path = "main.rs"
 
 [dev-dependencies]

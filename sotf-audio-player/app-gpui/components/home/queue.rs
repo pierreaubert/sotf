@@ -169,18 +169,23 @@ impl PlayerView {
                             div()
                                 .p_2()
                                 .child(
-                                    div()
-                                        .on_mouse_up(
-                                            MouseButton::Left,
-                                            move |_event, _window, cx| {
-                                                log::info!("[Queue] Magic Radio button clicked");
-                                                cx.dispatch_action(&crate::app::actions::FillQueueMagic);
-                                            },
-                                        )
-                                        .child(
-                                            Button::new("magic-radio-btn", "Magic Radio")
-                                                .full_width(true)
-                                        ),
+                                    Button::new("magic-radio-btn", "Magic Radio")
+                                        .full_width(true)
+                                        .build()
+                                        .on_click(cx.listener(|view, _event: &ClickEvent, _window, cx| {
+                                            log::info!("[Queue] Magic Radio button clicked");
+                                            view.state.update(cx, |state, _cx| {
+                                                match state.app.fill_queue_magic() {
+                                                    Ok(count) => {
+                                                        log::info!("[Queue] Magic Radio added {} tracks", count);
+                                                    }
+                                                    Err(e) => {
+                                                        log::error!("[Queue] Magic Radio error: {}", e);
+                                                    }
+                                                }
+                                            });
+                                            cx.notify();
+                                        })),
                                 ),
                         ),
                 )
