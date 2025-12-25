@@ -83,6 +83,11 @@ tui:
 gpui:
 	cargo run --release --bin sotf-gpui -p sotf-gpui
 
+gpui-release-macos:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	sh -x ./sotf-audio-player/macos/build-dmg.sh
+
 # ----------------------------------------------------------------------
 # AUDIO UNIT (macOS only)
 # ----------------------------------------------------------------------
@@ -315,9 +320,10 @@ build-static-local:
 			exit 1
 		fi
 	elif [ "$(uname)" = "Darwin" ]; then
-		cargo build --release --bin sotf-tui
-		cargo build --release --bin sotf-gpui
-		echo "✓ Built: target/release/sotf-tui"
+		RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --bin sotf-tui --target-dir ./target-static
+		echo "✓ Built: target-static/release/sotf-tui"
+		RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --bin sotf-gpui  --target-dir ./target-static
+		echo "✓ Built: target-static/release/sotf-gpui"
 		echo "Note: macOS binaries have limited static linking due to Apple restrictions"
 	else
 		echo "❌ Unsupported platform: $(uname)"

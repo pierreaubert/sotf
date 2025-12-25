@@ -18,7 +18,8 @@
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.5.5</string>
+    <!-- DO NOT TOUCH EDITED BY BUILD SCRIPT -->
+    <string>SOTF_VERSION</string>
 
     <!-- macOS Requirements -->
     <key>LSMinimumSystemVersion</key>

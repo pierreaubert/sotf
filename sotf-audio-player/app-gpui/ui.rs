@@ -58,6 +58,7 @@ impl PlayerView {
                         state.app.replay_gain_manager.update();
                         state.app.bliss_manager.update();
                         state.app.update_library_scan();
+                        state.app.update_toast();
                     });
 
                     // Infinite scroll check
@@ -1170,6 +1171,21 @@ impl PlayerView {
         cx.notify();
     }
 
+    fn fill_queue_magic(&mut self, _: &FillQueueMagic, _: &mut Window, cx: &mut Context<Self>) {
+        log::info!("[UI] FillQueueMagic action handler triggered");
+        self.state.update(cx, |state, _cx| {
+            match state.app.fill_queue_magic() {
+                Ok(count) => {
+                    log::info!("[UI] fill_queue_magic added {} tracks", count);
+                }
+                Err(e) => {
+                    log::error!("[UI] fill_queue_magic error: {}", e);
+                }
+            }
+        });
+        cx.notify();
+    }
+
     fn move_plugin_up(&mut self, _: &MovePluginUp, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             state.app.move_plugin_up(state.app.selected_plugin_index);
@@ -1957,6 +1973,7 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::cancel))
             .on_action(cx.listener(Self::remove_item))
             .on_action(cx.listener(Self::clear_queue))
+            .on_action(cx.listener(Self::fill_queue_magic))
             .on_action(cx.listener(Self::move_plugin_up))
             .on_action(cx.listener(Self::move_plugin_down))
             .on_action(cx.listener(Self::toggle_plugin))
@@ -2165,6 +2182,10 @@ impl Render for PlayerView {
             .when(
                 input_mode == crate::app::InputMode::EmptyLibraryPrompt,
                 |div| div.child(self.render_empty_library_prompt(cx)),
+            )
+            .when(
+                input_mode == crate::app::InputMode::EditingPluginNode,
+                |div| div.child(self.render_plugin_node_modal(cx)),
             )
             // Scan progress modal
             .child(self.render_scan_progress_modal(cx))

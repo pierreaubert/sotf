@@ -77,7 +77,7 @@ fn main() {
 
         cx.set_menus(vec![
             Menu {
-                name: "SotF Player".into(),
+                name: format!("SotF-v{}", env!("CARGO_PKG_VERSION")).into(),
                 items: vec![
                     MenuItem::action("About SotF Player", About),
                     MenuItem::separator(),

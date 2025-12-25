@@ -27,19 +27,25 @@ set -euo pipefail
 APP_NAME="SotF"
 BUNDLE_ID="org.spinorama.sotf"
 BINARY_NAME="sotf-gpui"
-VERSION="0.5.5"
 BUILD_NUMBER="1"
 
 # Paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-BUILD_DIR="$PROJECT_ROOT/target/release"
-DMG_DIR="$PROJECT_ROOT/target/dmg"
+
+# Extract version from root Cargo.toml
+VERSION=$(grep -m1 '^version = ' "$PROJECT_ROOT/Cargo.toml" | sed 's/version = "\(.*\)"/\1/')
+if [ -z "$VERSION" ]; then
+    echo "ERROR: Could not extract version from Cargo.toml"
+    exit 1
+fi
+BUILD_DIR="$PROJECT_ROOT/target-static/release"
+DMG_DIR="$PROJECT_ROOT/target-static/dmg"
 APP_BUNDLE="$DMG_DIR/$APP_NAME.app"
 
 # Command line options
-SIGN=false
-NOTARIZE=false
+SIGN=true
+NOTARIZE=true
 UNIVERSAL=false
 CLEAN=false
 
@@ -130,15 +136,15 @@ check_prerequisites() {
             log_error "APPLE_ID environment variable not set"
             exit 1
         fi
-        if [ -z "${APPLE_APP_PASSWORD:-}" ]; then
-            log_error "APPLE_APP_PASSWORD environment variable not set"
-            log_info "Create an app-specific password at https://appleid.apple.com"
-            exit 1
-        fi
-        if [ -z "${APPLE_TEAM_ID:-}" ]; then
-            log_error "APPLE_TEAM_ID environment variable not set"
-            exit 1
-        fi
+#        if [ -z "${APPLE_APP_PASSWORD:-}" ]; then
+#            log_error "APPLE_APP_PASSWORD environment variable not set"
+#            log_info "Create an app-specific password at https://appleid.apple.com"
+#            exit 1
+#        fi
+#        if [ -z "${APPLE_TEAM_ID:-}" ]; then
+#            log_error "APPLE_TEAM_ID environment variable not set"
+#            exit 1
+#        fi
     fi
 
     log_success "Prerequisites check passed"
@@ -166,8 +172,8 @@ build_binary() {
         rustup target add x86_64-apple-darwin aarch64-apple-darwin
 
         # Build for both architectures
-        cargo build --release --package sotf-gpui --target x86_64-apple-darwin
-        cargo build --release --package sotf-gpui --target aarch64-apple-darwin
+        RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --package sotf-gpui --target x86_64-apple-darwin --target-dir ./target-static
+        RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --package sotf-gpui --target aarch64-apple-darwin --target-dir ./target-static
 
         # Create universal binary
         mkdir -p "$BUILD_DIR"
@@ -178,7 +184,7 @@ build_binary() {
 
         log_success "Universal binary created"
     else
-        cargo build --release --package sotf-gpui
+        RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --package sotf-gpui --target-dir ./target-static
     fi
 
     if [ ! -f "$BUILD_DIR/$BINARY_NAME" ]; then
@@ -202,7 +208,7 @@ create_app_bundle() {
     cp "$BUILD_DIR/$BINARY_NAME" "$APP_BUNDLE/Contents/MacOS/"
 
     # Copy Info.plist and update version
-    sed -e "s/<string>0.5.3<\/string>/<string>$VERSION<\/string>/" \
+    sed -e "s/<string>SOTF_VERSION<\/string>/<string>$VERSION<\/string>/" \
         -e "s/<string>1<\/string>/<string>$BUILD_NUMBER<\/string>/" \
         "$SCRIPT_DIR/Info.plist" > "$APP_BUNDLE/Contents/Info.plist"
 
@@ -219,6 +225,91 @@ create_app_bundle() {
     fi
 
     log_success "App bundle created at $APP_BUNDLE"
+}
+
+# Bundle dynamic libraries from Homebrew and other non-system locations
+bundle_dylibs() {
+    log_info "Bundling dynamic libraries..."
+
+    local frameworks_dir="$APP_BUNDLE/Contents/Frameworks"
+    mkdir -p "$frameworks_dir"
+
+    local binary="$APP_BUNDLE/Contents/MacOS/$BINARY_NAME"
+
+    # Get list of non-system dylibs
+    local dylibs
+    dylibs=$(otool -L "$binary" | grep -v "^$binary" | awk '{print $1}' | grep -v "^/System" | grep -v "^/usr/lib" | grep -v "@rpath" | grep -v "@executable_path" || true)
+
+    if [ -z "$dylibs" ]; then
+        log_info "No external dylibs to bundle"
+        return
+    fi
+
+    # Process each dylib
+    for dylib in $dylibs; do
+        if [ ! -f "$dylib" ]; then
+            log_warning "Dylib not found: $dylib"
+            continue
+        fi
+
+        local dylib_name
+        dylib_name=$(basename "$dylib")
+        local dest="$frameworks_dir/$dylib_name"
+
+        log_info "Bundling: $dylib_name"
+
+        # Copy the dylib
+        cp "$dylib" "$dest"
+        chmod 755 "$dest"
+
+        # Update the reference in the main binary
+        install_name_tool -change "$dylib" "@executable_path/../Frameworks/$dylib_name" "$binary"
+
+        # Recursively process dependencies of this dylib
+        bundle_dylib_deps "$dest" "$frameworks_dir" "$binary"
+    done
+
+    log_success "Dynamic libraries bundled"
+}
+
+# Recursively bundle dependencies of a dylib
+bundle_dylib_deps() {
+    local dylib="$1"
+    local frameworks_dir="$2"
+    local main_binary="$3"
+
+    local deps
+    deps=$(otool -L "$dylib" | grep -v "^$dylib" | awk '{print $1}' | grep -v "^/System" | grep -v "^/usr/lib" | grep -v "@rpath" | grep -v "@executable_path" || true)
+
+    for dep in $deps; do
+        if [ ! -f "$dep" ]; then
+            continue
+        fi
+
+        local dep_name
+        dep_name=$(basename "$dep")
+        local dest="$frameworks_dir/$dep_name"
+
+        # Skip if already bundled
+        if [ -f "$dest" ]; then
+            # Just update the reference
+            install_name_tool -change "$dep" "@executable_path/../Frameworks/$dep_name" "$dylib"
+            continue
+        fi
+
+        log_info "  Bundling dependency: $dep_name"
+        cp "$dep" "$dest"
+        chmod 755 "$dest"
+
+        # Update reference in the dylib being processed
+        install_name_tool -change "$dep" "@executable_path/../Frameworks/$dep_name" "$dylib"
+
+        # Also fix the dylib's own install name
+        install_name_tool -id "@executable_path/../Frameworks/$dep_name" "$dest"
+
+        # Recurse
+        bundle_dylib_deps "$dest" "$frameworks_dir" "$main_binary"
+    done
 }
 
 # Create icns from image file
@@ -263,6 +354,19 @@ sign_app() {
     fi
 
     log_info "Signing application..."
+
+    # Sign all frameworks first (must sign inside-out)
+    if [ -d "$APP_BUNDLE/Contents/Frameworks" ]; then
+        for lib in "$APP_BUNDLE/Contents/Frameworks"/*.dylib; do
+            if [ -f "$lib" ]; then
+                log_info "Signing framework: $(basename "$lib")"
+                codesign --force --options runtime \
+                    --sign "$DEVELOPER_ID" \
+                    --timestamp \
+                    "$lib"
+            fi
+        done
+    fi
 
     # Sign the binary with hardened runtime
     codesign --force --options runtime \
@@ -375,8 +479,7 @@ notarize_dmg() {
     local submission_output
     submission_output=$(xcrun notarytool submit "$dmg_path" \
         --apple-id "$APPLE_ID" \
-        --password "$APPLE_APP_PASSWORD" \
-        --team-id "$APPLE_TEAM_ID" \
+        --keychain-profile "autoeq-notarization" \
         --wait 2>&1)
 
     echo "$submission_output"
@@ -417,6 +520,7 @@ main() {
     clean_build
     build_binary
     create_app_bundle
+    bundle_dylibs
     sign_app
     create_dmg
     notarize_dmg
