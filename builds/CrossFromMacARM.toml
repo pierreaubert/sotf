@@ -1,3 +1,8 @@
+[build]
+volumes = [
+    "/Users/pierre/src/autoeq:/Users/pierre/src/autoeq",
+]
+
 [build.env]
 passthrough = [
     "BROWSER_PATH",
@@ -23,7 +28,7 @@ dockerfile = "./builds/from_macos_arm/Dockerfile.aarch64-unknown-linux-musl"
 pre-build = []
 
 [target.x86_64-pc-windows-gnu]
-image = "ghcr.io/cross-rs/aarch64-pc-windows-gnu:main"
+image = "ghcr.io/cross-rs/x86_64-pc-windows-gnu:main"
 
 [target.aarch64-pc-windows-gnu]
 image = "ghcr.io/cross-rs/aarch64-pc-windows-gnu:main"

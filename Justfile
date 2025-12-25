@@ -88,6 +88,9 @@ gpui-release-macos:
 	set -euo pipefail
 	sh -x ./sotf-audio-player/macos/build-dmg.sh
 
+gpui-release-windows:
+	cd sotf-audio-player && cargo vcpkg build
+
 # ----------------------------------------------------------------------
 # AUDIO UNIT (macOS only)
 # ----------------------------------------------------------------------
@@ -341,6 +344,7 @@ install-rustup:
 	~/.cargo/bin/rustup default stable
 	~/.cargo/bin/cargo install just
 	~/.cargo/bin/cargo install cargo-wizard
+	~/.cargo/bin/cargo install cargo-vcpkg
 	~/.cargo/bin/cargo install cargo-llvm-cov
 	~/.cargo/bin/cargo install cargo-bininstall
 	~/.cargo/bin/cargo binstall cargo-nextest --secure
