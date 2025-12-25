@@ -43,9 +43,9 @@ BUILD_DIR="$PROJECT_ROOT/target-static/release"
 DMG_DIR="$PROJECT_ROOT/target-static/dmg"
 APP_BUNDLE="$DMG_DIR/$APP_NAME.app"
 
-# Command line options
-SIGN=true
-NOTARIZE=true
+# Command line options (defaults: unsigned build for local testing)
+SIGN=false
+NOTARIZE=false
 UNIVERSAL=false
 CLEAN=false
 
@@ -262,14 +262,38 @@ bundle_dylibs() {
         cp "$dylib" "$dest"
         chmod 755 "$dest"
 
+        # Remove existing signature to avoid warnings from install_name_tool
+        codesign --remove-signature "$dest" 2>/dev/null || true
+
+        # Fix the dylib's own install name
+        install_name_tool -id "@executable_path/../Frameworks/$dylib_name" "$dest"
+
         # Update the reference in the main binary
         install_name_tool -change "$dylib" "@executable_path/../Frameworks/$dylib_name" "$binary"
 
-        # Recursively process dependencies of this dylib
+        # Recursively process dependencies FIRST (before fixing references)
         bundle_dylib_deps "$dest" "$frameworks_dir" "$binary"
+
+        # Fix all internal references within this dylib AFTER bundling deps
+        fix_dylib_references "$dest"
     done
 
     log_success "Dynamic libraries bundled"
+}
+
+# Fix all non-system library references within a dylib to use @executable_path
+fix_dylib_references() {
+    local dylib="$1"
+
+    # Get all non-system dependencies
+    local deps
+    deps=$(otool -L "$dylib" | tail -n +2 | awk '{print $1}' | grep -v "^/System" | grep -v "^/usr/lib" | grep -v "@executable_path" | grep -v "@rpath" || true)
+
+    for dep in $deps; do
+        local dep_name
+        dep_name=$(basename "$dep")
+        install_name_tool -change "$dep" "@executable_path/../Frameworks/$dep_name" "$dylib"
+    done
 }
 
 # Recursively bundle dependencies of a dylib
@@ -301,14 +325,20 @@ bundle_dylib_deps() {
         cp "$dep" "$dest"
         chmod 755 "$dest"
 
+        # Remove existing signature to avoid warnings from install_name_tool
+        codesign --remove-signature "$dest" 2>/dev/null || true
+
+        # Fix the dylib's own install name
+        install_name_tool -id "@executable_path/../Frameworks/$dep_name" "$dest"
+
         # Update reference in the dylib being processed
         install_name_tool -change "$dep" "@executable_path/../Frameworks/$dep_name" "$dylib"
 
-        # Also fix the dylib's own install name
-        install_name_tool -id "@executable_path/../Frameworks/$dep_name" "$dest"
-
-        # Recurse
+        # Recurse FIRST (before fixing references)
         bundle_dylib_deps "$dest" "$frameworks_dir" "$main_binary"
+
+        # Fix all internal references within this dylib AFTER bundling deps
+        fix_dylib_references "$dest"
     done
 }
 

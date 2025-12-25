@@ -7425,7 +7425,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-audio-engine"
-version = "0.5.5"
+version = "0.5.7"
 dependencies = [
  "autoeq-env 0.2.4",
  "chrono",
@@ -7480,7 +7480,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-audio-player"
-version = "0.5.5"
+version = "0.5.7"
 dependencies = [
  "anyhow",
  "autoeq 0.2.258",
@@ -7525,7 +7525,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-audio-player-midi"
-version = "0.5.5"
+version = "0.5.7"
 dependencies = [
  "anyhow",
  "chrono",
@@ -7543,7 +7543,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-audio-plugins"
-version = "0.5.5"
+version = "0.5.7"
 dependencies = [
  "autoeq-env 0.2.4",
  "chrono",
@@ -7608,7 +7608,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-gpui"
-version = "0.5.5"
+version = "0.5.7"
 dependencies = [
  "anyhow",
  "autoeq 0.2.258",
@@ -7674,7 +7674,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-tui"
-version = "0.5.5"
+version = "0.5.7"
 dependencies = [
  "chrono",
  "clap 4.5.53",
