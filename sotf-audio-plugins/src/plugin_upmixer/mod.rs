@@ -130,6 +130,8 @@ pub struct UpmixerPlugin {
     /// Safety cap on upmixer output peak (in dB)
     param_safety_cap_db: ParameterId,
     safety_cap_db: f32,
+    /// Previous safety scale for smoothing between blocks
+    prev_safety_scale: f32,
 
     // Sub-harmonic synth state
     subharmonic_phase: f32,
@@ -460,6 +462,7 @@ impl UpmixerPlugin {
             hr_sharpen: 1.0,
             param_safety_cap_db: ParameterId::from("safety_cap_db"),
             safety_cap_db: default_safety_cap_db(),
+            prev_safety_scale: 1.0, // Start with no gain reduction
             param_decorrelation_mode: ParameterId::from("decorrelation_mode"),
             decorrelation_mode: 0, // Default to Velvet Noise
 
@@ -1657,6 +1660,20 @@ Upper bound for dialogue detection analysis.",
                     self.next_add_position = 0;
                 }
 
+                // Debug assertions to catch overlap-add state inconsistencies
+                debug_assert!(
+                    self.next_add_position <= self.fft_size * 2,
+                    "next_add_position {} exceeds max {} (2*fft_size)",
+                    self.next_add_position,
+                    self.fft_size * 2
+                );
+                debug_assert!(
+                    self.output_accumulator_fill <= self.fft_size * 3,
+                    "output_accumulator_fill {} exceeds max {} (3*fft_size)",
+                    self.output_accumulator_fill,
+                    self.fft_size * 3
+                );
+
                 // log::debug!(
                 //     "[UPMIXER] After drain: accum_fill={}, next_add_pos={}, output_pos={}",
                 //     self.output_accumulator_fill,
@@ -1703,13 +1720,19 @@ Upper bound for dialogue detection analysis.",
                         self.process_hr_block(hr_input, &mut hr_output);
 
                         // Overlay HR contribution onto the low-res output block
+                        // Apply synthesis window to HR output for proper phase alignment
+                        // This prevents comb filtering artifacts from mismatched overlap-add
                         let hr_mix = (self.hr_transient_env * self.hr_sharpen).clamp(0.0, 1.0);
                         if hr_mix > 0.0 {
                             for i in 0..self.hr_fft_size {
                                 let dst_idx = (center + i) * self.num_output_channels;
                                 let src_idx = i * self.num_output_channels;
+                                // Apply synthesis window (Hann) to taper HR contribution at edges
+                                let window_val = self.hr_window[i];
+                                let scaled_mix = hr_mix * window_val;
                                 for ch in 0..self.num_output_channels {
-                                    output_block[dst_idx + ch] += hr_output[src_idx + ch] * hr_mix;
+                                    output_block[dst_idx + ch] +=
+                                        hr_output[src_idx + ch] * scaled_mix;
                                 }
                             }
                         }
@@ -1866,6 +1889,20 @@ Upper bound for dialogue detection analysis.",
             if self.output_accumulator_fill == 0 {
                 self.next_add_position = 0;
             }
+
+            // Debug assertions to catch overlap-add state inconsistencies
+            debug_assert!(
+                self.next_add_position <= self.fft_size * 2,
+                "next_add_position {} exceeds max {} (2*fft_size)",
+                self.next_add_position,
+                self.fft_size * 2
+            );
+            debug_assert!(
+                self.output_accumulator_fill <= self.fft_size * 3,
+                "output_accumulator_fill {} exceeds max {} (3*fft_size)",
+                self.output_accumulator_fill,
+                self.fft_size * 3
+            );
 
             // log::debug!(
             //     "[UPMIXER] After final drain: accum_fill={}, next_add_pos={}, total_output={}",

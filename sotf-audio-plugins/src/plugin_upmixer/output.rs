@@ -14,7 +14,7 @@ impl UpmixerPlugin {
         // Applying window again here would break COLA and cause amplitude modulation artifacts
         // Safety cap: optionally reduce overall gain so that the block peak does not
         // exceed safety_cap_db (in dB) above unit amplitude.
-        let mut safety_scale = 1.0_f32;
+        let mut target_safety_scale = 1.0_f32;
         if self.safety_cap_db > 0.0 {
             let mut max_abs = 0.0_f32;
             for ch in 0..self.num_output_channels {
@@ -30,10 +30,23 @@ impl UpmixerPlugin {
                 let cap_linear = 10.0_f32.powf(self.safety_cap_db / 20.0);
                 let effective_peak = max_abs * combined_scale;
                 if effective_peak > cap_linear {
-                    safety_scale = cap_linear / effective_peak;
+                    target_safety_scale = cap_linear / effective_peak;
                 }
             }
         }
+
+        // Smooth safety scale changes to avoid clicks and pumping artifacts.
+        // Use asymmetric smoothing: fast attack (protect against clipping) but slow release.
+        let attack_coeff = 0.5_f32; // Fast attack to catch peaks
+        let release_coeff = 0.05_f32; // Slow release to avoid pumping
+        let smoothing = if target_safety_scale < self.prev_safety_scale {
+            attack_coeff // Going down (reducing gain) - fast
+        } else {
+            release_coeff // Going up (restoring gain) - slow
+        };
+        let safety_scale =
+            self.prev_safety_scale + smoothing * (target_safety_scale - self.prev_safety_scale);
+        self.prev_safety_scale = safety_scale;
 
         let final_scale = combined_scale * safety_scale;
 

@@ -67,7 +67,7 @@ impl UpmixerPlugin {
                 let prev_smooth_clamped = prev_smooth.max(1e-9);
                 let ratio = (energy / prev_smooth_clamped).max(0.0);
 
-                let attack_e = 0.5_f32;
+                let attack_e = 0.25_f32; // Slower energy tracking to reduce pumping
                 let release_e = 0.1_f32;
                 let alpha_e = if energy > prev_smooth {
                     attack_e
@@ -84,7 +84,7 @@ impl UpmixerPlugin {
                 };
 
                 let prev_env = self.hr_transient_env;
-                let attack_env = 0.8_f32;
+                let attack_env = 0.4_f32; // Slower envelope attack to reduce surround modulation
                 let release_env = 0.3_f32;
                 let alpha_env = if transient_target > prev_env {
                     attack_env

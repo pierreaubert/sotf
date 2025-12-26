@@ -288,7 +288,8 @@ impl UpmixerPlugin {
                 //
                 // Dialogue-adaptive decorrelation: reduce decorrelation for dialogue
                 // to keep vocals coherent and prevent metallic artifacts
-                let base_decorr_strength = (1.0 - self.hr_transient_env * 0.85).max(0.15);
+                // Reduced transient impact (0.5 instead of 0.85) to prevent audible surround pumping
+                let base_decorr_strength = (1.0 - self.hr_transient_env * 0.5).max(0.3);
                 let dialogue_decorr_reduction = 1.0 - (self.dialogue_probability * 0.7); // Reduce by up to 70%
                 let decorrelation_strength =
                     (base_decorr_strength * dialogue_decorr_reduction).max(0.05);
