@@ -417,6 +417,13 @@ pub enum PluginSettings {
         voice_freq_min_hz: f64,
         #[serde(default = "default_upmixer_voice_freq_max_hz")]
         voice_freq_max_hz: f64,
+        // Diagnostic bypass parameters
+        #[serde(default)] // false
+        bypass_decorrelation: bool,
+        #[serde(default)] // false
+        bypass_transient_detection: bool,
+        #[serde(default)] // false
+        bypass_all_processing: bool,
     },
     Compressor {
         threshold_db: f64,
@@ -569,6 +576,9 @@ impl PluginSettings {
                 dialogue_weight,
                 voice_freq_min_hz,
                 voice_freq_max_hz,
+                bypass_decorrelation,
+                bypass_transient_detection,
+                bypass_all_processing,
             } => PluginConfig::new(
                 "upmixer",
                 json!({
@@ -604,6 +614,9 @@ impl PluginSettings {
                     "dialogue_weight": dialogue_weight,
                     "voice_freq_min_hz": voice_freq_min_hz,
                     "voice_freq_max_hz": voice_freq_max_hz,
+                    "bypass_decorrelation": bypass_decorrelation,
+                    "bypass_transient_detection": bypass_transient_detection,
+                    "bypass_all_processing": bypass_all_processing,
                 }),
             ),
             Self::Compressor {
@@ -794,6 +807,10 @@ impl PluginSettings {
                 dialogue_weight: upmixer_specs::DIALOGUE_WEIGHT_DEFAULT as f64,
                 voice_freq_min_hz: upmixer_specs::VOICE_FREQ_MIN_HZ_DEFAULT as f64,
                 voice_freq_max_hz: upmixer_specs::VOICE_FREQ_MAX_HZ_DEFAULT as f64,
+                // Diagnostic bypass
+                bypass_decorrelation: false,
+                bypass_transient_detection: false,
+                bypass_all_processing: false,
             },
             PluginType::Compressor => Self::Compressor {
                 threshold_db: -20.0,

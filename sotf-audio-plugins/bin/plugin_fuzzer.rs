@@ -723,6 +723,10 @@ impl PluginFuzzer for UpmixerFuzzer {
             dialogue_weight: 0.4,
             voice_freq_min_hz: 500.0,
             voice_freq_max_hz: 3000.0,
+            // Diagnostic bypass parameters
+            bypass_decorrelation: false,
+            bypass_transient_detection: false,
+            bypass_all_processing: false,
         };
 
         let desc = format!(

@@ -20,6 +20,8 @@ impl UpmixerPlugin {
         assert_eq!(input.len(), self.fft_size * 2); // stereo interleaved
         assert_eq!(output.len(), self.fft_size * self.num_output_channels); // variable channels
 
+        // (Bypass logic moved to UpmixerPlugin::process)
+
         /*
                 log::trace!(
                     "[UPMIXER] process_fft_block() start: fft_size={}, num_output_channels={}",
@@ -32,7 +34,10 @@ impl UpmixerPlugin {
         self.apply_window_and_forward_fft(input);
 
         // High-frequency transient detector for HR direct-path crossfade.
-        if self.enable_hr_direct {
+        // Diagnostic bypass: skip transient detection if bypass is enabled
+        if self.bypass_transient_detection {
+            self.hr_transient_env = 0.0;
+        } else if self.enable_hr_direct {
             let spectrum_size = self.fft_size / 2 + 1;
             let freq_per_bin = self.sample_rate as f32 / self.fft_size as f32;
             let hf_start = self.bandpass_hz.max(1000.0);

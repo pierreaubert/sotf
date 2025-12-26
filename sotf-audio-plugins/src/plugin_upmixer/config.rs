@@ -130,6 +130,19 @@ pub fn default_voice_freq_max_hz() -> f32 {
     3000.0
 }
 
+// Diagnostic bypass parameters (for isolating audio artifacts)
+pub fn default_bypass_decorrelation() -> bool {
+    false
+}
+
+pub fn default_bypass_transient_detection() -> bool {
+    false
+}
+
+pub fn default_bypass_all_processing() -> bool {
+    false
+}
+
 /// Configuration parameters for UpmixerPlugin
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpmixerPluginParams {
@@ -256,4 +269,20 @@ pub struct UpmixerPluginParams {
     /// Voice frequency range maximum in Hz (2000-5000 Hz, default 3000 Hz)
     #[serde(default = "default_voice_freq_max_hz")]
     pub voice_freq_max_hz: f32,
+
+    // Diagnostic bypass parameters (for isolating audio artifacts)
+    /// Bypass decorrelation filters (sets all to identity/no phase change)
+    /// Use this to test if decorrelation is causing audio artifacts
+    #[serde(default = "default_bypass_decorrelation")]
+    pub bypass_decorrelation: bool,
+
+    /// Bypass transient detection (forces hr_transient_env to 0.0)
+    /// Use this to test if transient-adaptive processing is causing artifacts
+    #[serde(default = "default_bypass_transient_detection")]
+    pub bypass_transient_detection: bool,
+
+    /// Bypass ALL frequency domain processing - pure stereo pass-through
+    /// Use this to test if the FFT/IFFT or overlap-add is causing artifacts
+    #[serde(default = "default_bypass_all_processing")]
+    pub bypass_all_processing: bool,
 }

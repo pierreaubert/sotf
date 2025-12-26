@@ -193,6 +193,14 @@ pub struct UpmixerPlugin {
     param_voice_freq_max_hz: ParameterId,
     voice_freq_max_hz: f32,
 
+    // Diagnostic bypass parameters
+    param_bypass_decorrelation: ParameterId,
+    bypass_decorrelation: bool,
+    param_bypass_transient_detection: ParameterId,
+    bypass_transient_detection: bool,
+    param_bypass_all_processing: ParameterId,
+    bypass_all_processing: bool,
+
     // Decorrelation
     decorrelation_filter_left: Vec<Complex<f32>>,
     decorrelation_filter_right: Vec<Complex<f32>>,
@@ -499,6 +507,14 @@ impl UpmixerPlugin {
             param_voice_freq_max_hz: ParameterId::from("voice_freq_max_hz"),
             voice_freq_max_hz: default_voice_freq_max_hz(),
 
+            // Diagnostic bypass parameters
+            param_bypass_decorrelation: ParameterId::from("bypass_decorrelation"),
+            bypass_decorrelation: default_bypass_decorrelation(),
+            param_bypass_transient_detection: ParameterId::from("bypass_transient_detection"),
+            bypass_transient_detection: default_bypass_transient_detection(),
+            param_bypass_all_processing: ParameterId::from("bypass_all_processing"),
+            bypass_all_processing: default_bypass_all_processing(),
+
             subharmonic_phase: 0.0,
             subharmonic_envelope: 0.0,
 
@@ -627,6 +643,11 @@ impl UpmixerPlugin {
         plugin.dialogue_weight = params.dialogue_weight.clamp(0.0, 1.0);
         plugin.voice_freq_min_hz = params.voice_freq_min_hz.clamp(200.0, 800.0);
         plugin.voice_freq_max_hz = params.voice_freq_max_hz.clamp(2000.0, 5000.0);
+
+        // Diagnostic bypass parameters
+        plugin.bypass_decorrelation = params.bypass_decorrelation;
+        plugin.bypass_transient_detection = params.bypass_transient_detection;
+        plugin.bypass_all_processing = params.bypass_all_processing;
 
         plugin
     }
@@ -1285,6 +1306,21 @@ Upper bound for dialogue detection analysis.",
         {
             self.voice_freq_max_hz = val.clamp(2000.0, 5000.0);
             return Ok(());
+        } else if id == self.param_bypass_decorrelation {
+            if let Some(enable) = value.as_bool() {
+                self.bypass_decorrelation = enable;
+                return Ok(());
+            }
+        } else if id == self.param_bypass_transient_detection {
+            if let Some(enable) = value.as_bool() {
+                self.bypass_transient_detection = enable;
+                return Ok(());
+            }
+        } else if id == self.param_bypass_all_processing {
+            if let Some(enable) = value.as_bool() {
+                self.bypass_all_processing = enable;
+                return Ok(());
+            }
         }
         Err(format!("Unknown parameter: {}", id))
     }
@@ -1377,6 +1413,12 @@ Upper bound for dialogue detection analysis.",
             Some(ParameterValue::Float(self.voice_freq_min_hz))
         } else if id == &self.param_voice_freq_max_hz {
             Some(ParameterValue::Float(self.voice_freq_max_hz))
+        } else if id == &self.param_bypass_decorrelation {
+            Some(ParameterValue::Bool(self.bypass_decorrelation))
+        } else if id == &self.param_bypass_transient_detection {
+            Some(ParameterValue::Bool(self.bypass_transient_detection))
+        } else if id == &self.param_bypass_all_processing {
+            Some(ParameterValue::Bool(self.bypass_all_processing))
         } else {
             None
         }
@@ -1474,6 +1516,33 @@ Upper bound for dialogue detection analysis.",
         output: &mut [f32],
         context: &ProcessContext,
     ) -> PluginResult<()> {
+        // If bypass is enabled, just copy stereo input to output and return
+        if self.bypass_all_processing {
+            let num_frames = context.num_frames;
+            for i in 0..num_frames {
+                let left = input[i * 2];
+                let right = input[i * 2 + 1];
+
+                // Map stereo to output channels:
+                // Channel 0: Left front
+                // Channel 1: Right front
+                // Channel 2: Center (L+R)/2
+                // All other channels: silence
+                output[i * self.num_output_channels + 0] = left; // FL
+                if self.num_output_channels > 1 {
+                    output[i * self.num_output_channels + 1] = right; // FR
+                }
+                if self.num_output_channels > 2 {
+                    output[i * self.num_output_channels + 2] = (left + right) * 0.5; // C
+                }
+                // Fill remaining channels with silence
+                for ch in 3..self.num_output_channels {
+                    output[i * self.num_output_channels + ch] = 0.0;
+                }
+            }
+            return Ok(());
+        }
+
         // Verify input size
         let input_samples = context.num_frames * 2; // stereo
         if input.len() != input_samples {

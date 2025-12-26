@@ -2264,6 +2264,9 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             hr_sharpen,
             safety_cap_db,
             decorrelation_mode,
+            bypass_decorrelation,
+            bypass_transient_detection,
+            bypass_all_processing,
             ..
         } => vec![
             ("Speaker Config".to_string(), speaker_config.clone()),
@@ -2309,6 +2312,18 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
                     1 => "LFO Phase".to_string(),
                     _ => "Unknown".to_string(),
                 },
+            ),
+            (
+                "Bypass Decorrelation".to_string(),
+                if *bypass_decorrelation { "On" } else { "Off" }.to_string(),
+            ),
+            (
+                "Bypass Transient Det.".to_string(),
+                if *bypass_transient_detection { "On" } else { "Off" }.to_string(),
+            ),
+            (
+                "Bypass All Processing".to_string(),
+                if *bypass_all_processing { "On" } else { "Off" }.to_string(),
             ),
         ],
         PluginSettings::Compressor {

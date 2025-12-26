@@ -1565,6 +1565,9 @@ impl App {
                     hr_sharpen,
                     safety_cap_db,
                     decorrelation_mode,
+                    bypass_decorrelation,
+                    bypass_transient_detection,
+                    bypass_all_processing,
                     ..
                 } => {
                     match param_idx {
@@ -1618,6 +1621,18 @@ impl App {
                             if delta.abs() > 0.1 {
                                 *decorrelation_mode = if *decorrelation_mode == 0 { 1 } else { 0 };
                             }
+                        }
+                        15 => {
+                            // Toggle bypass_decorrelation (diagnostic)
+                            *bypass_decorrelation = !*bypass_decorrelation;
+                        }
+                        16 => {
+                            // Toggle bypass_transient_detection (diagnostic)
+                            *bypass_transient_detection = !*bypass_transient_detection;
+                        }
+                        17 => {
+                            // Toggle bypass_all_processing (diagnostic - bypasses all FFT)
+                            *bypass_all_processing = !*bypass_all_processing;
                         }
                         _ => return false,
                     }
@@ -2969,7 +2984,7 @@ fn get_param_count(settings: &sotf_audio_player::PluginSettings) -> usize {
     match settings {
         PluginSettings::EQ { filters } => filters.len() * 4, // freq, q, gain, type for each filter
         PluginSettings::Gain { .. } => 1,                    // gain_db
-        PluginSettings::Upmixer { .. } => 15, // speaker_config, gains (5), lfe_cutoff_hz, stereo_width, bandpass_hz, subharmonic (2), hr (2), safety_cap_db, decorrelation_mode
+        PluginSettings::Upmixer { .. } => 18, // speaker_config, gains (5), lfe_cutoff_hz, stereo_width, bandpass_hz, subharmonic (2), hr (2), safety_cap_db, decorrelation_mode, bypass_decorrelation, bypass_transient_detection, bypass_all_processing
         PluginSettings::Compressor { .. } => 10, // threshold, ratio, attack, release, knee, makeup_gain, mix, auto_makeup, link_channels, sidechain_hpf_hz
         PluginSettings::Limiter { .. } => 3,     // threshold, release, mix
         PluginSettings::Gate { .. } => 7, // threshold, ratio, attack, release, mix, link_channels, sidechain_hpf_hz

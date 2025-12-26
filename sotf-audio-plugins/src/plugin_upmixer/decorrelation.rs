@@ -9,6 +9,16 @@ use rustfft::num_complex::Complex;
 impl UpmixerPlugin {
     /// Generate decorrelation filters based on selected mode
     pub(super) fn generate_decorrelation_filters(&mut self) {
+        // Diagnostic bypass: set all filters to identity (no phase change)
+        if self.bypass_decorrelation {
+            let len = self.decorrelation_filter_left.len();
+            for i in 0..len {
+                self.decorrelation_filter_left[i] = Complex::new(1.0, 0.0);
+                self.decorrelation_filter_right[i] = Complex::new(1.0, 0.0);
+            }
+            return;
+        }
+
         if self.decorrelation_mode == 1 {
             self.generate_lfo_base_phases();
             self.update_lfo_decorrelation();
@@ -97,6 +107,11 @@ impl UpmixerPlugin {
 
     /// Update LFO-based decorrelation filters per frame
     pub(super) fn update_lfo_decorrelation(&mut self) {
+        // Diagnostic bypass: skip update if bypass is enabled
+        if self.bypass_decorrelation {
+            return;
+        }
+
         if self.sample_rate == 0 || self.fft_size == 0 {
             return;
         }
@@ -206,6 +221,20 @@ impl UpmixerPlugin {
                 time_buf[pos] = val;
 
                 cursor += grid_size;
+            }
+
+            // Apply fade-out window to avoid truncation artifacts
+            // Without this, the sharp cutoff at seq_len creates high-frequency
+            // ringing and metallic/scratchy artifacts in the frequency domain
+            let fade_len = seq_len / 4; // Fade last 25%
+            if fade_len > 0 {
+                let fade_start = seq_len.saturating_sub(fade_len);
+                for i in fade_start..seq_len {
+                    let t = (i - fade_start) as f32 / fade_len as f32;
+                    // Hann fade-out: cos^2 taper for smooth transition
+                    let fade = 0.5 * (1.0 + (std::f32::consts::PI * t).cos());
+                    time_buf[i] *= fade;
+                }
             }
 
             // FFT to get frequency response
