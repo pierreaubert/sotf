@@ -256,6 +256,12 @@ impl UpmixerPlugin {
                 }
             }
 
+            // DC and Nyquist bins must be real (no phase shift)
+            // This prevents low-frequency rumble and high-frequency artifacts
+            output_fft[0] = Complex::new(1.0, 0.0);
+            let nyquist_idx = output_fft.len() - 1;
+            output_fft[nyquist_idx] = Complex::new(1.0, 0.0);
+
             // Store in decorrelation filters
             let target = if ch == 0 {
                 &mut self.decorrelation_filter_left
