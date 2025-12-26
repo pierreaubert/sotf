@@ -356,4 +356,4 @@ match scatter(&x, &y).build() {
 
 ## License
 
-ISC
+- [ISC License](https://en.wikipedia.org/wiki/ISC_license)

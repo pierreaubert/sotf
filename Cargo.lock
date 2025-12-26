@@ -659,7 +659,7 @@ dependencies = [
 
 [[package]]
 name = "autoeq"
-version = "0.2.258"
+version = "0.2.257"
 dependencies = [
  "anyhow",
  "autoeq-cea2034 0.2.191",
@@ -3434,7 +3434,7 @@ dependencies = [
 name = "gpui-px"
 version = "0.1.17"
 dependencies = [
- "autoeq 0.2.258",
+ "autoeq 0.2.257",
  "gpui",
  "gpui-d3rs",
  "gpui-ui-kit",
@@ -7483,7 +7483,7 @@ name = "sotf-audio-player"
 version = "0.5.7"
 dependencies = [
  "anyhow",
- "autoeq 0.2.258",
+ "autoeq 0.2.257",
  "autoeq-cea2034 0.2.191",
  "autoeq-env 0.2.4",
  "bliss-audio",
@@ -7611,7 +7611,7 @@ name = "sotf-gpui"
 version = "0.5.7"
 dependencies = [
  "anyhow",
- "autoeq 0.2.258",
+ "autoeq 0.2.257",
  "chrono",
  "clap 4.5.53",
  "cpal",

@@ -647,4 +647,4 @@ A showcase is provided that demonstrate the capabilities of the library. Here ar
 
 ## License
 
-ISC (similar to Apaches2 or MIT)
+Permissive [ISC License](https://en.wikipedia.org/wiki/ISC_license)

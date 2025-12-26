@@ -127,7 +127,7 @@ sotf-head-scanner = { path = "sotf-head-scanner", version = "0.1" }
 # We use aubio-static to avoid runtime aubio dependency, and our own Symphonia decoder
 # update-aubio-bindings uses bindgen to generate bindings (needed for macOS which has no prebuilt)
 bliss-audio = { version = "0.11", default-features = false, features = ["aubio-static", "update-aubio-bindings"] }
-cpal = "0.16.0"
+cpal = "0.17.0"
 ebur128 = "0.1.10"
 hound = "3.5"
 id3 = "1.16"
