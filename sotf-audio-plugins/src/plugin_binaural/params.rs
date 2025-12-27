@@ -5,7 +5,7 @@ fn default_fft_size() -> usize {
     2048
 }
 
-fn default_sofa_path() -> String {
+fn default_hrtf_path() -> String {
     "".to_string()
 }
 
@@ -40,9 +40,9 @@ fn default_lfe_level() -> f32 {
 /// Configuration parameters for BinauralDecoderPlugin
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BinauralDecoderParams {
-    /// Path to SOFA file containing HRTFs
-    #[serde(default = "default_sofa_path")]
-    pub sofa_file: String,
+    /// Path to HRTF file containing HRTFs (.sofa or .polar)
+    #[serde(default = "default_hrtf_path")]
+    pub hrtf_file: String,
     /// FFT size for convolution (must be power of 2)
     #[serde(default = "default_fft_size")]
     pub fft_size: usize,

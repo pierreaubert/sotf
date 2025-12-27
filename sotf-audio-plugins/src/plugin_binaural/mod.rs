@@ -32,7 +32,7 @@ pub use self::room::{Reflection, RoomModel};
 // Plugin Implementation
 // ============================================================================
 
-/// Binaural decoder using HRTFs from SOFA file
+/// Binaural decoder using HRTFs from a file
 pub struct BinauralDecoderPlugin {
     /// Number of input channels
     input_channels: usize,
@@ -43,10 +43,10 @@ pub struct BinauralDecoderPlugin {
     /// Sample rate
     sample_rate: u32,
 
-    /// SOFA file containing HRTFs
-    sofa: Option<SofaFile>,
-    /// Path to SOFA file
-    sofa_path: Option<PathBuf>,
+    /// HRTF data store
+    hrtf_data: Option<SofaFile>,
+    /// Path to HRTF file
+    hrtf_path: Option<PathBuf>,
 
     /// Speaker configuration for input channels
     speaker_config: &'static SpeakerConfig,
@@ -128,7 +128,7 @@ impl BinauralDecoderPlugin {
     pub fn new(
         input_channels: usize,
         fft_size: usize,
-        sofa_path: Option<PathBuf>,
+        hrtf_path: Option<PathBuf>,
         enable_optimization: bool,
         externalization: f32,
         near_field_strength: f32,
@@ -148,8 +148,8 @@ impl BinauralDecoderPlugin {
             .checked_mul(input_channels)
             .expect("Buffer size overflow: hop_size * input_channels too large");
         // For real FFT: freq_size = fft_size/2 + 1, store 2 ears × freq_size bins
-        let freq_size_check = fft_size / 2 + 1;
-        let _hrtf_buffer_per_channel = freq_size_check
+        let freq_size = fft_size / 2 + 1;
+        let _hrtf_buffer_per_channel = freq_size
             .checked_mul(2)
             .expect("Buffer size overflow: freq_size * 2 too large");
         let output_acc_size = fft_size
@@ -167,8 +167,7 @@ impl BinauralDecoderPlugin {
         let mut planner = RealFftPlanner::<f32>::new();
         let fft_r2c = planner.plan_fft_forward(fft_size);
         let fft_c2r = planner.plan_fft_inverse(fft_size);
-        let freq_size = fft_size / 2 + 1;
-
+        
         let speaker_config = get_speaker_config_by_channels(input_channels)
             .unwrap_or_else(|| {
                 log::warn!(
@@ -202,8 +201,8 @@ impl BinauralDecoderPlugin {
             hop_size,
             sample_rate: 48000, // Will be set in initialize()
 
-            sofa: None,
-            sofa_path,
+            hrtf_data: None,
+            hrtf_path,
             speaker_config,
 
             fft_r2c,
@@ -251,16 +250,16 @@ impl BinauralDecoderPlugin {
 
     /// Create from parameters
     pub fn from_params(params: BinauralDecoderParams) -> Self {
-        let sofa_path = if params.sofa_file.is_empty() {
+        let hrtf_path = if params.hrtf_file.is_empty() {
             None
         } else {
-            Some(PathBuf::from(params.sofa_file))
+            Some(PathBuf::from(params.hrtf_file))
         };
 
         Self::new(
             params.input_channels,
             params.fft_size,
-            sofa_path,
+            hrtf_path,
             params.enable_optimization,
             params.externalization,
             params.near_field_strength,
@@ -272,15 +271,38 @@ impl BinauralDecoderPlugin {
         )
     }
 
-    /// Load SOFA file and prepare HRTFs
-    pub fn load_sofa(&mut self, path: PathBuf) -> Result<(), String> {
-        log::debug!("[BinauralDecoder] Loading SOFA file: {:?}", path);
+    /// Load HRTF data from a file and prepare filters
+    pub fn load_hrtf(&mut self, path: PathBuf) -> Result<(), String> {
+        log::debug!("[BinauralDecoder] Loading HRTF file: {:?}", path);
 
-        let mut sofa =
-            SofaFile::load(&path).map_err(|e| BinauralError::SofaLoadError(e).to_string())?;
+        let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+
+        let mut sofa = match extension {
+            "hrtfdb" => SofaFile::load_sqlite(&path)
+                .map_err(|e| BinauralError::SofaLoadError(e).to_string()),
+            "sofa" => {
+                #[cfg(feature = "sofa_support")]
+                {
+                    SofaFile::load(&path).map_err(|e| BinauralError::SofaLoadError(e).to_string())
+                }
+                #[cfg(not(feature = "sofa_support"))]
+                {
+                    Err(BinauralError::SofaLoadError(
+                        "SOFA support not enabled in this build. Please use a .hrtfdb file."
+                            .to_string(),
+                    )
+                    .to_string())
+                }
+            }
+            _ => Err(BinauralError::SofaLoadError(format!(
+                "Unsupported HRTF file extension: '{}'",
+                extension
+            ))
+            .to_string()),
+        }?;
 
         log::info!(
-            "[BinauralDecoder] SOFA loaded: {} measurements, IR length: {}, sample rate: {} Hz",
+            "[BinauralDecoder] HRTF data loaded: {} measurements, IR length: {}, sample rate: {} Hz",
             sofa.num_measurements,
             sofa.ir_length,
             sofa.sample_rate
@@ -290,7 +312,7 @@ impl BinauralDecoderPlugin {
         let sample_rate_diff = (sofa.sample_rate - self.sample_rate as f32).abs();
         if sample_rate_diff > 1.0 {
             log::info!(
-                "[BinauralDecoder] Resampling SOFA from {} Hz to {} Hz",
+                "[BinauralDecoder] Resampling HRTF data from {} Hz to {} Hz",
                 sofa.sample_rate,
                 self.sample_rate
             );
@@ -298,13 +320,13 @@ impl BinauralDecoderPlugin {
         }
 
         // Store SOFA first so prepare_hrtf_filters can use it
-        self.sofa = Some(sofa);
-        self.sofa_path = Some(path);
+        self.hrtf_data = Some(sofa);
+        self.hrtf_path = Some(path);
 
         // Prepare HRTF filters for each speaker
         self.prepare_hrtf_filters()?;
 
-        log::debug!("[BinauralDecoder] SOFA file loaded and HRTFs prepared");
+        log::debug!("[BinauralDecoder] HRTF file loaded and filters prepared");
 
         Ok(())
     }
@@ -370,7 +392,7 @@ impl BinauralDecoderPlugin {
 
     /// Prepare HRTF filters in frequency domain for all speakers
     fn prepare_hrtf_filters(&mut self) -> Result<(), String> {
-        let sofa = self.sofa.as_ref().ok_or("SOFA file not loaded")?;
+        let sofa = self.hrtf_data.as_ref().ok_or("HRTF data not loaded")?;
 
         for (i, speaker) in self.speaker_config.speakers.iter().enumerate() {
             if speaker.is_lfe {
@@ -791,7 +813,7 @@ impl Plugin for BinauralDecoderPlugin {
             version: "1.1.0".to_string(),
             author: "AutoEQ".to_string(),
             description: format!(
-                "Converts {}-channel audio to binaural stereo using HRTFs from SOFA file",
+                "Converts {}-channel audio to binaural stereo using HRTFs from a file",
                 self.input_channels
             ),
         }
@@ -836,7 +858,7 @@ impl Plugin for BinauralDecoderPlugin {
                 && (0.0..=1.0).contains(&v)
             {
                 self.near_field_strength = v;
-                if self.sofa.is_some() {
+                if self.hrtf_data.is_some() {
                     self.prepare_hrtf_filters()
                         .map_err(|e| format!("Failed to update filters: {}", e))?;
                 }
@@ -846,10 +868,10 @@ impl Plugin for BinauralDecoderPlugin {
             && let Some(v) = value.as_bool()
         {
             self.diffuse_field_eq = v;
-            if v && self.sofa.is_some() {
+            if v && self.hrtf_data.is_some() {
                 self.diffuse_field_eq_filter = Some(
                     filter::compute_diffuse_field_eq(
-                        self.sofa.as_ref().unwrap(),
+                        self.hrtf_data.as_ref().unwrap(),
                         self.fft_size,
                         self.sample_rate,
                         &self.fft_r2c,
@@ -891,11 +913,11 @@ impl Plugin for BinauralDecoderPlugin {
         self.lfe_lowpass_filter = filter;
         self.lfe_gain = gain;
 
-        if let Some(path) = self.sofa_path.clone() {
-            self.load_sofa(path)
-                .map_err(|e| format!("Failed to load SOFA file: {}", e))?;
+        if let Some(path) = self.hrtf_path.clone() {
+            self.load_hrtf(path)
+                .map_err(|e| format!("Failed to load HRTF file: {}", e))?;
         } else {
-            log::debug!("[BinauralDecoder] No SOFA file specified, plugin will pass through audio");
+            log::debug!("[BinauralDecoder] No HRTF file specified, plugin will pass through audio");
         }
 
         Ok(())
@@ -938,7 +960,7 @@ impl Plugin for BinauralDecoderPlugin {
 
         output.fill(0.0);
 
-        if self.sofa.is_none() {
+        if self.hrtf_data.is_none() {
             for frame in 0..context.num_frames {
                 let (mut left, mut right) = if self.input_channels == 1 {
                     let sample = input[frame];
