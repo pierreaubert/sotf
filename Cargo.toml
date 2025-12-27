@@ -150,7 +150,7 @@ rb = "0.4"
 midir = "0.10"
 
 # TUI framework
-ratatui = "0.29"
+ratatui = "0.30"
 crossterm = "0.28"
 
 # GPUI framework, using HEAD (macros with _)

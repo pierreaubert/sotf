@@ -207,7 +207,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     result
 }
 
-fn run_app<B: ratatui::backend::Backend>(
+fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
     terminal: &mut Terminal<B>,
     app: &mut App,
     player: &mut Player,

@@ -38,7 +38,378 @@ pub struct SpeakerConfig {
     pub total_channels: usize,
     /// Speaker positions
     pub speakers: &'static [SpeakerPosition],
+    /// Channel groupings for level meters
+    pub meter_groups: &'static [MeterGroupSpec],
 }
+
+// ============================================================================
+// Meter Group Definitions
+// ============================================================================
+
+/// Channel info for meter display (static definition)
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MeterChannelSpec {
+    /// Channel index in output array
+    pub index: usize,
+    /// Short label (e.g., "L", "R", "C")
+    pub label: &'static str,
+    /// Display characters for vertical rendering (e.g., ["S", "L"] for "SL")
+    pub display_chars: &'static [&'static str],
+}
+
+/// Meter group specification (static definition)
+#[derive(Debug, Clone, PartialEq)]
+pub struct MeterGroupSpec {
+    /// Group name (e.g., "L/R", "Center", "Surrounds")
+    pub name: &'static str,
+    /// Channels in this group
+    pub channels: &'static [MeterChannelSpec],
+}
+
+// Meter group definitions for each configuration
+
+const METER_GROUPS_2_0: &[MeterGroupSpec] = &[
+    MeterGroupSpec {
+        name: "Left",
+        channels: &[MeterChannelSpec { index: 0, label: "L", display_chars: &["L"] }],
+    },
+    MeterGroupSpec {
+        name: "Right",
+        channels: &[MeterChannelSpec { index: 1, label: "R", display_chars: &["R"] }],
+    },
+];
+
+const METER_GROUPS_2_1: &[MeterGroupSpec] = &[
+    MeterGroupSpec {
+        name: "Left",
+        channels: &[MeterChannelSpec { index: 0, label: "L", display_chars: &["L"] }],
+    },
+    MeterGroupSpec {
+        name: "Right",
+        channels: &[MeterChannelSpec { index: 1, label: "R", display_chars: &["R"] }],
+    },
+    MeterGroupSpec {
+        name: "LFE",
+        channels: &[MeterChannelSpec { index: 2, label: "LFE", display_chars: &["L", "F", "E"] }],
+    },
+];
+
+const METER_GROUPS_5_0: &[MeterGroupSpec] = &[
+    MeterGroupSpec {
+        name: "L/R",
+        channels: &[
+            MeterChannelSpec { index: 0, label: "L", display_chars: &["L"] },
+            MeterChannelSpec { index: 1, label: "R", display_chars: &["R"] },
+        ],
+    },
+    MeterGroupSpec {
+        name: "Center",
+        channels: &[MeterChannelSpec { index: 2, label: "C", display_chars: &["C"] }],
+    },
+    MeterGroupSpec {
+        name: "Surrounds",
+        channels: &[
+            MeterChannelSpec { index: 3, label: "SL", display_chars: &["S", "L"] },
+            MeterChannelSpec { index: 4, label: "SR", display_chars: &["S", "R"] },
+        ],
+    },
+];
+
+const METER_GROUPS_5_1: &[MeterGroupSpec] = &[
+    MeterGroupSpec {
+        name: "L/R",
+        channels: &[
+            MeterChannelSpec { index: 0, label: "L", display_chars: &["L"] },
+            MeterChannelSpec { index: 1, label: "R", display_chars: &["R"] },
+        ],
+    },
+    MeterGroupSpec {
+        name: "Center",
+        channels: &[MeterChannelSpec { index: 2, label: "C", display_chars: &["C"] }],
+    },
+    MeterGroupSpec {
+        name: "LFE",
+        channels: &[MeterChannelSpec { index: 3, label: "LFE", display_chars: &["L", "F", "E"] }],
+    },
+    MeterGroupSpec {
+        name: "Surrounds",
+        channels: &[
+            MeterChannelSpec { index: 4, label: "SL", display_chars: &["S", "L"] },
+            MeterChannelSpec { index: 5, label: "SR", display_chars: &["S", "R"] },
+        ],
+    },
+];
+
+const METER_GROUPS_7_1: &[MeterGroupSpec] = &[
+    MeterGroupSpec {
+        name: "L/R",
+        channels: &[
+            MeterChannelSpec { index: 0, label: "L", display_chars: &["L"] },
+            MeterChannelSpec { index: 1, label: "R", display_chars: &["R"] },
+        ],
+    },
+    MeterGroupSpec {
+        name: "Center",
+        channels: &[MeterChannelSpec { index: 2, label: "C", display_chars: &["C"] }],
+    },
+    MeterGroupSpec {
+        name: "LFE",
+        channels: &[MeterChannelSpec { index: 3, label: "LFE", display_chars: &["L", "F", "E"] }],
+    },
+    MeterGroupSpec {
+        name: "Surrounds",
+        channels: &[
+            MeterChannelSpec { index: 4, label: "SL", display_chars: &["S", "L"] },
+            MeterChannelSpec { index: 5, label: "SR", display_chars: &["S", "R"] },
+            MeterChannelSpec { index: 6, label: "BL", display_chars: &["B", "L"] },
+            MeterChannelSpec { index: 7, label: "BR", display_chars: &["B", "R"] },
+        ],
+    },
+];
+
+const METER_GROUPS_5_1_2: &[MeterGroupSpec] = &[
+    MeterGroupSpec {
+        name: "L/R",
+        channels: &[
+            MeterChannelSpec { index: 0, label: "L", display_chars: &["L"] },
+            MeterChannelSpec { index: 1, label: "R", display_chars: &["R"] },
+        ],
+    },
+    MeterGroupSpec {
+        name: "Center",
+        channels: &[MeterChannelSpec { index: 2, label: "C", display_chars: &["C"] }],
+    },
+    MeterGroupSpec {
+        name: "LFE",
+        channels: &[MeterChannelSpec { index: 3, label: "LFE", display_chars: &["L", "F", "E"] }],
+    },
+    MeterGroupSpec {
+        name: "Surrounds",
+        channels: &[
+            MeterChannelSpec { index: 4, label: "SL", display_chars: &["S", "L"] },
+            MeterChannelSpec { index: 5, label: "SR", display_chars: &["S", "R"] },
+        ],
+    },
+    MeterGroupSpec {
+        name: "Height",
+        channels: &[
+            MeterChannelSpec { index: 6, label: "TFL", display_chars: &["T", "F", "L"] },
+            MeterChannelSpec { index: 7, label: "TFR", display_chars: &["T", "F", "R"] },
+        ],
+    },
+];
+
+const METER_GROUPS_5_1_4: &[MeterGroupSpec] = &[
+    MeterGroupSpec {
+        name: "L/R",
+        channels: &[
+            MeterChannelSpec { index: 0, label: "L", display_chars: &["L"] },
+            MeterChannelSpec { index: 1, label: "R", display_chars: &["R"] },
+        ],
+    },
+    MeterGroupSpec {
+        name: "Center",
+        channels: &[MeterChannelSpec { index: 2, label: "C", display_chars: &["C"] }],
+    },
+    MeterGroupSpec {
+        name: "LFE",
+        channels: &[MeterChannelSpec { index: 3, label: "LFE", display_chars: &["L", "F", "E"] }],
+    },
+    MeterGroupSpec {
+        name: "Surrounds",
+        channels: &[
+            MeterChannelSpec { index: 4, label: "SL", display_chars: &["S", "L"] },
+            MeterChannelSpec { index: 5, label: "SR", display_chars: &["S", "R"] },
+        ],
+    },
+    MeterGroupSpec {
+        name: "Height",
+        channels: &[
+            MeterChannelSpec { index: 6, label: "TFL", display_chars: &["T", "F", "L"] },
+            MeterChannelSpec { index: 7, label: "TFR", display_chars: &["T", "F", "R"] },
+            MeterChannelSpec { index: 8, label: "TBL", display_chars: &["T", "B", "L"] },
+            MeterChannelSpec { index: 9, label: "TBR", display_chars: &["T", "B", "R"] },
+        ],
+    },
+];
+
+const METER_GROUPS_7_1_2: &[MeterGroupSpec] = &[
+    MeterGroupSpec {
+        name: "L/R",
+        channels: &[
+            MeterChannelSpec { index: 0, label: "L", display_chars: &["L"] },
+            MeterChannelSpec { index: 1, label: "R", display_chars: &["R"] },
+        ],
+    },
+    MeterGroupSpec {
+        name: "Center",
+        channels: &[MeterChannelSpec { index: 2, label: "C", display_chars: &["C"] }],
+    },
+    MeterGroupSpec {
+        name: "LFE",
+        channels: &[MeterChannelSpec { index: 3, label: "LFE", display_chars: &["L", "F", "E"] }],
+    },
+    MeterGroupSpec {
+        name: "Side",
+        channels: &[
+            MeterChannelSpec { index: 4, label: "SL", display_chars: &["S", "L"] },
+            MeterChannelSpec { index: 5, label: "SR", display_chars: &["S", "R"] },
+        ],
+    },
+    MeterGroupSpec {
+        name: "Rear",
+        channels: &[
+            MeterChannelSpec { index: 6, label: "BL", display_chars: &["B", "L"] },
+            MeterChannelSpec { index: 7, label: "BR", display_chars: &["B", "R"] },
+        ],
+    },
+    MeterGroupSpec {
+        name: "Height",
+        channels: &[
+            MeterChannelSpec { index: 8, label: "TFL", display_chars: &["T", "F", "L"] },
+            MeterChannelSpec { index: 9, label: "TFR", display_chars: &["T", "F", "R"] },
+        ],
+    },
+];
+
+const METER_GROUPS_7_1_4: &[MeterGroupSpec] = &[
+    MeterGroupSpec {
+        name: "L/R",
+        channels: &[
+            MeterChannelSpec { index: 0, label: "L", display_chars: &["L"] },
+            MeterChannelSpec { index: 1, label: "R", display_chars: &["R"] },
+        ],
+    },
+    MeterGroupSpec {
+        name: "Center",
+        channels: &[MeterChannelSpec { index: 2, label: "C", display_chars: &["C"] }],
+    },
+    MeterGroupSpec {
+        name: "LFE",
+        channels: &[MeterChannelSpec { index: 3, label: "LFE", display_chars: &["L", "F", "E"] }],
+    },
+    MeterGroupSpec {
+        name: "Side",
+        channels: &[
+            MeterChannelSpec { index: 4, label: "SL", display_chars: &["S", "L"] },
+            MeterChannelSpec { index: 5, label: "SR", display_chars: &["S", "R"] },
+        ],
+    },
+    MeterGroupSpec {
+        name: "Rear",
+        channels: &[
+            MeterChannelSpec { index: 6, label: "BL", display_chars: &["B", "L"] },
+            MeterChannelSpec { index: 7, label: "BR", display_chars: &["B", "R"] },
+        ],
+    },
+    MeterGroupSpec {
+        name: "Height",
+        channels: &[
+            MeterChannelSpec { index: 8, label: "TFL", display_chars: &["T", "F", "L"] },
+            MeterChannelSpec { index: 9, label: "TFR", display_chars: &["T", "F", "R"] },
+            MeterChannelSpec { index: 10, label: "TBL", display_chars: &["T", "B", "L"] },
+            MeterChannelSpec { index: 11, label: "TBR", display_chars: &["T", "B", "R"] },
+        ],
+    },
+];
+
+const METER_GROUPS_9_1_4: &[MeterGroupSpec] = &[
+    MeterGroupSpec {
+        name: "Front",
+        channels: &[
+            MeterChannelSpec { index: 0, label: "L", display_chars: &["L"] },
+            MeterChannelSpec { index: 1, label: "R", display_chars: &["R"] },
+            MeterChannelSpec { index: 2, label: "WL", display_chars: &["W", "L"] },
+            MeterChannelSpec { index: 3, label: "WR", display_chars: &["W", "R"] },
+        ],
+    },
+    MeterGroupSpec {
+        name: "Center",
+        channels: &[MeterChannelSpec { index: 4, label: "C", display_chars: &["C"] }],
+    },
+    MeterGroupSpec {
+        name: "LFE",
+        channels: &[MeterChannelSpec { index: 5, label: "LFE", display_chars: &["L", "F", "E"] }],
+    },
+    MeterGroupSpec {
+        name: "Side",
+        channels: &[
+            MeterChannelSpec { index: 6, label: "SL", display_chars: &["S", "L"] },
+            MeterChannelSpec { index: 7, label: "SR", display_chars: &["S", "R"] },
+        ],
+    },
+    MeterGroupSpec {
+        name: "Rear",
+        channels: &[
+            MeterChannelSpec { index: 8, label: "BL", display_chars: &["B", "L"] },
+            MeterChannelSpec { index: 9, label: "BR", display_chars: &["B", "R"] },
+        ],
+    },
+    MeterGroupSpec {
+        name: "Height",
+        channels: &[
+            MeterChannelSpec { index: 10, label: "TFL", display_chars: &["T", "F", "L"] },
+            MeterChannelSpec { index: 11, label: "TFR", display_chars: &["T", "F", "R"] },
+            MeterChannelSpec { index: 12, label: "TBL", display_chars: &["T", "B", "L"] },
+            MeterChannelSpec { index: 13, label: "TBR", display_chars: &["T", "B", "R"] },
+        ],
+    },
+];
+
+const METER_GROUPS_9_1_6: &[MeterGroupSpec] = &[
+    MeterGroupSpec {
+        name: "Front",
+        channels: &[
+            MeterChannelSpec { index: 0, label: "L", display_chars: &["L"] },
+            MeterChannelSpec { index: 1, label: "R", display_chars: &["R"] },
+            MeterChannelSpec { index: 2, label: "WL", display_chars: &["W", "L"] },
+            MeterChannelSpec { index: 3, label: "WR", display_chars: &["W", "R"] },
+        ],
+    },
+    MeterGroupSpec {
+        name: "Center",
+        channels: &[MeterChannelSpec { index: 4, label: "C", display_chars: &["C"] }],
+    },
+    MeterGroupSpec {
+        name: "LFE",
+        channels: &[MeterChannelSpec { index: 5, label: "LFE", display_chars: &["L", "F", "E"] }],
+    },
+    MeterGroupSpec {
+        name: "Side",
+        channels: &[
+            MeterChannelSpec { index: 6, label: "SL", display_chars: &["S", "L"] },
+            MeterChannelSpec { index: 7, label: "SR", display_chars: &["S", "R"] },
+        ],
+    },
+    MeterGroupSpec {
+        name: "Rear",
+        channels: &[
+            MeterChannelSpec { index: 8, label: "BL", display_chars: &["B", "L"] },
+            MeterChannelSpec { index: 9, label: "BR", display_chars: &["B", "R"] },
+        ],
+    },
+    MeterGroupSpec {
+        name: "Top Front",
+        channels: &[
+            MeterChannelSpec { index: 10, label: "TFL", display_chars: &["T", "F", "L"] },
+            MeterChannelSpec { index: 11, label: "TFR", display_chars: &["T", "F", "R"] },
+        ],
+    },
+    MeterGroupSpec {
+        name: "Top Mid",
+        channels: &[
+            MeterChannelSpec { index: 12, label: "TML", display_chars: &["T", "M", "L"] },
+            MeterChannelSpec { index: 13, label: "TMR", display_chars: &["T", "M", "R"] },
+        ],
+    },
+    MeterGroupSpec {
+        name: "Top Rear",
+        channels: &[
+            MeterChannelSpec { index: 14, label: "TBL", display_chars: &["T", "B", "L"] },
+            MeterChannelSpec { index: 15, label: "TBR", display_chars: &["T", "B", "R"] },
+        ],
+    },
+];
 
 // ============================================================================
 // Standard Speaker Configurations
@@ -68,6 +439,42 @@ pub const CONFIG_2_0: SpeakerConfig = SpeakerConfig {
             is_lfe: false,
         },
     ],
+    meter_groups: METER_GROUPS_2_0,
+};
+
+/// 2.1 Stereo with LFE
+pub const CONFIG_2_1: SpeakerConfig = SpeakerConfig {
+    id: "2.1",
+    name: "2.1 Stereo",
+    description: "Stereo with LFE subwoofer channel",
+    total_channels: 3,
+    speakers: &[
+        SpeakerPosition {
+            label: "L",
+            name: "Left",
+            azimuth: 30.0,
+            elevation: 0.0,
+            channel: 0,
+            is_lfe: false,
+        },
+        SpeakerPosition {
+            label: "R",
+            name: "Right",
+            azimuth: -30.0,
+            elevation: 0.0,
+            channel: 1,
+            is_lfe: false,
+        },
+        SpeakerPosition {
+            label: "LFE",
+            name: "Low Frequency Effects",
+            azimuth: 0.0,
+            elevation: 0.0,
+            channel: 2,
+            is_lfe: true,
+        },
+    ],
+    meter_groups: METER_GROUPS_2_1,
 };
 
 /// 5.0 Surround (no LFE)
@@ -118,6 +525,7 @@ pub const CONFIG_5_0: SpeakerConfig = SpeakerConfig {
             is_lfe: false,
         },
     ],
+    meter_groups: METER_GROUPS_5_0,
 };
 
 /// 5.1 Surround (ITU-R BS.775)
@@ -176,6 +584,7 @@ pub const CONFIG_5_1: SpeakerConfig = SpeakerConfig {
             is_lfe: false,
         },
     ],
+    meter_groups: METER_GROUPS_5_1,
 };
 
 /// 7.1 Surround
@@ -250,6 +659,7 @@ pub const CONFIG_7_1: SpeakerConfig = SpeakerConfig {
             is_lfe: false,
         },
     ],
+    meter_groups: METER_GROUPS_7_1,
 };
 
 /// 5.1.2 Atmos
@@ -324,6 +734,7 @@ pub const CONFIG_5_1_2: SpeakerConfig = SpeakerConfig {
             is_lfe: false,
         },
     ],
+    meter_groups: METER_GROUPS_5_1_2,
 };
 
 /// 5.1.4 Atmos
@@ -414,6 +825,7 @@ pub const CONFIG_5_1_4: SpeakerConfig = SpeakerConfig {
             is_lfe: false,
         },
     ],
+    meter_groups: METER_GROUPS_5_1_4,
 };
 
 /// 7.1.2 Atmos
@@ -504,6 +916,7 @@ pub const CONFIG_7_1_2: SpeakerConfig = SpeakerConfig {
             is_lfe: false,
         },
     ],
+    meter_groups: METER_GROUPS_7_1_2,
 };
 
 /// 7.1.4 Atmos
@@ -610,6 +1023,7 @@ pub const CONFIG_7_1_4: SpeakerConfig = SpeakerConfig {
             is_lfe: false,
         },
     ],
+    meter_groups: METER_GROUPS_7_1_4,
 };
 
 /// 9.1.4 Atmos
@@ -732,6 +1146,7 @@ pub const CONFIG_9_1_4: SpeakerConfig = SpeakerConfig {
             is_lfe: false,
         },
     ],
+    meter_groups: METER_GROUPS_9_1_4,
 };
 
 /// 9.1.6 Atmos
@@ -870,6 +1285,7 @@ pub const CONFIG_9_1_6: SpeakerConfig = SpeakerConfig {
             is_lfe: false,
         },
     ],
+    meter_groups: METER_GROUPS_9_1_6,
 };
 
 // ============================================================================
@@ -880,6 +1296,7 @@ pub const CONFIG_9_1_6: SpeakerConfig = SpeakerConfig {
 pub fn get_speaker_config(id: &str) -> Option<&'static SpeakerConfig> {
     match id {
         "2.0" => Some(&CONFIG_2_0),
+        "2.1" => Some(&CONFIG_2_1),
         "5.0" => Some(&CONFIG_5_0),
         "5.1" => Some(&CONFIG_5_1),
         "7.1" => Some(&CONFIG_7_1),
@@ -896,7 +1313,7 @@ pub fn get_speaker_config(id: &str) -> Option<&'static SpeakerConfig> {
 /// Get all available configuration IDs
 pub fn get_available_configs() -> &'static [&'static str] {
     &[
-        "2.0", "5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4", "9.1.4", "9.1.6",
+        "2.0", "2.1", "5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4", "9.1.4", "9.1.6",
     ]
 }
 
@@ -905,6 +1322,7 @@ pub fn get_available_configs() -> &'static [&'static str] {
 pub fn get_speaker_config_by_channels(num_channels: usize) -> Option<&'static SpeakerConfig> {
     match num_channels {
         2 => Some(&CONFIG_2_0),
+        3 => Some(&CONFIG_2_1),
         5 => Some(&CONFIG_5_0),
         6 => Some(&CONFIG_5_1),
         8 => Some(&CONFIG_7_1),    // Could also be 5.1.2, prefer 7.1
@@ -913,6 +1331,59 @@ pub fn get_speaker_config_by_channels(num_channels: usize) -> Option<&'static Sp
         14 => Some(&CONFIG_9_1_4),
         16 => Some(&CONFIG_9_1_6),
         _ => None,
+    }
+}
+
+/// Get meter groups for a speaker configuration ID, or generate fallback for unknown configs
+pub fn get_meter_groups(config_id: &str) -> Option<&'static [MeterGroupSpec]> {
+    get_speaker_config(config_id).map(|c| c.meter_groups)
+}
+
+/// Get meter groups by channel count, or None if unknown
+pub fn get_meter_groups_by_channels(num_channels: usize) -> Option<&'static [MeterGroupSpec]> {
+    get_speaker_config_by_channels(num_channels).map(|c| c.meter_groups)
+}
+
+/// Generate a fallback meter channel spec for a given channel index
+/// Returns a heap-allocated MeterChannelSpec for runtime use
+pub fn make_fallback_channel(index: usize) -> MeterChannelSpec {
+    // Use a static string for the label since we can't allocate at compile time
+    // The caller should handle display names separately for fallback channels
+    static FALLBACK_LABELS: &[&str] = &[
+        "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16",
+    ];
+    static FALLBACK_CHARS: &[&[&str]] = &[
+        &["1"],
+        &["2"],
+        &["3"],
+        &["4"],
+        &["5"],
+        &["6"],
+        &["7"],
+        &["8"],
+        &["9"],
+        &["1", "0"],
+        &["1", "1"],
+        &["1", "2"],
+        &["1", "3"],
+        &["1", "4"],
+        &["1", "5"],
+        &["1", "6"],
+    ];
+
+    if index < FALLBACK_LABELS.len() {
+        MeterChannelSpec {
+            index,
+            label: FALLBACK_LABELS[index],
+            display_chars: FALLBACK_CHARS[index],
+        }
+    } else {
+        // For channels beyond 16, just use the first entry as placeholder
+        MeterChannelSpec {
+            index,
+            label: "?",
+            display_chars: &["?"],
+        }
     }
 }
 

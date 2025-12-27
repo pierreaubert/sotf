@@ -218,7 +218,7 @@ fn run_playback_thread(
     // Create stream config
     let mut config = StreamConfig {
         channels: channels as u16,
-        sample_rate: cpal::SampleRate(sample_rate),
+        sample_rate: sample_rate,
         buffer_size: cpal::BufferSize::Default,
     };
 
@@ -328,7 +328,7 @@ fn run_playback_thread(
                         log::info!(
                             "[Playback Thread] Building new stream with config: {}ch, {}Hz (drained {} frames)",
                             new_config.channels,
-                            new_config.sample_rate.0,
+                            new_config.sample_rate,
                             drained_count
                         );
 

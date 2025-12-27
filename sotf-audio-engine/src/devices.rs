@@ -70,8 +70,8 @@ pub fn get_audio_devices() -> Result<HashMap<String, Vec<AudioDevice>>, String> 
                             let config_range = config;
                             // Add min and max sample rate configs
                             for sample_rate in [
-                                config_range.min_sample_rate().0,
-                                config_range.max_sample_rate().0,
+                                config_range.min_sample_rate(),
+                                config_range.max_sample_rate(),
                             ] {
                                 // Only include valid channel configurations (1 or 2 for input devices)
                                 let max_channels = config_range.channels();
@@ -108,14 +108,14 @@ pub fn get_audio_devices() -> Result<HashMap<String, Vec<AudioDevice>>, String> 
                             // Get current sample rate from device default
                             let current_sample_rate = device
                                 .default_input_config()
-                                .map(|cfg| cfg.sample_rate().0)
+                                .map(|cfg| cfg.sample_rate())
                                 .unwrap_or(48000); // Fallback to 48kHz
 
                             let default_cfg = max_channel_config.map(|config| {
                                 // Use current sample rate, clamped to supported range
                                 let sample_rate = current_sample_rate
-                                    .max(config.min_sample_rate().0)
-                                    .min(config.max_sample_rate().0);
+                                    .max(config.min_sample_rate())
+                                    .min(config.max_sample_rate());
 
                                 AudioConfig {
                                     sample_rate,
@@ -128,12 +128,12 @@ pub fn get_audio_devices() -> Result<HashMap<String, Vec<AudioDevice>>, String> 
                             // Collect all available sample rates across all configs
                             let mut sample_rates = std::collections::HashSet::new();
                             for config in &configs {
-                                sample_rates.insert(config.min_sample_rate().0);
-                                sample_rates.insert(config.max_sample_rate().0);
+                                sample_rates.insert(config.min_sample_rate());
+                                sample_rates.insert(config.max_sample_rate());
                                 // Add common rates if in range
                                 for &rate in &[44100, 48000, 88200, 96000, 176400, 192000] {
-                                    if rate >= config.min_sample_rate().0
-                                        && rate <= config.max_sample_rate().0
+                                    if rate >= config.min_sample_rate()
+                                        && rate <= config.max_sample_rate()
                                     {
                                         sample_rates.insert(rate);
                                     }
@@ -212,11 +212,11 @@ pub fn get_audio_devices() -> Result<HashMap<String, Vec<AudioDevice>>, String> 
                                 96000,
                                 176400,
                                 192000,
-                                config_range.min_sample_rate().0,
-                                config_range.max_sample_rate().0,
+                                config_range.min_sample_rate(),
+                                config_range.max_sample_rate(),
                             ] {
-                                if sample_rate < config_range.min_sample_rate().0
-                                    || sample_rate > config_range.max_sample_rate().0
+                                if sample_rate < config_range.min_sample_rate()
+                                    || sample_rate > config_range.max_sample_rate()
                                 {
                                     continue;
                                 }
@@ -259,14 +259,14 @@ pub fn get_audio_devices() -> Result<HashMap<String, Vec<AudioDevice>>, String> 
                             // Get current sample rate from device default
                             let current_sample_rate = device
                                 .default_output_config()
-                                .map(|cfg| cfg.sample_rate().0)
+                                .map(|cfg| cfg.sample_rate())
                                 .unwrap_or(48000); // Fallback to 48kHz
 
                             let default_cfg = max_channel_config.map(|config| {
                                 // Use current sample rate, clamped to supported range
                                 let sample_rate = current_sample_rate
-                                    .max(config.min_sample_rate().0)
-                                    .min(config.max_sample_rate().0);
+                                    .max(config.min_sample_rate())
+                                    .min(config.max_sample_rate());
 
                                 AudioConfig {
                                     sample_rate,
@@ -279,12 +279,12 @@ pub fn get_audio_devices() -> Result<HashMap<String, Vec<AudioDevice>>, String> 
                             // Collect all available sample rates across all configs
                             let mut sample_rates = std::collections::HashSet::new();
                             for config in &configs {
-                                sample_rates.insert(config.min_sample_rate().0);
-                                sample_rates.insert(config.max_sample_rate().0);
+                                sample_rates.insert(config.min_sample_rate());
+                                sample_rates.insert(config.max_sample_rate());
                                 // Add common rates if in range
                                 for &rate in &[44100, 48000, 88200, 96000, 176400, 192000] {
-                                    if rate >= config.min_sample_rate().0
-                                        && rate <= config.max_sample_rate().0
+                                    if rate >= config.min_sample_rate()
+                                        && rate <= config.max_sample_rate()
                                     {
                                         sample_rates.insert(rate);
                                     }
@@ -380,7 +380,7 @@ pub fn set_audio_device(
             Ok(configs) => {
                 let mut valid = false;
                 for supported_config in configs {
-                    let sample_rate = cpal::SampleRate(config.sample_rate);
+                    let sample_rate = config.sample_rate;
                     if supported_config.min_sample_rate() <= sample_rate
                         && supported_config.max_sample_rate() >= sample_rate
                         && supported_config.channels() >= config.channels
@@ -402,7 +402,7 @@ pub fn set_audio_device(
             Ok(configs) => {
                 let mut valid = false;
                 for supported_config in configs {
-                    let sample_rate = cpal::SampleRate(config.sample_rate);
+                    let sample_rate = config.sample_rate;
                     if supported_config.min_sample_rate() <= sample_rate
                         && supported_config.max_sample_rate() >= sample_rate
                         && supported_config.channels() >= config.channels
@@ -499,8 +499,8 @@ pub fn get_device_properties(
         if let Ok(configs) = device.supported_input_configs() {
             for config in configs {
                 config_ranges.push(serde_json::json!({
-                    "min_sample_rate": config.min_sample_rate().0,
-                    "max_sample_rate": config.max_sample_rate().0,
+                    "min_sample_rate": config.min_sample_rate(),
+                    "max_sample_rate": config.max_sample_rate(),
                     "channels": config.channels(),
                     "sample_format": format_to_string(config.sample_format()),
                     "buffer_size_range": match config.buffer_size() {
@@ -515,8 +515,8 @@ pub fn get_device_properties(
     } else if let Ok(configs) = device.supported_output_configs() {
         for config in configs {
             config_ranges.push(serde_json::json!({
-                "min_sample_rate": config.min_sample_rate().0,
-                "max_sample_rate": config.max_sample_rate().0,
+                "min_sample_rate": config.min_sample_rate(),
+                "max_sample_rate": config.max_sample_rate(),
                 "channels": config.channels(),
                 "sample_format": format_to_string(config.sample_format()),
                 "buffer_size_range": match config.buffer_size() {
@@ -534,7 +534,7 @@ pub fn get_device_properties(
     if is_input {
         if let Ok(default_config) = device.default_input_config() {
             properties["default_config"] = serde_json::json!({
-                "sample_rate": default_config.sample_rate().0,
+                "sample_rate": default_config.sample_rate(),
                 "channels": default_config.channels(),
                 "sample_format": format_to_string(default_config.sample_format()),
                 "buffer_size": match default_config.buffer_size() {
@@ -547,7 +547,7 @@ pub fn get_device_properties(
         }
     } else if let Ok(default_config) = device.default_output_config() {
         properties["default_config"] = serde_json::json!({
-            "sample_rate": default_config.sample_rate().0,
+            "sample_rate": default_config.sample_rate(),
             "channels": default_config.channels(),
             "sample_format": format_to_string(default_config.sample_format()),
             "buffer_size": match default_config.buffer_size() {

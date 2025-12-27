@@ -324,7 +324,7 @@ pub fn record_and_analyze(
     // We'll extract the specific channel we want in the callback
     let input_config = cpal::StreamConfig {
         channels: hardware_input_channels as u16,
-        sample_rate: cpal::SampleRate(sample_rate),
+        sample_rate: sample_rate,
         buffer_size: cpal::BufferSize::Default,
     };
 

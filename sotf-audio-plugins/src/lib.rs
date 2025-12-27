@@ -42,7 +42,7 @@ mod plugin_resampler;
 mod plugin_upmixer;
 mod simd;
 mod sofa;
-mod speaker_config;
+pub mod speaker_config;
 
 // HAL plugins (macOS only, requires 'hal' feature)
 #[cfg(all(target_os = "macos", feature = "hal"))]

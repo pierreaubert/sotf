@@ -1077,6 +1077,27 @@ impl PluginChain {
         processing_plugins
     }
 
+    /// Get the speaker configuration ID from the last enabled upmixer/binaural decoder
+    /// Returns None if no channel-changing plugin is active
+    pub fn output_speaker_config(&self) -> Option<&str> {
+        for plugin in self.plugins.iter().rev() {
+            if !plugin.enabled {
+                continue;
+            }
+
+            match &plugin.settings {
+                PluginSettings::Upmixer { speaker_config, .. } => {
+                    return Some(speaker_config.as_str());
+                }
+                PluginSettings::BinauralDecoder { .. } => {
+                    return Some("2.0");
+                }
+                _ => continue,
+            }
+        }
+        None
+    }
+
     pub fn output_channels(&self) -> usize {
         // Walk backwards through the chain to find the last channel-count-changing plugin
         for plugin in self.plugins.iter().rev() {

@@ -10,6 +10,7 @@ use gpui::prelude::*;
 use gpui::*;
 use sotf_audio_player::PluginSettings;
 use sotf_plugins::ChannelState;
+use sotf_plugins::speaker_config::{get_meter_groups, get_meter_groups_by_channels, make_fallback_channel, MeterGroupSpec};
 use std::panic;
 
 use super::{MeterTheme, TickConfig, render_tick_row};
@@ -1320,7 +1321,7 @@ pub fn calculate_meters_panel_width(num_channels: usize) -> f32 {
 // ============================================================================
 
 impl AppState {
-    /// Update level meter groups based on current channel count from loudness info
+    /// Update level meter groups based on current speaker configuration or channel count
     /// Creates a default stereo layout when no audio is playing
     pub fn update_level_meter_groups(&mut self) {
         self.level_meter_groups.clear();
@@ -1335,673 +1336,109 @@ impl AppState {
         // This ensures meters are always visible with -60 dB default
         let num_channels = if num_channels == 0 { 2 } else { num_channels };
 
-        // Standard channel layouts based on channel count
-        match num_channels {
-            1 => {
-                // Mono
+        // Try to get meter groups from the speaker config (via upmixer plugin)
+        // This handles collisions like 5.1.4 vs 7.1.2 (both 10 channels)
+        let meter_groups: Option<&[MeterGroupSpec]> = self
+            .plugin_chain
+            .output_speaker_config()
+            .and_then(get_meter_groups)
+            .or_else(|| get_meter_groups_by_channels(num_channels));
+
+        if let Some(groups) = meter_groups {
+            // Convert static specs to runtime groups
+            for group_spec in groups {
                 self.level_meter_groups.push(ChannelGroup {
-                    name: "Mono".to_string(),
-                    channels: vec![ChannelInfo {
-                        index: 0,
-                        name: "M".to_string(),
-                        display_name: vec!["M".to_string()],
-                    }],
+                    name: group_spec.name.to_string(),
+                    channels: group_spec
+                        .channels
+                        .iter()
+                        .map(|ch| ChannelInfo {
+                            index: ch.index,
+                            name: ch.label.to_string(),
+                            display_name: ch.display_chars.iter().map(|s| (*s).to_string()).collect(),
+                        })
+                        .collect(),
                     muted: false,
                     soloed: false,
                     dimmed: false,
                 });
             }
-            2 => {
-                // Stereo (2.0) - L and R are separate groups
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "Left".to_string(),
-                    channels: vec![ChannelInfo {
-                        index: 0,
-                        name: "L".to_string(),
-                        display_name: vec!["L".to_string()],
-                    }],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "Right".to_string(),
-                    channels: vec![ChannelInfo {
-                        index: 1,
-                        name: "R".to_string(),
-                        display_name: vec!["R".to_string()],
-                    }],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-            }
-            3 => {
-                // 2.1 - L, R, and LFE are separate groups
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "Left".to_string(),
-                    channels: vec![ChannelInfo {
-                        index: 0,
-                        name: "L".to_string(),
-                        display_name: vec!["L".to_string()],
-                    }],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "Right".to_string(),
-                    channels: vec![ChannelInfo {
-                        index: 1,
-                        name: "R".to_string(),
-                        display_name: vec!["R".to_string()],
-                    }],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "LFE".to_string(),
-                    channels: vec![ChannelInfo {
-                        index: 2,
-                        name: "LFE".to_string(),
-                        display_name: vec!["L".to_string(), "F".to_string(), "E".to_string()],
-                    }],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-            }
-            4 => {
-                // Quad (FL, FR, SL, SR)
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "Fronts".to_string(),
-                    channels: vec![
-                        ChannelInfo {
+        } else {
+            // Fallback for unknown channel counts (mono, quad, or exotic configs)
+            match num_channels {
+                1 => {
+                    // Mono
+                    self.level_meter_groups.push(ChannelGroup {
+                        name: "Mono".to_string(),
+                        channels: vec![ChannelInfo {
                             index: 0,
-                            name: "FL".to_string(),
-                            display_name: vec!["F".to_string(), "L".to_string()],
-                        },
-                        ChannelInfo {
-                            index: 1,
-                            name: "FR".to_string(),
-                            display_name: vec!["F".to_string(), "R".to_string()],
-                        },
-                    ],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "Surrounds".to_string(),
-                    channels: vec![
-                        ChannelInfo {
-                            index: 2,
-                            name: "SL".to_string(),
-                            display_name: vec!["S".to_string(), "L".to_string()],
-                        },
-                        ChannelInfo {
-                            index: 3,
-                            name: "SR".to_string(),
-                            display_name: vec!["S".to_string(), "R".to_string()],
-                        },
-                    ],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-            }
-            5 => {
-                // 5.0 (FL, FR, FC, SL, SR) - Same as 5.1 without LFE
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "Fronts".to_string(),
-                    channels: vec![
-                        ChannelInfo {
-                            index: 0,
-                            name: "FL".to_string(),
-                            display_name: vec!["F".to_string(), "L".to_string()],
-                        },
-                        ChannelInfo {
-                            index: 1,
-                            name: "FR".to_string(),
-                            display_name: vec!["F".to_string(), "R".to_string()],
-                        },
-                    ],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "Center".to_string(),
-                    channels: vec![ChannelInfo {
-                        index: 2,
-                        name: "C".to_string(),
-                        display_name: vec!["C".to_string()],
-                    }],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "Surrounds".to_string(),
-                    channels: vec![
-                        ChannelInfo {
-                            index: 3,
-                            name: "SL".to_string(),
-                            display_name: vec!["S".to_string(), "L".to_string()],
-                        },
-                        ChannelInfo {
-                            index: 4,
-                            name: "SR".to_string(),
-                            display_name: vec!["S".to_string(), "R".to_string()],
-                        },
-                    ],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-            }
-            6 => {
-                // 5.1 (FL, FR, FC, LFE, SL, SR)
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "Fronts".to_string(),
-                    channels: vec![
-                        ChannelInfo {
-                            index: 0,
-                            name: "FL".to_string(),
-                            display_name: vec!["F".to_string(), "L".to_string()],
-                        },
-                        ChannelInfo {
-                            index: 1,
-                            name: "FR".to_string(),
-                            display_name: vec!["F".to_string(), "R".to_string()],
-                        },
-                    ],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "Center".to_string(),
-                    channels: vec![ChannelInfo {
-                        index: 2,
-                        name: "C".to_string(),
-                        display_name: vec!["C".to_string()],
-                    }],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "LFE".to_string(),
-                    channels: vec![ChannelInfo {
-                        index: 3,
-                        name: "LFE".to_string(),
-                        display_name: vec!["L".to_string(), "F".to_string(), "E".to_string()],
-                    }],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "Surrounds".to_string(),
-                    channels: vec![
-                        ChannelInfo {
-                            index: 4,
-                            name: "SL".to_string(),
-                            display_name: vec!["S".to_string(), "L".to_string()],
-                        },
-                        ChannelInfo {
-                            index: 5,
-                            name: "SR".to_string(),
-                            display_name: vec!["S".to_string(), "R".to_string()],
-                        },
-                    ],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-            }
-            8 => {
-                // 7.1 (FL, FR, FC, LFE, SL, SR, BL, BR)
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "Fronts".to_string(),
-                    channels: vec![
-                        ChannelInfo {
-                            index: 0,
-                            name: "FL".to_string(),
-                            display_name: vec!["F".to_string(), "L".to_string()],
-                        },
-                        ChannelInfo {
-                            index: 1,
-                            name: "FR".to_string(),
-                            display_name: vec!["F".to_string(), "R".to_string()],
-                        },
-                    ],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "Center".to_string(),
-                    channels: vec![ChannelInfo {
-                        index: 2,
-                        name: "C".to_string(),
-                        display_name: vec!["C".to_string()],
-                    }],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "LFE".to_string(),
-                    channels: vec![ChannelInfo {
-                        index: 3,
-                        name: "LFE".to_string(),
-                        display_name: vec!["L".to_string(), "F".to_string(), "E".to_string()],
-                    }],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "Surrounds".to_string(),
-                    channels: vec![
-                        ChannelInfo {
-                            index: 4,
-                            name: "SL".to_string(),
-                            display_name: vec!["S".to_string(), "L".to_string()],
-                        },
-                        ChannelInfo {
-                            index: 5,
-                            name: "SR".to_string(),
-                            display_name: vec!["S".to_string(), "R".to_string()],
-                        },
-                        ChannelInfo {
-                            index: 6,
-                            name: "BL".to_string(),
-                            display_name: vec!["B".to_string(), "L".to_string()],
-                        },
-                        ChannelInfo {
-                            index: 7,
-                            name: "BR".to_string(),
-                            display_name: vec!["B".to_string(), "R".to_string()],
-                        },
-                    ],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-            }
-            10 => {
-                // 5.1.4 or 7.1.2 - Currently assuming 5.1.4
-                // 5.1.4: FL, FR, FC, LFE, SL, SR, TFL, TFR, TBL, TBR
-                // 7.1.2: FL, FR, FC, LFE, SL, SR, BL, BR, TML, TMR
-                // TODO: Add configuration option to distinguish between these layouts
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "Fronts".to_string(),
-                    channels: vec![
-                        ChannelInfo {
-                            index: 0,
-                            name: "FL".to_string(),
-                            display_name: vec!["F".to_string(), "L".to_string()],
-                        },
-                        ChannelInfo {
-                            index: 1,
-                            name: "FR".to_string(),
-                            display_name: vec!["F".to_string(), "R".to_string()],
-                        },
-                    ],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "Center".to_string(),
-                    channels: vec![ChannelInfo {
-                        index: 2,
-                        name: "C".to_string(),
-                        display_name: vec!["C".to_string()],
-                    }],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "LFE".to_string(),
-                    channels: vec![ChannelInfo {
-                        index: 3,
-                        name: "LFE".to_string(),
-                        display_name: vec!["L".to_string(), "F".to_string(), "E".to_string()],
-                    }],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "Surrounds".to_string(),
-                    channels: vec![
-                        ChannelInfo {
-                            index: 4,
-                            name: "SL".to_string(),
-                            display_name: vec!["S".to_string(), "L".to_string()],
-                        },
-                        ChannelInfo {
-                            index: 5,
-                            name: "SR".to_string(),
-                            display_name: vec!["S".to_string(), "R".to_string()],
-                        },
-                    ],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "Top".to_string(),
-                    channels: vec![
-                        ChannelInfo {
-                            index: 6,
-                            name: "TFL".to_string(),
-                            display_name: vec!["T".to_string(), "F".to_string(), "L".to_string()],
-                        },
-                        ChannelInfo {
-                            index: 7,
-                            name: "TFR".to_string(),
-                            display_name: vec!["T".to_string(), "F".to_string(), "R".to_string()],
-                        },
-                        ChannelInfo {
-                            index: 8,
-                            name: "TBL".to_string(),
-                            display_name: vec!["T".to_string(), "B".to_string(), "L".to_string()],
-                        },
-                        ChannelInfo {
-                            index: 9,
-                            name: "TBR".to_string(),
-                            display_name: vec!["T".to_string(), "B".to_string(), "R".to_string()],
-                        },
-                    ],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-            }
-            14 => {
-                // 9.1.4 (FL, FR, FC, LFE, SL, SR, BL, BR, FWL, FWR, TFL, TFR, TBL, TBR)
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "Fronts".to_string(),
-                    channels: vec![
-                        ChannelInfo {
-                            index: 0,
-                            name: "FL".to_string(),
-                            display_name: vec!["F".to_string(), "L".to_string()],
-                        },
-                        ChannelInfo {
-                            index: 1,
-                            name: "FR".to_string(),
-                            display_name: vec!["F".to_string(), "R".to_string()],
-                        },
-                    ],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "Center".to_string(),
-                    channels: vec![ChannelInfo {
-                        index: 2,
-                        name: "C".to_string(),
-                        display_name: vec!["C".to_string()],
-                    }],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "LFE".to_string(),
-                    channels: vec![ChannelInfo {
-                        index: 3,
-                        name: "LFE".to_string(),
-                        display_name: vec!["L".to_string(), "F".to_string(), "E".to_string()],
-                    }],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "Sides".to_string(),
-                    channels: vec![
-                        ChannelInfo {
-                            index: 4,
-                            name: "SL".to_string(),
-                            display_name: vec!["S".to_string(), "L".to_string()],
-                        },
-                        ChannelInfo {
-                            index: 5,
-                            name: "SR".to_string(),
-                            display_name: vec!["S".to_string(), "R".to_string()],
-                        },
-                    ],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "Backs".to_string(),
-                    channels: vec![
-                        ChannelInfo {
-                            index: 6,
-                            name: "BL".to_string(),
-                            display_name: vec!["B".to_string(), "L".to_string()],
-                        },
-                        ChannelInfo {
-                            index: 7,
-                            name: "BR".to_string(),
-                            display_name: vec!["B".to_string(), "R".to_string()],
-                        },
-                    ],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "Wides".to_string(),
-                    channels: vec![
-                        ChannelInfo {
-                            index: 8,
-                            name: "FWL".to_string(),
-                            display_name: vec!["F".to_string(), "W".to_string(), "L".to_string()],
-                        },
-                        ChannelInfo {
-                            index: 9,
-                            name: "FWR".to_string(),
-                            display_name: vec!["F".to_string(), "W".to_string(), "R".to_string()],
-                        },
-                    ],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "Top".to_string(),
-                    channels: vec![
-                        ChannelInfo {
-                            index: 10,
-                            name: "TFL".to_string(),
-                            display_name: vec!["T".to_string(), "F".to_string(), "L".to_string()],
-                        },
-                        ChannelInfo {
-                            index: 11,
-                            name: "TFR".to_string(),
-                            display_name: vec!["T".to_string(), "F".to_string(), "R".to_string()],
-                        },
-                        ChannelInfo {
-                            index: 12,
-                            name: "TBL".to_string(),
-                            display_name: vec!["T".to_string(), "B".to_string(), "L".to_string()],
-                        },
-                        ChannelInfo {
-                            index: 13,
-                            name: "TBR".to_string(),
-                            display_name: vec!["T".to_string(), "B".to_string(), "R".to_string()],
-                        },
-                    ],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-            }
-            16 => {
-                // 9.1.6 (FL, FR, FC, LFE, SL, SR, BL, BR, FWL, FWR, TFL, TFR, TML, TMR, TBL, TBR)
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "Fronts".to_string(),
-                    channels: vec![
-                        ChannelInfo {
-                            index: 0,
-                            name: "FL".to_string(),
-                            display_name: vec!["F".to_string(), "L".to_string()],
-                        },
-                        ChannelInfo {
-                            index: 1,
-                            name: "FR".to_string(),
-                            display_name: vec!["F".to_string(), "R".to_string()],
-                        },
-                    ],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "Center".to_string(),
-                    channels: vec![ChannelInfo {
-                        index: 2,
-                        name: "C".to_string(),
-                        display_name: vec!["C".to_string()],
-                    }],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "LFE".to_string(),
-                    channels: vec![ChannelInfo {
-                        index: 3,
-                        name: "LFE".to_string(),
-                        display_name: vec!["L".to_string(), "F".to_string(), "E".to_string()],
-                    }],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "Sides".to_string(),
-                    channels: vec![
-                        ChannelInfo {
-                            index: 4,
-                            name: "SL".to_string(),
-                            display_name: vec!["S".to_string(), "L".to_string()],
-                        },
-                        ChannelInfo {
-                            index: 5,
-                            name: "SR".to_string(),
-                            display_name: vec!["S".to_string(), "R".to_string()],
-                        },
-                    ],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "Backs".to_string(),
-                    channels: vec![
-                        ChannelInfo {
-                            index: 6,
-                            name: "BL".to_string(),
-                            display_name: vec!["B".to_string(), "L".to_string()],
-                        },
-                        ChannelInfo {
-                            index: 7,
-                            name: "BR".to_string(),
-                            display_name: vec!["B".to_string(), "R".to_string()],
-                        },
-                    ],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "Wides".to_string(),
-                    channels: vec![
-                        ChannelInfo {
-                            index: 8,
-                            name: "FWL".to_string(),
-                            display_name: vec!["F".to_string(), "W".to_string(), "L".to_string()],
-                        },
-                        ChannelInfo {
-                            index: 9,
-                            name: "FWR".to_string(),
-                            display_name: vec!["F".to_string(), "W".to_string(), "R".to_string()],
-                        },
-                    ],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "Top".to_string(),
-                    channels: vec![
-                        ChannelInfo {
-                            index: 10,
-                            name: "TFL".to_string(),
-                            display_name: vec!["T".to_string(), "F".to_string(), "L".to_string()],
-                        },
-                        ChannelInfo {
-                            index: 11,
-                            name: "TFR".to_string(),
-                            display_name: vec!["T".to_string(), "F".to_string(), "R".to_string()],
-                        },
-                        ChannelInfo {
-                            index: 12,
-                            name: "TML".to_string(),
-                            display_name: vec!["T".to_string(), "M".to_string(), "L".to_string()],
-                        },
-                        ChannelInfo {
-                            index: 13,
-                            name: "TMR".to_string(),
-                            display_name: vec!["T".to_string(), "M".to_string(), "R".to_string()],
-                        },
-                        ChannelInfo {
-                            index: 14,
-                            name: "TBL".to_string(),
-                            display_name: vec!["T".to_string(), "B".to_string(), "L".to_string()],
-                        },
-                        ChannelInfo {
-                            index: 15,
-                            name: "TBR".to_string(),
-                            display_name: vec!["T".to_string(), "B".to_string(), "R".to_string()],
-                        },
-                    ],
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
-            }
-            _ => {
-                // Generic fallback - treat all channels as one group
-                let mut channels = Vec::new();
-                for i in 0..num_channels {
-                    channels.push(ChannelInfo {
-                        index: i,
-                        name: format!("CH{}", i + 1),
-                        display_name: vec![format!("CH{}", i + 1)],
+                            name: "M".to_string(),
+                            display_name: vec!["M".to_string()],
+                        }],
+                        muted: false,
+                        soloed: false,
+                        dimmed: false,
                     });
                 }
-                self.level_meter_groups.push(ChannelGroup {
-                    name: "All Channels".to_string(),
-                    channels,
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
-                });
+                4 => {
+                    // Quad (FL, FR, SL, SR) - not a standard speaker config
+                    self.level_meter_groups.push(ChannelGroup {
+                        name: "L/R".to_string(),
+                        channels: vec![
+                            ChannelInfo {
+                                index: 0,
+                                name: "L".to_string(),
+                                display_name: vec!["L".to_string()],
+                            },
+                            ChannelInfo {
+                                index: 1,
+                                name: "R".to_string(),
+                                display_name: vec!["R".to_string()],
+                            },
+                        ],
+                        muted: false,
+                        soloed: false,
+                        dimmed: false,
+                    });
+                    self.level_meter_groups.push(ChannelGroup {
+                        name: "Surrounds".to_string(),
+                        channels: vec![
+                            ChannelInfo {
+                                index: 2,
+                                name: "SL".to_string(),
+                                display_name: vec!["S".to_string(), "L".to_string()],
+                            },
+                            ChannelInfo {
+                                index: 3,
+                                name: "SR".to_string(),
+                                display_name: vec!["S".to_string(), "R".to_string()],
+                            },
+                        ],
+                        muted: false,
+                        soloed: false,
+                        dimmed: false,
+                    });
+                }
+                _ => {
+                    // Generic fallback - treat all channels as one group
+                    let channels: Vec<ChannelInfo> = (0..num_channels)
+                        .map(|i| {
+                            let spec = make_fallback_channel(i);
+                            ChannelInfo {
+                                index: spec.index,
+                                name: spec.label.to_string(),
+                                display_name: spec.display_chars.iter().map(|s| (*s).to_string()).collect(),
+                            }
+                        })
+                        .collect();
+                    self.level_meter_groups.push(ChannelGroup {
+                        name: "All Channels".to_string(),
+                        channels,
+                        muted: false,
+                        soloed: false,
+                        dimmed: false,
+                    });
+                }
             }
         }
 
