@@ -82,6 +82,7 @@ fn plugin_color(plugin_type: &PluginType, theme: &crate::theme::Theme) -> Rgba {
         PluginType::LoudnessMonitor => theme.plugin_colors.monitor,
         PluginType::SpectrumAnalyzer => theme.plugin_colors.spectrum,
         PluginType::ChannelMuteSolo => theme.plugin_colors.mute_solo,
+        PluginType::Matrix => theme.plugin_colors.upmixer, // Reuse upmixer color for matrix
     }
 }
 
@@ -99,6 +100,7 @@ fn plugin_icon(plugin_type: &PluginType) -> &'static str {
         PluginType::LoudnessMonitor => "◐",
         PluginType::SpectrumAnalyzer => "▓",
         PluginType::ChannelMuteSolo => "◧",
+        PluginType::Matrix => "⊞",
     }
 }
 
@@ -116,6 +118,7 @@ fn short_name(plugin_type: &PluginType) -> &'static str {
         PluginType::LoudnessMonitor => "Mon",
         PluginType::SpectrumAnalyzer => "Spectr",
         PluginType::ChannelMuteSolo => "Mix",
+        PluginType::Matrix => "Matrix",
     }
 }
 
@@ -327,6 +330,7 @@ impl PlayerView {
                                 color,
                                 icon,
                             };
+                            let plugin_type_for_remove = plugin_type.clone();
                             div()
                                 .flex()
                                 .items_center()
@@ -427,6 +431,13 @@ impl PlayerView {
                                                         move |view, _e: &MouseUpEvent, _, cx| {
                                                             cx.stop_propagation();
                                                             view.state.update(cx, |state, _cx| {
+                                                                // Disable spectrum fetching when removing SpectrumAnalyzer
+                                                                if plugin_type_for_remove
+                                                                    == PluginType::SpectrumAnalyzer
+                                                                {
+                                                                    state.app.spectrum_visible = false;
+                                                                }
+
                                                                 state
                                                                     .app
                                                                     .plugin_chain
@@ -813,6 +824,11 @@ impl PlayerView {
                                         state.app.pending_plugin_update =
                                             Some(PluginUpdateType::Structural);
                                         state.app.update_level_meter_groups(); // Reconfigure metering
+
+                                        // Enable spectrum data fetching when adding SpectrumAnalyzer
+                                        if pt == PluginType::SpectrumAnalyzer {
+                                            state.app.spectrum_visible = true;
+                                        }
                                     });
                                     cx.notify();
                                 }),

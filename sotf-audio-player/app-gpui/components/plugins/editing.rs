@@ -149,6 +149,7 @@ impl App {
                     dialogue_weight,
                     voice_freq_min_hz,
                     voice_freq_max_hz,
+                    ..
                 } => {
                     use sotf_audio_player::param_specs::upmixer::*;
                     match param_idx {
@@ -651,6 +652,10 @@ impl App {
                     // No adjustable parameters (mute/solo are toggles, not adjustable)
                     false
                 }
+                PluginSettings::Matrix { .. } => {
+                    // Matrix is edited via grid UI, not adjustable parameters
+                    false
+                }
             }
         } else {
             false
@@ -727,6 +732,7 @@ impl App {
                     dialogue_weight,
                     voice_freq_min_hz,
                     voice_freq_max_hz,
+                    ..
                 } => {
                     use sotf_audio_player::param_specs::upmixer::*;
                     match param_idx {
@@ -1582,5 +1588,6 @@ pub fn get_param_count(settings: &PluginSettings) -> usize {
         PluginSettings::SpectrumAnalyzer { .. } => 4, // num_bins, min_freq, max_freq, smoothing
         PluginSettings::Gain { .. } => 1,            // gain_db
         PluginSettings::ChannelMuteSolo { .. } => 0, // No editable params (toggles only)
+        PluginSettings::Matrix { .. } => 0,          // Matrix is edited via grid UI, not params
     }
 }

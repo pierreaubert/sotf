@@ -462,6 +462,7 @@ fn plugin_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
         | PluginType::LoudnessMonitor
         | PluginType::SpectrumAnalyzer
         | PluginType::ChannelMuteSolo => theme.text_muted,
+        PluginType::Matrix => theme.accent,
     }
 }
 
@@ -484,6 +485,8 @@ fn plugin_channel_counts(plugin_type: &PluginType) -> (usize, usize) {
         PluginType::BinauralDecoder => (5, 2),
         // Convolution: stereo in/out
         PluginType::Convolution => (2, 2),
+        // Matrix: variable in/out (default to 2x2)
+        PluginType::Matrix => (2, 2),
     }
 }
 
