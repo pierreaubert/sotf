@@ -6,8 +6,85 @@ use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::devices::get_device_supported_sample_rates;
 use crate::engine::{AudioEngine, AudioEngineState, EngineConfig, PlaybackState, PluginConfig};
 use crate::{AudioDecoderError, AudioDecoderResult, AudioFormat, AudioSpec, probe_file};
+
+/// Select the optimal output sample rate for playback
+///
+/// Strategy:
+/// 1. If device supports file's native rate -> use it (no resampling)
+/// 2. Otherwise, find best supported rate:
+///    - Prefer rates in the same "family" (44100-based or 48000-based)
+///    - Prefer higher rates (less quality loss during resampling)
+///    - Fallback to device default
+fn select_output_sample_rate(file_sample_rate: u32, output_device: Option<&str>) -> u32 {
+    // Get device supported rates
+    let supported_rates = match get_device_supported_sample_rates(output_device) {
+        Some(rates) if !rates.is_empty() => rates,
+        _ => {
+            // No device info available, assume file rate is supported
+            log::debug!(
+                "[AudioEngineManager] Could not query device rates, using file rate: {}Hz",
+                file_sample_rate
+            );
+            return file_sample_rate;
+        }
+    };
+
+    log::debug!(
+        "[AudioEngineManager] File: {}Hz, Device supports: {:?}",
+        file_sample_rate,
+        supported_rates
+    );
+
+    // If device supports file's native rate, use it (no resampling needed)
+    if supported_rates.contains(&file_sample_rate) {
+        log::info!(
+            "[AudioEngineManager] Using native rate: {}Hz",
+            file_sample_rate
+        );
+        return file_sample_rate;
+    }
+
+    // Device doesn't support file rate - find best alternative
+    // Determine the sample rate "family" (44100-based vs 48000-based)
+    let is_44100_family = file_sample_rate % 44100 == 0 || file_sample_rate == 22050;
+    let is_48000_family = file_sample_rate % 48000 == 0 || file_sample_rate == 24000;
+
+    // Preferred rates in order of preference for each family
+    let preferred_rates: &[u32] = if is_44100_family {
+        // 44100 family: prefer multiples/divisors within family, then cross-family
+        &[88200, 176400, 44100, 96000, 192000, 48000]
+    } else if is_48000_family {
+        // 48000 family: prefer multiples/divisors within family, then cross-family
+        &[96000, 192000, 48000, 88200, 176400, 44100]
+    } else {
+        // Unknown family (e.g., 32000Hz): prefer highest quality rates
+        &[192000, 176400, 96000, 88200, 48000, 44100]
+    };
+
+    // Find the best available rate
+    for &preferred in preferred_rates {
+        if supported_rates.contains(&preferred) {
+            log::info!(
+                "[AudioEngineManager] Resampling {}Hz -> {}Hz (native not supported)",
+                file_sample_rate,
+                preferred
+            );
+            return preferred;
+        }
+    }
+
+    // Fallback: use highest supported rate
+    let highest = *supported_rates.last().unwrap_or(&48000);
+    log::info!(
+        "[AudioEngineManager] Resampling {}Hz -> {}Hz (fallback to highest)",
+        file_sample_rate,
+        highest
+    );
+    highest
+}
 
 /// High-level audio streaming manager using native AudioEngine
 pub struct AudioEngineManager {
@@ -141,18 +218,23 @@ impl AudioEngineManager {
             .clone()
             .ok_or_else(|| AudioDecoderError::ConfigError("No file loaded".to_string()))?;
 
-        log::warn!(
+        log::debug!(
             "[AudioEngineManager] start_playback called: {} plugins, requested output_channels={}",
             plugins.len(),
             output_channels
         );
+
+        // Select optimal output sample rate based on device capabilities
+        let file_sample_rate = audio_info.spec.sample_rate;
+        let output_sample_rate =
+            select_output_sample_rate(file_sample_rate, output_device.as_deref());
 
         // Create engine config
         let config = EngineConfig {
             version: 1,
             frame_size: 1024,
             buffer_ms: 200, // 200ms latency
-            output_sample_rate: audio_info.spec.sample_rate,
+            output_sample_rate,
             input_channels: audio_info.spec.channels as usize, // Input from audio file
             output_channels,                                   // Output after plugins
             output_device, // User-specified device or None for default
@@ -164,9 +246,15 @@ impl AudioEngineManager {
         };
 
         log::info!(
-            "[AudioEngineManager] Creating engine: {}Hz, {}ch",
+            "[AudioEngineManager] Creating engine: source={}Hz, output={}Hz, {}ch{}",
+            file_sample_rate,
             config.output_sample_rate,
-            config.output_channels
+            config.output_channels,
+            if file_sample_rate != config.output_sample_rate {
+                " (resampling)"
+            } else {
+                ""
+            }
         );
 
         // Create and start engine

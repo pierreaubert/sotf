@@ -41,7 +41,7 @@ fn find_device(
 }
 
 #[test]
-fn test_channel_mute_loopback_verification() {
+fn test_matrix_swap_channels_loopback_verification() {
     let device_names = ["BlackHole 2ch", "BlackHole 16ch", "BlackHole 64ch"];
     let mut output_setup = None;
     let mut input_setup = None;
@@ -64,26 +64,25 @@ fn test_channel_mute_loopback_verification() {
 
     let (out_device, out_config) = output_setup.unwrap();
     let (in_device, in_config) = input_setup.unwrap();
-    let sample_rate = out_config.sample_rate().0 as f64;
+    let sample_rate = out_config.sample_rate() as f64;
 
     // Generate stereo signal with different frequencies per channel
     let duration_secs = 2.0;
     let num_samples = (duration_secs * sample_rate) as usize;
-    let left_freq = 440.0;
-    let right_freq = 880.0;
+    let left_freq = 440.0; // A4
+    let right_freq = 880.0; // A5
 
-    // Audio Engine with left channel muted
+    // Audio Engine with matrix that swaps channels
+    // Matrix: [0, 1, 1, 0] means Out0 = In1, Out1 = In0
     let mut config = EngineConfig::default();
     config.output_device = Some(out_device.name().unwrap());
     config.output_channels = 2;
     config.plugins = vec![PluginConfig::new(
-        "channel_mute_solo",
+        "matrix",
         json!({
-            "enabled": true,
-            "channel_states": [
-                {"muted": true, "soloed": false, "dimmed": false},  // Left muted
-                {"muted": false, "soloed": false, "dimmed": false}  // Right not muted
-            ]
+            "input_channels": 2,
+            "output_channels": 2,
+            "matrix": [0.0, 1.0, 1.0, 0.0]  // Swap L/R
         }),
     )];
     let mut engine = match AudioEngine::new(config) {
@@ -150,7 +149,7 @@ fn test_channel_mute_loopback_verification() {
     let captured_left: Vec<f32> = buffer.iter().step_by(channels).cloned().collect();
     let captured_right: Vec<f32> = buffer.iter().skip(1).step_by(channels).cloned().collect();
 
-    // Calculate RMS for each channel (skip first 0.5s)
+    // Calculate RMS for each channel
     let start_idx = (0.5 * sample_rate) as usize;
     let end_idx = start_idx + (1.0 * sample_rate) as usize;
 
@@ -167,33 +166,33 @@ fn test_channel_mute_loopback_verification() {
     let left_rms = (left_sum_sq / (end_idx - start_idx) as f32).sqrt();
     let right_rms = (right_sum_sq / (end_idx - start_idx) as f32).sqrt();
 
-    println!(
-        "Left RMS: {:.4} ({:.2} dB), Right RMS: {:.4} ({:.2} dB)",
-        left_rms,
-        20.0 * left_rms.log10(),
-        right_rms,
-        20.0 * right_rms.log10()
-    );
+    println!("Left RMS: {:.4}, Right RMS: {:.4}", left_rms, right_rms);
 
-    // Left channel should be muted (very low)
+    // Both channels should have signal (swapped)
     assert!(
-        left_rms < 0.01,
-        "Left channel should be muted, got RMS: {:.4}",
+        left_rms > 0.2,
+        "Left channel should have signal (from right input), got RMS: {:.4}",
         left_rms
     );
-
-    // Right channel should have signal
     assert!(
         right_rms > 0.2,
-        "Right channel should have signal, got RMS: {:.4}",
+        "Right channel should have signal (from left input), got RMS: {:.4}",
         right_rms
     );
 
-    println!("Test PASSED: Channel mute verified.");
+    // The RMS values should be similar since both input signals have same amplitude
+    let rms_diff = (left_rms - right_rms).abs();
+    assert!(
+        rms_diff < 0.1,
+        "Both channels should have similar RMS after swap, diff: {:.4}",
+        rms_diff
+    );
+
+    println!("Test PASSED: Matrix channel swap verified.");
 }
 
 #[test]
-fn test_channel_solo_loopback_verification() {
+fn test_matrix_mono_sum_loopback_verification() {
     let device_names = ["BlackHole 2ch", "BlackHole 16ch", "BlackHole 64ch"];
     let mut output_setup = None;
     let mut input_setup = None;
@@ -216,25 +215,22 @@ fn test_channel_solo_loopback_verification() {
 
     let (out_device, out_config) = output_setup.unwrap();
     let (in_device, in_config) = input_setup.unwrap();
-    let sample_rate = out_config.sample_rate().0 as f64;
+    let sample_rate = out_config.sample_rate() as f64;
 
     let duration_secs = 2.0;
     let num_samples = (duration_secs * sample_rate) as usize;
-    let left_freq = 440.0;
-    let right_freq = 880.0;
 
-    // Audio Engine with left channel soloed (right should be muted)
+    // Audio Engine with matrix that sums to mono
+    // Matrix: [0.5, 0.5, 0.5, 0.5] means Out0 = 0.5*In0 + 0.5*In1, Out1 = 0.5*In0 + 0.5*In1
     let mut config = EngineConfig::default();
     config.output_device = Some(out_device.name().unwrap());
     config.output_channels = 2;
     config.plugins = vec![PluginConfig::new(
-        "channel_mute_solo",
+        "matrix",
         json!({
-            "enabled": true,
-            "channel_states": [
-                {"muted": false, "soloed": true, "dimmed": false},  // Left soloed
-                {"muted": false, "soloed": false, "dimmed": false}  // Right not soloed
-            ]
+            "input_channels": 2,
+            "output_channels": 2,
+            "matrix": [0.5, 0.5, 0.5, 0.5]  // Sum to mono on both outputs
         }),
     )];
     let mut engine = match AudioEngine::new(config) {
@@ -245,7 +241,7 @@ fn test_channel_solo_loopback_verification() {
         }
     };
 
-    // WAV file
+    // WAV file with signal only on left channel
     let spec = hound::WavSpec {
         channels: 2,
         sample_rate: sample_rate as u32,
@@ -256,8 +252,8 @@ fn test_channel_solo_loopback_verification() {
     let mut writer = hound::WavWriter::create(temp_file.path(), spec).unwrap();
     for i in 0..num_samples {
         let t = i as f64 / sample_rate;
-        let left = (t * left_freq * 2.0 * std::f64::consts::PI).sin() * 0.5;
-        let right = (t * right_freq * 2.0 * std::f64::consts::PI).sin() * 0.5;
+        let left = (t * 440.0 * 2.0 * std::f64::consts::PI).sin() * 0.8;
+        let right = 0.0; // Silent right channel
         writer
             .write_sample((left * i16::MAX as f64) as i16)
             .unwrap();
@@ -316,27 +312,27 @@ fn test_channel_solo_loopback_verification() {
     let left_rms = (left_sum_sq / (end_idx - start_idx) as f32).sqrt();
     let right_rms = (right_sum_sq / (end_idx - start_idx) as f32).sqrt();
 
-    println!(
-        "Left RMS: {:.4} ({:.2} dB), Right RMS: {:.4} ({:.2} dB)",
-        left_rms,
-        20.0 * left_rms.log10(),
-        right_rms,
-        20.0 * right_rms.log10()
-    );
+    println!("Left RMS: {:.4}, Right RMS: {:.4}", left_rms, right_rms);
 
-    // Left channel (soloed) should have signal
+    // Both channels should have signal (mono sum)
     assert!(
-        left_rms > 0.2,
-        "Left channel (soloed) should have signal, got RMS: {:.4}",
+        left_rms > 0.1,
+        "Left channel should have signal from mono sum, got RMS: {:.4}",
         left_rms
     );
-
-    // Right channel should be muted (not soloed)
     assert!(
-        right_rms < 0.01,
-        "Right channel should be muted (not soloed), got RMS: {:.4}",
+        right_rms > 0.1,
+        "Right channel should have signal from mono sum, got RMS: {:.4}",
         right_rms
     );
 
-    println!("Test PASSED: Channel solo verified.");
+    // Both channels should be identical (mono)
+    let rms_diff = (left_rms - right_rms).abs();
+    assert!(
+        rms_diff < 0.05,
+        "Both channels should have identical RMS (mono), diff: {:.4}",
+        rms_diff
+    );
+
+    println!("Test PASSED: Matrix mono sum verified.");
 }

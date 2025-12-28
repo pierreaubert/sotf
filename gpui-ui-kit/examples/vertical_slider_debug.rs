@@ -12,7 +12,7 @@ use gpui::*;
 use gpui_ui_kit::i18n::{I18nExt, TranslationKey};
 use gpui_ui_kit::scale::Scale;
 use gpui_ui_kit::theme::ThemeExt;
-use gpui_ui_kit::vertical_slider::{VerticalSlider, VerticalSliderSize};
+use gpui_ui_kit::audio::vertical_slider::{VerticalSlider, VerticalSliderSize};
 use gpui_ui_kit::*;
 
 /// Demo state

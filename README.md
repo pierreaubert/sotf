@@ -21,7 +21,7 @@ What can you do with it?
 
 ## How to use?
 
-Download a release from our [repo](https://github.com/pierreaubert/sotf) on Github. If you like it, star the directory please.
+Download a release from our [repo](https://github.com/pierreaubert/sotf) on Github. If you like it, star the directory please. If you dont, please let us know why? All feedback is welcome: you can leave a comment on [github](https://github.com/pierreaubert/sotf/discussions/116) or on [AudioScienceReview](https://www.audiosciencereview.com/forum/index.php?threads/autoeq-for-speaker-and-headphone.66460/).
 
 ## Install
 
@@ -33,13 +33,21 @@ If you already have cargo / rustup, you can jump to:
 
 ```shell
 cargo install just
-export AUTOEQ_DIR=`pwd`
 just
 ```
 
-Select the correct install just command for your platform:
+On Linux or MacOS, select the correct install just command for your platform:
 ```shell
 just install-...
+```
+On Windows,
+```shell
+.\sotf-audio-player\windows\build-windows.bat
+```
+
+Then run post-install
+```shell
+just post-install
 ```
 
 You can build or test with a simple:
@@ -48,7 +56,28 @@ just build
 just test
 ```
 
-and you are set up. See this [README](autoeq/README.md) for instructions on how to use it.
+In order to build the TUI version
+```shell
+just sotf-tui
+```
+and for the UI version:
+```shell
+just SotF
+```
+
+## Where is the code?
+
+The code is in 3 parts:
+- [math-audio](https://github.com/pierreaubert/math-audio) : a toolkit for DSP processing, FEM and BEM simulations
+- [autoeq](https://github.com/pierreaubert/autoeq) : a toolkit for generating EQ from measurements (IIR, FIR, MSO, DSO etc)
+- this repository [sotf](https://github.com/pierreaubert/sotf) which is mostly the UI and TUI. It also as a GPUI toolkit with components and plots (see below).
+
+Why did you not reuse more code? The goal was to learn Rust and to learn other things I always wondered about:
+- How to write an audio player? I took inspiration from camilladsp and wrote my own. I could have use Camilla (and I did at the beginning)
+- Why are plotting library never perfect? I can usually go 90% of the way with most libraries but then I get block and then it gets complicated to get exactly what you want.
+- Can I do everything in Rust from backend to fronted? I am not a fan of Typescript and the context switching between Rust and Typescript is not ideal for me. Using GPUI allow me to stay in Rust and be concentrated.
+- Did LLM model progress enough to help building a complex app? Answer is yes since Opus 4.5 and Gemini 3.0.
+- Can I reuse my old c++ code with audio plugin? Answer is also yes, I translated most of them in Rust now. I am still unclear if I will be able to build AU plugins with GPUI but it is working for CLAP and VST3.
 
 ## Toolkit
 

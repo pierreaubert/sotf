@@ -1,4 +1,5 @@
 use anyhow::anyhow;
+use clap::Parser;
 use gpui::*;
 use mimalloc::MiMalloc;
 use rust_embed::RustEmbed;
@@ -15,6 +16,11 @@ use std::sync::Arc;
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
+#[derive(Parser, Debug)]
+#[command(name = "SotF")]
+#[command(version, about = "SOTF GPUI Music Player", long_about = None)]
+struct Args {}
+
 actions!(sotf_player, [Quit, NextScreen, PrevScreen]);
 
 /// Embedded assets including Lucide SVG icons and brand images
@@ -30,6 +36,8 @@ actions!(sotf_player, [Quit, NextScreen, PrevScreen]);
 struct Assets;
 
 fn main() {
+    // Parse command line arguments (handles --version and --help)
+    let _args = Args::parse();
     // Initialize logging to file
     if let Some(log_path) = sotf_audio_player::config::get_gpui_log_path() {
         if let Ok(log_file) = OpenOptions::new().create(true).append(true).open(&log_path) {

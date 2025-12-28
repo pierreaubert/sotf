@@ -41,7 +41,7 @@ fn find_device(
 }
 
 #[test]
-fn test_matrix_swap_channels_loopback_verification() {
+fn test_crossover_lowpass_loopback_verification() {
     let device_names = ["BlackHole 2ch", "BlackHole 16ch", "BlackHole 64ch"];
     let mut output_setup = None;
     let mut input_setup = None;
@@ -64,25 +64,36 @@ fn test_matrix_swap_channels_loopback_verification() {
 
     let (out_device, out_config) = output_setup.unwrap();
     let (in_device, in_config) = input_setup.unwrap();
-    let sample_rate = out_config.sample_rate().0 as f64;
+    let sample_rate = out_config.sample_rate() as f64;
 
-    // Generate stereo signal with different frequencies per channel
+    // Parameters - Lowpass crossover at 500Hz
+    let crossover_freq = 500.0;
+
+    // Generate signal: mix of low frequency (200Hz) and high frequency (2000Hz)
     let duration_secs = 2.0;
     let num_samples = (duration_secs * sample_rate) as usize;
-    let left_freq = 440.0; // A4
-    let right_freq = 880.0; // A5
+    let mut source_signal = Vec::with_capacity(num_samples);
 
-    // Audio Engine with matrix that swaps channels
-    // Matrix: [0, 1, 1, 0] means Out0 = In1, Out1 = In0
+    let low_freq = 200.0; // Below crossover - should pass
+    let high_freq = 2000.0; // Above crossover - should be attenuated
+
+    for i in 0..num_samples {
+        let t = i as f64 / sample_rate;
+        let low_sine = (t * low_freq * 2.0 * std::f64::consts::PI).sin() * 0.5;
+        let high_sine = (t * high_freq * 2.0 * std::f64::consts::PI).sin() * 0.5;
+        source_signal.push(low_sine + high_sine);
+    }
+
+    // Audio Engine with lowpass crossover
     let mut config = EngineConfig::default();
     config.output_device = Some(out_device.name().unwrap());
     config.output_channels = 2;
     config.plugins = vec![PluginConfig::new(
-        "matrix",
+        "crossover",
         json!({
-            "input_channels": 2,
-            "output_channels": 2,
-            "matrix": [0.0, 1.0, 1.0, 0.0]  // Swap L/R
+            "type": "LR24",
+            "frequency": crossover_freq,
+            "output": "low"
         }),
     )];
     let mut engine = match AudioEngine::new(config) {
@@ -93,7 +104,7 @@ fn test_matrix_swap_channels_loopback_verification() {
         }
     };
 
-    // WAV file with different frequencies per channel
+    // WAV file
     let spec = hound::WavSpec {
         channels: 2,
         sample_rate: sample_rate as u32,
@@ -102,16 +113,10 @@ fn test_matrix_swap_channels_loopback_verification() {
     };
     let temp_file = tempfile::Builder::new().suffix(".wav").tempfile().unwrap();
     let mut writer = hound::WavWriter::create(temp_file.path(), spec).unwrap();
-    for i in 0..num_samples {
-        let t = i as f64 / sample_rate;
-        let left = (t * left_freq * 2.0 * std::f64::consts::PI).sin() * 0.5;
-        let right = (t * right_freq * 2.0 * std::f64::consts::PI).sin() * 0.5;
-        writer
-            .write_sample((left * i16::MAX as f64) as i16)
-            .unwrap();
-        writer
-            .write_sample((right * i16::MAX as f64) as i16)
-            .unwrap();
+    for &sample in &source_signal {
+        let amp = (sample * i16::MAX as f64) as i16;
+        writer.write_sample(amp).unwrap();
+        writer.write_sample(amp).unwrap();
     }
     writer.finalize().unwrap();
 
@@ -144,55 +149,45 @@ fn test_matrix_swap_channels_loopback_verification() {
     if buffer.is_empty() {
         panic!("No audio captured");
     }
+    let captured_ch0: Vec<f32> = buffer.iter().step_by(channels).cloned().collect();
 
-    // Extract left and right channels
-    let captured_left: Vec<f32> = buffer.iter().step_by(channels).cloned().collect();
-    let captured_right: Vec<f32> = buffer.iter().skip(1).step_by(channels).cloned().collect();
-
-    // Calculate RMS for each channel
+    // Analyze frequency content using simple energy measurement
+    // Skip first 0.5s for settling, analyze 1s
     let start_idx = (0.5 * sample_rate) as usize;
     let end_idx = start_idx + (1.0 * sample_rate) as usize;
 
-    if captured_left.len() < end_idx || captured_right.len() < end_idx {
+    if captured_ch0.len() < end_idx {
         panic!("Recording too short");
     }
 
-    let mut left_sum_sq = 0.0f32;
-    let mut right_sum_sq = 0.0f32;
+    // Calculate RMS of the captured signal
+    let mut sum_sq = 0.0f32;
     for i in start_idx..end_idx {
-        left_sum_sq += captured_left[i] * captured_left[i];
-        right_sum_sq += captured_right[i] * captured_right[i];
+        sum_sq += captured_ch0[i] * captured_ch0[i];
     }
-    let left_rms = (left_sum_sq / (end_idx - start_idx) as f32).sqrt();
-    let right_rms = (right_sum_sq / (end_idx - start_idx) as f32).sqrt();
+    let rms = (sum_sq / (end_idx - start_idx) as f32).sqrt();
+    let db_fs = 20.0 * rms.log10();
 
-    println!("Left RMS: {:.4}, Right RMS: {:.4}", left_rms, right_rms);
+    println!("Captured RMS: {:.4} ({:.2} dBFS)", rms, db_fs);
 
-    // Both channels should have signal (swapped)
-    assert!(
-        left_rms > 0.2,
-        "Left channel should have signal (from right input), got RMS: {:.4}",
-        left_rms
-    );
-    assert!(
-        right_rms > 0.2,
-        "Right channel should have signal (from left input), got RMS: {:.4}",
-        right_rms
-    );
+    // The lowpass should pass the 200Hz component and attenuate the 2000Hz component
+    // So we should have roughly half the energy (the low frequency part)
+    // Expected RMS for single sine at 0.5 amplitude = 0.5 * 0.707 = 0.354
+    let expected_rms = 0.354;
 
-    // The RMS values should be similar since both input signals have same amplitude
-    let rms_diff = (left_rms - right_rms).abs();
+    // Allow reasonable tolerance
     assert!(
-        rms_diff < 0.1,
-        "Both channels should have similar RMS after swap, diff: {:.4}",
-        rms_diff
+        (rms - expected_rms).abs() < 0.15,
+        "RMS mismatch. Expected ~{:.4} (low freq only), got {:.4}",
+        expected_rms,
+        rms
     );
 
-    println!("Test PASSED: Matrix channel swap verified.");
+    println!("Test PASSED: Crossover lowpass verified.");
 }
 
 #[test]
-fn test_matrix_mono_sum_loopback_verification() {
+fn test_crossover_highpass_loopback_verification() {
     let device_names = ["BlackHole 2ch", "BlackHole 16ch", "BlackHole 64ch"];
     let mut output_setup = None;
     let mut input_setup = None;
@@ -215,22 +210,36 @@ fn test_matrix_mono_sum_loopback_verification() {
 
     let (out_device, out_config) = output_setup.unwrap();
     let (in_device, in_config) = input_setup.unwrap();
-    let sample_rate = out_config.sample_rate().0 as f64;
+    let sample_rate = out_config.sample_rate() as f64;
 
+    // Parameters - Highpass crossover at 500Hz
+    let crossover_freq = 500.0;
+
+    // Generate signal: mix of low frequency (200Hz) and high frequency (2000Hz)
     let duration_secs = 2.0;
     let num_samples = (duration_secs * sample_rate) as usize;
+    let mut source_signal = Vec::with_capacity(num_samples);
 
-    // Audio Engine with matrix that sums to mono
-    // Matrix: [0.5, 0.5, 0.5, 0.5] means Out0 = 0.5*In0 + 0.5*In1, Out1 = 0.5*In0 + 0.5*In1
+    let low_freq = 200.0; // Below crossover - should be attenuated
+    let high_freq = 2000.0; // Above crossover - should pass
+
+    for i in 0..num_samples {
+        let t = i as f64 / sample_rate;
+        let low_sine = (t * low_freq * 2.0 * std::f64::consts::PI).sin() * 0.5;
+        let high_sine = (t * high_freq * 2.0 * std::f64::consts::PI).sin() * 0.5;
+        source_signal.push(low_sine + high_sine);
+    }
+
+    // Audio Engine with highpass crossover
     let mut config = EngineConfig::default();
     config.output_device = Some(out_device.name().unwrap());
     config.output_channels = 2;
     config.plugins = vec![PluginConfig::new(
-        "matrix",
+        "crossover",
         json!({
-            "input_channels": 2,
-            "output_channels": 2,
-            "matrix": [0.5, 0.5, 0.5, 0.5]  // Sum to mono on both outputs
+            "type": "LR24",
+            "frequency": crossover_freq,
+            "output": "high"
         }),
     )];
     let mut engine = match AudioEngine::new(config) {
@@ -241,7 +250,7 @@ fn test_matrix_mono_sum_loopback_verification() {
         }
     };
 
-    // WAV file with signal only on left channel
+    // WAV file
     let spec = hound::WavSpec {
         channels: 2,
         sample_rate: sample_rate as u32,
@@ -250,16 +259,10 @@ fn test_matrix_mono_sum_loopback_verification() {
     };
     let temp_file = tempfile::Builder::new().suffix(".wav").tempfile().unwrap();
     let mut writer = hound::WavWriter::create(temp_file.path(), spec).unwrap();
-    for i in 0..num_samples {
-        let t = i as f64 / sample_rate;
-        let left = (t * 440.0 * 2.0 * std::f64::consts::PI).sin() * 0.8;
-        let right = 0.0; // Silent right channel
-        writer
-            .write_sample((left * i16::MAX as f64) as i16)
-            .unwrap();
-        writer
-            .write_sample((right * i16::MAX as f64) as i16)
-            .unwrap();
+    for &sample in &source_signal {
+        let amp = (sample * i16::MAX as f64) as i16;
+        writer.write_sample(amp).unwrap();
+        writer.write_sample(amp).unwrap();
     }
     writer.finalize().unwrap();
 
@@ -292,47 +295,34 @@ fn test_matrix_mono_sum_loopback_verification() {
     if buffer.is_empty() {
         panic!("No audio captured");
     }
+    let captured_ch0: Vec<f32> = buffer.iter().step_by(channels).cloned().collect();
 
-    let captured_left: Vec<f32> = buffer.iter().step_by(channels).cloned().collect();
-    let captured_right: Vec<f32> = buffer.iter().skip(1).step_by(channels).cloned().collect();
-
+    // Analyze frequency content
     let start_idx = (0.5 * sample_rate) as usize;
     let end_idx = start_idx + (1.0 * sample_rate) as usize;
 
-    if captured_left.len() < end_idx || captured_right.len() < end_idx {
+    if captured_ch0.len() < end_idx {
         panic!("Recording too short");
     }
 
-    let mut left_sum_sq = 0.0f32;
-    let mut right_sum_sq = 0.0f32;
+    let mut sum_sq = 0.0f32;
     for i in start_idx..end_idx {
-        left_sum_sq += captured_left[i] * captured_left[i];
-        right_sum_sq += captured_right[i] * captured_right[i];
+        sum_sq += captured_ch0[i] * captured_ch0[i];
     }
-    let left_rms = (left_sum_sq / (end_idx - start_idx) as f32).sqrt();
-    let right_rms = (right_sum_sq / (end_idx - start_idx) as f32).sqrt();
+    let rms = (sum_sq / (end_idx - start_idx) as f32).sqrt();
+    let db_fs = 20.0 * rms.log10();
 
-    println!("Left RMS: {:.4}, Right RMS: {:.4}", left_rms, right_rms);
+    println!("Captured RMS: {:.4} ({:.2} dBFS)", rms, db_fs);
 
-    // Both channels should have signal (mono sum)
+    // The highpass should pass the 2000Hz component and attenuate the 200Hz component
+    let expected_rms = 0.354;
+
     assert!(
-        left_rms > 0.1,
-        "Left channel should have signal from mono sum, got RMS: {:.4}",
-        left_rms
-    );
-    assert!(
-        right_rms > 0.1,
-        "Right channel should have signal from mono sum, got RMS: {:.4}",
-        right_rms
+        (rms - expected_rms).abs() < 0.15,
+        "RMS mismatch. Expected ~{:.4} (high freq only), got {:.4}",
+        expected_rms,
+        rms
     );
 
-    // Both channels should be identical (mono)
-    let rms_diff = (left_rms - right_rms).abs();
-    assert!(
-        rms_diff < 0.05,
-        "Both channels should have identical RMS (mono), diff: {:.4}",
-        rms_diff
-    );
-
-    println!("Test PASSED: Matrix mono sum verified.");
+    println!("Test PASSED: Crossover highpass verified.");
 }

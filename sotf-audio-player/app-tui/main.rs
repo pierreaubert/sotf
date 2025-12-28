@@ -17,7 +17,7 @@ use std::time::Duration;
 
 #[derive(Parser, Debug)]
 #[command(name = "sotf-player")]
-#[command(about = "SOTF TUI Music Player", long_about = None)]
+#[command(version, about = "SOTF TUI Music Player", long_about = None)]
 struct Args {
     /// Initial directories to scan for music
     #[arg(short, long)]

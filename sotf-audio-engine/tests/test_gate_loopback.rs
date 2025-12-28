@@ -41,7 +41,7 @@ fn find_device(
 }
 
 #[test]
-fn test_delay_loopback_verification() {
+fn test_gate_loopback_verification() {
     let device_names = ["BlackHole 2ch", "BlackHole 16ch", "BlackHole 64ch"];
     let mut output_setup = None;
     let mut input_setup = None;
@@ -64,26 +64,35 @@ fn test_delay_loopback_verification() {
 
     let (out_device, out_config) = output_setup.unwrap();
     let (in_device, in_config) = input_setup.unwrap();
-    let sample_rate = out_config.sample_rate().0 as f64;
+    let sample_rate = out_config.sample_rate() as f64;
 
-    // Parameters
-    let delay_ms = 100.0; // 100ms delay
-    let feedback = 0.0; // No feedback for cleaner test
-    let mix = 1.0; // 100% wet signal
+    // Parameters - Gate with high threshold to silence quiet parts
+    let threshold_db = -20.0; // Gate opens above -20dB
+    let ratio = 100.0; // High ratio for strong gating
+    let attack_ms = 1.0;
+    let hold_ms = 10.0;
+    let release_ms = 50.0;
 
-    // Generate a short impulse signal
-    let duration_secs = 1.0;
+    // Generate signal: loud part (above threshold) followed by quiet part (below threshold)
+    let duration_secs = 2.0;
     let num_samples = (duration_secs * sample_rate) as usize;
     let mut source_signal = Vec::with_capacity(num_samples);
 
-    // Create an impulse at the start (first 10ms)
-    let impulse_samples = (0.01 * sample_rate) as usize;
+    let loud_amplitude = 0.5; // -6dB, above threshold
+    let quiet_amplitude = 0.05; // -26dB, below threshold
+
     for i in 0..num_samples {
-        if i < impulse_samples {
-            source_signal.push(0.8); // Impulse
+        let t = i as f64 / sample_rate;
+        let sine = (t * 440.0 * 2.0 * std::f64::consts::PI).sin();
+
+        // First half: loud signal (gate open)
+        // Second half: quiet signal (gate closed)
+        let amplitude = if t < 1.0 {
+            loud_amplitude
         } else {
-            source_signal.push(0.0); // Silence
-        }
+            quiet_amplitude
+        };
+        source_signal.push(sine * amplitude);
     }
 
     // Audio Engine
@@ -91,11 +100,14 @@ fn test_delay_loopback_verification() {
     config.output_device = Some(out_device.name().unwrap());
     config.output_channels = 2;
     config.plugins = vec![PluginConfig::new(
-        "delay",
+        "gate",
         json!({
-            "delay_ms": delay_ms,
-            "feedback": feedback,
-            "mix": mix
+            "threshold_db": threshold_db,
+            "ratio": ratio,
+            "attack_ms": attack_ms,
+            "hold_ms": hold_ms,
+            "release_ms": release_ms,
+            "mix": 1.0
         }),
     )];
     let mut engine = match AudioEngine::new(config) {
@@ -153,39 +165,49 @@ fn test_delay_loopback_verification() {
     }
     let captured_ch0: Vec<f32> = buffer.iter().step_by(channels).cloned().collect();
 
-    // Find the peak in the captured signal
-    // With 100ms delay and 100% wet, the impulse should appear ~100ms later
-    let delay_samples = (delay_ms / 1000.0 * sample_rate) as usize;
+    // Calculate RMS for first half (should be loud - gate open)
+    let first_half_start = (0.2 * sample_rate) as usize;
+    let first_half_end = (0.8 * sample_rate) as usize;
 
-    // Find the maximum sample and its position
-    let mut max_val = 0.0f32;
-    let mut max_idx = 0;
-    for (i, &sample) in captured_ch0.iter().enumerate() {
-        if sample.abs() > max_val {
-            max_val = sample.abs();
-            max_idx = i;
-        }
+    // Calculate RMS for second half (should be quiet - gate closed)
+    let second_half_start = (1.2 * sample_rate) as usize;
+    let second_half_end = (1.8 * sample_rate) as usize;
+
+    if captured_ch0.len() < second_half_end {
+        panic!("Recording too short: {} samples", captured_ch0.len());
     }
 
+    let mut first_half_sum_sq = 0.0f32;
+    for i in first_half_start..first_half_end {
+        first_half_sum_sq += captured_ch0[i] * captured_ch0[i];
+    }
+    let first_half_rms = (first_half_sum_sq / (first_half_end - first_half_start) as f32).sqrt();
+
+    let mut second_half_sum_sq = 0.0f32;
+    for i in second_half_start..second_half_end {
+        second_half_sum_sq += captured_ch0[i] * captured_ch0[i];
+    }
+    let second_half_rms =
+        (second_half_sum_sq / (second_half_end - second_half_start) as f32).sqrt();
+
+    let first_half_db = 20.0 * first_half_rms.log10();
+    let second_half_db = 20.0 * second_half_rms.log10();
+
     println!(
-        "Peak found at sample {} ({:.2}ms), value: {:.4}",
-        max_idx,
-        max_idx as f64 / sample_rate * 1000.0,
-        max_val
+        "First half RMS: {:.4} ({:.2} dB), Second half RMS: {:.4} ({:.2} dB)",
+        first_half_rms, first_half_db, second_half_rms, second_half_db
     );
 
-    // The peak should be approximately at the delay time (with some tolerance for latency)
-    // We expect the peak to be after the delay time, accounting for system latency
-    let expected_min_delay = delay_samples / 2; // Allow for some variation
+    // The second half should be significantly quieter due to gating
+    let reduction_db = first_half_db - second_half_db;
+    println!("Reduction: {:.2} dB", reduction_db);
+
+    // Expect at least 10dB reduction from gating
     assert!(
-        max_idx >= expected_min_delay,
-        "Peak should be delayed by at least {}ms, but found at {}ms",
-        delay_ms / 2.0,
-        max_idx as f64 / sample_rate * 1000.0
+        reduction_db > 10.0,
+        "Gate should reduce quiet signal by at least 10dB, got {:.2}dB reduction",
+        reduction_db
     );
 
-    // Verify we got a significant signal
-    assert!(max_val > 0.1, "Peak amplitude too low: {:.4}", max_val);
-
-    println!("Test PASSED: Delay plugin verified.");
+    println!("Test PASSED: Gate plugin verified.");
 }

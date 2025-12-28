@@ -120,18 +120,20 @@ impl PlayerView {
                                             ),
                                         )
                                         .child({
-                                            // Truncate album title to 20 characters max
+                                            // Dynamic truncation based on panel width
+                                            let max_title_chars = state.app.max_chars_queue_list_title();
+                                            let max_artist_chars = state.app.max_chars_queue_list_artist();
+
                                             let album_title = item.album.title.clone();
-                                            let album_title_truncated = if album_title.chars().count() > 20 {
-                                                album_title.chars().take(20).collect::<String>() + "..."
+                                            let album_title_truncated = if album_title.chars().count() > max_title_chars {
+                                                album_title.chars().take(max_title_chars).collect::<String>() + "..."
                                             } else {
                                                 album_title
                                             };
 
-                                            // Truncate artist to 20 characters max
                                             let artist = item.album.artist();
-                                            let artist_truncated = if artist.chars().count() > 20 {
-                                                artist.chars().take(20).collect::<String>() + "..."
+                                            let artist_truncated = if artist.chars().count() > max_artist_chars {
+                                                artist.chars().take(max_artist_chars).collect::<String>() + "..."
                                             } else {
                                                 artist
                                             };
@@ -418,16 +420,18 @@ impl PlayerView {
             let artist_raw = album.artist();
             let art_path = album.album_art_path.clone();
 
-            // Truncate album title to 20 characters max for display
-            let album_title = if album_title_full.chars().count() > 20 {
-                album_title_full.chars().take(20).collect::<String>() + "..."
+            // Dynamic truncation based on window/panel size
+            let max_title_chars = state.app.max_chars_now_playing_title();
+            let max_artist_chars = state.app.max_chars_now_playing_artist();
+
+            let album_title = if album_title_full.chars().count() > max_title_chars {
+                album_title_full.chars().take(max_title_chars).collect::<String>() + "..."
             } else {
                 album_title_full.clone()
             };
 
-            // Truncate artist to 20 characters max
-            let artist = if artist_raw.chars().count() > 20 {
-                artist_raw.chars().take(20).collect::<String>() + "..."
+            let artist = if artist_raw.chars().count() > max_artist_chars {
+                artist_raw.chars().take(max_artist_chars).collect::<String>() + "..."
             } else {
                 artist_raw
             };
@@ -618,6 +622,9 @@ impl PlayerView {
         theme: &crate::theme::Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        // Get dynamic max chars for track titles based on window size
+        let max_track_chars = self.state.read(cx).app.max_chars_track_title();
+
         // Find common prefix to strip from track names
         // For albums like "Monteverdi: Vespro della Beata...", tracks often start with "Vespro della Beata..."
         let prefix_to_strip = Self::find_common_track_prefix(album_title, disc_map);
@@ -659,9 +666,9 @@ impl PlayerView {
                     title_raw
                 };
 
-                // Truncate track title to 20 characters max
-                let title = if title_stripped.chars().count() > 20 {
-                    title_stripped.chars().take(20).collect::<String>() + "..."
+                // Dynamic truncation based on window size
+                let title = if title_stripped.chars().count() > max_track_chars {
+                    title_stripped.chars().take(max_track_chars).collect::<String>() + "..."
                 } else {
                     title_stripped
                 };

@@ -15,7 +15,7 @@ members = [
     "sotf-audio-plugins/src-ffi",
     "sotf-hal",         # macOS only
 ]
-default_members = [
+default-members = [
     "gpui-d3rs",
     "gpui-px",
     "gpui-themes",
@@ -32,7 +32,7 @@ default_members = [
 resolver = "3"
 
 [workspace.package]
-version = "0.5.7"
+version = "0.5.8"
 authors = ["Pierre F. Aubert pierre@spinorama.org"]
 description = "Optimise the sound of your speakers or your headphones"
 edition = "2024"
@@ -172,7 +172,7 @@ unicode-normalization = "0.1"
 toml = "0.8"
 
 # ffi
-cbindgen = "0.24"
+cbindgen = "0.29"
 
 [workspace.lints.rust]
 ambiguous_negative_literals = "warn"

@@ -290,8 +290,7 @@ pub fn record_and_analyze(
         input_device
             .description()
             .map(|d| d.name().to_string())
-            .or_else(|_| input_device.name())
-            .unwrap_or_else(|_| "Unknown".to_string())
+            .unwrap_or_else(|_| "Unknown Device".to_string())
     );
 
     // Get the maximum number of input channels supported by the device
@@ -400,8 +399,7 @@ pub fn record_and_analyze(
         output_device
             .description()
             .map(|d| d.name().to_string())
-            .or_else(|_| output_device.name())
-            .unwrap_or_else(|_| "Unknown".to_string())
+            .unwrap_or_else(|_| "Unknown Device".to_string())
     );
 
     // Get the maximum number of output channels supported by the device
@@ -662,8 +660,7 @@ fn find_device_by_name(
     let get_display_name = |d: &cpal::Device| -> String {
         d.description()
             .map(|desc| desc.name().to_string())
-            .or_else(|_| d.name())
-            .unwrap_or_else(|_| "Unknown".to_string())
+            .unwrap_or_else(|_| "Unknown Device".to_string())
     };
 
     // First: try to match by device ID (preferred for persistence)

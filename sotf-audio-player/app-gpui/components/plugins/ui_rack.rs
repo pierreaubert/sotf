@@ -769,6 +769,7 @@ impl PlayerView {
             (PluginType::Gate, "Effects"),
             // Spatial
             (PluginType::Upmixer, "Spatial"),
+            (PluginType::Matrix, "Spatial"),
             (PluginType::BinauralDecoder, "Spatial"),
             (PluginType::Convolution, "Spatial"),
             // Monitoring

@@ -16,10 +16,11 @@ pub use plugins::{
     render_plugin_content,
 };
 
+use crate::app::Screen;
+use crate::components::icons::{Icon, IconName};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{HStack, StackJustify, StackSpacing};
 
 impl PlayerView {
     pub(crate) fn render_settings_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -43,6 +44,11 @@ impl PlayerView {
 
         // Tabs are now custom-rendered to avoid context issues
 
+        // Clone state for home button click handler
+        let state_for_home = self.state.clone();
+        let text_muted = theme.text_muted;
+        let text_secondary = theme.text_secondary;
+
         div()
             .id("settings-screen")
             .flex()
@@ -50,12 +56,36 @@ impl PlayerView {
             .size_full()
             .bg(theme.background)
             .child(
-                // Tab Header
-                div().w_full().bg(theme.surface).px_4().pt_2().child(
-                    HStack::new()
-                        .spacing(StackSpacing::Sm)
-                        .justify(StackJustify::Center)
-                        .child({
+                // Tab Header with Home button on left, tabs centered
+                div()
+                    .w_full()
+                    .bg(theme.surface)
+                    .px_4()
+                    .pt_2()
+                    .flex()
+                    .items_center()
+                    // Home button on the left
+                    .child(
+                        div()
+                            .id("settings-home-button")
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .w(px(40.0))
+                            .h(px(32.0))
+                            .cursor_pointer()
+                            .rounded_md()
+                            .hover(move |s| s.bg(theme.surface_hover))
+                            .child(Icon::new(IconName::Home).color(text_muted))
+                            .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
+                                state_for_home.update(cx, |state, _cx| {
+                                    state.app.current_screen = Screen::Library;
+                                });
+                            }),
+                    )
+                    // Centered tabs (flex-1 with centered content)
+                    .child(
+                        div().flex_1().flex().justify_center().child({
                             // Custom tab rendering to avoid context issues
                             let state_entity = self.state.clone();
                             let tab_data = [
@@ -82,7 +112,7 @@ impl PlayerView {
                                 let border = theme.border;
                                 let text_selected = theme.text_primary;
                                 let text_unselected = theme.text_muted;
-                                let text_hover = theme.text_secondary;
+                                let text_hover = text_secondary;
 
                                 let tab = div()
                                     .id(SharedString::from(format!(
@@ -133,12 +163,15 @@ impl PlayerView {
 
                             tabs_container
                         }),
-                ),
+                    )
+                    // Spacer on the right to balance the home button
+                    .child(div().w(px(40.0))),
             )
-            // Content
+            // Content with vertical scroll
             .child(
                 div()
-                    // .overflow_y_scroll()
+                    .id("settings-content-scroll")
+                    .overflow_y_scroll()
                     .flex_1()
                     .p_4()
                     .child(content),

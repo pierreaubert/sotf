@@ -23,6 +23,7 @@ mod ui_gate;
 mod ui_graph;
 mod ui_limiter;
 mod ui_loudness;
+mod ui_matrix;
 mod ui_mute_solo;
 mod ui_rack;
 mod ui_spectrum;
@@ -45,6 +46,7 @@ pub use ui_gain::render_gain_plugin;
 pub use ui_gate::render_gate_plugin;
 pub use ui_limiter::render_limiter_plugin;
 pub use ui_loudness::{render_loudness_compensation_plugin, render_loudness_monitor_plugin};
+pub use ui_matrix::render_matrix_plugin;
 pub use ui_mute_solo::render_mute_solo_plugin;
 pub use ui_rack::PluginDragInfo;
 pub use ui_spectrum::{
@@ -365,27 +367,19 @@ pub fn render_plugin_content(
             input_channels,
             output_channels,
             matrix,
-        } => {
-            // TODO: Implement dedicated Matrix UI
-            // For now, render a placeholder
-            div()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .p_4()
-                .child(
-                    div()
-                        .text_sm()
-                        .text_color(theme.text_primary)
-                        .child(format!("Matrix: {}→{} channels", input_channels, output_channels)),
-                )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(theme.text_muted)
-                        .child(format!("{} coefficients", matrix.len())),
-                )
-                .into_any_element()
-        }
+        } => render_matrix_plugin(
+            entity.clone(),
+            plugin_idx,
+            ui_matrix::MatrixRenderState {
+                input_channels: *input_channels,
+                output_channels: *output_channels,
+                matrix,
+                is_editing,
+                selected_param,
+                selected_cell: None, // Will be connected to app state later
+            },
+            theme,
+        )
+        .into_any_element()
     }
 }

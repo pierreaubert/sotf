@@ -41,7 +41,7 @@ fn find_device(
 }
 
 #[test]
-fn test_limiter_loopback_verification() {
+fn test_delay_loopback_verification() {
     let device_names = ["BlackHole 2ch", "BlackHole 16ch", "BlackHole 64ch"];
     let mut output_setup = None;
     let mut input_setup = None;
@@ -64,21 +64,26 @@ fn test_limiter_loopback_verification() {
 
     let (out_device, out_config) = output_setup.unwrap();
     let (in_device, in_config) = input_setup.unwrap();
-    let sample_rate = out_config.sample_rate().0 as f64;
+    let sample_rate = out_config.sample_rate() as f64;
 
     // Parameters
-    // Input: Sine Wave 0dBFS (Amplitude 1.0)
-    // Limiter: Threshold -6.0dB (Amplitude 0.5)
-    let threshold_db = -6.0;
+    let delay_ms = 100.0; // 100ms delay
+    let feedback = 0.0; // No feedback for cleaner test
+    let mix = 1.0; // 100% wet signal
 
-    // Generate Signal
-    let duration_secs = 2.0;
+    // Generate a short impulse signal
+    let duration_secs = 1.0;
     let num_samples = (duration_secs * sample_rate) as usize;
-    let amplitude = 1.0;
     let mut source_signal = Vec::with_capacity(num_samples);
+
+    // Create an impulse at the start (first 10ms)
+    let impulse_samples = (0.01 * sample_rate) as usize;
     for i in 0..num_samples {
-        let t = i as f64 / sample_rate;
-        source_signal.push((t * 440.0 * 2.0 * std::f64::consts::PI).sin() * amplitude);
+        if i < impulse_samples {
+            source_signal.push(0.8); // Impulse
+        } else {
+            source_signal.push(0.0); // Silence
+        }
     }
 
     // Audio Engine
@@ -86,11 +91,11 @@ fn test_limiter_loopback_verification() {
     config.output_device = Some(out_device.name().unwrap());
     config.output_channels = 2;
     config.plugins = vec![PluginConfig::new(
-        "limiter",
+        "delay",
         json!({
-            "threshold_db": threshold_db,
-            "release_ms": 100.0,
-            "mix": 1.0
+            "delay_ms": delay_ms,
+            "feedback": feedback,
+            "mix": mix
         }),
     )];
     let mut engine = match AudioEngine::new(config) {
@@ -144,58 +149,43 @@ fn test_limiter_loopback_verification() {
     // Analysis
     let buffer = captured_samples.lock().unwrap();
     if buffer.is_empty() {
-        panic!("No audio");
+        panic!("No audio captured");
     }
     let captured_ch0: Vec<f32> = buffer.iter().step_by(channels).cloned().collect();
 
-    // Analyze steady state (skip first 0.5s)
-    let start_idx = (0.5 * sample_rate) as usize;
-    let end_idx = start_idx + (1.0 * sample_rate) as usize;
-    if captured_ch0.len() < end_idx {
-        panic!("Recording too short");
-    }
+    // Find the peak in the captured signal
+    // With 100ms delay and 100% wet, the impulse should appear ~100ms later
+    let delay_samples = (delay_ms / 1000.0 * sample_rate) as usize;
 
-    let mut max_peak = 0.0f32;
-    let mut sum_sq = 0.0;
-    for i in start_idx..end_idx {
-        let val = captured_ch0[i].abs();
-        if val > max_peak {
-            max_peak = val;
+    // Find the maximum sample and its position
+    let mut max_val = 0.0f32;
+    let mut max_idx = 0;
+    for (i, &sample) in captured_ch0.iter().enumerate() {
+        if sample.abs() > max_val {
+            max_val = sample.abs();
+            max_idx = i;
         }
-        sum_sq += val * val;
     }
-    let rms = (sum_sq / (end_idx - start_idx) as f32).sqrt();
-    let rms_db = 20.0 * rms.log10();
-    let peak_db = 20.0 * max_peak.log10();
 
-    println!("Measured Peak: {:.4} ({:.2} dBFS)", max_peak, peak_db);
-    println!("Measured RMS:  {:.4} ({:.2} dBFS)", rms, rms_db);
-
-    // Assertions
-    // Peak should be clamped to approx -6dB (0.5)
-    // Allow slight overshoot (e.g. 0.5dB) due to limiter response time or inter-sample peaks?
-    // Usually hard limiters are strict.
-    // If output is 0.5, peak_db is -6.02.
-
-    assert!(
-        peak_db <= threshold_db + 0.5,
-        "Peak exceeded threshold significantly: {:.2} dB (Threshold: {:.2} dB)",
-        peak_db,
-        threshold_db
-    );
-    assert!(
-        peak_db >= threshold_db - 1.0,
-        "Signal attenuated too much: {:.2} dB",
-        peak_db
+    println!(
+        "Peak found at sample {} ({:.2}ms), value: {:.4}",
+        max_idx,
+        max_idx as f64 / sample_rate * 1000.0,
+        max_val
     );
 
-    // Check if it's actually limited (source was 0dBFS)
-    // If limiter was bypassed, peak would be ~0dBFS.
+    // The peak should be approximately at the delay time (with some tolerance for latency)
+    // We expect the peak to be after the delay time, accounting for system latency
+    let expected_min_delay = delay_samples / 2; // Allow for some variation
     assert!(
-        peak_db < -1.0,
-        "Limiter inactive? Peak is {:.2} dBFS",
-        peak_db
+        max_idx >= expected_min_delay,
+        "Peak should be delayed by at least {}ms, but found at {}ms",
+        delay_ms / 2.0,
+        max_idx as f64 / sample_rate * 1000.0
     );
 
-    println!("Test PASSED: Limiter clamped signal to threshold.");
+    // Verify we got a significant signal
+    assert!(max_val > 0.1, "Peak amplitude too low: {:.4}", max_val);
+
+    println!("Test PASSED: Delay plugin verified.");
 }

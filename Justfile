@@ -3,10 +3,9 @@
 #	  cargo install just
 # ----------------------------------------------------------------------
 
-# you need to define the path
-autoeq_dir := env('AUTOEQ_DIR')
 # should be done automatically
 dyld_fallback_library_path := '/Applications/Xcode.app/Contents/Framework'
+
 # opencv
 opencv_haarcascades_path := '/opt/homebrew/Cellar/opencv/4.12.0_15/share/opencv4/haarcascades'
 
@@ -32,11 +31,36 @@ generate-audio-tests: prod-generate-audio-tests
 # ----------------------------------------------------------------------
 
 test:
-	cargo check --workspace --all-targets
-	cargo test --workspace --lib
+	# Exclude GPUI crates from check - they cause stack overflow in syn during test/example mode compilation
+	cargo check --workspace --all-targets --exclude sotf-gpui --exclude gpui-ui-kit --exclude gpui-au --exclude gpui-themes
+	# Check GPUI crates without tests/examples
+	cargo check -p sotf-gpui -p gpui-ui-kit -p gpui-au -p gpui-themes --lib
+	# Exclude GPUI crates - they cause stack overflow in syn during test mode compilation
+	cargo test --workspace --lib --exclude sotf-gpui --exclude gpui-ui-kit --exclude gpui-au --exclude gpui-themes
 
 ntest:
-	cargo nextest run --release --no-fail-fast --workspace --lib
+	# Exclude GPUI crates - they cause stack overflow in syn during test mode compilation
+	cargo nextest run --release --no-fail-fast --workspace --lib --exclude sotf-gpui --exclude gpui-ui-kit --exclude gpui-au --exclude gpui-themes
+
+# ----------------------------------------------------------------------
+# RUN
+# ----------------------------------------------------------------------
+
+# Run the GPUI player (debug mode with ad-hoc signing for macOS file dialogs)
+run-gpui:
+	cargo build --bin SotF
+	codesign --force --deep --sign - --entitlements sotf-audio-player/app-gpui/macos/debug.entitlements target/debug/SotF
+	./target/debug/SotF
+
+# Run the GPUI player (release mode)
+run-gpui-release:
+	cargo build --release --bin SotF
+	codesign --force --deep --sign - --entitlements sotf-audio-player/app-gpui/macos/entitlements.plist target/release/SotF
+	./target/release/SotF
+
+# Run the TUI player
+run-tui:
+	cargo run --release --bin sotf_player_tui
 
 # ----------------------------------------------------------------------
 # FORMAT

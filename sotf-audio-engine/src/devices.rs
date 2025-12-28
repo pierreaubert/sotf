@@ -55,28 +55,22 @@ fn format_to_string(format: cpal::SampleFormat) -> String {
 
 /// Extract device info from cpal device using description() and id()
 fn get_device_info<D: DeviceTrait>(device: &D) -> Option<(String, Option<String>, Option<String>)> {
-    // Get display name from description (preferred) or fallback to name()
-    let (name, display_info) = if let Ok(desc) = device.description() {
-        let name = desc.name().to_string();
-        // Build extended display info from manufacturer and interface type
-        let mut info_parts = Vec::new();
-        if let Some(manufacturer) = desc.manufacturer() {
-            info_parts.push(manufacturer.to_string());
-        }
-        let interface_str = format!("{:?}", desc.interface_type());
-        if interface_str != "Unknown" {
-            info_parts.push(interface_str);
-        }
-        let display_info = if info_parts.is_empty() {
-            None
-        } else {
-            Some(info_parts.join(" - "))
-        };
-        (name, display_info)
-    } else if let Ok(name) = device.name() {
-        (name, None)
+    // Get display name from description
+    let desc = device.description().ok()?;
+    let name = desc.name().to_string();
+    // Build extended display info from manufacturer and interface type
+    let mut info_parts = Vec::new();
+    if let Some(manufacturer) = desc.manufacturer() {
+        info_parts.push(manufacturer.to_string());
+    }
+    let interface_str = format!("{:?}", desc.interface_type());
+    if interface_str != "Unknown" {
+        info_parts.push(interface_str);
+    }
+    let display_info = if info_parts.is_empty() {
+        None
     } else {
-        return None;
+        Some(info_parts.join(" - "))
     };
 
     // Get stable device ID for persistence
@@ -405,6 +399,80 @@ pub fn get_audio_devices() -> Result<HashMap<String, Vec<AudioDevice>>, String> 
     Ok(devices_map)
 }
 
+/// Get supported sample rates for a specific output device
+///
+/// # Arguments
+/// * `device_identifier` - Device ID or name. If None, uses default output device.
+///
+/// # Returns
+/// Sorted Vec of supported sample rates, or None if device not found
+pub fn get_device_supported_sample_rates(device_identifier: Option<&str>) -> Option<Vec<u32>> {
+    let host = cpal::default_host();
+
+    // Find the device
+    let device = if let Some(identifier) = device_identifier {
+        // Look for specific device by ID or name
+        host.output_devices()
+            .ok()?
+            .find(|d| device_matches_str(d, identifier))
+    } else {
+        // Use default device
+        host.default_output_device()
+    }?;
+
+    // Collect supported sample rates from all configurations
+    let mut sample_rates = std::collections::HashSet::new();
+    if let Ok(configs) = device.supported_output_configs() {
+        for config in configs {
+            sample_rates.insert(config.min_sample_rate());
+            sample_rates.insert(config.max_sample_rate());
+            // Add common rates if in range
+            for &rate in &[44100u32, 48000, 88200, 96000, 176400, 192000] {
+                if rate >= config.min_sample_rate() && rate <= config.max_sample_rate() {
+                    sample_rates.insert(rate);
+                }
+            }
+        }
+    }
+
+    if sample_rates.is_empty() {
+        return None;
+    }
+
+    let mut rates: Vec<u32> = sample_rates.into_iter().collect();
+    rates.sort_unstable();
+    Some(rates)
+}
+
+/// Helper to match device by string identifier
+fn device_matches_str<D: DeviceTrait>(device: &D, identifier: &str) -> bool {
+    // First try to match by device ID (preferred for persistence)
+    if let Ok(id) = device.id() {
+        if id.to_string() == identifier {
+            return true;
+        }
+    }
+    // Try description name
+    if let Ok(desc) = device.description() {
+        let name = desc.name();
+        // Exact match
+        if name == identifier {
+            return true;
+        }
+        // Case-insensitive match
+        if name.to_lowercase() == identifier.to_lowercase() {
+            return true;
+        }
+        // Partial match (starts with or contains)
+        let lower_name = name.to_lowercase();
+        let lower_id = identifier.to_lowercase();
+        if lower_name.starts_with(&lower_id) || lower_name.contains(&lower_id) {
+            return true;
+        }
+    }
+    false
+}
+
 /// Check if a device matches the given identifier (ID preferred, name fallback)
 fn device_matches<D: DeviceTrait>(device: &D, identifier: &str) -> bool {
     // First try to match by device ID (preferred for persistence)
@@ -416,12 +484,6 @@ fn device_matches<D: DeviceTrait>(device: &D, identifier: &str) -> bool {
     // Fallback to name matching for legacy saved states
     if let Ok(desc) = device.description() {
         if desc.name() == identifier {
-            return true;
-        }
-    }
-    // Last resort: deprecated name() method
-    if let Ok(name) = device.name() {
-        if name == identifier {
             return true;
         }
     }
@@ -575,7 +637,6 @@ pub fn get_device_properties(
     let display_name = device
         .description()
         .map(|d| d.name().to_string())
-        .or_else(|_| device.name())
         .unwrap_or_else(|_| device_identifier.clone());
 
     // Get all supported configurations

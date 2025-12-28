@@ -25,6 +25,7 @@ pub enum IconName {
     Speaker,
 
     // Navigation
+    Home,
     ChevronLeft,
     ChevronRight,
     ChevronUp,
@@ -71,6 +72,7 @@ impl IconName {
             IconName::Volume2 => "icons/volume-2.svg",
             IconName::VolumeX => "icons/volume-x.svg",
             IconName::Speaker => "icons/speaker.svg",
+            IconName::Home => "icons/home.svg",
             IconName::ChevronLeft => "icons/chevron-left.svg",
             IconName::ChevronRight => "icons/chevron-right.svg",
             IconName::ChevronUp => "icons/chevron-up.svg",

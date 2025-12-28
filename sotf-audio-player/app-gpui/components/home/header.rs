@@ -1,5 +1,6 @@
 //! Header component rendering with dropdown menus
 
+use crate::app::actions::QuitApp;
 use crate::app::{ActiveMenu, LayoutMode, Screen};
 use crate::theme::Theme;
 use crate::ui::PlayerView;
@@ -161,7 +162,8 @@ impl PlayerView {
                     });
                 }
                 "quit" => {
-                    window.remove_window();
+                    // Dispatch QuitApp action to properly save config and quit
+                    window.dispatch_action(Box::new(QuitApp), cx);
                 }
                 _ => {}
             }

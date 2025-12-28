@@ -41,7 +41,7 @@ fn find_device(
 }
 
 #[test]
-fn test_crossover_lowpass_loopback_verification() {
+fn test_channel_mute_loopback_verification() {
     let device_names = ["BlackHole 2ch", "BlackHole 16ch", "BlackHole 64ch"];
     let mut output_setup = None;
     let mut input_setup = None;
@@ -64,36 +64,26 @@ fn test_crossover_lowpass_loopback_verification() {
 
     let (out_device, out_config) = output_setup.unwrap();
     let (in_device, in_config) = input_setup.unwrap();
-    let sample_rate = out_config.sample_rate().0 as f64;
+    let sample_rate = out_config.sample_rate() as f64;
 
-    // Parameters - Lowpass crossover at 500Hz
-    let crossover_freq = 500.0;
-
-    // Generate signal: mix of low frequency (200Hz) and high frequency (2000Hz)
+    // Generate stereo signal with different frequencies per channel
     let duration_secs = 2.0;
     let num_samples = (duration_secs * sample_rate) as usize;
-    let mut source_signal = Vec::with_capacity(num_samples);
+    let left_freq = 440.0;
+    let right_freq = 880.0;
 
-    let low_freq = 200.0; // Below crossover - should pass
-    let high_freq = 2000.0; // Above crossover - should be attenuated
-
-    for i in 0..num_samples {
-        let t = i as f64 / sample_rate;
-        let low_sine = (t * low_freq * 2.0 * std::f64::consts::PI).sin() * 0.5;
-        let high_sine = (t * high_freq * 2.0 * std::f64::consts::PI).sin() * 0.5;
-        source_signal.push(low_sine + high_sine);
-    }
-
-    // Audio Engine with lowpass crossover
+    // Audio Engine with left channel muted
     let mut config = EngineConfig::default();
     config.output_device = Some(out_device.name().unwrap());
     config.output_channels = 2;
     config.plugins = vec![PluginConfig::new(
-        "crossover",
+        "channel_mute_solo",
         json!({
-            "type": "LR24",
-            "frequency": crossover_freq,
-            "output": "low"
+            "enabled": true,
+            "channel_states": [
+                {"muted": true, "soloed": false, "dimmed": false},  // Left muted
+                {"muted": false, "soloed": false, "dimmed": false}  // Right not muted
+            ]
         }),
     )];
     let mut engine = match AudioEngine::new(config) {
@@ -104,7 +94,7 @@ fn test_crossover_lowpass_loopback_verification() {
         }
     };
 
-    // WAV file
+    // WAV file with different frequencies per channel
     let spec = hound::WavSpec {
         channels: 2,
         sample_rate: sample_rate as u32,
@@ -113,10 +103,16 @@ fn test_crossover_lowpass_loopback_verification() {
     };
     let temp_file = tempfile::Builder::new().suffix(".wav").tempfile().unwrap();
     let mut writer = hound::WavWriter::create(temp_file.path(), spec).unwrap();
-    for &sample in &source_signal {
-        let amp = (sample * i16::MAX as f64) as i16;
-        writer.write_sample(amp).unwrap();
-        writer.write_sample(amp).unwrap();
+    for i in 0..num_samples {
+        let t = i as f64 / sample_rate;
+        let left = (t * left_freq * 2.0 * std::f64::consts::PI).sin() * 0.5;
+        let right = (t * right_freq * 2.0 * std::f64::consts::PI).sin() * 0.5;
+        writer
+            .write_sample((left * i16::MAX as f64) as i16)
+            .unwrap();
+        writer
+            .write_sample((right * i16::MAX as f64) as i16)
+            .unwrap();
     }
     writer.finalize().unwrap();
 
@@ -149,45 +145,55 @@ fn test_crossover_lowpass_loopback_verification() {
     if buffer.is_empty() {
         panic!("No audio captured");
     }
-    let captured_ch0: Vec<f32> = buffer.iter().step_by(channels).cloned().collect();
 
-    // Analyze frequency content using simple energy measurement
-    // Skip first 0.5s for settling, analyze 1s
+    // Extract left and right channels
+    let captured_left: Vec<f32> = buffer.iter().step_by(channels).cloned().collect();
+    let captured_right: Vec<f32> = buffer.iter().skip(1).step_by(channels).cloned().collect();
+
+    // Calculate RMS for each channel (skip first 0.5s)
     let start_idx = (0.5 * sample_rate) as usize;
     let end_idx = start_idx + (1.0 * sample_rate) as usize;
 
-    if captured_ch0.len() < end_idx {
+    if captured_left.len() < end_idx || captured_right.len() < end_idx {
         panic!("Recording too short");
     }
 
-    // Calculate RMS of the captured signal
-    let mut sum_sq = 0.0f32;
+    let mut left_sum_sq = 0.0f32;
+    let mut right_sum_sq = 0.0f32;
     for i in start_idx..end_idx {
-        sum_sq += captured_ch0[i] * captured_ch0[i];
+        left_sum_sq += captured_left[i] * captured_left[i];
+        right_sum_sq += captured_right[i] * captured_right[i];
     }
-    let rms = (sum_sq / (end_idx - start_idx) as f32).sqrt();
-    let db_fs = 20.0 * rms.log10();
+    let left_rms = (left_sum_sq / (end_idx - start_idx) as f32).sqrt();
+    let right_rms = (right_sum_sq / (end_idx - start_idx) as f32).sqrt();
 
-    println!("Captured RMS: {:.4} ({:.2} dBFS)", rms, db_fs);
-
-    // The lowpass should pass the 200Hz component and attenuate the 2000Hz component
-    // So we should have roughly half the energy (the low frequency part)
-    // Expected RMS for single sine at 0.5 amplitude = 0.5 * 0.707 = 0.354
-    let expected_rms = 0.354;
-
-    // Allow reasonable tolerance
-    assert!(
-        (rms - expected_rms).abs() < 0.15,
-        "RMS mismatch. Expected ~{:.4} (low freq only), got {:.4}",
-        expected_rms,
-        rms
+    println!(
+        "Left RMS: {:.4} ({:.2} dB), Right RMS: {:.4} ({:.2} dB)",
+        left_rms,
+        20.0 * left_rms.log10(),
+        right_rms,
+        20.0 * right_rms.log10()
     );
 
-    println!("Test PASSED: Crossover lowpass verified.");
+    // Left channel should be muted (very low)
+    assert!(
+        left_rms < 0.01,
+        "Left channel should be muted, got RMS: {:.4}",
+        left_rms
+    );
+
+    // Right channel should have signal
+    assert!(
+        right_rms > 0.2,
+        "Right channel should have signal, got RMS: {:.4}",
+        right_rms
+    );
+
+    println!("Test PASSED: Channel mute verified.");
 }
 
 #[test]
-fn test_crossover_highpass_loopback_verification() {
+fn test_channel_solo_loopback_verification() {
     let device_names = ["BlackHole 2ch", "BlackHole 16ch", "BlackHole 64ch"];
     let mut output_setup = None;
     let mut input_setup = None;
@@ -210,36 +216,25 @@ fn test_crossover_highpass_loopback_verification() {
 
     let (out_device, out_config) = output_setup.unwrap();
     let (in_device, in_config) = input_setup.unwrap();
-    let sample_rate = out_config.sample_rate().0 as f64;
+    let sample_rate = out_config.sample_rate() as f64;
 
-    // Parameters - Highpass crossover at 500Hz
-    let crossover_freq = 500.0;
-
-    // Generate signal: mix of low frequency (200Hz) and high frequency (2000Hz)
     let duration_secs = 2.0;
     let num_samples = (duration_secs * sample_rate) as usize;
-    let mut source_signal = Vec::with_capacity(num_samples);
+    let left_freq = 440.0;
+    let right_freq = 880.0;
 
-    let low_freq = 200.0; // Below crossover - should be attenuated
-    let high_freq = 2000.0; // Above crossover - should pass
-
-    for i in 0..num_samples {
-        let t = i as f64 / sample_rate;
-        let low_sine = (t * low_freq * 2.0 * std::f64::consts::PI).sin() * 0.5;
-        let high_sine = (t * high_freq * 2.0 * std::f64::consts::PI).sin() * 0.5;
-        source_signal.push(low_sine + high_sine);
-    }
-
-    // Audio Engine with highpass crossover
+    // Audio Engine with left channel soloed (right should be muted)
     let mut config = EngineConfig::default();
     config.output_device = Some(out_device.name().unwrap());
     config.output_channels = 2;
     config.plugins = vec![PluginConfig::new(
-        "crossover",
+        "channel_mute_solo",
         json!({
-            "type": "LR24",
-            "frequency": crossover_freq,
-            "output": "high"
+            "enabled": true,
+            "channel_states": [
+                {"muted": false, "soloed": true, "dimmed": false},  // Left soloed
+                {"muted": false, "soloed": false, "dimmed": false}  // Right not soloed
+            ]
         }),
     )];
     let mut engine = match AudioEngine::new(config) {
@@ -259,10 +254,16 @@ fn test_crossover_highpass_loopback_verification() {
     };
     let temp_file = tempfile::Builder::new().suffix(".wav").tempfile().unwrap();
     let mut writer = hound::WavWriter::create(temp_file.path(), spec).unwrap();
-    for &sample in &source_signal {
-        let amp = (sample * i16::MAX as f64) as i16;
-        writer.write_sample(amp).unwrap();
-        writer.write_sample(amp).unwrap();
+    for i in 0..num_samples {
+        let t = i as f64 / sample_rate;
+        let left = (t * left_freq * 2.0 * std::f64::consts::PI).sin() * 0.5;
+        let right = (t * right_freq * 2.0 * std::f64::consts::PI).sin() * 0.5;
+        writer
+            .write_sample((left * i16::MAX as f64) as i16)
+            .unwrap();
+        writer
+            .write_sample((right * i16::MAX as f64) as i16)
+            .unwrap();
     }
     writer.finalize().unwrap();
 
@@ -295,34 +296,47 @@ fn test_crossover_highpass_loopback_verification() {
     if buffer.is_empty() {
         panic!("No audio captured");
     }
-    let captured_ch0: Vec<f32> = buffer.iter().step_by(channels).cloned().collect();
 
-    // Analyze frequency content
+    let captured_left: Vec<f32> = buffer.iter().step_by(channels).cloned().collect();
+    let captured_right: Vec<f32> = buffer.iter().skip(1).step_by(channels).cloned().collect();
+
     let start_idx = (0.5 * sample_rate) as usize;
     let end_idx = start_idx + (1.0 * sample_rate) as usize;
 
-    if captured_ch0.len() < end_idx {
+    if captured_left.len() < end_idx || captured_right.len() < end_idx {
         panic!("Recording too short");
     }
 
-    let mut sum_sq = 0.0f32;
+    let mut left_sum_sq = 0.0f32;
+    let mut right_sum_sq = 0.0f32;
     for i in start_idx..end_idx {
-        sum_sq += captured_ch0[i] * captured_ch0[i];
+        left_sum_sq += captured_left[i] * captured_left[i];
+        right_sum_sq += captured_right[i] * captured_right[i];
     }
-    let rms = (sum_sq / (end_idx - start_idx) as f32).sqrt();
-    let db_fs = 20.0 * rms.log10();
+    let left_rms = (left_sum_sq / (end_idx - start_idx) as f32).sqrt();
+    let right_rms = (right_sum_sq / (end_idx - start_idx) as f32).sqrt();
 
-    println!("Captured RMS: {:.4} ({:.2} dBFS)", rms, db_fs);
-
-    // The highpass should pass the 2000Hz component and attenuate the 200Hz component
-    let expected_rms = 0.354;
-
-    assert!(
-        (rms - expected_rms).abs() < 0.15,
-        "RMS mismatch. Expected ~{:.4} (high freq only), got {:.4}",
-        expected_rms,
-        rms
+    println!(
+        "Left RMS: {:.4} ({:.2} dB), Right RMS: {:.4} ({:.2} dB)",
+        left_rms,
+        20.0 * left_rms.log10(),
+        right_rms,
+        20.0 * right_rms.log10()
     );
 
-    println!("Test PASSED: Crossover highpass verified.");
+    // Left channel (soloed) should have signal
+    assert!(
+        left_rms > 0.2,
+        "Left channel (soloed) should have signal, got RMS: {:.4}",
+        left_rms
+    );
+
+    // Right channel should be muted (not soloed)
+    assert!(
+        right_rms < 0.01,
+        "Right channel should be muted (not soloed), got RMS: {:.4}",
+        right_rms
+    );
+
+    println!("Test PASSED: Channel solo verified.");
 }

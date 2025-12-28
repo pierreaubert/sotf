@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use crate::force::{ForceManyBody, Simulation, SimulationNode};
-    use crate::hierarchy::{HierarchyNode, TreeLayout};
+    use d3rs::force::{ForceManyBody, Simulation, SimulationNode};
+    use d3rs::hierarchy::{HierarchyNode, TreeLayout};
 
     #[test]
     fn test_hierarchy_golden() {

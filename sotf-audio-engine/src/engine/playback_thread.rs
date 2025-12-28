@@ -158,8 +158,7 @@ fn run_playback_thread(
         let get_display_name = |d: &Device| -> String {
             d.description()
                 .map(|desc| desc.name().to_string())
-                .or_else(|_| d.name())
-                .unwrap_or_else(|_| "Unknown".to_string())
+                .unwrap_or_else(|_| "Unknown Device".to_string())
         };
 
         // First try to match by device ID (preferred for persistence)

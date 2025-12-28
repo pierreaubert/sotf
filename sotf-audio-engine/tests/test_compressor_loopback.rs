@@ -41,7 +41,7 @@ fn find_device(
 }
 
 #[test]
-fn test_gain_loopback_verification() {
+fn test_compressor_loopback_verification() {
     let device_names = ["BlackHole 2ch", "BlackHole 16ch", "BlackHole 64ch"];
     let mut output_setup = None;
     let mut input_setup = None;
@@ -64,17 +64,25 @@ fn test_gain_loopback_verification() {
 
     let (out_device, out_config) = output_setup.unwrap();
     let (in_device, in_config) = input_setup.unwrap();
-    let sample_rate = out_config.sample_rate().0 as f64;
+    let sample_rate = out_config.sample_rate() as f64;
 
     // Parameters
-    let input_gain_db = -6.0; // Input signal level (approx 0.5 amplitude)
-    let plugin_gain_db = 6.0; // Gain to apply (+6dB, factor approx 2.0)
-    // Expected output peak = 0dBFS (1.0 amplitude)
+    // Input: Sine Wave 0dBFS (Amplitude 1.0)
+    // Compressor: Threshold -20dB, Ratio 4:1
+    let threshold_db = -20.0;
+    let ratio = 4.0;
+
+    // Expected Output Calculation
+    // Output Level = Threshold + (Input - Threshold) / Ratio
+    //              = -20 + (0 - -20)/4
+    //              = -20 + 5
+    //              = -15 dB.
+    let expected_peak_db = -15.0;
 
     // Generate Signal
     let duration_secs = 2.0;
     let num_samples = (duration_secs * sample_rate) as usize;
-    let amplitude = 10.0f64.powf(input_gain_db / 20.0);
+    let amplitude = 1.0;
     let mut source_signal = Vec::with_capacity(num_samples);
     for i in 0..num_samples {
         let t = i as f64 / sample_rate;
@@ -86,8 +94,17 @@ fn test_gain_loopback_verification() {
     config.output_device = Some(out_device.name().unwrap());
     config.output_channels = 2;
     config.plugins = vec![PluginConfig::new(
-        "gain",
-        json!({ "gain_db": plugin_gain_db }),
+        "compressor",
+        json!({
+            "threshold_db": threshold_db,
+            "ratio": ratio,
+            "attack_ms": 10.0,
+            "release_ms": 100.0,
+            "knee_db": 0.0, // Hard knee for precise calculation
+            "makeup_gain_db": 0.0,
+            "mix": 1.0,
+            "auto_makeup": false
+        }),
     )];
     let mut engine = match AudioEngine::new(config) {
         Ok(e) => e,
@@ -144,31 +161,33 @@ fn test_gain_loopback_verification() {
     }
     let captured_ch0: Vec<f32> = buffer.iter().step_by(channels).cloned().collect();
 
-    // Calculate RMS of steady state (skip first 0.5s, take 1s)
+    // Analyze steady state (skip first 0.5s for attack/settling)
     let start_idx = (0.5 * sample_rate) as usize;
     let end_idx = start_idx + (1.0 * sample_rate) as usize;
     if captured_ch0.len() < end_idx {
         panic!("Recording too short");
     }
 
-    let mut sum_sq = 0.0;
+    let mut max_peak = 0.0f32;
     for i in start_idx..end_idx {
-        sum_sq += captured_ch0[i] * captured_ch0[i];
+        let val = captured_ch0[i].abs();
+        if val > max_peak {
+            max_peak = val;
+        }
     }
-    let rms = (sum_sq / (end_idx - start_idx) as f32).sqrt();
-    let db_fs = 20.0 * rms.log10();
+    let peak_db = 20.0 * max_peak.log10();
 
-    println!("Measured RMS: {:.4} ({:.2} dBFS)", rms, db_fs);
+    println!("Measured Peak: {:.4} ({:.2} dBFS)", max_peak, peak_db);
+    println!("Expected Peak: {:.2} dBFS", expected_peak_db);
 
-    // Expected: 0 dBFS Peak -> RMS = 0.7071
-    let expected_rms = 0.7071;
-    // Allow 5% tolerance due to analog/digital approximations
+    // Assertions
+    // Allow 1.5dB tolerance (compressors can have complex ballistics)
     assert!(
-        (rms - expected_rms).abs() < 0.05,
-        "RMS mismatch. Expected {:.4}, got {:.4}",
-        expected_rms,
-        rms
+        (peak_db - expected_peak_db).abs() < 1.5,
+        "Compressor output mismatch: Got {:.2} dB, Expected {:.2} dB",
+        peak_db,
+        expected_peak_db
     );
 
-    println!("Test PASSED: Gain verified.");
+    println!("Test PASSED: Compressor output level verified.");
 }

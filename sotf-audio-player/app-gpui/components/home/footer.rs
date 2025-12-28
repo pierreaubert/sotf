@@ -440,11 +440,11 @@ impl PlayerView {
                                 IconButton::with_child(
                                     "transport-prev",
                                     Icon::new(IconName::SkipBack)
-                                        .size(IconSize::Lg)
+                                        .size(IconSize::Md)
                                         .color(theme_clone.text_primary),
                                 )
                                 .variant(IconButtonVariant::Ghost)
-                                .size(IconButtonSize::Lg)
+                                .size(IconButtonSize::Md)
                                 .rounded_full()
                                 .theme(theme_clone.to_icon_button_theme()),
                             ),
@@ -467,11 +467,11 @@ impl PlayerView {
                                 IconButton::with_child(
                                     "transport-seek-back",
                                     Icon::new(IconName::Rewind)
-                                        .size(IconSize::Lg)
+                                        .size(IconSize::Md)
                                         .color(theme_clone.text_primary),
                                 )
                                 .variant(IconButtonVariant::Ghost)
-                                .size(IconButtonSize::Lg)
+                                .size(IconButtonSize::Md)
                                 .rounded_full()
                                 .theme(theme_clone.to_icon_button_theme()),
                             ),
@@ -492,11 +492,11 @@ impl PlayerView {
                                 IconButton::with_child(
                                     "transport-play",
                                     Icon::new(play_icon)
-                                        .size(IconSize::Lg)
+                                        .size(IconSize::Md)
                                         .color(theme_clone.text_on_accent),
                                 )
                                 .variant(IconButtonVariant::Filled)
-                                .size(IconButtonSize::Xl)
+                                .size(IconButtonSize::Lg)
                                 .rounded_full()
                                 .selected(true) // Use selected state for accent background
                                 .theme(theme_clone.to_icon_button_theme()),
@@ -521,11 +521,11 @@ impl PlayerView {
                                 IconButton::with_child(
                                     "transport-seek-fwd",
                                     Icon::new(IconName::FastForward)
-                                        .size(IconSize::Lg)
+                                        .size(IconSize::Md)
                                         .color(theme_clone.text_primary),
                                 )
                                 .variant(IconButtonVariant::Ghost)
-                                .size(IconButtonSize::Lg)
+                                .size(IconButtonSize::Md)
                                 .rounded_full()
                                 .theme(theme_clone.to_icon_button_theme()),
                             ),
@@ -541,11 +541,11 @@ impl PlayerView {
                                 IconButton::with_child(
                                     "transport-next",
                                     Icon::new(IconName::SkipForward)
-                                        .size(IconSize::Lg)
+                                        .size(IconSize::Md)
                                         .color(theme_clone.text_primary),
                                 )
                                 .variant(IconButtonVariant::Ghost)
-                                .size(IconButtonSize::Lg)
+                                .size(IconButtonSize::Md)
                                 .rounded_full()
                                 .theme(theme_clone.to_icon_button_theme()),
                             ),

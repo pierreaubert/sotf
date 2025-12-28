@@ -84,6 +84,10 @@ mimalloc = { workspace = true }
 [lib]
 name = "sotf_audio_player_gpui"
 path = "lib.rs"
+# Disable test building - the deeply nested GPUI macros in ui.rs cause
+# a stack overflow in syn during test mode compilation (SIGBUS).
+# Actual tests are in sotf-audio-engine/tests/ for audio functionality.
+test = false
 
 [[bin]]
 name = "SotF"

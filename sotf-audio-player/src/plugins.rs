@@ -1666,6 +1666,9 @@ mod tests {
                 dialogue_weight: 0.5,
                 voice_freq_min_hz: 300.0,
                 voice_freq_max_hz: 3400.0,
+                bypass_decorrelation: false,
+                bypass_transient_detection: false,
+                bypass_all_processing: false,
             };
         }
         assert_eq!(chain.output_channels(), 8);
@@ -1731,6 +1734,9 @@ mod tests {
                 dialogue_weight: 0.5,
                 voice_freq_min_hz: 300.0,
                 voice_freq_max_hz: 3400.0,
+                bypass_decorrelation: false,
+                bypass_transient_detection: false,
+                bypass_all_processing: false,
             };
         }
 

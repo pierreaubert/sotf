@@ -70,7 +70,7 @@ fn test_eq_sweep_loopback_verification() {
     let (in_device, in_config) = input_setup.unwrap();
 
     // Ensure we use the device's native sample rate to avoid resampling artifacts in the loopback
-    let sample_rate = out_config.sample_rate().0 as f64;
+    let sample_rate = out_config.sample_rate() as f64;
     println!("Testing at sample rate: {} Hz", sample_rate);
 
     // 2. Configure EQ Parameters (Test Case: +6dB Peak at 1kHz)

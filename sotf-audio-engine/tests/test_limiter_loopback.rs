@@ -41,7 +41,7 @@ fn find_device(
 }
 
 #[test]
-fn test_gate_loopback_verification() {
+fn test_limiter_loopback_verification() {
     let device_names = ["BlackHole 2ch", "BlackHole 16ch", "BlackHole 64ch"];
     let mut output_setup = None;
     let mut input_setup = None;
@@ -64,35 +64,21 @@ fn test_gate_loopback_verification() {
 
     let (out_device, out_config) = output_setup.unwrap();
     let (in_device, in_config) = input_setup.unwrap();
-    let sample_rate = out_config.sample_rate().0 as f64;
+    let sample_rate = out_config.sample_rate() as f64;
 
-    // Parameters - Gate with high threshold to silence quiet parts
-    let threshold_db = -20.0; // Gate opens above -20dB
-    let ratio = 100.0; // High ratio for strong gating
-    let attack_ms = 1.0;
-    let hold_ms = 10.0;
-    let release_ms = 50.0;
+    // Parameters
+    // Input: Sine Wave 0dBFS (Amplitude 1.0)
+    // Limiter: Threshold -6.0dB (Amplitude 0.5)
+    let threshold_db = -6.0;
 
-    // Generate signal: loud part (above threshold) followed by quiet part (below threshold)
+    // Generate Signal
     let duration_secs = 2.0;
     let num_samples = (duration_secs * sample_rate) as usize;
+    let amplitude = 1.0;
     let mut source_signal = Vec::with_capacity(num_samples);
-
-    let loud_amplitude = 0.5; // -6dB, above threshold
-    let quiet_amplitude = 0.05; // -26dB, below threshold
-
     for i in 0..num_samples {
         let t = i as f64 / sample_rate;
-        let sine = (t * 440.0 * 2.0 * std::f64::consts::PI).sin();
-
-        // First half: loud signal (gate open)
-        // Second half: quiet signal (gate closed)
-        let amplitude = if t < 1.0 {
-            loud_amplitude
-        } else {
-            quiet_amplitude
-        };
-        source_signal.push(sine * amplitude);
+        source_signal.push((t * 440.0 * 2.0 * std::f64::consts::PI).sin() * amplitude);
     }
 
     // Audio Engine
@@ -100,13 +86,10 @@ fn test_gate_loopback_verification() {
     config.output_device = Some(out_device.name().unwrap());
     config.output_channels = 2;
     config.plugins = vec![PluginConfig::new(
-        "gate",
+        "limiter",
         json!({
             "threshold_db": threshold_db,
-            "ratio": ratio,
-            "attack_ms": attack_ms,
-            "hold_ms": hold_ms,
-            "release_ms": release_ms,
+            "release_ms": 100.0,
             "mix": 1.0
         }),
     )];
@@ -161,53 +144,58 @@ fn test_gate_loopback_verification() {
     // Analysis
     let buffer = captured_samples.lock().unwrap();
     if buffer.is_empty() {
-        panic!("No audio captured");
+        panic!("No audio");
     }
     let captured_ch0: Vec<f32> = buffer.iter().step_by(channels).cloned().collect();
 
-    // Calculate RMS for first half (should be loud - gate open)
-    let first_half_start = (0.2 * sample_rate) as usize;
-    let first_half_end = (0.8 * sample_rate) as usize;
-
-    // Calculate RMS for second half (should be quiet - gate closed)
-    let second_half_start = (1.2 * sample_rate) as usize;
-    let second_half_end = (1.8 * sample_rate) as usize;
-
-    if captured_ch0.len() < second_half_end {
-        panic!("Recording too short: {} samples", captured_ch0.len());
+    // Analyze steady state (skip first 0.5s)
+    let start_idx = (0.5 * sample_rate) as usize;
+    let end_idx = start_idx + (1.0 * sample_rate) as usize;
+    if captured_ch0.len() < end_idx {
+        panic!("Recording too short");
     }
 
-    let mut first_half_sum_sq = 0.0f32;
-    for i in first_half_start..first_half_end {
-        first_half_sum_sq += captured_ch0[i] * captured_ch0[i];
+    let mut max_peak = 0.0f32;
+    let mut sum_sq = 0.0;
+    for i in start_idx..end_idx {
+        let val = captured_ch0[i].abs();
+        if val > max_peak {
+            max_peak = val;
+        }
+        sum_sq += val * val;
     }
-    let first_half_rms = (first_half_sum_sq / (first_half_end - first_half_start) as f32).sqrt();
+    let rms = (sum_sq / (end_idx - start_idx) as f32).sqrt();
+    let rms_db = 20.0 * rms.log10();
+    let peak_db = 20.0 * max_peak.log10();
 
-    let mut second_half_sum_sq = 0.0f32;
-    for i in second_half_start..second_half_end {
-        second_half_sum_sq += captured_ch0[i] * captured_ch0[i];
-    }
-    let second_half_rms =
-        (second_half_sum_sq / (second_half_end - second_half_start) as f32).sqrt();
+    println!("Measured Peak: {:.4} ({:.2} dBFS)", max_peak, peak_db);
+    println!("Measured RMS:  {:.4} ({:.2} dBFS)", rms, rms_db);
 
-    let first_half_db = 20.0 * first_half_rms.log10();
-    let second_half_db = 20.0 * second_half_rms.log10();
+    // Assertions
+    // Peak should be clamped to approx -6dB (0.5)
+    // Allow slight overshoot (e.g. 0.5dB) due to limiter response time or inter-sample peaks?
+    // Usually hard limiters are strict.
+    // If output is 0.5, peak_db is -6.02.
 
-    println!(
-        "First half RMS: {:.4} ({:.2} dB), Second half RMS: {:.4} ({:.2} dB)",
-        first_half_rms, first_half_db, second_half_rms, second_half_db
-    );
-
-    // The second half should be significantly quieter due to gating
-    let reduction_db = first_half_db - second_half_db;
-    println!("Reduction: {:.2} dB", reduction_db);
-
-    // Expect at least 10dB reduction from gating
     assert!(
-        reduction_db > 10.0,
-        "Gate should reduce quiet signal by at least 10dB, got {:.2}dB reduction",
-        reduction_db
+        peak_db <= threshold_db + 0.5,
+        "Peak exceeded threshold significantly: {:.2} dB (Threshold: {:.2} dB)",
+        peak_db,
+        threshold_db
+    );
+    assert!(
+        peak_db >= threshold_db - 1.0,
+        "Signal attenuated too much: {:.2} dB",
+        peak_db
     );
 
-    println!("Test PASSED: Gate plugin verified.");
+    // Check if it's actually limited (source was 0dBFS)
+    // If limiter was bypassed, peak would be ~0dBFS.
+    assert!(
+        peak_db < -1.0,
+        "Limiter inactive? Peak is {:.2} dBFS",
+        peak_db
+    );
+
+    println!("Test PASSED: Limiter clamped signal to threshold.");
 }

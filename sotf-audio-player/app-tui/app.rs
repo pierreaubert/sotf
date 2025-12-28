@@ -4238,8 +4238,8 @@ mod tests {
         app.set_channel_filter(ChannelFilter::Stereo);
         assert_eq!(app.channel_filter, ChannelFilter::Stereo);
 
-        app.set_channel_filter(ChannelFilter::Multichannel);
-        assert_eq!(app.channel_filter, ChannelFilter::Multichannel);
+        app.set_channel_filter(ChannelFilter::Surround);
+        assert_eq!(app.channel_filter, ChannelFilter::Surround);
     }
 
     #[test]

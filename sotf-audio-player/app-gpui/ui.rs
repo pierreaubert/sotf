@@ -309,6 +309,8 @@ impl PlayerView {
     }
 
     pub(crate) fn quit_app(&mut self, _: &QuitApp, window: &mut Window, cx: &mut Context<Self>) {
+        log::info!("Quit requested - saving config and stopping services...");
+
         // Save window geometry before quitting
         let window_bounds = window.bounds();
         let geometry = crate::config::WindowGeometry {
@@ -319,12 +321,32 @@ impl PlayerView {
         };
 
         self.state.update(cx, |state, _cx| {
+            // Save configuration
             if let Err(e) = state.app.save_config_with_geometry(Some(geometry)) {
                 log::error!("Failed to save config on quit: {}", e);
             }
+
+            // Stop background managers
+            state.app.waveform_manager.stop();
+            state.app.replay_gain_manager.stop();
+            state.app.bliss_manager.stop();
+
+            // Stop audio playback - this stops the audio engine threads
+            if let Err(e) = state.player.lock().stop() {
+                log::error!("Failed to stop player on quit: {}", e);
+            }
         });
 
+        log::info!("Services stopped, quitting application...");
+
+        // Request GPUI to quit
         cx.quit();
+
+        // Force immediate process exit
+        // cx.quit() may not terminate if background threads (audio engine, etc.) are still running.
+        // We've already stopped the services above, so it's safe to exit immediately.
+        log::info!("Force exiting process");
+        std::process::exit(0);
     }
 
     fn cycle_theme(&mut self, _: &CycleTheme, _: &mut Window, cx: &mut Context<Self>) {

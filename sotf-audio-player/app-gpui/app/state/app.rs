@@ -107,6 +107,7 @@ pub struct App {
     pub editing_plugin_index: Option<usize>,
     pub plugin_param_selection: usize, // Which parameter is selected in edit mode
     pub selected_eq_band: usize,       // Currently selected EQ band for display (0-indexed)
+    pub matrix_selected_cell: Option<(usize, usize)>, // Currently selected matrix cell (input, output)
 
     // Plugin graph system (alternative to linear plugin chain)
     pub plugin_view_mode: PluginViewMode,
@@ -357,6 +358,7 @@ impl App {
             pending_plugin_update: None,
             editing_plugin_index: None,
             plugin_param_selection: 0,
+            matrix_selected_cell: None,
             plugin_view_mode: PluginViewMode::Rack,
             plugin_graph: None,
             graph_selection: GraphSelection::default(),
@@ -980,5 +982,69 @@ impl App {
                 }
             })
             .collect()
+    }
+
+    // ============== Dynamic Text Truncation ==============
+
+    /// Calculate the maximum characters for queue list album title based on panel width.
+    /// Returns a reasonable limit that adapts to window size.
+    pub fn max_chars_queue_list_title(&self) -> usize {
+        // Queue list panel width = window_width * queue_list_ratio
+        // Subtract padding (16px on each side = 32px)
+        // Account for ellipsis (~24px) and some margin
+        // Average char width for text_sm is ~7px
+        let panel_width = self.window_width * self.queue_list_ratio;
+        let available_width = (panel_width - 32.0 - 24.0).max(50.0);
+        let char_width = 7.0;
+        let max_chars = (available_width / char_width) as usize;
+        max_chars.clamp(15, 100) // Min 15, max 100 characters
+    }
+
+    /// Calculate the maximum characters for queue list artist based on panel width.
+    pub fn max_chars_queue_list_artist(&self) -> usize {
+        // Same calculation as title, but artist uses text_xs (~6px)
+        let panel_width = self.window_width * self.queue_list_ratio;
+        let available_width = (panel_width - 32.0 - 24.0).max(50.0);
+        let char_width = 6.0;
+        let max_chars = (available_width / char_width) as usize;
+        max_chars.clamp(15, 120) // Min 15, max 120 characters
+    }
+
+    /// Calculate the maximum characters for Now Playing album title.
+    /// The center panel uses remaining width after queue list and meters panels.
+    pub fn max_chars_now_playing_title(&self) -> usize {
+        // Center panel width = window_width * (1.0 - queue_list_ratio - meters_panel_ratio)
+        // Subtract album art (120px), gaps (16px), padding (16px), dividers (~40px)
+        // text_lg uses ~9px per character
+        let center_ratio = 1.0 - self.queue_list_ratio - self.meters_panel_ratio;
+        let center_width = self.window_width * center_ratio;
+        let available_width = (center_width - 120.0 - 40.0 - 32.0).max(100.0);
+        let char_width = 9.0;
+        let max_chars = (available_width / char_width) as usize;
+        max_chars.clamp(20, 150) // Min 20, max 150 characters
+    }
+
+    /// Calculate the maximum characters for Now Playing artist.
+    pub fn max_chars_now_playing_artist(&self) -> usize {
+        // Same as title but text_sm uses ~7px
+        let center_ratio = 1.0 - self.queue_list_ratio - self.meters_panel_ratio;
+        let center_width = self.window_width * center_ratio;
+        let available_width = (center_width - 120.0 - 40.0 - 32.0).max(100.0);
+        let char_width = 7.0;
+        let max_chars = (available_width / char_width) as usize;
+        max_chars.clamp(20, 180) // Min 20, max 180 characters
+    }
+
+    /// Calculate the maximum characters for track titles in the track list.
+    /// Accounts for track number column and duration column.
+    pub fn max_chars_track_title(&self) -> usize {
+        // Center panel minus album info section, track number (24px), duration (~48px), padding
+        let center_ratio = 1.0 - self.queue_list_ratio - self.meters_panel_ratio;
+        let center_width = self.window_width * center_ratio;
+        // Available for track title = center_width - track_num(24) - duration(48) - padding(32) - gaps(16)
+        let available_width = (center_width - 24.0 - 48.0 - 48.0).max(100.0);
+        let char_width = 7.0; // text_sm
+        let max_chars = (available_width / char_width) as usize;
+        max_chars.clamp(20, 200) // Min 20, max 200 characters
     }
 }
