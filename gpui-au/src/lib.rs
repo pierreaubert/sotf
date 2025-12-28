@@ -24,9 +24,21 @@
 mod metal_view;
 pub use metal_view::{MetalView, MetalViewState};
 
+// 2D renderer for Metal
+mod renderer;
+pub use renderer::{Renderer2D, Vertex2D};
+
+// EQ visualization
+mod eq_view;
+pub use eq_view::{EQBand, EQTheme, EQView, FilterType};
+
 // Hybrid embedded view combining Metal NSView with GPUI text system
 mod embedded_view;
 pub use embedded_view::{EmbeddedView, EmbeddedViewState};
+
+// Integrated AU plugin view
+mod au_plugin_view;
+pub use au_plugin_view::AUPluginView;
 
 use std::borrow::Cow;
 use std::cell::RefCell;
