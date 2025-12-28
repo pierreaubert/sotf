@@ -1,12 +1,15 @@
-use crate::app::{App, FocusedPane, InputMode, LibraryViewMode, Screen, TreeItem};
+use crate::app::{App, FocusedPane, InputMode, LibraryViewMode, MatrixEditMode, Screen, TreeItem};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
+    widgets::{Block, BorderType, Borders, Cell, Clear, List, ListItem, ListState, Paragraph, Row, Table, Wrap},
 };
-use sotf_audio_player::{PluginSettings, PluginType};
+use sotf_audio_player::{
+    PluginSettings, PluginType,
+    detect_matrix_preset, get_channel_label, linear_to_db_string,
+};
 
 /// Format channel count as common surround notation (e.g., Mono, 2.0, 5.1, 7.1)
 fn format_channel_count(n: u32) -> String {
@@ -2176,6 +2179,12 @@ fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
 
 fn draw_plugin_editor_modal(f: &mut Frame, app: &App) {
     if let Some(plugin) = app.get_editing_plugin() {
+        // Check if we're editing a Matrix plugin - use specialized editor
+        if matches!(plugin.settings, PluginSettings::Matrix { .. }) {
+            draw_matrix_editor_modal(f, app);
+            return;
+        }
+
         // Create a centered modal (60% width, 80% height)
         let area = f.area();
         let modal_width = (area.width as f32 * 0.6) as u16;
@@ -2243,6 +2252,263 @@ fn draw_plugin_editor_modal(f: &mut Frame, app: &App) {
 
         f.render_widget(paragraph, inner);
     }
+}
+
+/// Specialized matrix editor modal with visual grid display
+fn draw_matrix_editor_modal(f: &mut Frame, app: &App) {
+    let Some(plugin) = app.get_editing_plugin() else {
+        return;
+    };
+
+    let PluginSettings::Matrix {
+        input_channels,
+        output_channels,
+        matrix,
+    } = &plugin.settings
+    else {
+        return;
+    };
+
+    // Create a centered modal (70% width, 85% height)
+    let area = f.area();
+    let modal_width = (area.width as f32 * 0.7).min(80.0) as u16;
+    let modal_height = (area.height as f32 * 0.85).min(35.0) as u16;
+    let modal_x = (area.width - modal_width) / 2;
+    let modal_y = (area.height - modal_height) / 2;
+
+    let modal_area = Rect {
+        x: modal_x,
+        y: modal_y,
+        width: modal_width,
+        height: modal_height,
+    };
+
+    // Clear background
+    f.render_widget(Clear, modal_area);
+
+    let preset_name = detect_matrix_preset(*input_channels, *output_channels, matrix);
+
+    // Outer block
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .style(Style::default().bg(app.theme.bg_primary))
+        .title(format!(" Matrix Mixer - {} (ESC to close) ", preset_name));
+    f.render_widget(block, modal_area);
+
+    // Inner area
+    let inner = Rect {
+        x: modal_area.x + 1,
+        y: modal_area.y + 1,
+        width: modal_area.width.saturating_sub(2),
+        height: modal_area.height.saturating_sub(2),
+    };
+
+    // Split into header (5 lines) and grid sections
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(5), // Header section
+            Constraint::Min(3),    // Grid section
+            Constraint::Length(2), // Help line
+        ])
+        .split(inner);
+
+    // === Header Section ===
+    draw_matrix_header(f, app, chunks[0], *input_channels, *output_channels, preset_name);
+
+    // === Grid Section ===
+    draw_matrix_grid(
+        f,
+        app,
+        chunks[1],
+        *input_channels,
+        *output_channels,
+        matrix,
+    );
+
+    // === Help Line ===
+    let help_text = match app.matrix_edit_mode {
+        MatrixEditMode::Header => {
+            "↑↓: Select | ←→: Adjust | Tab: Grid Mode | Esc: Exit"
+        }
+        MatrixEditMode::Grid => {
+            "↑↓←→: Navigate | -/+: Adjust ±0.5dB | 0: Zero | 1: Unity | Tab: Header Mode | Esc: Exit"
+        }
+    };
+    let help = Paragraph::new(help_text)
+        .style(Style::default().fg(app.theme.fg_secondary))
+        .alignment(Alignment::Center);
+    f.render_widget(help, chunks[2]);
+}
+
+/// Draw the header section of matrix editor (input/output channels, preset)
+fn draw_matrix_header(
+    f: &mut Frame,
+    app: &App,
+    area: Rect,
+    input_channels: usize,
+    output_channels: usize,
+    preset_name: &str,
+) {
+    let in_header = app.matrix_edit_mode == MatrixEditMode::Header;
+
+    let mut lines = Vec::new();
+
+    // Input channels line
+    let input_style = if in_header && app.matrix_header_selection == 0 {
+        Style::default()
+            .fg(app.theme.fg_selected)
+            .bg(app.theme.bg_selected)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+    };
+    lines.push(Line::from(vec![
+        Span::styled("  Input Channels:  ", Style::default()),
+        Span::styled(
+            format!("[{}]", input_channels),
+            input_style.fg(app.theme.accent_primary),
+        ),
+        Span::styled(
+            format!("  ({})", format_channel_config(input_channels)),
+            Style::default().fg(app.theme.fg_secondary),
+        ),
+    ]));
+
+    // Output channels line
+    let output_style = if in_header && app.matrix_header_selection == 1 {
+        Style::default()
+            .fg(app.theme.fg_selected)
+            .bg(app.theme.bg_selected)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+    };
+    lines.push(Line::from(vec![
+        Span::styled("  Output Channels: ", Style::default()),
+        Span::styled(
+            format!("[{}]", output_channels),
+            output_style.fg(app.theme.accent_primary),
+        ),
+        Span::styled(
+            format!("  ({})", format_channel_config(output_channels)),
+            Style::default().fg(app.theme.fg_secondary),
+        ),
+    ]));
+
+    // Preset line
+    let preset_style = if in_header && app.matrix_header_selection == 2 {
+        Style::default()
+            .fg(app.theme.fg_selected)
+            .bg(app.theme.bg_selected)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+    };
+    lines.push(Line::from(vec![
+        Span::styled("  Preset:          ", Style::default()),
+        Span::styled(
+            format!("[{}]", preset_name),
+            preset_style.fg(app.theme.title_color),
+        ),
+    ]));
+
+    lines.push(Line::from(""));
+
+    let paragraph = Paragraph::new(lines);
+    f.render_widget(paragraph, area);
+}
+
+/// Format channel count to a common config name
+fn format_channel_config(channels: usize) -> &'static str {
+    match channels {
+        1 => "Mono",
+        2 => "Stereo",
+        3 => "2.1 / LCR",
+        4 => "Quad",
+        5 => "5.0",
+        6 => "5.1",
+        8 => "7.1",
+        10 => "7.1.2",
+        12 => "7.1.4",
+        _ => "Custom",
+    }
+}
+
+/// Draw the matrix grid with channel labels and dB values
+fn draw_matrix_grid(
+    f: &mut Frame,
+    app: &App,
+    area: Rect,
+    input_channels: usize,
+    output_channels: usize,
+    matrix: &[f32],
+) {
+    let in_grid = app.matrix_edit_mode == MatrixEditMode::Grid;
+
+    // Calculate column widths: first column for row labels, then one per input
+    let label_width = 5u16; // "Out" label column
+    let cell_width = 7u16;  // Each gain cell (e.g., "-12.5" or "-∞")
+
+    // Build header row (empty corner + input channel labels)
+    let mut header_cells = vec![Cell::from("Out\\In").style(Style::default().fg(app.theme.fg_secondary))];
+    for inp in 0..input_channels {
+        let label = get_channel_label(inp, input_channels);
+        header_cells.push(
+            Cell::from(label).style(Style::default().fg(app.theme.accent_primary).add_modifier(Modifier::BOLD)),
+        );
+    }
+    let header = Row::new(header_cells).height(1);
+
+    // Build data rows
+    let mut rows = Vec::new();
+    for out in 0..output_channels {
+        let mut cells = Vec::new();
+
+        // Row label (output channel)
+        let row_label = get_channel_label(out, output_channels);
+        cells.push(
+            Cell::from(row_label).style(Style::default().fg(app.theme.accent_primary).add_modifier(Modifier::BOLD)),
+        );
+
+        // Gain cells
+        for inp in 0..input_channels {
+            let gain = matrix.get(out * input_channels + inp).copied().unwrap_or(0.0);
+            let db_str = linear_to_db_string(gain);
+
+            let is_selected = in_grid && out == app.matrix_grid_row && inp == app.matrix_grid_col;
+            let style = if is_selected {
+                Style::default()
+                    .fg(app.theme.fg_selected)
+                    .bg(app.theme.bg_selected)
+                    .add_modifier(Modifier::BOLD)
+            } else if gain > 0.999 && gain < 1.001 {
+                // Unity gain - highlight
+                Style::default().fg(app.theme.title_color)
+            } else if gain < 0.001 {
+                // Silent - dim
+                Style::default().fg(app.theme.fg_secondary)
+            } else {
+                Style::default()
+            };
+
+            cells.push(Cell::from(db_str).style(style));
+        }
+
+        rows.push(Row::new(cells).height(1));
+    }
+
+    // Column widths
+    let mut widths = vec![Constraint::Length(label_width)];
+    for _ in 0..input_channels {
+        widths.push(Constraint::Length(cell_width));
+    }
+
+    let table = Table::new(rows, widths)
+        .header(header)
+        .block(Block::default().borders(Borders::TOP).title(" Matrix Grid "));
+
+    f.render_widget(table, area);
 }
 
 /// Get the parameters for a plugin as (name, value) pairs
@@ -2526,6 +2792,20 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
                 ("Soloed Channels".to_string(), format!("{}", soloed_count)),
             ]
         }
+        PluginSettings::Matrix {
+            input_channels,
+            output_channels,
+            ..
+        } => vec![
+            (
+                "Input Channels".to_string(),
+                format!("{}", input_channels),
+            ),
+            (
+                "Output Channels".to_string(),
+                format!("{}", output_channels),
+            ),
+        ],
     }
 }
 

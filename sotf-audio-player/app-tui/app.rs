@@ -35,6 +35,14 @@ pub enum FocusedPane {
     Meters, // Right column with level meters
 }
 
+/// Matrix plugin editor mode
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MatrixEditMode {
+    #[default]
+    Header, // Editing input/output channels, preset
+    Grid,   // Editing matrix cells
+}
+
 /// Tree view mode for library
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LibraryViewMode {
@@ -177,6 +185,12 @@ pub struct App {
     pub plugin_update_retry_count: u32,
     pub plugin_update_in_progress: bool,
 
+    // Matrix editor state
+    pub matrix_edit_mode: MatrixEditMode, // Header (channels/preset) or Grid (cells)
+    pub matrix_grid_row: usize,           // Selected output row in grid
+    pub matrix_grid_col: usize,           // Selected input column in grid
+    pub matrix_header_selection: usize,   // 0 = Input Channels, 1 = Output Channels, 2 = Preset
+
     // Playback state
     pub is_playing: bool,
     pub current_queue_index: Option<usize>,
@@ -287,6 +301,10 @@ impl App {
             plugin_update_last_attempt: None,
             plugin_update_retry_count: 0,
             plugin_update_in_progress: false,
+            matrix_edit_mode: MatrixEditMode::Header,
+            matrix_grid_row: 0,
+            matrix_grid_col: 0,
+            matrix_header_selection: 0,
             is_playing: false,
             current_queue_index: None,
             volume: 0.1, // Start at 10% volume
@@ -1877,6 +1895,10 @@ impl App {
                     // ChannelMuteSolo is automatically managed, not user-editable
                     false
                 }
+                PluginSettings::Matrix { .. } => {
+                    // Matrix is not yet user-editable
+                    false
+                }
             }
         } else {
             false
@@ -1889,6 +1911,190 @@ impl App {
 
         result
     }
+
+    // ========================================================================
+    // Matrix Editor Methods
+    // ========================================================================
+
+    /// Get the dimensions of the currently editing Matrix plugin
+    pub fn get_matrix_dimensions(&self) -> Option<(usize, usize)> {
+        use sotf_audio_player::PluginSettings;
+        if let Some(plugin) = self.get_editing_plugin() {
+            if let PluginSettings::Matrix {
+                input_channels,
+                output_channels,
+                ..
+            } = &plugin.settings
+            {
+                return Some((*input_channels, *output_channels));
+            }
+        }
+        None
+    }
+
+    /// Adjust the selected matrix header parameter (input channels, output channels, or preset)
+    /// Returns true if adjustment was made
+    pub fn adjust_matrix_header(&mut self, delta: i32) -> bool {
+        use sotf_audio_player::{PluginSettings, apply_matrix_preset, resize_matrix};
+
+        // Read selection before mutable borrow
+        let header_selection = self.matrix_header_selection;
+
+        // Track whether we need to clamp grid selection and the new dimensions
+        let mut clamp_col_to: Option<usize> = None;
+        let mut clamp_row_to: Option<usize> = None;
+
+        let result = {
+            let Some(plugin) = self.get_editing_plugin_mut() else {
+                return false;
+            };
+
+            let PluginSettings::Matrix {
+                input_channels,
+                output_channels,
+                matrix,
+            } = &mut plugin.settings
+            else {
+                return false;
+            };
+
+            match header_selection {
+                0 => {
+                    // Input channels: 1-16
+                    let old_in = *input_channels;
+                    let new_in = (*input_channels as i32 + delta).clamp(1, 16) as usize;
+                    if new_in != old_in {
+                        resize_matrix(matrix, old_in, *output_channels, new_in, *output_channels);
+                        *input_channels = new_in;
+                        clamp_col_to = Some(new_in);
+                        true
+                    } else {
+                        false
+                    }
+                }
+                1 => {
+                    // Output channels: 1-16
+                    let old_out = *output_channels;
+                    let new_out = (*output_channels as i32 + delta).clamp(1, 16) as usize;
+                    if new_out != old_out {
+                        resize_matrix(matrix, *input_channels, old_out, *input_channels, new_out);
+                        *output_channels = new_out;
+                        clamp_row_to = Some(new_out);
+                        true
+                    } else {
+                        false
+                    }
+                }
+                2 => {
+                    // Preset: cycle through available presets
+                    const PRESETS: [&str; 3] = ["Identity", "Swap L/R", "Mono Mix"];
+                    let in_ch = *input_channels;
+                    let out_ch = *output_channels;
+                    let current = sotf_audio_player::detect_matrix_preset(in_ch, out_ch, matrix);
+                    let current_idx = PRESETS.iter().position(|&p| p == current).unwrap_or(0);
+                    let new_idx = if delta > 0 {
+                        (current_idx + 1) % PRESETS.len()
+                    } else {
+                        (current_idx + PRESETS.len() - 1) % PRESETS.len()
+                    };
+                    apply_matrix_preset(in_ch, out_ch, matrix, PRESETS[new_idx]);
+                    true
+                }
+                _ => false,
+            }
+        }; // Mutable borrow ends here
+
+        // Clamp grid selection after borrow is released
+        if let Some(max_col) = clamp_col_to {
+            if self.matrix_grid_col >= max_col {
+                self.matrix_grid_col = max_col.saturating_sub(1);
+            }
+        }
+        if let Some(max_row) = clamp_row_to {
+            if self.matrix_grid_row >= max_row {
+                self.matrix_grid_row = max_row.saturating_sub(1);
+            }
+        }
+
+        result
+    }
+
+    /// Adjust the selected matrix cell gain by dB amount
+    /// Returns true if adjustment was made
+    pub fn adjust_matrix_cell(&mut self, delta_db: f32) -> bool {
+        use sotf_audio_player::{PluginSettings, db_to_linear};
+
+        // Read grid position before mutable borrow
+        let grid_row = self.matrix_grid_row;
+        let grid_col = self.matrix_grid_col;
+
+        let Some(plugin) = self.get_editing_plugin_mut() else {
+            return false;
+        };
+
+        let PluginSettings::Matrix {
+            input_channels,
+            matrix,
+            ..
+        } = &mut plugin.settings
+        else {
+            return false;
+        };
+
+        let idx = grid_row * *input_channels + grid_col;
+        if idx >= matrix.len() {
+            return false;
+        }
+
+        let current = matrix[idx];
+        // Convert to dB, adjust, convert back
+        let current_db = if current < 0.001 {
+            -60.0 // Treat as -60 dB for adjustment
+        } else {
+            20.0 * current.log10()
+        };
+        let new_db = (current_db + delta_db).clamp(-60.0, 6.0);
+        let new_linear = if new_db <= -60.0 {
+            0.0 // Silence
+        } else {
+            db_to_linear(new_db)
+        };
+        matrix[idx] = new_linear;
+        true
+    }
+
+    /// Set the selected matrix cell to a specific linear gain value
+    /// Returns true if adjustment was made
+    pub fn set_matrix_cell(&mut self, linear_gain: f32) -> bool {
+        use sotf_audio_player::PluginSettings;
+
+        // Read grid position before mutable borrow
+        let grid_row = self.matrix_grid_row;
+        let grid_col = self.matrix_grid_col;
+
+        let Some(plugin) = self.get_editing_plugin_mut() else {
+            return false;
+        };
+
+        let PluginSettings::Matrix {
+            input_channels,
+            matrix,
+            ..
+        } = &mut plugin.settings
+        else {
+            return false;
+        };
+
+        let idx = grid_row * *input_channels + grid_col;
+        if idx >= matrix.len() {
+            return false;
+        }
+
+        matrix[idx] = linear_gain.clamp(0.0, 2.0);
+        true
+    }
+
+    // ========================================================================
 
     /// Save plugin chain to file
     pub fn save_plugin_chain(&mut self) {
@@ -2664,8 +2870,6 @@ impl App {
             .any(|s| s.muted || s.soloed || s.dimmed);
 
         // Find and update the ChannelMuteSolo plugin
-        // We need to compute the engine index, which only counts enabled plugins
-        let mut engine_index = 0;
         for i in 0..self.plugin_chain.len() {
             if let Some(plugin) = self.plugin_chain.get_plugin_mut(i) {
                 if matches!(&plugin.settings, PluginSettings::ChannelMuteSolo { .. }) {
@@ -2676,20 +2880,24 @@ impl App {
                     };
 
                     // Queue zero-dropout parameter update
-                    // Serialize channel states to JSON
-                    // Use engine_index (not i) since the engine only has enabled plugins
-                    if let Ok(json) = serde_json::to_string(&channel_states) {
-                        self.pending_param_update = Some(PendingParameterUpdate {
-                            plugin_index: engine_index,
-                            param_id: "channel_states".to_string(),
-                            value: json,
+                    // Use get_engine_index() which handles monitoring plugin reordering
+                    if let Some(engine_index) = self.plugin_chain.get_engine_index(i) {
+                        // Send enabled and channel_states together as a JSON object
+                        // The plugin's set_parameter for channel_states will auto-enable
+                        // when any channel is muted/soloed/dimmed
+                        let params = serde_json::json!({
+                            "enabled": enabled,
+                            "channel_states": channel_states,
                         });
+                        if let Ok(json) = serde_json::to_string(&params) {
+                            self.pending_param_update = Some(PendingParameterUpdate {
+                                plugin_index: engine_index,
+                                param_id: "full_state".to_string(),
+                                value: json,
+                            });
+                        }
                     }
                     return;
-                }
-                // Only count enabled plugins toward the engine index
-                if plugin.enabled {
-                    engine_index += 1;
                 }
             }
         }
@@ -2784,6 +2992,7 @@ fn get_param_count(settings: &sotf_audio_player::PluginSettings) -> usize {
         PluginSettings::LoudnessMonitor => 0,        // No parameters
         PluginSettings::SpectrumAnalyzer { .. } => 4, // num_bins, min_freq, max_freq, smoothing
         PluginSettings::ChannelMuteSolo { .. } => 0, // Automatically managed, no user-editable parameters
+        PluginSettings::Matrix { .. } => 0,          // Not yet user-editable
     }
 }
 
@@ -4219,7 +4428,9 @@ mod tests {
 
     fn create_test_audio_device(name: &str, is_default: bool) -> AudioDevice {
         AudioDevice {
+            device_id: Some(format!("test-device-{}", name)),
             name: name.to_string(),
+            display_info: None,
             is_input: false,
             is_default,
             supported_configs: vec![],

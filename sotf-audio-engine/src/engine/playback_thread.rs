@@ -142,65 +142,80 @@ fn run_playback_thread(
     let host = cpal::default_host();
 
     // Select output device
-    let device = if let Some(device_name) = output_device {
-        // Try to find device by name
-        log::debug!("[Playback Thread] Looking for device: '{}'", device_name);
+    let device = if let Some(device_identifier) = output_device {
+        // Try to find device by ID first, then name
+        log::debug!(
+            "[Playback Thread] Looking for device: '{}'",
+            device_identifier
+        );
 
-        // Case-insensitive pattern matching with exact match priority
-        let target_pattern = device_name.to_lowercase();
         let devices: Vec<_> = host
             .output_devices()
             .map_err(|e| format!("Failed to enumerate output devices: {}", e))?
             .collect();
 
-        // First try exact match
+        // Helper to get device display name
+        let get_display_name = |d: &Device| -> String {
+            d.description()
+                .map(|desc| desc.name().to_string())
+                .or_else(|_| d.name())
+                .unwrap_or_else(|_| "Unknown".to_string())
+        };
+
+        // First try to match by device ID (preferred for persistence)
         let found_device = devices
             .iter()
             .find(|d| {
-                if let Ok(name) = d.name() {
-                    name.to_lowercase() == target_pattern
+                if let Ok(id) = d.id() {
+                    id.to_string() == device_identifier
                 } else {
                     false
                 }
             })
             .cloned()
+            // Then try exact name match using description
+            .or_else(|| {
+                let target_pattern = device_identifier.to_lowercase();
+                devices
+                    .iter()
+                    .find(|d| get_display_name(d).to_lowercase() == target_pattern)
+                    .cloned()
+            })
             // Then try partial match (starts with)
             .or_else(|| {
+                let target_pattern = device_identifier.to_lowercase();
                 devices
                     .iter()
                     .find(|d| {
-                        if let Ok(name) = d.name() {
-                            name.to_lowercase().starts_with(&target_pattern)
-                        } else {
-                            false
-                        }
+                        get_display_name(d)
+                            .to_lowercase()
+                            .starts_with(&target_pattern)
                     })
                     .cloned()
             })
             // Finally try partial match (contains)
             .or_else(|| {
+                let target_pattern = device_identifier.to_lowercase();
                 devices
                     .iter()
                     .find(|d| {
-                        if let Ok(name) = d.name() {
-                            name.to_lowercase().contains(&target_pattern)
-                        } else {
-                            false
-                        }
+                        get_display_name(d)
+                            .to_lowercase()
+                            .contains(&target_pattern)
                     })
                     .cloned()
             });
 
         match found_device {
             Some(dev) => {
-                let dev_name = dev.name().unwrap_or_else(|_| "Unknown".to_string());
+                let dev_name = get_display_name(&dev);
                 log::debug!("[Playback Thread] Using device: '{}'", dev_name);
                 dev
             }
             None => {
                 log::info!(
                     "[Playback Thread] Device '{}' not found, using default",
-                    device_name
+                    device_identifier
                 );
                 host.default_output_device()
                     .ok_or("No default output device available")?

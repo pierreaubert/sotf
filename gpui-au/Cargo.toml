@@ -6,6 +6,10 @@ edition = "2021"
 [lib]
 crate-type = ["staticlib", "cdylib"]
 
+[[bin]]
+name = "gpui_au_test"
+path = "src/bin/test_embedded.rs"
+
 # This crate is macOS-only (Audio Unit plugin)
 [target.'cfg(target_os = "macos")'.dependencies]
 parking_lot = { workspace = true }

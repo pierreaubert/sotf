@@ -17,6 +17,7 @@ pub enum PluginType {
     LoudnessMonitor,
     SpectrumAnalyzer,
     ChannelMuteSolo,
+    Matrix,
 }
 
 impl PluginType {
@@ -34,6 +35,7 @@ impl PluginType {
             Self::LoudnessMonitor => "[9] Loudness Monitor",
             Self::SpectrumAnalyzer => "[0] Spectrum Analyzer",
             Self::ChannelMuteSolo => "[m] Channel Mute/Solo",
+            Self::Matrix => "[x] Matrix Mixer",
         }
     }
 
@@ -51,6 +53,7 @@ impl PluginType {
             Self::LoudnessMonitor => "Real-time EBU R128 loudness monitoring",
             Self::SpectrumAnalyzer => "Real-time frequency spectrum analysis",
             Self::ChannelMuteSolo => "Mute or solo individual channels",
+            Self::Matrix => "Channel routing and mixing matrix",
         }
     }
 
@@ -68,6 +71,7 @@ impl PluginType {
             Self::LoudnessMonitor,
             Self::SpectrumAnalyzer,
             Self::ChannelMuteSolo,
+            Self::Matrix,
         ]
     }
 
@@ -494,6 +498,11 @@ pub enum PluginSettings {
         enabled: bool,
         channel_states: Vec<sotf_plugins::ChannelState>,
     },
+    Matrix {
+        input_channels: usize,
+        output_channels: usize,
+        matrix: Vec<f32>, // Row-major: matrix[out * in_count + in] = linear_gain
+    },
 }
 
 impl PluginSettings {
@@ -511,6 +520,7 @@ impl PluginSettings {
             Self::LoudnessMonitor => PluginType::LoudnessMonitor,
             Self::SpectrumAnalyzer { .. } => PluginType::SpectrumAnalyzer,
             Self::ChannelMuteSolo { .. } => PluginType::ChannelMuteSolo,
+            Self::Matrix { .. } => PluginType::Matrix,
         }
     }
 
@@ -744,6 +754,18 @@ impl PluginSettings {
                     "channel_states": channel_states,
                 }),
             ),
+            Self::Matrix {
+                input_channels,
+                output_channels,
+                matrix,
+            } => PluginConfig::new(
+                "matrix",
+                json!({
+                    "input_channels": input_channels,
+                    "output_channels": output_channels,
+                    "matrix": matrix,
+                }),
+            ),
         }
     }
 
@@ -867,9 +889,195 @@ impl PluginSettings {
                 enabled: false,
                 channel_states: vec![],
             },
+            PluginType::Matrix => Self::Matrix {
+                input_channels: 2,
+                output_channels: 2,
+                matrix: vec![1.0, 0.0, 0.0, 1.0], // Identity 2x2
+            },
         }
     }
 }
+
+// ============================================================================
+// Matrix Helper Functions
+// ============================================================================
+
+/// Get channel label for a given channel index and total channel count
+/// Returns standard speaker labels (L, R, C, LFE, etc.) when possible
+pub fn get_channel_label(index: usize, total: usize) -> String {
+    const MONO: &[&str] = &["M"];
+    const STEREO: &[&str] = &["L", "R"];
+    const SURROUND_3_0: &[&str] = &["L", "R", "C"];
+    const SURROUND_4_0: &[&str] = &["L", "R", "LS", "RS"];
+    const SURROUND_5_0: &[&str] = &["L", "R", "C", "LS", "RS"];
+    const SURROUND_5_1: &[&str] = &["L", "R", "C", "LFE", "LS", "RS"];
+    const SURROUND_7_1: &[&str] = &["L", "R", "C", "LFE", "LS", "RS", "LB", "RB"];
+
+    let labels: Option<&[&str]> = match total {
+        1 => Some(MONO),
+        2 => Some(STEREO),
+        3 => Some(SURROUND_3_0),
+        4 => Some(SURROUND_4_0),
+        5 => Some(SURROUND_5_0),
+        6 => Some(SURROUND_5_1),
+        8 => Some(SURROUND_7_1),
+        _ => None,
+    };
+
+    if let Some(labels) = labels {
+        if index < labels.len() {
+            return labels[index].to_string();
+        }
+    }
+
+    // Fallback: generic channel number
+    format!("Ch{}", index)
+}
+
+/// Convert linear gain to dB string for display
+/// Returns "-∞" for gains below threshold (effectively silent)
+pub fn linear_to_db_string(linear: f32) -> String {
+    const SILENCE_THRESHOLD: f32 = 0.001; // -60 dB
+
+    if linear < SILENCE_THRESHOLD {
+        "-∞".to_string()
+    } else {
+        format!("{:.1}", 20.0 * linear.log10())
+    }
+}
+
+/// Convert dB value to linear gain
+pub fn db_to_linear(db: f32) -> f32 {
+    10.0_f32.powf(db / 20.0)
+}
+
+/// Detect which preset a matrix matches, if any
+pub fn detect_matrix_preset(in_ch: usize, out_ch: usize, matrix: &[f32]) -> &'static str {
+    if is_identity_matrix(in_ch, out_ch, matrix) {
+        "Identity"
+    } else if is_swap_matrix(in_ch, out_ch, matrix) {
+        "Swap L/R"
+    } else if is_mono_mix_matrix(in_ch, out_ch, matrix) {
+        "Mono Mix"
+    } else {
+        "Custom"
+    }
+}
+
+/// Check if matrix is identity (diagonal = 1, rest = 0)
+fn is_identity_matrix(in_ch: usize, out_ch: usize, matrix: &[f32]) -> bool {
+    if matrix.len() != in_ch * out_ch {
+        return false;
+    }
+
+    for out in 0..out_ch {
+        for inp in 0..in_ch {
+            let value = matrix[out * in_ch + inp];
+            let expected = if inp == out { 1.0 } else { 0.0 };
+            if (value - expected).abs() > 0.001 {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Check if matrix swaps L/R (stereo only)
+fn is_swap_matrix(in_ch: usize, out_ch: usize, matrix: &[f32]) -> bool {
+    if in_ch != 2 || out_ch != 2 || matrix.len() != 4 {
+        return false;
+    }
+
+    // Swap matrix: [[0, 1], [1, 0]]
+    // Row-major: [0, 1, 1, 0]
+    let expected = [0.0, 1.0, 1.0, 0.0];
+    for (i, &exp) in expected.iter().enumerate() {
+        if (matrix[i] - exp).abs() > 0.001 {
+            return false;
+        }
+    }
+    true
+}
+
+/// Check if matrix is a mono mix (all inputs summed equally to all outputs)
+fn is_mono_mix_matrix(in_ch: usize, out_ch: usize, matrix: &[f32]) -> bool {
+    if matrix.len() != in_ch * out_ch || in_ch == 0 {
+        return false;
+    }
+
+    // Expected gain for equal power mix
+    let expected_gain = 1.0 / (in_ch as f32).sqrt();
+
+    for value in matrix {
+        if (*value - expected_gain).abs() > 0.001 {
+            return false;
+        }
+    }
+    true
+}
+
+/// Apply a preset to the matrix
+pub fn apply_matrix_preset(in_ch: usize, out_ch: usize, matrix: &mut Vec<f32>, preset: &str) {
+    matrix.resize(in_ch * out_ch, 0.0);
+    matrix.fill(0.0);
+
+    match preset {
+        "Identity" => {
+            for i in 0..in_ch.min(out_ch) {
+                matrix[i * in_ch + i] = 1.0;
+            }
+        }
+        "Swap L/R" => {
+            if in_ch >= 2 && out_ch >= 2 {
+                // Swap first two channels
+                matrix[0 * in_ch + 1] = 1.0; // Out 0 <- In 1
+                matrix[1 * in_ch + 0] = 1.0; // Out 1 <- In 0
+                                             // Pass through remaining channels
+                for i in 2..in_ch.min(out_ch) {
+                    matrix[i * in_ch + i] = 1.0;
+                }
+            }
+        }
+        "Mono Mix" => {
+            let gain = 1.0 / (in_ch as f32).sqrt();
+            matrix.fill(gain);
+        }
+        _ => {
+            // Custom or unknown - set to identity as fallback
+            for i in 0..in_ch.min(out_ch) {
+                matrix[i * in_ch + i] = 1.0;
+            }
+        }
+    }
+}
+
+/// Resize matrix preserving existing values where possible
+/// New cells on diagonal get 1.0 (identity), others get 0.0
+pub fn resize_matrix(
+    matrix: &mut Vec<f32>,
+    old_in: usize,
+    old_out: usize,
+    new_in: usize,
+    new_out: usize,
+) {
+    let mut new_matrix = vec![0.0; new_in * new_out];
+
+    // Copy existing values
+    for out in 0..old_out.min(new_out) {
+        for inp in 0..old_in.min(new_in) {
+            new_matrix[out * new_in + inp] = matrix[out * old_in + inp];
+        }
+    }
+
+    // Fill diagonal for new channels
+    for i in old_in.min(old_out)..new_in.min(new_out) {
+        new_matrix[i * new_in + i] = 1.0;
+    }
+
+    *matrix = new_matrix;
+}
+
+// ============================================================================
 
 /// Versioned wrapper for plugin presets
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1132,6 +1340,11 @@ impl PluginChain {
                     // Binaural decoder always outputs stereo
                     return 2;
                 }
+                PluginSettings::Matrix {
+                    output_channels, ..
+                } => {
+                    return *output_channels;
+                }
                 _ => continue,
             }
         }
@@ -1354,6 +1567,11 @@ impl PluginChain {
                             }
                             PluginSettings::BinauralDecoder { .. } => {
                                 channels = 2; // Binaural outputs stereo
+                            }
+                            PluginSettings::Matrix {
+                                output_channels, ..
+                            } => {
+                                channels = *output_channels;
                             }
                             _ => {} // Other plugins don't change channel count
                         }
