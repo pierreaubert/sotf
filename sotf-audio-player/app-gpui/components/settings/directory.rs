@@ -1,6 +1,8 @@
 //! Directory manager screen rendering functions
 
+use crate::app::types::Screen;
 use crate::app::InputMode;
+use crate::components::icons::{Icon, IconName};
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -54,18 +56,62 @@ impl PlayerView {
             })
             .collect();
 
+        // Home button for navigation back to Library
+        let state_for_home = self.state.clone();
+        let text_muted = theme.text_muted;
+        let surface_hover = theme.surface_hover;
+
         div()
             .flex()
             .flex_col()
             .size_full()
-            .p_4()
-            .gap_4()
-            // Title
+            // Header bar with Home button and title
             .child(
-                Text::new(title)
-                    .size(TextSize::Lg)
-                    .weight(TextWeight::Semibold),
+                div()
+                    .flex()
+                    .items_center()
+                    .px_4()
+                    .py_2()
+                    .bg(theme.background_secondary)
+                    .border_b_1()
+                    .border_color(theme.border)
+                    // Home button on the left
+                    .child(
+                        div()
+                            .id("directory-home-button")
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .w(px(40.0))
+                            .h(px(32.0))
+                            .cursor_pointer()
+                            .rounded_md()
+                            .hover(move |s| s.bg(surface_hover))
+                            .child(Icon::new(IconName::Home).color(text_muted))
+                            .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
+                                state_for_home.update(cx, |state, _cx| {
+                                    state.app.current_screen = Screen::Library;
+                                });
+                            }),
+                    )
+                    // Title
+                    .child(
+                        div()
+                            .ml_2()
+                            .text_sm()
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(theme.text_primary)
+                            .child(title),
+                    ),
             )
+            // Main content area
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .p_4()
+                    .gap_4()
             // Add Directory Input Box (always visible, styled differently when active)
             .child(self.render_add_directory_box(
                 &theme,
@@ -86,7 +132,8 @@ impl PlayerView {
                 ))
             })
             // Help Text Footer
-            .child(render_directory_help_footer(&theme, is_add_mode))
+            .child(render_directory_help_footer(&theme, is_add_mode)),
+            )
     }
 
     /// Render the directory list with click handlers

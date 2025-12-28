@@ -7972,6 +7972,7 @@ dependencies = [
  "sotf-audio-engine",
  "sotf-audio-player",
  "sotf-audio-plugins",
+ "sotf-hal",
  "symphonia",
  "symphonia-bundle-flac",
  "symphonia-bundle-mp3",

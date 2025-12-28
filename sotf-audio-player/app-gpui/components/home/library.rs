@@ -1374,15 +1374,20 @@ impl PlayerView {
 
             let album_card = div()
                 .id(("album-wrapper", idx))
-                .on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                .on_click(cx.listener(move |view, event: &ClickEvent, _window, cx| {
+                    view.state.update(cx, |state, _cx| {
+                        state.app.selected_album_index = idx;
+                    });
+                    // Double-click adds to queue
+                    if event.click_count() == 2 {
                         view.state.update(cx, |state, _cx| {
-                            state.app.selected_album_index = idx;
+                            if let Some(path) = state.app.add_album_to_queue() {
+                                Self::play_track(state, path);
+                            }
                         });
-                        cx.notify();
-                    }),
-                )
+                    }
+                    cx.notify();
+                }))
                 .on_mouse_up(
                     MouseButton::Right,
                     cx.listener(move |view, event: &MouseUpEvent, _window, cx| {

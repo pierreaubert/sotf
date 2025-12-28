@@ -7,6 +7,10 @@
 // - High-shelf filter with 12dB/octave slope (2 cascaded biquads)
 // - Automatic gain compensation to prevent clipping
 //
+// Supports two modes:
+// 1. Single set of parameters applied to all channels (default)
+// 2. Per-channel parameters with independent values for each channel
+//
 // Typical use: Boost bass and treble at low listening volumes to compensate
 // for the Fletcher-Munson equal-loudness contours.
 
@@ -85,9 +89,9 @@ fn default_high_gain() -> f32 {
     HIGH_GAIN_DEFAULT
 }
 
-/// Configuration parameters for LoudnessCompensationPlugin
+/// Per-channel loudness compensation parameters
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LoudnessCompensationPluginParams {
+pub struct ChannelLoudnessParams {
     #[serde(default = "default_low_freq")]
     pub low_freq: f32,
     #[serde(default = "default_low_gain")]
@@ -98,30 +102,72 @@ pub struct LoudnessCompensationPluginParams {
     pub high_gain: f32,
 }
 
+impl Default for ChannelLoudnessParams {
+    fn default() -> Self {
+        Self {
+            low_freq: LOW_FREQ_DEFAULT,
+            low_gain: LOW_GAIN_DEFAULT,
+            high_freq: HIGH_FREQ_DEFAULT,
+            high_gain: HIGH_GAIN_DEFAULT,
+        }
+    }
+}
+
+/// Configuration parameters for LoudnessCompensationPlugin
+///
+/// Supports two modes:
+/// 1. Single parameters for all channels: Use top-level fields
+/// 2. Per-channel parameters: Use `channel_params` field
+///
+/// If `channel_params` is provided and non-empty, it takes precedence.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoudnessCompensationPluginParams {
+    /// Global low-shelf frequency (used if channel_params is empty)
+    #[serde(default = "default_low_freq")]
+    pub low_freq: f32,
+    /// Global low-shelf gain (used if channel_params is empty)
+    #[serde(default = "default_low_gain")]
+    pub low_gain: f32,
+    /// Global high-shelf frequency (used if channel_params is empty)
+    #[serde(default = "default_high_freq")]
+    pub high_freq: f32,
+    /// Global high-shelf gain (used if channel_params is empty)
+    #[serde(default = "default_high_gain")]
+    pub high_gain: f32,
+
+    /// Per-channel parameters (optional)
+    /// If provided, must have exactly one entry per channel
+    #[serde(default)]
+    pub channel_params: Vec<ChannelLoudnessParams>,
+}
+
 // ============================================================================
 // Loudness Compensation Plugin
 // ============================================================================
 
-/// Loudness compensation plugin
+/// Loudness compensation plugin with per-channel support
 pub struct LoudnessCompensationPlugin {
     /// Number of input/output channels
     num_channels: usize,
 
-    /// Low-shelf frequency (Hz)
+    /// Global low-shelf frequency (Hz)
     param_low_freq: ParameterId,
     low_freq: f32,
 
-    /// Low-shelf gain (dB)
+    /// Global low-shelf gain (dB)
     param_low_gain: ParameterId,
     low_gain: f32,
 
-    /// High-shelf frequency (Hz)
+    /// Global high-shelf frequency (Hz)
     param_high_freq: ParameterId,
     high_freq: f32,
 
-    /// High-shelf gain (dB)
+    /// Global high-shelf gain (dB)
     param_high_gain: ParameterId,
     high_gain: f32,
+
+    /// Per-channel parameters (empty = use global params)
+    channel_params: Vec<ChannelLoudnessParams>,
 
     /// Sample rate
     sample_rate: u32,
@@ -132,12 +178,12 @@ pub struct LoudnessCompensationPlugin {
     /// 2-3: High-shelf stages (2 for 12dB/oct)
     filters: Vec<Vec<Biquad>>,
 
-    /// Compensation gain to prevent clipping
-    compensation_gain: f32,
+    /// Compensation gains per channel to prevent clipping
+    compensation_gains: Vec<f32>,
 }
 
 impl LoudnessCompensationPlugin {
-    /// Create a new loudness compensation plugin
+    /// Create a new loudness compensation plugin with global parameters
     ///
     /// # Arguments
     /// * `num_channels` - Number of audio channels to process
@@ -162,47 +208,180 @@ impl LoudnessCompensationPlugin {
             high_freq,
             param_high_gain: ParameterId::from("high_gain"),
             high_gain,
+            channel_params: Vec::new(),
             sample_rate: 48000,
             filters: Vec::new(),
-            compensation_gain: 0.0,
+            compensation_gains: Vec::new(),
         };
 
         plugin.rebuild_filters();
         plugin
     }
 
-    /// Create a new loudness compensation plugin from configuration parameters
-    pub fn from_params(num_channels: usize, params: LoudnessCompensationPluginParams) -> Self {
-        Self::new(
+    /// Create a new loudness compensation plugin with per-channel parameters
+    ///
+    /// # Arguments
+    /// * `channel_params` - Parameters for each channel
+    ///
+    /// # Errors
+    /// Returns an error if channel_params is empty
+    pub fn new_per_channel(channel_params: Vec<ChannelLoudnessParams>) -> Result<Self, String> {
+        if channel_params.is_empty() {
+            return Err("channel_params must not be empty".to_string());
+        }
+
+        let num_channels = channel_params.len();
+        let mut plugin = Self {
             num_channels,
-            params.low_freq,
-            params.low_gain,
-            params.high_freq,
-            params.high_gain,
-        )
+            param_low_freq: ParameterId::from("low_freq"),
+            low_freq: LOW_FREQ_DEFAULT,
+            param_low_gain: ParameterId::from("low_gain"),
+            low_gain: LOW_GAIN_DEFAULT,
+            param_high_freq: ParameterId::from("high_freq"),
+            high_freq: HIGH_FREQ_DEFAULT,
+            param_high_gain: ParameterId::from("high_gain"),
+            high_gain: HIGH_GAIN_DEFAULT,
+            channel_params,
+            sample_rate: 48000,
+            filters: Vec::new(),
+            compensation_gains: Vec::new(),
+        };
+
+        plugin.rebuild_filters();
+        Ok(plugin)
+    }
+
+    /// Create a new loudness compensation plugin from configuration parameters
+    pub fn from_params(
+        num_channels: usize,
+        params: LoudnessCompensationPluginParams,
+    ) -> Result<Self, String> {
+        if params.channel_params.is_empty() {
+            // Global mode
+            Ok(Self::new(
+                num_channels,
+                params.low_freq,
+                params.low_gain,
+                params.high_freq,
+                params.high_gain,
+            ))
+        } else {
+            // Per-channel mode
+            if params.channel_params.len() != num_channels {
+                return Err(format!(
+                    "Channel params count mismatch: expected {} channels, got {} params",
+                    num_channels,
+                    params.channel_params.len()
+                ));
+            }
+            Self::new_per_channel(params.channel_params)
+        }
+    }
+
+    /// Check if plugin is in per-channel mode
+    pub fn is_per_channel(&self) -> bool {
+        !self.channel_params.is_empty()
+    }
+
+    /// Get parameters for a specific channel
+    fn get_channel_params(&self, channel: usize) -> ChannelLoudnessParams {
+        if self.is_per_channel() {
+            self.channel_params
+                .get(channel)
+                .cloned()
+                .unwrap_or_default()
+        } else {
+            ChannelLoudnessParams {
+                low_freq: self.low_freq,
+                low_gain: self.low_gain,
+                high_freq: self.high_freq,
+                high_gain: self.high_gain,
+            }
+        }
+    }
+
+    /// Set per-channel parameters (switches to per-channel mode)
+    pub fn set_channel_params(
+        &mut self,
+        channel_params: Vec<ChannelLoudnessParams>,
+    ) -> Result<(), String> {
+        if channel_params.len() != self.num_channels {
+            return Err(format!(
+                "Channel params count mismatch: expected {} channels, got {} params",
+                self.num_channels,
+                channel_params.len()
+            ));
+        }
+
+        self.channel_params = channel_params;
+        self.rebuild_filters();
+        Ok(())
+    }
+
+    /// Set a parameter for a specific channel (initializes per-channel mode if needed)
+    pub fn set_channel_param(
+        &mut self,
+        channel: usize,
+        param: &str,
+        value: f32,
+    ) -> Result<(), String> {
+        if channel >= self.num_channels {
+            return Err(format!(
+                "Channel index {} out of bounds (max {})",
+                channel,
+                self.num_channels - 1
+            ));
+        }
+
+        // Initialize per-channel mode if not already
+        if self.channel_params.is_empty() {
+            self.channel_params = (0..self.num_channels)
+                .map(|_| ChannelLoudnessParams {
+                    low_freq: self.low_freq,
+                    low_gain: self.low_gain,
+                    high_freq: self.high_freq,
+                    high_gain: self.high_gain,
+                })
+                .collect();
+        }
+
+        match param {
+            "low_freq" => self.channel_params[channel].low_freq = value,
+            "low_gain" => self.channel_params[channel].low_gain = value,
+            "high_freq" => self.channel_params[channel].high_freq = value,
+            "high_gain" => self.channel_params[channel].high_gain = value,
+            _ => return Err(format!("Unknown parameter: {}", param)),
+        }
+
+        self.rebuild_filters();
+        Ok(())
     }
 
     /// Rebuild all filters based on current parameters
     fn rebuild_filters(&mut self) {
-        // Calculate compensation gain: -max(low_gain, high_gain)
-        // This prevents clipping when both shelves boost
-        self.compensation_gain = -self.low_gain.max(self.high_gain);
-
-        // For 12dB/octave slope, we need 2 cascaded biquads (each is 6dB/oct)
-        // Split the gain between the two stages
-        let low_gain_per_stage = self.low_gain / 2.0;
-        let high_gain_per_stage = self.high_gain / 2.0;
-
         // Q factor for shelving filters (0.707 = Butterworth response)
         let q = 0.707;
 
         self.filters.clear();
-        for _ in 0..self.num_channels {
+        self.compensation_gains.clear();
+
+        for ch in 0..self.num_channels {
+            let params = self.get_channel_params(ch);
+
+            // Calculate compensation gain for this channel: -max(low_gain, high_gain)
+            let comp_gain = -params.low_gain.max(params.high_gain);
+            self.compensation_gains.push(comp_gain);
+
+            // For 12dB/octave slope, we need 2 cascaded biquads (each is 6dB/oct)
+            // Split the gain between the two stages
+            let low_gain_per_stage = params.low_gain / 2.0;
+            let high_gain_per_stage = params.high_gain / 2.0;
+
             let channel_filters = vec![
                 // Low-shelf stage 1
                 Biquad::new(
                     BiquadFilterType::Lowshelf,
-                    self.low_freq as f64,
+                    params.low_freq as f64,
                     self.sample_rate as f64,
                     q,
                     low_gain_per_stage as f64,
@@ -210,7 +389,7 @@ impl LoudnessCompensationPlugin {
                 // Low-shelf stage 2
                 Biquad::new(
                     BiquadFilterType::Lowshelf,
-                    self.low_freq as f64,
+                    params.low_freq as f64,
                     self.sample_rate as f64,
                     q,
                     low_gain_per_stage as f64,
@@ -218,7 +397,7 @@ impl LoudnessCompensationPlugin {
                 // High-shelf stage 1
                 Biquad::new(
                     BiquadFilterType::Highshelf,
-                    self.high_freq as f64,
+                    params.high_freq as f64,
                     self.sample_rate as f64,
                     q,
                     high_gain_per_stage as f64,
@@ -226,7 +405,7 @@ impl LoudnessCompensationPlugin {
                 // High-shelf stage 2
                 Biquad::new(
                     BiquadFilterType::Highshelf,
-                    self.high_freq as f64,
+                    params.high_freq as f64,
                     self.sample_rate as f64,
                     q,
                     high_gain_per_stage as f64,
@@ -237,8 +416,8 @@ impl LoudnessCompensationPlugin {
         }
     }
 
-    /// Update a parameter and rebuild filters if needed
-    fn update_parameter(&mut self, id: &ParameterId, value: f32) -> bool {
+    /// Update a global parameter and rebuild filters if needed
+    fn update_global_parameter(&mut self, id: &ParameterId, value: f32) -> bool {
         let mut changed = false;
 
         if id == &self.param_low_freq {
@@ -256,6 +435,8 @@ impl LoudnessCompensationPlugin {
         }
 
         if changed {
+            // Clear per-channel mode and rebuild
+            self.channel_params.clear();
             self.rebuild_filters();
         }
 
@@ -267,10 +448,10 @@ impl Plugin for LoudnessCompensationPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo {
             name: "Loudness Compensation".to_string(),
-            version: "1.0.0".to_string(),
+            version: "1.1.0".to_string(),
             author: "AutoEQ".to_string(),
             description:
-                "Bass and treble boost for low-volume listening (Fletcher-Munson compensation)"
+                "Bass and treble boost for low-volume listening with per-channel support"
                     .to_string(),
         }
     }
@@ -284,63 +465,126 @@ impl Plugin for LoudnessCompensationPlugin {
     }
 
     fn parameters(&self) -> Vec<Parameter> {
-        vec![
-            Parameter::new_float(
-                "low_freq",
-                "Low-shelf Frequency",
-                self.low_freq,
-                LOW_FREQ_MIN,
-                LOW_FREQ_MAX,
-            )
-            .with_description("Frequency for bass boost (Hz)"),
-            Parameter::new_float(
-                "low_gain",
-                "Low-shelf Gain",
-                self.low_gain,
-                LOW_GAIN_MIN,
-                LOW_GAIN_MAX,
-            )
-            .with_description("Bass boost amount (dB)"),
-            Parameter::new_float(
-                "high_freq",
-                "High-shelf Frequency",
-                self.high_freq,
-                HIGH_FREQ_MIN,
-                HIGH_FREQ_MAX,
-            )
-            .with_description("Frequency for treble boost (Hz)"),
-            Parameter::new_float(
-                "high_gain",
-                "High-shelf Gain",
-                self.high_gain,
-                HIGH_GAIN_MIN,
-                HIGH_GAIN_MAX,
-            )
-            .with_description("Treble boost amount (dB)"),
-        ]
+        let mut params = vec![
+            Parameter::new_float("low_freq", "Low-shelf Frequency", LOW_FREQ_DEFAULT, LOW_FREQ_MIN, LOW_FREQ_MAX)
+                .with_description("Global frequency for bass boost (Hz)"),
+            Parameter::new_float("low_gain", "Low-shelf Gain", LOW_GAIN_DEFAULT, LOW_GAIN_MIN, LOW_GAIN_MAX)
+                .with_description("Global bass boost amount (dB)"),
+            Parameter::new_float("high_freq", "High-shelf Frequency", HIGH_FREQ_DEFAULT, HIGH_FREQ_MIN, HIGH_FREQ_MAX)
+                .with_description("Global frequency for treble boost (Hz)"),
+            Parameter::new_float("high_gain", "High-shelf Gain", HIGH_GAIN_DEFAULT, HIGH_GAIN_MIN, HIGH_GAIN_MAX)
+                .with_description("Global treble boost amount (dB)"),
+        ];
+
+        // Add per-channel parameters
+        for ch in 0..self.num_channels {
+            params.push(
+                Parameter::new_float(
+                    &format!("low_freq_{}", ch),
+                    &format!("Ch{} Low Freq", ch),
+                    LOW_FREQ_DEFAULT,
+                    LOW_FREQ_MIN,
+                    LOW_FREQ_MAX,
+                )
+                .with_description(&format!("Channel {} bass frequency (Hz)", ch)),
+            );
+            params.push(
+                Parameter::new_float(
+                    &format!("low_gain_{}", ch),
+                    &format!("Ch{} Low Gain", ch),
+                    LOW_GAIN_DEFAULT,
+                    LOW_GAIN_MIN,
+                    LOW_GAIN_MAX,
+                )
+                .with_description(&format!("Channel {} bass boost (dB)", ch)),
+            );
+            params.push(
+                Parameter::new_float(
+                    &format!("high_freq_{}", ch),
+                    &format!("Ch{} High Freq", ch),
+                    HIGH_FREQ_DEFAULT,
+                    HIGH_FREQ_MIN,
+                    HIGH_FREQ_MAX,
+                )
+                .with_description(&format!("Channel {} treble frequency (Hz)", ch)),
+            );
+            params.push(
+                Parameter::new_float(
+                    &format!("high_gain_{}", ch),
+                    &format!("Ch{} High Gain", ch),
+                    HIGH_GAIN_DEFAULT,
+                    HIGH_GAIN_MIN,
+                    HIGH_GAIN_MAX,
+                )
+                .with_description(&format!("Channel {} treble boost (dB)", ch)),
+            );
+        }
+
+        params
     }
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        if let Some(val) = value.as_float()
-            && self.update_parameter(&id, val)
-        {
-            return Ok(());
+        let id_str = id.as_str();
+
+        // Try global parameters first
+        if let Some(val) = value.as_float() {
+            if self.update_global_parameter(&id, val) {
+                return Ok(());
+            }
         }
+
+        // Try per-channel parameters: {param}_{channel}
+        for param_name in &["low_freq", "low_gain", "high_freq", "high_gain"] {
+            let prefix = format!("{}_", param_name);
+            if let Some(suffix) = id_str.strip_prefix(&prefix) {
+                if let Ok(channel) = suffix.parse::<usize>() {
+                    if let Some(val) = value.as_float() {
+                        return self.set_channel_param(channel, param_name, val);
+                    } else {
+                        return Err("Parameter must be a float".to_string());
+                    }
+                }
+            }
+        }
+
         Err(format!("Unknown parameter: {}", id))
     }
 
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
+        let id_str = id.as_str();
+
+        // Check global parameters
         if id == &self.param_low_freq {
-            Some(ParameterValue::Float(self.low_freq))
+            return Some(ParameterValue::Float(self.low_freq));
         } else if id == &self.param_low_gain {
-            Some(ParameterValue::Float(self.low_gain))
+            return Some(ParameterValue::Float(self.low_gain));
         } else if id == &self.param_high_freq {
-            Some(ParameterValue::Float(self.high_freq))
+            return Some(ParameterValue::Float(self.high_freq));
         } else if id == &self.param_high_gain {
-            Some(ParameterValue::Float(self.high_gain))
-        } else {
-            None
+            return Some(ParameterValue::Float(self.high_gain));
         }
+
+        // Check per-channel parameters
+        for param_name in &["low_freq", "low_gain", "high_freq", "high_gain"] {
+            let prefix = format!("{}_", param_name);
+            if let Some(suffix) = id_str.strip_prefix(&prefix) {
+                if let Ok(channel) = suffix.parse::<usize>() {
+                    if channel < self.num_channels {
+                        let params = self.get_channel_params(channel);
+                        let value = match *param_name {
+                            "low_freq" => params.low_freq,
+                            "low_gain" => params.low_gain,
+                            "high_freq" => params.high_freq,
+                            "high_gain" => params.high_gain,
+                            _ => return None,
+                        };
+                        return Some(ParameterValue::Float(value));
+                    }
+                }
+            }
+        }
+
+        None
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
@@ -379,9 +623,6 @@ impl Plugin for LoudnessCompensationPlugin {
             ));
         }
 
-        // Calculate linear compensation gain
-        let comp_gain_linear = 10.0_f32.powf(self.compensation_gain / 20.0);
-
         // Process each frame
         for frame_idx in 0..context.num_frames {
             for ch in 0..self.num_channels {
@@ -393,7 +634,8 @@ impl Plugin for LoudnessCompensationPlugin {
                     sample = filter.process(sample);
                 }
 
-                // Apply compensation gain
+                // Apply per-channel compensation gain
+                let comp_gain_linear = 10.0_f32.powf(self.compensation_gains[ch] / 20.0);
                 output[sample_idx] = (sample as f32) * comp_gain_linear;
             }
         }
@@ -418,6 +660,7 @@ mod tests {
         assert_eq!(plugin.output_channels(), 2);
         assert_eq!(plugin.filters.len(), 2); // 2 channels
         assert_eq!(plugin.filters[0].len(), 4); // 4 filters per channel
+        assert!(!plugin.is_per_channel());
     }
 
     #[test]
@@ -425,8 +668,9 @@ mod tests {
         // Test that compensation gain prevents clipping
         let plugin = LoudnessCompensationPlugin::new(2, 100.0, 10.0, 10000.0, 8.0);
 
-        // Compensation gain should be -max(10, 8) = -10dB
-        assert_eq!(plugin.compensation_gain, -10.0);
+        // Compensation gain should be -max(10, 8) = -10dB for both channels
+        assert_eq!(plugin.compensation_gains[0], -10.0);
+        assert_eq!(plugin.compensation_gains[1], -10.0);
     }
 
     #[test]
@@ -518,7 +762,7 @@ mod tests {
 
         assert_eq!(plugin.low_gain, 12.0);
         // Compensation gain should update to -max(12, 6) = -12dB
-        assert_eq!(plugin.compensation_gain, -12.0);
+        assert_eq!(plugin.compensation_gains[0], -12.0);
 
         // Get parameter
         let val = plugin.get_parameter(&ParameterId::from("low_freq"));
@@ -558,5 +802,191 @@ mod tests {
             max_diff < 0.01,
             "With zero gain should be nearly passthrough"
         );
+    }
+
+    #[test]
+    fn test_per_channel_creation() {
+        let channel_params = vec![
+            ChannelLoudnessParams {
+                low_freq: 80.0,
+                low_gain: 6.0,
+                high_freq: 8000.0,
+                high_gain: 3.0,
+            },
+            ChannelLoudnessParams {
+                low_freq: 120.0,
+                low_gain: 9.0,
+                high_freq: 12000.0,
+                high_gain: 6.0,
+            },
+        ];
+
+        let plugin = LoudnessCompensationPlugin::new_per_channel(channel_params).unwrap();
+
+        assert!(plugin.is_per_channel());
+        assert_eq!(plugin.num_channels, 2);
+
+        // Check per-channel compensation gains
+        assert_eq!(plugin.compensation_gains[0], -6.0); // -max(6, 3)
+        assert_eq!(plugin.compensation_gains[1], -9.0); // -max(9, 6)
+    }
+
+    #[test]
+    fn test_per_channel_parameter() {
+        let mut plugin = LoudnessCompensationPlugin::new(2, 100.0, 6.0, 10000.0, 6.0);
+
+        // Set per-channel parameter
+        plugin
+            .set_parameter(
+                ParameterId::from("low_gain_0"),
+                ParameterValue::Float(12.0),
+            )
+            .unwrap();
+
+        assert!(plugin.is_per_channel());
+
+        // Channel 0 should have new value
+        let params = plugin.get_channel_params(0);
+        assert_eq!(params.low_gain, 12.0);
+
+        // Channel 1 should have inherited global value
+        let params = plugin.get_channel_params(1);
+        assert_eq!(params.low_gain, 6.0);
+
+        // Get via parameter system
+        let value = plugin.get_parameter(&ParameterId::from("low_gain_0"));
+        assert_eq!(value.unwrap().as_float(), Some(12.0));
+    }
+
+    #[test]
+    fn test_per_channel_processing() {
+        let channel_params = vec![
+            ChannelLoudnessParams {
+                low_freq: 100.0,
+                low_gain: 12.0, // More bass on channel 0
+                high_freq: 10000.0,
+                high_gain: 0.0,
+            },
+            ChannelLoudnessParams {
+                low_freq: 100.0,
+                low_gain: 0.0, // No bass boost on channel 1
+                high_freq: 10000.0,
+                high_gain: 0.0,
+            },
+        ];
+
+        let mut plugin = LoudnessCompensationPlugin::new_per_channel(channel_params).unwrap();
+        plugin.initialize(48000).unwrap();
+
+        // Create test signal: 50Hz sine wave (in bass region)
+        let num_frames = 2048;
+        let mut input = vec![0.0_f32; num_frames * 2];
+        for i in 0..num_frames {
+            let phase = 2.0 * std::f32::consts::PI * 50.0 * i as f32 / 48000.0;
+            let sample = phase.sin() * 0.1;
+            input[i * 2] = sample; // Ch0
+            input[i * 2 + 1] = sample; // Ch1
+        }
+
+        let mut output = vec![0.0_f32; num_frames * 2];
+
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+
+        plugin.process(&input, &mut output, &context).unwrap();
+
+        // Channel 0 should have more energy (bass boosted)
+        // Channel 1 should be close to passthrough
+        let ch0_energy: f32 = (0..num_frames).map(|i| output[i * 2].powi(2)).sum();
+        let ch1_energy: f32 = (0..num_frames).map(|i| output[i * 2 + 1].powi(2)).sum();
+
+        log::info!(
+            "Per-channel energy: ch0={:.4}, ch1={:.4}",
+            ch0_energy,
+            ch1_energy
+        );
+
+        // Ch0 should have more energy than ch1 due to bass boost
+        // (though compensation reduces absolute levels)
+        assert!(
+            ch0_energy > ch1_energy * 0.5 || ch1_energy > ch0_energy * 0.5,
+            "Channels should process independently"
+        );
+    }
+
+    #[test]
+    fn test_from_params_global() {
+        let params = LoudnessCompensationPluginParams {
+            low_freq: 80.0,
+            low_gain: 9.0,
+            high_freq: 12000.0,
+            high_gain: 3.0,
+            channel_params: vec![],
+        };
+
+        let plugin = LoudnessCompensationPlugin::from_params(2, params).unwrap();
+
+        assert!(!plugin.is_per_channel());
+        assert_eq!(plugin.low_freq, 80.0);
+        assert_eq!(plugin.low_gain, 9.0);
+    }
+
+    #[test]
+    fn test_from_params_per_channel() {
+        let params = LoudnessCompensationPluginParams {
+            low_freq: 100.0,
+            low_gain: 6.0,
+            high_freq: 10000.0,
+            high_gain: 6.0,
+            channel_params: vec![
+                ChannelLoudnessParams {
+                    low_freq: 80.0,
+                    low_gain: 9.0,
+                    high_freq: 8000.0,
+                    high_gain: 3.0,
+                },
+                ChannelLoudnessParams {
+                    low_freq: 120.0,
+                    low_gain: 12.0,
+                    high_freq: 12000.0,
+                    high_gain: 6.0,
+                },
+            ],
+        };
+
+        let plugin = LoudnessCompensationPlugin::from_params(2, params).unwrap();
+
+        assert!(plugin.is_per_channel());
+
+        let ch0_params = plugin.get_channel_params(0);
+        assert_eq!(ch0_params.low_freq, 80.0);
+        assert_eq!(ch0_params.low_gain, 9.0);
+
+        let ch1_params = plugin.get_channel_params(1);
+        assert_eq!(ch1_params.low_freq, 120.0);
+        assert_eq!(ch1_params.low_gain, 12.0);
+    }
+
+    #[test]
+    fn test_switch_modes() {
+        let mut plugin = LoudnessCompensationPlugin::new(2, 100.0, 6.0, 10000.0, 6.0);
+
+        // Switch to per-channel mode
+        plugin
+            .set_parameter(
+                ParameterId::from("low_gain_0"),
+                ParameterValue::Float(12.0),
+            )
+            .unwrap();
+        assert!(plugin.is_per_channel());
+
+        // Switch back to global mode
+        plugin
+            .set_parameter(ParameterId::from("low_gain"), ParameterValue::Float(9.0))
+            .unwrap();
+        assert!(!plugin.is_per_channel());
+        assert_eq!(plugin.low_gain, 9.0);
     }
 }

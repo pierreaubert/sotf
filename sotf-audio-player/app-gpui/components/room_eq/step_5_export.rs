@@ -47,6 +47,7 @@ impl PlayerView {
                             .child(
                                 Button::new("backup_rack", "Save Rack Backup...")
                                     .variant(ButtonVariant::Secondary)
+                                    .theme(theme.to_button_theme())
                                     .build()
                                     .on_mouse_up(
                                         MouseButton::Left,
@@ -69,6 +70,7 @@ impl PlayerView {
                             .child(
                                 Button::new("export_json", "Export as JSON")
                                     .variant(ButtonVariant::Secondary)
+                                    .theme(theme.to_button_theme())
                                     .build()
                                     .on_mouse_up(
                                         MouseButton::Left,

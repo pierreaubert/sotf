@@ -12,6 +12,8 @@ use gpui_ui_kit::MenuItem;
 use sotf_audio::devices::AudioDevice;
 use sotf_audio_player::{PluginGraph, PluginSettings, PluginType, SpecialNodeType};
 
+use crate::app::types::Screen;
+use crate::components::icons::{Icon, IconName};
 use crate::components::plugins::{
     render_compressor_plugin, render_eq_plugin, render_gain_plugin, render_gate_plugin,
     render_limiter_plugin, render_upmixer_plugin, ui_compressor, ui_eq, ui_gain, ui_gate,
@@ -237,6 +239,10 @@ impl PlayerView {
     ) -> impl IntoElement {
         let theme = self.state.read(cx).app.theme.clone();
 
+        let state_for_home = self.state.clone();
+        let text_muted = theme.text_muted;
+        let surface_hover = theme.surface_hover;
+
         div()
             .flex()
             .justify_between()
@@ -246,6 +252,26 @@ impl PlayerView {
             .bg(theme.background_secondary)
             .border_b_1()
             .border_color(theme.border)
+            // Home button on the left
+            .child(
+                div()
+                    .id("graph-home-button")
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .w(px(40.0))
+                    .h(px(32.0))
+                    .cursor_pointer()
+                    .rounded_md()
+                    .hover(move |s| s.bg(surface_hover))
+                    .child(Icon::new(IconName::Home).color(text_muted))
+                    .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
+                        state_for_home.update(cx, |state, _cx| {
+                            state.app.current_screen = Screen::Library;
+                        });
+                    }),
+            )
+            // Title and stats
             .child(
                 div()
                     .flex()
@@ -271,6 +297,7 @@ impl PlayerView {
                             .child(format!("#{} links", connection_count)),
                     ),
             )
+            // Reset view button on the right
             .child(
                 div()
                     .flex()

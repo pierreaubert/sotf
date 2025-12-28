@@ -1,5 +1,7 @@
 //! Audio device settings content
 
+#[cfg(all(target_os = "macos", feature = "hal"))]
+use crate::app::types::PlaybackSource;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -15,15 +17,144 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
         let translations = state.app.translations.clone();
+        let _playback_source = state.app.playback_source;
 
-        VStack::new()
-            .spacing(StackSpacing::Md)
-            .child(
-                Text::new(translations.devices_title)
-                    .size(TextSize::Sm)
-                    .weight(TextWeight::Semibold),
-            )
-            .child(
+        let mut content = VStack::new().spacing(StackSpacing::Md);
+
+        // HAL Input Source section (macOS only with hal feature)
+        #[cfg(all(target_os = "macos", feature = "hal"))]
+        {
+            let is_hal_mode = matches!(_playback_source, PlaybackSource::HalDevice);
+            let state_entity = self.state.clone();
+            let theme_for_source = theme.clone();
+
+            content = content
+                .child(
+                    Text::new("Audio Source")
+                        .size(TextSize::Sm)
+                        .weight(TextWeight::Semibold),
+                )
+                .child(
+                    HStack::new()
+                        .spacing(StackSpacing::Md)
+                        .child({
+                            // File Player option
+                            let is_selected = !is_hal_mode;
+                            let theme = theme_for_source.clone();
+                            let state_clone = state_entity.clone();
+                            div()
+                                .id("source-file")
+                                .px_4()
+                                .py_2()
+                                .rounded_md()
+                                .cursor_pointer()
+                                .border_1()
+                                .when(is_selected, |d| {
+                                    d.bg(theme.accent).border_color(theme.accent)
+                                })
+                                .when(!is_selected, |d| {
+                                    d.bg(theme.surface)
+                                        .border_color(theme.border)
+                                        .hover(|s| s.bg(theme.surface_hover))
+                                })
+                                .child(
+                                    VStack::new()
+                                        .spacing(StackSpacing::Xs)
+                                        .child(
+                                            Text::new("File Player")
+                                                .size(TextSize::Sm)
+                                                .weight(TextWeight::Semibold)
+                                                .color(if is_selected {
+                                                    theme.text_on_accent
+                                                } else {
+                                                    theme.text_primary
+                                                }),
+                                        )
+                                        .child(
+                                            Text::new("Play audio files from library")
+                                                .size(TextSize::Xs)
+                                                .color(if is_selected {
+                                                    theme.text_on_accent
+                                                } else {
+                                                    theme.text_muted
+                                                }),
+                                        ),
+                                )
+                                .on_mouse_up(
+                                    MouseButton::Left,
+                                    move |_: &MouseUpEvent, _window, cx| {
+                                        state_clone.update(cx, |state, _cx| {
+                                            state.app.playback_source = PlaybackSource::File;
+                                            // Stop HAL playback if running
+                                            if let Err(e) = state.player.lock().stop() {
+                                                log::error!("Failed to stop HAL playback: {}", e);
+                                            }
+                                            state.app.is_playing = false;
+                                        });
+                                    },
+                                )
+                        })
+                        .child({
+                            // HAL Device option
+                            let is_selected = is_hal_mode;
+                            let theme = theme_for_source.clone();
+                            let state_clone = state_entity.clone();
+                            div()
+                                .id("source-hal")
+                                .px_4()
+                                .py_2()
+                                .rounded_md()
+                                .cursor_pointer()
+                                .border_1()
+                                .when(is_selected, |d| {
+                                    d.bg(theme.accent).border_color(theme.accent)
+                                })
+                                .when(!is_selected, |d| {
+                                    d.bg(theme.surface)
+                                        .border_color(theme.border)
+                                        .hover(|s| s.bg(theme.surface_hover))
+                                })
+                                .child(
+                                    VStack::new()
+                                        .spacing(StackSpacing::Xs)
+                                        .child(
+                                            Text::new("HAL Device")
+                                                .size(TextSize::Sm)
+                                                .weight(TextWeight::Semibold)
+                                                .color(if is_selected {
+                                                    theme.text_on_accent
+                                                } else {
+                                                    theme.text_primary
+                                                }),
+                                        )
+                                        .child(
+                                            Text::new("Process system audio through plugins")
+                                                .size(TextSize::Xs)
+                                                .color(if is_selected {
+                                                    theme.text_on_accent
+                                                } else {
+                                                    theme.text_muted
+                                                }),
+                                        ),
+                                )
+                                .on_mouse_up(
+                                    MouseButton::Left,
+                                    move |_: &MouseUpEvent, _window, cx| {
+                                        Self::start_hal_playback_from_ui(&state_clone, cx);
+                                    },
+                                )
+                        }),
+                )
+                .child(div().h(px(8.0))); // Spacer between sections
+        }
+
+        content = content.child(
+            Text::new(translations.devices_title)
+                .size(TextSize::Sm)
+                .weight(TextWeight::Semibold),
+        );
+
+        content.child(
                 // Grid layout with 2 equal-width columns
                 div().grid().grid_cols(2).gap_3().w_full().children(
                     state
@@ -159,6 +290,59 @@ impl PlayerView {
                         }),
                 ),
             )
+    }
+
+    /// Start HAL playback from the UI settings toggle
+    #[cfg(all(target_os = "macos", feature = "hal"))]
+    fn start_hal_playback_from_ui(
+        state_entity: &Entity<crate::app::AppState>,
+        cx: &mut App,
+    ) {
+        use sotf_audio::engine::PluginConfig;
+
+        state_entity.update(cx, |state, _cx| {
+            // Build plugin chain with hal_input as first plugin
+            let mut plugins: Vec<PluginConfig> = Vec::new();
+
+            // Add hal_input plugin as the source
+            plugins.push(PluginConfig {
+                plugin_type: "hal_input".to_string(),
+                parameters: serde_json::json!({
+                    "channels": 2,
+                    "sample_rate": 48000
+                }),
+            });
+
+            // Add plugins from the current plugin chain (48kHz is the HAL default rate)
+            for plugin_config in state.app.plugin_chain.to_plugin_configs(48000.0) {
+                plugins.push(plugin_config);
+            }
+
+            // Get output device
+            let output_device = state.app.current_output_device_name.clone();
+
+            // Determine output channels from plugin chain
+            let output_channels = state.app.plugin_chain.output_channels();
+
+            // Start HAL playback
+            match state
+                .player
+                .lock()
+                .start_hal_playback(plugins, output_channels, output_device)
+            {
+                Ok(()) => {
+                    state.app.playback_source = PlaybackSource::HalDevice;
+                    state.app.is_playing = true;
+                    log::info!("HAL playback started successfully");
+                }
+                Err(e) => {
+                    log::error!("Failed to start HAL playback: {}", e);
+                    state.app.toast_message = Some(crate::app::types::ToastMessage::error(
+                        format!("Failed to start HAL: {}", e),
+                    ));
+                }
+            }
+        });
     }
 }
 

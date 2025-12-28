@@ -11,13 +11,14 @@ mod config;
 mod evaluating;
 mod saving;
 
-use crate::app::types::RecordingStep;
+use crate::app::types::{RecordingStep, Screen};
+use crate::components::icons::{Icon, IconName};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, HStack, StackSpacing, StepStatus, WizardHeader, WizardStep,
-    WizardTheme,
+    Button, ButtonSize, ButtonTheme, ButtonVariant, HStack, StackSpacing, StepStatus, WizardHeader,
+    WizardStep, WizardTheme,
 };
 
 impl PlayerView {
@@ -92,11 +93,16 @@ impl PlayerView {
             WizardStep::new("saving", "Save"),
         ];
 
-        let wizard_theme = WizardTheme::from(&theme.to_ui_kit_theme(theme_id));
+        let ui_kit_theme = theme.to_ui_kit_theme(theme_id);
+        let wizard_theme = WizardTheme::from(&ui_kit_theme);
+        let button_theme = ButtonTheme::from(&ui_kit_theme);
+
+        // Check if output directory is configured
+        let has_output_dir = state.app.recording_state.recording_base_directory.is_some();
 
         // Determine if next button should be disabled
         let next_disabled = match current_step {
-            RecordingStep::Config => false,
+            RecordingStep::Config => !has_output_dir,
             RecordingStep::Capture => !all_recorded || is_recording,
             RecordingStep::Evaluating => false,
             RecordingStep::Saving => false,
@@ -125,6 +131,7 @@ impl PlayerView {
                     .variant(ButtonVariant::Secondary)
                     .size(ButtonSize::Md)
                     .disabled(is_recording)
+                    .theme(button_theme.clone())
                     .build()
                     .on_mouse_up(
                         MouseButton::Left,
@@ -154,6 +161,7 @@ impl PlayerView {
                     .variant(ButtonVariant::Primary)
                     .size(ButtonSize::Md)
                     .disabled(next_disabled)
+                    .theme(button_theme.clone())
                     .build()
                     .on_mouse_up(
                         MouseButton::Left,
@@ -180,16 +188,42 @@ impl PlayerView {
                     ),
             );
 
+        // Home button for navigation back to Library
+        let state_for_home = self.state.clone();
+        let text_muted = theme.text_muted;
+        let surface_hover = theme.surface_hover;
+
         div()
             .flex()
             .items_center()
             .justify_between()
-            .px_6()
+            .px_4()
             .py_4()
             .bg(theme.background_secondary)
             .border_b_1()
             .border_color(theme.border)
-            .child(header)
+            // Home button on the left
+            .child(
+                div()
+                    .id("recording-home-button")
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .w(px(40.0))
+                    .h(px(32.0))
+                    .cursor_pointer()
+                    .rounded_md()
+                    .hover(move |s| s.bg(surface_hover))
+                    .child(Icon::new(IconName::Home).color(text_muted))
+                    .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
+                        state_for_home.update(cx, |state, _cx| {
+                            state.app.current_screen = Screen::Library;
+                        });
+                    }),
+            )
+            // Centered header with flex-1
+            .child(div().flex_1().flex().justify_center().child(header))
+            // Navigation buttons on the right
             .child(navigation)
     }
 }

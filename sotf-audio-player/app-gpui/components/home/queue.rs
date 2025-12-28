@@ -12,7 +12,8 @@ use gpui_ui_kit::{
     TextWeight, VStack,
 };
 
-use crate::app::types::MeterDisplayMode;
+use crate::app::types::{MeterDisplayMode, Screen};
+use crate::components::icons::{Icon, IconName};
 use sotf_audio_player::Track;
 
 use crate::ui::PlayerView;
@@ -31,11 +32,62 @@ impl PlayerView {
         let queue_collapsed = queue_list_ratio < 0.05;
         let meters_collapsed = meters_ratio < 0.05;
 
+        // Home button for navigation back to Library
+        let state_for_home = self.state.clone();
+        let text_muted = theme.text_muted;
+        let surface_hover = theme.surface_hover;
+
         div()
             .flex()
+            .flex_col()
             .size_full()
-            // Left panel: Queue list
-            .when(!queue_collapsed, |d| {
+            // Header bar with Home button and title
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .px_4()
+                    .py_2()
+                    .bg(theme.background_secondary)
+                    .border_b_1()
+                    .border_color(theme.border)
+                    // Home button on the left
+                    .child(
+                        div()
+                            .id("queue-home-button")
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .w(px(40.0))
+                            .h(px(32.0))
+                            .cursor_pointer()
+                            .rounded_md()
+                            .hover(move |s| s.bg(surface_hover))
+                            .child(Icon::new(IconName::Home).color(text_muted))
+                            .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
+                                state_for_home.update(cx, |state, _cx| {
+                                    state.app.current_screen = Screen::Library;
+                                });
+                            }),
+                    )
+                    // Title
+                    .child(
+                        div()
+                            .ml_2()
+                            .text_sm()
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(theme.text_primary)
+                            .child(translations.queue_title.to_string()),
+                    ),
+            )
+            // Main content area
+            .child(
+                div()
+                    .flex()
+                    .flex_1()
+                    .overflow_hidden()
+                    // Left panel: Queue list
+                    .when(!queue_collapsed, |d| {
                 d.child(
                     div()
                         .flex()
@@ -173,6 +225,7 @@ impl PlayerView {
                                 .child(
                                     Button::new("magic-radio-btn", "Magic Radio")
                                         .full_width(true)
+                                        .theme(theme.to_button_theme())
                                         .build()
                                         .on_click(cx.listener(|view, _event: &ClickEvent, _window, cx| {
                                             log::info!("[Queue] Magic Radio button clicked");
@@ -379,7 +432,8 @@ impl PlayerView {
                                 }),
                         ),
                 )
-            })
+            }),
+            )
     }
 
     // Level meter methods (render_lufs_panel, render_meters_panel, render_meter_group, etc.)

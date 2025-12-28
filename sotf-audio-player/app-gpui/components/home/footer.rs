@@ -1,5 +1,7 @@
 //! Footer component rendering with transport controls, track info, and volume
 
+#[cfg(all(target_os = "macos", feature = "hal"))]
+use crate::app::types::PlaybackSource;
 use crate::components::icons::{Icon, IconName, IconSize};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -276,6 +278,43 @@ impl PlayerView {
         let theme = &state.app.theme;
         let no_track_label = translations.playback_no_track;
 
+        // Check if we're in HAL input mode (macOS only)
+        #[cfg(all(target_os = "macos", feature = "hal"))]
+        if matches!(state.app.playback_source, PlaybackSource::HalDevice) {
+            let text_primary = theme.text_primary;
+            let text_secondary = theme.text_secondary;
+            let accent = theme.accent;
+
+            return VStack::new()
+                .spacing(StackSpacing::Xs)
+                .align(StackAlign::Start)
+                .child(
+                    div()
+                        .text_sm()
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(accent)
+                        .child("HAL Input Active"),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(text_secondary)
+                        .child("Processing system audio"),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(text_primary)
+                        .child(format!(
+                            "{} plugins active",
+                            state.app.plugin_chain.plugins().len()
+                        )),
+                )
+                .build()
+                .min_w(px(150.0))
+                .max_w(px(250.0));
+        }
+
         // Get current track info from queue
         let (title, album_name, artist) = if let Some(queue_idx) = state.app.current_queue_index {
             if let Some(item) = state.app.queue.get(queue_idx) {
@@ -370,6 +409,12 @@ impl PlayerView {
     ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = &state.app.theme;
+
+        // Check if we're in HAL mode - hide waveform/time display
+        #[cfg(all(target_os = "macos", feature = "hal"))]
+        let is_hal_mode = matches!(state.app.playback_source, PlaybackSource::HalDevice);
+        #[cfg(not(all(target_os = "macos", feature = "hal")))]
+        let is_hal_mode = false;
 
         let position_secs = state.app.position_secs;
         let duration_secs = state.app.duration_secs;
@@ -551,8 +596,8 @@ impl PlayerView {
                             ),
                     ),
             )
-            // Waveform/progress row - conditionally shown based on screen width
-            .when(show_waveform, |el| {
+            // Waveform/progress row - conditionally shown based on screen width (hidden in HAL mode)
+            .when(show_waveform && !is_hal_mode, |el| {
                 el.child(
                     div()
                         .flex()
@@ -630,8 +675,8 @@ impl PlayerView {
                         ),
                 )
             })
-            // When waveform is hidden, show compact time display below transport
-            .when(!show_waveform, |el| {
+            // When waveform is hidden, show compact time display below transport (not in HAL mode)
+            .when(!show_waveform && !is_hal_mode, |el| {
                 el.child(
                     div()
                         .flex()

@@ -6,8 +6,8 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, Card, HStack, Input, InputSize, Progress, ProgressSize,
-    StackAlign, StackSpacing, Text, TextSize, TextWeight, VStack,
+    Button, ButtonSize, ButtonTheme, ButtonVariant, Card, HStack, Input, InputSize, Progress,
+    ProgressSize, StackAlign, StackSpacing, Text, TextSize, TextWeight, VStack,
 };
 
 impl PlayerView {
@@ -21,6 +21,8 @@ impl PlayerView {
     ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
+        let theme_id = state.app.theme_id;
+        let button_theme = ButtonTheme::from(&theme.to_ui_kit_theme(theme_id));
         let spinorama = &state.app.spinorama_eq_state;
         let app_width = state.app.window_width;
 
@@ -118,6 +120,7 @@ impl PlayerView {
                                             .variant(ButtonVariant::Secondary)
                                             .size(ButtonSize::Sm)
                                             .disabled(is_loading)
+                                            .theme(button_theme.clone())
                                             .build()
                                             .on_mouse_up(
                                                 MouseButton::Left,

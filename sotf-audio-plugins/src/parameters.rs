@@ -20,6 +20,13 @@ impl fmt::Display for ParameterId {
     }
 }
 
+impl ParameterId {
+    /// Get the parameter ID as a string slice
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 /// Parameter value types
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParameterValue {

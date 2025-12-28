@@ -303,37 +303,88 @@ impl MeterData {
 // Axis Components
 // ============================================================================
 
-/// Render horizontal frequency axis (logarithmic scale, 20Hz - 20kHz)
-fn render_frequency_axis(theme: &Theme) -> impl IntoElement {
-    // Logarithmic frequency labels
-    let freq_labels = [
-        ("20", 0.0),
-        ("50", 0.132),  // log10(50/20) / log10(20000/20) = 0.132
-        ("100", 0.233), // log10(100/20) / log10(20000/20) = 0.233
-        ("200", 0.333),
-        ("500", 0.465),
-        ("1k", 0.566),
-        ("2k", 0.666),
-        ("5k", 0.799),
-        ("10k", 0.899),
-        ("20k", 1.0),
+/// Format frequency value for axis label
+fn format_freq_label(freq: f32) -> String {
+    if freq >= 1000.0 {
+        let khz = freq / 1000.0;
+        if khz == khz.floor() {
+            format!("{}k", khz as i32)
+        } else {
+            format!("{:.1}k", khz)
+        }
+    } else if freq == freq.floor() {
+        format!("{}", freq as i32)
+    } else {
+        format!("{:.0}", freq)
+    }
+}
+
+/// Calculate logarithmic position of a frequency within a range
+fn freq_to_log_position(freq: f32, min_freq: f32, max_freq: f32) -> f32 {
+    let log_min = min_freq.log10();
+    let log_max = max_freq.log10();
+    let log_freq = freq.log10();
+    (log_freq - log_min) / (log_max - log_min)
+}
+
+/// Generate frequency labels for the given range
+fn generate_freq_labels(min_freq: f32, max_freq: f32) -> Vec<(String, f32)> {
+    // Standard frequency points to consider
+    let all_freqs: [f32; 15] = [
+        20.0, 30.0, 50.0, 100.0, 200.0, 300.0, 500.0, 1000.0, 2000.0, 3000.0, 5000.0, 10000.0,
+        15000.0, 20000.0, 24000.0,
     ];
+
+    let mut labels = Vec::new();
+
+    // Always include min and max
+    labels.push((format_freq_label(min_freq), 0.0));
+
+    // Add intermediate labels that fall within range
+    for &freq in &all_freqs {
+        if freq > min_freq * 1.1 && freq < max_freq * 0.9 {
+            let pos = freq_to_log_position(freq, min_freq, max_freq);
+            labels.push((format_freq_label(freq), pos));
+        }
+    }
+
+    labels.push((format_freq_label(max_freq), 1.0));
+
+    // Filter to avoid overlapping labels (keep at least 0.08 apart)
+    let mut filtered = Vec::new();
+    for (label, pos) in labels {
+        if filtered.is_empty()
+            || filtered
+                .last()
+                .map(|(_, last_pos): &(String, f32)| pos - last_pos > 0.08)
+                .unwrap_or(true)
+        {
+            filtered.push((label, pos));
+        }
+    }
+
+    filtered
+}
+
+/// Render horizontal frequency axis (logarithmic scale)
+fn render_frequency_axis(min_freq: f32, max_freq: f32, theme: &Theme) -> impl IntoElement {
+    let freq_labels = generate_freq_labels(min_freq, max_freq);
 
     div()
         .w_full()
         .h(px(20.0))
         .relative()
-        .children(freq_labels.iter().map(|(label, pos)| {
+        .children(freq_labels.into_iter().map(|(label, pos)| {
             div()
                 .absolute()
-                .left(relative(*pos as f32))
+                .left(relative(pos))
                 .top_0()
                 .text_xs()
                 .text_color(theme.text_muted)
                 .child(
                     div()
                         .ml(px(-12.0)) // Center the label
-                        .child(*label),
+                        .child(label),
                 )
         }))
 }
@@ -446,7 +497,7 @@ pub fn render_spectrum_analyzer_plugin(
                     div()
                         .flex()
                         .child(div().w(px(32.0))) // Spacer to align with dB axis
-                        .child(render_frequency_axis(theme)),
+                        .child(render_frequency_axis(state.min_freq, state.max_freq, theme)),
                 ),
         )
         // Controls
@@ -553,7 +604,7 @@ impl PlayerView {
                     div()
                         .flex()
                         .child(div().w(px(32.0))) // Spacer to align with dB axis
-                        .child(render_frequency_axis(&theme)),
+                        .child(render_frequency_axis(20.0, 20000.0, &theme)),
                 )
         } else {
             div()

@@ -7,6 +7,10 @@ description = "GPUI music player frontend for SOTF"
 license.workspace = true
 repository.workspace = true
 
+[features]
+default = []
+hal = ["sotf-audio-engine/hal", "sotf-audio-player/hal", "sotf-hal"]
+
 [dependencies]
 # GPUI framework
 gpui = { git = "https://github.com/zed-industries/zed.git" }
@@ -18,6 +22,10 @@ gpui-d3rs = { path = "../../gpui-d3rs" }
 sotf-audio-player = { path = ".." }
 sotf-audio-plugins = { path = "../../sotf-audio-plugins", default-features = false }
 sotf-audio-engine = { path = "../../sotf-audio-engine" }
+
+# HAL dependency (macOS only, optional)
+[target.'cfg(target_os = "macos")'.dependencies]
+sotf-hal = { workspace = true, optional = true }
 
 # math libraries
 math-iir-fir = { workspace = true }

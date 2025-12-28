@@ -416,7 +416,7 @@ fn create_plugin(
             let params: GainPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse gain plugin parameters: {}", e))?;
 
-            let plugin = GainPlugin::from_params(channels, params);
+            let plugin = GainPlugin::from_params(channels, params)?;
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 
@@ -514,7 +514,7 @@ fn create_plugin(
                     )
                 })?;
 
-            let plugin = LoudnessCompensationPlugin::from_params(channels, params);
+            let plugin = LoudnessCompensationPlugin::from_params(channels, params)?;
             Ok(Box::new(plugin))
         }
 

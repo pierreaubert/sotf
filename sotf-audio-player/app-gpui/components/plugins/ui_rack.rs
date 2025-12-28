@@ -3,7 +3,8 @@
 use super::actions::ToggleUpmixerConfig;
 use super::level_meters::{db_to_position, render_gradient_meter};
 use super::render_plugin_content;
-use crate::app::types::PluginUpdateType;
+use crate::app::types::{PluginUpdateType, Screen};
+use crate::components::icons::{Icon, IconName};
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -106,18 +107,18 @@ fn plugin_icon(plugin_type: &PluginType) -> &'static str {
 
 fn short_name(plugin_type: &PluginType) -> &'static str {
     match plugin_type {
-        PluginType::EQ => "EQ",
+        PluginType::EQ => "Equalizer",
         PluginType::Gain => "Gain",
-        PluginType::Upmixer => "Upmix",
-        PluginType::Compressor => "Comp",
-        PluginType::Limiter => "Lim",
+        PluginType::Upmixer => "Upmixer",
+        PluginType::Compressor => "Compressor",
+        PluginType::Limiter => "Limiter",
         PluginType::Gate => "Gate",
-        PluginType::LoudnessCompensation => "Loud",
-        PluginType::BinauralDecoder => "Bin",
-        PluginType::Convolution => "Conv",
-        PluginType::LoudnessMonitor => "Mon",
-        PluginType::SpectrumAnalyzer => "Spectr",
-        PluginType::ChannelMuteSolo => "Mix",
+        PluginType::LoudnessCompensation => "Loudness",
+        PluginType::BinauralDecoder => "Binaural",
+        PluginType::Convolution => "Convolution",
+        PluginType::LoudnessMonitor => "Monitor",
+        PluginType::SpectrumAnalyzer => "Spectrum",
+        PluginType::ChannelMuteSolo => "Mixer",
         PluginType::Matrix => "Matrix",
     }
 }
@@ -280,13 +281,37 @@ impl PlayerView {
             .bg(theme.background_secondary)
             .border_color(theme.border)
             // Header
-            .child(
+            .child({
+                let state_for_home = self.state.clone();
+                let text_muted = theme.text_muted;
+                let surface_hover = theme.surface_hover;
+
                 div()
                     .flex()
                     .justify_between()
                     .items_center()
                     .px_4()
                     .py_2()
+                    // Home button on the left
+                    .child(
+                        div()
+                            .id("rack-home-button")
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .w(px(40.0))
+                            .h(px(32.0))
+                            .cursor_pointer()
+                            .rounded_md()
+                            .hover(move |s| s.bg(surface_hover))
+                            .child(Icon::new(IconName::Home).color(text_muted))
+                            .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
+                                state_for_home.update(cx, |state, _cx| {
+                                    state.app.current_screen = Screen::Library;
+                                });
+                            }),
+                    )
+                    // Title and plugin count
                     .child(
                         div()
                             .flex()
@@ -306,8 +331,9 @@ impl PlayerView {
                                     .child(format!("{} plugins", plugin_count)),
                             ),
                     )
-                    .child(self.render_add_plugin_buttons(cx)),
-            )
+                    // Add plugin buttons on the right
+                    .child(self.render_add_plugin_buttons(cx))
+            })
             // Plugin modules strip
             .child(
                 div()
@@ -834,7 +860,7 @@ impl PlayerView {
                                     cx.notify();
                                 }),
                             )
-                            .child(format!("+{}", name)),
+                            .child(name),
                     )
                 }),
         )

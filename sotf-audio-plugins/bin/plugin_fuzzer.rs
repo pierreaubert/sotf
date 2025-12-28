@@ -369,10 +369,13 @@ struct GainFuzzer;
 impl PluginFuzzer for GainFuzzer {
     fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
         let gain_db = rng.random_range(-60.0..0.0);
-        let params = GainPluginParams { gain_db };
-        let plugin = Box::new(InPlacePluginAdapter::new(GainPlugin::from_params(
-            channels, params,
-        )));
+        let params = GainPluginParams {
+            gain_db,
+            channel_gains: vec![],
+        };
+        let plugin = Box::new(InPlacePluginAdapter::new(
+            GainPlugin::from_params(channels, params).expect("Failed to create GainPlugin"),
+        ));
         let desc = format!("gain_db={:.2}", gain_db);
         (plugin, desc)
     }
@@ -618,8 +621,10 @@ impl PluginFuzzer for LoudnessCompensationFuzzer {
             low_gain,
             high_freq,
             high_gain,
+            channel_params: vec![],
         };
-        let plugin = LoudnessCompensationPlugin::from_params(channels, params);
+        let plugin = LoudnessCompensationPlugin::from_params(channels, params)
+            .expect("Failed to create LoudnessCompensationPlugin");
 
         let desc = format!(
             "low_freq={:.0}Hz low_gain={:.1}dB high_freq={:.0}Hz high_gain={:.1}dB",

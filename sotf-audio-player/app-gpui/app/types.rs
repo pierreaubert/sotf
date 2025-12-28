@@ -28,6 +28,18 @@ pub enum ReplayGainMode {
     Album,
 }
 
+/// Audio playback source mode
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum PlaybackSource {
+    /// Play from audio files (normal music player mode)
+    #[default]
+    File,
+    /// Process audio from HAL virtual device (macOS only)
+    /// This captures system-wide audio and processes it through the plugin chain
+    #[cfg(all(target_os = "macos", feature = "hal"))]
+    HalDevice,
+}
+
 /// View mode for plugin management (Rack vs Graph)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PluginViewMode {

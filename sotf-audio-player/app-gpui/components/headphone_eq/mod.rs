@@ -12,7 +12,8 @@ mod step_1_measurements;
 mod step_2_optimisation;
 mod step_3_listen;
 
-use crate::app::types::{HeadphoneEqStep, PluginUpdateType};
+use crate::app::types::{HeadphoneEqStep, PluginUpdateType, Screen};
+use crate::components::icons::{Icon, IconName};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -206,16 +207,42 @@ impl PlayerView {
                     ),
             );
 
+        // Home button for navigation back to Library
+        let state_for_home = self.state.clone();
+        let text_muted = theme.text_muted;
+        let surface_hover = theme.surface_hover;
+
         div()
             .flex()
             .items_center()
             .justify_between()
-            .px_6()
+            .px_4()
             .py_4()
             .bg(theme.background_secondary)
             .border_b_1()
             .border_color(theme.border)
-            .child(header)
+            // Home button on the left
+            .child(
+                div()
+                    .id("headphone-eq-home-button")
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .w(px(40.0))
+                    .h(px(32.0))
+                    .cursor_pointer()
+                    .rounded_md()
+                    .hover(move |s| s.bg(surface_hover))
+                    .child(Icon::new(IconName::Home).color(text_muted))
+                    .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
+                        state_for_home.update(cx, |state, _cx| {
+                            state.app.current_screen = Screen::Library;
+                        });
+                    }),
+            )
+            // Centered header with flex-1
+            .child(div().flex_1().flex().justify_center().child(header))
+            // Navigation buttons on the right
             .child(navigation)
     }
 }

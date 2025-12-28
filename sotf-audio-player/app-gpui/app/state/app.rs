@@ -22,8 +22,8 @@ use crate::theme::{Theme, ThemeId};
 use crate::app::types::{
     ActiveMenu, ChannelFilter, ChannelGroup, ContextMenuState, HeadphoneEqState, InputMode,
     LayoutMode, LibrarySortOrder, LibraryStats, MeasureState, MeterDisplayMode,
-    OptimizationUiState, PluginViewMode, QueueItem, RecordingState, RoomEqState, Screen,
-    SpinoramaEqState, ToastMessage,
+    OptimizationUiState, PlaybackSource, PluginViewMode, QueueItem, RecordingState, RoomEqState,
+    Screen, SpinoramaEqState, ToastMessage,
 };
 
 /// Mapping between workflow NodeIds and plugin indices / special nodes
@@ -151,6 +151,9 @@ pub struct App {
     pub input_devices: Vec<AudioDevice>,
     pub selected_input_device_index: usize,
     pub current_input_device_name: Option<String>,
+
+    /// Audio source mode (File player or HAL device input)
+    pub playback_source: PlaybackSource,
 
     // Measurement state
     pub measure_state: Option<MeasureState>,
@@ -385,6 +388,7 @@ impl App {
             input_devices: Vec::new(),
             selected_input_device_index: 0,
             current_input_device_name: None,
+            playback_source: PlaybackSource::default(),
             measure_state: None,
             recording_state: RecordingState::default(),
             room_eq_state: RoomEqState::default(),

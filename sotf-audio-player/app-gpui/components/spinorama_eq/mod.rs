@@ -6,13 +6,14 @@
 //! 3. Optimize - Run optimization with progress display
 //! 4. Review - View results, apply to playback, export
 
-use crate::app::types::{PluginUpdateType, SpinoramaStep};
+use crate::app::types::{PluginUpdateType, Screen, SpinoramaStep};
+use crate::components::icons::{Icon, IconName};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, HStack, StackSpacing, StepStatus, WizardHeader, WizardStep,
-    WizardTheme,
+    Button, ButtonSize, ButtonTheme, ButtonVariant, HStack, StackSpacing, StepStatus, WizardHeader,
+    WizardStep, WizardTheme,
 };
 use sotf_audio_player::autoeq::speaker::{
     CallbackConfig, MeasurementInput, SpeakerOptimizationCallback, SpeakerOptimizationConfig,
@@ -382,7 +383,9 @@ impl PlayerView {
             WizardStep::new("export", "Export"),
         ];
 
-        let wizard_theme = WizardTheme::from(&theme.to_ui_kit_theme(theme_id));
+        let ui_kit_theme = theme.to_ui_kit_theme(theme_id);
+        let wizard_theme = WizardTheme::from(&ui_kit_theme);
+        let button_theme = ButtonTheme::from(&ui_kit_theme);
 
         let header = WizardHeader::new()
             .title("Spinorama EQ")
@@ -407,6 +410,7 @@ impl PlayerView {
                     .variant(ButtonVariant::Secondary)
                     .size(ButtonSize::Md)
                     .disabled(is_busy)
+                    .theme(button_theme.clone())
                     .build()
                     .on_mouse_up(
                         MouseButton::Left,
@@ -434,6 +438,7 @@ impl PlayerView {
                     .variant(ButtonVariant::Primary)
                     .size(ButtonSize::Md)
                     .disabled(!can_go_next || is_busy)
+                    .theme(button_theme.clone())
                     .build()
                     .on_mouse_up(
                         MouseButton::Left,
@@ -456,16 +461,42 @@ impl PlayerView {
                     ),
             );
 
+        // Home button for navigation back to Library
+        let state_for_home = self.state.clone();
+        let text_muted = theme.text_muted;
+        let surface_hover = theme.surface_hover;
+
         div()
             .flex()
             .items_center()
             .justify_between()
-            .px_6()
+            .px_4()
             .py_4()
             .bg(theme.background_secondary)
             .border_b_1()
             .border_color(theme.border)
-            .child(header)
+            // Home button on the left
+            .child(
+                div()
+                    .id("spinorama-home-button")
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .w(px(40.0))
+                    .h(px(32.0))
+                    .cursor_pointer()
+                    .rounded_md()
+                    .hover(move |s| s.bg(surface_hover))
+                    .child(Icon::new(IconName::Home).color(text_muted))
+                    .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
+                        state_for_home.update(cx, |state, _cx| {
+                            state.app.current_screen = Screen::Library;
+                        });
+                    }),
+            )
+            // Centered header with flex-1
+            .child(div().flex_1().flex().justify_center().child(header))
+            // Navigation buttons on the right
             .child(navigation)
     }
 

@@ -87,6 +87,7 @@ impl PlayerView {
                                     Button::new("dismiss_error", "Dismiss")
                                         .variant(ButtonVariant::Secondary)
                                         .size(ButtonSize::Sm)
+                                        .theme(theme.to_button_theme())
                                         .build()
                                         .on_mouse_up(
                                             MouseButton::Left,
