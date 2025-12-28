@@ -51,6 +51,8 @@ pub struct ChannelMuteSoloPlugin {
     param_enabled: ParameterId,
     /// Parameter ID for channel states (JSON)
     param_channel_states: ParameterId,
+    /// Parameter ID for full state (enabled + channel_states combined)
+    param_full_state: ParameterId,
 }
 
 impl ChannelMuteSoloPlugin {
@@ -67,6 +69,7 @@ impl ChannelMuteSoloPlugin {
             channel_states,
             param_enabled: ParameterId::from("enabled"),
             param_channel_states: ParameterId::from("channel_states"),
+            param_full_state: ParameterId::from("full_state"),
         }
     }
 
@@ -170,6 +173,20 @@ impl InPlacePlugin for ChannelMuteSoloPlugin {
                 }
             } else {
                 Err("channel_states parameter must be a JSON string".to_string())
+            }
+        } else if id == self.param_full_state {
+            // Accept JSON object with both enabled and channel_states
+            if let Some(json_str) = value.as_string() {
+                match serde_json::from_str::<ChannelMuteSoloParams>(json_str) {
+                    Ok(params) => {
+                        self.set_enabled(params.enabled);
+                        self.set_channel_states(params.channel_states);
+                        Ok(())
+                    }
+                    Err(e) => Err(format!("Failed to parse full_state JSON: {}", e)),
+                }
+            } else {
+                Err("full_state parameter must be a JSON string".to_string())
             }
         } else {
             Err(format!("Unknown parameter: {}", id))

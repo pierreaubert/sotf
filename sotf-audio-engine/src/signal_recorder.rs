@@ -288,7 +288,9 @@ pub fn record_and_analyze(
     log::info!(
         "[record_and_analyze] Input device: {}",
         input_device
-            .name()
+            .description()
+            .map(|d| d.name().to_string())
+            .or_else(|_| input_device.name())
             .unwrap_or_else(|_| "Unknown".to_string())
     );
 
@@ -396,7 +398,9 @@ pub fn record_and_analyze(
     log::info!(
         "[record_and_analyze] Output device: {}",
         output_device
-            .name()
+            .description()
+            .map(|d| d.name().to_string())
+            .or_else(|_| output_device.name())
             .unwrap_or_else(|_| "Unknown".to_string())
     );
 
@@ -629,14 +633,14 @@ pub fn parse_channel_list(s: &str) -> Result<Vec<u16>, String> {
 ///
 /// # Arguments
 /// * `host` - The cpal host to search devices on
-/// * `device_name` - The name of the device to find
+/// * `device_identifier` - The device ID or name to find
 /// * `is_input` - True to search input devices, false for output devices
 ///
 /// # Returns
 /// The matching device, or an error if not found
 fn find_device_by_name(
     host: &cpal::Host,
-    device_name: &str,
+    device_identifier: &str,
     is_input: bool,
 ) -> Result<cpal::Device, String> {
     use cpal::traits::{DeviceTrait, HostTrait};
@@ -654,16 +658,37 @@ fn find_device_by_name(
             .collect()
     };
 
+    // Helper to get display name from device
+    let get_display_name = |d: &cpal::Device| -> String {
+        d.description()
+            .map(|desc| desc.name().to_string())
+            .or_else(|_| d.name())
+            .unwrap_or_else(|_| "Unknown".to_string())
+    };
+
+    // First: try to match by device ID (preferred for persistence)
+    for device in &devices_vec {
+        if let Ok(id) = device.id() {
+            if id.to_string() == device_identifier {
+                let name = get_display_name(device);
+                log::info!(
+                    "[find_device_by_name] Found {} device (by ID): {}",
+                    device_type,
+                    name
+                );
+                return Ok(device.clone());
+            }
+        }
+    }
+
     // Search for device with matching name (case-insensitive pattern match)
     // Supports partial matching: e.g., "Fireface" will match "Fireface UFX+ (24006088)"
-    let target_pattern = device_name.to_lowercase();
+    let target_pattern = device_identifier.to_lowercase();
 
-    // First pass: try exact match
-
+    // Second pass: try exact name match
     for device in &devices_vec {
-        if let Ok(name) = device.name()
-            && name.to_lowercase() == target_pattern
-        {
+        let name = get_display_name(device);
+        if name.to_lowercase() == target_pattern {
             log::info!(
                 "[find_device_by_name] Found {} device (exact match): {}",
                 device_type,
@@ -673,42 +698,40 @@ fn find_device_by_name(
         }
     }
 
-    // Second pass: try partial match (starts with) - strictly better than contains
+    // Third pass: try partial match (starts with)
     for device in &devices_vec {
-        if let Ok(name) = device.name()
-            && name.to_lowercase().starts_with(&target_pattern)
-        {
+        let name = get_display_name(device);
+        if name.to_lowercase().starts_with(&target_pattern) {
             log::info!(
                 "[find_device_by_name] Found {} device (starts with): {} (matched by '{}')",
                 device_type,
                 name,
-                device_name
+                device_identifier
             );
             return Ok(device.clone());
         }
     }
 
-    // Third pass: try partial match (contains)
+    // Fourth pass: try partial match (contains)
     for device in &devices_vec {
-        if let Ok(name) = device.name()
-            && name.to_lowercase().contains(&target_pattern)
-        {
+        let name = get_display_name(device);
+        if name.to_lowercase().contains(&target_pattern) {
             log::info!(
                 "[find_device_by_name] Found {} device (contains): {} (matched by '{}')",
                 device_type,
                 name,
-                device_name
+                device_identifier
             );
             return Ok(device.clone());
         }
     }
 
     // Device not found - provide helpful error message with available devices
-    let available_devices: Vec<String> = devices_vec.iter().filter_map(|d| d.name().ok()).collect();
+    let available_devices: Vec<String> = devices_vec.iter().map(|d| get_display_name(d)).collect();
 
     Err(format!(
         "Audio device '{}' not found. Use --list-devices to see available {} devices.\nAvailable devices: {}",
-        device_name,
+        device_identifier,
         device_type,
         available_devices.join(", ")
     ))

@@ -6,7 +6,12 @@ use std::sync::{Arc, Mutex};
 /// Represents information about an audio device
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioDevice {
+    /// Stable device identifier (persists across reboots)
+    pub device_id: Option<String>,
+    /// Human-readable display name (from cpal description)
     pub name: String,
+    /// Extended display info (manufacturer, interface type, etc.)
+    pub display_info: Option<String>,
     pub is_input: bool,
     pub is_default: bool,
     pub supported_configs: Vec<AudioConfig>,
@@ -26,7 +31,11 @@ pub struct AudioConfig {
 /// State for storing the currently selected audio configuration
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AudioState {
+    /// Selected input device ID (stable across reboots)
+    /// Falls back to name matching for legacy saved states
     pub selected_input_device: Option<String>,
+    /// Selected output device ID (stable across reboots)
+    /// Falls back to name matching for legacy saved states
     pub selected_output_device: Option<String>,
     pub input_config: Option<AudioConfig>,
     pub output_config: Option<AudioConfig>,
@@ -44,6 +53,38 @@ fn format_to_string(format: cpal::SampleFormat) -> String {
     }
 }
 
+/// Extract device info from cpal device using description() and id()
+fn get_device_info<D: DeviceTrait>(device: &D) -> Option<(String, Option<String>, Option<String>)> {
+    // Get display name from description (preferred) or fallback to name()
+    let (name, display_info) = if let Ok(desc) = device.description() {
+        let name = desc.name().to_string();
+        // Build extended display info from manufacturer and interface type
+        let mut info_parts = Vec::new();
+        if let Some(manufacturer) = desc.manufacturer() {
+            info_parts.push(manufacturer.to_string());
+        }
+        let interface_str = format!("{:?}", desc.interface_type());
+        if interface_str != "Unknown" {
+            info_parts.push(interface_str);
+        }
+        let display_info = if info_parts.is_empty() {
+            None
+        } else {
+            Some(info_parts.join(" - "))
+        };
+        (name, display_info)
+    } else if let Ok(name) = device.name() {
+        (name, None)
+    } else {
+        return None;
+    };
+
+    // Get stable device ID for persistence
+    let device_id = device.id().ok().map(|id| id.to_string());
+
+    Some((name, device_id, display_info))
+}
+
 /// Get information about all available audio devices
 pub fn get_audio_devices() -> Result<HashMap<String, Vec<AudioDevice>>, String> {
     let host = cpal::default_host();
@@ -54,14 +95,18 @@ pub fn get_audio_devices() -> Result<HashMap<String, Vec<AudioDevice>>, String> 
     match host.input_devices() {
         Ok(devices) => {
             let default_input = host.default_input_device();
-            let default_input_name = default_input.as_ref().and_then(|d| d.name().ok());
+            let default_input_id = default_input.as_ref().and_then(|d| d.id().ok());
 
             // WORKAROUND: On macOS, collecting devices into a Vec first can prevent
             // crashes caused by iterator issues with CoreAudio
             let device_vec: Vec<_> = devices.collect();
             for device in device_vec {
-                if let Ok(name) = device.name() {
-                    let is_default = default_input_name.as_ref() == Some(&name);
+                if let Some((name, device_id, display_info)) = get_device_info(&device) {
+                    // Compare by device ID if available, otherwise by name
+                    let is_default = match (&device_id, &default_input_id) {
+                        (Some(id), Some(default_id)) => id == &default_id.to_string(),
+                        _ => false,
+                    };
 
                     // Get supported configurations
                     let mut supported_configs = Vec::new();
@@ -169,7 +214,9 @@ pub fn get_audio_devices() -> Result<HashMap<String, Vec<AudioDevice>>, String> 
                     };
 
                     input_devices.push(AudioDevice {
-                        name: name.clone(),
+                        device_id,
+                        name,
+                        display_info,
                         is_input: true,
                         is_default,
                         supported_configs,
@@ -190,14 +237,18 @@ pub fn get_audio_devices() -> Result<HashMap<String, Vec<AudioDevice>>, String> 
     match host.output_devices() {
         Ok(devices) => {
             let default_output = host.default_output_device();
-            let default_output_name = default_output.as_ref().and_then(|d| d.name().ok());
+            let default_output_id = default_output.as_ref().and_then(|d| d.id().ok());
 
             // WORKAROUND: On macOS, collecting devices into a Vec first can prevent
             // crashes caused by iterator issues with CoreAudio
             let device_vec: Vec<_> = devices.collect();
             for device in device_vec {
-                if let Ok(name) = device.name() {
-                    let is_default = default_output_name.as_ref() == Some(&name);
+                if let Some((name, device_id, display_info)) = get_device_info(&device) {
+                    // Compare by device ID if available
+                    let is_default = match (&device_id, &default_output_id) {
+                        (Some(id), Some(default_id)) => id == &default_id.to_string(),
+                        _ => false,
+                    };
 
                     // Get supported configurations
                     let mut supported_configs = Vec::new();
@@ -320,7 +371,9 @@ pub fn get_audio_devices() -> Result<HashMap<String, Vec<AudioDevice>>, String> 
                     };
 
                     output_devices.push(AudioDevice {
-                        name: name.clone(),
+                        device_id,
+                        name,
+                        display_info,
                         is_input: false,
                         is_default,
                         supported_configs,
@@ -352,27 +405,50 @@ pub fn get_audio_devices() -> Result<HashMap<String, Vec<AudioDevice>>, String> 
     Ok(devices_map)
 }
 
+/// Check if a device matches the given identifier (ID preferred, name fallback)
+fn device_matches<D: DeviceTrait>(device: &D, identifier: &str) -> bool {
+    // First try to match by device ID (preferred for persistence)
+    if let Ok(id) = device.id() {
+        if id.to_string() == identifier {
+            return true;
+        }
+    }
+    // Fallback to name matching for legacy saved states
+    if let Ok(desc) = device.description() {
+        if desc.name() == identifier {
+            return true;
+        }
+    }
+    // Last resort: deprecated name() method
+    if let Ok(name) = device.name() {
+        if name == identifier {
+            return true;
+        }
+    }
+    false
+}
+
 /// Set the configuration for an audio device
 pub fn set_audio_device(
-    device_name: String,
+    device_identifier: String,
     is_input: bool,
     config: AudioConfig,
     audio_state: &SharedAudioState,
 ) -> Result<String, String> {
     let host = cpal::default_host();
 
-    // Find the device by name
+    // Find the device by ID or name
     let device = if is_input {
         host.input_devices()
             .map_err(|e| format!("Failed to enumerate input devices: {}", e))?
-            .find(|d| d.name().ok() == Some(device_name.clone()))
+            .find(|d| device_matches(d, &device_identifier))
     } else {
         host.output_devices()
             .map_err(|e| format!("Failed to enumerate output devices: {}", e))?
-            .find(|d| d.name().ok() == Some(device_name.clone()))
+            .find(|d| device_matches(d, &device_identifier))
     };
 
-    let device = device.ok_or_else(|| format!("Device '{}' not found", device_name))?;
+    let device = device.ok_or_else(|| format!("Device '{}' not found", device_identifier))?;
 
     // Validate the configuration against device capabilities
     let config_valid = if is_input {
@@ -424,16 +500,23 @@ pub fn set_audio_device(
     if !config_valid {
         log::info!(
             "[AUDIO ERROR] Invalid configuration for device '{}': sample_rate={}, channels={}, format={}",
-            device_name,
+            device_identifier,
             config.sample_rate,
             config.channels,
             config.sample_format
         );
         return Err(format!(
             "Configuration not supported by device '{}': sample_rate={}, channels={}, format={}",
-            device_name, config.sample_rate, config.channels, config.sample_format
+            device_identifier, config.sample_rate, config.channels, config.sample_format
         ));
     }
+
+    // Get the device ID for persistence (preferred over name)
+    let device_id_for_state = device
+        .id()
+        .ok()
+        .map(|id| id.to_string())
+        .unwrap_or_else(|| device_identifier.clone());
 
     // Store the configuration in the application state
     let mut state = audio_state
@@ -441,17 +524,17 @@ pub fn set_audio_device(
         .map_err(|e| format!("Failed to lock audio state: {}", e))?;
 
     if is_input {
-        state.selected_input_device = Some(device_name.clone());
+        state.selected_input_device = Some(device_id_for_state.clone());
         state.input_config = Some(config.clone());
     } else {
-        state.selected_output_device = Some(device_name.clone());
+        state.selected_output_device = Some(device_id_for_state.clone());
         state.output_config = Some(config.clone());
     }
 
     let success_msg = format!(
         "Successfully configured {} device '{}' with sample_rate={}, channels={}, format={}",
         if is_input { "input" } else { "output" },
-        device_name,
+        device_identifier,
         config.sample_rate,
         config.channels,
         config.sample_format
@@ -470,27 +553,34 @@ pub fn get_audio_config(audio_state: &SharedAudioState) -> Result<AudioState, St
 
 /// Get detailed properties of a specific audio device
 pub fn get_device_properties(
-    device_name: String,
+    device_identifier: String,
     is_input: bool,
 ) -> Result<serde_json::Value, String> {
     let host = cpal::default_host();
 
-    // Find the device by name
+    // Find the device by ID or name
     let device = if is_input {
         host.input_devices()
             .map_err(|e| format!("Failed to enumerate input devices: {}", e))?
-            .find(|d| d.name().ok() == Some(device_name.clone()))
+            .find(|d| device_matches(d, &device_identifier))
     } else {
         host.output_devices()
             .map_err(|e| format!("Failed to enumerate output devices: {}", e))?
-            .find(|d| d.name().ok() == Some(device_name.clone()))
+            .find(|d| device_matches(d, &device_identifier))
     };
 
-    let device = device.ok_or_else(|| format!("Device '{}' not found", device_name))?;
+    let device = device.ok_or_else(|| format!("Device '{}' not found", device_identifier))?;
+
+    // Get display name from description
+    let display_name = device
+        .description()
+        .map(|d| d.name().to_string())
+        .or_else(|_| device.name())
+        .unwrap_or_else(|_| device_identifier.clone());
 
     // Get all supported configurations
     let mut properties = serde_json::json!({
-        "name": device_name,
+        "name": display_name,
         "type": if is_input { "input" } else { "output" },
     });
 
