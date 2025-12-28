@@ -1,9 +1,9 @@
 //
 //  GPUIBridge.h
-//  SOTF GPUI Audio Unit Bridge
+//  SOTF Audio Unit Plugin View Bridge
 //
-//  FFI interface for embedding GPUI UI in Audio Unit plugins.
-//  Based on the JUCE pattern of extracting native NSView from UI framework.
+//  FFI interface for embedding Rust Metal UI in Audio Unit plugins.
+//  Provides EQ visualization with interactive band controls.
 //
 
 #ifndef GPUI_BRIDGE_H
@@ -11,6 +11,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -20,126 +21,98 @@ extern "C" {
 // Opaque Types
 // =============================================================================
 
-/// Opaque handle to GPUI embedded view
-typedef struct GPUIEmbeddedView GPUIEmbeddedView;
+/// Opaque handle to AU plugin view
+typedef struct AUPluginView AUPluginView;
 
 // =============================================================================
 // C-compatible Data Structures
 // =============================================================================
 
-/// EQ Filter representation (C-compatible)
+/// EQ Band representation (C-compatible)
 typedef struct {
-    double frequency;   // Hz (20-20000)
-    double q;           // Quality factor (0.1-10.0)
-    double gain_db;     // Gain in decibels (-20 to +20)
-    int32_t filter_type; // 0=Peak, 1=LowShelf, 2=HighShelf, 3=Lowpass, 4=Highpass
-} CEQFilter;
+    int32_t filter_type;  // 0=Peak, 1=LowShelf, 2=HighShelf, 3=LowPass, 4=HighPass
+    float frequency;      // Hz (20-20000)
+    float gain_db;        // Gain in decibels (-24 to +24)
+    float q;              // Quality factor (0.1-10.0)
+    bool enabled;         // Whether band is active
+} CAUEQBand;
 
 // =============================================================================
 // Lifecycle Functions
 // =============================================================================
 
-/// Create a new GPUI embedded view
+/// Create a new AU plugin view
 ///
-/// Creates a GPUI context and window without calling Application::run(),
-/// allowing integration with Audio Unit's main thread.
+/// Creates a Metal-backed NSView with EQ visualization.
+/// Must be called from the main thread.
 ///
 /// @param width Initial width in pixels
 /// @param height Initial height in pixels
-/// @return Opaque pointer to GPUIEmbeddedView, or NULL on failure
-GPUIEmbeddedView* gpui_view_create(uint32_t width, uint32_t height);
+/// @return Opaque pointer to AUPluginView, or NULL on failure
+AUPluginView* au_plugin_view_create(uint32_t width, uint32_t height);
 
-/// Destroy a GPUI embedded view
+/// Destroy an AU plugin view
 ///
-/// Cleans up GPUI resources and deallocates the view.
+/// Cleans up Metal resources and deallocates the view.
 ///
 /// @param view The view to destroy (can be NULL)
-void gpui_view_destroy(GPUIEmbeddedView* view);
+void au_plugin_view_destroy(AUPluginView* view);
 
 // =============================================================================
 // View Management
 // =============================================================================
 
-/// Get the native NSView* from GPUI window
+/// Get the native NSView* from the plugin view
 ///
-/// Extracts the Cocoa NSView backing the GPUI window. This NSView can be
+/// Returns the Cocoa NSView backing the plugin UI. This NSView can be
 /// embedded in the AU view controller using standard Cocoa APIs.
 ///
-/// The returned pointer remains valid as long as the GPUIEmbeddedView exists.
-/// The caller must NOT deallocate or retain it.
+/// The returned pointer remains valid as long as the AUPluginView exists.
+/// The caller must NOT deallocate or release it.
 ///
-/// @param view The GPUI embedded view
-/// @return Opaque pointer to NSView (id), or NULL if GPUI unavailable
-void* gpui_view_get_native_view(GPUIEmbeddedView* view);
+/// @param view The plugin view
+/// @return Opaque pointer to NSView (id), or NULL if view is invalid
+void* au_plugin_view_get_native(const AUPluginView* view);
 
-/// Check if GPUI view is available
+/// Request a redraw of the view
 ///
-/// Returns true if the GPUI view was successfully created with a native view.
-/// If false, the AU should use its fallback placeholder UI (e.g., SwiftUI or plain AppKit).
+/// Marks the view as needing display. Call this after updating parameters
+/// or when the view needs to refresh.
 ///
-/// @param view The GPUI embedded view
-/// @return true if native view is available, false otherwise
-bool gpui_view_is_available(GPUIEmbeddedView* view);
-
-/// Update view size
-///
-/// Notifies GPUI of a resize event from the AU host.
-///
-/// @param view The GPUI embedded view
-/// @param width New width in pixels
-/// @param height New height in pixels
-void gpui_view_set_size(GPUIEmbeddedView* view, uint32_t width, uint32_t height);
+/// @param view The plugin view
+void au_plugin_view_set_needs_display(const AUPluginView* view);
 
 // =============================================================================
 // Parameter Updates
 // =============================================================================
 
-/// Update EQ filter parameters
+/// Set EQ band parameters
 ///
+/// Updates the EQ visualization with new band settings.
 /// Called when AU parameters change (e.g., from host automation).
-/// Triggers UI re-render with the new filter state.
 ///
-/// @param view The GPUI embedded view
-/// @param filters Array of EQ filters
-/// @param count Number of filters in the array
-void gpui_view_set_filters(
-    GPUIEmbeddedView* view,
-    const CEQFilter* filters,
+/// @param view The plugin view
+/// @param bands Array of EQ bands
+/// @param count Number of bands in the array
+void au_plugin_view_set_bands(
+    AUPluginView* view,
+    const CAUEQBand* bands,
     size_t count
 );
 
-/// Get EQ filter parameters
+/// Get EQ band parameters
 ///
-/// Copies current filter state from GPUI to the provided buffer.
-/// Used for bidirectional sync when UI changes filters.
+/// Copies current band state from the view to the provided buffer.
+/// Used for bidirectional sync when UI changes band values.
 ///
-/// @param view The GPUI embedded view
-/// @param filters Output buffer for EQ filters
-/// @param max_count Maximum number of filters to copy
-/// @return Number of filters actually copied
-size_t gpui_view_get_filters(
-    GPUIEmbeddedView* view,
-    CEQFilter* filters,
+/// @param view The plugin view
+/// @param bands Output buffer for EQ bands
+/// @param max_count Maximum number of bands to copy
+/// @return Number of bands actually copied
+size_t au_plugin_view_get_bands(
+    const AUPluginView* view,
+    CAUEQBand* bands,
     size_t max_count
-);
-
-// =============================================================================
-// Input Handling
-// =============================================================================
-
-/// Handle mouse events
-///
-/// Forwards mouse events from NSView to GPUI's input system.
-///
-/// @param view The GPUI embedded view
-/// @param x Mouse X position in view coordinates
-/// @param y Mouse Y position in view coordinates
-/// @param event_type 0=MouseDown, 1=MouseDrag, 2=MouseUp
-void gpui_view_mouse_event(
-    GPUIEmbeddedView* view,
-    float x,
-    float y,
-    int32_t event_type
 );
 
 #ifdef __cplusplus

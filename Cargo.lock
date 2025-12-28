@@ -1807,7 +1807,7 @@ dependencies = [
  "core-graphics2",
  "io-surface",
  "libc",
- "metal",
+ "metal 0.29.0",
 ]
 
 [[package]]
@@ -3465,7 +3465,7 @@ dependencies = [
  "lyon",
  "mach2",
  "media",
- "metal",
+ "metal 0.29.0",
  "naga 25.0.1",
  "num_cpus",
  "objc",
@@ -3523,11 +3523,15 @@ name = "gpui-au"
 version = "0.5.3"
 dependencies = [
  "cocoa 0.26.0",
+ "core-foundation 0.10.0",
+ "core-graphics 0.24.0",
  "env_logger 0.11.8",
  "gpui",
  "gpui-ui-kit",
+ "lazy_static",
  "log",
  "math-iir-fir",
+ "metal 0.32.0",
  "objc",
  "parking_lot",
  "rust-embed",
@@ -4913,7 +4917,7 @@ dependencies = [
  "core-video",
  "ctor",
  "foreign-types 0.5.0",
- "metal",
+ "metal 0.29.0",
  "objc",
 ]
 
@@ -4980,6 +4984,21 @@ dependencies = [
  "bitflags 2.10.0",
  "block",
  "core-graphics-types 0.1.3",
+ "foreign-types 0.5.0",
+ "log",
+ "objc",
+ "paste",
+]
+
+[[package]]
+name = "metal"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "00c15a6f673ff72ddcc22394663290f870fb224c1bfce55734a75c414150e605"
+dependencies = [
+ "bitflags 2.10.0",
+ "block",
+ "core-graphics-types 0.2.0",
  "foreign-types 0.5.0",
  "log",
  "objc",
@@ -9987,7 +10006,7 @@ dependencies = [
  "libc",
  "libloading",
  "log",
- "metal",
+ "metal 0.29.0",
  "naga 23.1.0",
  "ndk-sys 0.5.0+25.2.9519653",
  "objc",

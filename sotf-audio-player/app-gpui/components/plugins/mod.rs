@@ -361,5 +361,31 @@ pub fn render_plugin_content(
             theme,
         )
         .into_any_element(),
+        PluginSettings::Matrix {
+            input_channels,
+            output_channels,
+            matrix,
+        } => {
+            // TODO: Implement dedicated Matrix UI
+            // For now, render a placeholder
+            div()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .p_4()
+                .child(
+                    div()
+                        .text_sm()
+                        .text_color(theme.text_primary)
+                        .child(format!("Matrix: {}→{} channels", input_channels, output_channels)),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(theme.text_muted)
+                        .child(format!("{} coefficients", matrix.len())),
+                )
+                .into_any_element()
+        }
     }
 }
