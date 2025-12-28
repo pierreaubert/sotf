@@ -30,3 +30,11 @@ rust-embed = "8"
 # Low-level macOS bindings for NSView extraction
 objc = { workspace = true }
 cocoa = { workspace = true }
+
+# Metal for GPU rendering
+metal = "0.32"
+core-graphics = "0.24"
+core-foundation = "0.10"
+
+# For lazy_static class registration
+lazy_static = "1.4"

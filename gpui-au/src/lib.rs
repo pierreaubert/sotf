@@ -1,9 +1,5 @@
 //! GPUI Audio Unit Integration
 //!
-// FFI functions take raw pointers from C but are not marked unsafe because
-// they handle null checks internally. This is the standard pattern for C FFI.
-#![allow(clippy::not_unsafe_ptr_arg_deref)]
-//!
 //! This crate provides a bridge between GPUI UI framework and Audio Unit plugins.
 //!
 //! ## Architecture
@@ -19,6 +15,18 @@
 //!
 //! GPUI's rendering is Metal-layer based and doesn't depend on owning the event loop.
 //! The NSView created by GPUI is self-contained and can be embedded in any view hierarchy.
+
+// FFI functions take raw pointers from C but are not marked unsafe because
+// they handle null checks internally. This is the standard pattern for C FFI.
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
+
+// Metal-backed NSView module for direct AU embedding
+mod metal_view;
+pub use metal_view::{MetalView, MetalViewState};
+
+// Hybrid embedded view combining Metal NSView with GPUI text system
+mod embedded_view;
+pub use embedded_view::{EmbeddedView, EmbeddedViewState};
 
 use std::borrow::Cow;
 use std::cell::RefCell;
