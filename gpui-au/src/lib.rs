@@ -32,6 +32,10 @@ pub use renderer::{Renderer2D, Vertex2D};
 mod eq_view;
 pub use eq_view::{EQBand, EQTheme, EQView, FilterType};
 
+// Text rendering
+mod text_renderer;
+pub use text_renderer::{EQLabels, TextAlign, TextLabel, TextRenderer};
+
 // Hybrid embedded view combining Metal NSView with GPUI text system
 mod embedded_view;
 pub use embedded_view::{EmbeddedView, EmbeddedViewState};

@@ -12,10 +12,9 @@ use metal::foreign_types::ForeignType;
 use objc::declare::ClassDecl;
 use objc::runtime::{Class, Object, Sel, BOOL};
 use objc::{class, msg_send, sel, sel_impl};
-use parking_lot::Mutex;
 use std::ffi::c_void;
 use std::ptr;
-use std::sync::{Arc, Once};
+use std::sync::Once;
 
 const VIEW_STATE_IVAR: &str = "auPluginViewState";
 

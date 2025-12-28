@@ -1,8 +1,7 @@
 // EQViewController.swift
 // UI for SOTF Parametric EQ
 //
-// Uses a parameter table UI for editing EQ filters.
-// GPUI integration prepared but disabled pending static library resolution.
+// Uses Rust Metal UI when available, with AppKit table fallback.
 
 import AppKit
 import CoreAudioKit
@@ -39,6 +38,27 @@ public struct EQFilterParams {
         gainDb = min(max(gainDb, Self.gainRange.lowerBound), Self.gainRange.upperBound)
         filterType = min(max(filterType, 0), Int32(Self.filterTypeNames.count - 1))
     }
+
+    /// Convert to C struct
+    func toCBand() -> CAUEQBand {
+        return CAUEQBand(
+            filter_type: filterType,
+            frequency: Float(frequency),
+            gain_db: Float(gainDb),
+            q: Float(q),
+            enabled: true
+        )
+    }
+
+    /// Create from C struct
+    static func fromCBand(_ band: CAUEQBand) -> EQFilterParams {
+        return EQFilterParams(
+            frequency: Double(band.frequency),
+            q: Double(band.q),
+            gainDb: Double(band.gain_db),
+            filterType: band.filter_type
+        )
+    }
 }
 
 // MARK: - View Controller
@@ -57,12 +77,25 @@ public class EQViewController: AUViewController, AUAudioUnitFactory, NSTableView
     // EQ filter parameters
     private var filters: [EQFilterParams] = []
 
-    // Table view for parameter editing
+    // MARK: - Rust View
+
+    /// Handle to Rust Metal view (NULL if unavailable)
+    private var rustView: OpaquePointer?
+
+    /// Whether we're using Rust UI (vs fallback AppKit)
+    private var usingRustUI = false
+
+    // MARK: - Fallback UI
+
+    // Table view for parameter editing (fallback UI)
     private var tableView: NSTableView?
     private var scrollView: NSScrollView?
 
     // Callback for parameter changes
     public var onParametersChanged: (([EQFilterParams]) -> Void)?
+
+    // Timer for polling Rust view for parameter changes
+    private var pollTimer: Timer?
 
     // MARK: - AUAudioUnitFactory
 
@@ -120,8 +153,12 @@ public class EQViewController: AUViewController, AUAudioUnitFactory, NSTableView
             }
         }
 
-        // Reload table with loaded values
-        tableView?.reloadData()
+        // Update UI
+        if usingRustUI {
+            syncFiltersToRustView()
+        } else {
+            tableView?.reloadData()
+        }
     }
 
     /// Handle parameter changes from host (automation, preset load, etc.)
@@ -142,8 +179,12 @@ public class EQViewController: AUViewController, AUAudioUnitFactory, NSTableView
             break
         }
 
-        // Reload just the affected row
-        tableView?.reloadData(forRowIndexes: IndexSet(integer: band), columnIndexes: IndexSet(integersIn: 0..<5))
+        // Update UI
+        if usingRustUI {
+            syncFiltersToRustView()
+        } else {
+            tableView?.reloadData(forRowIndexes: IndexSet(integer: band), columnIndexes: IndexSet(integersIn: 0..<5))
+        }
     }
 
     /// Sync filter values from UI to audio unit parameters
@@ -168,6 +209,41 @@ public class EQViewController: AUViewController, AUAudioUnitFactory, NSTableView
         }
     }
 
+    /// Sync filters to Rust view
+    private func syncFiltersToRustView() {
+        guard let rustView = rustView else { return }
+
+        var cBands = filters.map { $0.toCBand() }
+        au_plugin_view_set_bands(rustView, &cBands, cBands.count)
+    }
+
+    /// Poll Rust view for parameter changes
+    @objc private func pollRustView() {
+        guard let rustView = rustView else { return }
+
+        var cBands = [CAUEQBand](repeating: CAUEQBand(), count: bandCount)
+        let count = au_plugin_view_get_bands(rustView, &cBands, bandCount)
+
+        guard count > 0 else { return }
+
+        var changed = false
+        for i in 0..<Int(count) {
+            let newFilter = EQFilterParams.fromCBand(cBands[i])
+
+            // Check if values changed significantly
+            if abs(filters[i].frequency - newFilter.frequency) > 0.1 ||
+               abs(filters[i].gainDb - newFilter.gainDb) > 0.01 ||
+               abs(filters[i].q - newFilter.q) > 0.01 {
+                filters[i] = newFilter
+                changed = true
+            }
+        }
+
+        if changed {
+            onParametersChanged?(filters)
+        }
+    }
+
     // MARK: - Lifecycle
 
     public override func viewDidLoad() {
@@ -182,10 +258,80 @@ public class EQViewController: AUViewController, AUAudioUnitFactory, NSTableView
             return filter
         }
 
-        setupParameterTableUI()
+        // Try to create Rust Metal view
+        if trySetupRustUI() {
+            usingRustUI = true
+            NSLog("SOTF EQ: Using Rust Metal UI")
+
+            // Start polling for UI changes
+            pollTimer = Timer.scheduledTimer(
+                timeInterval: 0.05, // 20 Hz
+                target: self,
+                selector: #selector(pollRustView),
+                userInfo: nil,
+                repeats: true
+            )
+        } else {
+            usingRustUI = false
+            NSLog("SOTF EQ: Falling back to AppKit table UI")
+            setupParameterTableUI()
+        }
     }
 
-    // MARK: - UI Setup
+    public override func viewWillDisappear() {
+        super.viewWillDisappear()
+        pollTimer?.invalidate()
+        pollTimer = nil
+    }
+
+    deinit {
+        pollTimer?.invalidate()
+        if let rustView = rustView {
+            au_plugin_view_destroy(rustView)
+        }
+    }
+
+    // MARK: - Rust UI Setup
+
+    private func trySetupRustUI() -> Bool {
+        let width = UInt32(view.bounds.width > 0 ? view.bounds.width : 600)
+        let height = UInt32(view.bounds.height > 0 ? view.bounds.height : 400)
+
+        guard let rustView = au_plugin_view_create(width, height) else {
+            NSLog("SOTF EQ: Failed to create Rust view")
+            return false
+        }
+
+        guard let nativePtr = au_plugin_view_get_native(rustView) else {
+            NSLog("SOTF EQ: Failed to get native NSView from Rust")
+            au_plugin_view_destroy(rustView)
+            return false
+        }
+
+        // Cast to NSView
+        let nativeView = Unmanaged<NSView>.fromOpaque(nativePtr).takeUnretainedValue()
+
+        // Store the rust view handle
+        self.rustView = rustView
+
+        // Set up auto-resizing
+        nativeView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(nativeView)
+
+        NSLayoutConstraint.activate([
+            nativeView.topAnchor.constraint(equalTo: view.topAnchor),
+            nativeView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            nativeView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            nativeView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
+
+        // Sync initial filters to Rust view
+        syncFiltersToRustView()
+
+        return true
+    }
+
+    // MARK: - Fallback UI Setup
 
     private func setupParameterTableUI() {
         // Dark background
@@ -206,7 +352,7 @@ public class EQViewController: AUViewController, AUAudioUnitFactory, NSTableView
         container.addSubview(titleLabel)
 
         // Subtitle
-        let subtitleLabel = NSTextField(labelWithString: "\(bandCount)-Band Parametric Equalizer")
+        let subtitleLabel = NSTextField(labelWithString: "\(bandCount)-Band Parametric Equalizer (Fallback UI)")
         subtitleLabel.font = NSFont.systemFont(ofSize: 12)
         subtitleLabel.textColor = NSColor(calibratedWhite: 0.6, alpha: 1.0)
         subtitleLabel.alignment = .center
@@ -494,8 +640,12 @@ public class EQViewController: AUViewController, AUAudioUnitFactory, NSTableView
             return filter
         }
 
-        // Reload table
-        tableView?.reloadData()
+        // Update UI
+        if usingRustUI {
+            syncFiltersToRustView()
+        } else {
+            tableView?.reloadData()
+        }
     }
 
     /// Get current EQ filters
