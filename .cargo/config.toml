@@ -43,26 +43,24 @@ rustflags = [
   "-C", "link-arg=-lopenblas64"
 ]
 
-# Windows MSVC x86_64 configuration
+# Windows MSVC x86_64 configuration (dynamic linking)
+# Requires: symlink C:\vcpkg to your vcpkg installation
+# For static builds, use: .\build-windows.ps1 -Static
 [target.x86_64-pc-windows-msvc]
 rustflags = [
-  # Windows typically uses Intel MKL or OpenBLAS through vcpkg
-  # "-C", "-DCMAKE_TOOLCHAIN_FILE=C:/Users/pierr/source/repos/microsoft/vcpkg/scripts/buildsystems/vcpkg.cmake",
   "-C", "target-feature=+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+avx,+avx2",
-  # Uncomment and adjust paths if using vcpkg OpenBLAS:
   "-C", "link-arg=/LIBPATH:C:\\vcpkg\\installed\\x64-windows\\lib",
-  "-C", "link-arg=/LIBPATH:C:\\Users\\pierr\\source\\repos\\microsoft\\vcpkg\\installed\\x64-windows\\lib",
-  "-C", "link-arg=openblas.lib"
+  "-C", "link-arg=openblas.lib",
+  "-C", "link-arg=nlopt.lib"
 ]
 
-# Windows MSVC ARM configuration
+# Windows MSVC ARM configuration (dynamic linking)
+# Requires: symlink C:\vcpkg to your vcpkg installation
+# For static builds, use: .\build-windows.ps1 -Static
 [target.aarch64-pc-windows-msvc]
 rustflags = [
   "-C", 'target-feature=+neon',
-  # Windows typically uses Intel MKL or OpenBLAS through vcpkg
-  # Uncomment and adjust paths if using vcpkg OpenBLAS:
   "-C", "link-arg=/LIBPATH:C:\\vcpkg\\installed\\arm64-windows\\lib",
-  "-C", "link-arg=/LIBPATH:C:\\Users\\pierr\\source\\repos\\microsoft\\vcpkg\\installed\\arm64-windows\\lib",
   "-C", "link-arg=openblas.lib",
   "-C", "link-arg=nlopt.lib"
 ]

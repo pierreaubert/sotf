@@ -16,7 +16,7 @@ gpui-d3rs = { path = "../../gpui-d3rs" }
 
 # Shared audio player library (provides business logic, database, plugins, etc.)
 sotf-audio-player = { path = ".." }
-sotf-audio-plugins = { path = "../../sotf-audio-plugins" }
+sotf-audio-plugins = { path = "../../sotf-audio-plugins", default-features = false }
 sotf-audio-engine = { path = "../../sotf-audio-engine" }
 
 # math libraries

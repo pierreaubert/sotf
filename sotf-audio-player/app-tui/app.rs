@@ -2383,10 +2383,8 @@ impl App {
 
         // Initialize image picker if not already done
         if self.image_picker.is_none() {
-            self.image_picker = ratatui_image::picker::Picker::from_termios().ok();
-            if self.image_picker.is_none() {
-                self.image_picker = Some(ratatui_image::picker::Picker::new((8, 16)));
-            }
+            // Use default font size (8x16) for image rendering
+            self.image_picker = Some(ratatui_image::picker::Picker::new((8, 16)));
         }
 
         // Get the currently playing album

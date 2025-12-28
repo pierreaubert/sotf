@@ -25,7 +25,7 @@ math-iir-fir = { workspace = true }
 autoeq-env = { workspace = true }
 autoeq-cea2034 = { workspace = true }
 autoeq = { workspace = true }
-sotf-audio-plugins = { path = "../sotf-audio-plugins" }
+sotf-audio-plugins = { path = "../sotf-audio-plugins", default-features = false }
 sotf-audio-engine = { path = "../sotf-audio-engine" }
 
 # math
@@ -78,7 +78,7 @@ clap = { workspace = true }
 [package.metadata.vcpkg]
 git = "https://github.com/microsoft/vcpkg"
 rev = "84bab45"
-dependencies = ["nlopt", "hdf5", "netcdf-c"]
+dependencies = ["nlopt", "hdf5", "netcdf-c", "openblas"]
 
 # [package.metadata.vcpkg.target]
 # x86_64-apple-darwin = { dependencies = ["sdl2", "sdl2-gfx" ] }

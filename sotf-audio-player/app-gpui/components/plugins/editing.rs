@@ -149,6 +149,7 @@ impl App {
                     dialogue_weight,
                     voice_freq_min_hz,
                     voice_freq_max_hz,
+                    ..
                 } => {
                     use sotf_audio_player::param_specs::upmixer::*;
                     match param_idx {
@@ -727,6 +728,7 @@ impl App {
                     dialogue_weight,
                     voice_freq_min_hz,
                     voice_freq_max_hz,
+                    ..
                 } => {
                     use sotf_audio_player::param_specs::upmixer::*;
                     match param_idx {

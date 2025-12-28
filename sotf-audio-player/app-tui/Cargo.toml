@@ -12,7 +12,7 @@ repository.workspace = true
 sotf-audio-player = { path = ".." }
 
 # Audio engine
-sotf-audio-plugins = { path = "../../sotf-audio-plugins" }
+sotf-audio-plugins = { path = "../../sotf-audio-plugins", default-features = false }
 sotf-audio-engine = { path = "../../sotf-audio-engine" }
 math-iir-fir = { workspace = true }
 

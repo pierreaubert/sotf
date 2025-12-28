@@ -213,6 +213,7 @@ pub fn render_plugin_content(
             dialogue_weight,
             voice_freq_min_hz,
             voice_freq_max_hz,
+            ..
         } => render_upmixer_plugin(
             entity,
             plugin_idx,
