@@ -273,6 +273,30 @@ function Build-Binary {
     return $true
 }
 
+function Copy-RuntimeDlls {
+    Write-Info "Copying runtime DLLs..."
+
+    # Find and copy openblas.dll from the build output
+    $openblasSource = Get-ChildItem -Path "$ProjectRoot\target\release\build" -Recurse -Filter "openblas.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($openblasSource) {
+        $dest = "$BuildDir\openblas.dll"
+        Copy-Item $openblasSource.FullName -Destination $dest -Force
+        Write-Info "Copied openblas.dll to release folder"
+    } else {
+        Write-Warn "openblas.dll not found in build output"
+    }
+
+    # Find and copy nlopt.dll if present (for dynamic builds)
+    if (-not $Static) {
+        $nloptSource = Get-ChildItem -Path "$ProjectRoot\target\release\build" -Recurse -Filter "nlopt.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($nloptSource) {
+            $dest = "$BuildDir\nlopt.dll"
+            Copy-Item $nloptSource.FullName -Destination $dest -Force
+            Write-Info "Copied nlopt.dll to release folder"
+        }
+    }
+}
+
 function New-Distribution {
     Write-Info "Creating distribution package..."
 
@@ -298,6 +322,16 @@ function New-Distribution {
         }
     }
 
+    # Copy runtime DLLs
+    $runtimeDlls = @("openblas.dll", "nlopt.dll")
+    foreach ($dll in $runtimeDlls) {
+        $dllPath = "$BuildDir\$dll"
+        if (Test-Path $dllPath) {
+            Copy-Item $dllPath -Destination $stagingDir
+            Write-Info "Added $dll"
+        }
+    }
+
     # Copy assets if they exist
     $assetsDir = "$ScriptDir\..\assets"
     if (Test-Path $assetsDir) {
@@ -311,6 +345,11 @@ function New-Distribution {
     } else {
         "- Windows 10/11 $Arch`n- Visual C++ Redistributable 2019 or later (usually pre-installed)"
     }
+    $dllNote = if (-not $Static) {
+        "`nIncluded DLLs`n-------------`n- openblas.dll : Math library (keep in same folder as executables)`n"
+    } else {
+        ""
+    }
     $readme = @"
 SotF Player v$Version ($buildTypeDesc)
 ======================
@@ -321,7 +360,7 @@ Included Binaries
 -----------------
 - SotF.exe      : GPUI-based graphical player
 - sotf-tui.exe  : Terminal UI player
-
+$dllNote
 Running
 -------
 GUI: Double-click SotF.exe
@@ -376,6 +415,9 @@ function Main {
         Write-Err "Some builds failed"
         exit 1
     }
+
+    # Copy required runtime DLLs to release folder
+    Copy-RuntimeDlls
 
     $zipPath = New-Distribution
 

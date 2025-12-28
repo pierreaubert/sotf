@@ -67,7 +67,21 @@ pub fn get_app_config_dir() -> Option<PathBuf> {
         }
     }
 
-    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "android"))]
+    #[cfg(target_os = "windows")]
+    {
+        // On Windows, use LOCALAPPDATA (preferred) or USERPROFILE as fallback
+        if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+            let config_dir = PathBuf::from(local_app_data).join("sotf");
+            std::fs::create_dir_all(&config_dir).ok()?;
+            return Some(config_dir);
+        } else if let Ok(user_profile) = std::env::var("USERPROFILE") {
+            let config_dir = PathBuf::from(user_profile).join(".config").join("sotf");
+            std::fs::create_dir_all(&config_dir).ok()?;
+            return Some(config_dir);
+        }
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     {
         if let Ok(home) = std::env::var("HOME") {
             let config_dir = PathBuf::from(home).join(".config").join("sotf");
@@ -230,9 +244,13 @@ mod tests {
                     .contains("Library/Application Support/org.spinorama.sotf")
             );
 
-            // On Linux/Windows
-            #[cfg(any(target_os = "linux", target_os = "windows"))]
+            // On Linux
+            #[cfg(target_os = "linux")]
             assert!(dir.to_string_lossy().contains(".config/sotf"));
+
+            // On Windows (uses LOCALAPPDATA\sotf or USERPROFILE\.config\sotf)
+            #[cfg(target_os = "windows")]
+            assert!(dir.to_string_lossy().contains("sotf"));
         }
     }
 
