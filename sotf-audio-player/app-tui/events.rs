@@ -1,6 +1,6 @@
-use crate::app::{App, InputMode, Screen};
+use crate::app::{App, InputMode, MatrixEditMode, Screen};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use sotf_audio_player::PluginType;
+use sotf_audio_player::{PluginSettings, PluginType};
 use std::time::Duration;
 
 pub enum AppEvent {
@@ -739,11 +739,27 @@ fn handle_plugins_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             app.add_plugin(&PluginType::ChannelMuteSolo);
             None
         }
+        KeyCode::Char('x') => {
+            // Quick add Matrix Mixer
+            app.add_plugin(&PluginType::Matrix);
+            None
+        }
         _ => None,
     }
 }
 
 fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    // Check if we're editing a Matrix plugin
+    let is_matrix = app
+        .plugin_chain
+        .get_plugin(app.selected_plugin_index)
+        .is_some_and(|p| matches!(p.settings, PluginSettings::Matrix { .. }));
+
+    if is_matrix {
+        return handle_matrix_edit_mode(app, key);
+    }
+
+    // Standard plugin editing
     match key.code {
         KeyCode::Esc => {
             app.exit_plugin_edit_mode();
@@ -795,7 +811,6 @@ fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand
         }
         KeyCode::Char('a') => {
             // Load APO file (for EQ plugins)
-            use sotf_audio_player::PluginSettings;
             if let Some(plugin) = app.plugin_chain.get_plugin(app.selected_plugin_index) {
                 if matches!(plugin.settings, PluginSettings::EQ { .. }) {
                     app.input_mode = InputMode::LoadApoFile;
@@ -809,7 +824,6 @@ fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand
         }
         KeyCode::Char('f') => {
             // Load SOFA file (for Binaural Decoder plugins)
-            use sotf_audio_player::PluginSettings;
             if let Some(plugin) = app.plugin_chain.get_plugin(app.selected_plugin_index) {
                 if matches!(plugin.settings, PluginSettings::BinauralDecoder { .. }) {
                     app.input_mode = InputMode::LoadSofaFile;
@@ -819,6 +833,124 @@ fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand
                         "SOFA files can only be loaded for Binaural Decoder plugins".to_string(),
                     );
                 }
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+/// Handle key events for Matrix plugin editing
+fn handle_matrix_edit_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    match key.code {
+        KeyCode::Esc => {
+            app.exit_plugin_edit_mode();
+            None
+        }
+        KeyCode::Tab => {
+            // Toggle between Header and Grid mode
+            app.matrix_edit_mode = match app.matrix_edit_mode {
+                MatrixEditMode::Header => MatrixEditMode::Grid,
+                MatrixEditMode::Grid => MatrixEditMode::Header,
+            };
+            None
+        }
+        _ => {
+            // Delegate to mode-specific handler
+            match app.matrix_edit_mode {
+                MatrixEditMode::Header => handle_matrix_header_keys(app, key),
+                MatrixEditMode::Grid => handle_matrix_grid_keys(app, key),
+            }
+        }
+    }
+}
+
+/// Handle key events in Matrix header mode (input/output channels, preset)
+fn handle_matrix_header_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    match key.code {
+        KeyCode::Up | KeyCode::Char('k') => {
+            if app.matrix_header_selection > 0 {
+                app.matrix_header_selection -= 1;
+            }
+            None
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            if app.matrix_header_selection < 2 {
+                app.matrix_header_selection += 1;
+            }
+            None
+        }
+        KeyCode::Left | KeyCode::Char('h') => {
+            if app.adjust_matrix_header(-1) {
+                app.request_plugin_update();
+            }
+            None
+        }
+        KeyCode::Right | KeyCode::Char('l') => {
+            if app.adjust_matrix_header(1) {
+                app.request_plugin_update();
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+/// Handle key events in Matrix grid mode (cell editing)
+fn handle_matrix_grid_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    // Get current matrix dimensions
+    let (in_ch, out_ch) = app.get_matrix_dimensions().unwrap_or((2, 2));
+
+    match key.code {
+        KeyCode::Up | KeyCode::Char('k') => {
+            if app.matrix_grid_row > 0 {
+                app.matrix_grid_row -= 1;
+            }
+            None
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            if app.matrix_grid_row + 1 < out_ch {
+                app.matrix_grid_row += 1;
+            }
+            None
+        }
+        KeyCode::Left | KeyCode::Char('h') => {
+            if app.matrix_grid_col > 0 {
+                app.matrix_grid_col -= 1;
+            }
+            None
+        }
+        KeyCode::Right | KeyCode::Char('l') => {
+            if app.matrix_grid_col + 1 < in_ch {
+                app.matrix_grid_col += 1;
+            }
+            None
+        }
+        KeyCode::Char('-') | KeyCode::Char('[') => {
+            // Decrease gain by 0.5 dB
+            if app.adjust_matrix_cell(-0.5) {
+                app.request_plugin_update();
+            }
+            None
+        }
+        KeyCode::Char('+') | KeyCode::Char('=') | KeyCode::Char(']') => {
+            // Increase gain by 0.5 dB
+            if app.adjust_matrix_cell(0.5) {
+                app.request_plugin_update();
+            }
+            None
+        }
+        KeyCode::Char('0') => {
+            // Set cell to zero (−∞ dB / silence)
+            if app.set_matrix_cell(0.0) {
+                app.request_plugin_update();
+            }
+            None
+        }
+        KeyCode::Char('1') => {
+            // Set cell to unity gain (0 dB)
+            if app.set_matrix_cell(1.0) {
+                app.request_plugin_update();
             }
             None
         }

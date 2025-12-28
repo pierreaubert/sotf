@@ -40,7 +40,12 @@ pub use plugin_graph::{
     ConnectionDrag, GraphConnection, GraphNodeId, GraphSelection, NodeDrag, NodePosition,
     PluginGraph, PluginGraphNode, SpecialNode, SpecialNodeType,
 };
-pub use plugins::{EQFilter, Plugin, PluginChain, PluginSettings, PluginType};
+pub use plugins::{
+    EQFilter, Plugin, PluginChain, PluginSettings, PluginType,
+    // Matrix helper functions
+    apply_matrix_preset, db_to_linear, detect_matrix_preset, get_channel_label,
+    linear_to_db_string, resize_matrix,
+};
 pub use replay_gain_scanner::{ReplayGainScanManager, ReplayGainScanner, ScanMessage};
 pub use sotf_audio::replaygain::ReplayGainInfo;
 pub use waveform_scanner::{WaveformScanManager, WaveformScanMessage, WaveformScanner};
