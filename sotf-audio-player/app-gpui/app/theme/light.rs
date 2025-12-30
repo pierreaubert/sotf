@@ -1,0 +1,196 @@
+impl ThemeId {
+    /// Light theme
+    pub fn light() -> Self {
+        Self {
+            // Base colors
+            background: rgba(0xf5f5f5),
+            background_secondary: rgba(0xeeeeee),
+            background_tertiary: rgba(0xe0e0e0),
+            surface: rgba(0xffffff),
+            surface_hover: rgba(0xf0f0f0),
+            surface_selected: rgba(0xcce5ff),
+
+            // Text colors
+            text_primary: rgba(0x1e1e1e),
+            text_secondary: rgba(0x555555),
+            text_muted: rgba(0x666666), // Darker for better readability on light background
+            text_disabled: rgba(0xaaaaaa),
+
+            // Border colors
+            border: rgba(0x999999),         // More visible border
+            border_focused: rgba(0x0077ee), // Brighter for hover states
+
+            // Accent colors
+            accent: rgba(0x0074e8), // Bolder, more saturated
+            accent_hover: rgba(0x2687ff),
+            accent_muted: rgba(0xb3d4fc),
+
+            // Text on accent
+            text_on_accent: rgba(0xffffff),
+            text_on_accent_muted: rgba(0xffffffcc),
+            icon_on_accent: rgba(0x1e1e1e),
+
+            // Semantic colors
+            success: rgba(0x28a745),
+            warning: rgba(0xffc107),
+            error: rgba(0xdc3545),
+            info: rgba(0x17a2b8),
+
+            // Level meter colors
+            meter_normal: rgba(0x28a745),
+            meter_warning: rgba(0xffc107),
+            meter_clip: rgba(0xdc3545),
+
+            // Button colors
+            button_mute_active: rgba(0xdc3545),
+            button_solo_active: rgba(0xffc107),
+            button_dim_active: rgba(0x6f42c1),
+
+            // Playback bar
+            progress_bar_bg: rgba(0xcccccc),
+            progress_bar_fill: rgba(0x0066cc),
+
+            // Toast backgrounds
+            toast_success_bg: rgba(0xd4edda),
+            toast_error_bg: rgba(0xf8d7da),
+            toast_info_bg: rgba(0xd1ecf1),
+            toast_warning_bg: rgba(0xfff3cd),
+
+            // Plugin colors
+            plugin_colors: PluginColorMap {
+                eq: rgba(0x0066cc),
+                gain: rgba(0x28a745),
+                upmixer: rgba(0x6f42c1),
+                compressor: rgba(0xdc3545),
+                limiter: rgba(0xfd7e14),
+                gate: rgba(0xffc107),
+                loudness: rgba(0x17a2b8),
+                binaural: rgba(0xe83e8c),
+                convolution: rgba(0x6610f2),
+                monitor: rgba(0x20c997),
+                spectrum: rgba(0x9b59b6),
+                mute_solo: rgba(0x007bff),
+            },
+            graph_colors: GraphLineColors {
+                input: rgba(0x007bff),
+                target: rgba(0x28a745),
+                filter_response: rgba(0xffc107),
+                corrected: rgba(0x0066cc),
+                error: rgba(0xdc3545),
+                deviation: rgba(0x9b59b6),
+                grid: Rgba {
+                    r: 0.0,
+                    g: 0.0,
+                    b: 0.0,
+                    a: 0.063,
+                }, // rgba(0x00000010) = 16/255 ≈ 6.3%
+                secondary_line: Rgba {
+                    r: 0.333,
+                    g: 0.333,
+                    b: 0.333,
+                    a: 1.0,
+                }, // rgba(0x555555)
+                directivity_er: Rgba {
+                    r: 0.910,
+                    g: 0.118,
+                    b: 0.388,
+                    a: 1.0,
+                }, // rgba(0xe91e63)
+                directivity_sp: Rgba {
+                    r: 0.612,
+                    g: 0.153,
+                    b: 0.690,
+                    a: 1.0,
+                }, // rgba(0x9c27b0)
+            },
+            band_colors: vec![
+                rgba(0xdc3545), // Red
+                rgba(0xfd7e14), // Orange
+                rgba(0xffc107), // Yellow
+                rgba(0x28a745), // Green
+                rgba(0x20c997), // Teal
+                rgba(0x0066cc), // Blue
+                rgba(0x6f42c1), // Violet
+                rgba(0xe83e8c), // Pink
+                rgba(0x007bff), // Indigo
+                rgba(0x00bcd4), // Cyan
+                rgba(0x999999), // Gray
+            ],
+            eq_curve_colors: EQCurveColors {
+                background: rgba(0xfafafa),
+                grid: Rgba {
+                    r: 0.0,
+                    g: 0.0,
+                    b: 0.0,
+                    a: 0.063,
+                }, // rgba(0x00000010) = 16/255 ≈ 6.3%
+                curve_boost: rgba(0x28a745),
+                curve_cut: rgba(0xdc3545),
+                fill_boost: Rgba {
+                    r: 0.157,
+                    g: 0.655,
+                    b: 0.267,
+                    a: 0.188,
+                }, // rgba(0x28a74430) ≈ 19%
+                fill_cut: Rgba {
+                    r: 0.863,
+                    g: 0.208,
+                    b: 0.208,
+                    a: 0.188,
+                }, // rgba(0xdc354530) ≈ 19%
+                zero_line: Rgba {
+                    r: 0.0,
+                    g: 0.0,
+                    b: 0.0,
+                    a: 0.188,
+                }, // rgba(0x00000030) ≈ 19%
+            },
+            spectrum_colors: SpectrumColors {
+                background: rgba(0xffffff),
+                bass: rgba(0x28a745),
+                mids: rgba(0xffc107),
+                treble: rgba(0xdc3545),
+            },
+            meter_colors: MeterColors {
+                background: rgba(0xf5f5f5),
+                normal: rgba(0x28a745),
+                warning: rgba(0xffc107),
+                clip: rgba(0xdc3545),
+                peak: rgba(0x000000),
+                text: rgba(0x555555),
+            },
+
+            // Additional semantic colors
+            peak_indicator: rgba(0x000000),
+            drag_over_highlight: Rgba {
+                r: 0.0,
+                g: 0.4,
+                b: 0.8,
+                a: 0.251,
+            }, // rgba(0x0066cc40) ≈ 25%
+            drag_over_border: rgba(0x0066cc),
+            neutral_indicator: rgba(0x007bff),
+            warning_background: Rgba {
+                r: 1.0,
+                g: 0.753,
+                b: 0.0,
+                a: 0.188,
+            }, // rgba(0xffc10730) ≈ 19%
+            knob_color: rgba(0x000000),
+            optimization_color: rgba(0x9b59b6),
+            grid_color: Rgba {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 0.063,
+            }, // rgba(0x00000010) = 16/255 ≈ 6.3%
+
+            // Layout sizes
+            separator_size: 20.0,
+
+            // Font family
+            font_family: ".SystemUI".into(),
+        }
+    }
+
+}
