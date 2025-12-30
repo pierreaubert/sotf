@@ -63,3 +63,7 @@ path = "examples/head_tracker_demo.rs"
 [[example]]
 name = "vision_test"
 path = "examples/vision_test.rs"
+
+[[example]]
+name = "xtc_integration"
+path = "examples/xtc_integration.rs"

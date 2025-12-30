@@ -16,12 +16,15 @@
 // - Cross-platform: ONNX Runtime + MediaPipe (optional)
 
 mod types;
-pub use types::{HeadPosition, HeadTrackerConfig, HeadTrackerError};
+pub use types::{CalibrationData, FaceRect, HeadPosition, HeadTrackerConfig, HeadTrackerError};
 
 mod smoother;
 pub use smoother::HeadPositionSmoother;
 
 pub mod camera;
+
+pub mod integration;
+pub use integration::{HeadTrackingBridge, HeadTrackingTarget, XtcHeadParams};
 
 #[cfg(target_os = "macos")]
 #[cfg(feature = "macos-vision")]
