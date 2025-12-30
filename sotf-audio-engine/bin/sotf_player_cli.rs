@@ -166,6 +166,88 @@ fn create_loudness_analyzer_plugin_config() -> Result<PluginConfig, String> {
     })
 }
 
+/// Create expander PluginConfig with default parameters
+fn create_expander_plugin_config() -> Result<PluginConfig, String> {
+    use serde_json::json;
+    use sotf_plugins::param_specs::expander;
+
+    let parameters = json!({
+        "threshold_db": expander::THRESHOLD_DEFAULT,
+        "ratio": expander::RATIO_DEFAULT,
+        "attack_ms": expander::ATTACK_DEFAULT,
+        "release_ms": expander::RELEASE_DEFAULT,
+        "range_db": expander::RANGE_DEFAULT,
+        "knee_db": expander::KNEE_DEFAULT,
+        "hysteresis_db": expander::HYSTERESIS_DEFAULT,
+        "hold_ms": expander::HOLD_DEFAULT,
+        "mix": expander::MIX_DEFAULT,
+        "link_channels": expander::LINK_CHANNELS_DEFAULT,
+        "sidechain_hpf_hz": expander::SIDECHAIN_HPF_HZ_DEFAULT,
+    });
+
+    Ok(PluginConfig {
+        plugin_type: "expander".to_string(),
+        parameters,
+    })
+}
+
+/// Create multiband compressor PluginConfig with default parameters
+fn create_multiband_compressor_plugin_config() -> Result<PluginConfig, String> {
+    use serde_json::json;
+    use sotf_plugins::param_specs::multiband_compressor;
+
+    let parameters = json!({
+        "num_bands": multiband_compressor::NUM_BANDS_DEFAULT,
+        "crossover_preset": multiband_compressor::CROSSOVER_PRESET_DEFAULT,
+        "crossover_freq_1": multiband_compressor::CROSSOVER_FREQ_1_DEFAULT,
+        "crossover_freq_2": multiband_compressor::CROSSOVER_FREQ_2_DEFAULT,
+        "crossover_freq_3": multiband_compressor::CROSSOVER_FREQ_3_DEFAULT,
+        "crossover_freq_4": multiband_compressor::CROSSOVER_FREQ_4_DEFAULT,
+        "threshold_db": multiband_compressor::THRESHOLD_DEFAULT,
+        "ratio": multiband_compressor::RATIO_DEFAULT,
+        "attack_ms": multiband_compressor::ATTACK_DEFAULT,
+        "release_ms": multiband_compressor::RELEASE_DEFAULT,
+        "knee_db": multiband_compressor::KNEE_DEFAULT,
+        "mix": multiband_compressor::MIX_DEFAULT,
+        "link_channels": multiband_compressor::LINK_CHANNELS_DEFAULT,
+    });
+
+    Ok(PluginConfig {
+        plugin_type: "multiband_compressor".to_string(),
+        parameters,
+    })
+}
+
+/// Create multiband expander PluginConfig with default parameters
+fn create_multiband_expander_plugin_config() -> Result<PluginConfig, String> {
+    use serde_json::json;
+    use sotf_plugins::param_specs::multiband_expander;
+
+    let parameters = json!({
+        "num_bands": multiband_expander::NUM_BANDS_DEFAULT,
+        "crossover_preset": multiband_expander::CROSSOVER_PRESET_DEFAULT,
+        "crossover_freq_1": multiband_expander::CROSSOVER_FREQ_1_DEFAULT,
+        "crossover_freq_2": multiband_expander::CROSSOVER_FREQ_2_DEFAULT,
+        "crossover_freq_3": multiband_expander::CROSSOVER_FREQ_3_DEFAULT,
+        "crossover_freq_4": multiband_expander::CROSSOVER_FREQ_4_DEFAULT,
+        "threshold_db": multiband_expander::THRESHOLD_DEFAULT,
+        "ratio": multiband_expander::RATIO_DEFAULT,
+        "attack_ms": multiband_expander::ATTACK_DEFAULT,
+        "release_ms": multiband_expander::RELEASE_DEFAULT,
+        "range_db": multiband_expander::RANGE_DEFAULT,
+        "knee_db": multiband_expander::KNEE_DEFAULT,
+        "hysteresis_db": multiband_expander::HYSTERESIS_DEFAULT,
+        "hold_ms": multiband_expander::HOLD_DEFAULT,
+        "mix": multiband_expander::MIX_DEFAULT,
+        "link_channels": multiband_expander::LINK_CHANNELS_DEFAULT,
+    });
+
+    Ok(PluginConfig {
+        plugin_type: "multiband_expander".to_string(),
+        parameters,
+    })
+}
+
 /// Convert Biquad filters to PluginConfig for EQ plugin
 fn create_eq_plugin_config(filters: &[Biquad]) -> Result<PluginConfig, String> {
     use serde_json::json;
@@ -358,6 +440,18 @@ enum Commands {
         /// Binaural Decoder Near-Field Strength (0.0-1.0)
         #[arg(long = "binaural-near-field", default_value = "0.0")]
         binaural_near_field: f32,
+
+        /// Enable expander plugin (dynamic range expansion with hysteresis)
+        #[arg(long = "expander", default_value_t = false)]
+        expander: bool,
+
+        /// Enable multiband compressor plugin (3-band compression with crossovers)
+        #[arg(long = "multiband-compressor", default_value_t = false)]
+        multiband_compressor: bool,
+
+        /// Enable multiband expander plugin (3-band expansion with crossovers)
+        #[arg(long = "multiband-expander", default_value_t = false)]
+        multiband_expander: bool,
     },
 
     /// Get current playback status
@@ -444,6 +538,9 @@ fn main() {
             binaural_optimization,
             binaural_externalization,
             binaural_near_field,
+            expander,
+            multiband_compressor,
+            multiband_expander,
         } => {
             // Parse filters
             let filter_params = match parse_filters(&filters) {
@@ -494,6 +591,9 @@ fn main() {
                 binaural_optimization,
                 binaural_externalization,
                 binaural_near_field,
+                expander,
+                multiband_compressor,
+                multiband_expander,
             ) {
                 log::error!("Error: {}", e);
                 std::process::exit(1);
@@ -816,6 +916,9 @@ fn play_stream(
     enable_optimization: bool,
     externalization: f32,
     near_field_strength: f32,
+    expander: bool,
+    multiband_compressor: bool,
+    multiband_expander: bool,
 ) -> Result<(), String> {
     log::info!("Starting streaming playback...");
     log::info!("  File: {:?}", file);
@@ -967,6 +1070,25 @@ fn play_stream(
         let eq_plugin = create_eq_plugin_config(&filters)?;
         plugins.push(eq_plugin);
         log::debug!("Added EQ plugin with {} filters", filters.len());
+    }
+
+    // Dynamics plugins (expander, compressor, etc.)
+    if expander {
+        let expander_plugin = create_expander_plugin_config()?;
+        plugins.push(expander_plugin);
+        log::info!("Enabled expander plugin (default parameters)");
+    }
+
+    if multiband_compressor {
+        let mb_comp_plugin = create_multiband_compressor_plugin_config()?;
+        plugins.push(mb_comp_plugin);
+        log::info!("Enabled multiband compressor plugin (3-band, default parameters)");
+    }
+
+    if multiband_expander {
+        let mb_exp_plugin = create_multiband_expander_plugin_config()?;
+        plugins.push(mb_exp_plugin);
+        log::info!("Enabled multiband expander plugin (3-band, default parameters)");
     }
 
     // 4. Channel mapping to hardware (last plugin before output)

@@ -93,6 +93,54 @@ pub mod gate {
 }
 
 // ============================================================================
+// Expander Plugin
+// ============================================================================
+
+pub mod expander {
+    pub const THRESHOLD_DEFAULT: f32 = -40.0;
+    pub const THRESHOLD_MIN: f32 = -80.0;
+    pub const THRESHOLD_MAX: f32 = 0.0;
+
+    pub const RATIO_DEFAULT: f32 = 2.0;
+    pub const RATIO_MIN: f32 = 1.0;
+    pub const RATIO_MAX: f32 = 20.0;
+
+    pub const ATTACK_DEFAULT: f32 = 1.0;
+    pub const ATTACK_MIN: f32 = 0.1;
+    pub const ATTACK_MAX: f32 = 50.0;
+
+    pub const RELEASE_DEFAULT: f32 = 100.0;
+    pub const RELEASE_MIN: f32 = 10.0;
+    pub const RELEASE_MAX: f32 = 2000.0;
+
+    pub const RANGE_DEFAULT: f32 = 40.0;
+    pub const RANGE_MIN: f32 = 0.0;
+    pub const RANGE_MAX: f32 = 80.0;
+
+    pub const KNEE_DEFAULT: f32 = 6.0;
+    pub const KNEE_MIN: f32 = 0.0;
+    pub const KNEE_MAX: f32 = 20.0;
+
+    pub const HYSTERESIS_DEFAULT: f32 = 4.0;
+    pub const HYSTERESIS_MIN: f32 = 0.0;
+    pub const HYSTERESIS_MAX: f32 = 12.0;
+
+    pub const HOLD_DEFAULT: f32 = 10.0;
+    pub const HOLD_MIN: f32 = 0.0;
+    pub const HOLD_MAX: f32 = 500.0;
+
+    pub const MIX_DEFAULT: f32 = 1.0;
+    pub const MIX_MIN: f32 = 0.0;
+    pub const MIX_MAX: f32 = 1.0;
+
+    pub const LINK_CHANNELS_DEFAULT: bool = true;
+
+    pub const SIDECHAIN_HPF_HZ_DEFAULT: f32 = 80.0;
+    pub const SIDECHAIN_HPF_HZ_MIN: f32 = 0.0;
+    pub const SIDECHAIN_HPF_HZ_MAX: f32 = 500.0;
+}
+
+// ============================================================================
 // Limiter Plugin
 // ============================================================================
 
@@ -381,4 +429,148 @@ pub mod eq {
     pub const GAIN_DB_MIN: f64 = -24.0;
     pub const GAIN_DB_MAX: f64 = 24.0;
     pub const GAIN_DB_DEFAULT: f64 = 0.0;
+}
+
+// ============================================================================
+// Multiband Compressor Plugin
+// ============================================================================
+
+pub mod multiband_compressor {
+    // Number of bands
+    pub const NUM_BANDS_DEFAULT: usize = 3;
+    pub const NUM_BANDS_MIN: usize = 2;
+    pub const NUM_BANDS_MAX: usize = 5;
+
+    // Crossover preset: 0=Custom, 1=200/2k, 2=100/3k, 3=250/4k
+    pub const CROSSOVER_PRESET_DEFAULT: i32 = 1;
+    pub const CROSSOVER_PRESET_MIN: i32 = 0;
+    pub const CROSSOVER_PRESET_MAX: i32 = 3;
+
+    // Crossover frequencies (Hz)
+    pub const CROSSOVER_FREQ_1_DEFAULT: f32 = 200.0;
+    pub const CROSSOVER_FREQ_1_MIN: f32 = 20.0;
+    pub const CROSSOVER_FREQ_1_MAX: f32 = 500.0;
+
+    pub const CROSSOVER_FREQ_2_DEFAULT: f32 = 2000.0;
+    pub const CROSSOVER_FREQ_2_MIN: f32 = 500.0;
+    pub const CROSSOVER_FREQ_2_MAX: f32 = 5000.0;
+
+    pub const CROSSOVER_FREQ_3_DEFAULT: f32 = 8000.0;
+    pub const CROSSOVER_FREQ_3_MIN: f32 = 5000.0;
+    pub const CROSSOVER_FREQ_3_MAX: f32 = 15000.0;
+
+    pub const CROSSOVER_FREQ_4_DEFAULT: f32 = 12000.0;
+    pub const CROSSOVER_FREQ_4_MIN: f32 = 10000.0;
+    pub const CROSSOVER_FREQ_4_MAX: f32 = 18000.0;
+
+    // Global compression parameters (same as compressor)
+    pub const THRESHOLD_DEFAULT: f32 = -20.0;
+    pub const THRESHOLD_MIN: f32 = -60.0;
+    pub const THRESHOLD_MAX: f32 = 0.0;
+
+    pub const RATIO_DEFAULT: f32 = 4.0;
+    pub const RATIO_MIN: f32 = 1.0;
+    pub const RATIO_MAX: f32 = 20.0;
+
+    pub const ATTACK_DEFAULT: f32 = 5.0;
+    pub const ATTACK_MIN: f32 = 0.1;
+    pub const ATTACK_MAX: f32 = 100.0;
+
+    pub const RELEASE_DEFAULT: f32 = 50.0;
+    pub const RELEASE_MIN: f32 = 10.0;
+    pub const RELEASE_MAX: f32 = 1000.0;
+
+    pub const KNEE_DEFAULT: f32 = 6.0;
+    pub const KNEE_MIN: f32 = 0.0;
+    pub const KNEE_MAX: f32 = 20.0;
+
+    pub const MAKEUP_GAIN_DEFAULT: f32 = 0.0;
+    pub const MAKEUP_GAIN_MIN: f32 = -24.0;
+    pub const MAKEUP_GAIN_MAX: f32 = 24.0;
+
+    pub const MIX_DEFAULT: f32 = 1.0;
+    pub const MIX_MIN: f32 = 0.0;
+    pub const MIX_MAX: f32 = 1.0;
+
+    pub const LINK_CHANNELS_DEFAULT: bool = true;
+
+    // Per-band flags
+    pub const BAND_SOLO_DEFAULT: bool = false;
+    pub const BAND_BYPASS_DEFAULT: bool = false;
+}
+
+// ============================================================================
+// Multiband Expander Plugin
+// ============================================================================
+
+pub mod multiband_expander {
+    // Number of bands (same as multiband compressor)
+    pub const NUM_BANDS_DEFAULT: usize = 3;
+    pub const NUM_BANDS_MIN: usize = 2;
+    pub const NUM_BANDS_MAX: usize = 5;
+
+    // Crossover preset: 0=Custom, 1=200/2k, 2=100/3k, 3=250/4k
+    pub const CROSSOVER_PRESET_DEFAULT: i32 = 1;
+    pub const CROSSOVER_PRESET_MIN: i32 = 0;
+    pub const CROSSOVER_PRESET_MAX: i32 = 3;
+
+    // Crossover frequencies (Hz) - same as multiband compressor
+    pub const CROSSOVER_FREQ_1_DEFAULT: f32 = 200.0;
+    pub const CROSSOVER_FREQ_1_MIN: f32 = 20.0;
+    pub const CROSSOVER_FREQ_1_MAX: f32 = 500.0;
+
+    pub const CROSSOVER_FREQ_2_DEFAULT: f32 = 2000.0;
+    pub const CROSSOVER_FREQ_2_MIN: f32 = 500.0;
+    pub const CROSSOVER_FREQ_2_MAX: f32 = 5000.0;
+
+    pub const CROSSOVER_FREQ_3_DEFAULT: f32 = 8000.0;
+    pub const CROSSOVER_FREQ_3_MIN: f32 = 5000.0;
+    pub const CROSSOVER_FREQ_3_MAX: f32 = 15000.0;
+
+    pub const CROSSOVER_FREQ_4_DEFAULT: f32 = 12000.0;
+    pub const CROSSOVER_FREQ_4_MIN: f32 = 10000.0;
+    pub const CROSSOVER_FREQ_4_MAX: f32 = 18000.0;
+
+    // Global expansion parameters (same as expander)
+    pub const THRESHOLD_DEFAULT: f32 = -40.0;
+    pub const THRESHOLD_MIN: f32 = -80.0;
+    pub const THRESHOLD_MAX: f32 = 0.0;
+
+    pub const RATIO_DEFAULT: f32 = 2.0;
+    pub const RATIO_MIN: f32 = 1.0;
+    pub const RATIO_MAX: f32 = 20.0;
+
+    pub const ATTACK_DEFAULT: f32 = 1.0;
+    pub const ATTACK_MIN: f32 = 0.1;
+    pub const ATTACK_MAX: f32 = 50.0;
+
+    pub const RELEASE_DEFAULT: f32 = 100.0;
+    pub const RELEASE_MIN: f32 = 10.0;
+    pub const RELEASE_MAX: f32 = 2000.0;
+
+    pub const RANGE_DEFAULT: f32 = 40.0;
+    pub const RANGE_MIN: f32 = 0.0;
+    pub const RANGE_MAX: f32 = 80.0;
+
+    pub const KNEE_DEFAULT: f32 = 6.0;
+    pub const KNEE_MIN: f32 = 0.0;
+    pub const KNEE_MAX: f32 = 20.0;
+
+    pub const HYSTERESIS_DEFAULT: f32 = 4.0;
+    pub const HYSTERESIS_MIN: f32 = 0.0;
+    pub const HYSTERESIS_MAX: f32 = 12.0;
+
+    pub const HOLD_DEFAULT: f32 = 10.0;
+    pub const HOLD_MIN: f32 = 0.0;
+    pub const HOLD_MAX: f32 = 500.0;
+
+    pub const MIX_DEFAULT: f32 = 1.0;
+    pub const MIX_MIN: f32 = 0.0;
+    pub const MIX_MAX: f32 = 1.0;
+
+    pub const LINK_CHANNELS_DEFAULT: bool = true;
+
+    // Per-band flags
+    pub const BAND_SOLO_DEFAULT: bool = false;
+    pub const BAND_BYPASS_DEFAULT: bool = false;
 }

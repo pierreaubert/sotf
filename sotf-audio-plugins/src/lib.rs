@@ -34,10 +34,13 @@ mod plugin_crossover;
 mod plugin_delay;
 mod plugin_eq;
 mod plugin_gain;
+mod plugin_expander;
 mod plugin_gate;
 mod plugin_limiter;
 mod plugin_loudness_compensation;
 mod plugin_matrix;
+mod plugin_multiband_compressor;
+mod plugin_multiband_expander;
 mod plugin_resampler;
 mod plugin_upmixer;
 mod simd;
@@ -65,8 +68,17 @@ pub use plugin_crossover::{CrossoverPlugin, CrossoverPluginParams};
 pub use plugin_delay::{DelayPlugin, DelayPluginParams};
 pub use plugin_eq::{BiquadFilterConfig, EqPlugin, EqPluginParams};
 pub use plugin_gain::{GainPlugin, GainPluginParams};
+pub use plugin_expander::{ExpanderData, ExpanderPlugin, ExpanderPluginParams};
 pub use plugin_gate::{GateData, GatePlugin, GatePluginParams};
 pub use plugin_limiter::{LimiterPlugin, LimiterPluginParams};
+pub use plugin_multiband_compressor::{
+    BandCompressorParams, MultibandCompressorData, MultibandCompressorPlugin,
+    MultibandCompressorPluginParams,
+};
+pub use plugin_multiband_expander::{
+    BandExpanderParams, MultibandExpanderData, MultibandExpanderPlugin,
+    MultibandExpanderPluginParams,
+};
 pub use plugin_loudness_compensation::{
     LoudnessCompensationPlugin, LoudnessCompensationPluginParams,
 };

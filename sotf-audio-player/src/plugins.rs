@@ -11,6 +11,9 @@ pub enum PluginType {
     Compressor,
     Limiter,
     Gate,
+    Expander,
+    MultibandCompressor,
+    MultibandExpander,
     LoudnessCompensation,
     BinauralDecoder,
     Convolution,
@@ -29,6 +32,9 @@ impl PluginType {
             Self::Compressor => "[3] Compressor",
             Self::Gate => "[4] Gate",
             Self::Limiter => "[5] Limiter",
+            Self::Expander => "[e] Expander",
+            Self::MultibandCompressor => "[b] Multiband Compressor",
+            Self::MultibandExpander => "[n] Multiband Expander",
             Self::LoudnessCompensation => "[6] Loudness Compensation",
             Self::BinauralDecoder => "[7] Binaural Decoder",
             Self::Convolution => "[8] Convolution",
@@ -47,6 +53,9 @@ impl PluginType {
             Self::Compressor => "Dynamic Range Compressor",
             Self::Limiter => "Peak Limiter",
             Self::Gate => "Noise Gate",
+            Self::Expander => "Dynamic Range Expander with Hysteresis",
+            Self::MultibandCompressor => "Multiband Dynamic Range Compressor",
+            Self::MultibandExpander => "Multiband Dynamic Range Expander",
             Self::LoudnessCompensation => "Equal Loudness Compensation",
             Self::BinauralDecoder => "Multi-channel to Binaural (HRTF)",
             Self::Convolution => "FFT-based Convolution (IR Processing)",
@@ -65,6 +74,9 @@ impl PluginType {
             Self::Compressor,
             Self::Limiter,
             Self::Gate,
+            Self::Expander,
+            Self::MultibandCompressor,
+            Self::MultibandExpander,
             Self::LoudnessCompensation,
             Self::BinauralDecoder,
             Self::Convolution,
@@ -222,6 +234,11 @@ use sotf_plugins::{
 // Import param_specs for new upmixer defaults
 use sotf_plugins::param_specs::upmixer as upmixer_specs;
 
+// Import param_specs for dynamics plugins
+use sotf_plugins::param_specs::expander as expander_specs;
+use sotf_plugins::param_specs::multiband_compressor as mb_compressor_specs;
+use sotf_plugins::param_specs::multiband_expander as mb_expander_specs;
+
 // Wrapper functions to convert f32 -> f64 for PluginSettings (which uses f64)
 fn default_upmixer_subharmonic_gain() -> f64 {
     upmixer_default_subharmonic_gain() as f64
@@ -331,6 +348,169 @@ fn default_gate_link_channels() -> bool {
 
 fn default_gate_sidechain_hpf_hz() -> f64 {
     0.0
+}
+
+// Expander defaults
+fn default_expander_threshold_db() -> f64 {
+    expander_specs::THRESHOLD_DEFAULT as f64
+}
+
+fn default_expander_ratio() -> f64 {
+    expander_specs::RATIO_DEFAULT as f64
+}
+
+fn default_expander_attack_ms() -> f64 {
+    expander_specs::ATTACK_DEFAULT as f64
+}
+
+fn default_expander_release_ms() -> f64 {
+    expander_specs::RELEASE_DEFAULT as f64
+}
+
+fn default_expander_range_db() -> f64 {
+    expander_specs::RANGE_DEFAULT as f64
+}
+
+fn default_expander_knee_db() -> f64 {
+    expander_specs::KNEE_DEFAULT as f64
+}
+
+fn default_expander_hysteresis_db() -> f64 {
+    expander_specs::HYSTERESIS_DEFAULT as f64
+}
+
+fn default_expander_hold_ms() -> f64 {
+    expander_specs::HOLD_DEFAULT as f64
+}
+
+fn default_expander_mix() -> f64 {
+    expander_specs::MIX_DEFAULT as f64
+}
+
+fn default_expander_link_channels() -> bool {
+    expander_specs::LINK_CHANNELS_DEFAULT
+}
+
+fn default_expander_sidechain_hpf_hz() -> f64 {
+    expander_specs::SIDECHAIN_HPF_HZ_DEFAULT as f64
+}
+
+// Multiband Compressor defaults
+fn default_mb_compressor_num_bands() -> usize {
+    mb_compressor_specs::NUM_BANDS_DEFAULT
+}
+
+fn default_mb_compressor_crossover_preset() -> i32 {
+    mb_compressor_specs::CROSSOVER_PRESET_DEFAULT
+}
+
+fn default_mb_compressor_crossover_freq_1() -> f64 {
+    mb_compressor_specs::CROSSOVER_FREQ_1_DEFAULT as f64
+}
+
+fn default_mb_compressor_crossover_freq_2() -> f64 {
+    mb_compressor_specs::CROSSOVER_FREQ_2_DEFAULT as f64
+}
+
+fn default_mb_compressor_crossover_freq_3() -> f64 {
+    mb_compressor_specs::CROSSOVER_FREQ_3_DEFAULT as f64
+}
+
+fn default_mb_compressor_crossover_freq_4() -> f64 {
+    mb_compressor_specs::CROSSOVER_FREQ_4_DEFAULT as f64
+}
+
+fn default_mb_compressor_threshold_db() -> f64 {
+    mb_compressor_specs::THRESHOLD_DEFAULT as f64
+}
+
+fn default_mb_compressor_ratio() -> f64 {
+    mb_compressor_specs::RATIO_DEFAULT as f64
+}
+
+fn default_mb_compressor_attack_ms() -> f64 {
+    mb_compressor_specs::ATTACK_DEFAULT as f64
+}
+
+fn default_mb_compressor_release_ms() -> f64 {
+    mb_compressor_specs::RELEASE_DEFAULT as f64
+}
+
+fn default_mb_compressor_knee_db() -> f64 {
+    mb_compressor_specs::KNEE_DEFAULT as f64
+}
+
+fn default_mb_compressor_mix() -> f64 {
+    mb_compressor_specs::MIX_DEFAULT as f64
+}
+
+fn default_mb_compressor_link_channels() -> bool {
+    mb_compressor_specs::LINK_CHANNELS_DEFAULT
+}
+
+// Multiband Expander defaults
+fn default_mb_expander_num_bands() -> usize {
+    mb_expander_specs::NUM_BANDS_DEFAULT
+}
+
+fn default_mb_expander_crossover_preset() -> i32 {
+    mb_expander_specs::CROSSOVER_PRESET_DEFAULT
+}
+
+fn default_mb_expander_crossover_freq_1() -> f64 {
+    mb_expander_specs::CROSSOVER_FREQ_1_DEFAULT as f64
+}
+
+fn default_mb_expander_crossover_freq_2() -> f64 {
+    mb_expander_specs::CROSSOVER_FREQ_2_DEFAULT as f64
+}
+
+fn default_mb_expander_crossover_freq_3() -> f64 {
+    mb_expander_specs::CROSSOVER_FREQ_3_DEFAULT as f64
+}
+
+fn default_mb_expander_crossover_freq_4() -> f64 {
+    mb_expander_specs::CROSSOVER_FREQ_4_DEFAULT as f64
+}
+
+fn default_mb_expander_threshold_db() -> f64 {
+    mb_expander_specs::THRESHOLD_DEFAULT as f64
+}
+
+fn default_mb_expander_ratio() -> f64 {
+    mb_expander_specs::RATIO_DEFAULT as f64
+}
+
+fn default_mb_expander_attack_ms() -> f64 {
+    mb_expander_specs::ATTACK_DEFAULT as f64
+}
+
+fn default_mb_expander_release_ms() -> f64 {
+    mb_expander_specs::RELEASE_DEFAULT as f64
+}
+
+fn default_mb_expander_range_db() -> f64 {
+    mb_expander_specs::RANGE_DEFAULT as f64
+}
+
+fn default_mb_expander_knee_db() -> f64 {
+    mb_expander_specs::KNEE_DEFAULT as f64
+}
+
+fn default_mb_expander_hysteresis_db() -> f64 {
+    mb_expander_specs::HYSTERESIS_DEFAULT as f64
+}
+
+fn default_mb_expander_hold_ms() -> f64 {
+    mb_expander_specs::HOLD_DEFAULT as f64
+}
+
+fn default_mb_expander_mix() -> f64 {
+    mb_expander_specs::MIX_DEFAULT as f64
+}
+
+fn default_mb_expander_link_channels() -> bool {
+    mb_expander_specs::LINK_CHANNELS_DEFAULT
 }
 
 // SpectrumAnalyzer defaults
@@ -462,6 +642,92 @@ pub enum PluginSettings {
         #[serde(default)] // 0.0
         sidechain_hpf_hz: f64,
     },
+    Expander {
+        #[serde(default = "default_expander_threshold_db")]
+        threshold_db: f64,
+        #[serde(default = "default_expander_ratio")]
+        ratio: f64,
+        #[serde(default = "default_expander_attack_ms")]
+        attack_ms: f64,
+        #[serde(default = "default_expander_release_ms")]
+        release_ms: f64,
+        #[serde(default = "default_expander_range_db")]
+        range_db: f64,
+        #[serde(default = "default_expander_knee_db")]
+        knee_db: f64,
+        #[serde(default = "default_expander_hysteresis_db")]
+        hysteresis_db: f64,
+        #[serde(default = "default_expander_hold_ms")]
+        hold_ms: f64,
+        #[serde(default = "default_expander_mix")]
+        mix: f64,
+        #[serde(default = "default_expander_link_channels")]
+        link_channels: bool,
+        #[serde(default = "default_expander_sidechain_hpf_hz")]
+        sidechain_hpf_hz: f64,
+    },
+    MultibandCompressor {
+        #[serde(default = "default_mb_compressor_num_bands")]
+        num_bands: usize,
+        #[serde(default = "default_mb_compressor_crossover_preset")]
+        crossover_preset: i32,
+        #[serde(default = "default_mb_compressor_crossover_freq_1")]
+        crossover_freq_1: f64,
+        #[serde(default = "default_mb_compressor_crossover_freq_2")]
+        crossover_freq_2: f64,
+        #[serde(default = "default_mb_compressor_crossover_freq_3")]
+        crossover_freq_3: f64,
+        #[serde(default = "default_mb_compressor_crossover_freq_4")]
+        crossover_freq_4: f64,
+        #[serde(default = "default_mb_compressor_threshold_db")]
+        threshold_db: f64,
+        #[serde(default = "default_mb_compressor_ratio")]
+        ratio: f64,
+        #[serde(default = "default_mb_compressor_attack_ms")]
+        attack_ms: f64,
+        #[serde(default = "default_mb_compressor_release_ms")]
+        release_ms: f64,
+        #[serde(default = "default_mb_compressor_knee_db")]
+        knee_db: f64,
+        #[serde(default = "default_mb_compressor_mix")]
+        mix: f64,
+        #[serde(default = "default_mb_compressor_link_channels")]
+        link_channels: bool,
+    },
+    MultibandExpander {
+        #[serde(default = "default_mb_expander_num_bands")]
+        num_bands: usize,
+        #[serde(default = "default_mb_expander_crossover_preset")]
+        crossover_preset: i32,
+        #[serde(default = "default_mb_expander_crossover_freq_1")]
+        crossover_freq_1: f64,
+        #[serde(default = "default_mb_expander_crossover_freq_2")]
+        crossover_freq_2: f64,
+        #[serde(default = "default_mb_expander_crossover_freq_3")]
+        crossover_freq_3: f64,
+        #[serde(default = "default_mb_expander_crossover_freq_4")]
+        crossover_freq_4: f64,
+        #[serde(default = "default_mb_expander_threshold_db")]
+        threshold_db: f64,
+        #[serde(default = "default_mb_expander_ratio")]
+        ratio: f64,
+        #[serde(default = "default_mb_expander_attack_ms")]
+        attack_ms: f64,
+        #[serde(default = "default_mb_expander_release_ms")]
+        release_ms: f64,
+        #[serde(default = "default_mb_expander_range_db")]
+        range_db: f64,
+        #[serde(default = "default_mb_expander_knee_db")]
+        knee_db: f64,
+        #[serde(default = "default_mb_expander_hysteresis_db")]
+        hysteresis_db: f64,
+        #[serde(default = "default_mb_expander_hold_ms")]
+        hold_ms: f64,
+        #[serde(default = "default_mb_expander_mix")]
+        mix: f64,
+        #[serde(default = "default_mb_expander_link_channels")]
+        link_channels: bool,
+    },
     LoudnessCompensation {
         low_freq: f64,
         low_gain: f64,
@@ -514,6 +780,9 @@ impl PluginSettings {
             Self::Compressor { .. } => PluginType::Compressor,
             Self::Limiter { .. } => PluginType::Limiter,
             Self::Gate { .. } => PluginType::Gate,
+            Self::Expander { .. } => PluginType::Expander,
+            Self::MultibandCompressor { .. } => PluginType::MultibandCompressor,
+            Self::MultibandExpander { .. } => PluginType::MultibandExpander,
             Self::LoudnessCompensation { .. } => PluginType::LoudnessCompensation,
             Self::BinauralDecoder { .. } => PluginType::BinauralDecoder,
             Self::Convolution { .. } => PluginType::Convolution,
@@ -685,6 +954,104 @@ impl PluginSettings {
                     "mix": mix,
                     "link_channels": link_channels,
                     "sidechain_hpf_hz": sidechain_hpf_hz,
+                }),
+            ),
+            Self::Expander {
+                threshold_db,
+                ratio,
+                attack_ms,
+                release_ms,
+                range_db,
+                knee_db,
+                hysteresis_db,
+                hold_ms,
+                mix,
+                link_channels,
+                sidechain_hpf_hz,
+            } => PluginConfig::new(
+                "expander",
+                json!({
+                    "threshold_db": threshold_db,
+                    "ratio": ratio,
+                    "attack_ms": attack_ms,
+                    "release_ms": release_ms,
+                    "range_db": range_db,
+                    "knee_db": knee_db,
+                    "hysteresis_db": hysteresis_db,
+                    "hold_ms": hold_ms,
+                    "mix": mix,
+                    "link_channels": link_channels,
+                    "sidechain_hpf_hz": sidechain_hpf_hz,
+                }),
+            ),
+            Self::MultibandCompressor {
+                num_bands,
+                crossover_preset,
+                crossover_freq_1,
+                crossover_freq_2,
+                crossover_freq_3,
+                crossover_freq_4,
+                threshold_db,
+                ratio,
+                attack_ms,
+                release_ms,
+                knee_db,
+                mix,
+                link_channels,
+            } => PluginConfig::new(
+                "multiband_compressor",
+                json!({
+                    "num_bands": num_bands,
+                    "crossover_preset": crossover_preset,
+                    "crossover_freq_1": crossover_freq_1,
+                    "crossover_freq_2": crossover_freq_2,
+                    "crossover_freq_3": crossover_freq_3,
+                    "crossover_freq_4": crossover_freq_4,
+                    "threshold_db": threshold_db,
+                    "ratio": ratio,
+                    "attack_ms": attack_ms,
+                    "release_ms": release_ms,
+                    "knee_db": knee_db,
+                    "mix": mix,
+                    "link_channels": link_channels,
+                }),
+            ),
+            Self::MultibandExpander {
+                num_bands,
+                crossover_preset,
+                crossover_freq_1,
+                crossover_freq_2,
+                crossover_freq_3,
+                crossover_freq_4,
+                threshold_db,
+                ratio,
+                attack_ms,
+                release_ms,
+                range_db,
+                knee_db,
+                hysteresis_db,
+                hold_ms,
+                mix,
+                link_channels,
+            } => PluginConfig::new(
+                "multiband_expander",
+                json!({
+                    "num_bands": num_bands,
+                    "crossover_preset": crossover_preset,
+                    "crossover_freq_1": crossover_freq_1,
+                    "crossover_freq_2": crossover_freq_2,
+                    "crossover_freq_3": crossover_freq_3,
+                    "crossover_freq_4": crossover_freq_4,
+                    "threshold_db": threshold_db,
+                    "ratio": ratio,
+                    "attack_ms": attack_ms,
+                    "release_ms": release_ms,
+                    "range_db": range_db,
+                    "knee_db": knee_db,
+                    "hysteresis_db": hysteresis_db,
+                    "hold_ms": hold_ms,
+                    "mix": mix,
+                    "link_channels": link_channels,
                 }),
             ),
             Self::LoudnessCompensation {
@@ -859,6 +1226,52 @@ impl PluginSettings {
                 mix: default_gate_mix(),
                 link_channels: default_gate_link_channels(),
                 sidechain_hpf_hz: default_gate_sidechain_hpf_hz(),
+            },
+            PluginType::Expander => Self::Expander {
+                threshold_db: default_expander_threshold_db(),
+                ratio: default_expander_ratio(),
+                attack_ms: default_expander_attack_ms(),
+                release_ms: default_expander_release_ms(),
+                range_db: default_expander_range_db(),
+                knee_db: default_expander_knee_db(),
+                hysteresis_db: default_expander_hysteresis_db(),
+                hold_ms: default_expander_hold_ms(),
+                mix: default_expander_mix(),
+                link_channels: default_expander_link_channels(),
+                sidechain_hpf_hz: default_expander_sidechain_hpf_hz(),
+            },
+            PluginType::MultibandCompressor => Self::MultibandCompressor {
+                num_bands: default_mb_compressor_num_bands(),
+                crossover_preset: default_mb_compressor_crossover_preset(),
+                crossover_freq_1: default_mb_compressor_crossover_freq_1(),
+                crossover_freq_2: default_mb_compressor_crossover_freq_2(),
+                crossover_freq_3: default_mb_compressor_crossover_freq_3(),
+                crossover_freq_4: default_mb_compressor_crossover_freq_4(),
+                threshold_db: default_mb_compressor_threshold_db(),
+                ratio: default_mb_compressor_ratio(),
+                attack_ms: default_mb_compressor_attack_ms(),
+                release_ms: default_mb_compressor_release_ms(),
+                knee_db: default_mb_compressor_knee_db(),
+                mix: default_mb_compressor_mix(),
+                link_channels: default_mb_compressor_link_channels(),
+            },
+            PluginType::MultibandExpander => Self::MultibandExpander {
+                num_bands: default_mb_expander_num_bands(),
+                crossover_preset: default_mb_expander_crossover_preset(),
+                crossover_freq_1: default_mb_expander_crossover_freq_1(),
+                crossover_freq_2: default_mb_expander_crossover_freq_2(),
+                crossover_freq_3: default_mb_expander_crossover_freq_3(),
+                crossover_freq_4: default_mb_expander_crossover_freq_4(),
+                threshold_db: default_mb_expander_threshold_db(),
+                ratio: default_mb_expander_ratio(),
+                attack_ms: default_mb_expander_attack_ms(),
+                release_ms: default_mb_expander_release_ms(),
+                range_db: default_mb_expander_range_db(),
+                knee_db: default_mb_expander_knee_db(),
+                hysteresis_db: default_mb_expander_hysteresis_db(),
+                hold_ms: default_mb_expander_hold_ms(),
+                mix: default_mb_expander_mix(),
+                link_channels: default_mb_expander_link_channels(),
             },
             PluginType::LoudnessCompensation => Self::LoudnessCompensation {
                 low_freq: 100.0,    // param_specs::loudness_compensation::LOW_FREQ_DEFAULT

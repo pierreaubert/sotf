@@ -10,10 +10,10 @@ use super::{
 };
 use sotf_plugins::{
     CompressorPluginParams, ConvolutionPlugin, ConvolutionPluginParams, CrossoverPlugin,
-    CrossoverPluginParams, DelayPlugin, DelayPluginParams, EqPluginParams, GainPluginParams,
-    GatePluginParams, Host, LimiterPluginParams, LoudnessCompensationPluginParams,
-    LoudnessMonitorPlugin, Plugin, PluginHost, SpectrumAnalyzerPlugin, SpectrumConfig,
-    UpmixerPluginParams,
+    CrossoverPluginParams, DelayPlugin, DelayPluginParams, EqPluginParams, ExpanderPluginParams,
+    GainPluginParams, GatePluginParams, Host, LimiterPluginParams, LoudnessCompensationPluginParams,
+    LoudnessMonitorPlugin, MultibandCompressorPluginParams, MultibandExpanderPluginParams, Plugin,
+    PluginHost, SpectrumAnalyzerPlugin, SpectrumConfig, UpmixerPluginParams,
 };
 
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
@@ -406,9 +406,9 @@ fn create_plugin(
     sample_rate: u32,
 ) -> Result<Box<dyn Plugin>, String> {
     use sotf_plugins::{
-        BinauralDecoderPlugin, CompressorPlugin, EqPlugin, GainPlugin, GatePlugin,
+        BinauralDecoderPlugin, CompressorPlugin, EqPlugin, ExpanderPlugin, GainPlugin, GatePlugin,
         InPlacePluginAdapter, LimiterPlugin, LoudnessCompensationPlugin, MatrixPlugin,
-        UpmixerPlugin,
+        MultibandCompressorPlugin, MultibandExpanderPlugin, UpmixerPlugin,
     };
 
     match plugin_type {
@@ -494,6 +494,34 @@ fn create_plugin(
                 .map_err(|e| format!("Failed to parse gate plugin parameters: {}", e))?;
 
             let plugin = GatePlugin::from_params(channels, params);
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+        }
+
+        "expander" => {
+            let params: ExpanderPluginParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| format!("Failed to parse expander plugin parameters: {}", e))?;
+
+            let plugin = ExpanderPlugin::from_params(channels, params);
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+        }
+
+        "multiband_compressor" => {
+            let params: MultibandCompressorPluginParams =
+                serde_json::from_value(parameters.clone()).map_err(|e| {
+                    format!("Failed to parse multiband compressor plugin parameters: {}", e)
+                })?;
+
+            let plugin = MultibandCompressorPlugin::from_params(channels, params);
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
+        }
+
+        "multiband_expander" => {
+            let params: MultibandExpanderPluginParams =
+                serde_json::from_value(parameters.clone()).map_err(|e| {
+                    format!("Failed to parse multiband expander plugin parameters: {}", e)
+                })?;
+
+            let plugin = MultibandExpanderPlugin::from_params(channels, params);
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 
