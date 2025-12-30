@@ -209,6 +209,10 @@ pub struct App {
     pub level_meter_groups: Vec<ChannelGroup>,
     pub selected_level_meter_group: usize,
     pub level_meter_control_selection: usize, // 0 = Mute, 1 = Solo, 2 = Dim
+    /// Cached channel count to avoid rebuilding meter groups every frame
+    pub level_meter_last_channel_count: usize,
+    /// Cached speaker config to avoid rebuilding meter groups every frame
+    pub level_meter_last_speaker_config: Option<String>,
 
     // Audio devices
     pub output_devices: Vec<AudioDevice>,
@@ -316,6 +320,8 @@ impl App {
             level_meter_groups: Vec::new(),
             selected_level_meter_group: 0,
             level_meter_control_selection: 0,
+            level_meter_last_channel_count: 0,
+            level_meter_last_speaker_config: None,
             output_devices: Vec::new(),
             selected_output_device_index: 0,
             current_output_device_name: None,
@@ -1899,6 +1905,12 @@ impl App {
                     // Matrix is not yet user-editable
                     false
                 }
+                PluginSettings::Expander { .. }
+                | PluginSettings::MultibandCompressor { .. }
+                | PluginSettings::MultibandExpander { .. } => {
+                    // TODO: Implement parameter adjustment for dynamics plugins
+                    false
+                }
             }
         } else {
             false
@@ -2589,8 +2601,17 @@ impl App {
 
         // Initialize image picker if not already done
         if self.image_picker.is_none() {
-            // Use default font size (8x16) for image rendering
-            self.image_picker = Some(ratatui_image::picker::Picker::new((8, 16)));
+            // Query terminal for actual font size to avoid mangled images
+            match ratatui_image::picker::Picker::from_termios() {
+                Ok(picker) => {
+                    self.image_picker = Some(picker);
+                }
+                Err(e) => {
+                    log::warn!("Failed to query terminal for font size: {}, using fallback", e);
+                    // Fallback to default font size (8x16)
+                    self.image_picker = Some(ratatui_image::picker::Picker::new((8, 16)));
+                }
+            }
         }
 
         // Get the currently playing album
@@ -2646,9 +2667,8 @@ impl App {
     }
 
     /// Build channel groups from current speaker configuration or channel count
+    /// Uses caching to avoid rebuilding every frame
     pub fn update_level_meter_groups(&mut self) {
-        self.level_meter_groups.clear();
-
         let num_channels = self
             .loudness_info
             .as_ref()
@@ -2659,11 +2679,27 @@ impl App {
             return;
         }
 
+        // Get current speaker config
+        let current_speaker_config = self.plugin_chain.output_speaker_config().map(String::from);
+
+        // Skip rebuilding if nothing has changed
+        if num_channels == self.level_meter_last_channel_count
+            && current_speaker_config == self.level_meter_last_speaker_config
+            && !self.level_meter_groups.is_empty()
+        {
+            return;
+        }
+
+        // Update cache
+        self.level_meter_last_channel_count = num_channels;
+        self.level_meter_last_speaker_config = current_speaker_config.clone();
+
+        self.level_meter_groups.clear();
+
         // Try to get meter groups from the speaker config (via upmixer plugin)
         // This handles collisions like 5.1.4 vs 7.1.2 (both 10 channels)
-        let meter_groups: Option<&[MeterGroupSpec]> = self
-            .plugin_chain
-            .output_speaker_config()
+        let meter_groups: Option<&[MeterGroupSpec]> = current_speaker_config
+            .as_deref()
             .and_then(get_meter_groups)
             .or_else(|| get_meter_groups_by_channels(num_channels));
 
@@ -2991,6 +3027,10 @@ fn get_param_count(settings: &sotf_audio_player::PluginSettings) -> usize {
         PluginSettings::SpectrumAnalyzer { .. } => 4, // num_bins, min_freq, max_freq, smoothing
         PluginSettings::ChannelMuteSolo { .. } => 0, // Automatically managed, no user-editable parameters
         PluginSettings::Matrix { .. } => 0,          // Not yet user-editable
+        // TODO: Implement parameter editing for dynamics plugins
+        PluginSettings::Expander { .. } => 0,
+        PluginSettings::MultibandCompressor { .. } => 0,
+        PluginSettings::MultibandExpander { .. } => 0,
     }
 }
 

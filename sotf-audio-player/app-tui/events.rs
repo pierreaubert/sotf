@@ -675,7 +675,8 @@ fn handle_plugins_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             app.move_plugin_up(app.selected_plugin_index);
             None
         }
-        KeyCode::Char('n') | KeyCode::Char('N') => {
+        KeyCode::Char('w') | KeyCode::Char('W') => {
+            // Move plugin down (also available via Shift+Down)
             app.move_plugin_down(app.selected_plugin_index);
             None
         }
@@ -742,6 +743,21 @@ fn handle_plugins_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         KeyCode::Char('x') => {
             // Quick add Matrix Mixer
             app.add_plugin(&PluginType::Matrix);
+            None
+        }
+        KeyCode::Char('r') => {
+            // Quick add Expander
+            app.add_plugin(&PluginType::Expander);
+            None
+        }
+        KeyCode::Char('c') => {
+            // Quick add Multiband Compressor
+            app.add_plugin(&PluginType::MultibandCompressor);
+            None
+        }
+        KeyCode::Char('f') => {
+            // Quick add Multiband Expander
+            app.add_plugin(&PluginType::MultibandExpander);
             None
         }
         _ => None,
@@ -822,7 +838,7 @@ fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand
             }
             None
         }
-        KeyCode::Char('f') => {
+        KeyCode::Char('o') => {
             // Load SOFA file (for Binaural Decoder plugins)
             if let Some(plugin) = app.plugin_chain.get_plugin(app.selected_plugin_index) {
                 if matches!(plugin.settings, PluginSettings::BinauralDecoder { .. }) {

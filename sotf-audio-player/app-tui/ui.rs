@@ -1643,18 +1643,9 @@ fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
         return;
     }
 
-    // Update channel groups if not initialized or if channel count changed
+    // Update channel groups if needed (method handles caching internally)
     // Do this BEFORE borrowing loudness immutably
-    if app.level_meter_groups.is_empty()
-        || app
-            .level_meter_groups
-            .iter()
-            .flat_map(|g| &g.channels)
-            .count()
-            != num_channels
-    {
-        app.update_level_meter_groups();
-    }
+    app.update_level_meter_groups();
 
     // Now borrow loudness immutably for the rest of the function
     let loudness = app.loudness_info.as_ref().unwrap();
@@ -2806,6 +2797,21 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
                 format!("{}", output_channels),
             ),
         ],
+        // Placeholder for dynamics plugins - TODO: implement full parameter display
+        PluginSettings::Expander { threshold_db, ratio, .. } => vec![
+            ("Threshold".to_string(), format!("{:.1} dB", threshold_db)),
+            ("Ratio".to_string(), format!("{:.1}:1", ratio)),
+        ],
+        PluginSettings::MultibandCompressor { num_bands, threshold_db, ratio, .. } => vec![
+            ("Bands".to_string(), format!("{}", num_bands)),
+            ("Threshold".to_string(), format!("{:.1} dB", threshold_db)),
+            ("Ratio".to_string(), format!("{:.1}:1", ratio)),
+        ],
+        PluginSettings::MultibandExpander { num_bands, threshold_db, ratio, .. } => vec![
+            ("Bands".to_string(), format!("{}", num_bands)),
+            ("Threshold".to_string(), format!("{:.1} dB", threshold_db)),
+            ("Ratio".to_string(), format!("{:.1}:1", ratio)),
+        ],
     }
 }
 
@@ -3635,13 +3641,13 @@ fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str
                 "Quick add: EQ/Upmixer/Compressor/Gate/Limiter/Loudness/Binaural/Convolution",
             ),
             ("9/0", "Quick add: LoudnessMonitor/SpectrumAnalyzer"),
-            ("g", "Quick add: Gain"),
-            ("m", "Quick add: Channel Mute/Solo"),
+            ("g/m/x", "Quick add: Gain/MuteSolo/Matrix"),
+            ("r/c/f", "Quick add: Expander/MBCompressor/MBExpander"),
             ("e or Enter", "Edit selected plugin"),
             ("t", "Toggle plugin enabled/disabled"),
             ("d/Delete", "Remove plugin"),
             ("u/U or Shift+↑", "Move plugin up in chain"),
-            ("n/N or Shift+↓", "Move plugin down in chain"),
+            ("w/W or Shift+↓", "Move plugin down in chain"),
             ("s", "Save plugin chain to file"),
             ("l", "Load plugin chain from file"),
             ("", ""),
@@ -3650,7 +3656,7 @@ fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str
             ("←/→ or h/l", "Adjust parameter value (small)"),
             ("[/]", "Adjust parameter value (large)"),
             ("a", "Load APO file (EQ plugins only)"),
-            ("f", "Load SOFA file (Binaural Decoder only)"),
+            ("o", "Load SOFA file (Binaural only)"),
             ("ESC", "Exit edit mode"),
         ],
         Screen::Devices => vec![
