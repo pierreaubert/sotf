@@ -1907,7 +1907,8 @@ impl App {
                 }
                 PluginSettings::Expander { .. }
                 | PluginSettings::MultibandCompressor { .. }
-                | PluginSettings::MultibandExpander { .. } => {
+                | PluginSettings::MultibandExpander { .. }
+                | PluginSettings::XTC { .. } => {
                     // TODO: Implement parameter adjustment for dynamics plugins
                     false
                 }
@@ -3031,6 +3032,7 @@ fn get_param_count(settings: &sotf_audio_player::PluginSettings) -> usize {
         PluginSettings::Expander { .. } => 0,
         PluginSettings::MultibandCompressor { .. } => 0,
         PluginSettings::MultibandExpander { .. } => 0,
+        PluginSettings::XTC { .. } => 0,
     }
 }
 

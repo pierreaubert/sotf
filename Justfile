@@ -58,9 +58,19 @@ run-gpui-release:
 	codesign --force --deep --sign - --entitlements sotf-audio-player/app-gpui/macos/entitlements.plist target/release/SotF
 	./target/release/SotF
 
+# Run the GPUI player (release mode)
+run-gpui-leaks:
+	RUSTFLAGS="-C debuginfo=2" cargo build --release --bin SotF
+	codesign --force --deep --sign - --entitlements sotf-audio-player/app-gpui/macos/entitlements.plist target/release/SotF
+	./target/release/SotF
+
 # Run the TUI player
 run-tui:
-	cargo run --release --bin sotf_player_tui
+	cargo run --release --bin sotf-tui
+
+# Run the TUI player
+run-tui-leaks:
+	RUSTFLAGS="-C debuginfo=2" cargo run --release --bin sotf-tui
 
 # ----------------------------------------------------------------------
 # FORMAT

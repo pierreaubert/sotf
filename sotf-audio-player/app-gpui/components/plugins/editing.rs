@@ -656,6 +656,13 @@ impl App {
                     // Matrix is edited via grid UI, not adjustable parameters
                     false
                 }
+                PluginSettings::Expander { .. }
+                | PluginSettings::MultibandCompressor { .. }
+                | PluginSettings::MultibandExpander { .. }
+                | PluginSettings::XTC { .. } => {
+                    // TODO: Implement parameter adjustment for dynamics plugins
+                    false
+                }
             }
         } else {
             false
@@ -1589,5 +1596,10 @@ pub fn get_param_count(settings: &PluginSettings) -> usize {
         PluginSettings::Gain { .. } => 1,            // gain_db
         PluginSettings::ChannelMuteSolo { .. } => 0, // No editable params (toggles only)
         PluginSettings::Matrix { .. } => 0,          // Matrix is edited via grid UI, not params
+        // TODO: Implement parameter editing for dynamics plugins
+        PluginSettings::Expander { .. } => 0,
+        PluginSettings::MultibandCompressor { .. } => 0,
+        PluginSettings::MultibandExpander { .. } => 0,
+        PluginSettings::XTC { .. } => 0,
     }
 }

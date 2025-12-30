@@ -248,6 +248,27 @@ fn create_multiband_expander_plugin_config() -> Result<PluginConfig, String> {
     })
 }
 
+/// Create XTC (Crosstalk Cancellation) PluginConfig with default parameters
+fn create_xtc_plugin_config() -> Result<PluginConfig, String> {
+    use serde_json::json;
+
+    let parameters = json!({
+        "distance_m": 2.0,
+        "speaker_angle_deg": 30.0,
+        "head_radius_m": 0.0875,
+        "beta_base": 0.001,
+        "beta_low_freq_boost": 10.0,
+        "beta_high_freq_boost": 10.0,
+        "head_shadow_cutoff_hz": 4000.0,
+        "head_shadow_slope_db_per_octave": 6.0,
+    });
+
+    Ok(PluginConfig {
+        plugin_type: "xtc".to_string(),
+        parameters,
+    })
+}
+
 /// Convert Biquad filters to PluginConfig for EQ plugin
 fn create_eq_plugin_config(filters: &[Biquad]) -> Result<PluginConfig, String> {
     use serde_json::json;
@@ -452,6 +473,10 @@ enum Commands {
         /// Enable multiband expander plugin (3-band expansion with crossovers)
         #[arg(long = "multiband-expander", default_value_t = false)]
         multiband_expander: bool,
+
+        /// Enable XTC (crosstalk cancellation) plugin for speaker playback
+        #[arg(long = "xtc", default_value_t = false)]
+        xtc: bool,
     },
 
     /// Get current playback status
@@ -541,6 +566,7 @@ fn main() {
             expander,
             multiband_compressor,
             multiband_expander,
+            xtc,
         } => {
             // Parse filters
             let filter_params = match parse_filters(&filters) {
@@ -594,6 +620,7 @@ fn main() {
                 expander,
                 multiband_compressor,
                 multiband_expander,
+                xtc,
             ) {
                 log::error!("Error: {}", e);
                 std::process::exit(1);
@@ -919,6 +946,7 @@ fn play_stream(
     expander: bool,
     multiband_compressor: bool,
     multiband_expander: bool,
+    xtc: bool,
 ) -> Result<(), String> {
     log::info!("Starting streaming playback...");
     log::info!("  File: {:?}", file);
@@ -1089,6 +1117,13 @@ fn play_stream(
         let mb_exp_plugin = create_multiband_expander_plugin_config()?;
         plugins.push(mb_exp_plugin);
         log::info!("Enabled multiband expander plugin (3-band, default parameters)");
+    }
+
+    // XTC (Crosstalk Cancellation)
+    if xtc {
+        let xtc_plugin = create_xtc_plugin_config()?;
+        plugins.push(xtc_plugin);
+        log::info!("Enabled XTC (crosstalk cancellation) plugin");
     }
 
     // 4. Channel mapping to hardware (last plugin before output)

@@ -1,4 +1,9 @@
-impl ThemeId {
+use super::{
+    rgba, EQCurveColors, GraphLineColors, MeterColors, PluginColorMap, SpectrumColors, Theme,
+};
+use gpui::Rgba;
+
+impl Theme {
     /// Light theme
     pub fn light() -> Self {
         Self {

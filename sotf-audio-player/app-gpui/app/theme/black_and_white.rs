@@ -1,4 +1,9 @@
-impl ThemeId {
+use super::{
+    rgba, EQCurveColors, GraphLineColors, MeterColors, PluginColorMap, SpectrumColors, Theme,
+};
+use gpui::Rgba;
+
+impl Theme {
     /// Black & White theme (monochrome high contrast)
     pub fn black_and_white() -> Self {
         Self {

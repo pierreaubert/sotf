@@ -2812,6 +2812,11 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             ("Threshold".to_string(), format!("{:.1} dB", threshold_db)),
             ("Ratio".to_string(), format!("{:.1}:1", ratio)),
         ],
+        PluginSettings::XTC { distance_m, speaker_angle_deg, head_radius_m, .. } => vec![
+            ("Distance".to_string(), format!("{:.2} m", distance_m)),
+            ("Speaker Angle".to_string(), format!("{:.1}°", speaker_angle_deg)),
+            ("Head Radius".to_string(), format!("{:.4} m", head_radius_m)),
+        ],
     }
 }
 
@@ -3642,7 +3647,7 @@ fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str
             ),
             ("9/0", "Quick add: LoudnessMonitor/SpectrumAnalyzer"),
             ("g/m/x", "Quick add: Gain/MuteSolo/Matrix"),
-            ("r/c/f", "Quick add: Expander/MBCompressor/MBExpander"),
+            ("r/c/f/z", "Quick add: Expander/MBCompressor/MBExpander/XTC"),
             ("e or Enter", "Edit selected plugin"),
             ("t", "Toggle plugin enabled/disabled"),
             ("d/Delete", "Remove plugin"),

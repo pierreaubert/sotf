@@ -760,6 +760,11 @@ fn handle_plugins_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             app.add_plugin(&PluginType::MultibandExpander);
             None
         }
+        KeyCode::Char('z') => {
+            // Quick add XTC (Crosstalk Cancellation)
+            app.add_plugin(&PluginType::XTC);
+            None
+        }
         _ => None,
     }
 }

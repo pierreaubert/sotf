@@ -21,6 +21,7 @@ pub enum PluginType {
     SpectrumAnalyzer,
     ChannelMuteSolo,
     Matrix,
+    XTC,
 }
 
 impl PluginType {
@@ -42,6 +43,7 @@ impl PluginType {
             Self::SpectrumAnalyzer => "[0] Spectrum Analyzer",
             Self::ChannelMuteSolo => "[m] Channel Mute/Solo",
             Self::Matrix => "[x] Matrix Mixer",
+            Self::XTC => "[z] Crosstalk Cancellation",
         }
     }
 
@@ -63,6 +65,7 @@ impl PluginType {
             Self::SpectrumAnalyzer => "Real-time frequency spectrum analysis",
             Self::ChannelMuteSolo => "Mute or solo individual channels",
             Self::Matrix => "Channel routing and mixing matrix",
+            Self::XTC => "Crosstalk cancellation for speaker playback",
         }
     }
 
@@ -84,6 +87,7 @@ impl PluginType {
             Self::SpectrumAnalyzer,
             Self::ChannelMuteSolo,
             Self::Matrix,
+            Self::XTC,
         ]
     }
 
@@ -530,6 +534,32 @@ fn default_spectrum_smoothing() -> f32 {
     0.8
 }
 
+// XTC defaults
+fn default_xtc_distance_m() -> f64 {
+    2.0
+}
+fn default_xtc_speaker_angle_deg() -> f64 {
+    30.0
+}
+fn default_xtc_head_radius_m() -> f64 {
+    0.0875
+}
+fn default_xtc_beta_base() -> f64 {
+    0.001
+}
+fn default_xtc_beta_low_freq_boost() -> f64 {
+    10.0
+}
+fn default_xtc_beta_high_freq_boost() -> f64 {
+    10.0
+}
+fn default_xtc_head_shadow_cutoff_hz() -> f64 {
+    4000.0
+}
+fn default_xtc_head_shadow_slope() -> f64 {
+    6.0
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PluginSettings {
     EQ {
@@ -769,6 +799,24 @@ pub enum PluginSettings {
         output_channels: usize,
         matrix: Vec<f32>, // Row-major: matrix[out * in_count + in] = linear_gain
     },
+    XTC {
+        #[serde(default = "default_xtc_distance_m")]
+        distance_m: f64,
+        #[serde(default = "default_xtc_speaker_angle_deg")]
+        speaker_angle_deg: f64,
+        #[serde(default = "default_xtc_head_radius_m")]
+        head_radius_m: f64,
+        #[serde(default = "default_xtc_beta_base")]
+        beta_base: f64,
+        #[serde(default = "default_xtc_beta_low_freq_boost")]
+        beta_low_freq_boost: f64,
+        #[serde(default = "default_xtc_beta_high_freq_boost")]
+        beta_high_freq_boost: f64,
+        #[serde(default = "default_xtc_head_shadow_cutoff_hz")]
+        head_shadow_cutoff_hz: f64,
+        #[serde(default = "default_xtc_head_shadow_slope")]
+        head_shadow_slope_db_per_octave: f64,
+    },
 }
 
 impl PluginSettings {
@@ -790,6 +838,7 @@ impl PluginSettings {
             Self::SpectrumAnalyzer { .. } => PluginType::SpectrumAnalyzer,
             Self::ChannelMuteSolo { .. } => PluginType::ChannelMuteSolo,
             Self::Matrix { .. } => PluginType::Matrix,
+            Self::XTC { .. } => PluginType::XTC,
         }
     }
 
@@ -1133,6 +1182,28 @@ impl PluginSettings {
                     "matrix": matrix,
                 }),
             ),
+            Self::XTC {
+                distance_m,
+                speaker_angle_deg,
+                head_radius_m,
+                beta_base,
+                beta_low_freq_boost,
+                beta_high_freq_boost,
+                head_shadow_cutoff_hz,
+                head_shadow_slope_db_per_octave,
+            } => PluginConfig::new(
+                "xtc",
+                json!({
+                    "distance_m": distance_m,
+                    "speaker_angle_deg": speaker_angle_deg,
+                    "head_radius_m": head_radius_m,
+                    "beta_base": beta_base,
+                    "beta_low_freq_boost": beta_low_freq_boost,
+                    "beta_high_freq_boost": beta_high_freq_boost,
+                    "head_shadow_cutoff_hz": head_shadow_cutoff_hz,
+                    "head_shadow_slope_db_per_octave": head_shadow_slope_db_per_octave,
+                }),
+            ),
         }
     }
 
@@ -1306,6 +1377,16 @@ impl PluginSettings {
                 input_channels: 2,
                 output_channels: 2,
                 matrix: vec![1.0, 0.0, 0.0, 1.0], // Identity 2x2
+            },
+            PluginType::XTC => Self::XTC {
+                distance_m: default_xtc_distance_m(),
+                speaker_angle_deg: default_xtc_speaker_angle_deg(),
+                head_radius_m: default_xtc_head_radius_m(),
+                beta_base: default_xtc_beta_base(),
+                beta_low_freq_boost: default_xtc_beta_low_freq_boost(),
+                beta_high_freq_boost: default_xtc_beta_high_freq_boost(),
+                head_shadow_cutoff_hz: default_xtc_head_shadow_cutoff_hz(),
+                head_shadow_slope_db_per_octave: default_xtc_head_shadow_slope(),
             },
         }
     }

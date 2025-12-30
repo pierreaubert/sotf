@@ -643,6 +643,24 @@ fn create_plugin(
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 
+        "xtc" | "crosstalk_cancellation" => {
+            use sotf_plugins::{XtcPlugin, XtcPluginParams};
+
+            // XTC requires exactly 2 channels (stereo)
+            if channels != 2 {
+                return Err(format!(
+                    "XTC plugin requires 2 input channels (stereo), got {}",
+                    channels
+                ));
+            }
+
+            let params: XtcPluginParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| format!("Failed to parse XTC plugin parameters: {}", e))?;
+
+            let plugin = XtcPlugin::from_params(params, sample_rate)?;
+            Ok(Box::new(plugin))
+        }
+
         other => Err(format!("Unknown plugin type: {}", other)),
     }
 }

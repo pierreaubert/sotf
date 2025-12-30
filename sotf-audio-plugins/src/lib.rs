@@ -43,6 +43,7 @@ mod plugin_multiband_compressor;
 mod plugin_multiband_expander;
 mod plugin_resampler;
 mod plugin_upmixer;
+mod plugin_xtc;
 mod simd;
 mod sofa;
 pub mod speaker_config;
@@ -92,6 +93,7 @@ pub use plugin_upmixer::{
     // Re-export upmixer defaults for preset migration
     default_subharmonic_gain as upmixer_default_subharmonic_gain,
 };
+pub use plugin_xtc::{XtcPlugin, XtcPluginParams};
 // Re-export compressor defaults for preset migration
 pub use plugin_compressor::{
     default_auto_makeup as compressor_default_auto_makeup,

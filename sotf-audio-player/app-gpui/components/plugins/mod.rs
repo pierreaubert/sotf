@@ -380,6 +380,40 @@ pub fn render_plugin_content(
             },
             theme,
         )
-        .into_any_element()
+        .into_any_element(),
+        // Placeholder renderers for new dynamics plugins - TODO: implement full UI
+        PluginSettings::Expander { .. } => {
+            render_placeholder_plugin("Expander", plugin_idx, theme).into_any_element()
+        }
+        PluginSettings::MultibandCompressor { .. } => {
+            render_placeholder_plugin("Multiband Compressor", plugin_idx, theme).into_any_element()
+        }
+        PluginSettings::MultibandExpander { .. } => {
+            render_placeholder_plugin("Multiband Expander", plugin_idx, theme).into_any_element()
+        }
+        PluginSettings::XTC { .. } => {
+            render_placeholder_plugin("Crosstalk Cancellation", plugin_idx, theme).into_any_element()
+        }
     }
+}
+
+/// Placeholder renderer for plugins that don't have a full UI yet
+fn render_placeholder_plugin(
+    name: &str,
+    _plugin_idx: usize,
+    theme: &Theme,
+) -> gpui::Div {
+    use gpui::prelude::*;
+    gpui::div()
+        .flex()
+        .items_center()
+        .justify_center()
+        .h_full()
+        .w_full()
+        .bg(theme.background_secondary)
+        .child(
+            gpui::div()
+                .text_color(theme.text_muted)
+                .child(format!("{} (UI coming soon)", name)),
+        )
 }

@@ -5,6 +5,8 @@
 // This module provides functionality to read SOFA files containing HRTF data.
 // SOFA is a file format for storing spatially oriented acoustic data, based
 // on NetCDF.
+// Since loading a SOFA file implies linking with NetCDF, we also support loading
+// from a sqlite database. There is a binary doing sofa_2_sqlite.
 //
 // Primary use case: Reading Head-Related Transfer Functions (HRTFs) for
 // binaural audio rendering.
@@ -175,7 +177,7 @@ impl SofaFile {
             data_sample_rate,
         })
     }
-    
+
     /// Load a SOFA file from disk
     ///
     /// # Arguments

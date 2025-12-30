@@ -77,6 +77,9 @@ fn plugin_color(plugin_type: &PluginType, theme: &crate::theme::Theme) -> Rgba {
         PluginType::Compressor => theme.plugin_colors.compressor,
         PluginType::Limiter => theme.plugin_colors.limiter,
         PluginType::Gate => theme.plugin_colors.gate,
+        PluginType::Expander => theme.plugin_colors.gate, // Reuse gate color for expander
+        PluginType::MultibandCompressor => theme.plugin_colors.compressor, // Reuse compressor color
+        PluginType::MultibandExpander => theme.plugin_colors.gate, // Reuse gate color
         PluginType::LoudnessCompensation => theme.plugin_colors.loudness,
         PluginType::BinauralDecoder => theme.plugin_colors.binaural,
         PluginType::Convolution => theme.plugin_colors.convolution,
@@ -84,6 +87,7 @@ fn plugin_color(plugin_type: &PluginType, theme: &crate::theme::Theme) -> Rgba {
         PluginType::SpectrumAnalyzer => theme.plugin_colors.spectrum,
         PluginType::ChannelMuteSolo => theme.plugin_colors.mute_solo,
         PluginType::Matrix => theme.plugin_colors.upmixer, // Reuse upmixer color for matrix
+        PluginType::XTC => theme.plugin_colors.binaural,   // Reuse binaural color for XTC
     }
 }
 
@@ -95,6 +99,9 @@ fn plugin_icon(plugin_type: &PluginType) -> &'static str {
         PluginType::Compressor => "◉",
         PluginType::Limiter => "█",
         PluginType::Gate => "⊡",
+        PluginType::Expander => "⊟",
+        PluginType::MultibandCompressor => "◎",
+        PluginType::MultibandExpander => "◇",
         PluginType::LoudnessCompensation => "♫",
         PluginType::BinauralDecoder => "◎",
         PluginType::Convolution => "∿",
@@ -102,6 +109,7 @@ fn plugin_icon(plugin_type: &PluginType) -> &'static str {
         PluginType::SpectrumAnalyzer => "▓",
         PluginType::ChannelMuteSolo => "◧",
         PluginType::Matrix => "⊞",
+        PluginType::XTC => "⊗",
     }
 }
 
@@ -113,6 +121,9 @@ fn short_name(plugin_type: &PluginType) -> &'static str {
         PluginType::Compressor => "Compressor",
         PluginType::Limiter => "Limiter",
         PluginType::Gate => "Gate",
+        PluginType::Expander => "Expander",
+        PluginType::MultibandCompressor => "MB Comp",
+        PluginType::MultibandExpander => "MB Expand",
         PluginType::LoudnessCompensation => "Loudness",
         PluginType::BinauralDecoder => "Binaural",
         PluginType::Convolution => "Convolution",
@@ -120,6 +131,7 @@ fn short_name(plugin_type: &PluginType) -> &'static str {
         PluginType::SpectrumAnalyzer => "Spectrum",
         PluginType::ChannelMuteSolo => "Mixer",
         PluginType::Matrix => "Matrix",
+        PluginType::XTC => "XTC",
     }
 }
 

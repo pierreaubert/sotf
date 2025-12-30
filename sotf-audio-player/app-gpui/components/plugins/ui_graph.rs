@@ -481,10 +481,16 @@ fn plugin_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
     match plugin_type {
         PluginType::EQ => theme.info,
         PluginType::Gain => theme.success,
-        PluginType::Compressor | PluginType::Limiter | PluginType::Gate => theme.warning,
-        PluginType::Upmixer | PluginType::BinauralDecoder | PluginType::Convolution => {
-            theme.accent
-        }
+        PluginType::Compressor
+        | PluginType::Limiter
+        | PluginType::Gate
+        | PluginType::Expander
+        | PluginType::MultibandCompressor
+        | PluginType::MultibandExpander => theme.warning,
+        PluginType::Upmixer
+        | PluginType::BinauralDecoder
+        | PluginType::Convolution
+        | PluginType::XTC => theme.accent,
         PluginType::LoudnessCompensation
         | PluginType::LoudnessMonitor
         | PluginType::SpectrumAnalyzer
@@ -502,10 +508,14 @@ fn plugin_channel_counts(plugin_type: &PluginType) -> (usize, usize) {
         | PluginType::Compressor
         | PluginType::Limiter
         | PluginType::Gate
+        | PluginType::Expander
+        | PluginType::MultibandCompressor
+        | PluginType::MultibandExpander
         | PluginType::LoudnessCompensation
         | PluginType::LoudnessMonitor
         | PluginType::SpectrumAnalyzer
-        | PluginType::ChannelMuteSolo => (2, 2),
+        | PluginType::ChannelMuteSolo
+        | PluginType::XTC => (2, 2),
         // Upmixer: stereo in, multi-channel out (5.0 = 5 channels, show up to 5)
         PluginType::Upmixer => (2, 5),
         // Binaural decoder: multi-channel in, stereo out
