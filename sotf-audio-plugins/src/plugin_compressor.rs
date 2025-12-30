@@ -19,6 +19,7 @@
 use super::param_specs::compressor::*;
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use super::smoothing::Smoother;
 use serde::{Deserialize, Serialize};
 use std::f32::consts::PI;
 
@@ -149,19 +150,14 @@ pub struct CompressorPlugin {
     attack_coeff: f32,
     release_coeff: f32,
     sidechain_hpf_alpha: f32,
+
+    // Smoothing
+    threshold_smoother: Smoother,
+    makeup_gain_smoother: Smoother,
 }
 
 impl CompressorPlugin {
     /// Create a new compressor plugin
-    ///
-    /// # Arguments
-    /// * `channels` - Number of audio channels
-    /// * `threshold_db` - Threshold in dB (default: -20.0)
-    /// * `ratio` - Compression ratio (default: 4.0)
-    /// * `attack_ms` - Attack time in milliseconds (default: 5.0)
-    /// * `release_ms` - Release time in milliseconds (default: 50.0)
-    /// * `knee_db` - Soft knee width in dB (default: 6.0)
-    /// * `makeup_gain_db` - Makeup gain in dB (default: 0.0)
     pub fn new(
         channels: usize,
         threshold_db: f32,
@@ -171,9 +167,10 @@ impl CompressorPlugin {
         knee_db: f32,
         makeup_gain_db: f32,
     ) -> Self {
+        let sample_rate = 44100;
         Self {
             channels,
-            sample_rate: 44100, // Updated in initialize()
+            sample_rate,
 
             param_threshold: ParameterId::from("threshold"),
             threshold_db,
@@ -211,6 +208,9 @@ impl CompressorPlugin {
             attack_coeff: 0.0,
             release_coeff: 0.0,
             sidechain_hpf_alpha: 0.0,
+
+            threshold_smoother: Smoother::new(threshold_db, 20.0, sample_rate),
+            makeup_gain_smoother: Smoother::new(makeup_gain_db, 20.0, sample_rate),
         }
     }
 
@@ -244,15 +244,12 @@ impl CompressorPlugin {
     }
 
     /// Calculate gain reduction for a given input level
-    fn calculate_gain_reduction(&self, input_db: f32) -> f32 {
-        let threshold = self.threshold_db;
+    fn calculate_gain_reduction(&self, input_db: f32, threshold: f32) -> f32 {
         let knee = self.knee_db.max(0.0);
         let ratio = self.ratio.max(1.0);
         let slope = 1.0 - 1.0 / ratio;
 
-        // Handle hard knee (knee = 0) separately
         if knee < 0.1 {
-            // Hard knee compression
             if input_db <= threshold {
                 0.0
             } else {
@@ -260,16 +257,12 @@ impl CompressorPlugin {
                 overshoot * slope
             }
         } else {
-            // Soft knee compression
             if input_db < threshold - knee / 2.0 {
-                // Below threshold - no compression
                 0.0
             } else if input_db > threshold + knee / 2.0 {
-                // Above threshold + knee - full compression
                 let overshoot = input_db - threshold;
                 overshoot * slope
             } else {
-                // In the knee - smooth transition
                 let overshoot = input_db - threshold + knee / 2.0;
                 let knee_factor = overshoot / knee;
                 knee_factor * knee_factor * knee / 2.0 * slope
@@ -335,9 +328,9 @@ impl InPlacePlugin for CompressorPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo {
             name: "Compressor".to_string(),
-            version: "1.0.0".to_string(),
+            version: "1.1.0".to_string(),
             author: "AutoEQ".to_string(),
-            description: "Dynamic range compressor with soft knee".to_string(),
+            description: "Dynamic range compressor with soft knee and smoothing".to_string(),
         }
     }
 
@@ -396,7 +389,9 @@ impl InPlacePlugin for CompressorPlugin {
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
         if id == self.param_threshold {
-            self.threshold_db = value.as_float().ok_or("Invalid threshold value")?;
+            let val = value.as_float().ok_or("Invalid threshold value")?;
+            self.threshold_db = val;
+            self.threshold_smoother.set_target(val);
         } else if id == self.param_ratio {
             self.ratio = value.as_float().ok_or("Invalid ratio value")?.max(1.0);
         } else if id == self.param_attack {
@@ -408,7 +403,9 @@ impl InPlacePlugin for CompressorPlugin {
         } else if id == self.param_knee {
             self.knee_db = value.as_float().ok_or("Invalid knee value")?.max(0.0);
         } else if id == self.param_makeup_gain {
-            self.makeup_gain_db = value.as_float().ok_or("Invalid makeup gain value")?;
+            let val = value.as_float().ok_or("Invalid makeup gain value")?;
+            self.makeup_gain_db = val;
+            self.makeup_gain_smoother.set_target(val);
         } else if id == self.param_mix {
             self.mix = value.as_float().ok_or("Invalid mix value")?.clamp(0.0, 1.0);
         } else if id == self.param_auto_makeup {
@@ -455,6 +452,8 @@ impl InPlacePlugin for CompressorPlugin {
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
+        self.threshold_smoother.set_time(20.0, sample_rate);
+        self.makeup_gain_smoother.set_time(20.0, sample_rate);
         self.update_coefficients();
         Ok(())
     }
@@ -473,15 +472,21 @@ impl InPlacePlugin for CompressorPlugin {
         let num_frames = context.num_frames;
         let ratio = self.ratio.max(1.0);
         let compression_slope = 1.0 - 1.0 / ratio;
+        
+        let dry_mix = 1.0 - self.mix;
+        let wet_mix = self.mix;
+
+        // Tick smoothers for the block
+        let threshold = self.threshold_smoother.next();
+        let makeup_gain = self.makeup_gain_smoother.next();
+
         let auto_makeup_db = if self.auto_makeup {
-            let avg_overshoot = (-self.threshold_db).max(0.0) * 0.5;
+            let avg_overshoot = (-threshold).max(0.0) * 0.5;
             avg_overshoot * compression_slope
         } else {
             0.0
         };
-        let makeup_gain_linear = 10.0_f32.powf((self.makeup_gain_db + auto_makeup_db) / 20.0);
-        let dry_mix = 1.0 - self.mix;
-        let wet_mix = self.mix;
+        let makeup_gain_linear = 10.0_f32.powf((makeup_gain + auto_makeup_db) / 20.0);
 
         if self.link_channels && self.channels > 1 {
             for frame in 0..num_frames {
@@ -497,7 +502,7 @@ impl InPlacePlugin for CompressorPlugin {
 
                 let detection_level = detection_level.max(1e-10);
                 let input_db = 20.0 * detection_level.log10();
-                let target_gr = self.calculate_gain_reduction(input_db);
+                let target_gr = self.calculate_gain_reduction(input_db, threshold);
 
                 for ch in 0..self.channels {
                     let sample_idx = frame * self.channels + ch;
@@ -523,7 +528,7 @@ impl InPlacePlugin for CompressorPlugin {
                     let input_level = sidechain_sample.abs().max(1e-10);
                     let input_db = 20.0 * input_level.log10();
 
-                    let target_gr = self.calculate_gain_reduction(input_db);
+                    let target_gr = self.calculate_gain_reduction(input_db, threshold);
 
                     buffer[sample_idx] = self.apply_gain_for_channel(
                         ch,
@@ -569,16 +574,16 @@ mod tests {
         let compressor = CompressorPlugin::new(2, -20.0, 4.0, 5.0, 50.0, 0.0, 0.0); // No knee for simple test
 
         // Below threshold - no compression
-        let gr = compressor.calculate_gain_reduction(-30.0);
+        let gr = compressor.calculate_gain_reduction(-30.0, -20.0);
         assert_eq!(gr, 0.0);
 
         // At threshold - no compression
-        let gr = compressor.calculate_gain_reduction(-20.0);
+        let gr = compressor.calculate_gain_reduction(-20.0, -20.0);
         assert_eq!(gr, 0.0);
 
         // 12 dB above threshold with 4:1 ratio
         // Gain reduction = 12 * (1 - 1/4) = 9 dB
-        let gr = compressor.calculate_gain_reduction(-8.0);
+        let gr = compressor.calculate_gain_reduction(-8.0, -20.0);
         assert!((gr - 9.0).abs() < 0.01);
     }
 

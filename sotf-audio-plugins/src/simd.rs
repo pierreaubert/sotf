@@ -469,6 +469,7 @@ pub fn window_mul_simd(dst: &mut [f32], src: &[f32], window: &[f32]) {
 
 /// SIMD-optimized buffer fill with zeros
 #[inline]
+#[allow(dead_code)]
 pub fn zero_fill_simd(dst: &mut [f32]) {
     // For small buffers, scalar is fine
     // For larger buffers, the compiler optimizes this well
@@ -546,6 +547,7 @@ pub fn deinterleave_stereo(input: &[f32], left: &mut [f32], right: &mut [f32]) {
 /// Input: left = [L0, L1, L2, ...], right = [R0, R1, R2, ...]
 /// Output: [L0, R0, L1, R1, L2, R2, ...]
 #[inline]
+#[allow(dead_code)]
 pub fn interleave_stereo(left: &[f32], right: &[f32], output: &mut [f32]) {
     debug_assert_eq!(left.len(), right.len());
     debug_assert_eq!(output.len(), left.len() * 2);

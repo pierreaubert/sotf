@@ -18,6 +18,7 @@
 use super::param_specs::multiband_expander::*;
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use super::smoothing::Smoother;
 use autoeq_iir::{Biquad, BiquadFilterType};
 use serde::{Deserialize, Serialize};
 
@@ -372,8 +373,13 @@ pub struct MultibandExpanderPlugin {
     band_params: Vec<BandExpanderParams>,
     crossover_points: Vec<CrossoverPoint>,
     band_expanders: Vec<BandExpander>,
-    band_buffers: Vec<Vec<f32>>,
+    
+    // Flat buffer for better cache locality [band * stride + index]
+    band_buffers: Vec<f32>,
     band_levels_db: Vec<f32>,
+
+    // Smoothing
+    threshold_smoother: Smoother,
 
     param_num_bands: ParameterId,
     param_crossover_preset: ParameterId,
@@ -400,6 +406,7 @@ impl MultibandExpanderPlugin {
 
     pub fn with_params(channels: usize, params: MultibandExpanderPluginParams) -> Self {
         let num_bands = params.num_bands.clamp(NUM_BANDS_MIN, NUM_BANDS_MAX);
+        let sample_rate = 44100;
 
         let mut band_params = params.bands.clone();
         while band_params.len() < num_bands {
@@ -415,9 +422,12 @@ impl MultibandExpanderPlugin {
             &params.crossover_frequencies,
         );
 
+        // Initialize smoother (50ms smoothing time)
+        let threshold_smoother = Smoother::new(params.threshold_db, 50.0, sample_rate);
+
         Self {
             channels,
-            sample_rate: 44100,
+            sample_rate,
             num_bands,
             crossover_preset: params.crossover_preset,
             crossover_frequencies,
@@ -436,6 +446,7 @@ impl MultibandExpanderPlugin {
             band_expanders,
             band_buffers: Vec::new(),
             band_levels_db: vec![0.0; num_bands],
+            threshold_smoother,
             param_num_bands: ParameterId::from("num_bands"),
             param_crossover_preset: ParameterId::from("crossover_preset"),
             param_crossover_freq_1: ParameterId::from("crossover_freq_1"),
@@ -499,13 +510,6 @@ impl MultibandExpanderPlugin {
                 .unwrap_or(self.release_ms);
             band.update_coefficients(attack, release, self.sample_rate);
         }
-    }
-
-    fn get_band_threshold(&self, band: usize) -> f32 {
-        self.band_params
-            .get(band)
-            .and_then(|p| p.threshold_db)
-            .unwrap_or(self.threshold_db)
     }
 
     fn get_band_ratio(&self, band: usize) -> f32 {
@@ -590,15 +594,17 @@ impl MultibandExpanderPlugin {
     }
 
     fn split_bands(&mut self, input: &[f32], num_frames: usize) {
-        if self.band_buffers.len() != self.num_bands {
-            self.band_buffers = vec![vec![0.0; num_frames * self.channels]; self.num_bands];
+        let required_len = self.num_bands * num_frames * self.channels;
+        
+        // Ensure band buffers are allocated
+        if self.band_buffers.len() < required_len {
+            self.band_buffers.resize(required_len, 0.0);
         }
-        for buf in &mut self.band_buffers {
-            if buf.len() < num_frames * self.channels {
-                buf.resize(num_frames * self.channels, 0.0);
-            }
-            buf.fill(0.0);
-        }
+        
+        // Reset buffers
+        self.band_buffers[0..required_len].fill(0.0);
+        
+        let stride = num_frames * self.channels;
 
         for frame in 0..num_frames {
             for ch in 0..self.channels {
@@ -607,25 +613,35 @@ impl MultibandExpanderPlugin {
 
                 for (xover_idx, crossover) in self.crossover_points.iter_mut().enumerate() {
                     let low = crossover.process_lowpass(ch, remaining);
-                    self.band_buffers[xover_idx][idx] += low;
+                    
+                    let band_idx = xover_idx * stride + idx;
+                    self.band_buffers[band_idx] += low;
+                    
                     remaining = crossover.process_highpass(ch, remaining);
                 }
 
-                self.band_buffers[self.num_bands - 1][idx] = remaining;
+                let high_band_idx = (self.num_bands - 1) * stride + idx;
+                self.band_buffers[high_band_idx] = remaining;
             }
         }
     }
 
     fn process_bands(&mut self, num_frames: usize) {
         let any_solo = (0..self.num_bands).any(|b| self.is_band_solo(b));
+        let stride = num_frames * self.channels;
+        
+        let smoothed_threshold = self.threshold_smoother.next();
 
         for band in 0..self.num_bands {
             let bypass = self.is_band_bypass(band);
             let solo = self.is_band_solo(band);
             let muted = any_solo && !solo;
+            
+            let band_offset = band * stride;
 
             if muted {
-                self.band_buffers[band].fill(0.0);
+                let buf_slice = &mut self.band_buffers[band_offset..band_offset + stride];
+                buf_slice.fill(0.0);
                 continue;
             }
 
@@ -633,7 +649,12 @@ impl MultibandExpanderPlugin {
                 continue;
             }
 
-            let threshold = self.get_band_threshold(band);
+            let threshold = if let Some(p) = self.band_params.get(band).and_then(|b| b.threshold_db) {
+                p
+            } else {
+                smoothed_threshold
+            };
+            
             let ratio = self.get_band_ratio(band);
             let knee = self.get_band_knee(band);
             let range = self.get_band_range(band);
@@ -650,7 +671,8 @@ impl MultibandExpanderPlugin {
                     let mut max_level = 0.0_f32;
                     for ch in 0..self.channels {
                         let idx = frame * self.channels + ch;
-                        max_level = max_level.max(self.band_buffers[band][idx].abs());
+                        let sample = self.band_buffers[band_offset + idx];
+                        max_level = max_level.max(sample.abs());
                     }
 
                     let input_db = 20.0 * max_level.max(1e-10).log10();
@@ -679,14 +701,14 @@ impl MultibandExpanderPlugin {
                     let gain = 10.0_f32.powf(-target_atten / 20.0);
                     for ch in 0..self.channels {
                         let idx = frame * self.channels + ch;
-                        self.band_buffers[band][idx] *= gain;
+                        self.band_buffers[band_offset + idx] *= gain;
                     }
                 }
             } else {
                 for frame in 0..num_frames {
                     for ch in 0..self.channels {
                         let idx = frame * self.channels + ch;
-                        let sample = self.band_buffers[band][idx];
+                        let sample = self.band_buffers[band_offset + idx];
                         let input_db = 20.0 * sample.abs().max(1e-10).log10();
 
                         let atten = Self::process_hysteresis(
@@ -703,18 +725,18 @@ impl MultibandExpanderPlugin {
                         );
 
                         let gain = 10.0_f32.powf(-atten / 20.0);
-                        self.band_buffers[band][idx] = sample * gain;
+                        self.band_buffers[band_offset + idx] = sample * gain;
                     }
                 }
             }
 
             // Calculate RMS for monitoring
             let mut sum_sq = 0.0_f32;
-            let count = self.band_buffers[band].len();
-            for &s in &self.band_buffers[band] {
+            let buf_slice = &self.band_buffers[band_offset..band_offset + stride];
+            for &s in buf_slice {
                 sum_sq += s * s;
             }
-            let rms = (sum_sq / count as f32).sqrt();
+            let rms = (sum_sq / buf_slice.len() as f32).sqrt();
             self.band_levels_db[band] = 20.0 * rms.max(1e-10).log10();
         }
     }
@@ -782,12 +804,15 @@ impl MultibandExpanderPlugin {
     }
 
     fn sum_bands(&self, output: &mut [f32], num_frames: usize) {
+        let stride = num_frames * self.channels;
+        
         for frame in 0..num_frames {
             for ch in 0..self.channels {
                 let idx = frame * self.channels + ch;
                 let mut sum = 0.0_f32;
                 for band in 0..self.num_bands {
-                    sum += self.band_buffers[band][idx];
+                    let band_offset = band * stride;
+                    sum += self.band_buffers[band_offset + idx];
                 }
                 output[idx] = sum;
             }
@@ -943,7 +968,9 @@ impl InPlacePlugin for MultibandExpanderPlugin {
             self.crossover_preset = 0;
             self.build_crossovers();
         } else if id == self.param_threshold {
-            self.threshold_db = value.as_float().ok_or("Invalid threshold")?;
+            let val = value.as_float().ok_or("Invalid threshold")?;
+            self.threshold_db = val;
+            self.threshold_smoother.set_target(val);
         } else if id == self.param_ratio {
             self.ratio = value.as_float().ok_or("Invalid ratio")?.max(1.0);
         } else if id == self.param_attack {
@@ -1010,6 +1037,7 @@ impl InPlacePlugin for MultibandExpanderPlugin {
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
+        self.threshold_smoother.set_time(50.0, sample_rate);
         self.build_crossovers();
         self.update_coefficients();
         Ok(())
@@ -1022,9 +1050,7 @@ impl InPlacePlugin for MultibandExpanderPlugin {
         for band in &mut self.band_expanders {
             band.reset();
         }
-        for buf in &mut self.band_buffers {
-            buf.fill(0.0);
-        }
+        self.band_buffers.fill(0.0);
     }
 
     fn process_in_place(

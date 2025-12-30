@@ -18,6 +18,7 @@
 use super::param_specs::multiband_compressor::*;
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use super::smoothing::Smoother;
 use autoeq_iir::{Biquad, BiquadFilterType};
 use serde::{Deserialize, Serialize};
 
@@ -359,9 +360,12 @@ pub struct MultibandCompressorPlugin {
     crossover_points: Vec<CrossoverPoint>,
     band_compressors: Vec<BandCompressor>,
 
-    // Temporary buffers for band processing
-    band_buffers: Vec<Vec<f32>>, // [band][samples]
+    // Temporary buffers for band processing (Flattened: [band * stride + index])
+    band_buffers: Vec<f32>, 
     band_levels_db: Vec<f32>,    // RMS per band
+
+    // Smoothing
+    threshold_smoother: Smoother,
 
     // Parameter IDs
     param_num_bands: ParameterId,
@@ -388,6 +392,7 @@ impl MultibandCompressorPlugin {
     /// Create a new multiband compressor with custom parameters
     pub fn with_params(channels: usize, params: MultibandCompressorPluginParams) -> Self {
         let num_bands = params.num_bands.clamp(NUM_BANDS_MIN, NUM_BANDS_MAX);
+        let sample_rate = 44100; // Default until initialized
 
         // Initialize per-band parameters
         let mut band_params = params.bands.clone();
@@ -405,10 +410,13 @@ impl MultibandCompressorPlugin {
             params.crossover_preset,
             &params.crossover_frequencies,
         );
+        
+        // Initialize smoother (50ms smoothing time)
+        let threshold_smoother = Smoother::new(params.threshold_db, 50.0, sample_rate);
 
         Self {
             channels,
-            sample_rate: 44100, // Updated in initialize()
+            sample_rate, 
             num_bands,
             crossover_preset: params.crossover_preset,
             crossover_frequencies,
@@ -422,8 +430,9 @@ impl MultibandCompressorPlugin {
             band_params,
             crossover_points: Vec::new(), // Built in initialize()
             band_compressors,
-            band_buffers: Vec::new(), // Allocated in initialize()
+            band_buffers: Vec::new(), // Allocated in split_bands
             band_levels_db: vec![0.0; num_bands],
+            threshold_smoother,
             param_num_bands: ParameterId::from("num_bands"),
             param_crossover_preset: ParameterId::from("crossover_preset"),
             param_crossover_freq_1: ParameterId::from("crossover_freq_1"),
@@ -493,14 +502,6 @@ impl MultibandCompressorPlugin {
         }
     }
 
-    /// Get effective threshold for a band
-    fn get_band_threshold(&self, band: usize) -> f32 {
-        self.band_params
-            .get(band)
-            .and_then(|p| p.threshold_db)
-            .unwrap_or(self.threshold_db)
-    }
-
     /// Get effective ratio for a band
     fn get_band_ratio(&self, band: usize) -> f32 {
         self.band_params
@@ -565,16 +566,17 @@ impl MultibandCompressorPlugin {
 
     /// Split input into frequency bands
     fn split_bands(&mut self, input: &[f32], num_frames: usize) {
-        // Ensure band buffers are allocated
-        if self.band_buffers.len() != self.num_bands {
-            self.band_buffers = vec![vec![0.0; num_frames * self.channels]; self.num_bands];
+        let required_len = self.num_bands * num_frames * self.channels;
+        
+        // Ensure band buffers are allocated (flat buffer)
+        if self.band_buffers.len() < required_len {
+            self.band_buffers.resize(required_len, 0.0);
         }
-        for buf in &mut self.band_buffers {
-            if buf.len() < num_frames * self.channels {
-                buf.resize(num_frames * self.channels, 0.0);
-            }
-            buf.fill(0.0);
-        }
+        
+        // Reset buffers
+        self.band_buffers[0..required_len].fill(0.0);
+        
+        let stride = num_frames * self.channels;
 
         // Process each sample through the crossover network
         for frame in 0..num_frames {
@@ -586,14 +588,19 @@ impl MultibandCompressorPlugin {
                 for (xover_idx, crossover) in self.crossover_points.iter_mut().enumerate() {
                     // Low band gets the lowpass output
                     let low = crossover.process_lowpass(ch, remaining);
-                    self.band_buffers[xover_idx][idx] += low;
+                    
+                    // Add to appropriate band buffer section
+                    // Band buffer index = band * stride + frame * channels + channel
+                    let band_idx = xover_idx * stride + idx;
+                    self.band_buffers[band_idx] += low;
 
                     // High portion continues to next crossover
                     remaining = crossover.process_highpass(ch, remaining);
                 }
 
                 // Highest band gets whatever remains
-                self.band_buffers[self.num_bands - 1][idx] = remaining;
+                let high_band_idx = (self.num_bands - 1) * stride + idx;
+                self.band_buffers[high_band_idx] = remaining;
             }
         }
     }
@@ -602,24 +609,46 @@ impl MultibandCompressorPlugin {
     fn process_bands(&mut self, num_frames: usize) {
         // Check if any band is soloed
         let any_solo = (0..self.num_bands).any(|b| self.is_band_solo(b));
+        let stride = num_frames * self.channels;
+        
+        // Update global smoothers once per block is usually fine for efficiency, 
+        // but here we demonstrate per-sample smoothing for high quality automation.
+        // However, since we iterate bands -> samples, and bands share the global threshold,
+        // we can't tick the smoother in every band loop.
+        // We will tick it once, store values, or just use block update.
+        // Let's use block-start value for simplicity in this refactor, 
+        // as correct per-sample shared smoothing requires a separate pass.
+        // Or better: tick it in the loop for the first band, but that's messy if first band is bypassed.
+        // DECISION: Update smoother target in set_parameter, and tick it here for the whole block?
+        // No, let's just use the current value for the whole block for now to keep logic simple, 
+        // but the infrastructure (Smoother struct) is ready for per-sample if we change loop order.
+        let smoothed_threshold = self.threshold_smoother.next(); 
 
         for band in 0..self.num_bands {
             let bypass = self.is_band_bypass(band);
             let solo = self.is_band_solo(band);
             let muted = any_solo && !solo;
+            
+            let band_offset = band * stride;
 
             if muted {
-                // Mute this band (some band is soloed and it's not this one)
-                self.band_buffers[band].fill(0.0);
+                // Mute this band
+                let buf_slice = &mut self.band_buffers[band_offset..band_offset + stride];
+                buf_slice.fill(0.0);
                 continue;
             }
 
             if bypass {
-                // No processing, just pass through
                 continue;
             }
 
-            let threshold = self.get_band_threshold(band);
+            // Determine threshold to use (override or global smoothed)
+            let threshold = if let Some(p) = self.band_params.get(band).and_then(|b| b.threshold_db) {
+                p
+            } else {
+                smoothed_threshold
+            };
+            
             let ratio = self.get_band_ratio(band);
             let knee = self.get_band_knee(band);
             let makeup_linear = 10.0_f32.powf(self.get_band_makeup(band) / 20.0);
@@ -633,7 +662,8 @@ impl MultibandCompressorPlugin {
                     let mut max_level = 0.0_f32;
                     for ch in 0..self.channels {
                         let idx = frame * self.channels + ch;
-                        max_level = max_level.max(self.band_buffers[band][idx].abs());
+                        let sample = self.band_buffers[band_offset + idx];
+                        max_level = max_level.max(sample.abs());
                     }
 
                     let input_db = 20.0 * max_level.max(1e-10).log10();
@@ -652,7 +682,7 @@ impl MultibandCompressorPlugin {
                             target_gr + coeff * (band_comp.envelope[ch] - target_gr);
 
                         let gain = 10.0_f32.powf(-band_comp.envelope[ch] / 20.0) * makeup_linear;
-                        self.band_buffers[band][idx] *= gain;
+                        self.band_buffers[band_offset + idx] *= gain;
                     }
                 }
             } else {
@@ -660,7 +690,7 @@ impl MultibandCompressorPlugin {
                 for frame in 0..num_frames {
                     for ch in 0..self.channels {
                         let idx = frame * self.channels + ch;
-                        let sample = self.band_buffers[band][idx];
+                        let sample = self.band_buffers[band_offset + idx];
 
                         let input_db = 20.0 * sample.abs().max(1e-10).log10();
                         let target_gr =
@@ -675,30 +705,33 @@ impl MultibandCompressorPlugin {
                             target_gr + coeff * (band_comp.envelope[ch] - target_gr);
 
                         let gain = 10.0_f32.powf(-band_comp.envelope[ch] / 20.0) * makeup_linear;
-                        self.band_buffers[band][idx] = sample * gain;
+                        self.band_buffers[band_offset + idx] = sample * gain;
                     }
                 }
             }
 
             // Calculate RMS for monitoring
             let mut sum_sq = 0.0_f32;
-            let count = self.band_buffers[band].len();
-            for &s in &self.band_buffers[band] {
+            let buf_slice = &self.band_buffers[band_offset..band_offset + stride];
+            for &s in buf_slice {
                 sum_sq += s * s;
             }
-            let rms = (sum_sq / count as f32).sqrt();
+            let rms = (sum_sq / buf_slice.len() as f32).sqrt();
             self.band_levels_db[band] = 20.0 * rms.max(1e-10).log10();
         }
     }
 
     /// Sum bands back together
     fn sum_bands(&self, output: &mut [f32], num_frames: usize) {
+        let stride = num_frames * self.channels;
+        
         for frame in 0..num_frames {
             for ch in 0..self.channels {
                 let idx = frame * self.channels + ch;
                 let mut sum = 0.0_f32;
                 for band in 0..self.num_bands {
-                    sum += self.band_buffers[band][idx];
+                    let band_offset = band * stride;
+                    sum += self.band_buffers[band_offset + idx];
                 }
                 output[idx] = sum;
             }
@@ -843,7 +876,9 @@ impl InPlacePlugin for MultibandCompressorPlugin {
             self.crossover_preset = 0;
             self.build_crossovers();
         } else if id == self.param_threshold {
-            self.threshold_db = value.as_float().ok_or("Invalid threshold")?;
+            let val = value.as_float().ok_or("Invalid threshold")?;
+            self.threshold_db = val;
+            self.threshold_smoother.set_target(val);
         } else if id == self.param_ratio {
             self.ratio = value.as_float().ok_or("Invalid ratio")?.max(1.0);
         } else if id == self.param_attack {
@@ -898,6 +933,7 @@ impl InPlacePlugin for MultibandCompressorPlugin {
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
+        self.threshold_smoother.set_time(50.0, sample_rate);
         self.build_crossovers();
         self.update_coefficients();
         Ok(())
@@ -910,9 +946,7 @@ impl InPlacePlugin for MultibandCompressorPlugin {
         for band in &mut self.band_compressors {
             band.reset();
         }
-        for buf in &mut self.band_buffers {
-            buf.fill(0.0);
-        }
+        self.band_buffers.fill(0.0);
     }
 
     fn process_in_place(

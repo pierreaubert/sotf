@@ -30,6 +30,7 @@ mod plugin_binaural;
 mod plugin_channel_mute_solo;
 mod plugin_compressor;
 mod plugin_convolution;
+mod plugin_denoiser;
 mod plugin_crossover;
 mod plugin_delay;
 mod plugin_eq;
@@ -45,6 +46,7 @@ mod plugin_resampler;
 mod plugin_upmixer;
 mod plugin_xtc;
 mod simd;
+mod smoothing;
 mod sofa;
 pub mod speaker_config;
 
@@ -65,6 +67,7 @@ pub use plugin_binaural::{
 pub use plugin_channel_mute_solo::{ChannelMuteSoloParams, ChannelMuteSoloPlugin, ChannelState};
 pub use plugin_compressor::{CompressorData, CompressorPlugin, CompressorPluginParams};
 pub use plugin_convolution::{ConvolutionPlugin, ConvolutionPluginParams};
+pub use plugin_denoiser::{DenoiserData, DenoiserPlugin, DenoiserPluginParams};
 pub use plugin_crossover::{CrossoverPlugin, CrossoverPluginParams};
 pub use plugin_delay::{DelayPlugin, DelayPluginParams};
 pub use plugin_eq::{BiquadFilterConfig, EqPlugin, EqPluginParams};

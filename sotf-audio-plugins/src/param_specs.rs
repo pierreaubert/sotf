@@ -500,6 +500,40 @@ pub mod multiband_compressor {
 }
 
 // ============================================================================
+// Denoiser Plugin
+// ============================================================================
+
+pub mod denoiser {
+    pub const REDUCTION_DB_DEFAULT: f32 = 12.0;
+    pub const REDUCTION_DB_MIN: f32 = 0.0;
+    pub const REDUCTION_DB_MAX: f32 = 40.0;
+
+    pub const FLOOR_DB_DEFAULT: f32 = -30.0;
+    pub const FLOOR_DB_MIN: f32 = -60.0;
+    pub const FLOOR_DB_MAX: f32 = -10.0;
+
+    pub const SMOOTHING_DEFAULT: f32 = 0.8;
+    pub const SMOOTHING_MIN: f32 = 0.0;
+    pub const SMOOTHING_MAX: f32 = 0.99;
+
+    pub const ATTACK_MS_DEFAULT: f32 = 5.0;
+    pub const ATTACK_MS_MIN: f32 = 0.1;
+    pub const ATTACK_MS_MAX: f32 = 100.0;
+
+    pub const RELEASE_MS_DEFAULT: f32 = 50.0;
+    pub const RELEASE_MS_MIN: f32 = 10.0;
+    pub const RELEASE_MS_MAX: f32 = 500.0;
+
+    pub const LOW_LATENCY_DEFAULT: bool = false;
+
+    // MCRA-specific parameters (advanced/expert use)
+    pub const MCRA_ALPHA_S_DEFAULT: f32 = 0.9;   // Noise PSD smoothing
+    pub const MCRA_ALPHA_P_DEFAULT: f32 = 0.2;   // Speech presence probability smoothing
+    pub const MCRA_L_DEFAULT: usize = 50;        // Minimum tracking window (frames)
+    pub const MCRA_DELTA_DEFAULT: f32 = 5.0;     // Speech presence threshold
+}
+
+// ============================================================================
 // Multiband Expander Plugin
 // ============================================================================
 
