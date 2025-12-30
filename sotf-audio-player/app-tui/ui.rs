@@ -1157,18 +1157,42 @@ fn draw_plugin_chain(f: &mut Frame, area: Rect, app: &App) {
 
 fn draw_available_plugins(f: &mut Frame, area: Rect, app: &App) {
     let plugins = PluginType::all();
+    let is_selecting = app.input_mode == InputMode::AddPlugin;
+
     let items: Vec<ListItem> = plugins
         .iter()
-        .map(|plugin_type| {
+        .enumerate()
+        .map(|(i, plugin_type)| {
             let content = format!("{}\n  {}", plugin_type.name(), plugin_type.description());
-            ListItem::new(content).style(Style::default().fg(app.theme.accent_primary))
+            let style = if is_selecting && i == app.add_plugin_selected_index {
+                Style::default()
+                    .fg(app.theme.fg_selected)
+                    .bg(app.theme.bg_selected)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(app.theme.accent_primary)
+            };
+            ListItem::new(content).style(style)
         })
         .collect();
+
+    let title = if is_selecting {
+        "▶ Select Plugin (↑/↓, Enter=add, Esc=cancel)"
+    } else {
+        "Available Plugins"
+    };
+
+    let border_style = if is_selecting {
+        Style::default().fg(app.theme.accent_primary)
+    } else {
+        Style::default()
+    };
 
     let list = List::new(items).block(
         Block::default()
             .borders(Borders::ALL)
-            .title("Available Plugins"),
+            .border_style(border_style)
+            .title(title),
     );
 
     f.render_widget(list, area);
@@ -2797,25 +2821,111 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
                 format!("{}", output_channels),
             ),
         ],
-        // Placeholder for dynamics plugins - TODO: implement full parameter display
-        PluginSettings::Expander { threshold_db, ratio, .. } => vec![
+        PluginSettings::Expander {
+            threshold_db,
+            ratio,
+            attack_ms,
+            release_ms,
+            range_db,
+            knee_db,
+            hysteresis_db,
+            hold_ms,
+            mix,
+            link_channels,
+            sidechain_hpf_hz,
+        } => vec![
             ("Threshold".to_string(), format!("{:.1} dB", threshold_db)),
             ("Ratio".to_string(), format!("{:.1}:1", ratio)),
+            ("Attack".to_string(), format!("{:.1} ms", attack_ms)),
+            ("Release".to_string(), format!("{:.0} ms", release_ms)),
+            ("Range".to_string(), format!("{:.1} dB", range_db)),
+            ("Knee".to_string(), format!("{:.1} dB", knee_db)),
+            ("Hysteresis".to_string(), format!("{:.1} dB", hysteresis_db)),
+            ("Hold".to_string(), format!("{:.0} ms", hold_ms)),
+            ("Mix".to_string(), format!("{:.0}%", mix * 100.0)),
+            ("Link Channels".to_string(), if *link_channels { "Yes".to_string() } else { "No".to_string() }),
+            ("Sidechain HPF".to_string(), format!("{:.0} Hz", sidechain_hpf_hz)),
         ],
-        PluginSettings::MultibandCompressor { num_bands, threshold_db, ratio, .. } => vec![
+        PluginSettings::MultibandCompressor {
+            num_bands,
+            crossover_freq_1,
+            crossover_freq_2,
+            crossover_freq_3,
+            crossover_freq_4,
+            threshold_db,
+            ratio,
+            attack_ms,
+            release_ms,
+            knee_db,
+            mix,
+            link_channels,
+            ..
+        } => vec![
             ("Bands".to_string(), format!("{}", num_bands)),
+            ("Crossover 1".to_string(), format!("{:.0} Hz", crossover_freq_1)),
+            ("Crossover 2".to_string(), format!("{:.0} Hz", crossover_freq_2)),
+            ("Crossover 3".to_string(), format!("{:.0} Hz", crossover_freq_3)),
+            ("Crossover 4".to_string(), format!("{:.0} Hz", crossover_freq_4)),
             ("Threshold".to_string(), format!("{:.1} dB", threshold_db)),
             ("Ratio".to_string(), format!("{:.1}:1", ratio)),
+            ("Attack".to_string(), format!("{:.1} ms", attack_ms)),
+            ("Release".to_string(), format!("{:.0} ms", release_ms)),
+            ("Knee".to_string(), format!("{:.1} dB", knee_db)),
+            ("Mix".to_string(), format!("{:.0}%", mix * 100.0)),
+            ("Link Channels".to_string(), if *link_channels { "Yes".to_string() } else { "No".to_string() }),
         ],
-        PluginSettings::MultibandExpander { num_bands, threshold_db, ratio, .. } => vec![
+        PluginSettings::MultibandExpander {
+            num_bands,
+            crossover_freq_1,
+            crossover_freq_2,
+            crossover_freq_3,
+            crossover_freq_4,
+            threshold_db,
+            ratio,
+            attack_ms,
+            release_ms,
+            range_db,
+            knee_db,
+            hysteresis_db,
+            hold_ms,
+            mix,
+            link_channels,
+            ..
+        } => vec![
             ("Bands".to_string(), format!("{}", num_bands)),
+            ("Crossover 1".to_string(), format!("{:.0} Hz", crossover_freq_1)),
+            ("Crossover 2".to_string(), format!("{:.0} Hz", crossover_freq_2)),
+            ("Crossover 3".to_string(), format!("{:.0} Hz", crossover_freq_3)),
+            ("Crossover 4".to_string(), format!("{:.0} Hz", crossover_freq_4)),
             ("Threshold".to_string(), format!("{:.1} dB", threshold_db)),
             ("Ratio".to_string(), format!("{:.1}:1", ratio)),
+            ("Attack".to_string(), format!("{:.1} ms", attack_ms)),
+            ("Release".to_string(), format!("{:.0} ms", release_ms)),
+            ("Range".to_string(), format!("{:.1} dB", range_db)),
+            ("Knee".to_string(), format!("{:.1} dB", knee_db)),
+            ("Hysteresis".to_string(), format!("{:.1} dB", hysteresis_db)),
+            ("Hold".to_string(), format!("{:.0} ms", hold_ms)),
+            ("Mix".to_string(), format!("{:.0}%", mix * 100.0)),
+            ("Link Channels".to_string(), if *link_channels { "Yes".to_string() } else { "No".to_string() }),
         ],
-        PluginSettings::XTC { distance_m, speaker_angle_deg, head_radius_m, .. } => vec![
+        PluginSettings::XTC {
+            distance_m,
+            speaker_angle_deg,
+            head_radius_m,
+            beta_base,
+            beta_low_freq_boost,
+            beta_high_freq_boost,
+            head_shadow_cutoff_hz,
+            head_shadow_slope_db_per_octave,
+        } => vec![
             ("Distance".to_string(), format!("{:.2} m", distance_m)),
             ("Speaker Angle".to_string(), format!("{:.1}°", speaker_angle_deg)),
             ("Head Radius".to_string(), format!("{:.4} m", head_radius_m)),
+            ("Beta Base".to_string(), format!("{:.4}", beta_base)),
+            ("Beta Low Boost".to_string(), format!("{:.1}", beta_low_freq_boost)),
+            ("Beta High Boost".to_string(), format!("{:.1}", beta_high_freq_boost)),
+            ("Head Shadow Cutoff".to_string(), format!("{:.0} Hz", head_shadow_cutoff_hz)),
+            ("Head Shadow Slope".to_string(), format!("{:.1} dB/oct", head_shadow_slope_db_per_octave)),
         ],
     }
 }
@@ -3640,14 +3750,7 @@ fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str
         ],
         Screen::Plugins => vec![
             ("↑/↓ or k/j", "Navigate plugin chain"),
-            ("a", "Add plugin (default)"),
-            (
-                "1-8",
-                "Quick add: EQ/Upmixer/Compressor/Gate/Limiter/Loudness/Binaural/Convolution",
-            ),
-            ("9/0", "Quick add: LoudnessMonitor/SpectrumAnalyzer"),
-            ("g/m/x", "Quick add: Gain/MuteSolo/Matrix"),
-            ("r/c/f/z", "Quick add: Expander/MBCompressor/MBExpander/XTC"),
+            ("a", "Add plugin (opens selection dialog)"),
             ("e or Enter", "Edit selected plugin"),
             ("t", "Toggle plugin enabled/disabled"),
             ("d/Delete", "Remove plugin"),
@@ -3655,6 +3758,8 @@ fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str
             ("w/W or Shift+↓", "Move plugin down in chain"),
             ("s", "Save plugin chain to file"),
             ("l", "Load plugin chain from file"),
+            ("", ""),
+            ("ADD PLUGIN:", "(↑/↓ navigate, Enter select, Esc cancel)"),
             ("", ""),
             ("EDIT MODE:", "(when editing a plugin)"),
             ("↑/↓ or k/j", "Navigate parameters"),

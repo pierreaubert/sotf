@@ -3,6 +3,7 @@
 use super::actions::ToggleUpmixerConfig;
 use super::level_meters::{db_to_position, render_gradient_meter};
 use super::render_plugin_content;
+use crate::app::state::{DividerDragState, DividerType};
 use crate::app::types::{PluginUpdateType, Screen};
 use crate::components::icons::{Icon, IconName};
 use crate::theme::Theme;
@@ -169,22 +170,25 @@ impl PlayerView {
             .on_action(cx.listener(Self::on_select_plugin_param))
             .on_action(cx.listener(Self::on_reset_plugin_param))
             .on_action(cx.listener(Self::on_start_knob_drag))
-            // Global mouse move handler for knob/slider dragging
+            // Global mouse move handler for knob/slider and divider dragging
             .on_mouse_move(cx.listener(|view, event: &MouseMoveEvent, _window, cx| {
-                let (is_dragging, start_y, start_value, min, max, plugin_idx, param_idx) = {
-                    let state = view.state.read(cx);
-                    (
-                        state.app.is_dragging_knob,
-                        state.app.knob_drag_start_y,
-                        state.app.knob_drag_start_value,
-                        state.app.knob_drag_min,
-                        state.app.knob_drag_max,
-                        state.app.knob_drag_plugin_idx,
-                        state.app.knob_drag_param_idx,
-                    )
-                };
+                let state_read = view.state.read(cx);
 
-                if is_dragging {
+                // Handle knob/slider dragging
+                let (is_knob_dragging, start_y, start_value, min, max, plugin_idx, param_idx) = (
+                    state_read.app.is_dragging_knob,
+                    state_read.app.knob_drag_start_y,
+                    state_read.app.knob_drag_start_value,
+                    state_read.app.knob_drag_min,
+                    state_read.app.knob_drag_max,
+                    state_read.app.knob_drag_plugin_idx,
+                    state_read.app.knob_drag_param_idx,
+                );
+
+                // Handle divider dragging
+                let divider_drag = state_read.app.dragging_divider.clone();
+
+                if is_knob_dragging {
                     if let Some(start_y) = start_y {
                         let mouse_y: f32 = event.position.y.into();
                         let delta_y = start_y - mouse_y; // Inverted: up = positive (increase)
@@ -200,9 +204,28 @@ impl PlayerView {
                         });
                         cx.notify();
                     }
+                } else if let Some(drag) = divider_drag {
+                    let mouse_x: f32 = event.position.x.into();
+                    let delta_x = mouse_x - drag.start_x;
+
+                    view.state.update(cx, |state, _cx| {
+                        match drag.divider_type {
+                            DividerType::InputMeter => {
+                                // Dragging right increases input meter width
+                                let new_width = (drag.start_width + delta_x).clamp(60.0, 200.0);
+                                state.app.input_meter_width = new_width;
+                            }
+                            DividerType::OutputMeter => {
+                                // Dragging left increases output meter width
+                                let new_width = (drag.start_width - delta_x).clamp(60.0, 300.0);
+                                state.app.output_meter_width = new_width;
+                            }
+                        }
+                    });
+                    cx.notify();
                 }
             }))
-            // Global mouse up handler to stop knob/slider dragging
+            // Global mouse up handler to stop knob/slider and divider dragging
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(|view, _: &MouseUpEvent, _window, cx| {
@@ -210,6 +233,9 @@ impl PlayerView {
                         if state.app.is_dragging_knob {
                             state.app.is_dragging_knob = false;
                             state.app.knob_drag_start_y = None;
+                        }
+                        if state.app.dragging_divider.is_some() {
+                            state.app.dragging_divider = None;
                         }
                     });
                 }),
@@ -799,22 +825,25 @@ impl PlayerView {
 
         // All plugin types with categories
         let all_plugins = [
-            // Effects
+            // Effects - Dynamics
             (PluginType::EQ, "Effects"),
             (PluginType::Gain, "Effects"),
             (PluginType::Compressor, "Effects"),
             (PluginType::Limiter, "Effects"),
             (PluginType::Gate, "Effects"),
+            (PluginType::Expander, "Effects"),
+            (PluginType::MultibandCompressor, "Effects"),
+            (PluginType::MultibandExpander, "Effects"),
             // Spatial
             (PluginType::Upmixer, "Spatial"),
             (PluginType::Matrix, "Spatial"),
             (PluginType::BinauralDecoder, "Spatial"),
             (PluginType::Convolution, "Spatial"),
+            (PluginType::XTC, "Spatial"),
             // Monitoring
             (PluginType::LoudnessCompensation, "Monitor"),
             (PluginType::LoudnessMonitor, "Monitor"),
             (PluginType::SpectrumAnalyzer, "Monitor"),
-            (PluginType::ChannelMuteSolo, "Monitor"),
         ];
 
         div().flex().items_center().gap_2().children(
@@ -977,7 +1006,7 @@ impl PlayerView {
                             }
                         }
                     }
-                    let has_multichannel = output_channels > 2;
+                    let _has_multichannel = output_channels > 2;
 
                     let divider_theme = PaneDividerTheme {
                         background: theme.background,
@@ -990,8 +1019,14 @@ impl PlayerView {
 
                     let input_collapsed = state.app.input_meter_collapsed;
                     let output_collapsed = state.app.output_meter_collapsed;
-                    let state_for_input = self.state.clone();
-                    let state_for_output = self.state.clone();
+                    let input_meter_width = state.app.input_meter_width;
+                    let output_meter_width = state.app.output_meter_width;
+
+                    // Create state clones for divider callbacks
+                    let state_for_input_toggle = self.state.clone();
+                    let state_for_input_drag = self.state.clone();
+                    let state_for_output_toggle = self.state.clone();
+                    let state_for_output_drag = self.state.clone();
 
                     div()
                         .flex_1()
@@ -999,18 +1034,33 @@ impl PlayerView {
                         .min_h(px(300.0)) // Minimum height for meters and content
                         // Left: Input Meter (legend on right side, facing center)
                         .when(!input_collapsed, |d| {
-                            d.child(self.render_side_meter(cx, 2, "IN", false))
+                            d.child(
+                                div()
+                                    .w(px(input_meter_width))
+                                    .h_full()
+                                    .flex_shrink_0()
+                                    .child(self.render_side_meter(cx, 2, "IN", false)),
+                            )
                         })
-                        // Divider between input meter and main zone
+                        // Divider 1: Between input meter and main zone
                         .child(
                             PaneDivider::vertical("input-meter-divider", CollapseDirection::Left)
                                 .label("IN")
                                 .theme(divider_theme.clone())
-                                .thickness(px(4.0))
+                                .thickness(px(6.0))
                                 .collapsed(input_collapsed)
                                 .on_toggle(move |collapsed, _window, cx| {
-                                    state_for_input.update(cx, |s, _| {
+                                    state_for_input_toggle.update(cx, |s, _| {
                                         s.app.input_meter_collapsed = collapsed;
+                                    });
+                                })
+                                .on_drag_start(move |pos, _window, cx| {
+                                    state_for_input_drag.update(cx, |s, _| {
+                                        s.app.dragging_divider = Some(DividerDragState {
+                                            divider_type: DividerType::InputMeter,
+                                            start_x: pos,
+                                            start_width: s.app.input_meter_width,
+                                        });
                                     });
                                 }),
                         )
@@ -1054,29 +1104,40 @@ impl PlayerView {
                                     )
                                 }),
                         )
-                        // Divider between main zone and output meter (only if multichannel)
-                        .when(has_multichannel, |d| {
-                            d.child(
-                                PaneDivider::vertical(
-                                    "output-meter-divider",
-                                    CollapseDirection::Right,
-                                )
-                                .label("OUT")
-                                .theme(divider_theme.clone())
-                                .thickness(px(4.0))
-                                .collapsed(output_collapsed)
-                                .on_toggle(
-                                    move |collapsed, _window, cx| {
-                                        state_for_output.update(cx, |s, _| {
-                                            s.app.output_meter_collapsed = collapsed;
-                                        });
-                                    },
-                                ),
+                        // Divider 2: Between main zone and output meter (always shown)
+                        .child(
+                            PaneDivider::vertical(
+                                "output-meter-divider",
+                                CollapseDirection::Right,
                             )
-                        })
-                        // Right: Output Meter
+                            .label("OUT")
+                            .theme(divider_theme.clone())
+                            .thickness(px(6.0))
+                            .collapsed(output_collapsed)
+                            .on_toggle(move |collapsed, _window, cx| {
+                                state_for_output_toggle.update(cx, |s, _| {
+                                    s.app.output_meter_collapsed = collapsed;
+                                });
+                            })
+                            .on_drag_start(move |pos, _window, cx| {
+                                state_for_output_drag.update(cx, |s, _| {
+                                    s.app.dragging_divider = Some(DividerDragState {
+                                        divider_type: DividerType::OutputMeter,
+                                        start_x: pos,
+                                        start_width: s.app.output_meter_width,
+                                    });
+                                });
+                            }),
+                        )
+                        // Right: Output Meter (always shown when not collapsed)
                         .when(!output_collapsed, |d| {
-                            d.child(self.render_side_meter(cx, output_channels, "OUT", true))
+                            d.child(
+                                div()
+                                    .w(px(output_meter_width))
+                                    .h_full()
+                                    .flex_shrink_0()
+                                    .child(self.render_side_meter(cx, output_channels, "OUT", true)),
+                            )
                         })
                 })
             })

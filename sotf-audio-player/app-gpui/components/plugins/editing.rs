@@ -656,12 +656,316 @@ impl App {
                     // Matrix is edited via grid UI, not adjustable parameters
                     false
                 }
-                PluginSettings::Expander { .. }
-                | PluginSettings::MultibandCompressor { .. }
-                | PluginSettings::MultibandExpander { .. }
-                | PluginSettings::XTC { .. } => {
-                    // TODO: Implement parameter adjustment for dynamics plugins
-                    false
+                PluginSettings::Expander {
+                    threshold_db,
+                    ratio,
+                    attack_ms,
+                    release_ms,
+                    range_db,
+                    knee_db,
+                    hysteresis_db,
+                    hold_ms,
+                    mix,
+                    link_channels,
+                    sidechain_hpf_hz,
+                } => {
+                    use sotf_audio_player::param_specs::expander::*;
+                    match param_idx {
+                        0 => {
+                            *threshold_db = (*threshold_db + delta)
+                                .clamp(THRESHOLD_MIN as f64, THRESHOLD_MAX as f64);
+                            true
+                        }
+                        1 => {
+                            *ratio =
+                                (*ratio + delta * 0.1).clamp(RATIO_MIN as f64, RATIO_MAX as f64);
+                            true
+                        }
+                        2 => {
+                            *attack_ms = (*attack_ms + delta * 0.1)
+                                .clamp(ATTACK_MIN as f64, ATTACK_MAX as f64);
+                            true
+                        }
+                        3 => {
+                            *release_ms = (*release_ms + delta * 10.0)
+                                .clamp(RELEASE_MIN as f64, RELEASE_MAX as f64);
+                            true
+                        }
+                        4 => {
+                            *range_db =
+                                (*range_db + delta).clamp(RANGE_MIN as f64, RANGE_MAX as f64);
+                            true
+                        }
+                        5 => {
+                            *knee_db =
+                                (*knee_db + delta * 0.1).clamp(KNEE_MIN as f64, KNEE_MAX as f64);
+                            true
+                        }
+                        6 => {
+                            *hysteresis_db = (*hysteresis_db + delta * 0.1)
+                                .clamp(HYSTERESIS_MIN as f64, HYSTERESIS_MAX as f64);
+                            true
+                        }
+                        7 => {
+                            *hold_ms =
+                                (*hold_ms + delta * 5.0).clamp(HOLD_MIN as f64, HOLD_MAX as f64);
+                            true
+                        }
+                        8 => {
+                            *mix = (*mix + delta * 0.01).clamp(MIX_MIN as f64, MIX_MAX as f64);
+                            true
+                        }
+                        9 => {
+                            *link_channels = !*link_channels;
+                            true
+                        }
+                        10 => {
+                            *sidechain_hpf_hz = (*sidechain_hpf_hz + delta * 5.0)
+                                .clamp(SIDECHAIN_HPF_HZ_MIN as f64, SIDECHAIN_HPF_HZ_MAX as f64);
+                            true
+                        }
+                        _ => false,
+                    }
+                }
+                PluginSettings::MultibandCompressor {
+                    num_bands,
+                    crossover_preset,
+                    crossover_freq_1,
+                    crossover_freq_2,
+                    crossover_freq_3,
+                    crossover_freq_4,
+                    threshold_db,
+                    ratio,
+                    attack_ms,
+                    release_ms,
+                    knee_db,
+                    mix,
+                    link_channels,
+                } => {
+                    use sotf_audio_player::param_specs::multiband_compressor::*;
+                    match param_idx {
+                        0 => {
+                            *num_bands = ((*num_bands as i64) + delta as i64)
+                                .clamp(NUM_BANDS_MIN as i64, NUM_BANDS_MAX as i64)
+                                as usize;
+                            true
+                        }
+                        1 => {
+                            *crossover_preset = ((*crossover_preset as i64) + delta as i64)
+                                .clamp(CROSSOVER_PRESET_MIN as i64, CROSSOVER_PRESET_MAX as i64)
+                                as i32;
+                            true
+                        }
+                        2 => {
+                            *crossover_freq_1 = (*crossover_freq_1 + delta * 10.0)
+                                .clamp(CROSSOVER_FREQ_1_MIN as f64, CROSSOVER_FREQ_1_MAX as f64);
+                            true
+                        }
+                        3 => {
+                            *crossover_freq_2 = (*crossover_freq_2 + delta * 50.0)
+                                .clamp(CROSSOVER_FREQ_2_MIN as f64, CROSSOVER_FREQ_2_MAX as f64);
+                            true
+                        }
+                        4 => {
+                            *crossover_freq_3 = (*crossover_freq_3 + delta * 100.0)
+                                .clamp(CROSSOVER_FREQ_3_MIN as f64, CROSSOVER_FREQ_3_MAX as f64);
+                            true
+                        }
+                        5 => {
+                            *crossover_freq_4 = (*crossover_freq_4 + delta * 100.0)
+                                .clamp(CROSSOVER_FREQ_4_MIN as f64, CROSSOVER_FREQ_4_MAX as f64);
+                            true
+                        }
+                        6 => {
+                            *threshold_db = (*threshold_db + delta)
+                                .clamp(THRESHOLD_MIN as f64, THRESHOLD_MAX as f64);
+                            true
+                        }
+                        7 => {
+                            *ratio =
+                                (*ratio + delta * 0.1).clamp(RATIO_MIN as f64, RATIO_MAX as f64);
+                            true
+                        }
+                        8 => {
+                            *attack_ms = (*attack_ms + delta * 0.5)
+                                .clamp(ATTACK_MIN as f64, ATTACK_MAX as f64);
+                            true
+                        }
+                        9 => {
+                            *release_ms = (*release_ms + delta * 5.0)
+                                .clamp(RELEASE_MIN as f64, RELEASE_MAX as f64);
+                            true
+                        }
+                        10 => {
+                            *knee_db =
+                                (*knee_db + delta * 0.1).clamp(KNEE_MIN as f64, KNEE_MAX as f64);
+                            true
+                        }
+                        11 => {
+                            *mix = (*mix + delta * 0.01).clamp(MIX_MIN as f64, MIX_MAX as f64);
+                            true
+                        }
+                        12 => {
+                            *link_channels = !*link_channels;
+                            true
+                        }
+                        _ => false,
+                    }
+                }
+                PluginSettings::MultibandExpander {
+                    num_bands,
+                    crossover_preset,
+                    crossover_freq_1,
+                    crossover_freq_2,
+                    crossover_freq_3,
+                    crossover_freq_4,
+                    threshold_db,
+                    ratio,
+                    attack_ms,
+                    release_ms,
+                    range_db,
+                    knee_db,
+                    hysteresis_db,
+                    hold_ms,
+                    mix,
+                    link_channels,
+                } => {
+                    use sotf_audio_player::param_specs::multiband_expander::*;
+                    match param_idx {
+                        0 => {
+                            *num_bands = ((*num_bands as i64) + delta as i64)
+                                .clamp(NUM_BANDS_MIN as i64, NUM_BANDS_MAX as i64)
+                                as usize;
+                            true
+                        }
+                        1 => {
+                            *crossover_preset = ((*crossover_preset as i64) + delta as i64)
+                                .clamp(CROSSOVER_PRESET_MIN as i64, CROSSOVER_PRESET_MAX as i64)
+                                as i32;
+                            true
+                        }
+                        2 => {
+                            *crossover_freq_1 = (*crossover_freq_1 + delta * 10.0)
+                                .clamp(CROSSOVER_FREQ_1_MIN as f64, CROSSOVER_FREQ_1_MAX as f64);
+                            true
+                        }
+                        3 => {
+                            *crossover_freq_2 = (*crossover_freq_2 + delta * 50.0)
+                                .clamp(CROSSOVER_FREQ_2_MIN as f64, CROSSOVER_FREQ_2_MAX as f64);
+                            true
+                        }
+                        4 => {
+                            *crossover_freq_3 = (*crossover_freq_3 + delta * 100.0)
+                                .clamp(CROSSOVER_FREQ_3_MIN as f64, CROSSOVER_FREQ_3_MAX as f64);
+                            true
+                        }
+                        5 => {
+                            *crossover_freq_4 = (*crossover_freq_4 + delta * 100.0)
+                                .clamp(CROSSOVER_FREQ_4_MIN as f64, CROSSOVER_FREQ_4_MAX as f64);
+                            true
+                        }
+                        6 => {
+                            *threshold_db = (*threshold_db + delta)
+                                .clamp(THRESHOLD_MIN as f64, THRESHOLD_MAX as f64);
+                            true
+                        }
+                        7 => {
+                            *ratio =
+                                (*ratio + delta * 0.1).clamp(RATIO_MIN as f64, RATIO_MAX as f64);
+                            true
+                        }
+                        8 => {
+                            *attack_ms = (*attack_ms + delta * 0.1)
+                                .clamp(ATTACK_MIN as f64, ATTACK_MAX as f64);
+                            true
+                        }
+                        9 => {
+                            *release_ms = (*release_ms + delta * 10.0)
+                                .clamp(RELEASE_MIN as f64, RELEASE_MAX as f64);
+                            true
+                        }
+                        10 => {
+                            *range_db =
+                                (*range_db + delta).clamp(RANGE_MIN as f64, RANGE_MAX as f64);
+                            true
+                        }
+                        11 => {
+                            *knee_db =
+                                (*knee_db + delta * 0.1).clamp(KNEE_MIN as f64, KNEE_MAX as f64);
+                            true
+                        }
+                        12 => {
+                            *hysteresis_db = (*hysteresis_db + delta * 0.1)
+                                .clamp(HYSTERESIS_MIN as f64, HYSTERESIS_MAX as f64);
+                            true
+                        }
+                        13 => {
+                            *hold_ms =
+                                (*hold_ms + delta * 5.0).clamp(HOLD_MIN as f64, HOLD_MAX as f64);
+                            true
+                        }
+                        14 => {
+                            *mix = (*mix + delta * 0.01).clamp(MIX_MIN as f64, MIX_MAX as f64);
+                            true
+                        }
+                        15 => {
+                            *link_channels = !*link_channels;
+                            true
+                        }
+                        _ => false,
+                    }
+                }
+                PluginSettings::XTC {
+                    distance_m,
+                    speaker_angle_deg,
+                    head_radius_m,
+                    beta_base,
+                    beta_low_freq_boost,
+                    beta_high_freq_boost,
+                    head_shadow_cutoff_hz,
+                    head_shadow_slope_db_per_octave,
+                } => {
+                    match param_idx {
+                        0 => {
+                            *distance_m = (*distance_m + delta * 0.1).clamp(0.5, 5.0);
+                            true
+                        }
+                        1 => {
+                            *speaker_angle_deg = (*speaker_angle_deg + delta).clamp(10.0, 60.0);
+                            true
+                        }
+                        2 => {
+                            // head_radius stored in meters, display in cm, so /100 back
+                            *head_radius_m =
+                                (*head_radius_m + delta * 0.001).clamp(0.05, 0.15);
+                            true
+                        }
+                        3 => {
+                            *beta_base = (*beta_base + delta * 0.001).clamp(0.0001, 0.1);
+                            true
+                        }
+                        4 => {
+                            *beta_low_freq_boost =
+                                (*beta_low_freq_boost + delta * 1.0).clamp(1.0, 100.0);
+                            true
+                        }
+                        5 => {
+                            *beta_high_freq_boost =
+                                (*beta_high_freq_boost + delta * 1.0).clamp(1.0, 100.0);
+                            true
+                        }
+                        6 => {
+                            *head_shadow_cutoff_hz =
+                                (*head_shadow_cutoff_hz + delta * 100.0).clamp(1000.0, 10000.0);
+                            true
+                        }
+                        7 => {
+                            *head_shadow_slope_db_per_octave =
+                                (*head_shadow_slope_db_per_octave + delta * 0.1).clamp(0.0, 12.0);
+                            true
+                        }
+                        _ => false,
+                    }
                 }
             }
         } else {
@@ -1184,6 +1488,291 @@ impl App {
                     }
                     _ => {}
                 },
+                PluginSettings::Expander {
+                    threshold_db,
+                    ratio,
+                    attack_ms,
+                    release_ms,
+                    range_db,
+                    knee_db,
+                    hysteresis_db,
+                    hold_ms,
+                    mix,
+                    link_channels,
+                    sidechain_hpf_hz,
+                } => {
+                    use sotf_audio_player::param_specs::expander::*;
+                    match param_idx {
+                        0 => {
+                            *threshold_db =
+                                value.clamp(THRESHOLD_MIN as f64, THRESHOLD_MAX as f64);
+                            update_needed = true;
+                        }
+                        1 => {
+                            *ratio = value.clamp(RATIO_MIN as f64, RATIO_MAX as f64);
+                            update_needed = true;
+                        }
+                        2 => {
+                            *attack_ms = value.clamp(ATTACK_MIN as f64, ATTACK_MAX as f64);
+                            update_needed = true;
+                        }
+                        3 => {
+                            *release_ms = value.clamp(RELEASE_MIN as f64, RELEASE_MAX as f64);
+                            update_needed = true;
+                        }
+                        4 => {
+                            *range_db = value.clamp(RANGE_MIN as f64, RANGE_MAX as f64);
+                            update_needed = true;
+                        }
+                        5 => {
+                            *knee_db = value.clamp(KNEE_MIN as f64, KNEE_MAX as f64);
+                            update_needed = true;
+                        }
+                        6 => {
+                            *hysteresis_db =
+                                value.clamp(HYSTERESIS_MIN as f64, HYSTERESIS_MAX as f64);
+                            update_needed = true;
+                        }
+                        7 => {
+                            *hold_ms = value.clamp(HOLD_MIN as f64, HOLD_MAX as f64);
+                            update_needed = true;
+                        }
+                        8 => {
+                            *mix = (value / 100.0).clamp(MIX_MIN as f64, MIX_MAX as f64);
+                            update_needed = true;
+                        }
+                        9 => {
+                            *link_channels = value > 0.5;
+                            update_needed = true;
+                        }
+                        10 => {
+                            *sidechain_hpf_hz = value
+                                .clamp(SIDECHAIN_HPF_HZ_MIN as f64, SIDECHAIN_HPF_HZ_MAX as f64);
+                            update_needed = true;
+                        }
+                        _ => {}
+                    }
+                }
+                PluginSettings::MultibandCompressor {
+                    num_bands,
+                    crossover_preset,
+                    crossover_freq_1,
+                    crossover_freq_2,
+                    crossover_freq_3,
+                    crossover_freq_4,
+                    threshold_db,
+                    ratio,
+                    attack_ms,
+                    release_ms,
+                    knee_db,
+                    mix,
+                    link_channels,
+                } => {
+                    use sotf_audio_player::param_specs::multiband_compressor::*;
+                    match param_idx {
+                        0 => {
+                            *num_bands =
+                                (value as usize).clamp(NUM_BANDS_MIN, NUM_BANDS_MAX);
+                            update_needed = true;
+                        }
+                        1 => {
+                            *crossover_preset = (value as i32)
+                                .clamp(CROSSOVER_PRESET_MIN, CROSSOVER_PRESET_MAX);
+                            update_needed = true;
+                        }
+                        2 => {
+                            *crossover_freq_1 = value
+                                .clamp(CROSSOVER_FREQ_1_MIN as f64, CROSSOVER_FREQ_1_MAX as f64);
+                            update_needed = true;
+                        }
+                        3 => {
+                            *crossover_freq_2 = value
+                                .clamp(CROSSOVER_FREQ_2_MIN as f64, CROSSOVER_FREQ_2_MAX as f64);
+                            update_needed = true;
+                        }
+                        4 => {
+                            *crossover_freq_3 = value
+                                .clamp(CROSSOVER_FREQ_3_MIN as f64, CROSSOVER_FREQ_3_MAX as f64);
+                            update_needed = true;
+                        }
+                        5 => {
+                            *crossover_freq_4 = value
+                                .clamp(CROSSOVER_FREQ_4_MIN as f64, CROSSOVER_FREQ_4_MAX as f64);
+                            update_needed = true;
+                        }
+                        6 => {
+                            *threshold_db =
+                                value.clamp(THRESHOLD_MIN as f64, THRESHOLD_MAX as f64);
+                            update_needed = true;
+                        }
+                        7 => {
+                            *ratio = value.clamp(RATIO_MIN as f64, RATIO_MAX as f64);
+                            update_needed = true;
+                        }
+                        8 => {
+                            *attack_ms = value.clamp(ATTACK_MIN as f64, ATTACK_MAX as f64);
+                            update_needed = true;
+                        }
+                        9 => {
+                            *release_ms = value.clamp(RELEASE_MIN as f64, RELEASE_MAX as f64);
+                            update_needed = true;
+                        }
+                        10 => {
+                            *knee_db = value.clamp(KNEE_MIN as f64, KNEE_MAX as f64);
+                            update_needed = true;
+                        }
+                        11 => {
+                            *mix = (value / 100.0).clamp(MIX_MIN as f64, MIX_MAX as f64);
+                            update_needed = true;
+                        }
+                        12 => {
+                            *link_channels = value > 0.5;
+                            update_needed = true;
+                        }
+                        _ => {}
+                    }
+                }
+                PluginSettings::MultibandExpander {
+                    num_bands,
+                    crossover_preset,
+                    crossover_freq_1,
+                    crossover_freq_2,
+                    crossover_freq_3,
+                    crossover_freq_4,
+                    threshold_db,
+                    ratio,
+                    attack_ms,
+                    release_ms,
+                    range_db,
+                    knee_db,
+                    hysteresis_db,
+                    hold_ms,
+                    mix,
+                    link_channels,
+                } => {
+                    use sotf_audio_player::param_specs::multiband_expander::*;
+                    match param_idx {
+                        0 => {
+                            *num_bands =
+                                (value as usize).clamp(NUM_BANDS_MIN, NUM_BANDS_MAX);
+                            update_needed = true;
+                        }
+                        1 => {
+                            *crossover_preset = (value as i32)
+                                .clamp(CROSSOVER_PRESET_MIN, CROSSOVER_PRESET_MAX);
+                            update_needed = true;
+                        }
+                        2 => {
+                            *crossover_freq_1 = value
+                                .clamp(CROSSOVER_FREQ_1_MIN as f64, CROSSOVER_FREQ_1_MAX as f64);
+                            update_needed = true;
+                        }
+                        3 => {
+                            *crossover_freq_2 = value
+                                .clamp(CROSSOVER_FREQ_2_MIN as f64, CROSSOVER_FREQ_2_MAX as f64);
+                            update_needed = true;
+                        }
+                        4 => {
+                            *crossover_freq_3 = value
+                                .clamp(CROSSOVER_FREQ_3_MIN as f64, CROSSOVER_FREQ_3_MAX as f64);
+                            update_needed = true;
+                        }
+                        5 => {
+                            *crossover_freq_4 = value
+                                .clamp(CROSSOVER_FREQ_4_MIN as f64, CROSSOVER_FREQ_4_MAX as f64);
+                            update_needed = true;
+                        }
+                        6 => {
+                            *threshold_db =
+                                value.clamp(THRESHOLD_MIN as f64, THRESHOLD_MAX as f64);
+                            update_needed = true;
+                        }
+                        7 => {
+                            *ratio = value.clamp(RATIO_MIN as f64, RATIO_MAX as f64);
+                            update_needed = true;
+                        }
+                        8 => {
+                            *attack_ms = value.clamp(ATTACK_MIN as f64, ATTACK_MAX as f64);
+                            update_needed = true;
+                        }
+                        9 => {
+                            *release_ms = value.clamp(RELEASE_MIN as f64, RELEASE_MAX as f64);
+                            update_needed = true;
+                        }
+                        10 => {
+                            *range_db = value.clamp(RANGE_MIN as f64, RANGE_MAX as f64);
+                            update_needed = true;
+                        }
+                        11 => {
+                            *knee_db = value.clamp(KNEE_MIN as f64, KNEE_MAX as f64);
+                            update_needed = true;
+                        }
+                        12 => {
+                            *hysteresis_db =
+                                value.clamp(HYSTERESIS_MIN as f64, HYSTERESIS_MAX as f64);
+                            update_needed = true;
+                        }
+                        13 => {
+                            *hold_ms = value.clamp(HOLD_MIN as f64, HOLD_MAX as f64);
+                            update_needed = true;
+                        }
+                        14 => {
+                            *mix = (value / 100.0).clamp(MIX_MIN as f64, MIX_MAX as f64);
+                            update_needed = true;
+                        }
+                        15 => {
+                            *link_channels = value > 0.5;
+                            update_needed = true;
+                        }
+                        _ => {}
+                    }
+                }
+                PluginSettings::XTC {
+                    distance_m,
+                    speaker_angle_deg,
+                    head_radius_m,
+                    beta_base,
+                    beta_low_freq_boost,
+                    beta_high_freq_boost,
+                    head_shadow_cutoff_hz,
+                    head_shadow_slope_db_per_octave,
+                } => match param_idx {
+                    0 => {
+                        *distance_m = value.clamp(0.5, 5.0);
+                        update_needed = true;
+                    }
+                    1 => {
+                        *speaker_angle_deg = value.clamp(10.0, 60.0);
+                        update_needed = true;
+                    }
+                    2 => {
+                        // Value comes as cm, convert to meters
+                        *head_radius_m = (value / 100.0).clamp(0.05, 0.15);
+                        update_needed = true;
+                    }
+                    3 => {
+                        // Value comes as scaled (×1000), convert back
+                        *beta_base = (value / 1000.0).clamp(0.0001, 0.1);
+                        update_needed = true;
+                    }
+                    4 => {
+                        *beta_low_freq_boost = value.clamp(1.0, 100.0);
+                        update_needed = true;
+                    }
+                    5 => {
+                        *beta_high_freq_boost = value.clamp(1.0, 100.0);
+                        update_needed = true;
+                    }
+                    6 => {
+                        *head_shadow_cutoff_hz = value.clamp(1000.0, 10000.0);
+                        update_needed = true;
+                    }
+                    7 => {
+                        *head_shadow_slope_db_per_octave = value.clamp(0.0, 12.0);
+                        update_needed = true;
+                    }
+                    _ => {}
+                },
                 _ => {}
             }
         }
@@ -1596,10 +2185,9 @@ pub fn get_param_count(settings: &PluginSettings) -> usize {
         PluginSettings::Gain { .. } => 1,            // gain_db
         PluginSettings::ChannelMuteSolo { .. } => 0, // No editable params (toggles only)
         PluginSettings::Matrix { .. } => 0,          // Matrix is edited via grid UI, not params
-        // TODO: Implement parameter editing for dynamics plugins
-        PluginSettings::Expander { .. } => 0,
-        PluginSettings::MultibandCompressor { .. } => 0,
-        PluginSettings::MultibandExpander { .. } => 0,
-        PluginSettings::XTC { .. } => 0,
+        PluginSettings::Expander { .. } => 11, // threshold, ratio, attack, release, range, knee, hysteresis, hold, mix, link_channels, sidechain_hpf_hz
+        PluginSettings::MultibandCompressor { .. } => 13, // num_bands, crossover_preset, crossover_freq_1-4, threshold, ratio, attack, release, knee, mix, link_channels
+        PluginSettings::MultibandExpander { .. } => 16, // num_bands, crossover_preset, crossover_freq_1-4, threshold, ratio, attack, release, range, knee, hysteresis, hold, mix, link_channels
+        PluginSettings::XTC { .. } => 8, // distance, angle, head_radius, beta_base, beta_low_freq_boost, beta_high_freq_boost, head_shadow_cutoff, head_shadow_slope
     }
 }

@@ -20,6 +20,7 @@ pub enum InputMode {
     Normal,
     Search,
     AddDirectory,
+    AddPlugin,
     EditPlugin,
     SavePlugins,
     LoadPlugins,
@@ -156,6 +157,7 @@ pub struct App {
     pub selected_directory_index: usize,
     pub selected_queue_index: usize,
     pub selected_plugin_index: usize,
+    pub add_plugin_selected_index: usize, // For plugin add dialog
     pub album_list_offset: usize,
     pub status_message: Option<String>, // For displaying save/load status
     pub error_message: Option<String>,  // For displaying decode/playback errors in a modal
@@ -278,6 +280,7 @@ impl App {
             selected_directory_index: 0,
             selected_queue_index: 0,
             selected_plugin_index: 0,
+            add_plugin_selected_index: 0,
             album_list_offset: 0,
             status_message: None,
             error_message: None,
@@ -1905,12 +1908,139 @@ impl App {
                     // Matrix is not yet user-editable
                     false
                 }
-                PluginSettings::Expander { .. }
-                | PluginSettings::MultibandCompressor { .. }
-                | PluginSettings::MultibandExpander { .. }
-                | PluginSettings::XTC { .. } => {
-                    // TODO: Implement parameter adjustment for dynamics plugins
-                    false
+                PluginSettings::Expander {
+                    threshold_db,
+                    ratio,
+                    attack_ms,
+                    release_ms,
+                    range_db,
+                    knee_db,
+                    hysteresis_db,
+                    hold_ms,
+                    mix,
+                    link_channels,
+                    sidechain_hpf_hz,
+                } => {
+                    match param_idx {
+                        0 => *threshold_db = (*threshold_db + delta).clamp(-80.0, 0.0),
+                        1 => *ratio = (*ratio + delta * 0.1).clamp(1.0, 20.0),
+                        2 => *attack_ms = (*attack_ms + delta * 0.1).clamp(0.1, 50.0),
+                        3 => *release_ms = (*release_ms + delta).clamp(10.0, 2000.0),
+                        4 => *range_db = (*range_db + delta).clamp(0.0, 80.0),
+                        5 => *knee_db = (*knee_db + delta * 0.1).clamp(0.0, 20.0),
+                        6 => *hysteresis_db = (*hysteresis_db + delta * 0.1).clamp(0.0, 12.0),
+                        7 => *hold_ms = (*hold_ms + delta).clamp(0.0, 500.0),
+                        8 => *mix = (*mix + delta * 0.01).clamp(0.0, 1.0),
+                        9 => {
+                            if delta.abs() > 0.1 {
+                                *link_channels = !*link_channels;
+                            }
+                        }
+                        10 => *sidechain_hpf_hz = (*sidechain_hpf_hz + delta).clamp(0.0, 500.0),
+                        _ => return false,
+                    }
+                    true
+                }
+                PluginSettings::MultibandCompressor {
+                    num_bands,
+                    crossover_freq_1,
+                    crossover_freq_2,
+                    crossover_freq_3,
+                    crossover_freq_4,
+                    threshold_db,
+                    ratio,
+                    attack_ms,
+                    release_ms,
+                    knee_db,
+                    mix,
+                    link_channels,
+                    ..
+                } => {
+                    match param_idx {
+                        0 => *num_bands = (*num_bands as i32 + delta as i32).clamp(2, 5) as usize,
+                        1 => *crossover_freq_1 = (*crossover_freq_1 + delta * 10.0).clamp(20.0, 500.0),
+                        2 => *crossover_freq_2 = (*crossover_freq_2 + delta * 10.0).clamp(500.0, 5000.0),
+                        3 => *crossover_freq_3 = (*crossover_freq_3 + delta * 10.0).clamp(5000.0, 15000.0),
+                        4 => *crossover_freq_4 = (*crossover_freq_4 + delta * 10.0).clamp(10000.0, 18000.0),
+                        5 => *threshold_db = (*threshold_db + delta).clamp(-60.0, 0.0),
+                        6 => *ratio = (*ratio + delta * 0.1).clamp(1.0, 20.0),
+                        7 => *attack_ms = (*attack_ms + delta * 0.1).clamp(0.1, 100.0),
+                        8 => *release_ms = (*release_ms + delta).clamp(10.0, 1000.0),
+                        9 => *knee_db = (*knee_db + delta * 0.1).clamp(0.0, 20.0),
+                        10 => *mix = (*mix + delta * 0.01).clamp(0.0, 1.0),
+                        11 => {
+                            if delta.abs() > 0.1 {
+                                *link_channels = !*link_channels;
+                            }
+                        }
+                        _ => return false,
+                    }
+                    true
+                }
+                PluginSettings::MultibandExpander {
+                    num_bands,
+                    crossover_freq_1,
+                    crossover_freq_2,
+                    crossover_freq_3,
+                    crossover_freq_4,
+                    threshold_db,
+                    ratio,
+                    attack_ms,
+                    release_ms,
+                    range_db,
+                    knee_db,
+                    hysteresis_db,
+                    hold_ms,
+                    mix,
+                    link_channels,
+                    ..
+                } => {
+                    match param_idx {
+                        0 => *num_bands = (*num_bands as i32 + delta as i32).clamp(2, 5) as usize,
+                        1 => *crossover_freq_1 = (*crossover_freq_1 + delta * 10.0).clamp(20.0, 500.0),
+                        2 => *crossover_freq_2 = (*crossover_freq_2 + delta * 10.0).clamp(500.0, 5000.0),
+                        3 => *crossover_freq_3 = (*crossover_freq_3 + delta * 10.0).clamp(5000.0, 15000.0),
+                        4 => *crossover_freq_4 = (*crossover_freq_4 + delta * 10.0).clamp(10000.0, 18000.0),
+                        5 => *threshold_db = (*threshold_db + delta).clamp(-80.0, 0.0),
+                        6 => *ratio = (*ratio + delta * 0.1).clamp(1.0, 20.0),
+                        7 => *attack_ms = (*attack_ms + delta * 0.1).clamp(0.1, 50.0),
+                        8 => *release_ms = (*release_ms + delta).clamp(10.0, 2000.0),
+                        9 => *range_db = (*range_db + delta).clamp(0.0, 80.0),
+                        10 => *knee_db = (*knee_db + delta * 0.1).clamp(0.0, 20.0),
+                        11 => *hysteresis_db = (*hysteresis_db + delta * 0.1).clamp(0.0, 12.0),
+                        12 => *hold_ms = (*hold_ms + delta).clamp(0.0, 500.0),
+                        13 => *mix = (*mix + delta * 0.01).clamp(0.0, 1.0),
+                        14 => {
+                            if delta.abs() > 0.1 {
+                                *link_channels = !*link_channels;
+                            }
+                        }
+                        _ => return false,
+                    }
+                    true
+                }
+                PluginSettings::XTC {
+                    distance_m,
+                    speaker_angle_deg,
+                    head_radius_m,
+                    beta_base,
+                    beta_low_freq_boost,
+                    beta_high_freq_boost,
+                    head_shadow_cutoff_hz,
+                    head_shadow_slope_db_per_octave,
+                } => {
+                    match param_idx {
+                        0 => *distance_m = (*distance_m + delta * 0.1).clamp(0.5, 10.0),
+                        1 => *speaker_angle_deg = (*speaker_angle_deg + delta).clamp(10.0, 60.0),
+                        2 => *head_radius_m = (*head_radius_m + delta * 0.001).clamp(0.07, 0.12),
+                        3 => *beta_base = (*beta_base + delta * 0.0001).clamp(0.0001, 0.1),
+                        4 => *beta_low_freq_boost = (*beta_low_freq_boost + delta).clamp(1.0, 100.0),
+                        5 => *beta_high_freq_boost = (*beta_high_freq_boost + delta).clamp(1.0, 100.0),
+                        6 => *head_shadow_cutoff_hz = (*head_shadow_cutoff_hz + delta * 100.0).clamp(1000.0, 10000.0),
+                        7 => *head_shadow_slope_db_per_octave = (*head_shadow_slope_db_per_octave + delta * 0.1).clamp(0.0, 12.0),
+                        _ => return false,
+                    }
+                    true
                 }
             }
         } else {
@@ -3028,11 +3158,10 @@ fn get_param_count(settings: &sotf_audio_player::PluginSettings) -> usize {
         PluginSettings::SpectrumAnalyzer { .. } => 4, // num_bins, min_freq, max_freq, smoothing
         PluginSettings::ChannelMuteSolo { .. } => 0, // Automatically managed, no user-editable parameters
         PluginSettings::Matrix { .. } => 0,          // Not yet user-editable
-        // TODO: Implement parameter editing for dynamics plugins
-        PluginSettings::Expander { .. } => 0,
-        PluginSettings::MultibandCompressor { .. } => 0,
-        PluginSettings::MultibandExpander { .. } => 0,
-        PluginSettings::XTC { .. } => 0,
+        PluginSettings::Expander { .. } => 11, // threshold, ratio, attack, release, range, knee, hysteresis, hold, mix, link_channels, sidechain_hpf
+        PluginSettings::MultibandCompressor { .. } => 12, // num_bands, crossover_freq_1-4, threshold, ratio, attack, release, knee, mix, link_channels
+        PluginSettings::MultibandExpander { .. } => 15, // num_bands, crossover_freq_1-4, threshold, ratio, attack, release, range, knee, hysteresis, hold, mix, link_channels
+        PluginSettings::XTC { .. } => 8, // distance, speaker_angle, head_radius, beta_base, beta_low_boost, beta_high_boost, head_shadow_cutoff, head_shadow_slope
     }
 }
 

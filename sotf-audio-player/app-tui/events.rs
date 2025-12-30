@@ -25,6 +25,7 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     match app.input_mode {
         InputMode::Search => handle_search_mode(app, key),
         InputMode::AddDirectory => handle_add_directory_mode(app, key),
+        InputMode::AddPlugin => handle_add_plugin_mode(app, key),
         InputMode::EditPlugin => handle_edit_plugin_mode(app, key),
         InputMode::SavePlugins => handle_save_plugins_mode(app, key),
         InputMode::LoadPlugins => handle_load_plugins_mode(app, key),
@@ -612,6 +613,43 @@ fn handle_add_directory_mode(app: &mut App, key: KeyEvent) -> Option<PlayerComma
     }
 }
 
+fn handle_add_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    let plugin_types = PluginType::all();
+    let num_plugins = plugin_types.len();
+
+    match key.code {
+        KeyCode::Esc => {
+            app.input_mode = InputMode::Normal;
+            None
+        }
+        KeyCode::Enter => {
+            // Add the selected plugin
+            if let Some(plugin_type) = plugin_types.get(app.add_plugin_selected_index) {
+                app.add_plugin(plugin_type);
+            }
+            app.input_mode = InputMode::Normal;
+            None
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            if app.add_plugin_selected_index > 0 {
+                app.add_plugin_selected_index -= 1;
+            } else {
+                app.add_plugin_selected_index = num_plugins.saturating_sub(1);
+            }
+            None
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            if app.add_plugin_selected_index + 1 < num_plugins {
+                app.add_plugin_selected_index += 1;
+            } else {
+                app.add_plugin_selected_index = 0;
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
 fn handle_plugins_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     match key.code {
         KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
@@ -653,13 +691,9 @@ fn handle_plugins_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             None
         }
         KeyCode::Char('a') => {
-            // Add a plugin - cycle through available types for simplicity
-            // In a more complex UI, this could open a selection dialog
-            let plugin_types = PluginType::all();
-            // For now, add EQ by default, user can modify this behavior
-            if let Some(first_type) = plugin_types.first() {
-                app.add_plugin(first_type);
-            }
+            // Open plugin selection dialog
+            app.add_plugin_selected_index = 0;
+            app.input_mode = InputMode::AddPlugin;
             None
         }
         KeyCode::Char('t') => {
@@ -678,91 +712,6 @@ fn handle_plugins_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         KeyCode::Char('w') | KeyCode::Char('W') => {
             // Move plugin down (also available via Shift+Down)
             app.move_plugin_down(app.selected_plugin_index);
-            None
-        }
-        KeyCode::Char('1') => {
-            // Quick add EQ
-            app.add_plugin(&PluginType::EQ);
-            None
-        }
-        KeyCode::Char('2') => {
-            // Quick add Upmixer
-            app.add_plugin(&PluginType::Upmixer);
-            None
-        }
-        KeyCode::Char('3') => {
-            // Quick add Compressor
-            app.add_plugin(&PluginType::Compressor);
-            None
-        }
-        KeyCode::Char('4') => {
-            // Quick add Gate
-            app.add_plugin(&PluginType::Gate);
-            None
-        }
-        KeyCode::Char('5') => {
-            // Quick add Limiter
-            app.add_plugin(&PluginType::Limiter);
-            None
-        }
-        KeyCode::Char('6') => {
-            // Quick add Loudness Compensation
-            app.add_plugin(&PluginType::LoudnessCompensation);
-            None
-        }
-        KeyCode::Char('7') => {
-            // Quick add Binaural Decoder
-            app.add_plugin(&PluginType::BinauralDecoder);
-            None
-        }
-        KeyCode::Char('8') => {
-            // Quick add Convolution
-            app.add_plugin(&PluginType::Convolution);
-            None
-        }
-        KeyCode::Char('9') => {
-            // Quick add Loudness Monitor
-            app.add_plugin(&PluginType::LoudnessMonitor);
-            None
-        }
-        KeyCode::Char('0') => {
-            // Quick add Spectrum Analyzer
-            app.add_plugin(&PluginType::SpectrumAnalyzer);
-            None
-        }
-        KeyCode::Char('g') => {
-            // Quick add Gain
-            app.add_plugin(&PluginType::Gain);
-            None
-        }
-        KeyCode::Char('m') => {
-            // Quick add Channel Mute/Solo
-            app.add_plugin(&PluginType::ChannelMuteSolo);
-            None
-        }
-        KeyCode::Char('x') => {
-            // Quick add Matrix Mixer
-            app.add_plugin(&PluginType::Matrix);
-            None
-        }
-        KeyCode::Char('r') => {
-            // Quick add Expander
-            app.add_plugin(&PluginType::Expander);
-            None
-        }
-        KeyCode::Char('c') => {
-            // Quick add Multiband Compressor
-            app.add_plugin(&PluginType::MultibandCompressor);
-            None
-        }
-        KeyCode::Char('f') => {
-            // Quick add Multiband Expander
-            app.add_plugin(&PluginType::MultibandExpander);
-            None
-        }
-        KeyCode::Char('z') => {
-            // Quick add XTC (Crosstalk Cancellation)
-            app.add_plugin(&PluginType::XTC);
             None
         }
         _ => None,

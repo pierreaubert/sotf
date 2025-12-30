@@ -6,5 +6,5 @@
 pub mod app;
 pub mod library;
 
-pub use app::{App, AppState, WorkflowNodeMapping};
+pub use app::{App, AppState, DividerDragState, DividerType, WorkflowNodeMapping};
 pub use library::LibraryState;

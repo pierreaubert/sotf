@@ -37,6 +37,21 @@ pub struct WorkflowNodeMapping {
     pub output_node_id: Option<NodeId>,
 }
 
+/// Which divider is being dragged
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DividerType {
+    InputMeter,
+    OutputMeter,
+}
+
+/// State for tracking divider drag operations
+#[derive(Debug, Clone)]
+pub struct DividerDragState {
+    pub divider_type: DividerType,
+    pub start_x: f32,
+    pub start_width: f32,
+}
+
 #[derive(Debug)]
 pub struct App {
     pub library: MusicLibrary,
@@ -285,6 +300,13 @@ pub struct App {
     pub input_meter_collapsed: bool, // Left meter panel
     pub output_meter_collapsed: bool, // Right meter panel
 
+    // Rack panel widths (for resizing)
+    pub input_meter_width: f32,  // Width of input meter panel
+    pub output_meter_width: f32, // Width of output meter panel
+
+    // Divider drag state
+    pub dragging_divider: Option<DividerDragState>,
+
     // Startup database check state
     /// Whether we've performed the initial database check on startup
     pub startup_db_check_done: bool,
@@ -458,6 +480,9 @@ impl App {
             rack_detail_collapsed: false,
             input_meter_collapsed: false,
             output_meter_collapsed: false,
+            input_meter_width: 80.0,  // Default width for input meter panel
+            output_meter_width: 140.0, // Default width for output meter panel
+            dragging_divider: None,
             startup_db_check_done: false,
         };
 

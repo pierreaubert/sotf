@@ -18,16 +18,20 @@ mod ui_binaural;
 mod ui_compressor;
 mod ui_convolution;
 mod ui_eq;
+mod ui_expander;
 mod ui_gain;
 mod ui_gate;
 mod ui_graph;
 mod ui_limiter;
 mod ui_loudness;
 mod ui_matrix;
+mod ui_mb_compressor;
+mod ui_mb_expander;
 mod ui_mute_solo;
 mod ui_rack;
 mod ui_spectrum;
 mod ui_upmixer;
+mod ui_xtc;
 
 pub use common::*;
 pub use editing::get_param_count;
@@ -42,17 +46,21 @@ pub use ui_binaural::render_binaural_plugin;
 pub use ui_compressor::render_compressor_plugin;
 pub use ui_convolution::render_convolution_plugin;
 pub use ui_eq::render_eq_plugin;
+pub use ui_expander::render_expander_plugin;
 pub use ui_gain::render_gain_plugin;
 pub use ui_gate::render_gate_plugin;
 pub use ui_limiter::render_limiter_plugin;
 pub use ui_loudness::{render_loudness_compensation_plugin, render_loudness_monitor_plugin};
 pub use ui_matrix::render_matrix_plugin;
+pub use ui_mb_compressor::render_mb_compressor_plugin;
+pub use ui_mb_expander::render_mb_expander_plugin;
 pub use ui_mute_solo::render_mute_solo_plugin;
 pub use ui_rack::PluginDragInfo;
 pub use ui_spectrum::{
     MeterData, SpectrumColors, SpectrumElement, render_spectrum_analyzer_plugin,
 };
 pub use ui_upmixer::render_upmixer_plugin;
+pub use ui_xtc::render_xtc_plugin;
 
 use crate::app::AppState;
 use crate::theme::Theme;
@@ -381,39 +389,145 @@ pub fn render_plugin_content(
             theme,
         )
         .into_any_element(),
-        // Placeholder renderers for new dynamics plugins - TODO: implement full UI
-        PluginSettings::Expander { .. } => {
-            render_placeholder_plugin("Expander", plugin_idx, theme).into_any_element()
-        }
-        PluginSettings::MultibandCompressor { .. } => {
-            render_placeholder_plugin("Multiband Compressor", plugin_idx, theme).into_any_element()
-        }
-        PluginSettings::MultibandExpander { .. } => {
-            render_placeholder_plugin("Multiband Expander", plugin_idx, theme).into_any_element()
-        }
-        PluginSettings::XTC { .. } => {
-            render_placeholder_plugin("Crosstalk Cancellation", plugin_idx, theme).into_any_element()
-        }
-    }
-}
-
-/// Placeholder renderer for plugins that don't have a full UI yet
-fn render_placeholder_plugin(
-    name: &str,
-    _plugin_idx: usize,
-    theme: &Theme,
-) -> gpui::Div {
-    use gpui::prelude::*;
-    gpui::div()
-        .flex()
-        .items_center()
-        .justify_center()
-        .h_full()
-        .w_full()
-        .bg(theme.background_secondary)
-        .child(
-            gpui::div()
-                .text_color(theme.text_muted)
-                .child(format!("{} (UI coming soon)", name)),
+        PluginSettings::Expander {
+            threshold_db,
+            ratio,
+            attack_ms,
+            release_ms,
+            range_db,
+            knee_db,
+            hysteresis_db,
+            hold_ms,
+            mix,
+            link_channels,
+            sidechain_hpf_hz,
+        } => render_expander_plugin(
+            entity.clone(),
+            plugin_idx,
+            ui_expander::ExpanderRenderState {
+                threshold_db: *threshold_db,
+                ratio: *ratio,
+                attack_ms: *attack_ms,
+                release_ms: *release_ms,
+                range_db: *range_db,
+                knee_db: *knee_db,
+                hysteresis_db: *hysteresis_db,
+                hold_ms: *hold_ms,
+                mix: *mix,
+                link_channels: *link_channels,
+                sidechain_hpf_hz: *sidechain_hpf_hz,
+                is_editing,
+                selected_param,
+            },
+            theme,
         )
+        .into_any_element(),
+        PluginSettings::MultibandCompressor {
+            num_bands,
+            crossover_preset,
+            crossover_freq_1,
+            crossover_freq_2,
+            crossover_freq_3,
+            crossover_freq_4,
+            threshold_db,
+            ratio,
+            attack_ms,
+            release_ms,
+            knee_db,
+            mix,
+            link_channels,
+        } => render_mb_compressor_plugin(
+            entity.clone(),
+            plugin_idx,
+            ui_mb_compressor::MbCompressorRenderState {
+                num_bands: *num_bands,
+                crossover_preset: *crossover_preset,
+                crossover_freq_1: *crossover_freq_1,
+                crossover_freq_2: *crossover_freq_2,
+                crossover_freq_3: *crossover_freq_3,
+                crossover_freq_4: *crossover_freq_4,
+                threshold_db: *threshold_db,
+                ratio: *ratio,
+                attack_ms: *attack_ms,
+                release_ms: *release_ms,
+                knee_db: *knee_db,
+                mix: *mix,
+                link_channels: *link_channels,
+                is_editing,
+                selected_param,
+            },
+            theme,
+        )
+        .into_any_element(),
+        PluginSettings::MultibandExpander {
+            num_bands,
+            crossover_preset,
+            crossover_freq_1,
+            crossover_freq_2,
+            crossover_freq_3,
+            crossover_freq_4,
+            threshold_db,
+            ratio,
+            attack_ms,
+            release_ms,
+            range_db,
+            knee_db,
+            hysteresis_db,
+            hold_ms,
+            mix,
+            link_channels,
+        } => render_mb_expander_plugin(
+            entity.clone(),
+            plugin_idx,
+            ui_mb_expander::MbExpanderRenderState {
+                num_bands: *num_bands,
+                crossover_preset: *crossover_preset,
+                crossover_freq_1: *crossover_freq_1,
+                crossover_freq_2: *crossover_freq_2,
+                crossover_freq_3: *crossover_freq_3,
+                crossover_freq_4: *crossover_freq_4,
+                threshold_db: *threshold_db,
+                ratio: *ratio,
+                attack_ms: *attack_ms,
+                release_ms: *release_ms,
+                range_db: *range_db,
+                knee_db: *knee_db,
+                hysteresis_db: *hysteresis_db,
+                hold_ms: *hold_ms,
+                mix: *mix,
+                link_channels: *link_channels,
+                is_editing,
+                selected_param,
+            },
+            theme,
+        )
+        .into_any_element(),
+        PluginSettings::XTC {
+            distance_m,
+            speaker_angle_deg,
+            head_radius_m,
+            beta_base,
+            beta_low_freq_boost,
+            beta_high_freq_boost,
+            head_shadow_cutoff_hz,
+            head_shadow_slope_db_per_octave,
+        } => render_xtc_plugin(
+            entity.clone(),
+            plugin_idx,
+            ui_xtc::XtcRenderState {
+                distance_m: *distance_m,
+                speaker_angle_deg: *speaker_angle_deg,
+                head_radius_m: *head_radius_m,
+                beta_base: *beta_base,
+                beta_low_freq_boost: *beta_low_freq_boost,
+                beta_high_freq_boost: *beta_high_freq_boost,
+                head_shadow_cutoff_hz: *head_shadow_cutoff_hz,
+                head_shadow_slope_db_per_octave: *head_shadow_slope_db_per_octave,
+                is_editing,
+                selected_param,
+            },
+            theme,
+        )
+        .into_any_element()
+    }
 }

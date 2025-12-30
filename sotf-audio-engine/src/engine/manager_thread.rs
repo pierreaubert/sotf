@@ -954,6 +954,9 @@ fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), Config
             "compressor",
             "gate",
             "limiter",
+            "expander",
+            "multiband_compressor",
+            "multiband_expander",
             "loudness_compensation",
             "loudness_monitor",
             "spectrum_analyzer",
@@ -964,6 +967,7 @@ fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), Config
             "crossover",
             "delay",
             "resampler",
+            "xtc",
         ];
 
         let plugin_type_lower = config.plugin_type.to_lowercase();
