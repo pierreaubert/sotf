@@ -145,9 +145,11 @@ impl PlayerView {
         let theme = self.state.read(cx).app.theme.clone();
 
         div()
+            .id("plugins-screen")
             .flex()
             .flex_col()
             .size_full()
+            .overflow_y_scroll()
             .bg(theme.background)
             .on_action(cx.listener(Self::toggle_upmixer_config))
             // Plugin parameter actions - needed for knob/slider interaction
@@ -651,7 +653,8 @@ impl PlayerView {
         div()
             .flex()
             .flex_col()
-            .h_full()
+            .flex_1()
+            .min_h(px(200.0))
             .py_4()
             .px_2()
             .bg(theme.background_secondary)
@@ -673,7 +676,6 @@ impl PlayerView {
                     .flex()
                     .gap(px(0.0))
                     .flex_1()
-                    .h_full()
                     // Legend on left side if requested
                     .when(legend_on_left, |d| {
                         d.child(Self::render_side_meter_legend(&theme, false))
@@ -684,7 +686,6 @@ impl PlayerView {
                             .flex()
                             .gap(px(1.0))
                             .flex_1()
-                            .h_full()
                             .p(px(2.0))
                             .bg(theme_c.background_secondary)
                             .children(channel_data.into_iter().map(
@@ -719,7 +720,6 @@ impl PlayerView {
             .flex()
             .flex_col()
             .flex_1()
-            .h_full()
             .p(px(2.0))
             // Ticks area (matches meter_bar flex_1)
             .child(
@@ -890,6 +890,7 @@ impl PlayerView {
             .flex_1()
             .flex()
             .flex_col()
+            .min_h(px(350.0))
             .when(has_plugin, |d| {
                 let plugin = plugin_data.clone().unwrap();
                 let plugin_type = plugin.plugin_type().clone();
@@ -983,7 +984,7 @@ impl PlayerView {
                     div()
                         .flex_1()
                         .flex()
-                        .min_h(px(0.0)) // Allow shrinking
+                        .min_h(px(300.0)) // Minimum height for meters and content
                         // Left: Input Meter (legend on right side, facing center)
                         .when(!input_collapsed, |d| {
                             d.child(self.render_side_meter(cx, 2, "IN", false))

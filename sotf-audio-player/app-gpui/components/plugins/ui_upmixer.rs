@@ -236,7 +236,6 @@ pub fn render_upmixer_plugin(
         .build()
         .p_3()
         .w_full()
-        .h_full()
 }
 
 /// Crossovers box: LFE Cut, Bandpass Hz

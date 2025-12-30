@@ -525,7 +525,6 @@ pub fn render_gradient_meter(
         .flex_col()
         .items_center()
         .flex_1()
-        .h_full()
         // Meter bar container
         .child(
             div()
@@ -1323,9 +1322,8 @@ pub fn calculate_meters_panel_width(num_channels: usize) -> f32 {
 impl AppState {
     /// Update level meter groups based on current speaker configuration or channel count
     /// Creates a default stereo layout when no audio is playing
+    /// Uses caching to avoid rebuilding every frame
     pub fn update_level_meter_groups(&mut self) {
-        self.level_meter_groups.clear();
-
         let num_channels = self
             .loudness_info
             .as_ref()
@@ -1336,11 +1334,27 @@ impl AppState {
         // This ensures meters are always visible with -60 dB default
         let num_channels = if num_channels == 0 { 2 } else { num_channels };
 
+        // Get current speaker config
+        let current_speaker_config = self.plugin_chain.output_speaker_config().map(String::from);
+
+        // Skip rebuilding if nothing has changed
+        if num_channels == self.level_meter_last_channel_count
+            && current_speaker_config == self.level_meter_last_speaker_config
+            && !self.level_meter_groups.is_empty()
+        {
+            return;
+        }
+
+        // Update cache
+        self.level_meter_last_channel_count = num_channels;
+        self.level_meter_last_speaker_config = current_speaker_config.clone();
+
+        self.level_meter_groups.clear();
+
         // Try to get meter groups from the speaker config (via upmixer plugin)
         // This handles collisions like 5.1.4 vs 7.1.2 (both 10 channels)
-        let meter_groups: Option<&[MeterGroupSpec]> = self
-            .plugin_chain
-            .output_speaker_config()
+        let meter_groups: Option<&[MeterGroupSpec]> = current_speaker_config
+            .as_deref()
             .and_then(get_meter_groups)
             .or_else(|| get_meter_groups_by_channels(num_channels));
 

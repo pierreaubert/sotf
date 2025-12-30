@@ -137,6 +137,10 @@ pub struct App {
     pub level_meter_groups: Vec<ChannelGroup>,
     pub selected_level_meter_group: usize,
     pub level_meter_control_selection: usize, // 0 = Mute, 1 = Solo, 2 = Dim
+    /// Cached channel count to avoid rebuilding meter groups every frame
+    pub level_meter_last_channel_count: usize,
+    /// Cached speaker config to avoid rebuilding meter groups every frame
+    pub level_meter_last_speaker_config: Option<String>,
 
     // Spectrum analyzer
     pub spectrum_visible: bool,
@@ -380,6 +384,8 @@ impl App {
             level_meter_groups: Vec::new(),
             selected_level_meter_group: 0,
             level_meter_control_selection: 0,
+            level_meter_last_channel_count: 0,
+            level_meter_last_speaker_config: None,
             spectrum_visible: false,
             spectrum_info: None,
             output_devices: Vec::new(),

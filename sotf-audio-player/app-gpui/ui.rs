@@ -24,6 +24,8 @@ pub struct PlayerView {
     pub(crate) grid_scroll_handle: ScrollHandle,
     /// Track if we've done initial focus (for macOS menu activation)
     needs_initial_focus: bool,
+    /// Frame counter for throttling updates (increments every 100ms)
+    update_frame_count: u64,
 }
 
 impl PlayerView {
@@ -47,6 +49,9 @@ impl PlayerView {
                     .timer(Duration::from_millis(100))
                     .await;
                 let result = this.update(cx, |view, cx| {
+                    // Increment frame counter for throttling
+                    view.update_frame_count = view.update_frame_count.wrapping_add(1);
+
                     view.update_playback_state(cx);
 
                     // Update waveform scanner and check startup database state
@@ -110,6 +115,7 @@ impl PlayerView {
             last_saved_window_bounds: None,
             grid_scroll_handle: ScrollHandle::new(),
             needs_initial_focus: true,
+            update_frame_count: 0,
         }
     }
 
@@ -1063,20 +1069,33 @@ impl PlayerView {
     }
 
     fn update_playback_state(&mut self, cx: &mut Context<Self>) {
+        let frame_count = self.update_frame_count;
+
         self.state.update(cx, |state, _cx| {
-            // Get playback state (include spectrum data when on spectrum screen)
-            let include_spectrum =
-                state.app.spectrum_visible || state.app.current_screen == Screen::Spectrum;
+            // Only fetch spectrum every 2nd frame (200ms) to reduce allocations
+            // Spectrum visualization doesn't need 100ms precision
+            let should_update_spectrum = frame_count % 2 == 0;
+            let include_spectrum = should_update_spectrum
+                && (state.app.spectrum_visible || state.app.current_screen == Screen::Spectrum);
+
             let playback_state = state.player.lock().get_playback_state(include_spectrum);
 
             state.app.position_secs = playback_state.position_secs;
-            state.app.loudness_info = playback_state.loudness;
             state.app.duration_secs = state.app.get_current_track_duration();
+
+            // Only update loudness when we have new data (player returns None when not playing)
+            if playback_state.loudness.is_some() {
+                // Drop old data explicitly before assigning new
+                let _ = state.app.loudness_info.take();
+                state.app.loudness_info = playback_state.loudness;
+            }
 
             // Update level meter groups based on channel count
             state.app.update_level_meter_groups();
 
             if include_spectrum {
+                // Drop old spectrum data explicitly before assigning new
+                let _ = state.app.spectrum_info.take();
                 state.app.spectrum_info = playback_state.spectrum;
             }
 

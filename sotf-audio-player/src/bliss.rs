@@ -328,6 +328,19 @@ impl BlissScanner {
             let worker = thread::spawn(move || {
                 log::info!("[Bliss Worker {}] Started", worker_id);
 
+                // Open database once per worker thread (not per track)
+                let db = match MusicDatabase::open(&db_path) {
+                    Ok(db) => db,
+                    Err(e) => {
+                        log::error!(
+                            "[Bliss Worker {}] Failed to open database: {}",
+                            worker_id,
+                            e
+                        );
+                        return;
+                    }
+                };
+
                 loop {
                     // Check if we should stop
                     if stop_rx.lock().unwrap().try_recv().is_ok() {
@@ -361,21 +374,19 @@ impl BlissScanner {
                     // Analyze the file
                     match analyze_file(&path) {
                         Ok(analysis) => {
-                            // Update database
-                            if let Ok(db) = MusicDatabase::open(&db_path) {
-                                if let Err(e) = db.update_bliss(&path, &analysis) {
-                                    log::error!(
-                                        "[Bliss Worker {}] Failed to update database for {}: {}",
-                                        worker_id,
-                                        path.display(),
-                                        e
-                                    );
-                                    let _ = message_tx.send(BlissScanMessage::Error {
-                                        path: path.clone(),
-                                        error: format!("Database error: {}", e),
-                                    });
-                                    continue;
-                                }
+                            // Update database (reuse connection)
+                            if let Err(e) = db.update_bliss(&path, &analysis) {
+                                log::error!(
+                                    "[Bliss Worker {}] Failed to update database for {}: {}",
+                                    worker_id,
+                                    path.display(),
+                                    e
+                                );
+                                let _ = message_tx.send(BlissScanMessage::Error {
+                                    path: path.clone(),
+                                    error: format!("Database error: {}", e),
+                                });
+                                continue;
                             }
 
                             let _ = message_tx.send(BlissScanMessage::Success {

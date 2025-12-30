@@ -53,6 +53,19 @@ impl WaveformScanner {
             let worker = thread::spawn(move || {
                 log::info!("[Waveform Worker {}] Started", worker_id);
 
+                // Open database once per worker thread (not per track)
+                let db = match MusicDatabase::open(&db_path) {
+                    Ok(db) => db,
+                    Err(e) => {
+                        log::error!(
+                            "[Waveform Worker {}] Failed to open database: {}",
+                            worker_id,
+                            e
+                        );
+                        return;
+                    }
+                };
+
                 loop {
                     // Check if we should stop
                     if stop_rx.lock().unwrap().try_recv().is_ok() {
@@ -86,29 +99,17 @@ impl WaveformScanner {
                     // Analyze the file
                     match waveform::analyze_waveform(&path) {
                         Ok(waveform_data) => {
-                            // Update database
-                            if let Ok(db) = MusicDatabase::open(&db_path) {
-                                if let Err(e) = db.update_waveform(&path, &waveform_data) {
-                                    log::error!(
-                                        "[Waveform Worker {}] Failed to update database for {}: {}",
-                                        worker_id,
-                                        path.display(),
-                                        e
-                                    );
-                                    let _ = message_tx.send(WaveformScanMessage::Error {
-                                        path: path.clone(),
-                                        error: format!("Database error: {}", e),
-                                    });
-                                    continue;
-                                }
-                            } else {
+                            // Update database (reuse connection)
+                            if let Err(e) = db.update_waveform(&path, &waveform_data) {
                                 log::error!(
-                                    "[Waveform Worker {}] Failed to open database",
-                                    worker_id
+                                    "[Waveform Worker {}] Failed to update database for {}: {}",
+                                    worker_id,
+                                    path.display(),
+                                    e
                                 );
                                 let _ = message_tx.send(WaveformScanMessage::Error {
                                     path: path.clone(),
-                                    error: "Failed to open database".to_string(),
+                                    error: format!("Database error: {}", e),
                                 });
                                 continue;
                             }
@@ -119,9 +120,10 @@ impl WaveformScanner {
                                 path.display()
                             );
 
+                            // Don't send waveform data through channel - it's already in DB
                             let _ = message_tx.send(WaveformScanMessage::Success {
                                 path: path.clone(),
-                                waveform: waveform_data,
+                                waveform: Vec::new(), // Empty - data is in DB
                             });
                         }
                         Err(e) => {

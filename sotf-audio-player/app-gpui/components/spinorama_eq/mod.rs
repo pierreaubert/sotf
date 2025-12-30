@@ -936,6 +936,12 @@ impl PlayerView {
         } else if mode == crate::app::types::SpinoramaOptimizationMode::FlatOnPir {
             // For FlatOnPir mode, use the target curve selection
             target_curve.api_name().to_string()
+        } else if mode == crate::app::types::SpinoramaOptimizationMode::SpeakerScore {
+            // For SpeakerScore mode, use target curve selection for proper target:
+            // - On Axis: flat target (0 dB)
+            // - Listening Window: slight roll-off (-0.5 dB at 20kHz)
+            // The score loss function uses ON/LW/SP/PIR internally regardless
+            target_curve.api_name().to_string()
         } else {
             curve_name.clone()
         };

@@ -53,6 +53,19 @@ impl ReplayGainScanner {
             let worker = thread::spawn(move || {
                 log::info!("[ReplayGain Worker {}] Started", worker_id);
 
+                // Open database once per worker thread (not per track)
+                let db = match MusicDatabase::open(&db_path) {
+                    Ok(db) => db,
+                    Err(e) => {
+                        log::error!(
+                            "[ReplayGain Worker {}] Failed to open database: {}",
+                            worker_id,
+                            e
+                        );
+                        return;
+                    }
+                };
+
                 loop {
                     // Check if we should stop
                     if stop_rx.lock().unwrap().try_recv().is_ok() {
@@ -86,29 +99,17 @@ impl ReplayGainScanner {
                     // Analyze the file
                     match replaygain::analyze_file(&path) {
                         Ok(info) => {
-                            // Update database
-                            if let Ok(db) = MusicDatabase::open(&db_path) {
-                                if let Err(e) = db.update_replay_gain(&path, info.gain, info.peak) {
-                                    log::error!(
-                                        "[ReplayGain Worker {}] Failed to update database for {}: {}",
-                                        worker_id,
-                                        path.display(),
-                                        e
-                                    );
-                                    let _ = message_tx.send(ScanMessage::Error {
-                                        path: path.clone(),
-                                        error: format!("Database error: {}", e),
-                                    });
-                                    continue;
-                                }
-                            } else {
+                            // Update database (reuse connection)
+                            if let Err(e) = db.update_replay_gain(&path, info.gain, info.peak) {
                                 log::error!(
-                                    "[ReplayGain Worker {}] Failed to open database",
-                                    worker_id
+                                    "[ReplayGain Worker {}] Failed to update database for {}: {}",
+                                    worker_id,
+                                    path.display(),
+                                    e
                                 );
                                 let _ = message_tx.send(ScanMessage::Error {
                                     path: path.clone(),
-                                    error: "Failed to open database".to_string(),
+                                    error: format!("Database error: {}", e),
                                 });
                                 continue;
                             }
