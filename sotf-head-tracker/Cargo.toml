@@ -1,0 +1,65 @@
+[package]
+name = "sotf-head-tracker"
+description = "Camera-based head tracking for spatial audio"
+version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+
+[features]
+default = ["macos-vision"]
+macos-vision = []
+onnx = ["dep:ort"]
+
+[dependencies]
+log = { workspace = true }
+thiserror = { workspace = true }
+parking_lot = { workspace = true }
+crossbeam = { workspace = true }
+
+# Image processing (for RGB to JPEG conversion)
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
+
+# Camera capture
+# On macOS, use AVFoundation; on Linux, use V4L2; on Windows, use Media Foundation
+[target.'cfg(target_os = "macos")'.dependencies.nokhwa]
+version = "0.10"
+features = ["input-avfoundation"]
+default-features = false
+
+[target.'cfg(target_os = "linux")'.dependencies.nokhwa]
+version = "0.10"
+features = ["input-v4l"]
+default-features = false
+
+[target.'cfg(target_os = "windows")'.dependencies.nokhwa]
+version = "0.10"
+features = ["input-msmf"]
+default-features = false
+
+# macOS Vision framework
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-core-foundation = "0.3"
+objc2-vision = "0.3"
+objc2-core-image = "0.3"
+objc2-core-video = "0.3"
+block2 = "0.6"
+dispatch = "0.2"
+
+# Optional ONNX support for cross-platform (future)
+# Note: ort 2.0 is still in RC, using latest stable for now
+[dependencies.ort]
+version = "2.0.0-rc.10"
+optional = true
+
+[dev-dependencies]
+env_logger = { workspace = true }
+
+[[example]]
+name = "head_tracker_demo"
+path = "examples/head_tracker_demo.rs"
+
+[[example]]
+name = "vision_test"
+path = "examples/vision_test.rs"
