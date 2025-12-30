@@ -307,6 +307,256 @@ pub fn complex_mul_inplace_simd(dst: &mut [Complex<f32>], hrtf: &[Complex<f32>])
     }
 }
 
+// ============================================================================
+// Real-valued SIMD operations for windowing and overlap-add
+// ============================================================================
+
+/// SIMD-optimized windowed multiply-accumulate for overlap-add synthesis
+///
+/// Computes: dst[i] += src[i] * window[i] * scale for all i
+///
+/// This is the core operation for STFT overlap-add reconstruction.
+#[inline]
+pub fn window_mul_add_simd(dst: &mut [f32], src: &[f32], window: &[f32], scale: f32) {
+    debug_assert_eq!(dst.len(), src.len());
+    debug_assert_eq!(dst.len(), window.len());
+    let len = dst.len();
+
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    {
+        use std::arch::x86_64::*;
+
+        let scale_vec = unsafe { _mm256_set1_ps(scale) };
+        let simd_len = (len / 8) * 8;
+
+        for i in (0..simd_len).step_by(8) {
+            unsafe {
+                let src_ptr = src.as_ptr().add(i);
+                let win_ptr = window.as_ptr().add(i);
+                let dst_ptr = dst.as_mut_ptr().add(i);
+
+                let s = _mm256_loadu_ps(src_ptr);
+                let w = _mm256_loadu_ps(win_ptr);
+                let d = _mm256_loadu_ps(dst_ptr);
+
+                // src * window * scale + dst
+                let sw = _mm256_mul_ps(s, w);
+                let sws = _mm256_mul_ps(sw, scale_vec);
+                let result = _mm256_add_ps(d, sws);
+
+                _mm256_storeu_ps(dst_ptr, result);
+            }
+        }
+
+        // Scalar remainder
+        for i in simd_len..len {
+            dst[i] += src[i] * window[i] * scale;
+        }
+    }
+
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    {
+        use std::arch::aarch64::*;
+
+        let scale_vec = unsafe { vdupq_n_f32(scale) };
+        let simd_len = (len / 4) * 4;
+
+        for i in (0..simd_len).step_by(4) {
+            unsafe {
+                let src_ptr = src.as_ptr().add(i);
+                let win_ptr = window.as_ptr().add(i);
+                let dst_ptr = dst.as_mut_ptr().add(i);
+
+                let s = vld1q_f32(src_ptr);
+                let w = vld1q_f32(win_ptr);
+                let d = vld1q_f32(dst_ptr);
+
+                // src * window * scale + dst
+                let sw = vmulq_f32(s, w);
+                let sws = vmulq_f32(sw, scale_vec);
+                let result = vaddq_f32(d, sws);
+
+                vst1q_f32(dst_ptr, result);
+            }
+        }
+
+        // Scalar remainder
+        for i in simd_len..len {
+            dst[i] += src[i] * window[i] * scale;
+        }
+    }
+
+    #[cfg(not(any(
+        all(target_arch = "x86_64", target_feature = "avx2"),
+        all(target_arch = "aarch64", target_feature = "neon")
+    )))]
+    {
+        for i in 0..len {
+            dst[i] += src[i] * window[i] * scale;
+        }
+    }
+}
+
+/// SIMD-optimized windowed copy (for FFT input preparation)
+///
+/// Computes: dst[i] = src[i] * window[i] for all i
+#[inline]
+pub fn window_mul_simd(dst: &mut [f32], src: &[f32], window: &[f32]) {
+    debug_assert_eq!(dst.len(), src.len());
+    debug_assert_eq!(dst.len(), window.len());
+    let len = dst.len();
+
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    {
+        use std::arch::x86_64::*;
+
+        let simd_len = (len / 8) * 8;
+
+        for i in (0..simd_len).step_by(8) {
+            unsafe {
+                let src_ptr = src.as_ptr().add(i);
+                let win_ptr = window.as_ptr().add(i);
+                let dst_ptr = dst.as_mut_ptr().add(i);
+
+                let s = _mm256_loadu_ps(src_ptr);
+                let w = _mm256_loadu_ps(win_ptr);
+                let result = _mm256_mul_ps(s, w);
+
+                _mm256_storeu_ps(dst_ptr, result);
+            }
+        }
+
+        for i in simd_len..len {
+            dst[i] = src[i] * window[i];
+        }
+    }
+
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    {
+        use std::arch::aarch64::*;
+
+        let simd_len = (len / 4) * 4;
+
+        for i in (0..simd_len).step_by(4) {
+            unsafe {
+                let src_ptr = src.as_ptr().add(i);
+                let win_ptr = window.as_ptr().add(i);
+                let dst_ptr = dst.as_mut_ptr().add(i);
+
+                let s = vld1q_f32(src_ptr);
+                let w = vld1q_f32(win_ptr);
+                let result = vmulq_f32(s, w);
+
+                vst1q_f32(dst_ptr, result);
+            }
+        }
+
+        for i in simd_len..len {
+            dst[i] = src[i] * window[i];
+        }
+    }
+
+    #[cfg(not(any(
+        all(target_arch = "x86_64", target_feature = "avx2"),
+        all(target_arch = "aarch64", target_feature = "neon")
+    )))]
+    {
+        for i in 0..len {
+            dst[i] = src[i] * window[i];
+        }
+    }
+}
+
+/// SIMD-optimized buffer fill with zeros
+#[inline]
+pub fn zero_fill_simd(dst: &mut [f32]) {
+    // For small buffers, scalar is fine
+    // For larger buffers, the compiler optimizes this well
+    dst.fill(0.0);
+}
+
+/// Deinterleave stereo buffer into separate L/R channels
+///
+/// Input: [L0, R0, L1, R1, L2, R2, ...]
+/// Output: left = [L0, L1, L2, ...], right = [R0, R1, R2, ...]
+#[inline]
+pub fn deinterleave_stereo(input: &[f32], left: &mut [f32], right: &mut [f32]) {
+    debug_assert_eq!(input.len(), left.len() * 2);
+    debug_assert_eq!(left.len(), right.len());
+
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    {
+        use std::arch::x86_64::*;
+
+        let len = left.len();
+        let simd_len = (len / 8) * 8;
+
+        for i in (0..simd_len).step_by(8) {
+            unsafe {
+                // Load 16 floats (8 stereo pairs)
+                let in_ptr = input.as_ptr().add(i * 2);
+                let v0 = _mm256_loadu_ps(in_ptr); // L0 R0 L1 R1 L2 R2 L3 R3
+                let v1 = _mm256_loadu_ps(in_ptr.add(8)); // L4 R4 L5 R5 L6 R6 L7 R7
+
+                // Shuffle to separate L and R
+                // Within 256-bit lanes, shuffle to group L/R
+                let shuf_l = _mm256_shuffle_ps(v0, v1, 0b10_00_10_00); // L0 L1 L4 L5 | L2 L3 L6 L7
+                let shuf_r = _mm256_shuffle_ps(v0, v1, 0b11_01_11_01); // R0 R1 R4 R5 | R2 R3 R6 R7
+
+                // Permute to get correct order
+                let left_vec = _mm256_permute4x64_pd(
+                    std::mem::transmute::<_, __m256d>(shuf_l),
+                    0b11_01_10_00,
+                );
+                let right_vec = _mm256_permute4x64_pd(
+                    std::mem::transmute::<_, __m256d>(shuf_r),
+                    0b11_01_10_00,
+                );
+
+                _mm256_storeu_ps(
+                    left.as_mut_ptr().add(i),
+                    std::mem::transmute::<_, __m256>(left_vec),
+                );
+                _mm256_storeu_ps(
+                    right.as_mut_ptr().add(i),
+                    std::mem::transmute::<_, __m256>(right_vec),
+                );
+            }
+        }
+
+        // Scalar remainder
+        for i in simd_len..len {
+            left[i] = input[i * 2];
+            right[i] = input[i * 2 + 1];
+        }
+    }
+
+    #[cfg(not(all(target_arch = "x86_64", target_feature = "avx2")))]
+    {
+        // Scalar fallback (compiler will auto-vectorize for NEON)
+        for (i, chunk) in input.chunks_exact(2).enumerate() {
+            left[i] = chunk[0];
+            right[i] = chunk[1];
+        }
+    }
+}
+
+/// Interleave separate L/R channels into stereo buffer
+///
+/// Input: left = [L0, L1, L2, ...], right = [R0, R1, R2, ...]
+/// Output: [L0, R0, L1, R1, L2, R2, ...]
+#[inline]
+pub fn interleave_stereo(left: &[f32], right: &[f32], output: &mut [f32]) {
+    debug_assert_eq!(left.len(), right.len());
+    debug_assert_eq!(output.len(), left.len() * 2);
+
+    // Scalar version - compiler auto-vectorizes well
+    for i in 0..left.len() {
+        output[i * 2] = left[i];
+        output[i * 2 + 1] = right[i];
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
