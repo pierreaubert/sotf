@@ -500,34 +500,7 @@ impl PlayerView {
                                                         move |view, _e: &MouseUpEvent, _, cx| {
                                                             cx.stop_propagation();
                                                             view.state.update(cx, |state, _cx| {
-                                                                // Disable spectrum fetching when removing SpectrumAnalyzer
-                                                                if plugin_type_for_remove
-                                                                    == PluginType::SpectrumAnalyzer
-                                                                {
-                                                                    state.app.spectrum_visible = false;
-                                                                }
-
-                                                                state
-                                                                    .app
-                                                                    .plugin_chain
-                                                                    .remove_plugin(idx);
-                                                                // Update selection if needed
-                                                                if state.app.selected_plugin_index
-                                                                    >= state.app.plugin_chain.len()
-                                                                    && state.app.plugin_chain.len()
-                                                                        > 0
-                                                                {
-                                                                    state
-                                                                        .app
-                                                                        .selected_plugin_index =
-                                                                        state
-                                                                            .app
-                                                                            .plugin_chain
-                                                                            .len()
-                                                                            - 1;
-                                                                }
-                                                                state.app.pending_plugin_update =
-                                                         Some(PluginUpdateType::Structural);
+                                                                state.app.remove_plugin(idx);
                                                                 state
                                                                     .app
                                                                     .update_level_meter_groups(); // Reconfigure metering
@@ -557,12 +530,7 @@ impl PlayerView {
                                                         move |view, _e: &MouseUpEvent, _, cx| {
                                                             cx.stop_propagation();
                                                             view.state.update(cx, |state, _cx| {
-                                                                state
-                                                                    .app
-                                                                    .plugin_chain
-                                                                    .toggle_plugin(idx);
-                                                                state.app.pending_plugin_update =
-                                                        Some(PluginUpdateType::Structural);
+                                                                state.app.toggle_plugin(idx);
                                                                 state
                                                                     .app
                                                                     .update_level_meter_groups(); // Reconfigure metering
@@ -891,15 +859,8 @@ impl PlayerView {
                                 MouseButton::Left,
                                 cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                                     view.state.update(cx, |state, _cx| {
-                                        state.app.plugin_chain.add_plugin(&pt);
-                                        state.app.pending_plugin_update =
-                                            Some(PluginUpdateType::Structural);
+                                        state.app.add_plugin(&pt);
                                         state.app.update_level_meter_groups(); // Reconfigure metering
-
-                                        // Enable spectrum data fetching when adding SpectrumAnalyzer
-                                        if pt == PluginType::SpectrumAnalyzer {
-                                            state.app.spectrum_visible = true;
-                                        }
                                     });
                                     cx.notify();
                                 }),

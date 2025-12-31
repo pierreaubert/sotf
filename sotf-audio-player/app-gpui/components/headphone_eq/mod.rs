@@ -50,6 +50,7 @@ impl PlayerView {
             }
 
             state.app.pending_plugin_update = Some(PluginUpdateType::Structural);
+            state.app.sync_spectrum_visible();
             state.app.toast_message = Some(crate::app::ToastMessage::success(
                 "Cleared EQ from playback",
             ));

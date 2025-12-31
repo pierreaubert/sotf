@@ -9,12 +9,19 @@ use crate::app::types::PluginUpdateType;
 use crate::app::{App, ToastMessage};
 
 impl App {
+    /// Sync spectrum_visible flag with the actual plugin chain contents.
+    /// Should be called whenever the plugin chain changes structurally.
+    pub fn sync_spectrum_visible(&mut self) {
+        self.spectrum_visible = self.plugin_chain.has_enabled_spectrum_analyzer();
+    }
+
     // Plugin management methods
     pub fn add_plugin(&mut self, plugin_type: &sotf_audio_player::PluginType) {
         let new_index = self.plugin_chain.add_plugin(plugin_type);
         self.selected_plugin_index = new_index;
         self.plugin_chain.update_binaural_decoder_channels();
         self.pending_plugin_update = Some(PluginUpdateType::Structural);
+        self.sync_spectrum_visible();
     }
 
     pub fn toggle_plugin(&mut self, index: usize) {
@@ -22,6 +29,7 @@ impl App {
         // Update BinauralDecoder input channels after toggle
         self.plugin_chain.update_binaural_decoder_channels();
         self.pending_plugin_update = Some(PluginUpdateType::Structural);
+        self.sync_spectrum_visible();
     }
 
     pub fn move_plugin_up(&mut self, index: usize) {
@@ -66,6 +74,7 @@ impl App {
             // Update BinauralDecoder input channels after removal
             self.plugin_chain.update_binaural_decoder_channels();
             self.pending_plugin_update = Some(PluginUpdateType::Structural);
+            self.sync_spectrum_visible();
             // Adjust selection
             if self.selected_plugin_index >= self.plugin_chain.len()
                 && self.selected_plugin_index > 0
@@ -2148,6 +2157,7 @@ impl App {
                     filename
                 )));
                 self.pending_plugin_update = Some(PluginUpdateType::Structural);
+                self.sync_spectrum_visible();
                 self.last_loaded_preset = Some(filename);
             }
             Err(e) => {
@@ -2180,6 +2190,7 @@ impl App {
                         self.plugin_chain.len()
                     )));
                     self.pending_plugin_update = Some(PluginUpdateType::Structural);
+                    self.sync_spectrum_visible();
                     self.last_loaded_preset = Some(preset_filename);
                 }
                 Err(e) => {

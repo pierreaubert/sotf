@@ -203,6 +203,7 @@ impl PlayerView {
                 // Notify engine
                 state.app.pending_plugin_update =
                     Some(crate::app::types::PluginUpdateType::Structural);
+                state.app.sync_spectrum_visible();
 
                 state.app.toast_message = Some(crate::app::types::ToastMessage::success(
                     "Applied Headphone EQ",

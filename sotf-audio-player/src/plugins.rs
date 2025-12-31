@@ -1755,6 +1755,13 @@ impl PluginChain {
             .position(|p| p.plugin_type() == *plugin_type)
     }
 
+    /// Check if the chain has an enabled spectrum analyzer plugin
+    pub fn has_enabled_spectrum_analyzer(&self) -> bool {
+        self.plugins.iter().any(|p| {
+            p.enabled && matches!(p.settings, PluginSettings::SpectrumAnalyzer { .. })
+        })
+    }
+
     /// Find the insertion index for a new processing plugin (before monitoring plugins)
     pub fn find_processing_insert_index(&self) -> usize {
         // Find the first monitoring plugin

@@ -670,6 +670,7 @@ impl App {
                 Ok(_) => {
                     self.pending_plugin_update =
                         Some(crate::app::types::PluginUpdateType::Structural);
+                    self.sync_spectrum_visible();
                     log::info!("Restored plugin preset: {}", preset_name);
                 }
                 Err(e) => {

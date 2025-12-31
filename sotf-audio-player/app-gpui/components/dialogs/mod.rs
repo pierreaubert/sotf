@@ -562,7 +562,7 @@ impl PlayerView {
                                                 crate::app::ContextMenuType::Plugin,
                                                 "Toggle Enabled",
                                             ) => {
-                                                state.app.plugin_chain.toggle_plugin(item_idx);
+                                                state.app.toggle_plugin(item_idx);
                                             }
                                             (crate::app::ContextMenuType::Plugin, "Move Up") => {
                                                 state.app.move_plugin_up(item_idx);
@@ -574,7 +574,7 @@ impl PlayerView {
                                                 crate::app::ContextMenuType::Plugin,
                                                 "Remove Plugin",
                                             ) => {
-                                                state.app.plugin_chain.remove_plugin(item_idx);
+                                                state.app.remove_plugin(item_idx);
                                             }
                                             (
                                                 crate::app::ContextMenuType::Directory,

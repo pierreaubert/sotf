@@ -32,15 +32,11 @@ generate-audio-tests: prod-generate-audio-tests
 
 test:
 	# Exclude GPUI crates from check - they cause stack overflow in syn during test/example mode compilation
-	cargo check --workspace --all-targets --exclude sotf-gpui --exclude gpui-ui-kit --exclude gpui-au --exclude gpui-themes
-	# Check GPUI crates without tests/examples
-	cargo check -p sotf-gpui -p gpui-ui-kit -p gpui-au -p gpui-themes --lib
-	# Exclude GPUI crates - they cause stack overflow in syn during test mode compilation
-	cargo test --workspace --lib --exclude sotf-gpui --exclude gpui-ui-kit --exclude gpui-au --exclude gpui-themes
+	RUST_MIN_STACK=16777216 cargo check --workspace --all-targets
 
 ntest:
 	# Exclude GPUI crates - they cause stack overflow in syn during test mode compilation
-	cargo nextest run --release --no-fail-fast --workspace --lib --exclude sotf-gpui --exclude gpui-ui-kit --exclude gpui-au --exclude gpui-themes
+	RUST_MIN_STACK=16777216 cargo nextest run --release --no-fail-fast --workspace --lib
 
 # ----------------------------------------------------------------------
 # RUN
