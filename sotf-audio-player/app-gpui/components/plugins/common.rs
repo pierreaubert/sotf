@@ -403,6 +403,41 @@ pub fn render_vertical_slider(
     shortcut_key: Option<char>,
     theme: &Theme,
 ) -> impl IntoElement {
+    render_vertical_slider_sized(
+        entity,
+        plugin_idx,
+        label,
+        value,
+        min,
+        max,
+        unit,
+        idx,
+        selected_param,
+        is_editing,
+        shortcut_key,
+        None,
+        theme,
+    )
+}
+
+/// Render a vertical slider with custom height
+/// Uses Entity<AppState> for direct state updates
+#[allow(clippy::too_many_arguments)]
+pub fn render_vertical_slider_sized(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    label: &str,
+    value: f64,
+    min: f64,
+    max: f64,
+    unit: &str,
+    idx: usize,
+    selected_param: usize,
+    is_editing: bool,
+    shortcut_key: Option<char>,
+    height: Option<f32>,
+    theme: &Theme,
+) -> impl IntoElement {
     let is_selected = selected_param == idx && is_editing;
 
     let mut slider = VerticalSlider::new(("slider", plugin_idx * 1000 + idx))
@@ -412,7 +447,13 @@ pub fn render_vertical_slider(
         .unit(unit.to_string())
         .label(label.to_string())
         .selected(is_selected)
-        .theme(theme_to_vertical_slider_theme(theme))
+        .theme(theme_to_vertical_slider_theme(theme));
+
+    if let Some(h) = height {
+        slider = slider.height(h);
+    }
+
+    slider = slider
         .on_change({
             let entity = entity.clone();
             move |new_value, _, cx| {
@@ -558,7 +599,6 @@ pub fn render_transfer_curve_sized(
     theme: &Theme,
 ) -> impl IntoElement {
     let curve_width = width;
-    let curve_height = 80.0; // Fixed height for compact layout
     let num_points = 20;
 
     // Generate curve points
@@ -596,6 +636,7 @@ pub fn render_transfer_curve_sized(
     div()
         .flex()
         .flex_col()
+        .flex_1() // Grow to fill available space
         .gap_2()
         // Title
         .child(
@@ -606,11 +647,12 @@ pub fn render_transfer_curve_sized(
                 .text_center()
                 .child("Transfer Curve"),
         )
-        // Curve visualization
+        // Curve visualization - grows to fill space
         .child(
             div()
                 .w(px(curve_width))
-                .h(px(curve_height))
+                .flex_1() // Grow to fill available space
+                .min_h(px(60.0)) // Minimum height
                 .bg(theme.background)
                 .rounded_lg()
                 .border_1()

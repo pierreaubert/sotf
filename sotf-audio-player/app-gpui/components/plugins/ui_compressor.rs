@@ -8,7 +8,7 @@
 
 use super::common::{
     render_edit_hints, render_knob, render_section_title, render_toggle,
-    render_transfer_curve_sized, render_vertical_slider,
+    render_transfer_curve_sized, render_vertical_slider_sized,
 };
 use super::level_meters::render_gr_meter;
 use crate::app::AppState;
@@ -41,6 +41,7 @@ const SIDECHAIN_HPF_UI_MAX: f64 = 160.0;
 
 // Column layout constants
 const METER_WIDTH: f32 = 180.0; // Width for transfer curve and GR meter
+const SLIDER_HEIGHT: f32 = 200.0; // Height for vertical sliders
 
 /// Render the Compressor plugin
 pub fn render_compressor_plugin(
@@ -73,7 +74,6 @@ pub fn render_compressor_plugin(
             div()
                 .flex()
                 .gap_6()
-                .items_end() // Align all columns at the bottom
                 // Column 1: Vertical sliders for main dynamics controls
                 .child(
                     div()
@@ -85,7 +85,7 @@ pub fn render_compressor_plugin(
                             div()
                                 .flex()
                                 .gap_2()
-                                .child(render_vertical_slider(
+                                .child(render_vertical_slider_sized(
                                     entity.clone(),
                                     plugin_idx,
                                     "Threshold",
@@ -97,9 +97,10 @@ pub fn render_compressor_plugin(
                                     state.selected_param,
                                     state.is_editing,
                                     Some('t'),
+                                    Some(SLIDER_HEIGHT),
                                     theme,
                                 ))
-                                .child(render_vertical_slider(
+                                .child(render_vertical_slider_sized(
                                     entity.clone(),
                                     plugin_idx,
                                     "Ratio",
@@ -111,9 +112,10 @@ pub fn render_compressor_plugin(
                                     state.selected_param,
                                     state.is_editing,
                                     Some('r'),
+                                    Some(SLIDER_HEIGHT),
                                     theme,
                                 ))
-                                .child(render_vertical_slider(
+                                .child(render_vertical_slider_sized(
                                     entity.clone(),
                                     plugin_idx,
                                     "Attack",
@@ -125,9 +127,10 @@ pub fn render_compressor_plugin(
                                     state.selected_param,
                                     state.is_editing,
                                     Some('a'),
+                                    Some(SLIDER_HEIGHT),
                                     theme,
                                 ))
-                                .child(render_vertical_slider(
+                                .child(render_vertical_slider_sized(
                                     entity.clone(),
                                     plugin_idx,
                                     "Release",
@@ -139,9 +142,10 @@ pub fn render_compressor_plugin(
                                     state.selected_param,
                                     state.is_editing,
                                     Some('e'),
+                                    Some(SLIDER_HEIGHT),
                                     theme,
                                 ))
-                                .child(render_vertical_slider(
+                                .child(render_vertical_slider_sized(
                                     entity.clone(),
                                     plugin_idx,
                                     "Knee",
@@ -153,6 +157,7 @@ pub fn render_compressor_plugin(
                                     state.selected_param,
                                     state.is_editing,
                                     Some('k'),
+                                    Some(SLIDER_HEIGHT),
                                     theme,
                                 )),
                         ),
@@ -255,14 +260,14 @@ pub fn render_compressor_plugin(
                         .flex()
                         .flex_col()
                         .w(px(METER_WIDTH))
-                        .justify_between() // Distribute elements vertically
+                        .gap_2()
+                        .child(render_section_title("METER", theme))
+                        // Transfer curve section - grows to fill space
                         .child(
                             div()
                                 .flex()
                                 .flex_col()
-                                .gap_2()
-                                .child(render_section_title("METER", theme))
-                                // Transfer curve with matching width
+                                .flex_1() // Grow to fill available space
                                 .child(render_transfer_curve_sized(
                                     state.threshold_db,
                                     state.ratio,

@@ -129,8 +129,8 @@ impl EQFilter {
     pub fn to_biquad(&self, sample_rate: f64) -> Biquad {
         Biquad::new(
             self.filter_type,
-            sample_rate,
             self.frequency,
+            sample_rate,
             self.q,
             self.gain_db,
         )
