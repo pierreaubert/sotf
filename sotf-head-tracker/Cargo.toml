@@ -19,13 +19,7 @@ crossbeam = { workspace = true }
 # Image processing (for RGB to JPEG conversion)
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
 
-# Camera capture
-# On macOS, use AVFoundation; on Linux, use V4L2; on Windows, use Media Foundation
-[target.'cfg(target_os = "macos")'.dependencies.nokhwa]
-version = "0.10"
-features = ["input-avfoundation"]
-default-features = false
-
+# Camera capture - nokhwa for non-macOS platforms
 [target.'cfg(target_os = "linux")'.dependencies.nokhwa]
 version = "0.10"
 features = ["input-v4l"]
@@ -36,7 +30,7 @@ version = "0.10"
 features = ["input-msmf"]
 default-features = false
 
-# macOS Vision framework
+# macOS frameworks (Vision + AVFoundation for camera)
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 objc2-foundation = "0.3"
@@ -44,6 +38,8 @@ objc2-core-foundation = "0.3"
 objc2-vision = "0.3"
 objc2-core-image = "0.3"
 objc2-core-video = "0.3"
+objc2-av-foundation = "0.3"
+objc2-core-media = "0.3"
 block2 = "0.6"
 dispatch = "0.2"
 

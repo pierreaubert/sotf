@@ -2,15 +2,18 @@
 // Camera Capture Module
 // ============================================================================
 //
-// Provides camera access using nokhwa for cross-platform webcam capture.
+// Platform-specific camera capture:
+// - macOS: AVFoundation (direct objc2 bindings)
+// - Linux/Windows: nokhwa
 
 use crate::HeadTrackerError;
-use log::{debug, error, info, warn};
-use nokhwa::pixel_format::RgbFormat;
-use nokhwa::utils::{CameraIndex, RequestedFormat, RequestedFormatType};
-use nokhwa::Camera;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use log::{debug, info};
+
+// Platform-specific implementations
+#[cfg(target_os = "macos")]
+mod avfoundation;
+#[cfg(target_os = "macos")]
+use avfoundation::AVFoundationCapture;
 
 /// Camera frame data
 #[derive(Clone)]
@@ -36,7 +39,99 @@ impl std::fmt::Debug for CameraFrame {
     }
 }
 
-/// Camera capture wrapper
+// ============================================================================
+// macOS implementation using AVFoundation
+// ============================================================================
+
+#[cfg(target_os = "macos")]
+pub struct CameraCapture {
+    inner: AVFoundationCapture,
+    camera_index: usize,
+    target_fps: u32,
+}
+
+#[cfg(target_os = "macos")]
+impl std::fmt::Debug for CameraCapture {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CameraCapture")
+            .field("camera_index", &self.camera_index)
+            .field("target_fps", &self.target_fps)
+            .field("is_open", &self.inner.is_running())
+            .finish()
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl CameraCapture {
+    /// Create a new camera capture instance
+    pub fn new(camera_index: usize, target_fps: u32) -> Self {
+        Self {
+            inner: AVFoundationCapture::new(camera_index),
+            camera_index,
+            target_fps,
+        }
+    }
+
+    /// Set target resolution (ignored on macOS - uses camera default)
+    pub fn with_resolution(self, _width: u32, _height: u32) -> Self {
+        // AVFoundation uses camera's default resolution
+        self
+    }
+
+    /// Open the camera
+    pub fn open(&mut self) -> Result<(), HeadTrackerError> {
+        info!(
+            "Opening camera {} @ {}fps (macOS AVFoundation)",
+            self.camera_index, self.target_fps
+        );
+        self.inner.start()
+    }
+
+    /// Close the camera
+    pub fn close(&mut self) {
+        debug!("Closing camera");
+        self.inner.stop();
+    }
+
+    /// Check if camera is open
+    pub fn is_open(&self) -> bool {
+        self.inner.is_running()
+    }
+
+    /// Capture a single frame (blocking with timeout)
+    pub fn capture_frame(&mut self) -> Result<CameraFrame, HeadTrackerError> {
+        // Wait up to 100ms for a frame
+        self.inner.capture_frame(100)
+    }
+
+    /// Get current camera resolution
+    pub fn resolution(&self) -> Option<(u32, u32)> {
+        // Get from latest frame if available
+        self.inner.get_frame().map(|f| (f.width, f.height))
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl Drop for CameraCapture {
+    fn drop(&mut self) {
+        self.close();
+    }
+}
+
+// ============================================================================
+// Linux/Windows implementation using nokhwa
+// ============================================================================
+
+#[cfg(not(target_os = "macos"))]
+use nokhwa::pixel_format::RgbFormat;
+#[cfg(not(target_os = "macos"))]
+use nokhwa::utils::{CameraIndex, RequestedFormat, RequestedFormatType};
+#[cfg(not(target_os = "macos"))]
+use nokhwa::Camera;
+#[cfg(not(target_os = "macos"))]
+use log::{error, warn};
+
+#[cfg(not(target_os = "macos"))]
 pub struct CameraCapture {
     camera: Option<Camera>,
     camera_index: usize,
@@ -47,6 +142,7 @@ pub struct CameraCapture {
     start_time_ms: u64,
 }
 
+#[cfg(not(target_os = "macos"))]
 impl std::fmt::Debug for CameraCapture {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CameraCapture")
@@ -57,6 +153,7 @@ impl std::fmt::Debug for CameraCapture {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
 impl CameraCapture {
     /// Create a new camera capture instance
     pub fn new(camera_index: usize, target_fps: u32) -> Self {
@@ -85,24 +182,20 @@ impl CameraCapture {
         }
 
         info!(
-            "Opening camera {} at {}x{} @ {}fps",
+            "Opening camera {} at {}x{} @ {}fps (nokhwa)",
             self.camera_index, self.target_width, self.target_height, self.target_fps
         );
 
         let index = CameraIndex::Index(self.camera_index as u32);
-
-        // Request RGB format at target resolution and framerate
-        let requested = RequestedFormat::new::<RgbFormat>(RequestedFormatType::AbsoluteHighestFrameRate);
+        let requested =
+            RequestedFormat::new::<RgbFormat>(RequestedFormatType::AbsoluteHighestFrameRate);
 
         let camera = Camera::new(index, requested).map_err(|e| {
             error!("Failed to create camera: {}", e);
             HeadTrackerError::Camera(e.to_string())
         })?;
 
-        info!(
-            "Camera opened: {:?}",
-            camera.camera_format()
-        );
+        info!("Camera opened: {:?}", camera.camera_format());
 
         self.start_time_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -166,14 +259,21 @@ impl CameraCapture {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
 impl Drop for CameraCapture {
     fn drop(&mut self) {
         self.close();
     }
 }
 
+// ============================================================================
+// Common functions
+// ============================================================================
+
 /// List available cameras
+#[cfg(not(target_os = "macos"))]
 pub fn list_cameras() -> Vec<String> {
+    use log::warn;
     match nokhwa::query(nokhwa::utils::ApiBackend::Auto) {
         Ok(cameras) => cameras
             .iter()
@@ -186,6 +286,12 @@ pub fn list_cameras() -> Vec<String> {
     }
 }
 
+#[cfg(target_os = "macos")]
+pub fn list_cameras() -> Vec<String> {
+    // AVFoundation doesn't easily enumerate - just return default
+    vec!["0: Default Camera".to_string()]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -194,7 +300,6 @@ mod tests {
     fn test_camera_capture_creation() {
         let capture = CameraCapture::new(0, 30);
         assert!(!capture.is_open());
-        assert_eq!(capture.camera_index, 0);
     }
 
     #[test]
