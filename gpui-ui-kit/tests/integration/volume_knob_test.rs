@@ -11,7 +11,7 @@
 //! - Double-click mute toggle
 
 use gpui::{Context, TestAppContext, VisualTestContext, Window, div, prelude::*, px};
-use gpui_ui_kit::volume_knob::{VolumeKnob, VolumeKnobTheme};
+use gpui_ui_kit::audio::volume_knob::{VolumeKnob, VolumeKnobTheme};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;

@@ -13,7 +13,7 @@
 use gpui::{
     Context, Modifiers, MouseButton, TestAppContext, VisualTestContext, Window, div, prelude::*,
 };
-use gpui_ui_kit::potentiometer::{Potentiometer, PotentiometerScale, PotentiometerSize};
+use gpui_ui_kit::audio::potentiometer::{Potentiometer, PotentiometerScale, PotentiometerSize};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -554,7 +554,7 @@ async fn test_potentiometer_drag_start(cx: &mut TestAppContext) {
 
 #[gpui::test]
 async fn test_potentiometer_with_custom_theme(cx: &mut TestAppContext) {
-    use gpui_ui_kit::potentiometer::PotentiometerTheme;
+    use gpui_ui_kit::audio::potentiometer::PotentiometerTheme;
 
     struct ThemedPotView;
 
