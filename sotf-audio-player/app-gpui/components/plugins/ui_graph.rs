@@ -497,6 +497,7 @@ fn plugin_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
         | PluginType::ChannelMuteSolo => theme.text_muted,
         PluginType::Matrix => theme.accent,
         PluginType::Denoiser => theme.info,
+        PluginType::Pnd => theme.info,
     }
 }
 
@@ -517,7 +518,8 @@ fn plugin_channel_counts(plugin_type: &PluginType) -> (usize, usize) {
         | PluginType::SpectrumAnalyzer
         | PluginType::ChannelMuteSolo
         | PluginType::XTC
-        | PluginType::Denoiser => (2, 2),
+        | PluginType::Denoiser
+        | PluginType::Pnd => (2, 2),
         // Upmixer: stereo in, multi-channel out (5.0 = 5 channels, show up to 5)
         PluginType::Upmixer => (2, 5),
         // Binaural decoder: multi-channel in, stereo out

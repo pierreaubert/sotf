@@ -7,8 +7,8 @@
 //! - Rotary knobs for secondary parameters
 
 use super::common::{
-    ParamSectionStyle, render_edit_hints, render_knob, render_section_header, render_toggle,
-    render_transfer_curve, render_vertical_slider,
+    render_edit_hints, render_knob, render_section_title, render_toggle,
+    render_transfer_curve_sized, render_vertical_slider,
 };
 use super::level_meters::render_gr_meter;
 use crate::app::AppState;
@@ -39,9 +39,8 @@ pub struct CompressorRenderState<'a> {
 const SIDECHAIN_HPF_UI_MIN: f64 = 40.0;
 const SIDECHAIN_HPF_UI_MAX: f64 = 160.0;
 
-// Fixed height for all columns to ensure consistent layout
-// Height sized to fit OUTPUT column with two stacked knobs
-const COLUMN_HEIGHT: f32 = 380.0;
+// Column layout constants
+const METER_WIDTH: f32 = 180.0; // Width for transfer curve and GR meter
 
 /// Render the Compressor plugin
 pub fn render_compressor_plugin(
@@ -69,25 +68,22 @@ pub fn render_compressor_plugin(
         .flex()
         .flex_col()
         .gap_4()
-        // Main section - Four columns side by side, all same height
+        // Main section - columns side by side
         .child(
             div()
                 .flex()
-                .gap_4()
-                .items_start()
+                .gap_6()
+                .items_end() // Align all columns at the bottom
                 // Column 1: Vertical sliders for main dynamics controls
                 .child(
                     div()
                         .flex()
                         .flex_col()
-                        .gap_3()
-                        .h(px(COLUMN_HEIGHT))
-                        .param_section_style_lg(theme)
-                        .child(render_section_header("DYNAMICS", theme))
+                        .gap_2()
+                        .child(render_section_title("DYNAMICS", theme))
                         .child(
                             div()
                                 .flex()
-                                .flex_1()
                                 .gap_2()
                                 .child(render_vertical_slider(
                                     entity.clone(),
@@ -161,27 +157,24 @@ pub fn render_compressor_plugin(
                                 )),
                         ),
                 )
-                // Column 2: Link channels, Auto makeup, Makeup knob
+                // Column 2: Link channels, Auto makeup, Makeup knob - with vertical distribution
                 .child(
                     div()
                         .flex()
                         .flex_col()
-                        .gap_3()
-                        .h(px(COLUMN_HEIGHT))
-                        .param_section_style_lg(theme)
-                        .child(render_section_header("GAIN", theme))
-                        // Toggles
+                        .justify_between() // Distribute elements vertically
                         .child(
                             div()
                                 .flex()
                                 .flex_col()
                                 .gap_2()
+                                .child(render_section_title("GAIN", theme))
                                 .child(render_toggle(
                                     entity.clone(),
                                     plugin_idx,
                                     "Link Channels",
                                     state.link_channels,
-                                    8, // param index for link_channels
+                                    8,
                                     state.selected_param,
                                     state.is_editing,
                                     theme,
@@ -191,15 +184,13 @@ pub fn render_compressor_plugin(
                                     plugin_idx,
                                     "Auto Makeup",
                                     state.auto_makeup,
-                                    7, // param index for auto_makeup
+                                    7,
                                     state.selected_param,
                                     state.is_editing,
                                     theme,
                                 )),
                         )
-                        // Spacer to push knob down
-                        .child(div().flex_1())
-                        // Makeup gain knob (direct child, no wrapper)
+                        // Makeup gain knob at the bottom
                         .child(render_knob(
                             entity.clone(),
                             plugin_idx,
@@ -215,33 +206,34 @@ pub fn render_compressor_plugin(
                             theme,
                         )),
                 )
-                // Column 3: Mix and Sidechain HPF knobs
+                // Column 3: Mix and Sidechain HPF knobs - with vertical distribution
                 .child(
                     div()
                         .flex()
                         .flex_col()
-                        .gap_3()
-                        .h(px(COLUMN_HEIGHT))
-                        .param_section_style_lg(theme)
-                        .child(render_section_header("OUTPUT", theme))
-                        // Spacer to push knobs down
-                        .child(div().flex_1())
-                        // Mix knob (direct child)
-                        .child(render_knob(
-                            entity.clone(),
-                            plugin_idx,
-                            "Mix",
-                            state.mix * 100.0, // Convert 0-1 to 0-100%
-                            MIX_MIN as f64 * 100.0,
-                            MIX_MAX as f64 * 100.0,
-                            "%",
-                            6,
-                            state.selected_param,
-                            state.is_editing,
-                            Some('x'),
-                            theme,
-                        ))
-                        // SC HPF knob (direct child)
+                        .justify_between() // Distribute elements vertically
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_2()
+                                .child(render_section_title("OUTPUT", theme))
+                                .child(render_knob(
+                                    entity.clone(),
+                                    plugin_idx,
+                                    "Mix",
+                                    state.mix * 100.0,
+                                    MIX_MIN as f64 * 100.0,
+                                    MIX_MAX as f64 * 100.0,
+                                    "%",
+                                    6,
+                                    state.selected_param,
+                                    state.is_editing,
+                                    Some('x'),
+                                    theme,
+                                )),
+                        )
+                        // SC HPF knob at the bottom
                         .child(render_knob(
                             entity.clone(),
                             plugin_idx,
@@ -257,39 +249,31 @@ pub fn render_compressor_plugin(
                             theme,
                         )),
                 )
-                // Column 4: Transfer curve (top) and Gain reduction meter (bottom)
+                // Column 4: Transfer curve and Gain reduction meter - aligned width
                 .child(
                     div()
                         .flex()
                         .flex_col()
-                        .gap_3()
-                        .h(px(COLUMN_HEIGHT))
-                        .param_section_style_lg(theme)
-                        .child(render_section_header("METER", theme))
-                        // Transfer curve
-                        .child(div().flex().justify_center().child(render_transfer_curve(
-                            state.threshold_db,
-                            state.ratio,
-                            state.knee_db,
-                            false,
-                            theme,
-                        )))
-                        // Gain reduction meter
+                        .w(px(METER_WIDTH))
+                        .justify_between() // Distribute elements vertically
                         .child(
                             div()
                                 .flex()
                                 .flex_col()
-                                .flex_1()
-                                .gap_1()
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .font_weight(FontWeight::SEMIBOLD)
-                                        .text_color(theme.text_secondary)
-                                        .child("Gain Reduction"),
-                                )
-                                .child(render_gr_meter(meter_value, -30.0, theme)),
-                        ),
+                                .gap_2()
+                                .child(render_section_title("METER", theme))
+                                // Transfer curve with matching width
+                                .child(render_transfer_curve_sized(
+                                    state.threshold_db,
+                                    state.ratio,
+                                    state.knee_db,
+                                    false,
+                                    METER_WIDTH,
+                                    theme,
+                                )),
+                        )
+                        // Gain reduction meter at the bottom
+                        .child(render_gr_meter(meter_value, -30.0, theme)),
                 ),
         )
         .when(state.is_editing, |d| d.child(render_edit_hints(theme)))

@@ -90,6 +90,7 @@ fn plugin_color(plugin_type: &PluginType, theme: &crate::theme::Theme) -> Rgba {
         PluginType::Matrix => theme.plugin_colors.upmixer, // Reuse upmixer color for matrix
         PluginType::XTC => theme.plugin_colors.binaural,   // Reuse binaural color for XTC
         PluginType::Denoiser => theme.plugin_colors.eq,    // Reuse eq color for denoiser
+        PluginType::Pnd => theme.plugin_colors.eq,         // Reuse eq color for pnd
     }
 }
 
@@ -113,6 +114,7 @@ fn plugin_icon(plugin_type: &PluginType) -> &'static str {
         PluginType::Matrix => "⊞",
         PluginType::XTC => "⊗",
         PluginType::Denoiser => "◌",
+        PluginType::Pnd => "♪",
     }
 }
 
@@ -136,6 +138,7 @@ fn short_name(plugin_type: &PluginType) -> &'static str {
         PluginType::Matrix => "Matrix",
         PluginType::XTC => "XTC",
         PluginType::Denoiser => "Denoiser",
+        PluginType::Pnd => "PND",
     }
 }
 
@@ -662,8 +665,7 @@ impl PlayerView {
         div()
             .flex()
             .flex_col()
-            .flex_1()
-            .min_h(px(200.0))
+            .h_full()
             .py_4()
             .px_2()
             .bg(theme.background_secondary)
@@ -1045,6 +1047,14 @@ impl PlayerView {
                                         } => {
                                             self.state.read(cx).app.spectrum_info.clone().map(|s| {
                                                 std::sync::Arc::new(s)
+                                                    as std::sync::Arc<
+                                                        dyn std::any::Any + Send + Sync,
+                                                    >
+                                            })
+                                        }
+                                        sotf_audio_player::PluginSettings::Compressor { .. } => {
+                                            self.state.read(cx).app.compressor_info.clone().map(|c| {
+                                                std::sync::Arc::new(c)
                                                     as std::sync::Arc<
                                                         dyn std::any::Any + Send + Sync,
                                                     >

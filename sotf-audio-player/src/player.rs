@@ -1,6 +1,7 @@
 use sotf_audio::engine::PluginConfig;
 use sotf_audio::manager::{AudioEngineManager, StreamingEvent, StreamingState};
 use sotf_audio::{LoudnessData, SpectrumData};
+use sotf_plugins::CompressorData;
 use std::path::PathBuf;
 
 /// Batched playback state to reduce mutex locking
@@ -10,6 +11,7 @@ pub struct PlaybackState {
     pub is_playing: bool,
     pub loudness: Option<LoudnessData>,
     pub spectrum: Option<SpectrumData>,
+    pub compressor: Option<CompressorData>,
     pub last_error: Option<String>,
 }
 
@@ -17,6 +19,7 @@ pub struct Player {
     manager: AudioEngineManager,
     loudness_index: Option<usize>,
     spectrum_index: Option<usize>,
+    compressor_index: Option<usize>,
 }
 
 impl Player {
@@ -25,6 +28,7 @@ impl Player {
             manager: AudioEngineManager::with_signal_watching(true),
             loudness_index: None,
             spectrum_index: None,
+            compressor_index: None,
         }
     }
 
@@ -35,6 +39,9 @@ impl Player {
         self.spectrum_index = plugins
             .iter()
             .position(|p| p.plugin_type == "spectrum_analyzer");
+        self.compressor_index = plugins
+            .iter()
+            .position(|p| p.plugin_type == "compressor");
     }
 
     pub fn load_and_play(
@@ -155,6 +162,16 @@ impl Player {
         None
     }
 
+    pub fn get_compressor(&self) -> Option<CompressorData> {
+        if let Some(index) = self.compressor_index
+            && let Ok(data) = self.manager.get_plugin_data(index)
+            && let Some(compressor) = data.downcast_ref::<CompressorData>()
+        {
+            return Some(compressor.clone());
+        }
+        None
+    }
+
     pub fn set_output_device(
         &mut self,
         device_name: String,
@@ -229,11 +246,18 @@ impl Player {
             None
         };
 
+        let compressor = if is_playing {
+            self.get_compressor()
+        } else {
+            None
+        };
+
         PlaybackState {
             position_secs,
             is_playing,
             loudness,
             spectrum,
+            compressor,
             last_error,
         }
     }

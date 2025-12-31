@@ -7,7 +7,7 @@
 //! - Vertical sliders and rotary knob controls
 
 use super::common::{
-    ParamSectionStyle, render_knob, render_section_header, render_transfer_curve,
+    render_edit_hints, render_knob, render_section_title, render_transfer_curve,
     render_vertical_slider,
 };
 use super::level_meters::render_gr_meter;
@@ -25,10 +25,6 @@ pub struct LimiterRenderState {
     pub is_editing: bool,
     pub selected_param: usize,
 }
-
-// Fixed height for all columns to ensure consistent layout
-// Height sized to fit columns with stacked knobs
-const COLUMN_HEIGHT: f32 = 380.0;
 
 /// Render the Limiter plugin
 pub fn render_limiter_plugin(
@@ -56,25 +52,22 @@ pub fn render_limiter_plugin(
         .flex()
         .flex_col()
         .gap_4()
-        // Main section - Three columns side by side, all same height
+        // Main section - columns side by side
         .child(
             div()
                 .flex()
-                .gap_4()
+                .gap_6()
                 .items_start()
                 // Column 1: Vertical sliders for main dynamics controls
                 .child(
                     div()
                         .flex()
                         .flex_col()
-                        .gap_3()
-                        .h(px(COLUMN_HEIGHT))
-                        .param_section_style_lg(theme)
-                        .child(render_section_header("DYNAMICS", theme))
+                        .gap_2()
+                        .child(render_section_title("DYNAMICS", theme))
                         .child(
                             div()
                                 .flex()
-                                .flex_1()
                                 .gap_2()
                                 .child(render_vertical_slider(
                                     entity.clone(),
@@ -111,13 +104,9 @@ pub fn render_limiter_plugin(
                     div()
                         .flex()
                         .flex_col()
-                        .gap_3()
-                        .h(px(COLUMN_HEIGHT))
-                        .param_section_style_lg(theme)
-                        .child(render_section_header("OUTPUT", theme))
-                        // Spacer
-                        .child(div().flex_1())
-                        // Mix knob (direct child, no wrapper)
+                        .gap_2()
+                        .child(render_section_title("OUTPUT", theme))
+                        // Mix knob
                         .child(render_knob(
                             entity.clone(),
                             plugin_idx,
@@ -157,15 +146,13 @@ pub fn render_limiter_plugin(
                                 ),
                         ),
                 )
-                // Column 3: Transfer curve (top), Peak meter, GR meter (bottom)
+                // Column 3: Transfer curve, Peak meter, GR meter
                 .child(
                     div()
                         .flex()
                         .flex_col()
                         .gap_2()
-                        .h(px(COLUMN_HEIGHT))
-                        .param_section_style_lg(theme)
-                        .child(render_section_header("METER", theme))
+                        .child(render_section_title("METER", theme))
                         // Transfer curve
                         .child(div().flex().justify_center().child(render_transfer_curve(
                             state.threshold_db,
@@ -220,30 +207,8 @@ pub fn render_limiter_plugin(
                                 ),
                         )
                         // Gain reduction meter
-                        .child(
-                            div()
-                                .flex_1()
-                                .child(render_gr_meter(simulated_gr, -20.0, theme)),
-                        ),
+                        .child(render_gr_meter(simulated_gr, -20.0, theme)),
                 ),
         )
-        .when(state.is_editing, |d| {
-            d.child(
-                div()
-                    .mt_4()
-                    .p_3()
-                    .rounded_lg()
-                    .bg(theme.background_secondary)
-                    .border_1()
-                    .border_color(theme.border)
-                    .flex()
-                    .gap_4()
-                    .text_xs()
-                    .text_color(theme.text_muted)
-                    .child("↑/↓: Select")
-                    .child("←/→: Adjust")
-                    .child("[/]: Large step")
-                    .child("Enter: Done"),
-            )
-        })
+        .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
 }

@@ -2942,6 +2942,15 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             ("Release".to_string(), format!("{:.1} ms", release_ms)),
             ("Low Latency".to_string(), if *low_latency { "On" } else { "Off" }.to_string()),
         ],
+        PluginSettings::Pnd {
+            correction_strength,
+            analysis_window_ms,
+            drift_smoothing,
+        } => vec![
+            ("Correction Strength".to_string(), format!("{:.2}", correction_strength)),
+            ("Analysis Window".to_string(), format!("{:.1} ms", analysis_window_ms)),
+            ("Drift Smoothing".to_string(), format!("{:.3}", drift_smoothing)),
+        ],
     }
 }
 

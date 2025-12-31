@@ -1,6 +1,6 @@
 //! Loudness Plugin UI Components
 
-use super::common::{ParamSectionStyle, render_edit_hints, render_knob, render_section_header};
+use super::common::{render_edit_hints, render_knob, render_section_title, ParamSectionStyle};
 use super::level_meters::render_lufs_with_true_peak;
 use crate::app::AppState;
 use crate::theme::Theme;
@@ -30,40 +30,29 @@ pub fn render_loudness_compensation_plugin(
         .flex()
         .flex_col()
         .gap_4()
-        // Description section
+        // Description
         .child(
             div()
-                .flex()
-                .flex_col()
-                .gap_2()
-                .param_section_style_lg(theme)
-                .child(render_section_header("FLETCHER-MUNSON COMPENSATION", theme))
-                .child(
-                    div()
-                        .text_sm()
-                        .text_color(theme.text_muted)
-                        .child("Boosts bass and treble at low listening volumes to compensate for the ear's reduced sensitivity at those frequencies."),
-                ),
+                .text_sm()
+                .text_color(theme.text_muted)
+                .child("Boosts bass and treble at low listening volumes to compensate for the ear's reduced sensitivity at those frequencies."),
         )
         // Low Shelf and High Shelf sections side by side
         .child(
             div()
                 .flex()
-                .gap_4()
+                .gap_6()
                 // Low Shelf section
                 .child(
                     div()
                         .flex()
                         .flex_col()
-                        .flex_1()
                         .gap_2()
-                        .param_section_style(theme)
-                        .child(render_section_header("LOW SHELF", theme))
+                        .child(render_section_title("LOW SHELF", theme))
                         .child(
                             div()
                                 .flex()
                                 .gap_4()
-                                .justify_center()
                                 .child(render_knob(
                                     entity.clone(),
                                     plugin_idx,
@@ -99,15 +88,12 @@ pub fn render_loudness_compensation_plugin(
                     div()
                         .flex()
                         .flex_col()
-                        .flex_1()
                         .gap_2()
-                        .param_section_style(theme)
-                        .child(render_section_header("HIGH SHELF", theme))
+                        .child(render_section_title("HIGH SHELF", theme))
                         .child(
                             div()
                                 .flex()
                                 .gap_4()
-                                .justify_center()
                                 .child(render_knob(
                                     entity.clone(),
                                     plugin_idx,

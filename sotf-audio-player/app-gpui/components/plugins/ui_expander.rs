@@ -9,7 +9,7 @@
 //! - Mix (dry/wet)
 
 use super::common::{
-    ParamSectionStyle, render_knob, render_section_header, render_toggle_button,
+    render_edit_hints, render_knob, render_section_title, render_toggle_button,
     render_vertical_slider,
 };
 use crate::app::AppState;
@@ -35,9 +35,6 @@ pub struct ExpanderRenderState {
     pub selected_param: usize,
 }
 
-// Fixed height for all columns to ensure consistent layout
-const COLUMN_HEIGHT: f32 = 380.0;
-
 /// Render the Expander plugin
 pub fn render_expander_plugin(
     entity: Entity<AppState>,
@@ -49,25 +46,22 @@ pub fn render_expander_plugin(
         .flex()
         .flex_col()
         .gap_4()
-        // Main section - Three columns side by side
+        // Main section - columns side by side
         .child(
             div()
                 .flex()
-                .gap_4()
+                .gap_6()
                 .items_start()
                 // Column 1: Main dynamics controls (sliders)
                 .child(
                     div()
                         .flex()
                         .flex_col()
-                        .gap_3()
-                        .h(px(COLUMN_HEIGHT))
-                        .param_section_style_lg(theme)
-                        .child(render_section_header("DYNAMICS", theme))
+                        .gap_2()
+                        .child(render_section_title("DYNAMICS", theme))
                         .child(
                             div()
                                 .flex()
-                                .flex_1()
                                 .gap_2()
                                 .child(render_vertical_slider(
                                     entity.clone(),
@@ -118,14 +112,11 @@ pub fn render_expander_plugin(
                     div()
                         .flex()
                         .flex_col()
-                        .gap_3()
-                        .h(px(COLUMN_HEIGHT))
-                        .param_section_style_lg(theme)
-                        .child(render_section_header("TIMING", theme))
+                        .gap_2()
+                        .child(render_section_title("TIMING", theme))
                         .child(
                             div()
                                 .flex()
-                                .flex_1()
                                 .gap_2()
                                 .child(render_vertical_slider(
                                     entity.clone(),
@@ -176,8 +167,7 @@ pub fn render_expander_plugin(
                     div()
                         .flex()
                         .flex_col()
-                        .h(px(COLUMN_HEIGHT))
-                        .param_section_style_lg(theme)
+                        .gap_2()
                         // Header row with OUTPUT and Link Channels
                         .child(
                             div()
@@ -185,13 +175,7 @@ pub fn render_expander_plugin(
                                 .justify_between()
                                 .items_center()
                                 .w_full()
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .font_weight(FontWeight::SEMIBOLD)
-                                        .text_color(theme.text_secondary)
-                                        .child("OUTPUT"),
-                                )
+                                .child(render_section_title("OUTPUT", theme))
                                 .child(
                                     div()
                                         .text_xs()
@@ -199,12 +183,11 @@ pub fn render_expander_plugin(
                                         .child("Link Ch."),
                                 ),
                         )
-                        // Toggle button below header
+                        // Toggle button
                         .child(
                             div()
                                 .flex()
                                 .justify_end()
-                                .mt_1()
                                 .child(render_toggle_button(
                                     entity.clone(),
                                     plugin_idx,
@@ -215,8 +198,6 @@ pub fn render_expander_plugin(
                                     theme,
                                 )),
                         )
-                        // Spacer to push knobs to bottom
-                        .child(div().flex_1())
                         // Knee knob
                         .child(render_knob(
                             entity.clone(),
@@ -279,23 +260,5 @@ pub fn render_expander_plugin(
                         )),
                 ),
         )
-        .when(state.is_editing, |d| {
-            d.child(
-                div()
-                    .mt_4()
-                    .p_3()
-                    .rounded_lg()
-                    .bg(theme.background_secondary)
-                    .border_1()
-                    .border_color(theme.border)
-                    .flex()
-                    .gap_4()
-                    .text_xs()
-                    .text_color(theme.text_muted)
-                    .child("↑/↓: Select")
-                    .child("←/→: Adjust")
-                    .child("[/]: Large step")
-                    .child("Enter: Done"),
-            )
-        })
+        .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
 }

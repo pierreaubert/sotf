@@ -376,6 +376,7 @@ pub fn render_gr_meter(
                 )
                 .child(
                     div()
+                        .min_w(px(70.0))
                         .px_2()
                         .py_1()
                         .rounded_md()
@@ -383,7 +384,8 @@ pub fn render_gr_meter(
                         .text_xs()
                         .font_weight(FontWeight::BOLD)
                         .text_color(color)
-                        .child(format!("{:.1} dB", gr_abs)),
+                        .text_align(TextAlign::Right)
+                        .child(format!("-{:.1} dB", gr_abs)),
                 ),
         )
         // Meter bar (full width)
@@ -406,19 +408,21 @@ pub fn render_gr_meter(
         )
         // Tick marks (full width)
         .child(render_tick_row(&tick_config, 0.0, 0.0))
-        // Legend (full width)
+        // Legend (full width) - show as negative dB values (0, -10, -20, -30)
         .child(
             div()
                 .flex()
                 .justify_between()
                 .text_xs()
                 .text_color(theme.text_muted)
-                .children(
-                    tick_config
-                        .major_values
-                        .iter()
-                        .map(|v| div().child(format!("{:.0}", v))),
-                ),
+                .children(tick_config.major_values.iter().map(|v| {
+                    let label = if *v == 0.0 {
+                        "0".to_string()
+                    } else {
+                        format!("-{:.0}", v)
+                    };
+                    div().child(label)
+                })),
         )
 }
 

@@ -295,6 +295,26 @@ fn create_denoiser_plugin_config(
     })
 }
 
+/// Create PND (Polyphonic Note Detection) varispeed plugin config
+fn create_pnd_plugin_config(
+    correction_strength: f32,
+    analysis_window_ms: f32,
+    drift_smoothing: f32,
+) -> Result<PluginConfig, String> {
+    use serde_json::json;
+
+    let parameters = json!({
+        "correction_strength": correction_strength,
+        "analysis_window_ms": analysis_window_ms,
+        "drift_smoothing": drift_smoothing,
+    });
+
+    Ok(PluginConfig {
+        plugin_type: "pnd".to_string(),
+        parameters,
+    })
+}
+
 /// Convert Biquad filters to PluginConfig for EQ plugin
 fn create_eq_plugin_config(filters: &[Biquad]) -> Result<PluginConfig, String> {
     use serde_json::json;
@@ -531,6 +551,22 @@ enum Commands {
         /// Enable low-latency mode for denoiser (512 FFT vs 2048)
         #[arg(long = "denoiser-low-latency", default_value_t = false)]
         denoiser_low_latency: bool,
+
+        /// Enable PND (Polyphonic Note Detection) varispeed correction plugin
+        #[arg(long = "pnd", default_value_t = false)]
+        pnd: bool,
+
+        /// PND correction strength (0.0-2.0, 1.0 = full correction)
+        #[arg(long = "pnd-correction-strength", default_value = "1.0")]
+        pnd_correction_strength: f32,
+
+        /// PND analysis window size in milliseconds (20-500)
+        #[arg(long = "pnd-analysis-window-ms", default_value = "100.0")]
+        pnd_analysis_window_ms: f32,
+
+        /// PND drift smoothing factor (0.001-1.0)
+        #[arg(long = "pnd-drift-smoothing", default_value = "0.1")]
+        pnd_drift_smoothing: f32,
     },
 
     /// Get current playback status
@@ -628,6 +664,10 @@ fn main() {
             denoiser_attack_ms,
             denoiser_release_ms,
             denoiser_low_latency,
+            pnd,
+            pnd_correction_strength,
+            pnd_analysis_window_ms,
+            pnd_drift_smoothing,
         } => {
             // Parse filters
             let filter_params = match parse_filters(&filters) {
@@ -689,6 +729,10 @@ fn main() {
                 denoiser_attack_ms,
                 denoiser_release_ms,
                 denoiser_low_latency,
+                pnd,
+                pnd_correction_strength,
+                pnd_analysis_window_ms,
+                pnd_drift_smoothing,
             ) {
                 log::error!("Error: {}", e);
                 std::process::exit(1);
@@ -1022,6 +1066,10 @@ fn play_stream(
     denoiser_attack_ms: f32,
     denoiser_release_ms: f32,
     denoiser_low_latency: bool,
+    pnd: bool,
+    pnd_correction_strength: f32,
+    pnd_analysis_window_ms: f32,
+    pnd_drift_smoothing: f32,
 ) -> Result<(), String> {
     log::info!("Starting streaming playback...");
     log::info!("  File: {:?}", file);
@@ -1217,6 +1265,22 @@ fn play_stream(
             denoiser_reduction_db,
             denoiser_floor_db,
             denoiser_low_latency
+        );
+    }
+
+    // PND (Polyphonic Note Detection) varispeed
+    if pnd {
+        let pnd_plugin = create_pnd_plugin_config(
+            pnd_correction_strength,
+            pnd_analysis_window_ms,
+            pnd_drift_smoothing,
+        )?;
+        plugins.push(pnd_plugin);
+        log::info!(
+            "Enabled PND varispeed plugin (strength={:.2}, window={:.1}ms, smoothing={:.3})",
+            pnd_correction_strength,
+            pnd_analysis_window_ms,
+            pnd_drift_smoothing
         );
     }
 

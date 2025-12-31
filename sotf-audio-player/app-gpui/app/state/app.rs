@@ -161,6 +161,9 @@ pub struct App {
     pub spectrum_visible: bool,
     pub spectrum_info: Option<SpectrumData>,
 
+    // Compressor data (for real-time gain reduction display)
+    pub compressor_info: Option<sotf_plugins::CompressorData>,
+
     // Audio devices
     // Audio devices
     pub output_devices: Vec<AudioDevice>,
@@ -410,6 +413,7 @@ impl App {
             level_meter_last_speaker_config: None,
             spectrum_visible: false,
             spectrum_info: None,
+            compressor_info: None,
             output_devices: Vec::new(),
             selected_output_device_index: 0,
             current_output_device_name: None,

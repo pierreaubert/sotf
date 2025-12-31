@@ -2061,6 +2061,19 @@ impl App {
                     }
                     true
                 }
+                PluginSettings::Pnd {
+                    correction_strength,
+                    analysis_window_ms,
+                    drift_smoothing,
+                } => {
+                    match param_idx {
+                        0 => *correction_strength = (*correction_strength + delta * 0.1).clamp(0.0, 2.0),
+                        1 => *analysis_window_ms = (*analysis_window_ms + delta * 10.0).clamp(20.0, 500.0),
+                        2 => *drift_smoothing = (*drift_smoothing + delta * 0.01).clamp(0.001, 1.0),
+                        _ => return false,
+                    }
+                    true
+                }
             }
         } else {
             false
@@ -3182,6 +3195,7 @@ fn get_param_count(settings: &sotf_audio_player::PluginSettings) -> usize {
         PluginSettings::MultibandExpander { .. } => 15, // num_bands, crossover_freq_1-4, threshold, ratio, attack, release, range, knee, hysteresis, hold, mix, link_channels
         PluginSettings::XTC { .. } => 8, // distance, speaker_angle, head_radius, beta_base, beta_low_boost, beta_high_boost, head_shadow_cutoff, head_shadow_slope
         PluginSettings::Denoiser { .. } => 6, // reduction_db, floor_db, smoothing, attack_ms, release_ms, low_latency
+        PluginSettings::Pnd { .. } => 3,     // correction_strength, analysis_window_ms, drift_smoothing
     }
 }
 

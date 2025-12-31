@@ -35,7 +35,7 @@ version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b169f7a6d4742236a0a00c541b845991d0ac43e546831af1249753ab4c3aa3a0"
 dependencies = [
- "cfg-if 1.0.4",
+ "cfg-if",
  "cipher",
  "cpufeatures",
  "zeroize",
@@ -47,7 +47,7 @@ version = "0.8.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5a15f179cd60c4584b8a8c596927aadc462e27f2ca70c04e0071964a73ba7a75"
 dependencies = [
- "cfg-if 1.0.4",
+ "cfg-if",
  "const-random",
  "once_cell",
  "version_check",
@@ -95,7 +95,7 @@ checksum = "ed7572b7ba83a31e20d1b48970ee402d2e3e0537dcfe0a3ff4d6eb7508617d43"
 dependencies = [
  "alsa-sys",
  "bitflags 2.10.0",
- "cfg-if 1.0.4",
+ "cfg-if",
  "libc",
 ]
 
@@ -107,7 +107,7 @@ checksum = "7c88dbbce13b232b26250e1e2e6ac18b6a891a646b8148285036ebce260ac5c3"
 dependencies = [
  "alsa-sys",
  "bitflags 2.10.0",
- "cfg-if 1.0.4",
+ "cfg-if",
  "libc",
 ]
 
@@ -451,7 +451,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "456b8a8feb6f42d237746d4b3e9a178494627745c3c56c6ea55d92ba50d026fc"
 dependencies = [
  "autocfg",
- "cfg-if 1.0.4",
+ "cfg-if",
  "concurrent-queue",
  "futures-io",
  "futures-lite 2.6.1",
@@ -496,7 +496,7 @@ dependencies = [
  "async-signal",
  "async-task",
  "blocking",
- "cfg-if 1.0.4",
+ "cfg-if",
  "event-listener 5.4.1",
  "futures-lite 2.6.1",
  "rustix 1.1.3",
@@ -522,7 +522,7 @@ dependencies = [
  "async-io",
  "async-lock",
  "atomic-waker",
- "cfg-if 1.0.4",
+ "cfg-if",
  "futures-core",
  "futures-io",
  "rustix 1.1.3",
@@ -738,7 +738,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bb531853791a215d7c62a30daf0dde835f381ab5de4589cfe7c649d2cbe92bd6"
 dependencies = [
  "addr2line",
- "cfg-if 1.0.4",
+ "cfg-if",
  "libc",
  "miniz_oxide",
  "object 0.37.3",
@@ -1278,12 +1278,6 @@ dependencies = [
 
 [[package]]
 name = "cfg-if"
-version = "0.1.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4785bdd1c96b2a846b2bd7cc02e86b6b3dbf14e7e53446c4f54c92a361040822"
-
-[[package]]
-name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
@@ -1429,21 +1423,6 @@ dependencies = [
 
 [[package]]
 name = "cocoa"
-version = "0.20.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c49e86fc36d5704151f5996b7b3795385f50ce09e3be0f47a0cfde869681cf8"
-dependencies = [
- "bitflags 1.3.2",
- "block",
- "core-foundation 0.7.0",
- "core-graphics 0.19.2",
- "foreign-types 0.3.2",
- "libc",
- "objc",
-]
-
-[[package]]
-name = "cocoa"
 version = "0.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f6140449f97a6e97f9511815c5632d84c8aacf8ac271ad77c559218161a1373c"
@@ -1571,7 +1550,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3fdb1325a1cece981e8a296ab8f0f9b63ae357bd0784a9faaf548cc7b480707a"
 dependencies = [
  "castaway",
- "cfg-if 1.0.4",
+ "cfg-if",
  "itoa",
  "rustversion",
  "ryu",
@@ -1642,21 +1621,11 @@ dependencies = [
 
 [[package]]
 name = "core-foundation"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57d24c7a13c43e870e37c1556b74555437870a04514f7685f5b354e090567171"
-dependencies = [
- "core-foundation-sys 0.7.0",
- "libc",
-]
-
-[[package]]
-name = "core-foundation"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "91e195e091a93c46f7102ec7818a2aa394e1e1771c3ab4825963fa03e45afb8f"
 dependencies = [
- "core-foundation-sys 0.8.7",
+ "core-foundation-sys",
  "libc",
 ]
 
@@ -1666,33 +1635,15 @@ version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b55271e5c8c478ad3f38ad24ef34923091e0548492a266d19b3c0b4d82574c63"
 dependencies = [
- "core-foundation-sys 0.8.7",
+ "core-foundation-sys",
  "libc",
 ]
-
-[[package]]
-name = "core-foundation-sys"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b3a71ab494c0b5b860bdc8407ae08978052417070c2ced38573a9157ad75b8ac"
 
 [[package]]
 name = "core-foundation-sys"
 version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
-
-[[package]]
-name = "core-graphics"
-version = "0.19.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b3889374e6ea6ab25dba90bb5d96202f61108058361f6dc72e8b03e6f8bbe923"
-dependencies = [
- "bitflags 1.3.2",
- "core-foundation 0.7.0",
- "foreign-types 0.3.2",
- "libc",
-]
 
 [[package]]
 name = "core-graphics"
@@ -1763,19 +1714,8 @@ checksum = "7e4583956b9806b69f73fcb23aee05eb3620efc282972f08f6a6db7504f8334d"
 dependencies = [
  "bitflags 2.10.0",
  "block",
- "cfg-if 1.0.4",
+ "cfg-if",
  "core-foundation 0.10.0",
- "libc",
-]
-
-[[package]]
-name = "core-media-sys"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "273bf3fc5bf51fd06a7766a84788c1540b6527130a0bce39e00567d6ab9f31f1"
-dependencies = [
- "cfg-if 0.1.10",
- "core-foundation-sys 0.7.0",
  "libc",
 ]
 
@@ -1803,20 +1743,6 @@ dependencies = [
  "io-surface",
  "libc",
  "metal 0.29.0",
-]
-
-[[package]]
-name = "core-video-sys"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34ecad23610ad9757664d644e369246edde1803fcb43ed72876565098a5d3828"
-dependencies = [
- "cfg-if 0.1.10",
- "core-foundation-sys 0.7.0",
- "core-graphics 0.19.2",
- "libc",
- "metal 0.18.0",
- "objc",
 ]
 
 [[package]]
@@ -1868,7 +1794,7 @@ checksum = "964eb3e10ea8b0d29c797086aab3ca730f75e06dced0cb980642fd274a5cca30"
 dependencies = [
  "block",
  "core-foundation 0.9.4",
- "core-foundation-sys 0.8.7",
+ "core-foundation-sys",
  "coremidi-sys",
 ]
 
@@ -1878,7 +1804,7 @@ version = "3.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cc9504310988d938e49fff1b5f1e56e3dafe39bb1bae580c19660b58b83a191e"
 dependencies = [
- "core-foundation-sys 0.8.7",
+ "core-foundation-sys",
 ]
 
 [[package]]
@@ -1949,7 +1875,7 @@ version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9481c1c90cbf2ac953f07c8d4a58aa3945c425b7185c9154d67a65e4230da511"
 dependencies = [
- "cfg-if 1.0.4",
+ "cfg-if",
 ]
 
 [[package]]
@@ -2582,7 +2508,7 @@ version = "0.8.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "75030f3c4f45dafd7586dd6780965a8c7e8e285a5ecb86713e63a79c5b2766f3"
 dependencies = [
- "cfg-if 1.0.4",
+ "cfg-if",
 ]
 
 [[package]]
@@ -2862,7 +2788,7 @@ version = "0.2.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bc0505cd1b6fa6580283f6bdf70a73fcf4aba1184038c90902b92b3dd0df63ed"
 dependencies = [
- "cfg-if 1.0.4",
+ "cfg-if",
  "libc",
  "libredox",
  "windows-sys 0.60.2",
@@ -3224,7 +3150,7 @@ version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "335ff9f135e4384c8150d6f27c6daed433577f86b4750418338c01a1a2528592"
 dependencies = [
- "cfg-if 1.0.4",
+ "cfg-if",
  "js-sys",
  "libc",
  "wasi",
@@ -3237,7 +3163,7 @@ version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "899def5c37c4fd7b2664648c28120ecec138e4d395b459e5ca34f9cce2dd77fd"
 dependencies = [
- "cfg-if 1.0.4",
+ "cfg-if",
  "libc",
  "r-efi",
  "wasip2",
@@ -3452,7 +3378,7 @@ dependencies = [
  "cocoa-foundation 0.2.0",
  "collections",
  "core-foundation 0.10.0",
- "core-foundation-sys 0.8.7",
+ "core-foundation-sys",
  "core-graphics 0.24.0",
  "core-text",
  "core-video",
@@ -3660,7 +3586,7 @@ version = "2.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ea2d84b969582b4b1864a92dc5d27cd2b77b622a8d79306834f1be5ba20d84b"
 dependencies = [
- "cfg-if 1.0.4",
+ "cfg-if",
  "crunchy",
  "num-traits",
  "zerocopy",
@@ -3959,7 +3885,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "33e57f83510bb73707521ebaffa789ec8caf86f9657cad665b092b581d40e9fb"
 dependencies = [
  "android_system_properties",
- "core-foundation-sys 0.8.7",
+ "core-foundation-sys",
  "iana-time-zone-haiku",
  "js-sys",
  "log",
@@ -4228,7 +4154,7 @@ version = "0.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e0242819d153cba4b4b05a5a8f2a7e9bbf97b6055b2a002b395c96b5ff3c0222"
 dependencies = [
- "cfg-if 1.0.4",
+ "cfg-if",
 ]
 
 [[package]]
@@ -4281,7 +4207,7 @@ checksum = "554b8c5d64ec09a3a520fe58e4d48a73e00ff32899cdcbe32a4877afd4968b8e"
 dependencies = [
  "cgl",
  "core-foundation 0.10.0",
- "core-foundation-sys 0.8.7",
+ "core-foundation-sys",
  "leaky-cow",
 ]
 
@@ -4401,7 +4327,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a87aa2bb7d2af34197c04845522473242e1aa17c12f4935d5856491a7fb8c97"
 dependencies = [
  "cesu8",
- "cfg-if 1.0.4",
+ "cfg-if",
  "combine",
  "jni-sys",
  "log",
@@ -4613,7 +4539,7 @@ version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7c4b02199fee7c5d21a5ae7d8cfa79a6ef5bb2fc834d6e9058e89c825efdc55"
 dependencies = [
- "cfg-if 1.0.4",
+ "cfg-if",
  "windows-link 0.2.1",
 ]
 
@@ -4893,7 +4819,7 @@ version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ea1f30cedd69f0a2954655f7188c6a834246d2bcf1e315e2ac40c4b24dc9519"
 dependencies = [
- "cfg-if 1.0.4",
+ "cfg-if",
  "rayon",
 ]
 
@@ -4903,7 +4829,7 @@ version = "0.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d89e7ee0cfbedfc4da3340218492196241d89eefb6dab27de5df917a6d2e78cf"
 dependencies = [
- "cfg-if 1.0.4",
+ "cfg-if",
  "digest",
 ]
 
@@ -4974,21 +4900,6 @@ dependencies = [
  "rand_chacha 0.3.1",
  "rand_distr",
  "serde",
-]
-
-[[package]]
-name = "metal"
-version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e198a0ee42bdbe9ef2c09d0b9426f3b2b47d90d93a4a9b0395c4cea605e92dc0"
-dependencies = [
- "bitflags 1.3.2",
- "block",
- "cocoa 0.20.2",
- "core-graphics 0.19.2",
- "foreign-types 0.3.2",
- "log",
- "objc",
 ]
 
 [[package]]
@@ -5324,7 +5235,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "71e2746dc3a24dd78b3cfcb7be93368c6de9963d30f43a6a73998a9cf4b17b46"
 dependencies = [
  "bitflags 2.10.0",
- "cfg-if 1.0.4",
+ "cfg-if",
  "cfg_aliases 0.2.1",
  "libc",
  "memoffset",
@@ -5337,7 +5248,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "74523f3a35e05aba87a1d978330aef40f67b0304ac79c1c00b294c9830543db6"
 dependencies = [
  "bitflags 2.10.0",
- "cfg-if 1.0.4",
+ "cfg-if",
  "cfg_aliases 0.2.1",
  "libc",
  "memoffset",
@@ -5370,7 +5281,6 @@ dependencies = [
  "flume",
  "image",
  "nokhwa-bindings-linux",
- "nokhwa-bindings-macos",
  "nokhwa-bindings-windows",
  "nokhwa-core",
  "paste",
@@ -5385,23 +5295,6 @@ checksum = "4bd666aaa41d14357817bd9a981773a73c4d00b34d344cfc244e47ebd397b1ec"
 dependencies = [
  "nokhwa-core",
  "v4l",
-]
-
-[[package]]
-name = "nokhwa-bindings-macos"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de78eb4a2d47a68f490899aa0516070d7a972f853ec2bb374ab53be0bd39b60f"
-dependencies = [
- "block",
- "cocoa-foundation 0.2.0",
- "core-foundation 0.10.0",
- "core-media-sys",
- "core-video-sys",
- "flume",
- "nokhwa-core",
- "objc",
- "once_cell",
 ]
 
 [[package]]
@@ -5704,8 +5597,20 @@ version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "478ae33fcac9df0a18db8302387c666b8ef08a3e2d62b510ca4fc278a384b6c0"
 dependencies = [
+ "bitflags 2.10.0",
+ "block2",
+ "dispatch2",
  "objc2",
+ "objc2-avf-audio",
+ "objc2-core-audio-types",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-core-image",
+ "objc2-core-video",
  "objc2-foundation",
+ "objc2-image-io",
+ "objc2-media-toolbox",
+ "objc2-quartz-core",
 ]
 
 [[package]]
@@ -5790,6 +5695,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "05ec576860167a15dd9fce7fbee7512beb4e31f532159d3482d1f9c6caedf31d"
 dependencies = [
  "bitflags 2.10.0",
+ "block2",
  "dispatch2",
  "objc2",
  "objc2-core-audio",
@@ -5862,6 +5768,18 @@ dependencies = [
  "bitflags 2.10.0",
  "objc2",
  "objc2-core-foundation",
+]
+
+[[package]]
+name = "objc2-media-toolbox"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "edd9fdde720df3da7046bb9097811000c1e7ab5cd579fa89d96b27d56781fb30"
+dependencies = [
+ "objc2",
+ "objc2-core-audio-types",
+ "objc2-core-foundation",
+ "objc2-core-media",
 ]
 
 [[package]]
@@ -6096,7 +6014,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "08838db121398ad17ab8531ce9de97b244589089e290a384c900cb9ff7434328"
 dependencies = [
  "bitflags 2.10.0",
- "cfg-if 1.0.4",
+ "cfg-if",
  "foreign-types 0.3.2",
  "libc",
  "once_cell",
@@ -6206,7 +6124,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2621685985a2ebf1c516881c026032ac7deafcda1a2c9b7850dc81e3dfcb64c1"
 dependencies = [
  "backtrace",
- "cfg-if 1.0.4",
+ "cfg-if",
  "libc",
  "petgraph",
  "redox_syscall 0.5.18",
@@ -6546,7 +6464,7 @@ version = "3.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d0e4f59085d47d8241c88ead0f274e8a0cb551f3625263c05eb8dd897c34218"
 dependencies = [
- "cfg-if 1.0.4",
+ "cfg-if",
  "concurrent-queue",
  "hermit-abi",
  "pin-project-lite",
@@ -6894,7 +6812,7 @@ version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "577c9b9f652b4c121fb25c6a391dd06406d3b092ba68827e6d2f09550edc54b3"
 dependencies = [
- "cfg-if 1.0.4",
+ "cfg-if",
  "crossterm 0.29.0",
  "instability",
  "ratatui-core",
@@ -6969,7 +6887,7 @@ dependencies = [
  "av1-grain",
  "bitstream-io",
  "built",
- "cfg-if 1.0.4",
+ "cfg-if",
  "interpolate_name",
  "itertools 0.14.0",
  "libc",
@@ -7286,7 +7204,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4689e6c2294d81e88dc6261c768b63bc4fcdb852be6d1352498b114f61383b7"
 dependencies = [
  "cc",
- "cfg-if 1.0.4",
+ "cfg-if",
  "getrandom 0.2.16",
  "libc",
  "untrusted",
@@ -7650,7 +7568,7 @@ checksum = "897b2245f0b511c87893af39b033e5ca9cce68824c4d7e7630b5a1d339658d02"
 dependencies = [
  "bitflags 2.10.0",
  "core-foundation 0.9.4",
- "core-foundation-sys 0.8.7",
+ "core-foundation-sys",
  "libc",
  "security-framework-sys",
 ]
@@ -7661,7 +7579,7 @@ version = "2.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cc1f0cbffaac4852523ce30d8bd3c5cdc873501d96ff467ca09b6767bb8cd5c0"
 dependencies = [
- "core-foundation-sys 0.8.7",
+ "core-foundation-sys",
  "libc",
 ]
 
@@ -7866,7 +7784,7 @@ version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
 dependencies = [
- "cfg-if 1.0.4",
+ "cfg-if",
  "cpufeatures",
  "digest",
 ]
@@ -8281,7 +8199,7 @@ version = "0.2.1"
 dependencies = [
  "anyhow",
  "core-foundation 0.9.4",
- "core-foundation-sys 0.8.7",
+ "core-foundation-sys",
  "coreaudio-sys",
  "crossbeam",
  "env_logger 0.10.2",
@@ -8304,8 +8222,10 @@ dependencies = [
  "log",
  "nokhwa",
  "objc2",
+ "objc2-av-foundation",
  "objc2-core-foundation",
  "objc2-core-image",
+ "objc2-core-media",
  "objc2-core-video",
  "objc2-foundation",
  "objc2-vision",
@@ -8390,7 +8310,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1f8b29fb42aafcea4edeeb6b2f2d7ecd0d969c48b4cf0d2e64aafc471dd6e59"
 dependencies = [
  "cc",
- "cfg-if 1.0.4",
+ "cfg-if",
  "libc",
  "psm",
  "windows-sys 0.59.0",
@@ -8816,7 +8736,7 @@ version = "0.31.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "355dbe4f8799b304b05e1b0f05fc59b2a18d36645cf169607da45bde2f69a1be"
 dependencies = [
- "core-foundation-sys 0.8.7",
+ "core-foundation-sys",
  "libc",
  "memchr",
  "ntapi",
@@ -8841,7 +8761,7 @@ version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8e1d1b10ced5ca923a1fcb8d03e96b8d3268065d724548c0211415ff6ac6bac4"
 dependencies = [
- "core-foundation-sys 0.8.7",
+ "core-foundation-sys",
  "libc",
 ]
 
@@ -8869,8 +8789,8 @@ version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "271450eb289cb4d8d0720c6ce70c72c8c858c93dd61fc625881616752e6b98f6"
 dependencies = [
- "cfg-if 1.0.4",
- "core-foundation-sys 0.8.7",
+ "cfg-if",
+ "core-foundation-sys",
  "libc",
  "objc",
 ]
@@ -9028,7 +8948,7 @@ version = "1.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f60246a4944f24f6e018aa17cdeffb7818b76356965d03b07d6a9886e8962185"
 dependencies = [
- "cfg-if 1.0.4",
+ "cfg-if",
 ]
 
 [[package]]
@@ -9096,7 +9016,7 @@ dependencies = [
  "arrayref",
  "arrayvec",
  "bytemuck",
- "cfg-if 1.0.4",
+ "cfg-if",
  "log",
  "png 0.17.16",
  "tiny-skia-path",
@@ -9926,7 +9846,7 @@ version = "0.2.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d759f433fa64a2d763d1340820e46e111a7a5ab75f993d1852d70b03dbb80fd"
 dependencies = [
- "cfg-if 1.0.4",
+ "cfg-if",
  "once_cell",
  "rustversion",
  "wasm-bindgen-macro",
@@ -9939,7 +9859,7 @@ version = "0.4.56"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "836d9622d604feee9e5de25ac10e3ea5f2d65b41eac0d9ce72eb5deae707ce7c"
 dependencies = [
- "cfg-if 1.0.4",
+ "cfg-if",
  "js-sys",
  "once_cell",
  "wasm-bindgen",
@@ -11070,7 +10990,7 @@ version = "0.52.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a277a57398d4bfa075df44f501a17cfdf8542d224f0d36095a2adc7aee4ef0a5"
 dependencies = [
- "cfg-if 1.0.4",
+ "cfg-if",
  "serde",
  "windows-sys 0.48.0",
 ]
@@ -11081,7 +11001,7 @@ version = "0.55.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb5a765337c50e9ec252c2069be9bf91c7df47afb103b642ba3a53bf8101be97"
 dependencies = [
- "cfg-if 1.0.4",
+ "cfg-if",
  "windows-sys 0.59.0",
 ]
 

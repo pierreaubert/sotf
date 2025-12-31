@@ -5,7 +5,7 @@
 //! - Large circular gain display
 //! - Color-coded boost/cut/unity indication
 
-use super::common::{render_knob, render_param_section_lg, render_section_header};
+use super::common::{render_knob, render_section_title};
 use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
@@ -26,48 +26,29 @@ pub fn render_gain_plugin(
     state: GainRenderState,
     theme: &Theme,
 ) -> impl IntoElement {
-    let is_boost = state.gain_db > 0.5;
-    let is_cut = state.gain_db < -0.5;
-
-    // Color based on gain direction
-    let _gain_color = if is_boost {
-        theme.success // Green for boost
-    } else if is_cut {
-        theme.error // Red for cut
-    } else {
-        theme.text_primary // Neutral
-    };
-
     div()
         .flex()
         .flex_col()
-        .gap_4()
-        // Main section - Large gain display and knob
+        .gap_2()
+        .child(render_section_title("GAIN CONTROL", theme))
         .child(
             div()
                 .flex()
-                .gap_4()
                 .items_center()
                 .justify_center()
-                // Knob section
-                .child(
-                    render_param_section_lg(theme)
-                        .items_center()
-                        .child(render_section_header("GAIN CONTROL", theme))
-                        .child(render_knob(
-                            entity.clone(),
-                            plugin_idx,
-                            "Gain",
-                            state.gain_db,
-                            GAIN_DB_MIN as f64,
-                            GAIN_DB_MAX as f64,
-                            "dB",
-                            0,
-                            state.selected_param,
-                            state.is_editing,
-                            Some('g'),
-                            theme,
-                        )),
-                ),
+                .child(render_knob(
+                    entity.clone(),
+                    plugin_idx,
+                    "Gain",
+                    state.gain_db,
+                    GAIN_DB_MIN as f64,
+                    GAIN_DB_MAX as f64,
+                    "dB",
+                    0,
+                    state.selected_param,
+                    state.is_editing,
+                    Some('g'),
+                    theme,
+                )),
         )
 }

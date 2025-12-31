@@ -23,6 +23,7 @@ pub enum PluginType {
     Matrix,
     XTC,
     Denoiser,
+    Pnd,
 }
 
 impl PluginType {
@@ -46,6 +47,7 @@ impl PluginType {
             Self::Matrix => "Matrix Mixer",
             Self::XTC => "Crosstalk Cancellation",
             Self::Denoiser => "Denoiser",
+            Self::Pnd => "PND Varispeed",
         }
     }
 
@@ -69,6 +71,7 @@ impl PluginType {
             Self::Matrix => "Channel routing and mixing matrix",
             Self::XTC => "Crosstalk cancellation for speaker playback",
             Self::Denoiser => "Wiener filter denoiser with MCRA noise estimation",
+            Self::Pnd => "Polyphonic note detection and varispeed correction",
         }
     }
 
@@ -92,6 +95,7 @@ impl PluginType {
             Self::Matrix,
             Self::XTC,
             Self::Denoiser,
+            Self::Pnd,
         ]
     }
 
@@ -246,6 +250,7 @@ use sotf_plugins::param_specs::upmixer as upmixer_specs;
 use sotf_plugins::param_specs::expander as expander_specs;
 use sotf_plugins::param_specs::multiband_compressor as mb_compressor_specs;
 use sotf_plugins::param_specs::multiband_expander as mb_expander_specs;
+use sotf_plugins::param_specs::pnd as pnd_specs;
 
 // Wrapper functions to convert f32 -> f64 for PluginSettings (which uses f64)
 fn default_upmixer_subharmonic_gain() -> f64 {
@@ -584,6 +589,19 @@ fn default_denoiser_low_latency() -> bool {
     false
 }
 
+// PND defaults
+fn default_pnd_correction_strength() -> f64 {
+    pnd_specs::CORRECTION_STRENGTH_DEFAULT as f64
+}
+
+fn default_pnd_analysis_window_ms() -> f64 {
+    pnd_specs::ANALYSIS_WINDOW_MS_DEFAULT as f64
+}
+
+fn default_pnd_drift_smoothing() -> f64 {
+    pnd_specs::DRIFT_SMOOTHING_DEFAULT as f64
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PluginSettings {
     EQ {
@@ -855,6 +873,14 @@ pub enum PluginSettings {
         #[serde(default = "default_denoiser_low_latency")]
         low_latency: bool,
     },
+    Pnd {
+        #[serde(default = "default_pnd_correction_strength")]
+        correction_strength: f64,
+        #[serde(default = "default_pnd_analysis_window_ms")]
+        analysis_window_ms: f64,
+        #[serde(default = "default_pnd_drift_smoothing")]
+        drift_smoothing: f64,
+    },
 }
 
 impl PluginSettings {
@@ -878,6 +904,7 @@ impl PluginSettings {
             Self::Matrix { .. } => PluginType::Matrix,
             Self::XTC { .. } => PluginType::XTC,
             Self::Denoiser { .. } => PluginType::Denoiser,
+            Self::Pnd { .. } => PluginType::Pnd,
         }
     }
 
@@ -1261,6 +1288,18 @@ impl PluginSettings {
                     "low_latency": low_latency,
                 }),
             ),
+            Self::Pnd {
+                correction_strength,
+                analysis_window_ms,
+                drift_smoothing,
+            } => PluginConfig::new(
+                "pnd",
+                json!({
+                    "correction_strength": correction_strength,
+                    "analysis_window_ms": analysis_window_ms,
+                    "drift_smoothing": drift_smoothing,
+                }),
+            ),
         }
     }
 
@@ -1452,6 +1491,11 @@ impl PluginSettings {
                 attack_ms: default_denoiser_attack_ms(),
                 release_ms: default_denoiser_release_ms(),
                 low_latency: default_denoiser_low_latency(),
+            },
+            PluginType::Pnd => Self::Pnd {
+                correction_strength: default_pnd_correction_strength(),
+                analysis_window_ms: default_pnd_analysis_window_ms(),
+                drift_smoothing: default_pnd_drift_smoothing(),
             },
         }
     }

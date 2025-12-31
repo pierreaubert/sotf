@@ -181,13 +181,22 @@ pub fn render_param_row(
         )
 }
 
-/// Render a section header
+/// Render a section header (with bottom margin - use for bordered sections)
 pub fn render_section_header(title: &str, theme: &Theme) -> impl IntoElement {
     div()
         .text_sm()
         .font_weight(FontWeight::BOLD)
         .text_color(theme.text_primary)
         .mb_2()
+        .child(title.to_string())
+}
+
+/// Render a compact section title (no margin - use for borderless layouts)
+pub fn render_section_title(title: &str, theme: &Theme) -> impl IntoElement {
+    div()
+        .text_xs()
+        .font_weight(FontWeight::SEMIBOLD)
+        .text_color(theme.text_secondary)
         .child(title.to_string())
 }
 
@@ -536,7 +545,20 @@ pub fn render_transfer_curve(
     is_limiter: bool,
     theme: &Theme,
 ) -> impl IntoElement {
-    let curve_size = 100.0;
+    render_transfer_curve_sized(threshold_db, ratio, knee_db, is_limiter, 100.0, theme)
+}
+
+/// Render a transfer curve visualization with custom width
+pub fn render_transfer_curve_sized(
+    threshold_db: f64,
+    ratio: f64,
+    knee_db: f64,
+    is_limiter: bool,
+    width: f32,
+    theme: &Theme,
+) -> impl IntoElement {
+    let curve_width = width;
+    let curve_height = 80.0; // Fixed height for compact layout
     let num_points = 20;
 
     // Generate curve points
@@ -587,8 +609,8 @@ pub fn render_transfer_curve(
         // Curve visualization
         .child(
             div()
-                .w(px(curve_size))
-                .h(px(curve_size))
+                .w(px(curve_width))
+                .h(px(curve_height))
                 .bg(theme.background)
                 .rounded_lg()
                 .border_1()

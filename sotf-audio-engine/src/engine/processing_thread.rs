@@ -672,6 +672,16 @@ fn create_plugin(
             Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 
+        "pnd" | "varispeed" => {
+            use sotf_plugins::{PndPlugin, PndPluginParams};
+
+            let params: PndPluginParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| format!("Failed to parse PND plugin parameters: {}", e))?;
+
+            let plugin = PndPlugin::from_params(channels, params);
+            Ok(Box::new(plugin))
+        }
+
         other => Err(format!("Unknown plugin type: {}", other)),
     }
 }

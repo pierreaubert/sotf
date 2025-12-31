@@ -7,7 +7,7 @@
 //! - Beta (cancellation strength) with frequency-dependent boosts
 //! - Head shadow modeling
 
-use super::common::{ParamSectionStyle, render_knob, render_section_header};
+use super::common::{render_edit_hints, render_knob, render_section_title};
 use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
@@ -43,9 +43,6 @@ pub struct XtcRenderState {
     pub selected_param: usize,
 }
 
-// Fixed height for all columns to ensure consistent layout
-const COLUMN_HEIGHT: f32 = 380.0;
-
 /// Render the XTC plugin
 pub fn render_xtc_plugin(
     entity: Entity<AppState>,
@@ -57,21 +54,19 @@ pub fn render_xtc_plugin(
         .flex()
         .flex_col()
         .gap_4()
-        // Main section - Three columns side by side
+        // Main section - columns side by side
         .child(
             div()
                 .flex()
-                .gap_4()
+                .gap_6()
                 .items_start()
                 // Column 1: Physical setup
                 .child(
                     div()
                         .flex()
                         .flex_col()
-                        .gap_3()
-                        .h(px(COLUMN_HEIGHT))
-                        .param_section_style_lg(theme)
-                        .child(render_section_header("SETUP", theme))
+                        .gap_2()
+                        .child(render_section_title("SETUP", theme))
                         // Distance knob
                         .child(render_knob(
                             entity.clone(),
@@ -81,7 +76,7 @@ pub fn render_xtc_plugin(
                             DISTANCE_MIN,
                             DISTANCE_MAX,
                             "m",
-                            0, // distance_m param index
+                            0,
                             state.selected_param,
                             state.is_editing,
                             Some('d'),
@@ -96,7 +91,7 @@ pub fn render_xtc_plugin(
                             ANGLE_MIN,
                             ANGLE_MAX,
                             "°",
-                            1, // speaker_angle_deg param index
+                            1,
                             state.selected_param,
                             state.is_editing,
                             Some('a'),
@@ -107,11 +102,11 @@ pub fn render_xtc_plugin(
                             entity.clone(),
                             plugin_idx,
                             "Head Radius",
-                            state.head_radius_m * 100.0, // Convert to cm for display
+                            state.head_radius_m * 100.0,
                             HEAD_RADIUS_MIN * 100.0,
                             HEAD_RADIUS_MAX * 100.0,
                             "cm",
-                            2, // head_radius_m param index
+                            2,
                             state.selected_param,
                             state.is_editing,
                             Some('r'),
@@ -123,20 +118,18 @@ pub fn render_xtc_plugin(
                     div()
                         .flex()
                         .flex_col()
-                        .gap_3()
-                        .h(px(COLUMN_HEIGHT))
-                        .param_section_style_lg(theme)
-                        .child(render_section_header("CANCELLATION", theme))
+                        .gap_2()
+                        .child(render_section_title("CANCELLATION", theme))
                         // Beta base knob (scaled for display)
                         .child(render_knob(
                             entity.clone(),
                             plugin_idx,
                             "Beta Base",
-                            state.beta_base * 1000.0, // Scale up for display
+                            state.beta_base * 1000.0,
                             BETA_BASE_MIN * 1000.0,
                             BETA_BASE_MAX * 1000.0,
                             "×10⁻³",
-                            3, // beta_base param index
+                            3,
                             state.selected_param,
                             state.is_editing,
                             Some('b'),
@@ -151,7 +144,7 @@ pub fn render_xtc_plugin(
                             BETA_BOOST_MIN,
                             BETA_BOOST_MAX,
                             "×",
-                            4, // beta_low_freq_boost param index
+                            4,
                             state.selected_param,
                             state.is_editing,
                             Some('l'),
@@ -166,7 +159,7 @@ pub fn render_xtc_plugin(
                             BETA_BOOST_MIN,
                             BETA_BOOST_MAX,
                             "×",
-                            5, // beta_high_freq_boost param index
+                            5,
                             state.selected_param,
                             state.is_editing,
                             Some('h'),
@@ -178,10 +171,8 @@ pub fn render_xtc_plugin(
                     div()
                         .flex()
                         .flex_col()
-                        .gap_3()
-                        .h(px(COLUMN_HEIGHT))
-                        .param_section_style_lg(theme)
-                        .child(render_section_header("HEAD SHADOW", theme))
+                        .gap_2()
+                        .child(render_section_title("HEAD SHADOW", theme))
                         // Cutoff frequency knob
                         .child(render_knob(
                             entity.clone(),
@@ -191,7 +182,7 @@ pub fn render_xtc_plugin(
                             HEAD_SHADOW_CUTOFF_MIN,
                             HEAD_SHADOW_CUTOFF_MAX,
                             "Hz",
-                            6, // head_shadow_cutoff_hz param index
+                            6,
                             state.selected_param,
                             state.is_editing,
                             Some('c'),
@@ -206,7 +197,7 @@ pub fn render_xtc_plugin(
                             HEAD_SHADOW_SLOPE_MIN,
                             HEAD_SHADOW_SLOPE_MAX,
                             "dB/oct",
-                            7, // head_shadow_slope_db_per_octave param index
+                            7,
                             state.selected_param,
                             state.is_editing,
                             Some('s'),
@@ -214,23 +205,5 @@ pub fn render_xtc_plugin(
                         )),
                 ),
         )
-        .when(state.is_editing, |d| {
-            d.child(
-                div()
-                    .mt_4()
-                    .p_3()
-                    .rounded_lg()
-                    .bg(theme.background_secondary)
-                    .border_1()
-                    .border_color(theme.border)
-                    .flex()
-                    .gap_4()
-                    .text_xs()
-                    .text_color(theme.text_muted)
-                    .child("↑/↓: Select")
-                    .child("←/→: Adjust")
-                    .child("[/]: Large step")
-                    .child("Enter: Done"),
-            )
-        })
+        .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
 }

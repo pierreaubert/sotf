@@ -1018,6 +1018,31 @@ impl App {
                         _ => false,
                     }
                 }
+                PluginSettings::Pnd {
+                    correction_strength,
+                    analysis_window_ms,
+                    drift_smoothing,
+                } => {
+                    use sotf_audio_player::param_specs::pnd::*;
+                    match param_idx {
+                        0 => {
+                            *correction_strength = (*correction_strength + delta * 0.1)
+                                .clamp(CORRECTION_STRENGTH_MIN as f64, CORRECTION_STRENGTH_MAX as f64);
+                            true
+                        }
+                        1 => {
+                            *analysis_window_ms = (*analysis_window_ms + delta * 10.0)
+                                .clamp(ANALYSIS_WINDOW_MS_MIN as f64, ANALYSIS_WINDOW_MS_MAX as f64);
+                            true
+                        }
+                        2 => {
+                            *drift_smoothing = (*drift_smoothing + delta * 0.01)
+                                .clamp(DRIFT_SMOOTHING_MIN as f64, DRIFT_SMOOTHING_MAX as f64);
+                            true
+                        }
+                        _ => false,
+                    }
+                }
             }
         } else {
             false
@@ -2243,5 +2268,6 @@ pub fn get_param_count(settings: &PluginSettings) -> usize {
         PluginSettings::MultibandExpander { .. } => 16, // num_bands, crossover_preset, crossover_freq_1-4, threshold, ratio, attack, release, range, knee, hysteresis, hold, mix, link_channels
         PluginSettings::XTC { .. } => 8, // distance, angle, head_radius, beta_base, beta_low_freq_boost, beta_high_freq_boost, head_shadow_cutoff, head_shadow_slope
         PluginSettings::Denoiser { .. } => 6, // reduction_db, floor_db, smoothing, attack_ms, release_ms, low_latency
+        PluginSettings::Pnd { .. } => 3,     // correction_strength, analysis_window_ms, drift_smoothing
     }
 }

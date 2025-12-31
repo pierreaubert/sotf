@@ -6,7 +6,7 @@
 //! - Gain reduction meter
 
 use super::common::{
-    ParamSectionStyle, render_knob, render_section_header, render_toggle_button,
+    render_edit_hints, render_knob, render_section_title, render_toggle_button,
     render_vertical_slider,
 };
 use super::level_meters::render_gr_meter;
@@ -34,10 +34,6 @@ pub struct GateRenderState<'a> {
 // Sidechain HPF UI range (40-160Hz)
 const SIDECHAIN_HPF_UI_MIN: f64 = 40.0;
 const SIDECHAIN_HPF_UI_MAX: f64 = 160.0;
-
-// Fixed height for all columns to ensure consistent layout
-// Height sized to fit columns with stacked knobs
-const COLUMN_HEIGHT: f32 = 380.0;
 
 /// Render the Gate plugin
 pub fn render_gate_plugin(
@@ -75,25 +71,22 @@ pub fn render_gate_plugin(
         .flex()
         .flex_col()
         .gap_4()
-        // Main section - Three columns side by side, all same height
+        // Main section - columns side by side
         .child(
             div()
                 .flex()
-                .gap_4()
+                .gap_6()
                 .items_start()
                 // Column 1: Vertical sliders for main dynamics controls
                 .child(
                     div()
                         .flex()
                         .flex_col()
-                        .gap_3()
-                        .h(px(COLUMN_HEIGHT))
-                        .param_section_style_lg(theme)
-                        .child(render_section_header("DYNAMICS", theme))
+                        .gap_2()
+                        .child(render_section_title("DYNAMICS", theme))
                         .child(
                             div()
                                 .flex()
-                                .flex_1()
                                 .gap_2()
                                 .child(render_vertical_slider(
                                     entity.clone(),
@@ -153,13 +146,12 @@ pub fn render_gate_plugin(
                                 )),
                         ),
                 )
-                // Column 2: OUTPUT header with Link Channels on right, then knobs at bottom
+                // Column 2: OUTPUT with Link Channels, then knobs
                 .child(
                     div()
                         .flex()
                         .flex_col()
-                        .h(px(COLUMN_HEIGHT))
-                        .param_section_style_lg(theme)
+                        .gap_2()
                         // Header row with OUTPUT and Link Channels
                         .child(
                             div()
@@ -167,13 +159,7 @@ pub fn render_gate_plugin(
                                 .justify_between()
                                 .items_center()
                                 .w_full()
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .font_weight(FontWeight::SEMIBOLD)
-                                        .text_color(theme.text_secondary)
-                                        .child("OUTPUT"),
-                                )
+                                .child(render_section_title("OUTPUT", theme))
                                 .child(
                                     div()
                                         .text_xs()
@@ -181,12 +167,11 @@ pub fn render_gate_plugin(
                                         .child("Link Ch."),
                                 ),
                         )
-                        // Toggle button below header
+                        // Toggle button
                         .child(
                             div()
                                 .flex()
                                 .justify_end()
-                                .mt_1()
                                 .child(render_toggle_button(
                                     entity.clone(),
                                     plugin_idx,
@@ -197,9 +182,7 @@ pub fn render_gate_plugin(
                                     theme,
                                 )),
                         )
-                        // Spacer to push knobs to bottom
-                        .child(div().flex_1())
-                        // Mix knob (direct child)
+                        // Mix knob
                         .child(render_knob(
                             entity.clone(),
                             plugin_idx,
@@ -214,7 +197,7 @@ pub fn render_gate_plugin(
                             Some('m'),
                             theme,
                         ))
-                        // SC HPF knob (direct child)
+                        // SC HPF knob
                         .child(render_knob(
                             entity.clone(),
                             plugin_idx,
@@ -230,17 +213,16 @@ pub fn render_gate_plugin(
                             theme,
                         )),
                 )
-                // Column 3: Gate status, Input level meter, GR meter (spaced out)
+                // Column 3: Gate status, Input level meter, GR meter
                 .child(
                     div()
                         .flex()
                         .flex_col()
-                        .h(px(COLUMN_HEIGHT))
-                        .param_section_style_lg(theme)
-                        .child(render_section_header("METER", theme))
+                        .gap_2()
+                        .child(render_section_title("METER", theme))
                         // Gate status indicator
                         .child(
-                            div().flex().justify_center().mt_2().child(
+                            div().flex().justify_center().child(
                                 div()
                                     .w(px(60.0))
                                     .h(px(60.0))
@@ -260,8 +242,6 @@ pub fn render_gate_plugin(
                                     ),
                             ),
                         )
-                        // Spacer
-                        .child(div().flex_1())
                         // Input level meter with threshold marker
                         .child(
                             div()
@@ -313,29 +293,9 @@ pub fn render_gate_plugin(
                                         .child("0 dB"),
                                 ),
                         )
-                        // Spacer
-                        .child(div().h(px(16.0)))
-                        // Gain reduction meter (no label, aligned at bottom)
+                        // Gain reduction meter
                         .child(render_gr_meter(-attenuation_db, -40.0, theme)),
                 ),
         )
-        .when(state.is_editing, |d| {
-            d.child(
-                div()
-                    .mt_4()
-                    .p_3()
-                    .rounded_lg()
-                    .bg(theme.background_secondary)
-                    .border_1()
-                    .border_color(theme.border)
-                    .flex()
-                    .gap_4()
-                    .text_xs()
-                    .text_color(theme.text_muted)
-                    .child("↑/↓: Select")
-                    .child("←/→: Adjust")
-                    .child("[/]: Large step")
-                    .child("Enter: Done"),
-            )
-        })
+        .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
 }

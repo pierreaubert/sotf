@@ -1099,6 +1099,9 @@ impl PlayerView {
                 state.app.spectrum_info = playback_state.spectrum;
             }
 
+            // Update compressor data for gain reduction display
+            state.app.compressor_info = playback_state.compressor;
+
             // Apply pending plugin updates to audio engine
             if let Some(update_type) = state.app.pending_plugin_update.take() {
                 log::warn!("[GPUI] Applying pending plugin update: {:?}", update_type);

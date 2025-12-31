@@ -533,5 +533,9 @@ pub fn render_plugin_content(
             // TODO: Add proper Denoiser UI rendering
             gpui::div().into_any_element()
         }
+        PluginSettings::Pnd { .. } => {
+            // TODO: Add proper PND UI rendering
+            gpui::div().into_any_element()
+        }
     }
 }
