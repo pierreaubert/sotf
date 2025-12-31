@@ -357,62 +357,71 @@ impl LoudnessCompensationPlugin {
         Ok(())
     }
 
-    /// Rebuild all filters based on current parameters
+    /// Rebuild or update all filters based on current parameters
     fn rebuild_filters(&mut self) {
         // Q factor for shelving filters (0.707 = Butterworth response)
         let q = 0.707;
 
-        self.filters.clear();
-        self.compensation_gains.clear();
+        // Ensure vectors are sized correctly
+        if self.filters.len() != self.num_channels {
+            self.filters.clear();
+            self.filters.resize(self.num_channels, Vec::new());
+        }
+        if self.compensation_gains.len() != self.num_channels {
+            self.compensation_gains.resize(self.num_channels, 0.0);
+        }
 
         for ch in 0..self.num_channels {
             let params = self.get_channel_params(ch);
 
             // Calculate compensation gain for this channel: -max(low_gain, high_gain)
             let comp_gain = -params.low_gain.max(params.high_gain);
-            self.compensation_gains.push(comp_gain);
+            self.compensation_gains[ch] = comp_gain;
 
             // For 12dB/octave slope, we need 2 cascaded biquads (each is 6dB/oct)
             // Split the gain between the two stages
             let low_gain_per_stage = params.low_gain / 2.0;
             let high_gain_per_stage = params.high_gain / 2.0;
 
-            let channel_filters = vec![
+            let target_configs = [
                 // Low-shelf stage 1
-                Biquad::new(
-                    BiquadFilterType::Lowshelf,
-                    params.low_freq as f64,
-                    self.sample_rate as f64,
-                    q,
-                    low_gain_per_stage as f64,
-                ),
+                (BiquadFilterType::Lowshelf, params.low_freq, low_gain_per_stage),
                 // Low-shelf stage 2
-                Biquad::new(
-                    BiquadFilterType::Lowshelf,
-                    params.low_freq as f64,
-                    self.sample_rate as f64,
-                    q,
-                    low_gain_per_stage as f64,
-                ),
+                (BiquadFilterType::Lowshelf, params.low_freq, low_gain_per_stage),
                 // High-shelf stage 1
-                Biquad::new(
-                    BiquadFilterType::Highshelf,
-                    params.high_freq as f64,
-                    self.sample_rate as f64,
-                    q,
-                    high_gain_per_stage as f64,
-                ),
+                (BiquadFilterType::Highshelf, params.high_freq, high_gain_per_stage),
                 // High-shelf stage 2
-                Biquad::new(
-                    BiquadFilterType::Highshelf,
-                    params.high_freq as f64,
-                    self.sample_rate as f64,
-                    q,
-                    high_gain_per_stage as f64,
-                ),
+                (BiquadFilterType::Highshelf, params.high_freq, high_gain_per_stage),
             ];
 
-            self.filters.push(channel_filters);
+            // Initialize or update filters
+            if self.filters[ch].len() != 4 {
+                // Initialize from scratch (resets state)
+                self.filters[ch] = target_configs
+                    .iter()
+                    .map(|(ft, freq, gain)| {
+                        Biquad::new(
+                            *ft,
+                            *freq as f64,
+                            self.sample_rate as f64,
+                            q,
+                            *gain as f64,
+                        )
+                    })
+                    .collect();
+            } else {
+                // Recreate filters with new coefficients
+                // Note: This resets filter state which may cause brief transients
+                for (i, (ft, freq, gain)) in target_configs.iter().enumerate() {
+                    self.filters[ch][i] = Biquad::new(
+                        *ft,
+                        *freq as f64,
+                        self.sample_rate as f64,
+                        q,
+                        *gain as f64,
+                    );
+                }
+            }
         }
     }
 
@@ -595,6 +604,8 @@ impl Plugin for LoudnessCompensationPlugin {
 
     fn reset(&mut self) {
         // Reset all filter states
+        // Force full rebuild to reset state
+        self.filters.clear();
         self.rebuild_filters();
     }
 
