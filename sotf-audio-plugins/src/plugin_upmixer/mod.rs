@@ -1347,15 +1347,15 @@ Upper bound for dialogue detection analysis.",
             };
             Some(ParameterValue::Int(config_idx))
         } else if id == &self.param_gain_front_direct {
-            Some(ParameterValue::Float(self.gain_front_direct.current()))
+            Some(ParameterValue::Float(self.gain_front_direct.target()))
         } else if id == &self.param_gain_front_ambient {
-            Some(ParameterValue::Float(self.gain_front_ambient.current()))
+            Some(ParameterValue::Float(self.gain_front_ambient.target()))
         } else if id == &self.param_gain_rear_ambient {
-            Some(ParameterValue::Float(self.gain_rear_ambient.current()))
+            Some(ParameterValue::Float(self.gain_rear_ambient.target()))
         } else if id == &self.param_height_gain {
-            Some(ParameterValue::Float(self.height_gain.current()))
+            Some(ParameterValue::Float(self.height_gain.target()))
         } else if id == &self.param_lfe_gain {
-            Some(ParameterValue::Float(self.lfe_gain.current()))
+            Some(ParameterValue::Float(self.lfe_gain.target()))
         } else if id == &self.param_lfe_cutoff_hz {
             Some(ParameterValue::Float(self.lfe_cutoff_hz))
         } else if id == &self.param_stereo_width {
@@ -1367,7 +1367,7 @@ Upper bound for dialogue detection analysis.",
         } else if id == &self.param_enable_subharmonic_synth {
             Some(ParameterValue::Bool(self.enable_subharmonic_synth))
         } else if id == &self.param_subharmonic_gain {
-            Some(ParameterValue::Float(self.subharmonic_gain.current()))
+            Some(ParameterValue::Float(self.subharmonic_gain.target()))
         } else if id == &self.param_enable_hr_direct {
             Some(ParameterValue::Bool(self.enable_hr_direct))
         } else if id == &self.param_hr_sharpen {

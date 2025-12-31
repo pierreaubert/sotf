@@ -29,6 +29,7 @@ use std::sync::Arc;
 mod config;
 mod fft;
 mod mcra;
+mod polyphonic;
 mod wiener;
 
 pub use config::DenoiserPluginParams;
@@ -89,6 +90,9 @@ pub struct DenoiserPlugin {
 
     param_low_latency: ParameterId,
     low_latency: bool,
+
+    param_polyphonic_detection: ParameterId,
+    polyphonic_detection: bool,
 
     // Pre-computed coefficients
     attack_coeff: f32,
@@ -200,6 +204,9 @@ impl DenoiserPlugin {
             param_low_latency: ParameterId::from("low_latency"),
             low_latency,
 
+            param_polyphonic_detection: ParameterId::from("polyphonic_detection"),
+            polyphonic_detection: POLYPHONIC_DETECTION_DEFAULT,
+
             attack_coeff: 0.0,
             release_coeff: 0.0,
             floor_linear: 10.0_f32.powf(FLOOR_DB_DEFAULT / 20.0),
@@ -245,6 +252,7 @@ impl DenoiserPlugin {
         plugin.smoothing = params.smoothing.clamp(SMOOTHING_MIN, SMOOTHING_MAX);
         plugin.attack_ms = params.attack_ms.clamp(ATTACK_MS_MIN, ATTACK_MS_MAX);
         plugin.release_ms = params.release_ms.clamp(RELEASE_MS_MIN, RELEASE_MS_MAX);
+        plugin.polyphonic_detection = params.polyphonic_detection;
 
         plugin.mcra_alpha_s = params.mcra_alpha_s;
         plugin.mcra_alpha_p = params.mcra_alpha_p;
@@ -279,8 +287,12 @@ impl DenoiserPlugin {
             self.update_mcra(ch);
         }
 
-        // Phase 3: Calculate Wiener filter gains
-        self.calculate_wiener_gains();
+        // Phase 3: Calculate Gains (Wiener or Polyphonic)
+        if self.polyphonic_detection {
+            self.calculate_polyphonic_gains();
+        } else {
+            self.calculate_wiener_gains();
+        }
 
         // Phase 4: Apply gains and inverse FFT
         self.apply_gains_and_inverse_fft();
@@ -410,6 +422,12 @@ impl InPlacePlugin for DenoiserPlugin {
                 LOW_LATENCY_DEFAULT,
             )
             .with_description("Use smaller FFT for lower latency (requires reinit)"),
+            Parameter::new_bool(
+                "polyphonic_detection",
+                "Polyphonic Detection",
+                POLYPHONIC_DETECTION_DEFAULT,
+            )
+            .with_description("Enable polyphonic note detection mode (gates non-tonal content)"),
         ]
     }
 
@@ -446,6 +464,8 @@ impl InPlacePlugin for DenoiserPlugin {
             // Note: Changing low_latency requires reinitializing the plugin
             // This is typically not done at runtime
             self.low_latency = value.as_bool().ok_or("Invalid low_latency value")?;
+        } else if id == self.param_polyphonic_detection {
+            self.polyphonic_detection = value.as_bool().ok_or("Invalid polyphonic_detection value")?;
         } else {
             return Err(format!("Unknown parameter: {}", id));
         }
@@ -465,6 +485,8 @@ impl InPlacePlugin for DenoiserPlugin {
             Some(ParameterValue::Float(self.release_ms))
         } else if id == &self.param_low_latency {
             Some(ParameterValue::Bool(self.low_latency))
+        } else if id == &self.param_polyphonic_detection {
+            Some(ParameterValue::Bool(self.polyphonic_detection))
         } else {
             None
         }

@@ -500,6 +500,24 @@ pub mod multiband_compressor {
 }
 
 // ============================================================================
+// Polyphonic Note Detection (PND) & Varispeed Plugin
+// ============================================================================
+
+pub mod pnd {
+    pub const CORRECTION_STRENGTH_DEFAULT: f32 = 1.0;
+    pub const CORRECTION_STRENGTH_MIN: f32 = 0.0;
+    pub const CORRECTION_STRENGTH_MAX: f32 = 2.0; // Allow over-correction for effect
+
+    pub const ANALYSIS_WINDOW_MS_DEFAULT: f32 = 100.0;
+    pub const ANALYSIS_WINDOW_MS_MIN: f32 = 20.0;
+    pub const ANALYSIS_WINDOW_MS_MAX: f32 = 500.0;
+
+    pub const DRIFT_SMOOTHING_DEFAULT: f32 = 0.1; // Smoothing factor
+    pub const DRIFT_SMOOTHING_MIN: f32 = 0.001;
+    pub const DRIFT_SMOOTHING_MAX: f32 = 1.0;
+}
+
+// ============================================================================
 // Denoiser Plugin
 // ============================================================================
 
@@ -531,6 +549,8 @@ pub mod denoiser {
     pub const MCRA_ALPHA_P_DEFAULT: f32 = 0.2;   // Speech presence probability smoothing
     pub const MCRA_L_DEFAULT: usize = 50;        // Minimum tracking window (frames)
     pub const MCRA_DELTA_DEFAULT: f32 = 5.0;     // Speech presence threshold
+
+    pub const POLYPHONIC_DETECTION_DEFAULT: bool = false;
 }
 
 // ============================================================================

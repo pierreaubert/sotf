@@ -42,6 +42,7 @@ mod plugin_loudness_compensation;
 mod plugin_matrix;
 mod plugin_multiband_compressor;
 mod plugin_multiband_expander;
+mod plugin_pnd;
 mod plugin_resampler;
 mod plugin_upmixer;
 mod plugin_xtc;
@@ -83,6 +84,7 @@ pub use plugin_multiband_expander::{
     BandExpanderParams, MultibandExpanderData, MultibandExpanderPlugin,
     MultibandExpanderPluginParams,
 };
+pub use plugin_pnd::{PndPlugin, PndPluginParams};
 pub use plugin_loudness_compensation::{
     LoudnessCompensationPlugin, LoudnessCompensationPluginParams,
 };

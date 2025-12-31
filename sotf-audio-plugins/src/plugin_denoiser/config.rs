@@ -47,6 +47,10 @@ pub fn default_mcra_delta() -> f32 {
     MCRA_DELTA_DEFAULT
 }
 
+pub fn default_polyphonic_detection() -> bool {
+    POLYPHONIC_DETECTION_DEFAULT
+}
+
 /// Configuration parameters for DenoiserPlugin
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DenoiserPluginParams {
@@ -73,6 +77,10 @@ pub struct DenoiserPluginParams {
     /// Use smaller FFT for lower latency (512 vs 2048)
     #[serde(default = "default_low_latency")]
     pub low_latency: bool,
+
+    /// Enable Polyphonic Note Detection mode (Spectral Gating)
+    #[serde(default = "default_polyphonic_detection")]
+    pub polyphonic_detection: bool,
 
     // Advanced MCRA parameters (expert use)
     /// Noise PSD smoothing factor
@@ -101,6 +109,7 @@ impl Default for DenoiserPluginParams {
             attack_ms: default_attack_ms(),
             release_ms: default_release_ms(),
             low_latency: default_low_latency(),
+            polyphonic_detection: default_polyphonic_detection(),
             mcra_alpha_s: default_mcra_alpha_s(),
             mcra_alpha_p: default_mcra_alpha_p(),
             mcra_l: default_mcra_l(),
