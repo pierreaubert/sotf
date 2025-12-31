@@ -797,85 +797,140 @@ impl PlayerView {
             )
     }
 
-    /// Render add plugin buttons grouped by category
+    /// Render add plugin buttons grouped by category (2 rows)
     fn render_add_plugin_buttons(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = self.state.read(cx).app.theme.clone();
+        let state = self.state.read(cx);
+        let theme = state.app.theme.clone();
 
-        // All plugin types with categories
-        let all_plugins = [
-            // Effects - Dynamics
-            (PluginType::EQ, "Effects"),
-            (PluginType::Gain, "Effects"),
-            (PluginType::Compressor, "Effects"),
-            (PluginType::Limiter, "Effects"),
-            (PluginType::Gate, "Effects"),
-            (PluginType::Expander, "Effects"),
-            (PluginType::MultibandCompressor, "Effects"),
-            (PluginType::MultibandExpander, "Effects"),
-            // Spatial
-            (PluginType::Upmixer, "Spatial"),
-            (PluginType::Matrix, "Spatial"),
-            (PluginType::BinauralDecoder, "Spatial"),
-            (PluginType::Convolution, "Spatial"),
-            (PluginType::XTC, "Spatial"),
-            // Monitoring
-            (PluginType::LoudnessCompensation, "Monitor"),
-            (PluginType::LoudnessMonitor, "Monitor"),
-            (PluginType::SpectrumAnalyzer, "Monitor"),
+        // Get list of plugins already in chain
+        let present_plugins: Vec<_> = state
+            .app
+            .plugin_chain
+            .plugins()
+            .iter()
+            .map(|p| p.plugin_type().clone())
+            .collect();
+
+        // Row 1: Effects/Dynamics plugins
+        let row1_plugins = [
+            PluginType::EQ,
+            PluginType::Gain,
+            PluginType::Compressor,
+            PluginType::Limiter,
+            PluginType::Gate,
+            PluginType::Expander,
+            PluginType::MultibandCompressor,
+            PluginType::MultibandExpander,
+            PluginType::Denoiser,
         ];
 
-        div().flex().items_center().gap_2().children(
-            all_plugins
-                .into_iter()
-                .enumerate()
-                .filter_map(|(i, (pt, _category))| {
-                    // Check if plugin is already in chain for single-instance plugins
-                    let state = self.state.read(cx);
-                    let already_present = state
-                        .app
-                        .plugin_chain
-                        .plugins()
-                        .iter()
-                        .any(|p| p.plugin_type() == pt);
+        // Row 2: Spatial, Monitor, and other plugins
+        let row2_plugins = [
+            PluginType::Upmixer,
+            PluginType::Matrix,
+            PluginType::BinauralDecoder,
+            PluginType::Convolution,
+            PluginType::XTC,
+            PluginType::LoudnessCompensation,
+            PluginType::LoudnessMonitor,
+            PluginType::SpectrumAnalyzer,
+            PluginType::Pnd,
+        ];
 
-                    let is_single_instance =
-                        matches!(pt, PluginType::Upmixer | PluginType::BinauralDecoder);
+        // Build row 1 buttons
+        let row1_buttons: Vec<_> = row1_plugins
+            .into_iter()
+            .enumerate()
+            .filter_map(|(i, pt)| {
+                let is_single_instance =
+                    matches!(pt, PluginType::Upmixer | PluginType::BinauralDecoder);
+                if is_single_instance && present_plugins.contains(&pt) {
+                    return None;
+                }
 
-                    if is_single_instance && already_present {
-                        return None;
-                    }
+                let color = plugin_color(&pt, &theme);
+                let name = short_name(&pt);
+                let theme_c = theme.clone();
 
-                    let color = plugin_color(&pt, &theme);
-                    let name = short_name(&pt);
-                    let theme_c = theme.clone();
+                Some(
+                    div()
+                        .id(("add-plugin", i))
+                        .px_2()
+                        .py_1()
+                        .rounded_md()
+                        .bg(theme_c.surface)
+                        .border_1()
+                        .border_color(color)
+                        .text_xs()
+                        .text_color(color)
+                        .cursor_pointer()
+                        .hover(|s| s.bg(color).text_color(rgb(0xffffff)))
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                                view.state.update(cx, |state, _cx| {
+                                    state.app.add_plugin(&pt);
+                                    state.app.update_level_meter_groups();
+                                });
+                                cx.notify();
+                            }),
+                        )
+                        .child(name),
+                )
+            })
+            .collect();
 
-                    Some(
-                        div()
-                            .id(("add-plugin", i))
-                            .px_2()
-                            .py_1()
-                            .rounded_md()
-                            .bg(theme_c.surface)
-                            .border_1()
-                            .border_color(color)
-                            .text_xs()
-                            .text_color(color)
-                            .cursor_pointer()
-                            .hover(|s| s.bg(color).text_color(rgb(0xffffff)))
-                            .on_mouse_up(
-                                MouseButton::Left,
-                                cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                    view.state.update(cx, |state, _cx| {
-                                        state.app.add_plugin(&pt);
-                                        state.app.update_level_meter_groups(); // Reconfigure metering
-                                    });
-                                    cx.notify();
-                                }),
-                            )
-                            .child(name),
-                    )
-                }),
-        )
+        // Build row 2 buttons
+        let row2_buttons: Vec<_> = row2_plugins
+            .into_iter()
+            .enumerate()
+            .filter_map(|(i, pt)| {
+                let is_single_instance =
+                    matches!(pt, PluginType::Upmixer | PluginType::BinauralDecoder);
+                if is_single_instance && present_plugins.contains(&pt) {
+                    return None;
+                }
+
+                let color = plugin_color(&pt, &theme);
+                let name = short_name(&pt);
+                let theme_c = theme.clone();
+
+                Some(
+                    div()
+                        .id(("add-plugin", i + 100))
+                        .px_2()
+                        .py_1()
+                        .rounded_md()
+                        .bg(theme_c.surface)
+                        .border_1()
+                        .border_color(color)
+                        .text_xs()
+                        .text_color(color)
+                        .cursor_pointer()
+                        .hover(|s| s.bg(color).text_color(rgb(0xffffff)))
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                                view.state.update(cx, |state, _cx| {
+                                    state.app.add_plugin(&pt);
+                                    state.app.update_level_meter_groups();
+                                });
+                                cx.notify();
+                            }),
+                        )
+                        .child(name),
+                )
+            })
+            .collect();
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_1()
+            // Row 1
+            .child(div().flex().items_center().gap_2().children(row1_buttons))
+            // Row 2
+            .child(div().flex().items_center().gap_2().children(row2_buttons))
     }
 
     /// Render the plugin detail/settings panel

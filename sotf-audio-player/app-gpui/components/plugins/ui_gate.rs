@@ -7,7 +7,7 @@
 
 use super::common::{
     render_edit_hints, render_knob, render_section_title, render_toggle_button,
-    render_vertical_slider,
+    render_vertical_slider_sized,
 };
 use super::level_meters::render_gr_meter;
 use crate::app::AppState;
@@ -30,6 +30,9 @@ pub struct GateRenderState<'a> {
     pub selected_param: usize,
     pub data: Option<&'a GateData>,
 }
+
+// Layout constants
+const SLIDER_HEIGHT: f32 = 200.0;
 
 // Sidechain HPF UI range (40-160Hz)
 const SIDECHAIN_HPF_UI_MIN: f64 = 40.0;
@@ -76,7 +79,6 @@ pub fn render_gate_plugin(
             div()
                 .flex()
                 .gap_6()
-                .items_start()
                 // Column 1: Vertical sliders for main dynamics controls
                 .child(
                     div()
@@ -88,7 +90,7 @@ pub fn render_gate_plugin(
                             div()
                                 .flex()
                                 .gap_2()
-                                .child(render_vertical_slider(
+                                .child(render_vertical_slider_sized(
                                     entity.clone(),
                                     plugin_idx,
                                     "Threshold",
@@ -100,9 +102,10 @@ pub fn render_gate_plugin(
                                     state.selected_param,
                                     state.is_editing,
                                     Some('t'),
+                                    Some(SLIDER_HEIGHT),
                                     theme,
                                 ))
-                                .child(render_vertical_slider(
+                                .child(render_vertical_slider_sized(
                                     entity.clone(),
                                     plugin_idx,
                                     "Ratio",
@@ -114,9 +117,10 @@ pub fn render_gate_plugin(
                                     state.selected_param,
                                     state.is_editing,
                                     Some('r'),
+                                    Some(SLIDER_HEIGHT),
                                     theme,
                                 ))
-                                .child(render_vertical_slider(
+                                .child(render_vertical_slider_sized(
                                     entity.clone(),
                                     plugin_idx,
                                     "Attack",
@@ -128,9 +132,10 @@ pub fn render_gate_plugin(
                                     state.selected_param,
                                     state.is_editing,
                                     Some('a'),
+                                    Some(SLIDER_HEIGHT),
                                     theme,
                                 ))
-                                .child(render_vertical_slider(
+                                .child(render_vertical_slider_sized(
                                     entity.clone(),
                                     plugin_idx,
                                     "Release",
@@ -142,6 +147,7 @@ pub fn render_gate_plugin(
                                     state.selected_param,
                                     state.is_editing,
                                     Some('e'),
+                                    Some(SLIDER_HEIGHT),
                                     theme,
                                 )),
                         ),
@@ -151,53 +157,59 @@ pub fn render_gate_plugin(
                     div()
                         .flex()
                         .flex_col()
-                        .gap_2()
-                        // Header row with OUTPUT and Link Channels
+                        .justify_between()
                         .child(
                             div()
                                 .flex()
-                                .justify_between()
-                                .items_center()
-                                .w_full()
-                                .child(render_section_title("OUTPUT", theme))
+                                .flex_col()
+                                .gap_2()
+                                // Header row with OUTPUT and Link Channels
                                 .child(
                                     div()
-                                        .text_xs()
-                                        .text_color(theme.text_muted)
-                                        .child("Link Ch."),
-                                ),
-                        )
-                        // Toggle button
-                        .child(
-                            div()
-                                .flex()
-                                .justify_end()
-                                .child(render_toggle_button(
+                                        .flex()
+                                        .justify_between()
+                                        .items_center()
+                                        .w_full()
+                                        .child(render_section_title("OUTPUT", theme))
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(theme.text_muted)
+                                                .child("Link Ch."),
+                                        ),
+                                )
+                                // Toggle button
+                                .child(
+                                    div()
+                                        .flex()
+                                        .justify_end()
+                                        .child(render_toggle_button(
+                                            entity.clone(),
+                                            plugin_idx,
+                                            state.link_channels,
+                                            5,
+                                            state.selected_param,
+                                            state.is_editing,
+                                            theme,
+                                        )),
+                                )
+                                // Mix knob
+                                .child(render_knob(
                                     entity.clone(),
                                     plugin_idx,
-                                    state.link_channels,
-                                    5,
+                                    "Mix",
+                                    state.mix * 100.0,
+                                    MIX_MIN as f64 * 100.0,
+                                    MIX_MAX as f64 * 100.0,
+                                    "%",
+                                    4,
                                     state.selected_param,
                                     state.is_editing,
+                                    Some('m'),
                                     theme,
                                 )),
                         )
-                        // Mix knob
-                        .child(render_knob(
-                            entity.clone(),
-                            plugin_idx,
-                            "Mix",
-                            state.mix * 100.0,
-                            MIX_MIN as f64 * 100.0,
-                            MIX_MAX as f64 * 100.0,
-                            "%",
-                            4,
-                            state.selected_param,
-                            state.is_editing,
-                            Some('m'),
-                            theme,
-                        ))
-                        // SC HPF knob
+                        // SC HPF knob at bottom
                         .child(render_knob(
                             entity.clone(),
                             plugin_idx,

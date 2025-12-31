@@ -10,7 +10,7 @@
 
 use super::common::{
     render_edit_hints, render_knob, render_section_title, render_toggle_button,
-    render_vertical_slider,
+    render_vertical_slider_sized,
 };
 use crate::app::AppState;
 use crate::theme::Theme;
@@ -35,6 +35,9 @@ pub struct ExpanderRenderState {
     pub selected_param: usize,
 }
 
+// Layout constants
+const SLIDER_HEIGHT: f32 = 200.0;
+
 /// Render the Expander plugin
 pub fn render_expander_plugin(
     entity: Entity<AppState>,
@@ -51,8 +54,7 @@ pub fn render_expander_plugin(
             div()
                 .flex()
                 .gap_6()
-                .items_start()
-                // Column 1: Main dynamics controls (sliders)
+                // Column 1: Threshold and Ratio sliders
                 .child(
                     div()
                         .flex()
@@ -63,7 +65,7 @@ pub fn render_expander_plugin(
                             div()
                                 .flex()
                                 .gap_2()
-                                .child(render_vertical_slider(
+                                .child(render_vertical_slider_sized(
                                     entity.clone(),
                                     plugin_idx,
                                     "Threshold",
@@ -75,9 +77,10 @@ pub fn render_expander_plugin(
                                     state.selected_param,
                                     state.is_editing,
                                     Some('t'),
+                                    Some(SLIDER_HEIGHT),
                                     theme,
                                 ))
-                                .child(render_vertical_slider(
+                                .child(render_vertical_slider_sized(
                                     entity.clone(),
                                     plugin_idx,
                                     "Ratio",
@@ -89,9 +92,68 @@ pub fn render_expander_plugin(
                                     state.selected_param,
                                     state.is_editing,
                                     Some('r'),
+                                    Some(SLIDER_HEIGHT),
+                                    theme,
+                                )),
+                        ),
+                )
+                // Column 2: Attack and Release sliders
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(render_section_title("TIMING", theme))
+                        .child(
+                            div()
+                                .flex()
+                                .gap_2()
+                                .child(render_vertical_slider_sized(
+                                    entity.clone(),
+                                    plugin_idx,
+                                    "Attack",
+                                    state.attack_ms,
+                                    ATTACK_MIN as f64,
+                                    ATTACK_MAX as f64,
+                                    "ms",
+                                    2,
+                                    state.selected_param,
+                                    state.is_editing,
+                                    Some('a'),
+                                    Some(SLIDER_HEIGHT),
                                     theme,
                                 ))
-                                .child(render_vertical_slider(
+                                .child(render_vertical_slider_sized(
+                                    entity.clone(),
+                                    plugin_idx,
+                                    "Release",
+                                    state.release_ms,
+                                    RELEASE_MIN as f64,
+                                    RELEASE_MAX as f64,
+                                    "ms",
+                                    3,
+                                    state.selected_param,
+                                    state.is_editing,
+                                    Some('e'),
+                                    Some(SLIDER_HEIGHT),
+                                    theme,
+                                )),
+                        ),
+                )
+                // Column 3: Range, Knee, Hysteresis, Hold knobs
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .justify_between()
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_2()
+                                .child(render_section_title("SHAPE", theme))
+                                // Range knob
+                                .child(render_knob(
                                     entity.clone(),
                                     plugin_idx,
                                     "Range",
@@ -104,49 +166,45 @@ pub fn render_expander_plugin(
                                     state.is_editing,
                                     Some('g'),
                                     theme,
+                                ))
+                                // Knee knob
+                                .child(render_knob(
+                                    entity.clone(),
+                                    plugin_idx,
+                                    "Knee",
+                                    state.knee_db,
+                                    KNEE_MIN as f64,
+                                    KNEE_MAX as f64,
+                                    "dB",
+                                    5,
+                                    state.selected_param,
+                                    state.is_editing,
+                                    Some('k'),
+                                    theme,
                                 )),
-                        ),
-                )
-                // Column 2: Timing controls
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_2()
-                        .child(render_section_title("TIMING", theme))
+                        )
                         .child(
                             div()
                                 .flex()
+                                .flex_col()
                                 .gap_2()
-                                .child(render_vertical_slider(
+                                // Hysteresis knob
+                                .child(render_knob(
                                     entity.clone(),
                                     plugin_idx,
-                                    "Attack",
-                                    state.attack_ms,
-                                    ATTACK_MIN as f64,
-                                    ATTACK_MAX as f64,
-                                    "ms",
-                                    2,
+                                    "Hysteresis",
+                                    state.hysteresis_db,
+                                    HYSTERESIS_MIN as f64,
+                                    HYSTERESIS_MAX as f64,
+                                    "dB",
+                                    6,
                                     state.selected_param,
                                     state.is_editing,
-                                    Some('a'),
+                                    Some('y'),
                                     theme,
                                 ))
-                                .child(render_vertical_slider(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "Release",
-                                    state.release_ms,
-                                    RELEASE_MIN as f64,
-                                    RELEASE_MAX as f64,
-                                    "ms",
-                                    3,
-                                    state.selected_param,
-                                    state.is_editing,
-                                    Some('e'),
-                                    theme,
-                                ))
-                                .child(render_vertical_slider(
+                                // Hold knob
+                                .child(render_knob(
                                     entity.clone(),
                                     plugin_idx,
                                     "Hold",
@@ -162,88 +220,64 @@ pub fn render_expander_plugin(
                                 )),
                         ),
                 )
-                // Column 3: Output and advanced controls
+                // Column 4: Output controls
                 .child(
                     div()
                         .flex()
                         .flex_col()
-                        .gap_2()
-                        // Header row with OUTPUT and Link Channels
+                        .justify_between()
                         .child(
                             div()
                                 .flex()
-                                .justify_between()
-                                .items_center()
-                                .w_full()
-                                .child(render_section_title("OUTPUT", theme))
+                                .flex_col()
+                                .gap_2()
+                                // Header row with OUTPUT and Link Channels
                                 .child(
                                     div()
-                                        .text_xs()
-                                        .text_color(theme.text_muted)
-                                        .child("Link Ch."),
-                                ),
-                        )
-                        // Toggle button
-                        .child(
-                            div()
-                                .flex()
-                                .justify_end()
-                                .child(render_toggle_button(
+                                        .flex()
+                                        .justify_between()
+                                        .items_center()
+                                        .w_full()
+                                        .child(render_section_title("OUTPUT", theme))
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(theme.text_muted)
+                                                .child("Link Ch."),
+                                        ),
+                                )
+                                // Toggle button
+                                .child(
+                                    div()
+                                        .flex()
+                                        .justify_end()
+                                        .child(render_toggle_button(
+                                            entity.clone(),
+                                            plugin_idx,
+                                            state.link_channels,
+                                            9, // link_channels param index
+                                            state.selected_param,
+                                            state.is_editing,
+                                            theme,
+                                        )),
+                                )
+                                // Mix knob
+                                .child(render_knob(
                                     entity.clone(),
                                     plugin_idx,
-                                    state.link_channels,
-                                    9, // link_channels param index
+                                    "Mix",
+                                    state.mix * 100.0,
+                                    MIX_MIN as f64 * 100.0,
+                                    MIX_MAX as f64 * 100.0,
+                                    "%",
+                                    8,
                                     state.selected_param,
                                     state.is_editing,
+                                    Some('m'),
                                     theme,
                                 )),
                         )
-                        // Knee knob
-                        .child(render_knob(
-                            entity.clone(),
-                            plugin_idx,
-                            "Knee",
-                            state.knee_db,
-                            KNEE_MIN as f64,
-                            KNEE_MAX as f64,
-                            "dB",
-                            5,
-                            state.selected_param,
-                            state.is_editing,
-                            Some('k'),
-                            theme,
-                        ))
-                        // Hysteresis knob
-                        .child(render_knob(
-                            entity.clone(),
-                            plugin_idx,
-                            "Hysteresis",
-                            state.hysteresis_db,
-                            HYSTERESIS_MIN as f64,
-                            HYSTERESIS_MAX as f64,
-                            "dB",
-                            6,
-                            state.selected_param,
-                            state.is_editing,
-                            Some('y'),
-                            theme,
-                        ))
-                        // Mix knob
-                        .child(render_knob(
-                            entity.clone(),
-                            plugin_idx,
-                            "Mix",
-                            state.mix * 100.0,
-                            MIX_MIN as f64 * 100.0,
-                            MIX_MAX as f64 * 100.0,
-                            "%",
-                            8,
-                            state.selected_param,
-                            state.is_editing,
-                            Some('m'),
-                            theme,
-                        ))
-                        // SC HPF knob
+                        // SC HPF knob at bottom
                         .child(render_knob(
                             entity.clone(),
                             plugin_idx,

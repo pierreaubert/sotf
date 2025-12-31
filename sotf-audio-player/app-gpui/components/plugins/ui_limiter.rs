@@ -7,8 +7,8 @@
 //! - Vertical sliders and rotary knob controls
 
 use super::common::{
-    render_edit_hints, render_knob, render_section_title, render_transfer_curve,
-    render_vertical_slider,
+    render_edit_hints, render_knob, render_section_title, render_transfer_curve_sized,
+    render_vertical_slider_sized,
 };
 use super::level_meters::render_gr_meter;
 use crate::app::AppState;
@@ -25,6 +25,10 @@ pub struct LimiterRenderState {
     pub is_editing: bool,
     pub selected_param: usize,
 }
+
+// Layout constants
+const METER_WIDTH: f32 = 180.0;
+const SLIDER_HEIGHT: f32 = 200.0;
 
 /// Render the Limiter plugin
 pub fn render_limiter_plugin(
@@ -57,7 +61,6 @@ pub fn render_limiter_plugin(
             div()
                 .flex()
                 .gap_6()
-                .items_start()
                 // Column 1: Vertical sliders for main dynamics controls
                 .child(
                     div()
@@ -69,7 +72,7 @@ pub fn render_limiter_plugin(
                             div()
                                 .flex()
                                 .gap_2()
-                                .child(render_vertical_slider(
+                                .child(render_vertical_slider_sized(
                                     entity.clone(),
                                     plugin_idx,
                                     "Ceiling",
@@ -81,9 +84,10 @@ pub fn render_limiter_plugin(
                                     state.selected_param,
                                     state.is_editing,
                                     Some('c'),
+                                    Some(SLIDER_HEIGHT),
                                     theme,
                                 ))
-                                .child(render_vertical_slider(
+                                .child(render_vertical_slider_sized(
                                     entity.clone(),
                                     plugin_idx,
                                     "Release",
@@ -95,6 +99,7 @@ pub fn render_limiter_plugin(
                                     state.selected_param,
                                     state.is_editing,
                                     Some('r'),
+                                    Some(SLIDER_HEIGHT),
                                     theme,
                                 )),
                         ),
@@ -104,24 +109,30 @@ pub fn render_limiter_plugin(
                     div()
                         .flex()
                         .flex_col()
-                        .gap_2()
-                        .child(render_section_title("OUTPUT", theme))
-                        // Mix knob
-                        .child(render_knob(
-                            entity.clone(),
-                            plugin_idx,
-                            "Mix",
-                            state.mix * 100.0,
-                            MIX_MIN as f64 * 100.0,
-                            MIX_MAX as f64 * 100.0,
-                            "%",
-                            2,
-                            state.selected_param,
-                            state.is_editing,
-                            Some('m'),
-                            theme,
-                        ))
-                        // Large ceiling display
+                        .justify_between()
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_2()
+                                .child(render_section_title("OUTPUT", theme))
+                                // Mix knob
+                                .child(render_knob(
+                                    entity.clone(),
+                                    plugin_idx,
+                                    "Mix",
+                                    state.mix * 100.0,
+                                    MIX_MIN as f64 * 100.0,
+                                    MIX_MAX as f64 * 100.0,
+                                    "%",
+                                    2,
+                                    state.selected_param,
+                                    state.is_editing,
+                                    Some('m'),
+                                    theme,
+                                )),
+                        )
+                        // Large ceiling display at bottom
                         .child(
                             div()
                                 .flex()
@@ -151,16 +162,24 @@ pub fn render_limiter_plugin(
                     div()
                         .flex()
                         .flex_col()
+                        .w(px(METER_WIDTH))
                         .gap_2()
                         .child(render_section_title("METER", theme))
-                        // Transfer curve
-                        .child(div().flex().justify_center().child(render_transfer_curve(
-                            state.threshold_db,
-                            f64::INFINITY,
-                            0.0,
-                            true,
-                            theme,
-                        )))
+                        // Transfer curve - grows to fill space
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .flex_1()
+                                .child(render_transfer_curve_sized(
+                                    state.threshold_db,
+                                    f64::INFINITY,
+                                    0.0,
+                                    true,
+                                    METER_WIDTH,
+                                    theme,
+                                )),
+                        )
                         // Peak and GR info row
                         .child(
                             div()
