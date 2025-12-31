@@ -146,6 +146,7 @@ pub struct App {
     pub duration_secs: f64,
 
     // Loudness monitoring
+    pub input_loudness_info: Option<LoudnessData>,
     pub loudness_info: Option<LoudnessData>,
 
     // Level meters
@@ -405,6 +406,7 @@ impl App {
             muted: false,
             position_secs: 0.0,
             duration_secs: 0.0,
+            input_loudness_info: None,
             loudness_info: None,
             level_meter_groups: Vec::new(),
             selected_level_meter_group: 0,

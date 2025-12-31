@@ -402,7 +402,6 @@ impl PlayerView {
                                 color,
                                 icon,
                             };
-                            let plugin_type_for_remove = plugin_type.clone();
                             div()
                                 .flex()
                                 .items_center()
@@ -608,10 +607,16 @@ impl PlayerView {
         channels: usize,
         label: &str,
         legend_on_left: bool,
+        is_input: bool,
     ) -> impl IntoElement {
         let (theme, loudness) = {
             let state = self.state.read(cx);
-            (state.app.theme.clone(), state.app.loudness_info.clone())
+            let loudness = if is_input {
+                state.app.input_loudness_info.clone()
+            } else {
+                state.app.loudness_info.clone()
+            };
+            (state.app.theme.clone(), loudness)
         };
 
         let theme_c = theme.clone();
@@ -1005,7 +1010,7 @@ impl PlayerView {
                                     .w(px(input_meter_width))
                                     .h_full()
                                     .flex_shrink_0()
-                                    .child(self.render_side_meter(cx, 2, "IN", false)),
+                                    .child(self.render_side_meter(cx, 2, "IN", false, true)),
                             )
                         })
                         // Divider 1: Between input meter and main zone
@@ -1110,7 +1115,7 @@ impl PlayerView {
                                     .w(px(output_meter_width))
                                     .h_full()
                                     .flex_shrink_0()
-                                    .child(self.render_side_meter(cx, output_channels, "OUT", true)),
+                                    .child(self.render_side_meter(cx, output_channels, "OUT", true, false)),
                             )
                         })
                 })

@@ -1083,11 +1083,17 @@ impl PlayerView {
             state.app.position_secs = playback_state.position_secs;
             state.app.duration_secs = state.app.get_current_track_duration();
 
-            // Only update loudness when we have new data (player returns None when not playing)
-            if playback_state.loudness.is_some() {
+            // Update input loudness
+            if playback_state.input_loudness.is_some() {
+                let _ = state.app.input_loudness_info.take();
+                state.app.input_loudness_info = playback_state.input_loudness;
+            }
+
+            // Update output loudness
+            if playback_state.output_loudness.is_some() {
                 // Drop old data explicitly before assigning new
                 let _ = state.app.loudness_info.take();
-                state.app.loudness_info = playback_state.loudness;
+                state.app.loudness_info = playback_state.output_loudness;
             }
 
             // Update level meter groups based on channel count

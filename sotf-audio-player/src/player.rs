@@ -9,7 +9,8 @@ use std::path::PathBuf;
 pub struct PlaybackState {
     pub position_secs: f64,
     pub is_playing: bool,
-    pub loudness: Option<LoudnessData>,
+    pub input_loudness: Option<LoudnessData>,
+    pub output_loudness: Option<LoudnessData>,
     pub spectrum: Option<SpectrumData>,
     pub compressor: Option<CompressorData>,
     pub last_error: Option<String>,
@@ -17,7 +18,8 @@ pub struct PlaybackState {
 
 pub struct Player {
     manager: AudioEngineManager,
-    loudness_index: Option<usize>,
+    input_loudness_index: Option<usize>,
+    output_loudness_index: Option<usize>,
     spectrum_index: Option<usize>,
     compressor_index: Option<usize>,
 }
@@ -26,16 +28,35 @@ impl Player {
     pub fn new() -> Self {
         Self {
             manager: AudioEngineManager::with_signal_watching(true),
-            loudness_index: None,
+            input_loudness_index: None,
+            output_loudness_index: None,
             spectrum_index: None,
             compressor_index: None,
         }
     }
 
     fn update_analyzer_indices(&mut self, plugins: &[PluginConfig]) {
-        self.loudness_index = plugins
+        // Find all loudness monitors
+        let loudness_indices: Vec<usize> = plugins
             .iter()
-            .position(|p| p.plugin_type == "loudness_monitor");
+            .enumerate()
+            .filter(|(_, p)| p.plugin_type == "loudness_monitor")
+            .map(|(i, _)| i)
+            .collect();
+
+        if loudness_indices.is_empty() {
+            self.input_loudness_index = None;
+            self.output_loudness_index = None;
+        } else if loudness_indices.len() == 1 {
+            // If only one monitor, treat it as output (default behavior)
+            self.input_loudness_index = None;
+            self.output_loudness_index = Some(loudness_indices[0]);
+        } else {
+            // First one is input, last one is output
+            self.input_loudness_index = Some(loudness_indices[0]);
+            self.output_loudness_index = Some(*loudness_indices.last().unwrap());
+        }
+
         self.spectrum_index = plugins
             .iter()
             .position(|p| p.plugin_type == "spectrum_analyzer");
@@ -142,8 +163,8 @@ impl Player {
         matches!(state, StreamingState::Playing)
     }
 
-    pub fn get_loudness(&self) -> Option<LoudnessData> {
-        if let Some(index) = self.loudness_index
+    fn get_loudness_at_index(&self, index_opt: Option<usize>) -> Option<LoudnessData> {
+        if let Some(index) = index_opt
             && let Ok(data) = self.manager.get_plugin_data(index)
             && let Some(loudness) = data.downcast_ref::<LoudnessData>()
         {
@@ -234,8 +255,14 @@ impl Player {
         let is_playing = matches!(state, StreamingState::Playing);
 
         // Only query analyzers when actually playing to reduce overhead
-        let loudness = if is_playing {
-            self.get_loudness()
+        let input_loudness = if is_playing {
+            self.get_loudness_at_index(self.input_loudness_index)
+        } else {
+            None
+        };
+
+        let output_loudness = if is_playing {
+            self.get_loudness_at_index(self.output_loudness_index)
         } else {
             None
         };
@@ -255,7 +282,8 @@ impl Player {
         PlaybackState {
             position_secs,
             is_playing,
-            loudness,
+            input_loudness,
+            output_loudness,
             spectrum,
             compressor,
             last_error,
