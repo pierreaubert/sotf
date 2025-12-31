@@ -16,8 +16,9 @@ impl UpmixerPlugin {
 
             if speaker.is_lfe {
                 // LFE channel
+                let lfe_gain = self.lfe_gain.current();
                 for i in 0..spectrum_size {
-                    self.temp_freq_out[i] = self.lfe[i] * self.lfe_gain;
+                    self.temp_freq_out[i] = self.lfe[i] * lfe_gain;
                 }
             } else {
                 // Regular speaker
@@ -28,12 +29,16 @@ impl UpmixerPlugin {
                 let is_height = speaker.elevation > 10.0;
                 let is_center = speaker.label == "C";
 
+                let gain_front_direct = self.gain_front_direct.current();
+                let gain_front_ambient = self.gain_front_ambient.current();
+                let gain_rear_ambient = self.gain_rear_ambient.current();
+
                 // Front speakers use explicit front direct/ambient gains.
                 let mut direct_gain = if is_front && !is_height {
-                    self.gain_front_direct
+                    gain_front_direct
                 } else {
                     // Configurable direct bleed into surrounds/heights for cohesion
-                    if self.gain_front_direct == 0.0 && self.gain_rear_ambient == 0.0 {
+                    if gain_front_direct == 0.0 && gain_rear_ambient == 0.0 {
                         0.0
                     } else {
                         self.surround_direct_bleed
@@ -41,10 +46,10 @@ impl UpmixerPlugin {
                 };
 
                 let mut ambient_gain = if is_front && !is_height {
-                    self.gain_front_ambient
+                    gain_front_ambient
                 } else {
                     // Configurable ambient gain boost for rears
-                    self.gain_rear_ambient * self.rear_ambient_boost
+                    gain_rear_ambient * self.rear_ambient_boost
                 };
 
                 if is_front && !is_height && hr_mix_global > 0.0 {
@@ -109,7 +114,7 @@ impl UpmixerPlugin {
 
                         self.temp_freq_out[i] = (direct_component * direct_gain
                             + ambient_component * ambient_gain)
-                            * self.height_gain
+                            * self.height_gain.current()
                             * height_mask;
                     }
                 } else {

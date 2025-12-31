@@ -38,7 +38,7 @@ mod upmixer_tests {
                 ParameterValue::Float(0.8),
             )
             .unwrap();
-        assert_eq!(plugin.gain_front_direct, 0.8);
+        assert_eq!(plugin.gain_front_direct.target(), 0.8);
 
         // Test getting parameters
         let value = plugin.get_parameter(&ParameterId::from("gain_rear_ambient"));
@@ -418,14 +418,14 @@ mod upmixer_tests {
         let mut plugin = UpmixerPlugin::new(
             2048, "5.1.4", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 0.5, 1.0, false, 0.5,
         );
-        assert_eq!(plugin.height_gain, 0.5);
+        assert_eq!(plugin.height_gain.target(), 0.5);
         assert_eq!(plugin.output_channels(), 10); // 5.1.4 has 10 channels
 
         // Change height gain via parameter
         plugin
             .set_parameter(ParameterId::from("height_gain"), ParameterValue::Float(1.5))
             .unwrap();
-        assert_eq!(plugin.height_gain, 1.5);
+        assert_eq!(plugin.height_gain.target(), 1.5);
     }
 
     #[test]

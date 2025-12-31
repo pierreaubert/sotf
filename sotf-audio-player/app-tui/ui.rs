@@ -2927,6 +2927,21 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             ("Head Shadow Cutoff".to_string(), format!("{:.0} Hz", head_shadow_cutoff_hz)),
             ("Head Shadow Slope".to_string(), format!("{:.1} dB/oct", head_shadow_slope_db_per_octave)),
         ],
+        PluginSettings::Denoiser {
+            reduction_db,
+            floor_db,
+            smoothing,
+            attack_ms,
+            release_ms,
+            low_latency,
+        } => vec![
+            ("Reduction".to_string(), format!("{:.1} dB", reduction_db)),
+            ("Floor".to_string(), format!("{:.1} dB", floor_db)),
+            ("Smoothing".to_string(), format!("{:.2}", smoothing)),
+            ("Attack".to_string(), format!("{:.1} ms", attack_ms)),
+            ("Release".to_string(), format!("{:.1} ms", release_ms)),
+            ("Low Latency".to_string(), if *low_latency { "On" } else { "Off" }.to_string()),
+        ],
     }
 }
 

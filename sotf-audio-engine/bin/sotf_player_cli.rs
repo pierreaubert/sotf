@@ -269,6 +269,32 @@ fn create_xtc_plugin_config() -> Result<PluginConfig, String> {
     })
 }
 
+/// Create denoiser plugin config
+fn create_denoiser_plugin_config(
+    reduction_db: f32,
+    floor_db: f32,
+    smoothing: f32,
+    attack_ms: f32,
+    release_ms: f32,
+    low_latency: bool,
+) -> Result<PluginConfig, String> {
+    use serde_json::json;
+
+    let parameters = json!({
+        "reduction_db": reduction_db,
+        "floor_db": floor_db,
+        "smoothing": smoothing,
+        "attack_ms": attack_ms,
+        "release_ms": release_ms,
+        "low_latency": low_latency,
+    });
+
+    Ok(PluginConfig {
+        plugin_type: "denoiser".to_string(),
+        parameters,
+    })
+}
+
 /// Convert Biquad filters to PluginConfig for EQ plugin
 fn create_eq_plugin_config(filters: &[Biquad]) -> Result<PluginConfig, String> {
     use serde_json::json;
@@ -477,6 +503,34 @@ enum Commands {
         /// Enable XTC (crosstalk cancellation) plugin for speaker playback
         #[arg(long = "xtc", default_value_t = false)]
         xtc: bool,
+
+        /// Enable denoiser plugin (Wiener filter with MCRA noise estimation)
+        #[arg(long = "denoiser", default_value_t = false)]
+        denoiser: bool,
+
+        /// Denoiser noise reduction strength (0-40 dB)
+        #[arg(long = "denoiser-reduction-db", default_value = "12.0")]
+        denoiser_reduction_db: f32,
+
+        /// Denoiser floor/minimum gain (-60 to -10 dB, prevents musical noise)
+        #[arg(long = "denoiser-floor-db", default_value = "-30.0")]
+        denoiser_floor_db: f32,
+
+        /// Denoiser temporal smoothing (0.0-0.99)
+        #[arg(long = "denoiser-smoothing", default_value = "0.8")]
+        denoiser_smoothing: f32,
+
+        /// Denoiser attack time (ms)
+        #[arg(long = "denoiser-attack-ms", default_value = "5.0")]
+        denoiser_attack_ms: f32,
+
+        /// Denoiser release time (ms)
+        #[arg(long = "denoiser-release-ms", default_value = "50.0")]
+        denoiser_release_ms: f32,
+
+        /// Enable low-latency mode for denoiser (512 FFT vs 2048)
+        #[arg(long = "denoiser-low-latency", default_value_t = false)]
+        denoiser_low_latency: bool,
     },
 
     /// Get current playback status
@@ -567,6 +621,13 @@ fn main() {
             multiband_compressor,
             multiband_expander,
             xtc,
+            denoiser,
+            denoiser_reduction_db,
+            denoiser_floor_db,
+            denoiser_smoothing,
+            denoiser_attack_ms,
+            denoiser_release_ms,
+            denoiser_low_latency,
         } => {
             // Parse filters
             let filter_params = match parse_filters(&filters) {
@@ -621,6 +682,13 @@ fn main() {
                 multiband_compressor,
                 multiband_expander,
                 xtc,
+                denoiser,
+                denoiser_reduction_db,
+                denoiser_floor_db,
+                denoiser_smoothing,
+                denoiser_attack_ms,
+                denoiser_release_ms,
+                denoiser_low_latency,
             ) {
                 log::error!("Error: {}", e);
                 std::process::exit(1);
@@ -947,6 +1015,13 @@ fn play_stream(
     multiband_compressor: bool,
     multiband_expander: bool,
     xtc: bool,
+    denoiser: bool,
+    denoiser_reduction_db: f32,
+    denoiser_floor_db: f32,
+    denoiser_smoothing: f32,
+    denoiser_attack_ms: f32,
+    denoiser_release_ms: f32,
+    denoiser_low_latency: bool,
 ) -> Result<(), String> {
     log::info!("Starting streaming playback...");
     log::info!("  File: {:?}", file);
@@ -1124,6 +1199,25 @@ fn play_stream(
         let xtc_plugin = create_xtc_plugin_config()?;
         plugins.push(xtc_plugin);
         log::info!("Enabled XTC (crosstalk cancellation) plugin");
+    }
+
+    // Denoiser
+    if denoiser {
+        let denoiser_plugin = create_denoiser_plugin_config(
+            denoiser_reduction_db,
+            denoiser_floor_db,
+            denoiser_smoothing,
+            denoiser_attack_ms,
+            denoiser_release_ms,
+            denoiser_low_latency,
+        )?;
+        plugins.push(denoiser_plugin);
+        log::info!(
+            "Enabled denoiser plugin (reduction={:.1}dB, floor={:.1}dB, low_latency={})",
+            denoiser_reduction_db,
+            denoiser_floor_db,
+            denoiser_low_latency
+        );
     }
 
     // 4. Channel mapping to hardware (last plugin before output)

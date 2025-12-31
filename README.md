@@ -5,7 +5,7 @@
 The software helps you to get better sound from your speakers or your headsets. It can run as a TUI app (in a terminal) or a classical UI.
 What can you do with it?
 - play music :)
-- add audio plugins to customise the experience, an EQ, an upmixer for spatial audio or a binaral rendered? a limiter or a compressor?
+- add audio plugins to customise the experience, an EQ, an upmixer for spatial audio or a binaural rendered? a limiter or a multiband compressor? a denoiser?
 - create an EQ for your headphone!
 - create an EQ for anechoic speaker measurements that you find on AudioScienceReview or ErinsAudioCorner (among others)
 - create an room optimiser for your room, from simple to use to you are in control of every steps: a state of the art optimiser.
@@ -70,7 +70,10 @@ just SotF
 The code is in 3 parts:
 - [math-audio](https://github.com/pierreaubert/math-audio) : a toolkit for DSP processing, FEM and BEM simulations
 - [autoeq](https://github.com/pierreaubert/autoeq) : a toolkit for generating EQ from measurements (IIR, FIR, MSO, DSO etc)
-- this repository [sotf](https://github.com/pierreaubert/sotf) which is mostly the UI and TUI. It also as a GPUI toolkit with components and plots (see below).
+- this repository [sotf](https://github.com/pierreaubert/sotf) which is mostly the UI and TUI and the audio backend. It also as a GPUI toolkit with components and plots (see below).
+  - sotf-audio-engine : an audio engine (process streams or files and output pcm to your audio device)
+  - sotf-audio-plugins: a set of audio plugins
+  - sotf-audio-player: a library and 2 players one terminal based and one with a native UI.
 
 Why did you not reuse more code? The goal was to learn Rust and to learn other things I always wondered about:
 - How to write an audio player? I took inspiration from camilladsp and wrote my own. I could have use Camilla (and I did at the beginning)

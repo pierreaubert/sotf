@@ -10,10 +10,11 @@ use super::{
 };
 use sotf_plugins::{
     CompressorPluginParams, ConvolutionPlugin, ConvolutionPluginParams, CrossoverPlugin,
-    CrossoverPluginParams, DelayPlugin, DelayPluginParams, EqPluginParams, ExpanderPluginParams,
-    GainPluginParams, GatePluginParams, Host, LimiterPluginParams, LoudnessCompensationPluginParams,
-    LoudnessMonitorPlugin, MultibandCompressorPluginParams, MultibandExpanderPluginParams, Plugin,
-    PluginHost, SpectrumAnalyzerPlugin, SpectrumConfig, UpmixerPluginParams,
+    CrossoverPluginParams, DelayPlugin, DelayPluginParams, DenoiserPlugin, DenoiserPluginParams,
+    EqPluginParams, ExpanderPluginParams, GainPluginParams, GatePluginParams, Host,
+    LimiterPluginParams, LoudnessCompensationPluginParams, LoudnessMonitorPlugin,
+    MultibandCompressorPluginParams, MultibandExpanderPluginParams, Plugin, PluginHost,
+    SpectrumAnalyzerPlugin, SpectrumConfig, UpmixerPluginParams,
 };
 
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
@@ -659,6 +660,16 @@ fn create_plugin(
 
             let plugin = XtcPlugin::from_params(params, sample_rate)?;
             Ok(Box::new(plugin))
+        }
+
+        "denoiser" | "wiener_denoiser" => {
+            use sotf_plugins::InPlacePluginAdapter;
+
+            let params: DenoiserPluginParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| format!("Failed to parse denoiser plugin parameters: {}", e))?;
+
+            let plugin = DenoiserPlugin::from_params(channels, params);
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 
         other => Err(format!("Unknown plugin type: {}", other)),

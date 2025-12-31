@@ -9,6 +9,7 @@
 use super::param_specs::gain::*;
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use super::smoothing::Smoother;
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
@@ -47,36 +48,22 @@ pub struct GainPluginParams {
 /// Supports two modes:
 /// 1. Single gain applied to all channels (default)
 /// 2. Per-channel gain with independent values for each channel
-///
-/// # Example - Single gain
-/// ```
-/// use sotf_plugins::GainPlugin;
-///
-/// let mut gain = GainPlugin::new(2, -6.0); // -6dB gain on 2 channels
-/// gain.set_gain_db(0.0); // Change to unity gain
-/// ```
-///
-/// # Example - Per-channel gain
-/// ```
-/// use sotf_plugins::GainPlugin;
-///
-/// // Create with per-channel gains: -3dB on left, -6dB on right
-/// let mut gain = GainPlugin::new_per_channel(vec![-3.0, -6.0]).unwrap();
-/// gain.set_channel_gain_db(0, 0.0); // Set left channel to unity
-/// ```
 pub struct GainPlugin {
     /// Number of channels
     channels: usize,
+    sample_rate: u32,
 
-    /// Global gain in dB (used when not in per-channel mode)
+    /// Global gain in dB (stored for parameter retrieval)
     global_gain_db: f32,
-    /// Global linear gain multiplier (cached from global_gain_db)
-    global_gain_linear: f32,
+    
+    /// Smoother for global linear gain
+    global_gain_smoother: Smoother,
 
     /// Per-channel gains in dB (empty = use global gain)
     channel_gains_db: Vec<f32>,
-    /// Per-channel linear gains (cached from channel_gains_db)
-    channel_gains_linear: Vec<f32>,
+    
+    /// Smoothers for per-channel linear gains
+    channel_gains_smoothers: Vec<Smoother>,
 
     /// Parameter ID for global gain
     param_gain_db: ParameterId,
@@ -89,13 +76,16 @@ impl GainPlugin {
     /// * `channels` - Number of audio channels
     /// * `gain_db` - Initial gain in dB (0.0 = unity, negative = attenuation, positive = boost)
     pub fn new(channels: usize, gain_db: f32) -> Self {
+        let sample_rate = 44100; // Default
         let gain_linear = Self::db_to_linear(gain_db);
+        
         Self {
             channels,
+            sample_rate,
             global_gain_db: gain_db,
-            global_gain_linear: gain_linear,
+            global_gain_smoother: Smoother::new(gain_linear, 20.0, sample_rate),
             channel_gains_db: Vec::new(),
-            channel_gains_linear: Vec::new(),
+            channel_gains_smoothers: Vec::new(),
             param_gain_db: ParameterId::from("gain_db"),
         }
     }
@@ -113,15 +103,20 @@ impl GainPlugin {
         }
 
         let channels = channel_gains.len();
-        let channel_gains_linear: Vec<f32> =
-            channel_gains.iter().map(|&db| Self::db_to_linear(db)).collect();
+        let sample_rate = 44100;
+        
+        let channel_gains_smoothers: Vec<Smoother> = channel_gains
+            .iter()
+            .map(|&db| Smoother::new(Self::db_to_linear(db), 20.0, sample_rate))
+            .collect();
 
         Ok(Self {
             channels,
+            sample_rate,
             global_gain_db: GAIN_DB_DEFAULT,
-            global_gain_linear: Self::db_to_linear(GAIN_DB_DEFAULT),
+            global_gain_smoother: Smoother::new(Self::db_to_linear(GAIN_DB_DEFAULT), 20.0, sample_rate),
             channel_gains_db: channel_gains,
-            channel_gains_linear,
+            channel_gains_smoothers,
             param_gain_db: ParameterId::from("gain_db"),
         })
     }
@@ -152,19 +147,21 @@ impl GainPlugin {
     /// Set global gain in dB (switches to global mode if in per-channel mode)
     pub fn set_gain_db(&mut self, gain_db: f32) {
         self.global_gain_db = gain_db;
-        self.global_gain_linear = Self::db_to_linear(gain_db);
+        let gain_linear = Self::db_to_linear(gain_db);
+        self.global_gain_smoother.set_target(gain_linear);
+        
         // Clear per-channel gains to switch to global mode
         self.channel_gains_db.clear();
-        self.channel_gains_linear.clear();
+        self.channel_gains_smoothers.clear();
     }
 
     /// Set gain as linear multiplier (switches to global mode)
     pub fn set_gain_linear(&mut self, gain: f32) {
-        self.global_gain_linear = gain;
+        self.global_gain_smoother.set_target(gain);
         self.global_gain_db = Self::linear_to_db(gain);
         // Clear per-channel gains to switch to global mode
         self.channel_gains_db.clear();
-        self.channel_gains_linear.clear();
+        self.channel_gains_smoothers.clear();
     }
 
     /// Set per-channel gains (switches to per-channel mode)
@@ -180,7 +177,10 @@ impl GainPlugin {
             ));
         }
 
-        self.channel_gains_linear = gains_db.iter().map(|&db| Self::db_to_linear(db)).collect();
+        self.channel_gains_smoothers = gains_db
+            .iter()
+            .map(|&db| Smoother::new(Self::db_to_linear(db), 20.0, self.sample_rate))
+            .collect();
         self.channel_gains_db = gains_db;
         Ok(())
     }
@@ -201,11 +201,12 @@ impl GainPlugin {
         // Initialize per-channel mode if not already
         if self.channel_gains_db.is_empty() {
             self.channel_gains_db = vec![self.global_gain_db; self.channels];
-            self.channel_gains_linear = vec![self.global_gain_linear; self.channels];
+            let current_linear = self.global_gain_smoother.current(); // Use current smooth value to prevent jump
+            self.channel_gains_smoothers = vec![Smoother::new(current_linear, 20.0, self.sample_rate); self.channels];
         }
 
         self.channel_gains_db[channel] = gain_db;
-        self.channel_gains_linear[channel] = Self::db_to_linear(gain_db);
+        self.channel_gains_smoothers[channel].set_target(Self::db_to_linear(gain_db));
         Ok(())
     }
 
@@ -216,7 +217,7 @@ impl GainPlugin {
 
     /// Get current global gain as linear multiplier
     pub fn gain_linear(&self) -> f32 {
-        self.global_gain_linear
+        self.global_gain_smoother.current()
     }
 
     /// Get gain for a specific channel in dB
@@ -247,7 +248,7 @@ impl InPlacePlugin for GainPlugin {
             name: "Gain".to_string(),
             version: "1.1.0".to_string(),
             author: "AutoEQ".to_string(),
-            description: "Gain/volume control plugin with per-channel support".to_string(),
+            description: "Gain/volume control plugin with per-channel support (Smoothed)".to_string(),
         }
     }
 
@@ -329,6 +330,15 @@ impl InPlacePlugin for GainPlugin {
 
         None
     }
+    
+    fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        self.sample_rate = sample_rate;
+        self.global_gain_smoother.set_time(20.0, sample_rate);
+        for s in &mut self.channel_gains_smoothers {
+            s.set_time(20.0, sample_rate);
+        }
+        Ok(())
+    }
 
     fn process_in_place(
         &mut self,
@@ -344,19 +354,28 @@ impl InPlacePlugin for GainPlugin {
             ));
         }
 
+        let num_frames = buffer.len() / self.channels;
+
         if self.is_per_channel() {
-            // Per-channel mode: apply different gain to each channel
-            let num_frames = buffer.len() / self.channels;
+            // Per-channel mode
             for frame in 0..num_frames {
                 for ch in 0..self.channels {
                     let idx = frame * self.channels + ch;
-                    buffer[idx] *= self.channel_gains_linear[ch];
+                    // Tick smoother for this channel
+                    let gain = self.channel_gains_smoothers[ch].next();
+                    buffer[idx] *= gain;
                 }
             }
         } else {
-            // Global mode: apply same gain to all samples
-            for sample in buffer.iter_mut() {
-                *sample *= self.global_gain_linear;
+            // Global mode
+            for frame in 0..num_frames {
+                // Tick smoother once per frame (shared across channels for this frame)
+                // Note: Gain is applied to all channels equally
+                let gain = self.global_gain_smoother.next();
+                for ch in 0..self.channels {
+                    let idx = frame * self.channels + ch;
+                    buffer[idx] *= gain;
+                }
             }
         }
 
@@ -418,7 +437,8 @@ mod tests {
             .unwrap();
 
         assert_eq!(plugin.gain_db(), -12.0);
-        assert!((plugin.gain_linear() - 0.251).abs() < 0.01);
+        // Smoother will gradually reach target, but target should be set
+        assert!((plugin.global_gain_smoother.target() - 0.251).abs() < 0.01);
 
         // Get via parameter system
         let value = plugin.get_parameter(&ParameterId::from("gain_db"));

@@ -1,6 +1,6 @@
-// ============================================================================
+// ============================================================================ 
 // Upmixer Plugin - Stereo to Multi-Channel Surround
-// ============================================================================
+// ============================================================================ 
 //
 // This plugin converts stereo (2 channels) to multichannel surround sound
 // using FFT-based Direct/Ambient decomposition and VBAP panning.
@@ -19,6 +19,7 @@ use super::param_specs::upmixer::*;
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use super::speaker_config::{SpeakerConfig, get_speaker_config};
+use super::smoothing::Smoother;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
 use std::sync::Arc;
@@ -47,9 +48,9 @@ const PHASE_SHIFT_180: Complex<f32> = Complex::new(-1.0, 0.0); // -1
 const PHASE_SHIFT_270: Complex<f32> = Complex::new(0.0, -1.0); // -i
 */
 
-// ============================================================================
+// ============================================================================ 
 // Plugin Implementation
-// ============================================================================
+// ============================================================================ 
 
 /// Stereo to multi-channel surround upmixer using FFT-based Direct/Ambient decomposition
 pub struct UpmixerPlugin {
@@ -82,15 +83,15 @@ pub struct UpmixerPlugin {
 
     /// Front direct gain (gainFS)
     param_gain_front_direct: ParameterId,
-    gain_front_direct: f32,
+    gain_front_direct: Smoother,
 
     /// Front ambient gain (gainFA)
     param_gain_front_ambient: ParameterId,
-    gain_front_ambient: f32,
+    gain_front_ambient: Smoother,
 
     /// Rear ambient gain (gainRA)
     param_gain_rear_ambient: ParameterId,
-    gain_rear_ambient: f32,
+    gain_rear_ambient: Smoother,
 
     /// LFE cutoff frequency in Hz
     param_lfe_cutoff_hz: ParameterId,
@@ -109,17 +110,17 @@ pub struct UpmixerPlugin {
 
     /// Height channel gain (0.0 to 2.0)
     param_height_gain: ParameterId,
-    height_gain: f32,
+    height_gain: Smoother,
 
     /// LFE gain (0.0 to 2.0)
     param_lfe_gain: ParameterId,
-    lfe_gain: f32,
+    lfe_gain: Smoother,
 
     /// Sub-Harmonic Synthesis
     param_enable_subharmonic_synth: ParameterId,
     enable_subharmonic_synth: bool,
     param_subharmonic_gain: ParameterId,
-    subharmonic_gain: f32,
+    subharmonic_gain: Smoother,
 
     /// High-resolution direct-path enhancement (multires)
     param_enable_hr_direct: ParameterId,
@@ -356,6 +357,7 @@ impl UpmixerPlugin {
             "Bandpass frequency must be greater than LFE cutoff"
         );
 
+        let sample_rate = 44100; // Will be updated in initialize()
         let mut planner = RealFftPlanner::<f32>::new();
         let fft_forward = planner.plan_fft_forward(fft_size);
         let fft_inverse = planner.plan_fft_inverse(fft_size);
@@ -412,7 +414,7 @@ impl UpmixerPlugin {
         let mut plugin = Self {
             fft_size,
             hop_size,
-            sample_rate: 44100, // Will be updated in initialize()
+            sample_rate, 
             speaker_config,
             num_output_channels,
 
@@ -425,13 +427,13 @@ impl UpmixerPlugin {
 
             param_speaker_config: ParameterId::from("speaker_config"),
             param_gain_front_direct: ParameterId::from("gain_front_direct"),
-            gain_front_direct,
+            gain_front_direct: Smoother::new(gain_front_direct, 50.0, sample_rate),
 
             param_gain_front_ambient: ParameterId::from("gain_front_ambient"),
-            gain_front_ambient,
+            gain_front_ambient: Smoother::new(gain_front_ambient, 50.0, sample_rate),
 
             param_gain_rear_ambient: ParameterId::from("gain_rear_ambient"),
-            gain_rear_ambient,
+            gain_rear_ambient: Smoother::new(gain_rear_ambient, 50.0, sample_rate),
 
             param_lfe_cutoff_hz: ParameterId::from("lfe_cutoff_hz"),
             lfe_cutoff_hz,
@@ -446,15 +448,15 @@ impl UpmixerPlugin {
             bandpass_hz,
 
             param_height_gain: ParameterId::from("height_gain"),
-            height_gain,
+            height_gain: Smoother::new(height_gain, 50.0, sample_rate),
 
             param_lfe_gain: ParameterId::from("lfe_gain"),
-            lfe_gain,
+            lfe_gain: Smoother::new(lfe_gain, 50.0, sample_rate),
 
             param_enable_subharmonic_synth: ParameterId::from("enable_subharmonic_synth"),
             enable_subharmonic_synth,
             param_subharmonic_gain: ParameterId::from("subharmonic_gain"),
-            subharmonic_gain,
+            subharmonic_gain: Smoother::new(subharmonic_gain, 50.0, sample_rate),
 
             param_enable_hr_direct: ParameterId::from("enable_hr_direct"),
             enable_hr_direct: true, // Enable by default for multi-resolution analysis
@@ -660,10 +662,10 @@ impl Plugin for UpmixerPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo {
             name: format!("Stereo to {} Upmixer", self.speaker_config.name),
-            version: "2.0.0".to_string(),
+            version: "2.1.0".to_string(),
             author: "AutoEQ".to_string(),
             description: format!(
-                "Converts stereo to {} using FFT-based Direct/Ambient decomposition and VBAP panning",
+                "Converts stereo to {} using FFT-based Direct/Ambient decomposition and VBAP panning (Smoothed)",
                 self.speaker_config.name
             ),
         }
@@ -1101,24 +1103,24 @@ Upper bound for dialogue detection analysis.",
             }
         } else if id == self.param_gain_front_direct {
             if let Some(gain) = value.as_float() {
-                self.gain_front_direct = gain;
+                self.gain_front_direct.set_target(gain);
                 return Ok(());
             }
         } else if id == self.param_gain_front_ambient {
             if let Some(gain) = value.as_float() {
-                self.gain_front_ambient = gain;
+                self.gain_front_ambient.set_target(gain);
                 return Ok(());
             }
         } else if id == self.param_gain_rear_ambient
             && let Some(gain) = value.as_float()
         {
-            self.gain_rear_ambient = gain;
+            self.gain_rear_ambient.set_target(gain);
             return Ok(());
         } else if id == self.param_height_gain
             && let Some(gain) = value.as_float()
         {
             if (0.0..=2.0).contains(&gain) {
-                self.height_gain = gain;
+                self.height_gain.set_target(gain);
                 return Ok(());
             }
             return Err("Height gain must be between 0.0 and 2.0".to_string());
@@ -1126,7 +1128,7 @@ Upper bound for dialogue detection analysis.",
             && let Some(gain) = value.as_float()
         {
             if (0.0..=2.0).contains(&gain) {
-                self.lfe_gain = gain;
+                self.lfe_gain.set_target(gain);
                 return Ok(());
             }
             return Err("LFE gain must be between 0.0 and 2.0".to_string());
@@ -1174,7 +1176,7 @@ Upper bound for dialogue detection analysis.",
             && let Some(gain) = value.as_float()
         {
             if (0.0..=1.0).contains(&gain) {
-                self.subharmonic_gain = gain;
+                self.subharmonic_gain.set_target(gain);
                 return Ok(());
             }
             return Err("Sub-harmonic gain must be between 0.0 and 1.0".to_string());
@@ -1345,15 +1347,15 @@ Upper bound for dialogue detection analysis.",
             };
             Some(ParameterValue::Int(config_idx))
         } else if id == &self.param_gain_front_direct {
-            Some(ParameterValue::Float(self.gain_front_direct))
+            Some(ParameterValue::Float(self.gain_front_direct.current()))
         } else if id == &self.param_gain_front_ambient {
-            Some(ParameterValue::Float(self.gain_front_ambient))
+            Some(ParameterValue::Float(self.gain_front_ambient.current()))
         } else if id == &self.param_gain_rear_ambient {
-            Some(ParameterValue::Float(self.gain_rear_ambient))
+            Some(ParameterValue::Float(self.gain_rear_ambient.current()))
         } else if id == &self.param_height_gain {
-            Some(ParameterValue::Float(self.height_gain))
+            Some(ParameterValue::Float(self.height_gain.current()))
         } else if id == &self.param_lfe_gain {
-            Some(ParameterValue::Float(self.lfe_gain))
+            Some(ParameterValue::Float(self.lfe_gain.current()))
         } else if id == &self.param_lfe_cutoff_hz {
             Some(ParameterValue::Float(self.lfe_cutoff_hz))
         } else if id == &self.param_stereo_width {
@@ -1365,7 +1367,7 @@ Upper bound for dialogue detection analysis.",
         } else if id == &self.param_enable_subharmonic_synth {
             Some(ParameterValue::Bool(self.enable_subharmonic_synth))
         } else if id == &self.param_subharmonic_gain {
-            Some(ParameterValue::Float(self.subharmonic_gain))
+            Some(ParameterValue::Float(self.subharmonic_gain.current()))
         } else if id == &self.param_enable_hr_direct {
             Some(ParameterValue::Bool(self.enable_hr_direct))
         } else if id == &self.param_hr_sharpen {
@@ -1447,6 +1449,15 @@ Upper bound for dialogue detection analysis.",
 
         // Precompute LR4 crossover gains for mains/LFE split
         self.update_crossover_gains();
+        
+        // Initialize smoothers
+        let time_ms = 50.0;
+        self.gain_front_direct.set_time(time_ms, sample_rate);
+        self.gain_front_ambient.set_time(time_ms, sample_rate);
+        self.gain_rear_ambient.set_time(time_ms, sample_rate);
+        self.height_gain.set_time(time_ms, sample_rate);
+        self.lfe_gain.set_time(time_ms, sample_rate);
+        self.subharmonic_gain.set_time(time_ms, sample_rate);
 
         Ok(())
     }
@@ -1519,6 +1530,16 @@ Upper bound for dialogue detection analysis.",
         output: &mut [f32],
         context: &ProcessContext,
     ) -> PluginResult<()> {
+        
+        // Update smoothers once per block
+        // (For optimal quality this would be per-sample, but block-rate is acceptable for these gains)
+        self.gain_front_direct.next();
+        self.gain_front_ambient.next();
+        self.gain_rear_ambient.next();
+        self.height_gain.next();
+        self.lfe_gain.next();
+        self.subharmonic_gain.next();
+    
         // If bypass is enabled, just copy stereo input to output and return
         if self.bypass_all_processing {
             let num_frames = context.num_frames;
@@ -1707,7 +1728,7 @@ Upper bound for dialogue detection analysis.",
                 self.process_fft_block(&temp_input, &mut output_block);
 
                 // Optional high-resolution direct-path enhancement
-                if self.enable_hr_direct && self.gain_front_direct > 0.0 {
+                if self.enable_hr_direct && self.gain_front_direct.current() > 0.0 {
                     // Take a centered HR window from the current input block
                     let center = (self.fft_size - self.hr_fft_size) / 2;
                     let start = center * 2; // stereo interleaved

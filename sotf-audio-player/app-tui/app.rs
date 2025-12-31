@@ -2042,6 +2042,25 @@ impl App {
                     }
                     true
                 }
+                PluginSettings::Denoiser {
+                    reduction_db,
+                    floor_db,
+                    smoothing,
+                    attack_ms,
+                    release_ms,
+                    low_latency,
+                } => {
+                    match param_idx {
+                        0 => *reduction_db = (*reduction_db + delta).clamp(0.0, 40.0),
+                        1 => *floor_db = (*floor_db + delta).clamp(-60.0, -10.0),
+                        2 => *smoothing = (*smoothing + delta * 0.05).clamp(0.0, 0.99),
+                        3 => *attack_ms = (*attack_ms + delta).clamp(0.1, 100.0),
+                        4 => *release_ms = (*release_ms + delta * 5.0).clamp(10.0, 500.0),
+                        5 => *low_latency = !*low_latency,
+                        _ => return false,
+                    }
+                    true
+                }
             }
         } else {
             false
@@ -3162,6 +3181,7 @@ fn get_param_count(settings: &sotf_audio_player::PluginSettings) -> usize {
         PluginSettings::MultibandCompressor { .. } => 12, // num_bands, crossover_freq_1-4, threshold, ratio, attack, release, knee, mix, link_channels
         PluginSettings::MultibandExpander { .. } => 15, // num_bands, crossover_freq_1-4, threshold, ratio, attack, release, range, knee, hysteresis, hold, mix, link_channels
         PluginSettings::XTC { .. } => 8, // distance, speaker_angle, head_radius, beta_base, beta_low_boost, beta_high_boost, head_shadow_cutoff, head_shadow_slope
+        PluginSettings::Denoiser { .. } => 6, // reduction_db, floor_db, smoothing, attack_ms, release_ms, low_latency
     }
 }
 

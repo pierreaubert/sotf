@@ -89,6 +89,7 @@ fn plugin_color(plugin_type: &PluginType, theme: &crate::theme::Theme) -> Rgba {
         PluginType::ChannelMuteSolo => theme.plugin_colors.mute_solo,
         PluginType::Matrix => theme.plugin_colors.upmixer, // Reuse upmixer color for matrix
         PluginType::XTC => theme.plugin_colors.binaural,   // Reuse binaural color for XTC
+        PluginType::Denoiser => theme.plugin_colors.eq,    // Reuse eq color for denoiser
     }
 }
 
@@ -111,6 +112,7 @@ fn plugin_icon(plugin_type: &PluginType) -> &'static str {
         PluginType::ChannelMuteSolo => "◧",
         PluginType::Matrix => "⊞",
         PluginType::XTC => "⊗",
+        PluginType::Denoiser => "◌",
     }
 }
 
@@ -133,6 +135,7 @@ fn short_name(plugin_type: &PluginType) -> &'static str {
         PluginType::ChannelMuteSolo => "Mixer",
         PluginType::Matrix => "Matrix",
         PluginType::XTC => "XTC",
+        PluginType::Denoiser => "Denoiser",
     }
 }
 

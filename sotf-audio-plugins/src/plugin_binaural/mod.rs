@@ -6,6 +6,7 @@ use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use super::simd::{complex_mul_add_simd, complex_mul_simd};
 use super::speaker_config::{SpeakerConfig, get_speaker_config_by_channels};
+use super::smoothing::Smoother;
 
 use crate::sofa::SofaFile;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
@@ -15,6 +16,7 @@ use rubato::{
 use rustfft::num_complex::Complex;
 use std::path::PathBuf;
 use std::sync::Arc;
+use parking_lot::RwLock;
 
 pub mod error;
 pub mod filter;
@@ -32,6 +34,18 @@ pub use self::room::{Reflection, RoomModel};
 // Plugin Implementation
 // ============================================================================
 
+/// Holds the heavy state that needs to be swapped atomically
+struct BinauralState {
+    /// HRTF filters in frequency domain [channels × 2 × freq_size]
+    hrtf_filters_freq: Vec<Vec<Complex<f32>>>,
+    
+    /// Diffuse-field equalization filter
+    diffuse_field_eq_filter: Option<[Vec<Complex<f32>>; 2]>,
+    
+    /// Loaded HRTF data (needed for updates)
+    hrtf_data: Option<SofaFile>,
+}
+
 /// Binaural decoder using HRTFs from a file
 pub struct BinauralDecoderPlugin {
     /// Number of input channels
@@ -43,71 +57,55 @@ pub struct BinauralDecoderPlugin {
     /// Sample rate
     sample_rate: u32,
 
-    /// HRTF data store
-    hrtf_data: Option<SofaFile>,
     /// Path to HRTF file
     hrtf_path: Option<PathBuf>,
 
     /// Speaker configuration for input channels
     speaker_config: &'static SpeakerConfig,
 
-    /// Real FFT planners (more efficient for real-valued audio signals)
-    /// R2C: N real samples -> N/2+1 complex frequency bins
+    /// Real FFT planners
     fft_r2c: Arc<dyn RealToComplex<f32>>,
-    /// C2R: N/2+1 complex frequency bins -> N real samples
     fft_c2r: Arc<dyn ComplexToReal<f32>>,
-    /// Number of complex frequency bins (fft_size/2 + 1)
     freq_size: usize,
 
-    /// HRTF filters in frequency domain [channels × 2 × freq_size]
-    /// For each input channel: [left_ear_fft, right_ear_fft]
-    /// Uses half-spectrum representation (N/2+1 bins) for real signals
-    /// LFE channels have zero HRTFs and are handled separately
-    hrtf_filters_freq: Vec<Vec<Complex<f32>>>,
+    /// Thread-safe state container
+    state: Arc<RwLock<BinauralState>>,
 
-    /// Diffuse-field equalization filter (inverse of diffuse-field response)
-    /// Applied to both ears to compensate for HRTF coloration
-    /// [left_eq, right_eq] in frequency domain
-    diffuse_field_eq_filter: Option<[Vec<Complex<f32>>; 2]>,
-
-    /// LFE low-pass filter in frequency domain (band-limits LFE to subwoofer range)
-    /// Uses half-spectrum representation (N/2+1 bins)
+    /// LFE low-pass filter
     lfe_lowpass_filter: Vec<Complex<f32>>,
-    /// LFE gain including distance attenuation and level adjustment
+    /// LFE gain
     lfe_gain: f32,
 
-    /// LFE channel indices (channels that should not be spatially processed)
+    /// LFE channel indices
     lfe_channels: Vec<usize>,
 
-    /// Input buffer accumulator for block-based processing (interleaved multi-channel)
+    /// Input buffer accumulator
     input_buffer: Vec<f32>,
-    /// Number of samples currently in input buffer (counts samples, not frames)
     input_buffer_fill: usize,
 
-    /// Output accumulator for overlap-add [2 × accumulator_size]
+    /// Output accumulator
     output_accumulator: Vec<Vec<f32>>,
     output_accumulator_fill: usize,
     next_add_position: usize,
-    /// Ring buffer read position
     output_read_position: usize,
 
-    /// Temporary buffers (reused to avoid allocations)
+    /// Temporary buffers
     temp_input_block: Vec<f32>,
     temp_output_block: Vec<f32>,
-    /// Frequency domain buffer (N/2+1 complex bins for real FFT)
     temp_freq_buffer: Vec<Complex<f32>>,
-    /// Time domain buffer for real FFT input (N real samples)
     temp_time_buffer: Vec<f32>,
-    /// Scratch buffer for real FFT operations
     temp_fft_scratch: Vec<Complex<f32>>,
 
     // Parameters
     param_enable_optimization: ParameterId,
     enable_optimization: bool,
+    
     param_externalization: ParameterId,
-    externalization: f32,
+    externalization: Smoother, // Smoothed
+    
     param_near_field_strength: ParameterId,
     near_field_strength: f32,
+    
     param_diffuse_field_eq: ParameterId,
     diffuse_field_eq: bool,
 
@@ -142,19 +140,16 @@ impl BinauralDecoderPlugin {
         assert!(input_channels > 0, "Must have at least 1 input channel");
 
         let hop_size = fft_size / 2;
+        let sample_rate = 44100;
 
         // Overflow checks for buffer allocations
         let input_buffer_size = hop_size
             .checked_mul(input_channels)
-            .expect("Buffer size overflow: hop_size * input_channels too large");
-        // For real FFT: freq_size = fft_size/2 + 1, store 2 ears × freq_size bins
+            .expect("Buffer size overflow");
         let freq_size = fft_size / 2 + 1;
-        let _hrtf_buffer_per_channel = freq_size
-            .checked_mul(2)
-            .expect("Buffer size overflow: freq_size * 2 too large");
         let output_acc_size = fft_size
             .checked_mul(2)
-            .expect("Buffer size overflow: output accumulator size too large");
+            .expect("Buffer size overflow");
 
         assert!(
             input_buffer_size <= 1 << 24,
@@ -162,8 +157,6 @@ impl BinauralDecoderPlugin {
         );
         assert!(fft_size <= 1 << 16, "FFT size unreasonably large (> 65536)");
 
-        // Use real FFT for efficiency (audio signals are real-valued)
-        // R2C: N real -> N/2+1 complex, C2R: N/2+1 complex -> N real
         let mut planner = RealFftPlanner::<f32>::new();
         let fft_r2c = planner.plan_fft_forward(fft_size);
         let fft_c2r = planner.plan_fft_inverse(fft_size);
@@ -192,16 +185,21 @@ impl BinauralDecoderPlugin {
             lfe_channels
         );
 
-        // Get scratch buffer size from FFT planner
         let scratch_len = fft_r2c.get_scratch_len().max(fft_c2r.get_scratch_len());
+
+        // Initial state
+        let state = Arc::new(RwLock::new(BinauralState {
+            hrtf_filters_freq: vec![vec![Complex::new(0.0, 0.0); freq_size * 2]; input_channels],
+            diffuse_field_eq_filter: None,
+            hrtf_data: None,
+        }));
 
         Self {
             input_channels,
             fft_size,
             hop_size,
-            sample_rate: 48000, // Will be set in initialize()
+            sample_rate,
 
-            hrtf_data: None,
             hrtf_path,
             speaker_config,
 
@@ -209,9 +207,7 @@ impl BinauralDecoderPlugin {
             fft_c2r,
             freq_size,
 
-            // HRTF storage: 2 ears × freq_size bins per channel
-            hrtf_filters_freq: vec![vec![Complex::new(0.0, 0.0); freq_size * 2]; input_channels],
-            diffuse_field_eq_filter: None,
+            state,
             lfe_lowpass_filter: vec![Complex::new(1.0, 0.0); freq_size],
             lfe_gain: 1.0,
             lfe_channels,
@@ -232,10 +228,13 @@ impl BinauralDecoderPlugin {
 
             param_enable_optimization: ParameterId::from("enable_optimization"),
             enable_optimization,
+            
             param_externalization: ParameterId::from("externalization"),
-            externalization,
+            externalization: Smoother::new(externalization, 50.0, sample_rate),
+            
             param_near_field_strength: ParameterId::from("near_field_strength"),
             near_field_strength,
+            
             param_diffuse_field_eq: ParameterId::from("diffuse_field_eq"),
             diffuse_field_eq,
 
@@ -271,7 +270,80 @@ impl BinauralDecoderPlugin {
         )
     }
 
-    /// Load HRTF data from a file and prepare filters
+    /// Update filters (Async or Sync)
+    fn update_filters(&mut self, sync: bool) {
+        // We need to clone specific data to move into the thread/closure
+        // to avoid 'static lifetime issues with self
+        let state_arc = self.state.clone();
+        let speaker_config = self.speaker_config; // Static reference, cheap copy
+        let fft_size = self.fft_size;
+        let sample_rate = self.sample_rate;
+        let near_field_strength = self.near_field_strength;
+        let diffuse_field_eq = self.diffuse_field_eq;
+        let fft_r2c = self.fft_r2c.clone();
+        let freq_size = self.freq_size;
+        let input_channels = self.input_channels;
+        // Cloning Vec<usize> is cheap enough
+        let lfe_channels = self.lfe_channels.clone(); 
+
+        let task = move || {
+            // Read existing SOFA data
+            let sofa_opt = {
+                let lock = state_arc.read();
+                lock.hrtf_data.clone()
+            };
+
+            if let Some(sofa) = sofa_opt {
+                // Compute new filters
+                let mut new_filters = vec![vec![Complex::new(0.0, 0.0); freq_size * 2]; input_channels];
+                
+                for (i, speaker) in speaker_config.speakers.iter().enumerate() {
+                    if speaker.is_lfe { continue; }
+
+                    let target_pos = room::speaker_to_source_position(speaker);
+                    let nearest: [(usize, f32); 3] = sofa.find_three_nearest(&target_pos);
+                    let gains = hrtf::calculate_vbap_gains(&target_pos, &nearest, &sofa);
+
+                    let (left_fft, right_fft) = hrtf::interpolate_hrtf_frequency_domain(
+                        &nearest,
+                        &gains,
+                        &sofa,
+                        fft_size,
+                        sample_rate,
+                        &fft_r2c,
+                        near_field_strength,
+                        speaker.azimuth,
+                        speaker.elevation,
+                    );
+
+                    let combined: Vec<Complex<f32>> = left_fft.into_iter().chain(right_fft.into_iter()).collect();
+                    new_filters[i] = combined;
+                }
+
+                hrtf::normalize_hrtf_gains(&mut new_filters, &lfe_channels, freq_size, input_channels);
+
+                let mut new_df_eq = None;
+                if diffuse_field_eq {
+                    if let Ok(eq) = filter::compute_diffuse_field_eq(&sofa, fft_size, sample_rate, &fft_r2c) {
+                        new_df_eq = Some(eq);
+                    }
+                }
+
+                // Write back
+                let mut lock = state_arc.write();
+                lock.hrtf_filters_freq = new_filters;
+                lock.diffuse_field_eq_filter = new_df_eq;
+            }
+        };
+
+        if sync {
+            task();
+        } else {
+            rayon::spawn(task);
+        }
+    }
+
+    /// Load HRTF data from a file
     pub fn load_hrtf(&mut self, path: PathBuf) -> Result<(), String> {
         log::debug!("[BinauralDecoder] Loading HRTF file: {:?}", path);
 
@@ -288,8 +360,7 @@ impl BinauralDecoderPlugin {
                 #[cfg(not(feature = "sofa_support"))]
                 {
                     Err(BinauralError::SofaLoadError(
-                        "SOFA support not enabled in this build. Please use a .hrtfdb file."
-                            .to_string(),
+                        "SOFA support not enabled in this build.".to_string(),
                     )
                     .to_string())
                 }
@@ -300,13 +371,6 @@ impl BinauralDecoderPlugin {
             ))
             .to_string()),
         }?;
-
-        log::info!(
-            "[BinauralDecoder] HRTF data loaded: {} measurements, IR length: {}, sample rate: {} Hz",
-            sofa.num_measurements,
-            sofa.ir_length,
-            sofa.sample_rate
-        );
 
         // Check if resampling is needed
         let sample_rate_diff = (sofa.sample_rate - self.sample_rate as f32).abs();
@@ -319,15 +383,17 @@ impl BinauralDecoderPlugin {
             Self::resample_sofa(&mut sofa, self.sample_rate)?;
         }
 
-        // Store SOFA first so prepare_hrtf_filters can use it
-        self.hrtf_data = Some(sofa);
+        // Update state with new SOFA data
+        {
+            let mut lock = self.state.write();
+            lock.hrtf_data = Some(sofa);
+        }
         self.hrtf_path = Some(path);
 
-        // Prepare HRTF filters for each speaker
-        self.prepare_hrtf_filters()?;
+        // Update filters synchronously since we just loaded a file
+        self.update_filters(true);
 
         log::debug!("[BinauralDecoder] HRTF file loaded and filters prepared");
-
         Ok(())
     }
 
@@ -390,61 +456,6 @@ impl BinauralDecoderPlugin {
         Ok(())
     }
 
-    /// Prepare HRTF filters in frequency domain for all speakers
-    fn prepare_hrtf_filters(&mut self) -> Result<(), String> {
-        let sofa = self.hrtf_data.as_ref().ok_or("HRTF data not loaded")?;
-
-        for (i, speaker) in self.speaker_config.speakers.iter().enumerate() {
-            if speaker.is_lfe {
-                continue;
-            }
-
-            let target_pos = room::speaker_to_source_position(speaker);
-
-            let nearest = sofa.find_three_nearest(&target_pos);
-            let gains = hrtf::calculate_vbap_gains(&target_pos, &nearest, sofa);
-
-            // Returns freq_size (N/2+1) complex bins per ear
-            let (left_fft, right_fft) = hrtf::interpolate_hrtf_frequency_domain(
-                &nearest,
-                &gains,
-                sofa,
-                self.fft_size,
-                self.sample_rate,
-                &self.fft_r2c,
-                self.near_field_strength,
-                speaker.azimuth,
-                speaker.elevation,
-            );
-
-            // Store left and right HRTFs contiguously [left_freq_size | right_freq_size]
-            let combined: Vec<Complex<f32>> =
-                left_fft.into_iter().chain(right_fft.into_iter()).collect();
-
-            self.hrtf_filters_freq[i] = combined;
-        }
-
-        // Normalize HRTFs (now uses freq_size bins)
-        hrtf::normalize_hrtf_gains(
-            &mut self.hrtf_filters_freq,
-            &self.lfe_channels,
-            self.freq_size,
-            self.input_channels,
-        );
-
-        // Compute and apply diffuse-field equalization if enabled
-        if self.diffuse_field_eq {
-            self.diffuse_field_eq_filter = Some(filter::compute_diffuse_field_eq(
-                sofa,
-                self.fft_size,
-                self.sample_rate,
-                &self.fft_r2c,
-            )?);
-        }
-
-        Ok(())
-    }
-
     fn drain_output_accumulator(&mut self, output: &mut [f32], output_pos: usize) -> usize {
         let frames_available = (output.len() - output_pos) / 2;
         let frames_to_drain = self.output_accumulator_fill.min(frames_available);
@@ -477,6 +488,11 @@ impl BinauralDecoderPlugin {
         let input_needed = self.hop_size * self.input_channels;
         self.temp_input_block[..input_needed].copy_from_slice(&self.input_buffer[..input_needed]);
 
+        // Access filters via read lock
+        let state_guard = self.state.read();
+        let filters = &state_guard.hrtf_filters_freq;
+        let df_eq = &state_guard.diffuse_field_eq_filter;
+
         let input_block = std::mem::take(&mut self.temp_input_block);
         let mut output_block = std::mem::take(&mut self.temp_output_block);
         let mut time_buffer = std::mem::take(&mut self.temp_time_buffer);
@@ -486,8 +502,7 @@ impl BinauralDecoderPlugin {
         freq_buffer.fill(Complex::new(0.0, 0.0));
 
         if self.enable_optimization {
-            // Sum-Before-IFFT optimization: accumulate all channels in frequency domain
-            // then do a single IFFT per ear
+            // Sum-Before-IFFT optimization
             let mut sum_left = vec![Complex::new(0.0, 0.0); self.freq_size];
             let mut sum_right = vec![Complex::new(0.0, 0.0); self.freq_size];
 
@@ -496,39 +511,38 @@ impl BinauralDecoderPlugin {
                     continue;
                 }
 
-                // Extract channel data into time buffer (zero-padded)
+                // Extract channel data
                 for i in 0..self.hop_size {
                     time_buffer[i] = input_block[i * self.input_channels + ch];
                 }
                 time_buffer[self.hop_size..self.fft_size].fill(0.0);
 
-                // Real-to-Complex FFT: N real -> N/2+1 complex
+                // Real-to-Complex FFT
                 self.fft_r2c
                     .process_with_scratch(&mut time_buffer, &mut freq_buffer, &mut scratch)
                     .expect("FFT forward failed");
 
-                // Accumulate weighted by HRTF (freq_size bins per ear)
-                let hrtf = &self.hrtf_filters_freq[ch];
+                // Accumulate weighted by HRTF
+                let hrtf = &filters[ch];
                 complex_mul_add_simd(&mut sum_left, &freq_buffer, &hrtf[0..self.freq_size]);
                 complex_mul_add_simd(&mut sum_right, &freq_buffer, &hrtf[self.freq_size..]);
             }
 
             // Apply diffuse-field EQ if enabled
-            if let Some(ref df_eq) = self.diffuse_field_eq_filter {
+            if let Some(df_eq) = df_eq {
                 for (k, val) in sum_left.iter_mut().enumerate().take(self.freq_size) {
                     *val *= df_eq[0][k];
                     sum_right[k] *= df_eq[1][k];
                 }
             }
 
-            // Enforce real FFT constraints: DC and Nyquist bins must be real
-            // (imaginary part must be zero for valid inverse transform)
+            // Enforce real FFT constraints
             sum_left[0].im = 0.0;
             sum_right[0].im = 0.0;
             sum_left[self.freq_size - 1].im = 0.0;
             sum_right[self.freq_size - 1].im = 0.0;
 
-            // Inverse FFT for left ear: N/2+1 complex -> N real
+            // Inverse FFT for left ear
             let mut left_output = vec![0.0f32; self.fft_size];
             self.fft_c2r
                 .process_with_scratch(&mut sum_left, &mut left_output, &mut scratch)
@@ -540,16 +554,15 @@ impl BinauralDecoderPlugin {
                 .process_with_scratch(&mut sum_right, &mut right_output, &mut scratch)
                 .expect("FFT inverse failed");
 
-            // Real FFT normalization: output is scaled by fft_size
+            // Normalization
             let scale = 1.0 / self.fft_size as f32;
             for i in 0..self.fft_size {
                 output_block[i * 2] = left_output[i] * scale;
                 output_block[i * 2 + 1] = right_output[i] * scale;
             }
         } else {
-            // Non-optimized path: process each channel separately
+            // Non-optimized path
             output_block.fill(0.0);
-
             let mut channel_output = vec![0.0f32; self.fft_size];
 
             for ch in 0..self.input_channels {
@@ -573,16 +586,15 @@ impl BinauralDecoderPlugin {
                 complex_mul_simd(
                     &mut left_freq,
                     &freq_buffer,
-                    &self.hrtf_filters_freq[ch][0..self.freq_size],
+                    &filters[ch][0..self.freq_size],
                 );
 
-                if let Some(ref df_eq) = self.diffuse_field_eq_filter {
+                if let Some(df_eq) = df_eq {
                     for (k, val) in left_freq.iter_mut().enumerate().take(self.freq_size) {
                         *val *= df_eq[0][k];
                     }
                 }
 
-                // Enforce real FFT constraints
                 left_freq[0].im = 0.0;
                 left_freq[self.freq_size - 1].im = 0.0;
 
@@ -600,16 +612,15 @@ impl BinauralDecoderPlugin {
                 complex_mul_simd(
                     &mut right_freq,
                     &freq_buffer,
-                    &self.hrtf_filters_freq[ch][self.freq_size..],
+                    &filters[ch][self.freq_size..],
                 );
 
-                if let Some(ref df_eq) = self.diffuse_field_eq_filter {
+                if let Some(df_eq) = df_eq {
                     for (k, val) in right_freq.iter_mut().enumerate().take(self.freq_size) {
                         *val *= df_eq[1][k];
                     }
                 }
 
-                // Enforce real FFT constraints
                 right_freq[0].im = 0.0;
                 right_freq[self.freq_size - 1].im = 0.0;
 
@@ -622,6 +633,9 @@ impl BinauralDecoderPlugin {
                 }
             }
         }
+
+        // Release lock
+        drop(state_guard);
 
         self.temp_input_block = input_block;
         self.temp_output_block = output_block;
@@ -675,8 +689,9 @@ impl BinauralDecoderPlugin {
             }
         }
 
-        if self.externalization > 0.01 {
-            self.apply_externalization();
+        let externalization = self.externalization.next();
+        if externalization > 0.01 {
+            self.apply_externalization(externalization);
         }
 
         let buffer_size = self.output_accumulator[0].len();
@@ -768,14 +783,14 @@ impl BinauralDecoderPlugin {
         self.cached_reflections.sort_by_key(|r| r.delay_samples);
     }
 
-    fn apply_externalization(&mut self) {
+    fn apply_externalization(&mut self, externalization: f32) {
         if self.cached_reflections.is_empty() {
             self.calculate_reflections();
         }
 
         for reflection in &self.cached_reflections {
             let delay_samples = reflection.delay_samples;
-            let reflection_gain = reflection.gain * self.externalization;
+            let reflection_gain = reflection.gain * externalization;
 
             if delay_samples < self.fft_size && delay_samples > 0 {
                 for i in delay_samples..self.fft_size {
@@ -791,8 +806,8 @@ impl BinauralDecoderPlugin {
             }
         }
 
-        if self.externalization > 0.5 {
-            let diffuse_gain = (self.externalization - 0.5) * 0.3;
+        if externalization > 0.5 {
+            let diffuse_gain = (externalization - 0.5) * 0.3;
             let diffuse_delay = (self.sample_rate as f32 * 0.001) as usize;
 
             for i in diffuse_delay..self.fft_size {
@@ -810,10 +825,10 @@ impl Plugin for BinauralDecoderPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo {
             name: "Binaural Decoder".to_string(),
-            version: "1.1.0".to_string(),
+            version: "1.2.0".to_string(),
             author: "AutoEQ".to_string(),
             description: format!(
-                "Converts {}-channel audio to binaural stereo using HRTFs from a file",
+                "Converts {}-channel audio to binaural stereo using HRTFs from a file (Async)",
                 self.input_channels
             ),
         }
@@ -850,7 +865,7 @@ impl Plugin for BinauralDecoderPlugin {
             if let Some(v) = value.as_float()
                 && (0.0..=1.0).contains(&v)
             {
-                self.externalization = v;
+                self.externalization.set_target(v);
                 return Ok(());
             }
         } else if id == self.param_near_field_strength {
@@ -858,29 +873,16 @@ impl Plugin for BinauralDecoderPlugin {
                 && (0.0..=1.0).contains(&v)
             {
                 self.near_field_strength = v;
-                if self.hrtf_data.is_some() {
-                    self.prepare_hrtf_filters()
-                        .map_err(|e| format!("Failed to update filters: {}", e))?;
-                }
+                // Trigger async update
+                self.update_filters(false);
                 return Ok(());
             }
         } else if id == self.param_diffuse_field_eq
             && let Some(v) = value.as_bool()
         {
             self.diffuse_field_eq = v;
-            if v && self.hrtf_data.is_some() {
-                self.diffuse_field_eq_filter = Some(
-                    filter::compute_diffuse_field_eq(
-                        self.hrtf_data.as_ref().unwrap(),
-                        self.fft_size,
-                        self.sample_rate,
-                        &self.fft_r2c,
-                    )
-                    .map_err(|e| format!("Failed to compute diffuse-field EQ: {}", e))?,
-                );
-            } else if !v {
-                self.diffuse_field_eq_filter = None;
-            }
+            // Trigger async update
+            self.update_filters(false);
             return Ok(());
         }
         Err(format!("Unknown parameter or invalid value: {}", id))
@@ -890,7 +892,7 @@ impl Plugin for BinauralDecoderPlugin {
         if id == &self.param_enable_optimization {
             Some(ParameterValue::Bool(self.enable_optimization))
         } else if id == &self.param_externalization {
-            Some(ParameterValue::Float(self.externalization))
+            Some(ParameterValue::Float(self.externalization.target()))
         } else if id == &self.param_near_field_strength {
             Some(ParameterValue::Float(self.near_field_strength))
         } else if id == &self.param_diffuse_field_eq {
@@ -902,6 +904,7 @@ impl Plugin for BinauralDecoderPlugin {
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
+        self.externalization.set_time(50.0, sample_rate);
 
         let (filter, gain) = filter::compute_lfe_filter(
             self.fft_size,
@@ -960,7 +963,13 @@ impl Plugin for BinauralDecoderPlugin {
 
         output.fill(0.0);
 
-        if self.hrtf_data.is_none() {
+        // Check if HRTF data is loaded (via read lock on state)
+        let has_data = {
+            let lock = self.state.read();
+            lock.hrtf_data.is_some()
+        };
+
+        if !has_data {
             for frame in 0..context.num_frames {
                 let (mut left, mut right) = if self.input_channels == 1 {
                     let sample = input[frame];
@@ -1062,7 +1071,7 @@ mod tests {
         assert_eq!(plugin.fft_size, 4096);
         assert_eq!(plugin.hop_size, 2048);
         assert_eq!(plugin.enable_optimization, true);
-        assert_eq!(plugin.externalization, 0.0);
+        assert_eq!(plugin.externalization.target(), 0.0);
         assert_eq!(plugin.near_field_strength, 0.0);
     }
 }

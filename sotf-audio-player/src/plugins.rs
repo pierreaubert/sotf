@@ -22,6 +22,7 @@ pub enum PluginType {
     ChannelMuteSolo,
     Matrix,
     XTC,
+    Denoiser,
 }
 
 impl PluginType {
@@ -44,6 +45,7 @@ impl PluginType {
             Self::ChannelMuteSolo => "Channel Mute/Solo",
             Self::Matrix => "Matrix Mixer",
             Self::XTC => "Crosstalk Cancellation",
+            Self::Denoiser => "Denoiser",
         }
     }
 
@@ -66,6 +68,7 @@ impl PluginType {
             Self::ChannelMuteSolo => "Mute or solo individual channels",
             Self::Matrix => "Channel routing and mixing matrix",
             Self::XTC => "Crosstalk cancellation for speaker playback",
+            Self::Denoiser => "Wiener filter denoiser with MCRA noise estimation",
         }
     }
 
@@ -88,6 +91,7 @@ impl PluginType {
             Self::ChannelMuteSolo,
             Self::Matrix,
             Self::XTC,
+            Self::Denoiser,
         ]
     }
 
@@ -560,6 +564,26 @@ fn default_xtc_head_shadow_slope() -> f64 {
     6.0
 }
 
+// Denoiser defaults
+fn default_denoiser_reduction_db() -> f64 {
+    12.0
+}
+fn default_denoiser_floor_db() -> f64 {
+    -30.0
+}
+fn default_denoiser_smoothing() -> f64 {
+    0.8
+}
+fn default_denoiser_attack_ms() -> f64 {
+    5.0
+}
+fn default_denoiser_release_ms() -> f64 {
+    50.0
+}
+fn default_denoiser_low_latency() -> bool {
+    false
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PluginSettings {
     EQ {
@@ -817,6 +841,20 @@ pub enum PluginSettings {
         #[serde(default = "default_xtc_head_shadow_slope")]
         head_shadow_slope_db_per_octave: f64,
     },
+    Denoiser {
+        #[serde(default = "default_denoiser_reduction_db")]
+        reduction_db: f64,
+        #[serde(default = "default_denoiser_floor_db")]
+        floor_db: f64,
+        #[serde(default = "default_denoiser_smoothing")]
+        smoothing: f64,
+        #[serde(default = "default_denoiser_attack_ms")]
+        attack_ms: f64,
+        #[serde(default = "default_denoiser_release_ms")]
+        release_ms: f64,
+        #[serde(default = "default_denoiser_low_latency")]
+        low_latency: bool,
+    },
 }
 
 impl PluginSettings {
@@ -839,6 +877,7 @@ impl PluginSettings {
             Self::ChannelMuteSolo { .. } => PluginType::ChannelMuteSolo,
             Self::Matrix { .. } => PluginType::Matrix,
             Self::XTC { .. } => PluginType::XTC,
+            Self::Denoiser { .. } => PluginType::Denoiser,
         }
     }
 
@@ -1204,6 +1243,24 @@ impl PluginSettings {
                     "head_shadow_slope_db_per_octave": head_shadow_slope_db_per_octave,
                 }),
             ),
+            Self::Denoiser {
+                reduction_db,
+                floor_db,
+                smoothing,
+                attack_ms,
+                release_ms,
+                low_latency,
+            } => PluginConfig::new(
+                "denoiser",
+                json!({
+                    "reduction_db": reduction_db,
+                    "floor_db": floor_db,
+                    "smoothing": smoothing,
+                    "attack_ms": attack_ms,
+                    "release_ms": release_ms,
+                    "low_latency": low_latency,
+                }),
+            ),
         }
     }
 
@@ -1387,6 +1444,14 @@ impl PluginSettings {
                 beta_high_freq_boost: default_xtc_beta_high_freq_boost(),
                 head_shadow_cutoff_hz: default_xtc_head_shadow_cutoff_hz(),
                 head_shadow_slope_db_per_octave: default_xtc_head_shadow_slope(),
+            },
+            PluginType::Denoiser => Self::Denoiser {
+                reduction_db: default_denoiser_reduction_db(),
+                floor_db: default_denoiser_floor_db(),
+                smoothing: default_denoiser_smoothing(),
+                attack_ms: default_denoiser_attack_ms(),
+                release_ms: default_denoiser_release_ms(),
+                low_latency: default_denoiser_low_latency(),
             },
         }
     }

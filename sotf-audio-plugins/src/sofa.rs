@@ -105,6 +105,7 @@ pub struct HrtfData {
 }
 
 /// SOFA file reader for HRTF data
+#[derive(Clone)]
 pub struct SofaFile {
     /// Sample rate in Hz
     pub sample_rate: f32,

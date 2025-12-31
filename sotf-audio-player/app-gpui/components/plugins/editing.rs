@@ -967,6 +967,48 @@ impl App {
                         _ => false,
                     }
                 }
+                PluginSettings::Denoiser {
+                    reduction_db,
+                    floor_db,
+                    smoothing,
+                    attack_ms,
+                    release_ms,
+                    low_latency,
+                } => {
+                    use sotf_audio_player::param_specs::denoiser::*;
+                    match param_idx {
+                        0 => {
+                            *reduction_db = (*reduction_db + delta)
+                                .clamp(REDUCTION_DB_MIN as f64, REDUCTION_DB_MAX as f64);
+                            true
+                        }
+                        1 => {
+                            *floor_db =
+                                (*floor_db + delta).clamp(FLOOR_DB_MIN as f64, FLOOR_DB_MAX as f64);
+                            true
+                        }
+                        2 => {
+                            *smoothing = (*smoothing + delta * 0.05)
+                                .clamp(SMOOTHING_MIN as f64, SMOOTHING_MAX as f64);
+                            true
+                        }
+                        3 => {
+                            *attack_ms = (*attack_ms + delta)
+                                .clamp(ATTACK_MS_MIN as f64, ATTACK_MS_MAX as f64);
+                            true
+                        }
+                        4 => {
+                            *release_ms = (*release_ms + delta * 5.0)
+                                .clamp(RELEASE_MS_MIN as f64, RELEASE_MS_MAX as f64);
+                            true
+                        }
+                        5 => {
+                            *low_latency = !*low_latency;
+                            true
+                        }
+                        _ => false,
+                    }
+                }
             }
         } else {
             false
@@ -2189,5 +2231,6 @@ pub fn get_param_count(settings: &PluginSettings) -> usize {
         PluginSettings::MultibandCompressor { .. } => 13, // num_bands, crossover_preset, crossover_freq_1-4, threshold, ratio, attack, release, knee, mix, link_channels
         PluginSettings::MultibandExpander { .. } => 16, // num_bands, crossover_preset, crossover_freq_1-4, threshold, ratio, attack, release, range, knee, hysteresis, hold, mix, link_channels
         PluginSettings::XTC { .. } => 8, // distance, angle, head_radius, beta_base, beta_low_freq_boost, beta_high_freq_boost, head_shadow_cutoff, head_shadow_slope
+        PluginSettings::Denoiser { .. } => 6, // reduction_db, floor_db, smoothing, attack_ms, release_ms, low_latency
     }
 }

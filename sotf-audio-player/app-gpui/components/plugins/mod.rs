@@ -528,6 +528,10 @@ pub fn render_plugin_content(
             },
             theme,
         )
-        .into_any_element()
+        .into_any_element(),
+        PluginSettings::Denoiser { .. } => {
+            // TODO: Add proper Denoiser UI rendering
+            gpui::div().into_any_element()
+        }
     }
 }

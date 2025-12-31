@@ -5,11 +5,13 @@
 use super::param_specs::convolution::*;
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use super::smoothing::Smoother;
 use rustfft::FftPlanner;
 use rustfft::num_complex::Complex;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
+use parking_lot::RwLock;
 use symphonia::core::audio::{AudioBufferRef, Signal};
 use symphonia::core::codecs::{Decoder, DecoderOptions};
 use symphonia::core::conv::FromSample;
@@ -47,18 +49,20 @@ pub struct ConvolutionPluginParams {
 // Plugin Implementation
 // ============================================================================
 
+struct ConvolutionState {
+    ir_fft: Vec<Vec<Complex<f32>>>, // [channel][bin]
+    ir_channels: usize,
+    fft_size: usize,
+    hop_size: usize,
+    fft_forward: Arc<dyn rustfft::Fft<f32>>,
+    fft_inverse: Arc<dyn rustfft::Fft<f32>>,
+}
+
 /// FFT-based convolution plugin for impulse response processing
 ///
 /// Uses overlap-add FFT convolution for efficient processing of long IRs.
 /// Supports mono and stereo impulse responses.
-///
-/// # Example
-/// ```ignore
-/// use sotf_plugins::ConvolutionPlugin;
-///
-/// let mut conv = ConvolutionPlugin::new(2, 44100);
-/// conv.load_ir("reverb.wav").unwrap();
-/// ```
+/// Async IR loading prevents audio dropouts.
 pub struct ConvolutionPlugin {
     channels: usize,
     sample_rate: u32,
@@ -70,31 +74,23 @@ pub struct ConvolutionPlugin {
     param_gain_db: ParameterId,
 
     ir_file: String,
-    mix: f32,
-    gain_db: f32,
-    gain_linear: f32,
+    
+    // Smoothed parameters
+    mix: Smoother,
+    gain_db: f32, // Stored for get_parameter
+    gain_linear: Smoother,
 
-    // IR data
-    ir_channels: usize,
-    ir_samples: Vec<Vec<f32>>, // [channel][sample]
-    ir_length: usize,
-
-    // FFT processing
-    fft_size: usize,
-    hop_size: usize,
-    fft_forward: Arc<dyn rustfft::Fft<f32>>,
-    fft_inverse: Arc<dyn rustfft::Fft<f32>>,
-
-    // IR in frequency domain (pre-transformed)
-    ir_fft: Vec<Vec<Complex<f32>>>, // [channel][bin]
+    // Shared state (swapped when new IR is loaded)
+    state: Arc<RwLock<Option<ConvolutionState>>>,
 
     // Overlap-add buffers (per channel)
-    input_buffer: Vec<Vec<f32>>,       // Accumulate input samples
-    input_buffer_fill: Vec<usize>,     // How many samples in input buffer
-    output_accumulator: Vec<Vec<f32>>, // Overlap-add accumulator
-    output_accumulator_fill: usize,    // Valid samples in output accumulator
+    // These need to be resized if FFT size changes
+    input_buffer: Vec<Vec<f32>>,       
+    input_buffer_fill: Vec<usize>,     
+    output_accumulator: Vec<Vec<f32>>, 
+    output_accumulator_fill: usize,    
 
-    // Processing buffers (reused to avoid allocations)
+    // Processing buffers (reused to avoid allocations, resized as needed)
     fft_buffer: Vec<Complex<f32>>,
     conv_result: Vec<Complex<f32>>,
 }
@@ -102,14 +98,9 @@ pub struct ConvolutionPlugin {
 impl ConvolutionPlugin {
     /// Create a new convolution plugin
     pub fn new(channels: usize, sample_rate: u32) -> Self {
-        // Use a reasonable default FFT size (will be adjusted when IR is loaded)
+        // Initial dummy state
         let fft_size = 2048;
-        let hop_size = fft_size / 2;
-
-        let mut planner = FftPlanner::<f32>::new();
-        let fft_forward = planner.plan_fft_forward(fft_size);
-        let fft_inverse = planner.plan_fft_inverse(fft_size);
-
+        
         Self {
             channels,
             sample_rate,
@@ -119,21 +110,13 @@ impl ConvolutionPlugin {
             param_gain_db: ParameterId::from("gain_db"),
 
             ir_file: String::new(),
-            mix: 1.0,
+            mix: Smoother::new(1.0, 20.0, sample_rate),
             gain_db: 0.0,
-            gain_linear: 1.0,
+            gain_linear: Smoother::new(1.0, 20.0, sample_rate),
 
-            ir_channels: 0,
-            ir_samples: Vec::new(),
-            ir_length: 0,
+            state: Arc::new(RwLock::new(None)),
 
-            fft_size,
-            hop_size,
-            fft_forward,
-            fft_inverse,
-
-            ir_fft: Vec::new(),
-
+            // Initialize buffers with default size, will be resized on load
             input_buffer: vec![vec![0.0; fft_size]; channels],
             input_buffer_fill: vec![0; channels],
             output_accumulator: vec![vec![0.0; fft_size * 2]; channels],
@@ -155,75 +138,85 @@ impl ConvolutionPlugin {
         plugin.set_gain_db(params.gain_db);
 
         if !params.ir_file.is_empty() {
-            plugin.load_ir(&params.ir_file)?;
+            // Synchronous load for initialization
+            plugin.load_ir(&params.ir_file, true)?;
         }
 
         Ok(plugin)
     }
 
     /// Load impulse response from a WAV file
-    pub fn load_ir(&mut self, path: &str) -> Result<(), String> {
+    /// sync: true for blocking load (init), false for background load
+    pub fn load_ir(&mut self, path: &str, sync: bool) -> Result<(), String> {
         if path.is_empty() {
-            // Clear IR
+            let mut lock = self.state.write();
+            *lock = None;
             self.ir_file = String::new();
-            self.ir_samples.clear();
-            self.ir_fft.clear();
-            self.ir_length = 0;
-            self.ir_channels = 0;
             return Ok(());
         }
 
-        // Load IR using Symphonia
-        let ir_data = Self::load_wav_file(path)?;
-
         self.ir_file = path.to_string();
-        self.ir_channels = ir_data.len();
-        self.ir_length = if !ir_data.is_empty() {
-            ir_data[0].len()
-        } else {
-            0
-        };
-        self.ir_samples = ir_data;
+        let path_owned = path.to_string();
+        let state_arc = self.state.clone();
 
-        // Determine optimal FFT size (next power of 2 >= IR length + hop size)
-        let required_size = self.ir_length + self.hop_size;
-        self.fft_size = required_size.next_power_of_two().max(2048);
-        self.hop_size = self.fft_size / 2;
+        let task = move || -> Result<(), String> {
+            // Load IR using Symphonia
+            let ir_samples = Self::load_wav_file(&path_owned)?;
+            let ir_channels = ir_samples.len();
+            let ir_length = if !ir_samples.is_empty() { ir_samples[0].len() } else { 0 };
 
-        // Rebuild FFT planners
-        let mut planner = FftPlanner::<f32>::new();
-        self.fft_forward = planner.plan_fft_forward(self.fft_size);
-        self.fft_inverse = planner.plan_fft_inverse(self.fft_size);
-
-        // Pre-transform IR to frequency domain
-        self.ir_fft = Vec::with_capacity(self.ir_channels);
-        for ch in 0..self.ir_channels {
-            let mut fft_buffer = vec![Complex::new(0.0, 0.0); self.fft_size];
-
-            // Copy IR samples and zero-pad
-            for (i, &sample) in self.ir_samples[ch].iter().enumerate() {
-                fft_buffer[i] = Complex::new(sample, 0.0);
+            if ir_length == 0 {
+                return Ok(());
             }
 
-            // Transform to frequency domain
-            self.fft_forward.process(&mut fft_buffer);
-            self.ir_fft.push(fft_buffer);
+            // Determine optimal FFT size
+            let hop_size = 1024; // Base hop size
+            let required_size = ir_length + hop_size;
+            let fft_size = required_size.next_power_of_two().max(2048);
+            let effective_hop = fft_size / 2; 
+
+            // Rebuild FFT planners
+            let mut planner = FftPlanner::<f32>::new();
+            let fft_forward = planner.plan_fft_forward(fft_size);
+            let fft_inverse = planner.plan_fft_inverse(fft_size);
+
+            // Pre-transform IR
+            let mut ir_fft = Vec::with_capacity(ir_channels);
+            for ch in 0..ir_channels {
+                let mut fft_buffer = vec![Complex::new(0.0, 0.0); fft_size];
+                for (i, &sample) in ir_samples[ch].iter().enumerate() {
+                    fft_buffer[i] = Complex::new(sample, 0.0);
+                }
+                fft_forward.process(&mut fft_buffer);
+                ir_fft.push(fft_buffer);
+            }
+
+            let new_state = ConvolutionState {
+                ir_fft,
+                ir_channels,
+                fft_size,
+                hop_size: effective_hop,
+                fft_forward,
+                fft_inverse,
+            };
+
+            {
+                let mut lock = state_arc.write();
+                *lock = Some(new_state);
+            }
+            
+            Ok(())
+        };
+
+        if sync {
+            task()?;
+        } else {
+            rayon::spawn(move || {
+                if let Err(e) = task() {
+                    log::error!("[Convolution] Async load failed: {}", e);
+                }
+            });
         }
-
-        // Resize buffers
-        self.input_buffer = vec![vec![0.0; self.fft_size]; self.channels];
-        self.input_buffer_fill = vec![0; self.channels];
-        self.output_accumulator = vec![vec![0.0; self.fft_size * 2]; self.channels];
-        self.output_accumulator_fill = 0;
-        self.fft_buffer = vec![Complex::new(0.0, 0.0); self.fft_size];
-        self.conv_result = vec![Complex::new(0.0, 0.0); self.fft_size];
-
-        log::info!(
-            "[Convolution] Loaded IR: {} channels, {} samples, FFT size: {}",
-            self.ir_channels,
-            self.ir_length,
-            self.fft_size
-        );
 
         Ok(())
     }
@@ -239,7 +232,6 @@ impl ConvolutionPlugin {
         let mss = MediaSourceStream::new(Box::new(file), Default::default());
         let format_opts = FormatOptions::default();
 
-        // Use symphonia_format_riff for WAV file support
         let probe_result = symphonia_format_riff::WavReader::try_new(mss, &format_opts)
             .map_err(|e| format!("Failed to probe IR file: {}", e))?;
 
@@ -254,7 +246,6 @@ impl ConvolutionPlugin {
             .ok_or("No channel info in IR file")?
             .count();
 
-        // Create decoder - use PCM decoder for WAV files
         let codec_params = track.codec_params.clone();
         let decoder_opts = DecoderOptions::default();
 
@@ -265,7 +256,6 @@ impl ConvolutionPlugin {
 
         let mut samples: Vec<Vec<f32>> = vec![Vec::new(); channels];
 
-        // Decode all packets
         loop {
             let packet = match format.next_packet() {
                 Ok(packet) => packet,
@@ -275,7 +265,6 @@ impl ConvolutionPlugin {
                     break;
                 }
                 Err(SymphoniaError::ResetRequired) => {
-                    // End of stream
                     break;
                 }
                 Err(e) => return Err(format!("Error reading packet: {}", e)),
@@ -285,7 +274,6 @@ impl ConvolutionPlugin {
                 .decode(&packet)
                 .map_err(|e| format!("Decode error: {}", e))?;
 
-            // Convert to f32 samples
             let duration = decoded.frames();
 
             for (ch, sample_vec) in samples.iter_mut().enumerate().take(channels) {
@@ -312,10 +300,8 @@ impl ConvolutionPlugin {
                     }
                     AudioBufferRef::S24(buf) => {
                         for i in 0..duration {
-                            // S24 samples need to be converted to i32 first
                             let sample = buf.chan(ch)[i];
-                            // Convert i24 to f32 by scaling
-                            let sample_f32 = sample.inner() as f32 / 8388608.0; // 2^23
+                            let sample_f32 = sample.inner() as f32 / 8388608.0; 
                             sample_vec.push(sample_f32);
                         }
                     }
@@ -338,95 +324,109 @@ impl ConvolutionPlugin {
 
     /// Set mix (dry/wet) parameter
     pub fn set_mix(&mut self, mix: f32) {
-        self.mix = mix.clamp(0.0, 1.0);
+        self.mix.set_target(mix.clamp(0.0, 1.0));
     }
 
     /// Set gain in dB
     pub fn set_gain_db(&mut self, gain_db: f32) {
         self.gain_db = gain_db;
-        self.gain_linear = 10.0_f32.powf(gain_db / 20.0);
+        self.gain_linear.set_target(10.0_f32.powf(gain_db / 20.0));
     }
 
-    /// Process one channel with convolution
-    fn process_channel(
-        &mut self,
+    /// Ensure buffers are sized correctly for current FFT size
+    fn resize_buffers(&mut self, fft_size: usize) {
+        if self.input_buffer[0].len() != fft_size {
+            for ch in 0..self.channels {
+                self.input_buffer[ch].resize(fft_size, 0.0);
+                // Important: clear fill count if resized to avoid invalid indices
+                self.input_buffer_fill[ch] = 0; 
+                self.output_accumulator[ch].resize(fft_size * 2, 0.0);
+                self.output_accumulator[ch].fill(0.0); // Safe clear
+            }
+            self.output_accumulator_fill = 0;
+            self.fft_buffer.resize(fft_size, Complex::new(0.0, 0.0));
+            self.conv_result.resize(fft_size, Complex::new(0.0, 0.0));
+        }
+    }
+
+    /// Process one channel with convolution (Decoupled from self to allow shared state usage)
+    #[allow(clippy::too_many_arguments)]
+    fn process_channel_internal(
         channel: usize,
         input: &[f32],
         output: &mut [f32],
-    ) -> Result<(), String> {
-        if self.ir_length == 0 {
-            // No IR loaded, passthrough
-            output.copy_from_slice(input);
-            return Ok(());
-        }
-
+        state: &ConvolutionState,
+        input_buffer: &mut [f32],
+        input_buffer_fill: &mut usize,
+        output_accumulator: &mut [f32],
+        output_accumulator_fill: &mut usize,
+        fft_buffer: &mut [Complex<f32>],
+        conv_result: &mut [Complex<f32>],
+        dry_gain: f32,
+        wet_gain: f32,
+    ) {
         let num_frames = input.len();
         let mut input_pos = 0;
         let mut output_pos = 0;
 
-        // Determine which IR channel to use
-        let ir_channel = if self.ir_channels == 1 {
-            0 // Mono IR: use for all channels
+        let ir_channel = if state.ir_channels == 1 {
+            0 
         } else {
-            channel.min(self.ir_channels - 1) // Stereo IR: match channels
+            channel.min(state.ir_channels - 1)
         };
 
         while input_pos < num_frames {
             // 1. Fill input buffer
-            let space_in_buffer = self.fft_size - self.input_buffer_fill[channel];
+            let space_in_buffer = state.fft_size - *input_buffer_fill;
             let samples_available = num_frames - input_pos;
             let to_copy = space_in_buffer.min(samples_available);
 
-            self.input_buffer[channel]
-                [self.input_buffer_fill[channel]..self.input_buffer_fill[channel] + to_copy]
+            input_buffer
+                [*input_buffer_fill..*input_buffer_fill + to_copy]
                 .copy_from_slice(&input[input_pos..input_pos + to_copy]);
 
-            self.input_buffer_fill[channel] += to_copy;
+            *input_buffer_fill += to_copy;
             input_pos += to_copy;
 
             // 2. Process block when buffer is full
-            if self.input_buffer_fill[channel] >= self.hop_size {
+            if *input_buffer_fill >= state.hop_size {
                 // Copy to FFT buffer and zero-pad
-                self.fft_buffer.fill(Complex::new(0.0, 0.0));
-                for i in 0..self.hop_size {
-                    self.fft_buffer[i] = Complex::new(self.input_buffer[channel][i], 0.0);
+                fft_buffer.fill(Complex::new(0.0, 0.0));
+                for i in 0..state.hop_size {
+                    fft_buffer[i] = Complex::new(input_buffer[i], 0.0);
                 }
 
                 // Forward FFT
-                self.fft_forward.process(&mut self.fft_buffer);
+                state.fft_forward.process(fft_buffer);
 
-                // Complex multiply with IR in frequency domain
-                for i in 0..self.fft_size {
-                    self.conv_result[i] = self.fft_buffer[i] * self.ir_fft[ir_channel][i];
+                // Complex multiply with IR
+                for i in 0..state.fft_size {
+                    conv_result[i] = fft_buffer[i] * state.ir_fft[ir_channel][i];
                 }
 
                 // Inverse FFT
-                self.fft_inverse.process(&mut self.conv_result);
+                state.fft_inverse.process(conv_result);
 
-                // Scale by 1/N (IFFT normalization)
-                let scale = 1.0 / self.fft_size as f32;
+                // Scale by 1/N
+                let scale = 1.0 / state.fft_size as f32;
 
-                // Overlap-add into output accumulator
-                for i in 0..self.fft_size {
-                    self.output_accumulator[channel][i] += self.conv_result[i].re * scale;
+                // Overlap-add
+                for i in 0..state.fft_size {
+                    output_accumulator[i] += conv_result[i].re * scale;
                 }
 
                 // Shift input buffer
-                self.input_buffer[channel].copy_within(self.hop_size..self.fft_size, 0);
-                self.input_buffer[channel][self.hop_size..].fill(0.0);
-                self.input_buffer_fill[channel] -= self.hop_size;
+                input_buffer.copy_within(state.hop_size..state.fft_size, 0);
+                input_buffer[state.hop_size..].fill(0.0);
+                *input_buffer_fill -= state.hop_size;
 
                 // Track output accumulator fill
-                self.output_accumulator_fill = self.output_accumulator_fill.max(self.fft_size);
+                *output_accumulator_fill = (*output_accumulator_fill).max(state.fft_size);
             }
 
             // 3. Drain output accumulator
-            while output_pos < num_frames && self.output_accumulator_fill > 0 {
-                let to_drain = (num_frames - output_pos).min(self.output_accumulator_fill);
-
-                // Mix dry/wet
-                let wet_gain = self.mix * self.gain_linear;
-                let dry_gain = 1.0 - self.mix;
+            while output_pos < num_frames && *output_accumulator_fill > 0 {
+                let to_drain = (num_frames - output_pos).min(*output_accumulator_fill);
 
                 for i in 0..to_drain {
                     let dry = if output_pos + i < input.len() {
@@ -434,19 +434,17 @@ impl ConvolutionPlugin {
                     } else {
                         0.0
                     };
-                    let wet = self.output_accumulator[channel][i];
+                    let wet = output_accumulator[i];
                     output[output_pos + i] = dry * dry_gain + wet * wet_gain;
                 }
 
                 // Shift accumulator
-                self.output_accumulator[channel].copy_within(to_drain..self.fft_size * 2, 0);
-                self.output_accumulator[channel][self.fft_size * 2 - to_drain..].fill(0.0);
-                self.output_accumulator_fill -= to_drain;
+                output_accumulator.copy_within(to_drain..state.fft_size * 2, 0);
+                output_accumulator[state.fft_size * 2 - to_drain..].fill(0.0);
+                *output_accumulator_fill -= to_drain;
                 output_pos += to_drain;
             }
         }
-
-        Ok(())
     }
 }
 
@@ -454,9 +452,9 @@ impl Plugin for ConvolutionPlugin {
     fn info(&self) -> PluginInfo {
         PluginInfo {
             name: "Convolution".to_string(),
-            version: "1.0.0".to_string(),
+            version: "1.1.0".to_string(),
             author: "SOTF".to_string(),
-            description: "FFT-based convolution for impulse response processing".to_string(),
+            description: "FFT-based convolution (Async loading)".to_string(),
         }
     }
 
@@ -470,16 +468,18 @@ impl Plugin for ConvolutionPlugin {
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
+        self.mix.set_time(20.0, sample_rate);
+        self.gain_linear.set_time(20.0, sample_rate);
+        
         // Reload IR if it was previously loaded (sample rate changed)
         if !self.ir_file.is_empty() {
             let path = self.ir_file.clone();
-            self.load_ir(&path)?;
+            self.load_ir(&path, true)?;
         }
         Ok(())
     }
 
     fn reset(&mut self) {
-        // Clear all buffers
         for ch in 0..self.channels {
             self.input_buffer[ch].fill(0.0);
             self.input_buffer_fill[ch] = 0;
@@ -519,7 +519,7 @@ impl Plugin for ConvolutionPlugin {
 
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
         if id == &self.param_mix {
-            Some(ParameterValue::Float(self.mix))
+            Some(ParameterValue::Float(self.mix.target()))
         } else if id == &self.param_gain_db {
             Some(ParameterValue::Float(self.gain_db))
         } else {
@@ -545,25 +545,74 @@ impl Plugin for ConvolutionPlugin {
             ));
         }
 
-        let num_frames = input.len() / self.channels;
+        // Tick smoothers
+        let mix = self.mix.next();
+        let gain = self.gain_linear.next();
+        let wet_gain = mix * gain;
+        let dry_gain = 1.0 - mix;
 
-        // Process each channel
-        for ch in 0..self.channels {
-            // Extract channel samples
-            let mut channel_input = vec![0.0; num_frames];
-            let mut channel_output = vec![0.0; num_frames];
-
-            for frame in 0..num_frames {
-                channel_input[frame] = input[frame * self.channels + ch];
+        // 1. Check for resize requirements without holding lock for long
+        let resize_fft_size = {
+            let state_guard = self.state.read();
+            if let Some(ref state) = *state_guard {
+                if self.input_buffer[0].len() != state.fft_size {
+                    Some(state.fft_size)
+                } else {
+                    None
+                }
+            } else {
+                None
             }
+        };
 
-            // Process
-            self.process_channel(ch, &channel_input, &mut channel_output)?;
+        // 2. Resize if needed (mut access to self)
+        if let Some(size) = resize_fft_size {
+            self.resize_buffers(size);
+        }
 
-            // Interleave back
-            for frame in 0..num_frames {
-                output[frame * self.channels + ch] = channel_output[frame];
+        // 3. Process
+        let state_guard = self.state.read();
+        
+        if let Some(ref state) = *state_guard {
+            let num_frames = input.len() / self.channels;
+
+            // Process each channel
+            for ch in 0..self.channels {
+                // Extract channel samples (allocation here is acceptable for safety refactor, 
+                // typically we'd use pre-allocated buffers but process is mut self so we can't easily iterate)
+                // Actually, we can iterate indices.
+                // Let's create temp vectors for this frame.
+                let mut channel_input = vec![0.0; num_frames];
+                let mut channel_output = vec![0.0; num_frames];
+
+                for frame in 0..num_frames {
+                    channel_input[frame] = input[frame * self.channels + ch];
+                }
+
+                // Process (pass disjoint borrows)
+                Self::process_channel_internal(
+                    ch,
+                    &channel_input, 
+                    &mut channel_output, 
+                    state, 
+                    &mut self.input_buffer[ch],
+                    &mut self.input_buffer_fill[ch],
+                    &mut self.output_accumulator[ch],
+                    &mut self.output_accumulator_fill,
+                    &mut self.fft_buffer,
+                    &mut self.conv_result,
+                    dry_gain, 
+                    wet_gain
+                );
+
+                // Interleave back
+                for frame in 0..num_frames {
+                    output[frame * self.channels + ch] = channel_output[frame];
+                }
             }
+        } else {
+            // Passthrough
+            output.copy_from_slice(input);
         }
 
         Ok(())
@@ -600,7 +649,7 @@ mod tests {
             .set_parameter(ParameterId::from("mix"), ParameterValue::Float(0.5))
             .unwrap();
 
-        assert_eq!(plugin.mix, 0.5);
+        assert_eq!(plugin.mix.target(), 0.5);
 
         let value = plugin.get_parameter(&ParameterId::from("mix"));
         assert_eq!(value.unwrap().as_float(), Some(0.5));
@@ -615,6 +664,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(plugin.gain_db, 6.0);
-        assert!((plugin.gain_linear - 1.995).abs() < 0.01);
+        // Gain linear target should be ~2.0
+        assert!((plugin.gain_linear.target() - 1.995).abs() < 0.01);
     }
 }

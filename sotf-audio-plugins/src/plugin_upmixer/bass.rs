@@ -126,7 +126,7 @@ impl UpmixerPlugin {
                     // Apply envelope to sub-harmonic for smooth transitions
                     let sub = self.subharmonic_phase.sin()
                         * lfe_amp
-                        * self.subharmonic_gain
+                        * self.subharmonic_gain.current()
                         * self.subharmonic_envelope;
                     self.time_out_channels[lfe_idx][i] += sub;
                 }
