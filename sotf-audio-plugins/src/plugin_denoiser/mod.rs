@@ -30,6 +30,7 @@ mod config;
 mod fft;
 mod mcra;
 mod polyphonic;
+mod transient;
 mod wiener;
 
 pub use config::DenoiserPluginParams;
@@ -132,6 +133,9 @@ pub struct DenoiserPlugin {
     mcra_alpha_p: f32,
     mcra_l: usize,
     mcra_delta: f32,
+
+    // Transient Suppressor
+    transient_suppressor: transient::TransientSuppressor,
 
     // Data exposure for UI
     avg_reduction_db: f32,
@@ -237,6 +241,8 @@ impl DenoiserPlugin {
             mcra_alpha_p: MCRA_ALPHA_P_DEFAULT,
             mcra_l: MCRA_L_DEFAULT,
             mcra_delta: MCRA_DELTA_DEFAULT,
+
+            transient_suppressor: transient::TransientSuppressor::new(channels),
 
             avg_reduction_db: 0.0,
             learning_active: true,
@@ -508,6 +514,9 @@ impl InPlacePlugin for DenoiserPlugin {
             self.time_out_channels[ch].fill(0.0);
         }
 
+        // Reset transient suppressor
+        self.transient_suppressor.reset();
+
         // Reset buffers
         self.input_buffer.fill(0.0);
         self.input_buffer_fill = 0;
@@ -523,6 +532,9 @@ impl InPlacePlugin for DenoiserPlugin {
         buffer: &mut [f32],
         context: &ProcessContext,
     ) -> PluginResult<()> {
+        // Pre-process: Time-domain transient suppression (de-clicking)
+        self.transient_suppressor.process(buffer);
+
         let num_frames = context.num_frames;
         let total_samples = num_frames * self.channels;
 
