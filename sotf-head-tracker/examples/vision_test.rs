@@ -29,7 +29,12 @@ fn main() {
         timestamp_ms: 0,
     };
 
-    println!("Created test frame: {}x{} ({} bytes)", width, height, frame.data.len());
+    println!(
+        "Created test frame: {}x{} ({} bytes)",
+        width,
+        height,
+        frame.data.len()
+    );
 
     // Create Vision backend
     let backend = MacOSVisionBackend::new(0.5);

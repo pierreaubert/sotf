@@ -7,8 +7,8 @@
 //! - Mouse support: click to toggle
 //! - Indeterminate state support
 
-use crate::theme::ThemeExt;
 use crate::ComponentTheme;
+use crate::theme::ThemeExt;
 use gpui::prelude::*;
 use gpui::*;
 

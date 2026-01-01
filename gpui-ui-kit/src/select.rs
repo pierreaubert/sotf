@@ -15,8 +15,8 @@
 use gpui::prelude::*;
 use gpui::{deferred, *};
 
-use crate::theme::ThemeExt;
 use crate::ComponentTheme;
+use crate::theme::ThemeExt;
 
 /// Theme colors for select styling
 #[derive(Debug, Clone, ComponentTheme)]

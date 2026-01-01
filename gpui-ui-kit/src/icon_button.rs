@@ -3,8 +3,8 @@
 //! A button that displays only an icon, with optional tooltip.
 //! Supports both text/emoji icons and custom child elements (like SVG icons).
 
-use crate::theme::{ThemeExt, glow_shadow};
 use crate::ComponentTheme;
+use crate::theme::{ThemeExt, glow_shadow};
 use gpui::prelude::*;
 use gpui::*;
 

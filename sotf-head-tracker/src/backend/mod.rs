@@ -8,4 +8,4 @@
 mod macos_vision;
 
 #[cfg(target_os = "macos")]
-pub use macos_vision::{MacOSVisionBackend, FaceDetection};
+pub use macos_vision::{FaceDetection, MacOSVisionBackend};

@@ -2,8 +2,8 @@
 //!
 //! A modal dialog with backdrop, title, content, and footer sections.
 
-use crate::theme::ThemeExt;
 use crate::ComponentTheme;
+use crate::theme::ThemeExt;
 use gpui::prelude::*;
 use gpui::*;
 

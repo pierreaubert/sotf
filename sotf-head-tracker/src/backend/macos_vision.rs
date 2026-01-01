@@ -8,13 +8,13 @@
 use crate::camera::CameraFrame;
 use crate::types::{FaceRect, HeadPosition, HeadTrackerError};
 use log::{debug, info, trace, warn};
-use objc2::rc::Retained;
 use objc2::AnyThread;
+use objc2::rc::Retained;
 use objc2_core_foundation::CGRect;
-use objc2_foundation::{NSArray, NSDictionary, NSData};
+use objc2_foundation::{NSArray, NSData, NSDictionary};
 use objc2_vision::{
-    VNDetectFaceRectanglesRequest, VNFaceObservation, VNImageRequestHandler,
-    VNRequest, VNImageOption,
+    VNDetectFaceRectanglesRequest, VNFaceObservation, VNImageOption, VNImageRequestHandler,
+    VNRequest,
 };
 
 /// Face detection result
@@ -111,7 +111,10 @@ impl MacOSVisionBackend {
     /// Detect faces in a camera frame using Apple Vision framework
     ///
     /// Returns detected faces sorted by size (largest first)
-    pub fn detect_faces(&self, frame: &CameraFrame) -> Result<Vec<FaceDetection>, HeadTrackerError> {
+    pub fn detect_faces(
+        &self,
+        frame: &CameraFrame,
+    ) -> Result<Vec<FaceDetection>, HeadTrackerError> {
         trace!(
             "Detecting faces in {}x{} frame ({} bytes, expected {} bytes for RGB)",
             frame.width,
@@ -133,12 +136,11 @@ impl MacOSVisionBackend {
             NSDictionary::new();
 
         // Create image request handler from data
-        let handler: Retained<VNImageRequestHandler> =
-            VNImageRequestHandler::initWithData_options(
-                VNImageRequestHandler::alloc(),
-                &ns_data,
-                &options,
-            );
+        let handler: Retained<VNImageRequestHandler> = VNImageRequestHandler::initWithData_options(
+            VNImageRequestHandler::alloc(),
+            &ns_data,
+            &options,
+        );
 
         // Create face detection request
         // SAFETY: VNDetectFaceRectanglesRequest::new() is safe to call, it creates a new request object
@@ -208,8 +210,12 @@ impl MacOSVisionBackend {
 
                 debug!(
                     "Face detected: bbox=({:.2}, {:.2}, {:.2}x{:.2}), conf={:.2}, yaw={:?}",
-                    bounding_box.x, bounding_box.y, bounding_box.width, bounding_box.height,
-                    confidence, yaw
+                    bounding_box.x,
+                    bounding_box.y,
+                    bounding_box.width,
+                    bounding_box.height,
+                    confidence,
+                    yaw
                 );
             }
         } else {
@@ -238,7 +244,8 @@ impl MacOSVisionBackend {
                 _ => return None,
             };
 
-            let number: *const objc2_foundation::NSNumber = objc2::msg_send![face, performSelector: sel];
+            let number: *const objc2_foundation::NSNumber =
+                objc2::msg_send![face, performSelector: sel];
             if number.is_null() {
                 None
             } else {
@@ -256,11 +263,8 @@ impl MacOSVisionBackend {
         use std::io::Cursor;
 
         // Create image buffer
-        let img = image::RgbImage::from_raw(
-            frame.width,
-            frame.height,
-            frame.data.clone(),
-        ).ok_or_else(|| HeadTrackerError::Vision("Invalid RGB data".to_string()))?;
+        let img = image::RgbImage::from_raw(frame.width, frame.height, frame.data.clone())
+            .ok_or_else(|| HeadTrackerError::Vision("Invalid RGB data".to_string()))?;
 
         // Encode as JPEG
         let mut jpeg_data = Cursor::new(Vec::new());
@@ -301,9 +305,7 @@ mod tests {
             roll: Some(0.0),
         };
 
-        let pos = detection.to_head_position(
-            0.5, 0.5, 0.2, 0.6, 60.0, 1000,
-        );
+        let pos = detection.to_head_position(0.5, 0.5, 0.2, 0.6, 60.0, 1000);
 
         assert!(pos.x.abs() < 0.1, "X offset should be near zero");
         assert!(pos.confidence > 0.9);

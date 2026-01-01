@@ -2,8 +2,8 @@
 //!
 //! Provides a flexible button component with different visual styles.
 
-use crate::theme::{ThemeExt, glow_shadow};
 use crate::ComponentTheme;
+use crate::theme::{ThemeExt, glow_shadow};
 use gpui::prelude::*;
 use gpui::*;
 

@@ -108,8 +108,13 @@ fn main() {
         let smoothed = smoother.update(raw_pos);
 
         // Update bridge (which filters and sends to engine)
-        print!("Frame {:3}: {:20} raw=({:+.2}m, {:+.2}m) → ",
-            timestamp_ms / frame_duration_ms, name, raw_x, raw_z);
+        print!(
+            "Frame {:3}: {:20} raw=({:+.2}m, {:+.2}m) → ",
+            timestamp_ms / frame_duration_ms,
+            name,
+            raw_x,
+            raw_z
+        );
 
         match bridge.update(&mut engine, &smoothed) {
             Ok(true) => println!("UPDATE SENT"),
@@ -124,14 +129,18 @@ fn main() {
     println!("\n--- Summary ---");
     println!("Total frames: {}", num_frames);
     println!("Updates sent: {}", bridge.updates_sent());
-    println!("Final engine state: x={:.3}m, z={:.3}m",
-        engine.xtc_head_offset_x, engine.xtc_head_offset_z);
+    println!(
+        "Final engine state: x={:.3}m, z={:.3}m",
+        engine.xtc_head_offset_x, engine.xtc_head_offset_z
+    );
 
     // Demonstrate reset
     println!("\n--- Resetting to Center ---");
     bridge.reset(&mut engine).unwrap();
-    println!("Engine reset: x={:.3}m, z={:.3}m",
-        engine.xtc_head_offset_x, engine.xtc_head_offset_z);
+    println!(
+        "Engine reset: x={:.3}m, z={:.3}m",
+        engine.xtc_head_offset_x, engine.xtc_head_offset_z
+    );
 
     println!("\n=== Example Complete ===");
     println!();

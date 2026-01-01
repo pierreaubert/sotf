@@ -123,13 +123,13 @@ impl Drop for CameraCapture {
 // ============================================================================
 
 #[cfg(not(target_os = "macos"))]
-use nokhwa::pixel_format::RgbFormat;
-#[cfg(not(target_os = "macos"))]
-use nokhwa::utils::{CameraIndex, RequestedFormat, RequestedFormatType};
+use log::{error, warn};
 #[cfg(not(target_os = "macos"))]
 use nokhwa::Camera;
 #[cfg(not(target_os = "macos"))]
-use log::{error, warn};
+use nokhwa::pixel_format::RgbFormat;
+#[cfg(not(target_os = "macos"))]
+use nokhwa::utils::{CameraIndex, RequestedFormat, RequestedFormatType};
 
 #[cfg(not(target_os = "macos"))]
 pub struct CameraCapture {

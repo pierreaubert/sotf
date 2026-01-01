@@ -55,7 +55,12 @@ impl HeadPosition {
     }
 
     /// Check if position has changed significantly from another
-    pub fn significantly_different(&self, other: &Self, pos_threshold_m: f32, angle_threshold_deg: f32) -> bool {
+    pub fn significantly_different(
+        &self,
+        other: &Self,
+        pos_threshold_m: f32,
+        angle_threshold_deg: f32,
+    ) -> bool {
         (self.x - other.x).abs() > pos_threshold_m
             || (self.y - other.y).abs() > pos_threshold_m
             || (self.z - other.z).abs() > pos_threshold_m
@@ -123,11 +128,11 @@ impl Default for HeadTrackerConfig {
             smoothing_time_s: 0.1,
             min_confidence: 0.5,
             camera_index: 0,
-            camera_distance_m: 0.6, // Typical laptop webcam distance
-            camera_fov_deg: 60.0,   // Typical webcam FOV
-            position_threshold_m: 0.01,  // 1cm
-            angle_threshold_deg: 1.0,    // 1 degree
-            lost_face_hold_frames: 10,   // ~333ms at 30fps
+            camera_distance_m: 0.6,     // Typical laptop webcam distance
+            camera_fov_deg: 60.0,       // Typical webcam FOV
+            position_threshold_m: 0.01, // 1cm
+            angle_threshold_deg: 1.0,   // 1 degree
+            lost_face_hold_frames: 10,  // ~333ms at 30fps
         }
     }
 }

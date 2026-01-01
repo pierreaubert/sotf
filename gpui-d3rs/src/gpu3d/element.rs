@@ -722,7 +722,8 @@ impl Element for Surface3DElement {
             for i in 0..num_segments {
                 let t = i as f32 / num_segments as f32;
                 let segment_height = colorbar_height / num_segments as f32;
-                let y = colorbar_y + colorbar_height - (t + 1.0 / num_segments as f32) * colorbar_height;
+                let y = colorbar_y + colorbar_height
+                    - (t + 1.0 / num_segments as f32) * colorbar_height;
 
                 // Get color from colormap
                 let color = self.config.colormap.color_at(1.0 - t);
@@ -754,7 +755,10 @@ impl Element for Surface3DElement {
                 px(colorbar_x + colorbar_width),
                 px(colorbar_y + colorbar_height),
             ));
-            builder.line_to(gpui::point(px(colorbar_x), px(colorbar_y + colorbar_height)));
+            builder.line_to(gpui::point(
+                px(colorbar_x),
+                px(colorbar_y + colorbar_height),
+            ));
             builder.line_to(gpui::point(px(colorbar_x), px(colorbar_y)));
             if let Ok(path) = builder.build() {
                 window.paint_path(path, gpui::rgba(0xffffffff));

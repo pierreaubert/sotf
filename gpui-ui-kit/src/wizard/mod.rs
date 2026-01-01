@@ -8,10 +8,10 @@
 //! - Async operation support with progress tracking
 //! - Cancelable operations
 
+use crate::ComponentTheme;
 use crate::button::{Button, ButtonSize, ButtonVariant};
 use crate::progress::{Progress, ProgressSize, ProgressVariant};
 use crate::theme::ThemeExt;
-use crate::ComponentTheme;
 use gpui::prelude::*;
 use gpui::*;
 

@@ -13,8 +13,10 @@
 //! - Theme customization
 
 use gpui::{Context, TestAppContext, VisualTestContext, Window, div, prelude::*};
+use gpui_ui_kit::audio::vertical_slider::{
+    VerticalSlider, VerticalSliderSize, VerticalSliderTheme,
+};
 use gpui_ui_kit::scale::Scale;
-use gpui_ui_kit::audio::vertical_slider::{VerticalSlider, VerticalSliderSize, VerticalSliderTheme};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;

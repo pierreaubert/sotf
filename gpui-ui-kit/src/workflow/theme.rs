@@ -107,8 +107,8 @@ impl WorkflowTheme {
             // Connections
             connection_color: theme.text_secondary,
             connection_selected: theme.accent,
-            connection_width: 4.0,       // Fat links (all channels)
-            connection_width_thin: 1.5,  // Thin links (single channel)
+            connection_width: 4.0,      // Fat links (all channels)
+            connection_width_thin: 1.5, // Thin links (single channel)
             connection_preview: Rgba {
                 r: theme.accent.r,
                 g: theme.accent.g,

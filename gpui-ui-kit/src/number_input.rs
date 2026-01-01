@@ -42,8 +42,8 @@
 //! cleanup_number_input_state(&element_id);
 //! ```
 
-use crate::theme::ThemeExt;
 use crate::ComponentTheme;
+use crate::theme::ThemeExt;
 use gpui::prelude::*;
 use gpui::*;
 use std::cell::RefCell;

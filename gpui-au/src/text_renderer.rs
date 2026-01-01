@@ -88,12 +88,14 @@ impl TextRenderer {
         unsafe {
             // Create NSFont
             let font_name = NSString::alloc(nil).init_str(&self.font_name);
-            let font: id = msg_send![class!(NSFont), fontWithName:font_name size:self.font_size as CGFloat];
+            let font: id =
+                msg_send![class!(NSFont), fontWithName:font_name size:self.font_size as CGFloat];
             let _: () = msg_send![font_name, release];
 
             if font.is_null() {
                 // Fallback to system font
-                let font: id = msg_send![class!(NSFont), systemFontOfSize:self.font_size as CGFloat];
+                let font: id =
+                    msg_send![class!(NSFont), systemFontOfSize:self.font_size as CGFloat];
                 if font.is_null() {
                     return None;
                 }
@@ -103,8 +105,10 @@ impl TextRenderer {
             let ns_text = NSString::alloc(nil).init_str(text);
 
             // Create attributes dictionary
-            let font_key: id = msg_send![class!(NSString), stringWithUTF8String: b"NSFont\0".as_ptr()];
-            let attrs: id = msg_send![class!(NSDictionary), dictionaryWithObject:font forKey:font_key];
+            let font_key: id =
+                msg_send![class!(NSString), stringWithUTF8String: b"NSFont\0".as_ptr()];
+            let attrs: id =
+                msg_send![class!(NSDictionary), dictionaryWithObject:font forKey:font_key];
 
             // Measure
             let size: NSSize = msg_send![ns_text, sizeWithAttributes:attrs];
@@ -127,7 +131,13 @@ impl TextRenderer {
     }
 
     /// Render text to a texture using Core Graphics
-    fn render_to_texture(&self, texture: &Texture, text: &str, width: u32, height: u32) -> Option<()> {
+    fn render_to_texture(
+        &self,
+        texture: &Texture,
+        text: &str,
+        width: u32,
+        height: u32,
+    ) -> Option<()> {
         unsafe {
             // Create bitmap context
             let color_space = CGColorSpace::create_device_rgb();
@@ -162,7 +172,8 @@ impl TextRenderer {
 
             // Create font
             let font_name_ns = NSString::alloc(nil).init_str(&self.font_name);
-            let mut font: id = msg_send![class!(NSFont), fontWithName:font_name_ns size:self.font_size as CGFloat];
+            let mut font: id =
+                msg_send![class!(NSFont), fontWithName:font_name_ns size:self.font_size as CGFloat];
             let _: () = msg_send![font_name_ns, release];
 
             if font.is_null() {
@@ -173,8 +184,10 @@ impl TextRenderer {
             let color: id = msg_send![class!(NSColor), whiteColor];
 
             // Create attributes
-            let font_key: id = msg_send![class!(NSString), stringWithUTF8String: b"NSFont\0".as_ptr()];
-            let color_key: id = msg_send![class!(NSString), stringWithUTF8String: b"NSColor\0".as_ptr()];
+            let font_key: id =
+                msg_send![class!(NSString), stringWithUTF8String: b"NSFont\0".as_ptr()];
+            let color_key: id =
+                msg_send![class!(NSString), stringWithUTF8String: b"NSColor\0".as_ptr()];
 
             let keys: [id; 2] = [font_key, color_key];
             let values: [id; 2] = [font, color];
@@ -227,8 +240,8 @@ impl TextRenderer {
 
 /// Predefined labels for EQ view
 pub struct EQLabels {
-    pub freq_labels: Vec<(String, f32)>,  // (label, frequency)
-    pub db_labels: Vec<(String, f32)>,    // (label, db value)
+    pub freq_labels: Vec<(String, f32)>, // (label, frequency)
+    pub db_labels: Vec<(String, f32)>,   // (label, db value)
 }
 
 impl Default for EQLabels {

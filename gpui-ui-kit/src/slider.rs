@@ -8,8 +8,8 @@
 //!   - Arrow Down/Left: decrease value
 //! - Value snapping with step parameter
 
-use crate::theme::ThemeExt;
 use crate::ComponentTheme;
+use crate::theme::ThemeExt;
 use gpui::*;
 
 /// Theme colors for slider styling

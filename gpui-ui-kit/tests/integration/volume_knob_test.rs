@@ -279,10 +279,10 @@ async fn test_volume_knob_with_custom_theme(cx: &mut TestAppContext) {
     impl Render for ThemedView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
             let custom_theme = VolumeKnobTheme {
-                accent: gpui::rgba(0xff8000ff),      // Orange
-                muted: gpui::rgba(0x4d4d4dff),       // 30% gray
+                accent: gpui::rgba(0xff8000ff),     // Orange
+                muted: gpui::rgba(0x4d4d4dff),      // 30% gray
                 background: gpui::rgba(0x262626ff), // 15% gray (dark)
-                text: gpui::rgba(0xf2f2f2ff),        // 95% gray (nearly white)
+                text: gpui::rgba(0xf2f2f2ff),       // 95% gray (nearly white)
             };
 
             div().child(

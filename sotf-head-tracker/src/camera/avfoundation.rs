@@ -5,27 +5,26 @@
 // Direct AVFoundation camera capture using objc2 bindings.
 // More reliable than nokhwa on macOS.
 
-use crate::camera::CameraFrame;
 use crate::HeadTrackerError;
+use crate::camera::CameraFrame;
 use crossbeam::queue::ArrayQueue;
 use log::{info, trace, warn};
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
-use objc2::{define_class, msg_send, AllocAnyThread, DeclaredClass};
+use objc2::{AllocAnyThread, DeclaredClass, define_class, msg_send};
 use objc2_av_foundation::{
-    AVCaptureConnection, AVCaptureDevice, AVCaptureDeviceInput, AVCaptureOutput,
-    AVCaptureSession, AVCaptureVideoDataOutput, AVCaptureVideoDataOutputSampleBufferDelegate,
-    AVMediaTypeVideo,
+    AVCaptureConnection, AVCaptureDevice, AVCaptureDeviceInput, AVCaptureOutput, AVCaptureSession,
+    AVCaptureVideoDataOutput, AVCaptureVideoDataOutputSampleBufferDelegate, AVMediaTypeVideo,
 };
 use objc2_core_media::CMSampleBuffer;
 use objc2_core_video::{
-    kCVPixelFormatType_32BGRA, CVPixelBufferGetBaseAddress, CVPixelBufferGetBytesPerRow,
-    CVPixelBufferGetHeight, CVPixelBufferGetWidth, CVPixelBufferLockBaseAddress,
-    CVPixelBufferLockFlags, CVPixelBufferUnlockBaseAddress,
+    CVPixelBufferGetBaseAddress, CVPixelBufferGetBytesPerRow, CVPixelBufferGetHeight,
+    CVPixelBufferGetWidth, CVPixelBufferLockBaseAddress, CVPixelBufferLockFlags,
+    CVPixelBufferUnlockBaseAddress, kCVPixelFormatType_32BGRA,
 };
 use objc2_foundation::{NSNumber, NSObject, NSObjectProtocol, NSString};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 /// Frame buffer shared between delegate and capture
 struct FrameBuffer {
@@ -225,8 +224,9 @@ impl AVFoundationCapture {
 
         // Get the video media type
         // SAFETY: AVMediaTypeVideo is safe to access
-        let video_type = unsafe { AVMediaTypeVideo }
-            .ok_or_else(|| HeadTrackerError::Camera("AVMediaTypeVideo not available".to_string()))?;
+        let video_type = unsafe { AVMediaTypeVideo }.ok_or_else(|| {
+            HeadTrackerError::Camera("AVMediaTypeVideo not available".to_string())
+        })?;
 
         // Get the video device
         // SAFETY: defaultDeviceWithMediaType is safe
@@ -239,7 +239,10 @@ impl AVFoundationCapture {
         // SAFETY: deviceInputWithDevice returns Option or error
         let input = unsafe {
             AVCaptureDeviceInput::deviceInputWithDevice_error(&device).map_err(|e| {
-                HeadTrackerError::Camera(format!("Failed to create input: {}", e.localizedDescription()))
+                HeadTrackerError::Camera(format!(
+                    "Failed to create input: {}",
+                    e.localizedDescription()
+                ))
             })?
         };
 
@@ -277,8 +280,9 @@ impl AVFoundationCapture {
         // We must provide a valid dispatch queue for sample buffer callbacks
         // SAFETY: setSampleBufferDelegate:queue: with valid queue
         unsafe {
-            let delegate_protocol: &ProtocolObject<dyn AVCaptureVideoDataOutputSampleBufferDelegate> =
-                ProtocolObject::from_ref(&*delegate);
+            let delegate_protocol: &ProtocolObject<
+                dyn AVCaptureVideoDataOutputSampleBufferDelegate,
+            > = ProtocolObject::from_ref(&*delegate);
 
             // Create a serial dispatch queue for camera callbacks
             let queue_label = std::ffi::CString::new("sotf.head-tracker.camera").unwrap();
@@ -292,8 +296,8 @@ impl AVFoundationCapture {
             type MsgSendFn = unsafe extern "C" fn(
                 *const AVCaptureVideoDataOutput,
                 objc2::runtime::Sel,
-                *const std::ffi::c_void,  // delegate
-                *mut std::ffi::c_void,    // queue
+                *const std::ffi::c_void, // delegate
+                *mut std::ffi::c_void,   // queue
             );
             let send_fn: MsgSendFn = std::mem::transmute(objc2::ffi::objc_msgSend as *const ());
             let sel = objc2::sel!(setSampleBufferDelegate:queue:);
@@ -403,7 +407,9 @@ impl AVFoundationCapture {
             }
 
             if start.elapsed() > timeout {
-                return Err(HeadTrackerError::Camera("Frame capture timeout".to_string()));
+                return Err(HeadTrackerError::Camera(
+                    "Frame capture timeout".to_string(),
+                ));
             }
 
             std::thread::sleep(std::time::Duration::from_millis(5));

@@ -4,8 +4,8 @@
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, DeriveInput, Data, Fields, Expr, Lit, Meta, Token};
 use syn::punctuated::Punctuated;
+use syn::{parse_macro_input, Data, DeriveInput, Expr, Fields, Lit, Meta, Token};
 
 /// Derive macro for component themes.
 ///
@@ -67,7 +67,10 @@ pub fn derive_component_theme(input: TokenStream) -> TokenStream {
         let field_name = field.ident.as_ref().unwrap();
 
         // Find the #[theme(...)] attribute
-        let theme_attr = field.attrs.iter().find(|attr| attr.path().is_ident("theme"));
+        let theme_attr = field
+            .attrs
+            .iter()
+            .find(|attr| attr.path().is_ident("theme"));
 
         let Some(attr) = theme_attr else {
             panic!("Field `{}` is missing #[theme(...)] attribute", field_name);
@@ -80,7 +83,8 @@ pub fn derive_component_theme(input: TokenStream) -> TokenStream {
         let mut from_expr: Option<String> = None;
 
         // Parse the attribute arguments
-        let nested = attr.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)
+        let nested = attr
+            .parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)
             .expect("Failed to parse theme attribute");
 
         for meta in nested {
@@ -138,8 +142,10 @@ pub fn derive_component_theme(input: TokenStream) -> TokenStream {
         // Generate Default field based on type
         if let Some(expr_str) = default_expr_str {
             // Arbitrary expression (for Option types, nested themes, etc.)
-            let expr: syn::Expr = syn::parse_str(&expr_str)
-                .expect(&format!("Failed to parse default_expr for field `{}`", field_name));
+            let expr: syn::Expr = syn::parse_str(&expr_str).expect(&format!(
+                "Failed to parse default_expr for field `{}`",
+                field_name
+            ));
             default_fields.push(quote! {
                 #field_name: #expr
             });
@@ -170,8 +176,10 @@ pub fn derive_component_theme(input: TokenStream) -> TokenStream {
 
         // Generate From<&Theme> field
         if let Some(expr_str) = from_expr {
-            let expr: syn::Expr = syn::parse_str(&expr_str)
-                .expect(&format!("Failed to parse from_expr for field `{}`", field_name));
+            let expr: syn::Expr = syn::parse_str(&expr_str).expect(&format!(
+                "Failed to parse from_expr for field `{}`",
+                field_name
+            ));
             from_fields.push(quote! {
                 #field_name: #expr
             });

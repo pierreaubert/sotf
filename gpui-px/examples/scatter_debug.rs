@@ -74,103 +74,97 @@ impl ScatterDebugApp {
                     )
                     // Row 1: Left, Right
                     .child(
-                        div()
-                            .flex()
-                            .gap_2()
-                            .children(
-                                [
-                                    ("Left", Some(LegendPosition::Left)),
-                                    ("Right", Some(LegendPosition::Right)),
-                                ]
-                                .into_iter()
-                                .map(|(label, position)| {
-                                    let entity = entity.clone();
-                                    let is_selected = current_position == position;
+                        div().flex().gap_2().children(
+                            [
+                                ("Left", Some(LegendPosition::Left)),
+                                ("Right", Some(LegendPosition::Right)),
+                            ]
+                            .into_iter()
+                            .map(|(label, position)| {
+                                let entity = entity.clone();
+                                let is_selected = current_position == position;
 
-                                    div()
-                                        .id(ElementId::Name(format!("pos-{}", label).into()))
-                                        .px_4()
-                                        .py_2()
-                                        .rounded_md()
-                                        .cursor_pointer()
-                                        .flex_1()
-                                        .text_center()
-                                        .bg(if is_selected {
-                                            rgb(0x3b82f6)
+                                div()
+                                    .id(ElementId::Name(format!("pos-{}", label).into()))
+                                    .px_4()
+                                    .py_2()
+                                    .rounded_md()
+                                    .cursor_pointer()
+                                    .flex_1()
+                                    .text_center()
+                                    .bg(if is_selected {
+                                        rgb(0x3b82f6)
+                                    } else {
+                                        rgb(0xe5e7eb)
+                                    })
+                                    .hover(|s| {
+                                        s.bg(if is_selected {
+                                            rgb(0x2563eb)
                                         } else {
-                                            rgb(0xe5e7eb)
+                                            rgb(0xd1d5db)
                                         })
-                                        .hover(|s| {
-                                            s.bg(if is_selected {
-                                                rgb(0x2563eb)
-                                            } else {
-                                                rgb(0xd1d5db)
-                                            })
-                                        })
-                                        .text_color(if is_selected {
-                                            rgb(0xffffff)
-                                        } else {
-                                            rgb(0x374151)
-                                        })
-                                        .text_sm()
-                                        .child(label)
-                                        .on_click(move |_, _window, cx| {
-                                            entity.update(cx, |this, _| {
-                                                this.legend_position = position;
-                                            });
-                                        })
-                                }),
-                            ),
+                                    })
+                                    .text_color(if is_selected {
+                                        rgb(0xffffff)
+                                    } else {
+                                        rgb(0x374151)
+                                    })
+                                    .text_sm()
+                                    .child(label)
+                                    .on_click(move |_, _window, cx| {
+                                        entity.update(cx, |this, _| {
+                                            this.legend_position = position;
+                                        });
+                                    })
+                            }),
+                        ),
                     )
                     // Row 2: Top, Bottom
                     .child(
-                        div()
-                            .flex()
-                            .gap_2()
-                            .children(
-                                [
-                                    ("Top", Some(LegendPosition::Top)),
-                                    ("Bottom", Some(LegendPosition::Bottom)),
-                                ]
-                                .into_iter()
-                                .map(|(label, position)| {
-                                    let entity = entity.clone();
-                                    let is_selected = current_position == position;
+                        div().flex().gap_2().children(
+                            [
+                                ("Top", Some(LegendPosition::Top)),
+                                ("Bottom", Some(LegendPosition::Bottom)),
+                            ]
+                            .into_iter()
+                            .map(|(label, position)| {
+                                let entity = entity.clone();
+                                let is_selected = current_position == position;
 
-                                    div()
-                                        .id(ElementId::Name(format!("pos-{}", label).into()))
-                                        .px_4()
-                                        .py_2()
-                                        .rounded_md()
-                                        .cursor_pointer()
-                                        .flex_1()
-                                        .text_center()
-                                        .bg(if is_selected {
-                                            rgb(0x3b82f6)
+                                div()
+                                    .id(ElementId::Name(format!("pos-{}", label).into()))
+                                    .px_4()
+                                    .py_2()
+                                    .rounded_md()
+                                    .cursor_pointer()
+                                    .flex_1()
+                                    .text_center()
+                                    .bg(if is_selected {
+                                        rgb(0x3b82f6)
+                                    } else {
+                                        rgb(0xe5e7eb)
+                                    })
+                                    .hover(|s| {
+                                        s.bg(if is_selected {
+                                            rgb(0x2563eb)
                                         } else {
-                                            rgb(0xe5e7eb)
+                                            rgb(0xd1d5db)
                                         })
-                                        .hover(|s| {
-                                            s.bg(if is_selected {
-                                                rgb(0x2563eb)
-                                            } else {
-                                                rgb(0xd1d5db)
-                                            })
-                                        })
-                                        .text_color(if is_selected {
-                                            rgb(0xffffff)
-                                        } else {
-                                            rgb(0x374151)
-                                        })
-                                        .text_sm()
-                                        .child(label)
-                                        .on_click(move |_, _window, cx| {
-                                            entity.update(cx, |this, _| {
-                                                this.legend_position = position;
-                                            });
-                                        })
-                                }),
-                            ),
+                                    })
+                                    .text_color(if is_selected {
+                                        rgb(0xffffff)
+                                    } else {
+                                        rgb(0x374151)
+                                    })
+                                    .text_sm()
+                                    .child(label)
+                                    .on_click(move |_, _window, cx| {
+                                        entity.update(cx, |this, _| {
+                                            this.legend_position = position;
+                                        });
+                                    })
+                            }),
+                        ),
                     )
                     // Row 3: Auto (ratio-based)
                     .child({

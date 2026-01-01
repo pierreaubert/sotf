@@ -146,97 +146,101 @@ pub fn render(app: &ShowcaseApp, cx: &mut Context<ShowcaseApp>) -> Div {
                         }
                     }
                 }))
-                .child(canvas(
-                    move |bounds, _, _| bounds,
-                    move |bounds, _, window, _| {
-                        let width = f32::from(bounds.size.width) as f64;
-                        let height = f32::from(bounds.size.height) as f64;
-                        let min_dim = width.min(height);
+                .child(
+                    canvas(
+                        move |bounds, _, _| bounds,
+                        move |bounds, _, window, _| {
+                            let width = f32::from(bounds.size.width) as f64;
+                            let height = f32::from(bounds.size.height) as f64;
+                            let min_dim = width.min(height);
 
-                        macro_rules! draw_geo {
-                            ($projection:expr) => {{
-                                let geometry = get_world_data(use_large_data);
-                                let path = GeoPath::new($projection.clone());
-                                let d = path.render(&geometry);
-                                if let Some(p) = super::path_utils::parse_svg_path(&d, bounds) {
-                                    window.paint_path(p, rgb(0x228822));
+                            macro_rules! draw_geo {
+                                ($projection:expr) => {{
+                                    let geometry = get_world_data(use_large_data);
+                                    let path = GeoPath::new($projection.clone());
+                                    let d = path.render(&geometry);
+                                    if let Some(p) = super::path_utils::parse_svg_path(&d, bounds) {
+                                        window.paint_path(p, rgb(0x228822));
+                                    }
+                                }};
+                            }
+
+                            if matches!(
+                                current_projection,
+                                GeoProjectionType::Orthographic | GeoProjectionType::Stereographic
+                            ) {
+                                let center = bounds.origin
+                                    + point(px(width as f32 / 2.0), px(height as f32 / 2.0));
+                                // Scale factor is min_dim / 2.0 * 0.9
+                                let radius = px(min_dim as f32 / 2.0 * 0.9);
+                                let sphere_bounds = Bounds {
+                                    origin: center - point(radius, radius),
+                                    size: size(radius * 2.0, radius * 2.0),
+                                };
+                                window.paint_quad(PaintQuad {
+                                    bounds: sphere_bounds,
+                                    corner_radii: Corners::all(radius),
+                                    background: rgb(0xe0e0ff).into(),
+                                    border_widths: Edges::all(px(1.0)),
+                                    border_color: rgb(0x000000).into(),
+                                    border_style: BorderStyle::default(),
+                                });
+                            }
+
+                            // Dynamic scaling based on bounds
+                            let pi = std::f64::consts::PI;
+                            match current_projection {
+                                GeoProjectionType::Mercator => {
+                                    // Mercator is roughly square (up to ~85 deg lat)
+                                    let scale = min_dim / (2.0 * pi) * 0.9;
+                                    let p = Mercator::new()
+                                        .scale(scale)
+                                        .translate(width / 2.0, height / 2.0)
+                                        .rotate(rotation[0], 0.0, 0.0);
+                                    draw_geo!(p);
                                 }
-                            }};
-                        }
-
-                        if matches!(
-                            current_projection,
-                            GeoProjectionType::Orthographic | GeoProjectionType::Stereographic
-                        ) {
-                            let center = bounds.origin + point(px(width as f32 / 2.0), px(height as f32 / 2.0));
-                            // Scale factor is min_dim / 2.0 * 0.9
-                            let radius = px(min_dim as f32 / 2.0 * 0.9);
-                            let sphere_bounds = Bounds {
-                                origin: center - point(radius, radius),
-                                size: size(radius * 2.0, radius * 2.0),
+                                GeoProjectionType::Orthographic => {
+                                    // Radius = scale
+                                    let scale = min_dim / 2.0 * 0.9;
+                                    let p = Orthographic::new()
+                                        .scale(scale)
+                                        .translate(width / 2.0, height / 2.0)
+                                        .rotate(rotation[0], rotation[1], 0.0);
+                                    draw_geo!(p);
+                                }
+                                GeoProjectionType::Equirectangular => {
+                                    // Width = 2*PI*k, Height = PI*k
+                                    // k = min(width/(2*PI), height/PI)
+                                    let scale = (width / 2.0).min(height) / pi * 0.9;
+                                    let p = Equirectangular::new()
+                                        .scale(scale)
+                                        .translate(width / 2.0, height / 2.0)
+                                        .rotate(rotation[0], rotation[1], 0.0);
+                                    draw_geo!(p);
+                                }
+                                GeoProjectionType::Stereographic => {
+                                    // Stereographic projects to infinity at horizon, use smaller scale
+                                    let scale = min_dim / 4.0 * 0.9;
+                                    let p = Stereographic::new()
+                                        .scale(scale)
+                                        .translate(width / 2.0, height / 2.0)
+                                        .rotate(rotation[0], rotation[1], 0.0);
+                                    draw_geo!(p);
+                                }
+                                GeoProjectionType::ConicEqualArea => {
+                                    // Conic fits well in square or landscape
+                                    let scale = min_dim / 6.0; // Conservative scale
+                                    let p = ConicEqualArea::new()
+                                        .scale(scale)
+                                        .translate(width / 2.0, height / 2.0)
+                                        .center(0.0, 0.0)
+                                        .rotate(rotation[0], rotation[1], 0.0);
+                                    draw_geo!(p);
+                                }
                             };
-                            window.paint_quad(PaintQuad {
-                                bounds: sphere_bounds,
-                                corner_radii: Corners::all(radius),
-                                background: rgb(0xe0e0ff).into(),
-                                border_widths: Edges::all(px(1.0)),
-                                border_color: rgb(0x000000).into(),
-                                border_style: BorderStyle::default(),
-                            });
-                        }
-
-                        // Dynamic scaling based on bounds
-                        let pi = std::f64::consts::PI;
-                        match current_projection {
-                            GeoProjectionType::Mercator => {
-                                // Mercator is roughly square (up to ~85 deg lat)
-                                let scale = min_dim / (2.0 * pi) * 0.9;
-                                let p = Mercator::new()
-                                    .scale(scale)
-                                    .translate(width / 2.0, height / 2.0)
-                                    .rotate(rotation[0], 0.0, 0.0);
-                                draw_geo!(p);
-                            }
-                            GeoProjectionType::Orthographic => {
-                                // Radius = scale
-                                let scale = min_dim / 2.0 * 0.9;
-                                let p = Orthographic::new()
-                                    .scale(scale)
-                                    .translate(width / 2.0, height / 2.0)
-                                    .rotate(rotation[0], rotation[1], 0.0);
-                                draw_geo!(p);
-                            }
-                            GeoProjectionType::Equirectangular => {
-                                // Width = 2*PI*k, Height = PI*k
-                                // k = min(width/(2*PI), height/PI)
-                                let scale = (width / 2.0).min(height) / pi * 0.9;
-                                let p = Equirectangular::new()
-                                    .scale(scale)
-                                    .translate(width / 2.0, height / 2.0)
-                                    .rotate(rotation[0], rotation[1], 0.0);
-                                draw_geo!(p);
-                            }
-                            GeoProjectionType::Stereographic => {
-                                // Stereographic projects to infinity at horizon, use smaller scale
-                                let scale = min_dim / 4.0 * 0.9;
-                                let p = Stereographic::new()
-                                    .scale(scale)
-                                    .translate(width / 2.0, height / 2.0)
-                                    .rotate(rotation[0], rotation[1], 0.0);
-                                draw_geo!(p);
-                            }
-                            GeoProjectionType::ConicEqualArea => {
-                                // Conic fits well in square or landscape
-                                let scale = min_dim / 6.0; // Conservative scale
-                                let p = ConicEqualArea::new()
-                                    .scale(scale)
-                                    .translate(width / 2.0, height / 2.0)
-                                    .center(0.0, 0.0)
-                                    .rotate(rotation[0], rotation[1], 0.0);
-                                draw_geo!(p);
-                            }
-                        };
-                    },
-                ).size_full()),
+                        },
+                    )
+                    .size_full(),
+                ),
         )
 }

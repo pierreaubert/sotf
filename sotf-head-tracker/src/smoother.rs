@@ -74,7 +74,8 @@ impl HeadPositionSmoother {
             pitch: self.current.pitch + alpha * (new_pos.pitch - self.current.pitch),
             roll: self.current.roll + alpha * (new_pos.roll - self.current.roll),
             timestamp_ms: new_pos.timestamp_ms,
-            confidence: self.current.confidence + alpha * (new_pos.confidence - self.current.confidence),
+            confidence: self.current.confidence
+                + alpha * (new_pos.confidence - self.current.confidence),
         };
 
         self.last_timestamp_ms = new_pos.timestamp_ms;

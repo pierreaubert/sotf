@@ -220,8 +220,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 // Y-axis ticks and labels
                 .children(y_ticks.iter().map(|&val| {
                     let y = y_scale.scale(val);
-                    let label_config =
-                        VectorFontConfig::horizontal(10.0, rgb(0x333333).into());
+                    let label_config = VectorFontConfig::horizontal(10.0, rgb(0x333333).into());
                     div()
                         .absolute()
                         .left(px((margin_left - 35.0) as f32))
@@ -265,8 +264,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                 // X-axis ticks and labels
                 .children(x_ticks.iter().map(|&year| {
                     let x = x_scale.scale(year as f64);
-                    let label_config =
-                        VectorFontConfig::horizontal(10.0, rgb(0x333333).into());
+                    let label_config = VectorFontConfig::horizontal(10.0, rgb(0x333333).into());
                     div()
                         .absolute()
                         .left(px((margin_left + x - 15.0) as f32))
@@ -276,10 +274,7 @@ pub fn render(_app: &ShowcaseApp, _cx: &mut Context<ShowcaseApp>) -> Div {
                         .flex_col()
                         .items_center()
                         .child(div().w(px(1.0)).h(px(5.0)).bg(rgb(0x000000)))
-                        .child(render_vector_text(
-                            &format!("{}", year),
-                            &label_config,
-                        ))
+                        .child(render_vector_text(&format!("{}", year), &label_config))
                 }))
                 // X-axis label
                 .child(

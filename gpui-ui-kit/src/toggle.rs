@@ -9,8 +9,8 @@
 //! - Optional label
 //! - Two visual styles: Sliding (iOS-style) and Segmented ([OFF|ON])
 
-use crate::theme::ThemeExt;
 use crate::ComponentTheme;
+use crate::theme::ThemeExt;
 use gpui::prelude::*;
 use gpui::*;
 

@@ -58,8 +58,8 @@
 //! cleanup_input_state(&element_id);
 //! ```
 
-use crate::theme::ThemeExt;
 use crate::ComponentTheme;
+use crate::theme::ThemeExt;
 use gpui::prelude::*;
 use gpui::*;
 use std::cell::RefCell;
@@ -134,7 +134,10 @@ pub struct InputTheme {
     #[theme(default = 0x007acc, from = accent)]
     pub cursor: Rgba,
     /// Selection background
-    #[theme(default = 0x007acc44, from_expr = "Rgba { r: theme.accent.r, g: theme.accent.g, b: theme.accent.b, a: 0.3 }")]
+    #[theme(
+        default = 0x007acc44,
+        from_expr = "Rgba { r: theme.accent.r, g: theme.accent.g, b: theme.accent.b, a: 0.3 }"
+    )]
     pub selection_bg: Rgba,
 }
 

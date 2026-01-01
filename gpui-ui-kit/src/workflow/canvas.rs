@@ -580,10 +580,7 @@ impl WorkflowCanvas {
     fn handle_double_click(&mut self, position: Position, window: &mut Window, cx: &mut App) {
         // position is in screen coordinates (relative to canvas element)
         // Convert to canvas coordinates for hit testing
-        let canvas_pos = self
-            .state
-            .viewport
-            .screen_to_canvas(position.x, position.y);
+        let canvas_pos = self.state.viewport.screen_to_canvas(position.x, position.y);
 
         // Hit test to find what was double-clicked
         let hit_result = self.hit_tester.hit_test(canvas_pos, &self.state.graph);

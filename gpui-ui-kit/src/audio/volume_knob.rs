@@ -11,8 +11,8 @@
 //! - Mute state support
 //! - Customizable colors and theme support
 
-use crate::theme::ThemeExt;
 use crate::ComponentTheme;
+use crate::theme::ThemeExt;
 use gpui::*;
 use std::f32::consts::PI;
 

@@ -287,19 +287,14 @@ impl EQView {
     }
 
     /// Draw the frequency/dB grid
-    fn draw_grid(
-        &self,
-        renderer: &mut Renderer2D,
-        x: f32,
-        y: f32,
-        width: f32,
-        height: f32,
-    ) {
+    fn draw_grid(&self, renderer: &mut Renderer2D, x: f32, y: f32, width: f32, height: f32) {
         // Draw border
         renderer.draw_rect(x, y, width, height, [0.15, 0.15, 0.17, 1.0]);
 
         // Frequency grid lines (logarithmic)
-        let freq_lines = [20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0];
+        let freq_lines = [
+            20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0,
+        ];
         for &freq in &freq_lines {
             let line_x = x + self.freq_to_x(freq, width);
             let is_major = freq == 100.0 || freq == 1000.0 || freq == 10000.0;
@@ -321,7 +316,14 @@ impl EQView {
             } else {
                 self.theme.grid_minor
             };
-            renderer.draw_line(x, line_y, x + width, line_y, color, if is_major { 2.0 } else { 1.0 });
+            renderer.draw_line(
+                x,
+                line_y,
+                x + width,
+                line_y,
+                color,
+                if is_major { 2.0 } else { 1.0 },
+            );
         }
     }
 
@@ -366,14 +368,7 @@ impl EQView {
     }
 
     /// Draw band control handles
-    fn draw_handles(
-        &self,
-        renderer: &mut Renderer2D,
-        x: f32,
-        y: f32,
-        width: f32,
-        height: f32,
-    ) {
+    fn draw_handles(&self, renderer: &mut Renderer2D, x: f32, y: f32, width: f32, height: f32) {
         for (i, band) in self.bands.iter().enumerate() {
             if !band.enabled {
                 continue;
@@ -405,7 +400,13 @@ impl EQView {
 
     /// Handle mouse down event
     /// Returns the band index if a handle was hit
-    pub fn handle_mouse_down(&mut self, mouse_x: f32, mouse_y: f32, width: f32, height: f32) -> Option<usize> {
+    pub fn handle_mouse_down(
+        &mut self,
+        mouse_x: f32,
+        mouse_y: f32,
+        width: f32,
+        height: f32,
+    ) -> Option<usize> {
         let padding = 40.0;
         let graph_width = width - padding * 2.0;
         let graph_height = height - padding * 2.0;

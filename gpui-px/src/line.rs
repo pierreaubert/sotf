@@ -1464,7 +1464,10 @@ impl LineChart {
 
                 // Base item div with ID for click handling
                 let mut item = div()
-                    .id(ElementId::NamedInteger("legend-item".into(), series_idx as u64))
+                    .id(ElementId::NamedInteger(
+                        "legend-item".into(),
+                        series_idx as u64,
+                    ))
                     .flex()
                     .items_center()
                     .gap_2()

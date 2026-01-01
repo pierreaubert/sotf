@@ -14,8 +14,8 @@
 //! - Rotating indicator dot
 //! - Tick marks with major (labeled) and minor (unlabeled) ticks
 
-use crate::theme::ThemeExt;
 use crate::ComponentTheme;
+use crate::theme::ThemeExt;
 use gpui::prelude::*;
 use gpui::*;
 
@@ -35,7 +35,10 @@ pub struct PotentiometerTheme {
     #[theme(default = 0x007accff, from = accent)]
     pub accent: Rgba,
     /// Accent muted (for selection background)
-    #[theme(default = 0x007acc33, from_expr = "Rgba { r: theme.accent.r, g: theme.accent.g, b: theme.accent.b, a: 0.2 }")]
+    #[theme(
+        default = 0x007acc33,
+        from_expr = "Rgba { r: theme.accent.r, g: theme.accent.g, b: theme.accent.b, a: 0.2 }"
+    )]
     pub accent_muted: Rgba,
     /// Border color
     #[theme(default = 0x3a3a3aff, from = border)]

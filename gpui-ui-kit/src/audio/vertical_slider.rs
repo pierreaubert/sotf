@@ -15,9 +15,9 @@
 //! - Keyboard shortcut hints
 //! - Linear or logarithmic scale
 
+use crate::ComponentTheme;
 use crate::scale::Scale;
 use crate::theme::ThemeExt;
-use crate::ComponentTheme;
 use gpui::prelude::*;
 use gpui::*;
 
@@ -41,7 +41,10 @@ pub struct VerticalSliderTheme {
     #[theme(default = 0x007accff, from = accent)]
     pub accent: Rgba,
     /// Accent muted (for selection background)
-    #[theme(default = 0x007acc33, from_expr = "Rgba { r: theme.accent.r, g: theme.accent.g, b: theme.accent.b, a: 0.2 }")]
+    #[theme(
+        default = 0x007acc33,
+        from_expr = "Rgba { r: theme.accent.r, g: theme.accent.g, b: theme.accent.b, a: 0.2 }"
+    )]
     pub accent_muted: Rgba,
     /// Border color
     #[theme(default = 0x3a3a3aff, from = border)]

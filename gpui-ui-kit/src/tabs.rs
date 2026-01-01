@@ -2,8 +2,8 @@
 //!
 //! Provides a horizontal tab bar with content panels and theming support.
 
-use crate::theme::{ThemeExt, glow_shadow};
 use crate::ComponentTheme;
+use crate::theme::{ThemeExt, glow_shadow};
 use gpui::prelude::*;
 use gpui::*;
 

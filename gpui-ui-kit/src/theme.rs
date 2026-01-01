@@ -339,4 +339,3 @@ pub fn glow_shadow(color: Rgba) -> Vec<BoxShadow> {
         },
     ]
 }
-

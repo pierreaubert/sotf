@@ -16,7 +16,7 @@ use autoeq::{Curve, DirectivityData};
 use gpui::prelude::FluentBuilder;
 use gpui::*;
 use gpui_px::{
-    heatmap, line, surface3d, ColorScale, Colormap, LegendPosition, ScaleType, Surface3DState,
+    ColorScale, Colormap, LegendPosition, ScaleType, Surface3DState, heatmap, line, surface3d,
 };
 use gpui_ui_kit::{MiniApp, MiniAppConfig, SelectOption, Spinner, SpinnerSize};
 use tokio::runtime::Runtime;
@@ -303,10 +303,8 @@ impl SpinoramaApp {
                 .and_then(|r| r);
 
             // Wait for directivity data (optional - don't fail if not available)
-            let directivity_result: Option<DirectivityData> = directivity_handle
-                .await
-                .ok()
-                .and_then(|r| r.ok());
+            let directivity_result: Option<DirectivityData> =
+                directivity_handle.await.ok().and_then(|r| r.ok());
 
             match cea2034_result {
                 Ok(curves) => {
@@ -844,31 +842,37 @@ impl SpinoramaApp {
                             .rounded_md()
                             .shadow_lg()
                             .py_1()
-                            .children(colormaps.into_iter().enumerate().map(|(i, (cmap, label))| {
-                                let is_selected = self.selected_colormap == cmap;
-                                let entity = entity.clone();
+                            .children(colormaps.into_iter().enumerate().map(
+                                |(i, (cmap, label))| {
+                                    let is_selected = self.selected_colormap == cmap;
+                                    let entity = entity.clone();
 
-                                div()
-                                    .id(ElementId::NamedInteger("colormap-opt".into(), i as u64))
-                                    .px_3()
-                                    .py(px(6.0))
-                                    .cursor_pointer()
-                                    .text_sm()
-                                    .when(is_selected, |el: Stateful<Div>| {
-                                        el.bg(rgb(0x007acc)).text_color(rgb(0xffffff))
-                                    })
-                                    .when(!is_selected, |el: Stateful<Div>| {
-                                        el.text_color(rgb(0xcccccc)).hover(|s| s.bg(rgb(0x3a3a3a)))
-                                    })
-                                    .child(label)
-                                    .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
-                                        entity.update(cx, |this, cx| {
-                                            this.selected_colormap = cmap;
-                                            this.colormap_dropdown_open = false;
-                                            cx.notify();
-                                        });
-                                    })
-                            })),
+                                    div()
+                                        .id(ElementId::NamedInteger(
+                                            "colormap-opt".into(),
+                                            i as u64,
+                                        ))
+                                        .px_3()
+                                        .py(px(6.0))
+                                        .cursor_pointer()
+                                        .text_sm()
+                                        .when(is_selected, |el: Stateful<Div>| {
+                                            el.bg(rgb(0x007acc)).text_color(rgb(0xffffff))
+                                        })
+                                        .when(!is_selected, |el: Stateful<Div>| {
+                                            el.text_color(rgb(0xcccccc))
+                                                .hover(|s| s.bg(rgb(0x3a3a3a)))
+                                        })
+                                        .child(label)
+                                        .on_mouse_down(MouseButton::Left, move |_, _window, cx| {
+                                            entity.update(cx, |this, cx| {
+                                                this.selected_colormap = cmap;
+                                                this.colormap_dropdown_open = false;
+                                                cx.notify();
+                                            });
+                                        })
+                                },
+                            )),
                     )
                     .with_priority(1),
                 )
@@ -1000,17 +1004,12 @@ impl SpinoramaApp {
             .find(|&name| self.cea2034_curves.contains_key(*name));
 
         let Some(&first_name) = first_curve_name else {
-            return div()
-                .flex()
-                .items_center()
-                .justify_center()
-                .h_full()
-                .child(
-                    div()
-                        .text_base()
-                        .text_color(rgb(0x666666))
-                        .child("No CEA2034 data available for this speaker"),
-                );
+            return div().flex().items_center().justify_center().h_full().child(
+                div()
+                    .text_base()
+                    .text_color(rgb(0x666666))
+                    .child("No CEA2034 data available for this speaker"),
+            );
         };
 
         let first_curve = &self.cea2034_curves[first_name];
@@ -1079,35 +1078,20 @@ impl SpinoramaApp {
         }
 
         match chart.build() {
-            Ok(element) => div()
-                .flex()
-                .flex_col()
-                .gap_6()
-                .child(element)
-                .child(
+            Ok(element) => div().flex().flex_col().gap_6().child(element).child(
+                div().mt_4().p_4().bg(rgb(0xf5f5f5)).rounded_md().child(
                     div()
-                        .mt_4()
-                        .p_4()
-                        .bg(rgb(0xf5f5f5))
-                        .rounded_md()
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(rgb(0x666666))
-                                .child("Built with gpui-px high-level charting API"),
-                        ),
+                        .text_sm()
+                        .text_color(rgb(0x666666))
+                        .child("Built with gpui-px high-level charting API"),
                 ),
-            Err(e) => div()
-                .flex()
-                .items_center()
-                .justify_center()
-                .h_full()
-                .child(
-                    div()
-                        .text_base()
-                        .text_color(rgb(0xd32f2f))
-                        .child(format!("Chart error: {}", e)),
-                ),
+            ),
+            Err(e) => div().flex().items_center().justify_center().h_full().child(
+                div()
+                    .text_base()
+                    .text_color(rgb(0xd32f2f))
+                    .child(format!("Chart error: {}", e)),
+            ),
         }
     }
 
@@ -1123,17 +1107,12 @@ impl SpinoramaApp {
         ];
 
         let Some(ref directivity) = self.directivity_data else {
-            return div()
-                .flex()
-                .items_center()
-                .justify_center()
-                .h_full()
-                .child(
-                    div()
-                        .text_base()
-                        .text_color(rgb(0x666666))
-                        .child("No directivity data available for this speaker."),
-                );
+            return div().flex().items_center().justify_center().h_full().child(
+                div()
+                    .text_base()
+                    .text_color(rgb(0x666666))
+                    .child("No directivity data available for this speaker."),
+            );
         };
 
         let curves = if plane == "horizontal" {
@@ -1143,17 +1122,12 @@ impl SpinoramaApp {
         };
 
         if curves.is_empty() {
-            return div()
-                .flex()
-                .items_center()
-                .justify_center()
-                .h_full()
-                .child(
-                    div()
-                        .text_base()
-                        .text_color(rgb(0x666666))
-                        .child(format!("No {} directivity data available.", plane)),
-                );
+            return div().flex().items_center().justify_center().h_full().child(
+                div()
+                    .text_base()
+                    .text_color(rgb(0x666666))
+                    .child(format!("No {} directivity data available.", plane)),
+            );
         }
 
         // Get the first curve to use as the base for frequency data
@@ -1168,23 +1142,15 @@ impl SpinoramaApp {
             .map(|(i, _)| i)
             .collect();
 
-        let freq: Vec<f64> = freq_indices
-            .iter()
-            .map(|&i| first_curve.freq[i])
-            .collect();
+        let freq: Vec<f64> = freq_indices.iter().map(|&i| first_curve.freq[i]).collect();
 
         if freq.is_empty() {
-            return div()
-                .flex()
-                .items_center()
-                .justify_center()
-                .h_full()
-                .child(
-                    div()
-                        .text_base()
-                        .text_color(rgb(0x666666))
-                        .child("No frequency data in valid range."),
-                );
+            return div().flex().items_center().justify_center().h_full().child(
+                div()
+                    .text_base()
+                    .text_color(rgb(0x666666))
+                    .child("No frequency data in valid range."),
+            );
         }
 
         let num_curves = curves.len();
@@ -1295,51 +1261,39 @@ impl SpinoramaApp {
                         .mt_2()
                         .text_sm()
                         .text_color(rgb(0x888888))
-                        .child(format!("{} curves from {:.0}° to {:.0}°", num_curves, angle_min, angle_max)),
+                        .child(format!(
+                            "{} curves from {:.0}° to {:.0}°",
+                            num_curves, angle_min, angle_max
+                        )),
                 ),
-            Err(e) => div()
-                .flex()
-                .items_center()
-                .justify_center()
-                .h_full()
-                .child(
-                    div()
-                        .text_base()
-                        .text_color(rgb(0xd32f2f))
-                        .child(format!("Chart error: {}", e)),
-                ),
+            Err(e) => div().flex().items_center().justify_center().h_full().child(
+                div()
+                    .text_base()
+                    .text_color(rgb(0xd32f2f))
+                    .child(format!("Chart error: {}", e)),
+            ),
         }
     }
 
     fn render_contour_plot(&self, _cx: &mut Context<Self>) -> Div {
         let Some(ref directivity) = self.directivity_data else {
-            return div()
-                .flex()
-                .items_center()
-                .justify_center()
-                .h_full()
-                .child(
-                    div()
-                        .text_base()
-                        .text_color(rgb(0x666666))
-                        .child("No directivity data available for contour plot."),
-                );
+            return div().flex().items_center().justify_center().h_full().child(
+                div()
+                    .text_base()
+                    .text_color(rgb(0x666666))
+                    .child("No directivity data available for contour plot."),
+            );
         };
 
         let curves = &directivity.horizontal;
 
         if curves.is_empty() {
-            return div()
-                .flex()
-                .items_center()
-                .justify_center()
-                .h_full()
-                .child(
-                    div()
-                        .text_base()
-                        .text_color(rgb(0x666666))
-                        .child("No horizontal directivity data available for contour plot."),
-                );
+            return div().flex().items_center().justify_center().h_full().child(
+                div()
+                    .text_base()
+                    .text_color(rgb(0x666666))
+                    .child("No horizontal directivity data available for contour plot."),
+            );
         }
 
         // Build a 2D grid from directivity data
@@ -1401,91 +1355,58 @@ impl SpinoramaApp {
             .size(900.0, 500.0)
             .build()
         {
-            Ok(element) => {
+            Ok(element) => div().flex().flex_col().gap_6().child(element).child(
                 div()
                     .flex()
-                    .flex_col()
-                    .gap_6()
-                    .child(element)
+                    .gap_4()
+                    .p_4()
+                    .bg(rgb(0xf5f5f5))
+                    .rounded_md()
+                    .child(div().text_sm().text_color(rgb(0x666666)).child(format!(
+                        "X: Frequency ({:.0} Hz - {:.0} Hz, log scale)",
+                        freq_min, freq_max
+                    )))
                     .child(
                         div()
-                            .flex()
-                            .gap_4()
-                            .p_4()
-                            .bg(rgb(0xf5f5f5))
-                            .rounded_md()
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(rgb(0x666666))
-                                    .child(format!(
-                                        "X: Frequency ({:.0} Hz - {:.0} Hz, log scale)",
-                                        freq_min, freq_max
-                                    )),
-                            )
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(rgb(0x666666))
-                                    .child(format!(
-                                        "Y: Angle ({:.0}° to {:.0}°)",
-                                        angle_min, angle_max
-                                    )),
-                            )
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(rgb(0x666666))
-                                    .child(format!(
-                                        "SPL range: {:.1} dB to {:.1} dB",
-                                        spl_min, spl_max
-                                    )),
-                            ),
+                            .text_sm()
+                            .text_color(rgb(0x666666))
+                            .child(format!("Y: Angle ({:.0}° to {:.0}°)", angle_min, angle_max)),
                     )
-            }
-            Err(e) => div()
-                .flex()
-                .items_center()
-                .justify_center()
-                .h_full()
-                .child(
-                    div()
-                        .text_base()
-                        .text_color(rgb(0xd32f2f))
-                        .child(format!("Chart error: {}", e)),
-                ),
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(rgb(0x666666))
+                            .child(format!("SPL range: {:.1} dB to {:.1} dB", spl_min, spl_max)),
+                    ),
+            ),
+            Err(e) => div().flex().items_center().justify_center().h_full().child(
+                div()
+                    .text_base()
+                    .text_color(rgb(0xd32f2f))
+                    .child(format!("Chart error: {}", e)),
+            ),
         }
     }
 
     fn render_surface3d_plot(&mut self, cx: &mut Context<Self>) -> Div {
         let Some(ref directivity) = self.directivity_data else {
-            return div()
-                .flex()
-                .items_center()
-                .justify_center()
-                .h_full()
-                .child(
-                    div()
-                        .text_base()
-                        .text_color(rgb(0x666666))
-                        .child("No directivity data available for 3D surface plot."),
-                );
+            return div().flex().items_center().justify_center().h_full().child(
+                div()
+                    .text_base()
+                    .text_color(rgb(0x666666))
+                    .child("No directivity data available for 3D surface plot."),
+            );
         };
 
         let curves = &directivity.horizontal;
 
         if curves.is_empty() {
-            return div()
-                .flex()
-                .items_center()
-                .justify_center()
-                .h_full()
-                .child(
-                    div()
-                        .text_base()
-                        .text_color(rgb(0x666666))
-                        .child("No horizontal directivity data available for 3D surface plot."),
-                );
+            return div().flex().items_center().justify_center().h_full().child(
+                div()
+                    .text_base()
+                    .text_color(rgb(0x666666))
+                    .child("No horizontal directivity data available for 3D surface plot."),
+            );
         }
 
         // Build a 2D grid from directivity data
@@ -1628,52 +1549,31 @@ impl SpinoramaApp {
                             .p_4()
                             .bg(rgb(0xf5f5f5))
                             .rounded_md()
+                            .child(div().text_sm().text_color(rgb(0x666666)).child(format!(
+                                "X: Frequency ({:.0} Hz - {:.0} Hz, log scale)",
+                                freq_min, freq_max
+                            )))
+                            .child(div().text_sm().text_color(rgb(0x666666)).child(format!(
+                                "Y: Angle ({:.0}° to {:.0}°)",
+                                angle_min, angle_max
+                            )))
+                            .child(div().text_sm().text_color(rgb(0x666666)).child(format!(
+                                "Z: SPL range ({:.1} dB to {:.1} dB)",
+                                spl_min, spl_max
+                            )))
                             .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(rgb(0x666666))
-                                    .child(format!(
-                                        "X: Frequency ({:.0} Hz - {:.0} Hz, log scale)",
-                                        freq_min, freq_max
-                                    )),
-                            )
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(rgb(0x666666))
-                                    .child(format!(
-                                        "Y: Angle ({:.0}° to {:.0}°)",
-                                        angle_min, angle_max
-                                    )),
-                            )
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(rgb(0x666666))
-                                    .child(format!(
-                                        "Z: SPL range ({:.1} dB to {:.1} dB)",
-                                        spl_min, spl_max
-                                    )),
-                            )
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(rgb(0x888888))
-                                    .child("Drag to rotate • Scroll to zoom • Double-click to reset"),
+                                div().text_sm().text_color(rgb(0x888888)).child(
+                                    "Drag to rotate • Scroll to zoom • Double-click to reset",
+                                ),
                             ),
                     )
             }
-            Err(e) => div()
-                .flex()
-                .items_center()
-                .justify_center()
-                .h_full()
-                .child(
-                    div()
-                        .text_base()
-                        .text_color(rgb(0xd32f2f))
-                        .child(format!("Chart error: {}", e)),
-                ),
+            Err(e) => div().flex().items_center().justify_center().h_full().child(
+                div()
+                    .text_base()
+                    .text_color(rgb(0xd32f2f))
+                    .child(format!("Chart error: {}", e)),
+            ),
         }
     }
 }

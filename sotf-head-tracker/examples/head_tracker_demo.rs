@@ -55,12 +55,48 @@ fn demo_smoother() {
 
     // Simulate jittery position data
     let jitter_positions = vec![
-        HeadPosition { x: 0.10, z: 0.00, timestamp_ms: 0, confidence: 0.9, ..Default::default() },
-        HeadPosition { x: 0.12, z: 0.01, timestamp_ms: 33, confidence: 0.9, ..Default::default() },
-        HeadPosition { x: 0.09, z: -0.01, timestamp_ms: 66, confidence: 0.9, ..Default::default() },
-        HeadPosition { x: 0.11, z: 0.02, timestamp_ms: 100, confidence: 0.9, ..Default::default() },
-        HeadPosition { x: 0.08, z: -0.02, timestamp_ms: 133, confidence: 0.9, ..Default::default() },
-        HeadPosition { x: 0.10, z: 0.00, timestamp_ms: 166, confidence: 0.9, ..Default::default() },
+        HeadPosition {
+            x: 0.10,
+            z: 0.00,
+            timestamp_ms: 0,
+            confidence: 0.9,
+            ..Default::default()
+        },
+        HeadPosition {
+            x: 0.12,
+            z: 0.01,
+            timestamp_ms: 33,
+            confidence: 0.9,
+            ..Default::default()
+        },
+        HeadPosition {
+            x: 0.09,
+            z: -0.01,
+            timestamp_ms: 66,
+            confidence: 0.9,
+            ..Default::default()
+        },
+        HeadPosition {
+            x: 0.11,
+            z: 0.02,
+            timestamp_ms: 100,
+            confidence: 0.9,
+            ..Default::default()
+        },
+        HeadPosition {
+            x: 0.08,
+            z: -0.02,
+            timestamp_ms: 133,
+            confidence: 0.9,
+            ..Default::default()
+        },
+        HeadPosition {
+            x: 0.10,
+            z: 0.00,
+            timestamp_ms: 166,
+            confidence: 0.9,
+            ..Default::default()
+        },
     ];
 
     for (i, raw) in jitter_positions.iter().enumerate() {
@@ -88,7 +124,12 @@ fn demo_smoother() {
         let error = ((smoothed.x - target_x).powi(2) + (smoothed.z - target_z).powi(2)).sqrt();
         println!(
             "  Frame {}: target=({:+.3}m, {:+.3}m), smoothed=({:+.3}m, {:+.3}m), error={:.4}m",
-            i + 6, target_x, target_z, smoothed.x, smoothed.z, error
+            i + 6,
+            target_x,
+            target_z,
+            smoothed.x,
+            smoothed.z,
+            error
         );
     }
 }

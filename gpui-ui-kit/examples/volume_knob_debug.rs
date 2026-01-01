@@ -9,9 +9,9 @@
 //! - Double-click to mute
 
 use gpui::*;
+use gpui_ui_kit::audio::volume_knob::VolumeKnob;
 use gpui_ui_kit::i18n::{I18nExt, TranslationKey};
 use gpui_ui_kit::theme::ThemeExt;
-use gpui_ui_kit::audio::volume_knob::VolumeKnob;
 use gpui_ui_kit::*;
 
 /// Demo state

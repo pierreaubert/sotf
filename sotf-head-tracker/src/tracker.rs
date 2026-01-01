@@ -12,8 +12,8 @@ use crate::types::{CalibrationData, HeadPosition, HeadTrackerConfig, HeadTracker
 use crossbeam::queue::ArrayQueue;
 use log::{debug, error, info, warn};
 use parking_lot::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -192,10 +192,16 @@ impl HeadTracker {
 
         // Average the detections
         let n = calibration_detections.len() as f32;
-        let avg_center_x: f32 =
-            calibration_detections.iter().map(|d| d.bounding_box.center_x()).sum::<f32>() / n;
-        let avg_center_y: f32 =
-            calibration_detections.iter().map(|d| d.bounding_box.center_y()).sum::<f32>() / n;
+        let avg_center_x: f32 = calibration_detections
+            .iter()
+            .map(|d| d.bounding_box.center_x())
+            .sum::<f32>()
+            / n;
+        let avg_center_y: f32 = calibration_detections
+            .iter()
+            .map(|d| d.bounding_box.center_y())
+            .sum::<f32>()
+            / n;
         let avg_size: f32 = calibration_detections
             .iter()
             .map(|d| d.bounding_box.area().sqrt())
@@ -347,7 +353,9 @@ fn tracking_thread(
                                 // Face lost for too long, reduce confidence
                                 if let Some(last) = &last_detection {
                                     let mut pos = last.to_head_position(
-                                        0.5, 0.5, 0.2,
+                                        0.5,
+                                        0.5,
+                                        0.2,
                                         cfg.camera_distance_m,
                                         cfg.camera_fov_deg,
                                         frame.timestamp_ms,

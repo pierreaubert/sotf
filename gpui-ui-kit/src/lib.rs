@@ -92,6 +92,13 @@ pub use alert::{Alert, AlertVariant, InlineAlert};
 pub use toast::{Toast, ToastContainer, ToastPosition, ToastVariant};
 
 // Form
+pub use audio::potentiometer::{
+    Potentiometer, PotentiometerScale, PotentiometerSize, PotentiometerTheme,
+};
+pub use audio::vertical_slider::{
+    VerticalSlider, VerticalSliderScale, VerticalSliderSize, VerticalSliderTheme,
+};
+pub use audio::volume_knob::{VolumeKnob, VolumeKnobTheme};
 pub use autoeq::{
     ALGORITHM_OPTIONS, AutoEqConfig, AutoEqForm, AutoEqFormTheme, AutoEqFormUiState,
     DE_STRATEGY_OPTIONS, HEADPHONE_TARGET_CURVE_OPTIONS, LOCAL_ALGO_OPTIONS, OptimizationType,
@@ -101,15 +108,12 @@ pub use checkbox::{Checkbox, CheckboxSize};
 pub use color::Color;
 pub use color_picker::{ColorPickerMode, ColorPickerView};
 pub use input::{Input, InputSize, InputVariant, cleanup_input_state};
-pub use number_input::{NumberInput, NumberInputSize, NumberInputTheme, cleanup_number_input_state};
-pub use audio::potentiometer::{Potentiometer, PotentiometerScale, PotentiometerSize, PotentiometerTheme};
+pub use number_input::{
+    NumberInput, NumberInputSize, NumberInputTheme, cleanup_number_input_state,
+};
 pub use select::{Select, SelectOption, SelectSize, SelectTheme};
 pub use slider::{Slider, SliderSize, SliderTheme};
 pub use toggle::{Toggle, ToggleSize, ToggleStyle, ToggleTheme};
-pub use audio::vertical_slider::{
-    VerticalSlider, VerticalSliderScale, VerticalSliderSize, VerticalSliderTheme,
-};
-pub use audio::volume_knob::{VolumeKnob, VolumeKnobTheme};
 
 // Data display
 pub use avatar::{Avatar, AvatarGroup, AvatarShape, AvatarSize, AvatarStatus};

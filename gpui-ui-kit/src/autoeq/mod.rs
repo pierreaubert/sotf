@@ -23,6 +23,7 @@
 use gpui::prelude::*;
 use gpui::*;
 
+use crate::ComponentTheme;
 use crate::card::Card;
 use crate::number_input::{NumberInput, NumberInputSize, NumberInputTheme};
 use crate::select::{Select, SelectOption, SelectTheme};
@@ -30,7 +31,6 @@ use crate::stack::{HStack, StackJustify, StackSpacing, VStack};
 use crate::text::{Text, TextSize, TextWeight};
 use crate::theme::ThemeExt;
 use crate::toggle::{Toggle, ToggleSize, ToggleTheme};
-use crate::ComponentTheme;
 
 // ============================================================================
 // Constants - Algorithm and Model Options
@@ -395,10 +395,16 @@ pub struct AutoEqFormTheme {
     #[theme(default = 0x888888ff, from = text_muted)]
     pub text_muted: Rgba,
     /// NumberInput theme
-    #[theme(default_expr = "NumberInputTheme::default()", from_expr = "NumberInputTheme::from(theme)")]
+    #[theme(
+        default_expr = "NumberInputTheme::default()",
+        from_expr = "NumberInputTheme::from(theme)"
+    )]
     pub number_input_theme: NumberInputTheme,
     /// Select theme
-    #[theme(default_expr = "SelectTheme::default()", from_expr = "SelectTheme::from(theme)")]
+    #[theme(
+        default_expr = "SelectTheme::default()",
+        from_expr = "SelectTheme::from(theme)"
+    )]
     pub select_theme: SelectTheme,
 }
 

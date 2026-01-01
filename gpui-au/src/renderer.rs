@@ -140,9 +140,11 @@ impl Renderer2D {
         // Enable blending for anti-aliased lines
         color_attachment.set_blending_enabled(true);
         color_attachment.set_source_rgb_blend_factor(metal::MTLBlendFactor::SourceAlpha);
-        color_attachment.set_destination_rgb_blend_factor(metal::MTLBlendFactor::OneMinusSourceAlpha);
+        color_attachment
+            .set_destination_rgb_blend_factor(metal::MTLBlendFactor::OneMinusSourceAlpha);
         color_attachment.set_source_alpha_blend_factor(metal::MTLBlendFactor::One);
-        color_attachment.set_destination_alpha_blend_factor(metal::MTLBlendFactor::OneMinusSourceAlpha);
+        color_attachment
+            .set_destination_alpha_blend_factor(metal::MTLBlendFactor::OneMinusSourceAlpha);
 
         match device.new_render_pipeline_state(&pipeline_desc) {
             Ok(state) => Some(state),
@@ -159,7 +161,15 @@ impl Renderer2D {
     }
 
     /// Add a line segment
-    pub fn draw_line(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, color: [f32; 4], thickness: f32) {
+    pub fn draw_line(
+        &mut self,
+        x1: f32,
+        y1: f32,
+        x2: f32,
+        y2: f32,
+        color: [f32; 4],
+        thickness: f32,
+    ) {
         // Calculate perpendicular direction for thickness
         let dx = x2 - x1;
         let dy = y2 - y1;
@@ -307,7 +317,8 @@ impl Renderer2D {
         // Create command buffer and encoder using raw msg_send
         let command_queue_ptr = self.command_queue.as_ptr();
         let command_buffer: id = msg_send![command_queue_ptr, commandBuffer];
-        let encoder: id = msg_send![command_buffer, renderCommandEncoderWithDescriptor: render_pass_desc];
+        let encoder: id =
+            msg_send![command_buffer, renderCommandEncoderWithDescriptor: render_pass_desc];
 
         // Set pipeline state
         let _: () = msg_send![encoder, setRenderPipelineState: self.pipeline_state.as_ptr()];

@@ -2,8 +2,8 @@
 //!
 //! Collapsible content sections with support for both vertical and horizontal orientations.
 
-use crate::theme::{ThemeExt, glow_shadow};
 use crate::ComponentTheme;
+use crate::theme::{ThemeExt, glow_shadow};
 use gpui::prelude::*;
 use gpui::*;
 
