@@ -130,7 +130,7 @@ gpui:
 gpui-release-macos:
 	#!/usr/bin/env bash
 	set -euo pipefail
-	sh -x ./sotf-audio-player/macos/build-dmg.sh
+	sh -x ./sotf-audio-player/macos/build-dmg.sh --sign --notarize
 
 gpui-release-windows:
 	cd sotf-audio-player && cargo vcpkg build
@@ -281,14 +281,14 @@ cross : cross-macos-arm-2-linux-x86
 # Debug: Build Docker image and open interactive shell
 cross-debug-x86 :
 	@echo "Building Docker image..."
-	docker build -t autoeq-linux-x86 -f ./builds/Dockerfile.x86_64-unknown-linux-gnu .
+	docker build -t autoeq-linux-x86 -f ./builds/from_macos_arm/Dockerfile.x86_64-unknown-linux-gnu .
 	@echo "Starting interactive shell. Try: cargo build --release --target x86_64-unknown-linux-gnu"
 	docker run -it --rm -v "$(pwd)":/project -w /project autoeq-linux-x86 /bin/bash
 
 cross-macos-arm-2-linux-x86 :
 	echo "This can take minutes!"
 	@echo "Building Docker image..."
-	docker build -t autoeq-linux-x86 -f ./builds/Dockerfile.x86_64-unknown-linux-gnu .
+	docker build -t autoeq-linux-x86 -f ./builds/from_macos_arm/Dockerfile.x86_64-unknown-linux-musl .
 	@echo "Building in Docker container..."
 	docker run --rm -v "$(pwd)":/project -w /project autoeq-linux-x86 \
 		cargo build --release --target x86_64-unknown-linux-gnu
