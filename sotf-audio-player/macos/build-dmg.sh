@@ -431,7 +431,9 @@ create_dmg() {
     if command -v create-dmg &> /dev/null; then
         log_info "Using create-dmg for styled DMG..."
 
-        create-dmg \
+        # create-dmg can fail with AppleScript timeout when Finder is unresponsive
+        # or when running headless. We handle this gracefully with hdiutil fallback.
+        if create-dmg \
             --volname "$APP_NAME" \
             --volicon "$APP_BUNDLE/Contents/Resources/AppIcon.icns" \
             --window-pos 200 120 \
@@ -442,15 +444,20 @@ create_dmg() {
             --app-drop-link 450 185 \
             --no-internet-enable \
             "$dmg_path" \
-            "$APP_BUNDLE" || {
-                # create-dmg returns non-zero even on success sometimes
-                if [ -f "$dmg_path" ]; then
-                    log_success "DMG created (with create-dmg)"
-                else
-                    log_warning "create-dmg failed, falling back to hdiutil"
-                    create_dmg_hdiutil "$dmg_path"
-                fi
-            }
+            "$APP_BUNDLE" 2>&1; then
+            log_success "DMG created (with create-dmg)"
+        else
+            # Clean up any temp DMG files left by create-dmg
+            rm -f "$DMG_DIR"/rw.*.dmg 2>/dev/null || true
+
+            if [ -f "$dmg_path" ]; then
+                # create-dmg sometimes returns non-zero even on success
+                log_success "DMG created (with create-dmg)"
+            else
+                log_warning "create-dmg failed, falling back to hdiutil"
+                create_dmg_hdiutil "$dmg_path"
+            fi
+        fi
     else
         create_dmg_hdiutil "$dmg_path"
     fi
