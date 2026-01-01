@@ -286,8 +286,21 @@ create_tarball() {
     local arch
     if $CROSS_ARM64; then
         arch="arm64"
-    else
+    elif $CROSS_COMPILE; then
         arch="x86_64"
+    else
+        # Native build - detect architecture
+        case "$(uname -m)" in
+            x86_64)
+                arch="x86_64"
+                ;;
+            aarch64|arm64)
+                arch="arm64"
+                ;;
+            *)
+                arch="$(uname -m)"
+                ;;
+        esac
     fi
 
     local tarball_name="${APP_NAME}-${VERSION}-linux-${arch}"
@@ -620,9 +633,25 @@ main() {
     if $CROSS_ARM64; then
         arch="arm64"
         deb_arch="arm64"
-    else
+    elif $CROSS_COMPILE; then
         arch="x86_64"
         deb_arch="amd64"
+    else
+        # Native build - detect architecture
+        case "$(uname -m)" in
+            x86_64)
+                arch="x86_64"
+                deb_arch="amd64"
+                ;;
+            aarch64|arm64)
+                arch="arm64"
+                deb_arch="arm64"
+                ;;
+            *)
+                arch="$(uname -m)"
+                deb_arch="$(uname -m)"
+                ;;
+        esac
     fi
 
     local tarball_name="${APP_NAME}-${VERSION}-linux-${arch}"
