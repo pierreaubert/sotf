@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
     Library,
-    DirectoryManager,
     Queue,
     Spectrum,
     Settings,

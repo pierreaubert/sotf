@@ -18,7 +18,6 @@ actions!(
         VolumeUpSmall,
         VolumeDownSmall,
         SwitchToDevices,
-        SwitchToDirectoryManager,
         SwitchToHeadphoneEQ,
         SwitchToLibrary,
         SwitchToQueue,

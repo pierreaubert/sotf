@@ -11,7 +11,6 @@ mod tests {
         // Ensure all variants exist and are distinct
         let screens = [
             Screen::Library,
-            Screen::DirectoryManager,
             Screen::Queue,
             Screen::Spectrum,
             Screen::Settings,
@@ -22,7 +21,7 @@ mod tests {
             Screen::Spinorama,
             Screen::PluginGraph,
         ];
-        assert_eq!(screens.len(), 11);
+        assert_eq!(screens.len(), 10);
         assert_ne!(Screen::Library, Screen::Queue);
     }
 

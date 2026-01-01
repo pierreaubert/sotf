@@ -15,7 +15,6 @@ impl PlayerView {
         let theme = state.app.theme.clone();
         let screen_name = match state.app.current_screen {
             Screen::Library => "Library",
-            Screen::DirectoryManager => "Directories",
             Screen::Queue => "Queue",
             Screen::Spectrum => "Spectrum",
             Screen::Settings => "Settings",
@@ -836,14 +835,6 @@ fn get_keybindings_for_screen(screen: Screen) -> Vec<(&'static str, &'static str
             ("C or 5/6/7/8/9", "Filter: All/Mono/Stereo/Multi/Mixed"),
             ("A or Enter", "Add album to queue"),
             ("Shift-Q", "Go to queue screen"),
-        ],
-        Screen::DirectoryManager => vec![
-            ("↑/↓ or K/J", "Navigate directories"),
-            ("PageUp/PageDown", "Jump by page"),
-            ("Enter/→/L", "Expand/collapse directory"),
-            ("Shift-A", "Add directory"),
-            ("D/Delete", "Remove selected directory"),
-            ("Shift-S", "Scan library"),
         ],
         Screen::Queue => vec![
             ("↑/↓ or K/J", "Navigate queue items"),

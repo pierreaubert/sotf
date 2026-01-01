@@ -1,4 +1,4 @@
-//! Appearance settings content
+//! Appearance settings content (Theme and Language)
 
 use crate::i18n::Language;
 use crate::theme::ThemeId;
@@ -8,13 +8,13 @@ use gpui::*;
 use gpui_ui_kit::{Button, ButtonSize, ButtonVariant};
 
 impl PlayerView {
-    pub(crate) fn render_appearance_settings_content(
+    /// Render theme settings content
+    pub(crate) fn render_theme_settings_content(
         &self,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme_id = state.app.theme_id;
-        let language = state.app.language;
         let theme = state.app.theme.clone();
         let translations = state.app.translations.clone();
 
@@ -22,7 +22,6 @@ impl PlayerView {
             .flex()
             .flex_col()
             .gap_6()
-            // Theme selection with visual previews
             .child(
                 div()
                     .flex()
@@ -55,7 +54,22 @@ impl PlayerView {
                         container
                     }),
             )
-            // Language selection
+    }
+
+    /// Render language settings content
+    pub(crate) fn render_language_settings_content(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let language = state.app.language;
+        let theme = state.app.theme.clone();
+        let translations = state.app.translations.clone();
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_6()
             .child(
                 div()
                     .flex()

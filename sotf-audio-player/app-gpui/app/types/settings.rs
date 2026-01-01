@@ -2,7 +2,9 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsTab {
     Library,
-    Appearance,
+    Theme,
+    Language,
+    Keybindings,
     AudioDevice,
 }
 

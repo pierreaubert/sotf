@@ -275,15 +275,6 @@ impl PlayerView {
         cx.notify();
     }
 
-    fn switch_to_directory_manager(
-        &mut self,
-        _: &SwitchToDirectoryManager,
-        _: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.switch_screen(Screen::DirectoryManager, cx);
-    }
-
     fn switch_to_settings(&mut self, _: &SwitchToSettings, _: &mut Window, cx: &mut Context<Self>) {
         self.switch_screen(Screen::Settings, cx);
     }
@@ -944,9 +935,6 @@ impl PlayerView {
                 Screen::Queue => {
                     state.app.select_next_queue_item();
                 }
-                Screen::DirectoryManager => {
-                    state.app.select_next_directory();
-                }
                 _ => {}
             }
         });
@@ -965,9 +953,6 @@ impl PlayerView {
                 }
                 Screen::Queue => {
                     state.app.select_previous_queue_item();
-                }
-                Screen::DirectoryManager => {
-                    state.app.select_previous_directory();
                 }
                 _ => {}
             }
@@ -990,9 +975,6 @@ impl PlayerView {
                 Screen::Queue => {
                     state.app.page_down_queue(LIST_PAGE_SIZE);
                 }
-                Screen::DirectoryManager => {
-                    state.app.page_down_directories(LIST_PAGE_SIZE);
-                }
                 _ => {}
             });
         cx.notify();
@@ -1012,9 +994,6 @@ impl PlayerView {
                 }
                 Screen::Queue => {
                     state.app.page_up_queue(LIST_PAGE_SIZE);
-                }
-                Screen::DirectoryManager => {
-                    state.app.page_up_directories(LIST_PAGE_SIZE);
                 }
                 _ => {}
             });
@@ -1061,8 +1040,6 @@ impl PlayerView {
         self.state.update(cx, |state, _cx| {
             if state.app.current_screen == Screen::Queue {
                 state.app.toggle_queue_item_expansion();
-            } else if state.app.current_screen == Screen::DirectoryManager {
-                state.app.toggle_directory_expansion();
             }
         });
         cx.notify();
@@ -1201,14 +1178,8 @@ impl PlayerView {
             if Self::is_text_input_mode(state.app.input_mode) {
                 return;
             }
-            match state.app.current_screen {
-                Screen::Queue => {
-                    state.app.remove_from_queue(state.app.selected_queue_index);
-                }
-                Screen::DirectoryManager => {
-                    state.app.remove_selected_directory();
-                }
-                _ => {}
+            if state.app.current_screen == Screen::Queue {
+                state.app.remove_from_queue(state.app.selected_queue_index);
             }
         });
         cx.notify();
@@ -1981,7 +1952,6 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::switch_to_studio))
             .on_action(cx.listener(Self::switch_to_plugin_graph))
             .on_action(cx.listener(Self::switch_to_devices))
-            .on_action(cx.listener(Self::switch_to_directory_manager))
             .on_action(cx.listener(Self::switch_to_settings))
             .on_action(cx.listener(Self::switch_to_recording))
             .on_action(cx.listener(Self::switch_to_room_eq))
@@ -2142,9 +2112,6 @@ impl Render for PlayerView {
                                 Screen::Spectrum => {
                                     self.render_spectrum_screen(cx).into_any_element()
                                 }
-                                Screen::DirectoryManager => {
-                                    self.render_directory_screen(cx).into_any_element()
-                                }
                                 Screen::Settings => {
                                     self.render_settings_screen(cx).into_any_element()
                                 }
@@ -2177,9 +2144,6 @@ impl Render for PlayerView {
                                 Screen::Queue => self.render_queue_screen(cx).into_any_element(),
                                 Screen::Spectrum => {
                                     self.render_spectrum_screen(cx).into_any_element()
-                                }
-                                Screen::DirectoryManager => {
-                                    self.render_directory_screen(cx).into_any_element()
                                 }
                                 Screen::Settings => {
                                     self.render_settings_screen(cx).into_any_element()

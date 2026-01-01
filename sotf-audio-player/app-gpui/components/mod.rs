@@ -34,9 +34,15 @@ impl PlayerView {
             crate::app::SettingsTab::Library => {
                 self.render_library_settings_content(cx).into_any_element()
             }
-            crate::app::SettingsTab::Appearance => self
-                .render_appearance_settings_content(cx)
-                .into_any_element(),
+            crate::app::SettingsTab::Theme => {
+                self.render_theme_settings_content(cx).into_any_element()
+            }
+            crate::app::SettingsTab::Language => {
+                self.render_language_settings_content(cx).into_any_element()
+            }
+            crate::app::SettingsTab::Keybindings => {
+                self.render_keybindings_settings_content(cx).into_any_element()
+            }
             crate::app::SettingsTab::AudioDevice => self
                 .render_audio_device_settings_content(cx)
                 .into_any_element(),
@@ -93,8 +99,16 @@ impl PlayerView {
                                 crate::app::SettingsTab::Library,
                             ),
                             (
-                                translations.settings_tab_appearance,
-                                crate::app::SettingsTab::Appearance,
+                                translations.settings_tab_theme,
+                                crate::app::SettingsTab::Theme,
+                            ),
+                            (
+                                translations.settings_tab_language,
+                                crate::app::SettingsTab::Language,
+                            ),
+                            (
+                                translations.settings_tab_keybindings,
+                                crate::app::SettingsTab::Keybindings,
                             ),
                             (
                                 translations.settings_tab_audio_device,

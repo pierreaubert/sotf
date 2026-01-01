@@ -1,4 +1,4 @@
 mod appearance;
 mod audio_device;
-pub mod directory;
+mod keybindings;
 mod library;

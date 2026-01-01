@@ -212,7 +212,9 @@ pub struct Translations {
 
     // Settings tabs
     pub settings_tab_library: &'static str,
-    pub settings_tab_appearance: &'static str,
+    pub settings_tab_theme: &'static str,
+    pub settings_tab_language: &'static str,
+    pub settings_tab_keybindings: &'static str,
     pub settings_tab_audio_device: &'static str,
     pub settings_tab_plugins: &'static str,
     pub settings_tab_recording: &'static str,
@@ -436,7 +438,9 @@ impl Translations {
             settings_default_badge: "Default",
 
             settings_tab_library: "Library",
-            settings_tab_appearance: "Appearance",
+            settings_tab_theme: "Theme",
+            settings_tab_language: "Language",
+            settings_tab_keybindings: "Keybindings",
             settings_tab_audio_device: "Audio Device",
             settings_tab_plugins: "Plugins",
             settings_tab_recording: "Recording",
@@ -642,7 +646,9 @@ impl Translations {
             settings_default_badge: "Par défaut",
 
             settings_tab_library: "Bibliothèque",
-            settings_tab_appearance: "Apparence",
+            settings_tab_theme: "Thème",
+            settings_tab_language: "Langue",
+            settings_tab_keybindings: "Raccourcis",
             settings_tab_audio_device: "Périphérique audio",
             settings_tab_plugins: "Plugins",
             settings_tab_recording: "Enregistrement",
@@ -848,7 +854,9 @@ impl Translations {
             settings_default_badge: "Standard",
 
             settings_tab_library: "Bibliothek",
-            settings_tab_appearance: "Erscheinung",
+            settings_tab_theme: "Thema",
+            settings_tab_language: "Sprache",
+            settings_tab_keybindings: "Tastenkürzel",
             settings_tab_audio_device: "Audiogerät",
             settings_tab_plugins: "Plugins",
             settings_tab_recording: "Aufnahme",
@@ -1054,7 +1062,9 @@ impl Translations {
             settings_default_badge: "Predeterminado",
 
             settings_tab_library: "Biblioteca",
-            settings_tab_appearance: "Apariencia",
+            settings_tab_theme: "Tema",
+            settings_tab_language: "Idioma",
+            settings_tab_keybindings: "Atajos de teclado",
             settings_tab_audio_device: "Dispositivo de audio",
             settings_tab_plugins: "Plugins",
             settings_tab_recording: "Grabación",
