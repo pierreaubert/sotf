@@ -1704,12 +1704,16 @@ impl App {
                 PluginSettings::Limiter {
                     threshold_db,
                     release_ms,
+                    lookahead_ms,
+                    soft,
                     mix,
                 } => {
                     match param_idx {
                         0 => *threshold_db = (*threshold_db + delta * 0.1).clamp(-20.0, 0.0),
                         1 => *release_ms = (*release_ms + delta).clamp(1.0, 500.0),
-                        2 => *mix = (*mix + delta * 0.05).clamp(0.0, 1.0),
+                        2 => *lookahead_ms = (*lookahead_ms + delta * 0.1).clamp(0.0, 20.0),
+                        3 => *soft = !*soft,
+                        4 => *mix = (*mix + delta * 0.05).clamp(0.0, 1.0),
                         _ => return false,
                     }
                     true
@@ -1718,6 +1722,7 @@ impl App {
                     threshold_db,
                     ratio,
                     attack_ms,
+                    hold_ms,
                     release_ms,
                     mix,
                     link_channels,
@@ -1727,13 +1732,14 @@ impl App {
                         0 => *threshold_db = (*threshold_db + delta).clamp(-80.0, 0.0),
                         1 => *ratio = (*ratio + delta * 0.1).clamp(1.0, 100.0),
                         2 => *attack_ms = (*attack_ms + delta * 0.1).clamp(0.1, 100.0),
-                        3 => *release_ms = (*release_ms + delta).clamp(1.0, 1000.0),
-                        4 => *mix = (*mix + delta * 0.05).clamp(0.0, 1.0),
-                        5 => {
+                        3 => *hold_ms = (*hold_ms + delta * 5.0).clamp(0.0, 1000.0),
+                        4 => *release_ms = (*release_ms + delta).clamp(1.0, 1000.0),
+                        5 => *mix = (*mix + delta * 0.05).clamp(0.0, 1.0),
+                        6 => {
                             // Toggle linked / unlinked sidechain detection
                             *link_channels = !*link_channels;
                         }
-                        6 => {
+                        7 => {
                             // Adjust sidechain HPF cutoff in Hz
                             *sidechain_hpf_hz = (*sidechain_hpf_hz + delta * 5.0).clamp(0.0, 200.0);
                         }
@@ -2049,6 +2055,7 @@ impl App {
                     attack_ms,
                     release_ms,
                     low_latency,
+                    polyphonic_detection,
                 } => {
                     match param_idx {
                         0 => *reduction_db = (*reduction_db + delta).clamp(0.0, 40.0),
@@ -2057,6 +2064,7 @@ impl App {
                         3 => *attack_ms = (*attack_ms + delta).clamp(0.1, 100.0),
                         4 => *release_ms = (*release_ms + delta * 5.0).clamp(10.0, 500.0),
                         5 => *low_latency = !*low_latency,
+                        6 => *polyphonic_detection = !*polyphonic_detection,
                         _ => return false,
                     }
                     true
@@ -2765,15 +2773,27 @@ impl App {
         // Initialize image picker if not already done
         if self.image_picker.is_none() {
             // Query terminal for actual font size to avoid mangled images
-            match ratatui_image::picker::Picker::from_termios() {
-                Ok(picker) => {
-                    self.image_picker = Some(picker);
+            // from_termios() only works on Unix systems
+            #[cfg(unix)]
+            {
+                match ratatui_image::picker::Picker::from_termios() {
+                    Ok(picker) => {
+                        self.image_picker = Some(picker);
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "Failed to query terminal for font size: {}, using fallback",
+                            e
+                        );
+                        // Fallback to default font size (8x16)
+                        self.image_picker = Some(ratatui_image::picker::Picker::new((8, 16)));
+                    }
                 }
-                Err(e) => {
-                    log::warn!("Failed to query terminal for font size: {}, using fallback", e);
-                    // Fallback to default font size (8x16)
-                    self.image_picker = Some(ratatui_image::picker::Picker::new((8, 16)));
-                }
+            }
+            #[cfg(not(unix))]
+            {
+                // On Windows, use default font size (8x16)
+                self.image_picker = Some(ratatui_image::picker::Picker::new((8, 16)));
             }
         }
 
@@ -3181,8 +3201,8 @@ fn get_param_count(settings: &sotf_audio_player::PluginSettings) -> usize {
         PluginSettings::Gain { .. } => 1,                    // gain_db
         PluginSettings::Upmixer { .. } => 18, // speaker_config, gains (5), lfe_cutoff_hz, stereo_width, bandpass_hz, subharmonic (2), hr (2), safety_cap_db, decorrelation_mode, bypass_decorrelation, bypass_transient_detection, bypass_all_processing
         PluginSettings::Compressor { .. } => 10, // threshold, ratio, attack, release, knee, makeup_gain, mix, auto_makeup, link_channels, sidechain_hpf_hz
-        PluginSettings::Limiter { .. } => 3,     // threshold, release, mix
-        PluginSettings::Gate { .. } => 7, // threshold, ratio, attack, release, mix, link_channels, sidechain_hpf_hz
+        PluginSettings::Limiter { .. } => 5, // threshold, release, lookahead, soft, mix
+        PluginSettings::Gate { .. } => 8, // threshold, ratio, attack, hold, release, mix, link_channels, sidechain_hpf_hz
         PluginSettings::LoudnessCompensation { .. } => 3, // target_lufs, min_gain, max_gain
         PluginSettings::BinauralDecoder { .. } => 5, // sofa_file, input_channels, enable_optimization, externalization, near_field_strength
         PluginSettings::Convolution { .. } => 3,     // ir_file, mix, gain_db
@@ -3194,7 +3214,7 @@ fn get_param_count(settings: &sotf_audio_player::PluginSettings) -> usize {
         PluginSettings::MultibandCompressor { .. } => 12, // num_bands, crossover_freq_1-4, threshold, ratio, attack, release, knee, mix, link_channels
         PluginSettings::MultibandExpander { .. } => 15, // num_bands, crossover_freq_1-4, threshold, ratio, attack, release, range, knee, hysteresis, hold, mix, link_channels
         PluginSettings::XTC { .. } => 8, // distance, speaker_angle, head_radius, beta_base, beta_low_boost, beta_high_boost, head_shadow_cutoff, head_shadow_slope
-        PluginSettings::Denoiser { .. } => 6, // reduction_db, floor_db, smoothing, attack_ms, release_ms, low_latency
+        PluginSettings::Denoiser { .. } => 7, // reduction_db, floor_db, smoothing, attack_ms, release_ms, low_latency, polyphonic_detection
         PluginSettings::Pnd { .. } => 3,     // correction_strength, analysis_window_ms, drift_smoothing
     }
 }
