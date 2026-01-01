@@ -126,7 +126,8 @@ pub fn param_index_to_engine_param(
             2 => Some(("smoothing".to_string(), format!("{}", smoothing))),
             3 => Some(("attack_ms".to_string(), format!("{}", attack_ms))),
             4 => Some(("release_ms".to_string(), format!("{}", release_ms))),
-            5 => Some(("low_latency".to_string(), low_latency.to_string())),
+            // low_latency (5) requires structural update (FFT resize), so return None
+            5 => None,
             6 => Some((
                 "polyphonic_detection".to_string(),
                 polyphonic_detection.to_string(),
