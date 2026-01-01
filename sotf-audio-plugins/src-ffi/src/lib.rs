@@ -11,6 +11,8 @@
 // - JSON-based configuration
 // - Parameter management system
 
+#![cfg(target_os = "macos")]
+
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_double, c_int};
 use std::panic::{self, AssertUnwindSafe};

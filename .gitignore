@@ -4,6 +4,11 @@
 /coverage
 mutants.out
 
+# build
+/tools
+/dist
+/appimage-builder-*
+
 # generated data
 /data
 /data_cached

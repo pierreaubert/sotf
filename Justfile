@@ -16,12 +16,26 @@ default:
 # Downloads
 # ----------------------------------------------------------------------
 
-download-once: download-sofa generate-audio-tests
+download-once: download-sofa download-world-atlas generate-audio-tests
 
 download-sofa:
 	mkdir -p data_cached/org.sofacoustics/mit
 	wget -O data_cached/org.sofacoustics/mit/kemar_normal_pinna.sofa https://sofacoustics.org/data/database/mit/mit_kemar_normal_pinna.sofa
 	wget -O data_cached/org.sofacoustics/mit/kemar_large.sofa https://sofacoustics.org/data/database/mit/mit_kemar_large_pinna.sofa
+
+download-world-atlas:
+	wget -q -O gpui-d3rs/bin/showcase/data/land-50m.json https://cdn.jsdelivr.net/npm/world-atlas@2/land-50m.json
+
+convert-sofa-to-sqlite:
+	@for sofa in data_cached/org.sofacoustics/mit/*.sofa; do \
+		hrtfdb="$${sofa%.sofa}.hrtfdb"; \
+		if [ ! -f "$$hrtfdb" ]; then \
+			echo "Converting $$sofa -> $$hrtfdb"; \
+			cargo run --bin sofa_to_sqlite -p sotf-audio-plugins --features=sofa_support --release -- "$$sofa" "$$hrtfdb"; \
+		else \
+			echo "Skipping $$sofa (already converted)"; \
+		fi \
+	done
 
 generate-audio-tests: prod-generate-audio-tests
 	cargo run --bin generate-audio-tests --release
