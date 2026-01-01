@@ -1,0 +1,27 @@
+[package]
+name = "sotf-audio-plugins-vst3"
+version = "0.5.1"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "VST3/CLAP wrapper for SOTF audio plugins using nih-plug"
+license = { workspace = true }
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# nih-plug for VST3/CLAP
+nih_plug = { workspace = true }
+nih_plug_egui = { workspace = true }
+
+# SOTF plugins and audio processing
+sotf-audio-plugins = { workspace = true }
+autoeq-iir = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Utilities
+log = { workspace = true }
+parking_lot = { workspace = true }

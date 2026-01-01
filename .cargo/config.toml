@@ -2,6 +2,10 @@
 # macOS-specific configuration
 MACOSX_DEPLOYMENT_TARGET = "15.0"
 
+# Alias for nih-plug bundler
+[alias]
+xtask = "run --package xtask --"
+
 [build]
 rustflags = ["-Ctarget-cpu=native"]
 

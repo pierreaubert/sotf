@@ -216,6 +216,101 @@ build-au: build-au-rust build-au-swift
 	echo "✅ Complete Audio Unit build finished"
 
 # ----------------------------------------------------------------------
+# VST3/CLAP PLUGINS (Cross-platform)
+# ----------------------------------------------------------------------
+
+# Build VST3/CLAP plugins for current platform
+build-vst3:
+	cargo xtask bundle sotf-audio-plugins-vst3 --release
+	@echo "✅ VST3/CLAP plugins built successfully"
+	@echo "   Output: target/bundled/"
+
+# Build VST3/CLAP plugins (debug mode)
+build-vst3-debug:
+	cargo xtask bundle sotf-audio-plugins-vst3
+	@echo "✅ VST3/CLAP plugins built (debug)"
+	@echo "   Output: target/bundled/"
+
+# Build for Linux (from Linux host)
+build-vst3-linux:
+	cargo xtask bundle sotf-audio-plugins-vst3 --release
+	@echo "✅ Linux VST3/CLAP plugins built"
+	@echo "   Output: target/bundled/sotf-audio-plugins-vst3.clap"
+	@echo "           target/bundled/sotf-audio-plugins-vst3.vst3"
+
+# Build for macOS (from macOS host)
+build-vst3-macos:
+	cargo xtask bundle sotf-audio-plugins-vst3 --release
+	@echo "✅ macOS VST3 plugin built"
+	@echo "   Output: target/bundled/sotf-audio-plugins-vst3.vst3"
+
+# Build universal macOS binary (Intel + Apple Silicon)
+build-vst3-macos-universal:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	echo "Building macOS universal VST3 plugin..."
+	# Build for both architectures
+	cargo xtask bundle sotf-audio-plugins-vst3 --release --target aarch64-apple-darwin
+	cargo xtask bundle sotf-audio-plugins-vst3 --release --target x86_64-apple-darwin
+	echo "✅ macOS universal VST3 plugins built"
+	echo "   Output: target/bundled/"
+
+# Build for Windows (cross-compile from Linux/macOS)
+build-vst3-windows:
+	cargo xtask bundle sotf-audio-plugins-vst3 --release --target x86_64-pc-windows-msvc
+	@echo "✅ Windows VST3 plugin built"
+	@echo "   Output: target/bundled/sotf-audio-plugins-vst3.vst3"
+
+# Install VST3/CLAP plugins to standard locations
+install-vst3:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	BUNDLED_DIR="target/bundled"
+	if [ "$(uname)" = "Linux" ]; then
+		# Linux plugin locations
+		VST3_DIR="$HOME/.vst3"
+		CLAP_DIR="$HOME/.clap"
+		mkdir -p "$VST3_DIR" "$CLAP_DIR"
+		if [ -d "$BUNDLED_DIR/sotf-audio-plugins-vst3.vst3" ]; then
+			cp -r "$BUNDLED_DIR/sotf-audio-plugins-vst3.vst3" "$VST3_DIR/"
+			echo "✓ Installed VST3 to $VST3_DIR/"
+		fi
+		if [ -f "$BUNDLED_DIR/sotf-audio-plugins-vst3.clap" ]; then
+			cp "$BUNDLED_DIR/sotf-audio-plugins-vst3.clap" "$CLAP_DIR/"
+			echo "✓ Installed CLAP to $CLAP_DIR/"
+		fi
+	elif [ "$(uname)" = "Darwin" ]; then
+		# macOS plugin locations
+		VST3_DIR="$HOME/Library/Audio/Plug-Ins/VST3"
+		mkdir -p "$VST3_DIR"
+		if [ -d "$BUNDLED_DIR/sotf-audio-plugins-vst3.vst3" ]; then
+			cp -r "$BUNDLED_DIR/sotf-audio-plugins-vst3.vst3" "$VST3_DIR/"
+			echo "✓ Installed VST3 to $VST3_DIR/"
+		fi
+	else
+		echo "❌ Unsupported platform for install"
+		exit 1
+	fi
+	echo "✅ VST3/CLAP plugins installed"
+
+# Validate VST3 plugin with pluginval (if installed)
+validate-vst3:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	if command -v pluginval &> /dev/null; then
+		if [ -d "target/bundled/sotf-audio-plugins-vst3.vst3" ]; then
+			echo "Validating VST3 plugin..."
+			pluginval --validate target/bundled/sotf-audio-plugins-vst3.vst3
+		fi
+		if [ -f "target/bundled/sotf-audio-plugins-vst3.clap" ]; then
+			echo "Validating CLAP plugin..."
+			pluginval --validate target/bundled/sotf-audio-plugins-vst3.clap
+		fi
+	else
+		echo "⚠️  pluginval not found. Install from https://github.com/Tracktion/pluginval"
+	fi
+
+# ----------------------------------------------------------------------
 # BENCH
 # ----------------------------------------------------------------------
 
@@ -456,7 +551,13 @@ install-ubuntu-common:
 			 libnetcdf-dev \
 			 libopencv-dev \
 			 libclang-dev \
-			 webkit2gtk-driver
+			 webkit2gtk-driver \
+			 libx11-xcb-dev \
+			 libxcb-icccm4-dev \
+			 libxcb-render0-dev \
+			 libxcb-shape0-dev \
+			 libxcb-xfixes0-dev \
+			 libxkbcommon-dev
 
 install-ubuntu-x86-driver :
 		sudo apt install -y \
