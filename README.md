@@ -45,9 +45,10 @@ On Windows,
 .\sotf-audio-player\windows\build-windows.bat
 ```
 
-Then run post-install
+Then run post-install and download various data files
 ```shell
 just post-install
+just download-once
 ```
 
 You can build or test with a simple:

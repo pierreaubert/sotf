@@ -133,7 +133,7 @@ gpui-release-macos:
 	sh -x ./sotf-audio-player/macos/build-dmg.sh --sign --notarize
 
 gpui-release-windows:
-	cd sotf-audio-player && cargo vcpkg build
+	echo "cd sotf-audio-player/windows and launch the bat script"
 
 # ----------------------------------------------------------------------
 # AUDIO UNIT (macOS only)
@@ -288,7 +288,7 @@ cross-debug-x86 :
 cross-macos-arm-2-linux-x86 :
 	echo "This can take minutes!"
 	@echo "Building Docker image..."
-	docker build -t autoeq-linux-x86 -f ./builds/from_macos_arm/Dockerfile.x86_64-unknown-linux-musl .
+	docker build -t autoeq-linux-x86 -f ./builds/from_macos_arm/Dockerfile.x86_64-unknown-linux-x86 .
 	@echo "Building in Docker container..."
 	docker run --rm -v "$(pwd)":/project -w /project autoeq-linux-x86 \
 		cargo build --release --target x86_64-unknown-linux-gnu
@@ -296,7 +296,12 @@ cross-macos-arm-2-linux-x86 :
 
 cross-macos-arm-2-linux-arm64 :
 	echo "This can take minutes!"
-	cross build --release --target aarch64-unknown-linux-gnu
+	@echo "Building Docker image..."
+	docker build -t autoeq-linux-arm64 -f ./builds/from_macos_arm/Dockerfile.aarch64-unknown-linux-musl .
+	@echo "Building in Docker container..."
+	docker run --rm -v "$(pwd)":/project -w /project autoeq-linux-arm64 \
+		cargo build --release --target aarch64-unknown-linux-musl
+	@echo "Done! Binary at: target/aarch64-unknown-linux-musl/release/"
 
 cross-macos-arm-2-win-x86-gnu :
 	echo "This is not supported yet"
@@ -387,11 +392,6 @@ install-rustup:
 	./scripts/install-rustup -y
 	~/.cargo/bin/rustup default stable
 	~/.cargo/bin/cargo install just
-	~/.cargo/bin/cargo install cargo-wizard
-	~/.cargo/bin/cargo install cargo-vcpkg
-	~/.cargo/bin/cargo install cargo-llvm-cov
-	~/.cargo/bin/cargo install cargo-bininstall
-	~/.cargo/bin/cargo binstall cargo-nextest --secure
 
 # ----------------------------------------------------------------------
 # Install macos
@@ -478,6 +478,12 @@ install-ubuntu-arm64: install-ubuntu-common install-ubuntu-arm64-driver
 post-install:
 	$HOME/.cargo/bin/rustup default stable
 	$HOME/.cargo/bin/cargo install just
+	$HOME/.cargo/bin/cargo install cargo-wizard
+	$HOME/.cargo/bin/cargo install cargo-vcpkg
+	$HOME/.cargo/bin/cargo install cargo-llvm-cov
+	$HOME/.cargo/bin/cargo install cross
+	$HOME/.cargo/bin/cargo install cargo-bininstall
+	$HOME/.cargo/bin/cargo binstall cargo-nextest --secure
 	$HOME/.cargo/bin/cargo check
 
 # ----------------------------------------------------------------------
