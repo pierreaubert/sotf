@@ -446,6 +446,31 @@ impl PlayerView {
                                                 let target = idx;
                                                 if source != target {
                                                     view.state.update(cx, |state, _cx| {
+                                                        let chain_len =
+                                                            state.app.plugin_chain.plugins().len();
+
+                                                        // Check if source plugin is a LoudnessMonitor
+                                                        let source_is_monitor = state
+                                                            .app
+                                                            .plugin_chain
+                                                            .get_plugin(source)
+                                                            .map(|p| {
+                                                                matches!(
+                                                                    p.plugin_type(),
+                                                                    PluginType::LoudnessMonitor
+                                                                )
+                                                            })
+                                                            .unwrap_or(false);
+
+                                                        // Monitors can only be at first or last position
+                                                        // Don't allow moving monitor to middle positions
+                                                        if source_is_monitor
+                                                            && target != 0
+                                                            && target != chain_len - 1
+                                                        {
+                                                            return; // Reject move
+                                                        }
+
                                                         state
                                                             .app
                                                             .plugin_chain
@@ -811,6 +836,12 @@ impl PlayerView {
             .map(|p| p.plugin_type().clone())
             .collect();
 
+        // Count LoudnessMonitor plugins (max 2 allowed: one for input, one for output)
+        let monitor_count = present_plugins
+            .iter()
+            .filter(|p| matches!(p, PluginType::LoudnessMonitor))
+            .count();
+
         // Row 1: Effects/Dynamics plugins
         let row1_plugins = [
             PluginType::EQ,
@@ -888,6 +919,11 @@ impl PlayerView {
                 let is_single_instance =
                     matches!(pt, PluginType::Upmixer | PluginType::BinauralDecoder);
                 if is_single_instance && present_plugins.contains(&pt) {
+                    return None;
+                }
+
+                // LoudnessMonitor: max 2 allowed (one for input, one for output)
+                if matches!(pt, PluginType::LoudnessMonitor) && monitor_count >= 2 {
                     return None;
                 }
 
@@ -1125,6 +1161,51 @@ impl PlayerView {
                                         _ => None,
                                     };
 
+                                    // Determine which loudness data to pass for LoudnessMonitor plugins
+                                    // First monitor in chain gets input data, last gets output data
+                                    let loudness_for_plugin = {
+                                        let state = self.state.read(cx);
+                                        if matches!(
+                                            plugin.settings,
+                                            sotf_audio_player::PluginSettings::LoudnessMonitor
+                                        ) {
+                                            // Find all LoudnessMonitor indices in the chain
+                                            let monitor_indices: Vec<usize> = state
+                                                .app
+                                                .plugin_chain
+                                                .plugins()
+                                                .iter()
+                                                .enumerate()
+                                                .filter(|(_, p)| {
+                                                    matches!(
+                                                        p.settings,
+                                                        sotf_audio_player::PluginSettings::LoudnessMonitor
+                                                    )
+                                                })
+                                                .map(|(i, _)| i)
+                                                .collect();
+
+                                            if monitor_indices.len() <= 1 {
+                                                // Only one monitor - use output (default behavior)
+                                                state.app.loudness_info.clone()
+                                            } else if selected_idx == monitor_indices[0] {
+                                                // First monitor - show input levels
+                                                state.app.input_loudness_info.clone()
+                                            } else if selected_idx
+                                                == *monitor_indices.last().unwrap()
+                                            {
+                                                // Last monitor - show output levels
+                                                state.app.loudness_info.clone()
+                                            } else {
+                                                // Middle monitor - show output (best available approximation)
+                                                state.app.loudness_info.clone()
+                                            }
+                                        } else {
+                                            // Non-monitor plugins use output loudness
+                                            state.app.loudness_info.clone()
+                                        }
+                                    };
+
                                     render_plugin_content(
                                         self.state.clone(),
                                         selected_idx, // Pass index
@@ -1134,8 +1215,7 @@ impl PlayerView {
                                         &theme,
                                         self.state.read(cx).app.upmixer_config_open,
                                         self.state.read(cx).app.selected_eq_band,
-                                        // Pass loudness_info for backward compatibility
-                                        self.state.read(cx).app.loudness_info.clone(),
+                                        loudness_for_plugin,
                                         plugin_data,
                                     )
                                 }),
