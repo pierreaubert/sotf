@@ -197,11 +197,7 @@ fn run_playback_thread(
                 let target_pattern = device_identifier.to_lowercase();
                 devices
                     .iter()
-                    .find(|d| {
-                        get_display_name(d)
-                            .to_lowercase()
-                            .contains(&target_pattern)
-                    })
+                    .find(|d| get_display_name(d).to_lowercase().contains(&target_pattern))
                     .cloned()
             });
 

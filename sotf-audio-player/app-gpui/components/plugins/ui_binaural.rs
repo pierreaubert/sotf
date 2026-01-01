@@ -1,7 +1,9 @@
 //! Binaural Decoder Plugin UI Component
 
 use super::actions::OpenSofaFile;
-use super::common::{render_edit_hints, render_knob, render_param_row, render_section_title, render_toggle};
+use super::common::{
+    render_edit_hints, render_knob, render_param_row, render_section_title, render_toggle,
+};
 use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
@@ -254,7 +256,9 @@ pub fn render_binaural_plugin(
                                                 .cursor_pointer()
                                                 .hover(|s| s.bg(theme.surface_hover))
                                                 .on_click(move |_, _, cx| {
-                                                    cx.dispatch_action(&OpenSofaFile { plugin_idx });
+                                                    cx.dispatch_action(&OpenSofaFile {
+                                                        plugin_idx,
+                                                    });
                                                 })
                                                 .child("Load"),
                                         ),

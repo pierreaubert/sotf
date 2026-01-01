@@ -7,8 +7,8 @@
 //! - Vertical sliders and rotary knob controls
 
 use super::common::{
-    render_edit_hints, render_knob, render_section_title, render_transfer_curve_sized,
-    render_vertical_slider_sized,
+    render_edit_hints, render_knob, render_section_title, render_toggle_button,
+    render_transfer_curve_sized, render_vertical_slider_sized,
 };
 use super::level_meters::render_gr_meter;
 use crate::app::AppState;
@@ -21,6 +21,8 @@ use sotf_audio_player::param_specs::limiter::*;
 pub struct LimiterRenderState {
     pub threshold_db: f64,
     pub release_ms: f64,
+    pub lookahead_ms: f64,
+    pub soft: bool,
     pub mix: f64,
     pub is_editing: bool,
     pub selected_param: usize,
@@ -101,6 +103,21 @@ pub fn render_limiter_plugin(
                                     Some('r'),
                                     Some(SLIDER_HEIGHT),
                                     theme,
+                                ))
+                                .child(render_vertical_slider_sized(
+                                    entity.clone(),
+                                    plugin_idx,
+                                    "Lookahead",
+                                    state.lookahead_ms,
+                                    LOOKAHEAD_MIN as f64,
+                                    LOOKAHEAD_MAX as f64,
+                                    "ms",
+                                    2,
+                                    state.selected_param,
+                                    state.is_editing,
+                                    Some('l'),
+                                    Some(SLIDER_HEIGHT),
+                                    theme,
                                 )),
                         ),
                 )
@@ -116,6 +133,28 @@ pub fn render_limiter_plugin(
                                 .flex_col()
                                 .gap_2()
                                 .child(render_section_title("OUTPUT", theme))
+                                // Soft Toggle
+                                .child(
+                                    div()
+                                        .flex()
+                                        .justify_between()
+                                        .items_center()
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(theme.text_muted)
+                                                .child("Soft Knee"),
+                                        )
+                                        .child(render_toggle_button(
+                                            entity.clone(),
+                                            plugin_idx,
+                                            state.soft,
+                                            3,
+                                            state.selected_param,
+                                            state.is_editing,
+                                            theme,
+                                        )),
+                                )
                                 // Mix knob
                                 .child(render_knob(
                                     entity.clone(),
@@ -125,7 +164,7 @@ pub fn render_limiter_plugin(
                                     MIX_MIN as f64 * 100.0,
                                     MIX_MAX as f64 * 100.0,
                                     "%",
-                                    2,
+                                    4,
                                     state.selected_param,
                                     state.is_editing,
                                     Some('m'),

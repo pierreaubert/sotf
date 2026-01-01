@@ -301,15 +301,10 @@ impl PlayerView {
                         .text_color(text_secondary)
                         .child("Processing system audio"),
                 )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(text_primary)
-                        .child(format!(
-                            "{} plugins active",
-                            state.app.plugin_chain.plugins().len()
-                        )),
-                )
+                .child(div().text_xs().text_color(text_primary).child(format!(
+                    "{} plugins active",
+                    state.app.plugin_chain.plugins().len()
+                )))
                 .build()
                 .min_w(px(150.0))
                 .max_w(px(250.0));

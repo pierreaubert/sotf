@@ -190,7 +190,7 @@ pub fn render_upmixer_plugin(
         .child(
             HStack::new()
                 .spacing(StackSpacing::Md)
-                .align(StackAlign::Start)
+                .align(StackAlign::Stretch)
                 .child(render_crossovers_box(
                     entity.clone(),
                     plugin_idx,
@@ -262,21 +262,8 @@ fn render_crossovers_box(
             None,
             theme,
         ))
-        .child(render_knob(
-            entity.clone(),
-            plugin_idx,
-            "Bandpass",
-            state.bandpass_hz,
-            BANDPASS_HZ_MIN as f64,
-            BANDPASS_HZ_MAX as f64,
-            "Hz",
-            param_idx::BANDPASS_HZ,
-            state.selected_param,
-            state.is_editing,
-            None,
-            theme,
-        ))
         .build()
+        .h_full()
         .p_2()
         .bg(theme.background_secondary)
         .rounded_lg()
@@ -390,6 +377,7 @@ fn render_subharmonic_box(
             ))
         })
         .build()
+        .h_full()
         .p_2()
         .bg(theme.background_secondary)
         .rounded_lg()
@@ -418,7 +406,7 @@ fn render_gains_row(
             state.selected_param,
             state.is_editing,
             Some('m'),
-            130.0,
+            220.0,
             theme,
         ))
         .child(render_vertical_slider_with_ticks(
@@ -433,7 +421,7 @@ fn render_gains_row(
             state.selected_param,
             state.is_editing,
             Some('c'),
-            130.0,
+            220.0,
             theme,
         ))
         .child(render_vertical_slider_with_ticks(
@@ -448,7 +436,7 @@ fn render_gains_row(
             state.selected_param,
             state.is_editing,
             Some('s'),
-            130.0,
+            220.0,
             theme,
         ))
         .child(render_vertical_slider_with_ticks(
@@ -463,7 +451,7 @@ fn render_gains_row(
             state.selected_param,
             state.is_editing,
             Some('t'),
-            130.0,
+            220.0,
             theme,
         ))
         .child(render_vertical_slider_with_ticks(
@@ -478,7 +466,7 @@ fn render_gains_row(
             state.selected_param,
             state.is_editing,
             Some('w'),
-            130.0,
+            220.0,
             theme,
         ))
         .child(render_vertical_slider_with_ticks(
@@ -493,7 +481,7 @@ fn render_gains_row(
             state.selected_param,
             state.is_editing,
             None,
-            130.0,
+            220.0,
             theme,
         ))
         .child(render_vertical_slider_with_ticks(
@@ -508,7 +496,7 @@ fn render_gains_row(
             state.selected_param,
             state.is_editing,
             None,
-            130.0,
+            220.0,
             theme,
         ))
         .child(render_vertical_slider_with_ticks(
@@ -523,10 +511,11 @@ fn render_gains_row(
             state.selected_param,
             state.is_editing,
             None,
-            130.0,
+            220.0,
             theme,
         ))
         .build()
+        .h_full()
         .p_2()
         .bg(theme.surface)
         .rounded_lg()
@@ -663,86 +652,94 @@ fn render_height_box(
         .spacing(StackSpacing::Xs)
         .child(render_section_header("Height", theme))
         .child(
-            Toggle::new(("hr-direct-toggle", plugin_idx))
-                .checked(state.enable_hr_direct)
-                .label(if state.enable_hr_direct {
-                    "HR On"
-                } else {
-                    "HR Off"
+            HStack::new()
+                .spacing(StackSpacing::Sm)
+                .align(StackAlign::Center)
+                .child(
+                    Toggle::new(("hr-direct-toggle", plugin_idx))
+                        .checked(state.enable_hr_direct)
+                        .label(if state.enable_hr_direct { "HR On" } else { "HR Off" })
+                        .style(ToggleStyle::Segmented)
+                        .theme(theme.to_toggle_theme())
+                        .on_change({
+                            let entity = entity.clone();
+                            move |new_value, _, cx| {
+                                entity.update(cx, |state, _| {
+                                    state.app.set_plugin_param(
+                                        plugin_idx,
+                                        param_idx::ENABLE_HR_DIRECT,
+                                        if new_value { 1.0 } else { 0.0 },
+                                    );
+                                });
+                            }
+                        }),
+                )
+                .when(state.enable_hr_direct, |el| {
+                    el.child(render_knob(
+                        entity.clone(),
+                        plugin_idx,
+                        "Sharpen",
+                        state.hr_sharpen,
+                        HR_SHARPEN_MIN as f64,
+                        HR_SHARPEN_MAX as f64,
+                        "",
+                        param_idx::HR_SHARPEN,
+                        state.selected_param,
+                        state.is_editing,
+                        None,
+                        theme,
+                    ))
                 })
-                .style(ToggleStyle::Segmented)
-                .theme(theme.to_toggle_theme())
-                .on_change({
-                    let entity = entity.clone();
-                    move |new_value, _, cx| {
-                        entity.update(cx, |state, _| {
-                            state.app.set_plugin_param(
-                                plugin_idx,
-                                param_idx::ENABLE_HR_DIRECT,
-                                if new_value { 1.0 } else { 0.0 },
-                            );
-                        });
-                    }
-                }),
+                .build(),
         )
-        .when(state.enable_hr_direct, |el| {
-            el.child(render_knob(
-                entity.clone(),
-                plugin_idx,
-                "Sharpen",
-                state.hr_sharpen,
-                HR_SHARPEN_MIN as f64,
-                HR_SHARPEN_MAX as f64,
-                "",
-                param_idx::HR_SHARPEN,
-                state.selected_param,
-                state.is_editing,
-                None,
-                theme,
-            ))
-        })
-        .child(render_knob(
-            entity.clone(),
-            plugin_idx,
-            "HF Cap",
-            state.height_hf_cap_hz,
-            HEIGHT_HF_CAP_HZ_MIN as f64,
-            HEIGHT_HF_CAP_HZ_MAX as f64,
-            "Hz",
-            param_idx::HEIGHT_HF_CAP_HZ,
-            state.selected_param,
-            state.is_editing,
-            None,
-            theme,
-        ))
-        .child(render_knob(
-            entity.clone(),
-            plugin_idx,
-            "Trans Red",
-            state.height_transient_reduction,
-            HEIGHT_TRANSIENT_REDUCTION_MIN as f64,
-            HEIGHT_TRANSIENT_REDUCTION_MAX as f64,
-            "",
-            param_idx::HEIGHT_TRANSIENT_REDUCTION,
-            state.selected_param,
-            state.is_editing,
-            None,
-            theme,
-        ))
-        .child(render_knob(
-            entity.clone(),
-            plugin_idx,
-            "Dir Leak",
-            state.height_direct_leak,
-            HEIGHT_DIRECT_LEAK_MIN as f64,
-            HEIGHT_DIRECT_LEAK_MAX as f64,
-            "",
-            param_idx::HEIGHT_DIRECT_LEAK,
-            state.selected_param,
-            state.is_editing,
-            None,
-            theme,
-        ))
+        .child(
+            HStack::new()
+                .spacing(StackSpacing::Sm)
+                .align(StackAlign::Center)
+                .child(render_knob(
+                    entity.clone(),
+                    plugin_idx,
+                    "HF Cap",
+                    state.height_hf_cap_hz,
+                    HEIGHT_HF_CAP_HZ_MIN as f64,
+                    HEIGHT_HF_CAP_HZ_MAX as f64,
+                    "Hz",
+                    param_idx::HEIGHT_HF_CAP_HZ,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
+                ))
+                .child(render_knob(
+                    entity.clone(),
+                    plugin_idx,
+                    "Trans Red",
+                    state.height_transient_reduction,
+                    HEIGHT_TRANSIENT_REDUCTION_MIN as f64,
+                    HEIGHT_TRANSIENT_REDUCTION_MAX as f64,
+                    "",
+                    param_idx::HEIGHT_TRANSIENT_REDUCTION,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
+                ))
+                .child(render_knob(
+                    entity.clone(),
+                    plugin_idx,
+                    "Dir Leak",
+                    state.height_direct_leak,
+                    HEIGHT_DIRECT_LEAK_MIN as f64,
+                    HEIGHT_DIRECT_LEAK_MAX as f64,
+                    "",
+                    param_idx::HEIGHT_DIRECT_LEAK,
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
+                ))
+                .build(),
+        )
         .build()
         .p_2()
         .bg(theme.background_secondary)

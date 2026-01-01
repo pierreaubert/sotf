@@ -18,9 +18,9 @@
 // - https://www.sofaconventions.org/
 // - AES69-2015: AES standard for file exchange - Spatial acoustic data file format
 
-use std::path::Path;
-use serde::{Serialize, Deserialize};
 use rusqlite::{Connection, Result};
+use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 // ============================================================================
 // Types and Structures
@@ -128,13 +128,22 @@ impl SofaFile {
     /// Load HRTF data from a .hrtfdb (SQLite) file
     pub fn load_sqlite<P: AsRef<Path>>(path: P) -> Result<Self, String> {
         let path_ref = path.as_ref();
-        let conn = Connection::open(path_ref)
-            .map_err(|e| format!("Failed to open SQLite HRTF database '{}': {}", path_ref.display(), e))?;
+        let conn = Connection::open(path_ref).map_err(|e| {
+            format!(
+                "Failed to open SQLite HRTF database '{}': {}",
+                path_ref.display(),
+                e
+            )
+        })?;
 
-        let mut stmt = conn.prepare("SELECT key, value FROM metadata").map_err(|e| e.to_string())?;
-        let metadata_iter = stmt.query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-        }).map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare("SELECT key, value FROM metadata")
+            .map_err(|e| e.to_string())?;
+        let metadata_iter = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| e.to_string())?;
 
         let mut metadata = std::collections::HashMap::new();
         for item in metadata_iter {
@@ -142,27 +151,49 @@ impl SofaFile {
             metadata.insert(key, value);
         }
 
-        let convention = metadata.get("convention").ok_or("Missing 'convention' in metadata")?.clone();
-        let sample_rate = metadata.get("sample_rate").ok_or("Missing 'sample_rate'")?.parse::<f32>().map_err(|e| e.to_string())?;
-        let ir_length = metadata.get("ir_length").ok_or("Missing 'ir_length'")?.parse::<usize>().map_err(|e| e.to_string())?;
-        let num_measurements = metadata.get("num_measurements").ok_or("Missing 'num_measurements'")?.parse::<usize>().map_err(|e| e.to_string())?;
-        let data_sample_rate = metadata.get("data_sample_rate").and_then(|s| s.parse::<f32>().ok());
+        let convention = metadata
+            .get("convention")
+            .ok_or("Missing 'convention' in metadata")?
+            .clone();
+        let sample_rate = metadata
+            .get("sample_rate")
+            .ok_or("Missing 'sample_rate'")?
+            .parse::<f32>()
+            .map_err(|e| e.to_string())?;
+        let ir_length = metadata
+            .get("ir_length")
+            .ok_or("Missing 'ir_length'")?
+            .parse::<usize>()
+            .map_err(|e| e.to_string())?;
+        let num_measurements = metadata
+            .get("num_measurements")
+            .ok_or("Missing 'num_measurements'")?
+            .parse::<usize>()
+            .map_err(|e| e.to_string())?;
+        let data_sample_rate = metadata
+            .get("data_sample_rate")
+            .and_then(|s| s.parse::<f32>().ok());
 
         let positions: Vec<SourcePosition> = {
-            let blob: Vec<u8> = conn.query_row(
-                "SELECT value FROM data WHERE key = 'positions'",
-                [],
-                |row| row.get(0),
-            ).map_err(|e| e.to_string())?;
-            bincode::deserialize(&blob).map_err(|e| format!("Failed to deserialize positions: {}", e))?
+            let blob: Vec<u8> = conn
+                .query_row(
+                    "SELECT value FROM data WHERE key = 'positions'",
+                    [],
+                    |row| row.get(0),
+                )
+                .map_err(|e| e.to_string())?;
+            bincode::deserialize(&blob)
+                .map_err(|e| format!("Failed to deserialize positions: {}", e))?
         };
 
         let impulse_responses: Vec<f32> = {
-            let blob: Vec<u8> = conn.query_row(
-                "SELECT value FROM data WHERE key = 'impulse_responses'",
-                [],
-                |row| row.get(0),
-            ).map_err(|e| e.to_string())?;
+            let blob: Vec<u8> = conn
+                .query_row(
+                    "SELECT value FROM data WHERE key = 'impulse_responses'",
+                    [],
+                    |row| row.get(0),
+                )
+                .map_err(|e| e.to_string())?;
             blob.chunks_exact(4)
                 .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap()))
                 .collect()

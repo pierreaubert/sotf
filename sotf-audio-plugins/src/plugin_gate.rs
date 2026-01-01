@@ -16,7 +16,7 @@
 // - sidechain_hpf_hz: Sidechain high-pass filter cutoff frequency (Hz)
 
 use super::param_specs::gate::*;
-use super::parameters::{Parameter, ParameterId, ParameterValue};
+use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use serde::{Deserialize, Serialize};
 use std::f32::consts::PI;
@@ -291,13 +291,21 @@ impl InPlacePlugin for GatePlugin {
                 THRESHOLD_MIN,
                 THRESHOLD_MAX,
             )
-            .with_description("Level below which gate closes (dB)"),
+            .with_description("Level below which gate closes (dB)")
+            .with_group("Dynamics")
+            .with_importance(ParameterImportance::Critical),
             Parameter::new_float("ratio", "Ratio", RATIO_DEFAULT, RATIO_MIN, RATIO_MAX)
-                .with_description("Gate depth ratio (higher = more attenuation)"),
+                .with_description("Gate depth ratio (higher = more attenuation)")
+                .with_group("Dynamics")
+                .with_importance(ParameterImportance::Critical),
             Parameter::new_float("attack", "Attack", ATTACK_DEFAULT, ATTACK_MIN, ATTACK_MAX)
-                .with_description("Time to open gate (ms)"),
+                .with_description("Time to open gate (ms)")
+                .with_group("Timing")
+                .with_importance(ParameterImportance::Critical),
             Parameter::new_float("hold", "Hold", HOLD_DEFAULT, HOLD_MIN, HOLD_MAX)
-                .with_description("Time to keep gate open after signal drops (ms)"),
+                .with_description("Time to keep gate open after signal drops (ms)")
+                .with_group("Timing")
+                .with_importance(ParameterImportance::Useful),
             Parameter::new_float(
                 "release",
                 "Release",
@@ -305,11 +313,17 @@ impl InPlacePlugin for GatePlugin {
                 RELEASE_MIN,
                 RELEASE_MAX,
             )
-            .with_description("Time to close gate (ms)"),
+            .with_description("Time to close gate (ms)")
+            .with_group("Timing")
+            .with_importance(ParameterImportance::Critical),
             Parameter::new_float("mix", "Mix", MIX_DEFAULT, MIX_MIN, MIX_MAX)
-                .with_description("Dry/wet mix (0 = dry, 1 = gated)"),
+                .with_description("Dry/wet mix (0 = dry, 1 = gated)")
+                .with_group("Output")
+                .with_importance(ParameterImportance::Useful),
             Parameter::new_bool("link_channels", "Link Channels", LINK_CHANNELS_DEFAULT)
-                .with_description("Use linked sidechain for all channels"),
+                .with_description("Use linked sidechain for all channels")
+                .with_group("Channels")
+                .with_importance(ParameterImportance::Useful),
             Parameter::new_float(
                 "sidechain_hpf_hz",
                 "Sidechain HPF",
@@ -317,7 +331,9 @@ impl InPlacePlugin for GatePlugin {
                 SIDECHAIN_HPF_HZ_MIN,
                 SIDECHAIN_HPF_HZ_MAX,
             )
-            .with_description("High-pass filter frequency for sidechain (Hz)"),
+            .with_description("High-pass filter frequency for sidechain (Hz)")
+            .with_group("Sidechain")
+            .with_importance(ParameterImportance::FineTuning),
         ]
     }
 

@@ -440,4 +440,3 @@ impl RecordingState {
         self.current_recording_channel.is_some()
     }
 }
-

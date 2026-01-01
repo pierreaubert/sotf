@@ -19,7 +19,7 @@
 // 6. Inverse FFT and overlap-add to output
 
 use super::param_specs::denoiser::*;
-use super::parameters::{Parameter, ParameterId, ParameterValue};
+use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
@@ -104,22 +104,22 @@ pub struct DenoiserPlugin {
     window: Vec<f32>,
 
     // Processing buffers (per-channel)
-    time_domain: Vec<Vec<f32>>,       // [channels][fft_size]
+    time_domain: Vec<Vec<f32>>,          // [channels][fft_size]
     freq_domain: Vec<Vec<Complex<f32>>>, // [channels][spectrum_size]
 
     // MCRA state (per-channel, per-bin)
-    noise_psd: Vec<Vec<f32>>,         // Estimated noise power spectrum
-    smoothed_psd: Vec<Vec<f32>>,      // Smoothed signal PSD (S_tmp)
-    min_psd: Vec<Vec<f32>>,           // Minimum PSD tracker (S_min)
-    speech_presence: Vec<Vec<f32>>,   // Speech presence probability (p)
-    frame_counter: Vec<usize>,        // Per-channel frame count
+    noise_psd: Vec<Vec<f32>>,       // Estimated noise power spectrum
+    smoothed_psd: Vec<Vec<f32>>,    // Smoothed signal PSD (S_tmp)
+    min_psd: Vec<Vec<f32>>,         // Minimum PSD tracker (S_min)
+    speech_presence: Vec<Vec<f32>>, // Speech presence probability (p)
+    frame_counter: Vec<usize>,      // Per-channel frame count
 
     // Wiener filter state
-    gain: Vec<Vec<f32>>,              // Current Wiener gains per bin
-    smoothed_gain: Vec<Vec<f32>>,     // Temporally smoothed gains
+    gain: Vec<Vec<f32>>,          // Current Wiener gains per bin
+    smoothed_gain: Vec<Vec<f32>>, // Temporally smoothed gains
 
     // Overlap-add buffers
-    input_buffer: Vec<f32>,           // Interleaved input accumulator
+    input_buffer: Vec<f32>, // Interleaved input accumulator
     input_buffer_fill: usize,
     output_accumulator: Vec<Vec<f32>>, // Per-channel output overlap-add
     output_accumulator_fill: usize,
@@ -253,7 +253,9 @@ impl DenoiserPlugin {
     pub fn from_params(channels: usize, params: DenoiserPluginParams) -> Self {
         let mut plugin = Self::new(channels, params.low_latency);
 
-        plugin.reduction_db = params.reduction_db.clamp(REDUCTION_DB_MIN, REDUCTION_DB_MAX);
+        plugin.reduction_db = params
+            .reduction_db
+            .clamp(REDUCTION_DB_MIN, REDUCTION_DB_MAX);
         plugin.floor_db = params.floor_db.clamp(FLOOR_DB_MIN, FLOOR_DB_MAX);
         plugin.smoothing = params.smoothing.clamp(SMOOTHING_MIN, SMOOTHING_MAX);
         plugin.attack_ms = params.attack_ms.clamp(ATTACK_MS_MIN, ATTACK_MS_MAX);
@@ -358,8 +360,9 @@ impl DenoiserPlugin {
                 self.output_accumulator[ch][clear_start..].fill(0.0);
             }
             self.next_add_position -= samples_to_drain;
-            self.output_accumulator_fill =
-                self.output_accumulator_fill.saturating_sub(samples_to_drain);
+            self.output_accumulator_fill = self
+                .output_accumulator_fill
+                .saturating_sub(samples_to_drain);
         }
 
         samples_to_drain
@@ -389,7 +392,9 @@ impl InPlacePlugin for DenoiserPlugin {
                 REDUCTION_DB_MIN,
                 REDUCTION_DB_MAX,
             )
-            .with_description("Noise reduction strength (dB)"),
+            .with_description("Noise reduction strength (dB)")
+            .with_group("General")
+            .with_importance(ParameterImportance::Critical),
             Parameter::new_float(
                 "floor_db",
                 "Floor",
@@ -397,7 +402,9 @@ impl InPlacePlugin for DenoiserPlugin {
                 FLOOR_DB_MIN,
                 FLOOR_DB_MAX,
             )
-            .with_description("Minimum gain floor to prevent musical noise (dB)"),
+            .with_description("Minimum gain floor to prevent musical noise (dB)")
+            .with_group("General")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_float(
                 "smoothing",
                 "Smoothing",
@@ -405,7 +412,9 @@ impl InPlacePlugin for DenoiserPlugin {
                 SMOOTHING_MIN,
                 SMOOTHING_MAX,
             )
-            .with_description("Temporal smoothing factor"),
+            .with_description("Temporal smoothing factor")
+            .with_group("Timing")
+            .with_importance(ParameterImportance::FineTuning),
             Parameter::new_float(
                 "attack_ms",
                 "Attack",
@@ -413,7 +422,9 @@ impl InPlacePlugin for DenoiserPlugin {
                 ATTACK_MS_MIN,
                 ATTACK_MS_MAX,
             )
-            .with_description("Attack time for gain changes (ms)"),
+            .with_description("Attack time for gain changes (ms)")
+            .with_group("Timing")
+            .with_importance(ParameterImportance::FineTuning),
             Parameter::new_float(
                 "release_ms",
                 "Release",
@@ -421,19 +432,21 @@ impl InPlacePlugin for DenoiserPlugin {
                 RELEASE_MS_MIN,
                 RELEASE_MS_MAX,
             )
-            .with_description("Release time for gain changes (ms)"),
-            Parameter::new_bool(
-                "low_latency",
-                "Low Latency",
-                LOW_LATENCY_DEFAULT,
-            )
-            .with_description("Use smaller FFT for lower latency (requires reinit)"),
+            .with_description("Release time for gain changes (ms)")
+            .with_group("Timing")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_bool("low_latency", "Low Latency", LOW_LATENCY_DEFAULT)
+                .with_description("Use smaller FFT for lower latency (requires reinit)")
+                .with_group("Performance")
+                .with_importance(ParameterImportance::FineTuning),
             Parameter::new_bool(
                 "polyphonic_detection",
                 "Polyphonic Detection",
                 POLYPHONIC_DETECTION_DEFAULT,
             )
-            .with_description("Enable polyphonic note detection mode (gates non-tonal content)"),
+            .with_description("Enable polyphonic note detection mode (gates non-tonal content)")
+            .with_group("Detection")
+            .with_importance(ParameterImportance::Useful),
         ]
     }
 
@@ -471,7 +484,9 @@ impl InPlacePlugin for DenoiserPlugin {
             // This is typically not done at runtime
             self.low_latency = value.as_bool().ok_or("Invalid low_latency value")?;
         } else if id == self.param_polyphonic_detection {
-            self.polyphonic_detection = value.as_bool().ok_or("Invalid polyphonic_detection value")?;
+            self.polyphonic_detection = value
+                .as_bool()
+                .ok_or("Invalid polyphonic_detection value")?;
         } else {
             return Err(format!("Unknown parameter: {}", id));
         }
@@ -622,7 +637,10 @@ mod tests {
         denoiser.initialize(48000).unwrap();
 
         denoiser
-            .set_parameter(ParameterId::from("reduction_db"), ParameterValue::Float(25.0))
+            .set_parameter(
+                ParameterId::from("reduction_db"),
+                ParameterValue::Float(25.0),
+            )
             .unwrap();
         denoiser
             .set_parameter(ParameterId::from("floor_db"), ParameterValue::Float(-35.0))

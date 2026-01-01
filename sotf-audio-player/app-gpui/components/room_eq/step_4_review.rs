@@ -1,14 +1,10 @@
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui_ui_kit::{
-    Card, HStack, StackSpacing, Text, TextSize, TextWeight, VStack,
-};
+use gpui_ui_kit::{Card, HStack, StackSpacing, Text, TextSize, TextWeight, VStack};
 
 use super::render::render_channel_result_card;
 
 impl PlayerView {
-
-
     pub(crate) fn render_room_eq_review(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();

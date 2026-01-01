@@ -10,7 +10,9 @@ use gpui::prelude::*;
 use gpui::*;
 use sotf_audio_player::PluginSettings;
 use sotf_plugins::ChannelState;
-use sotf_plugins::speaker_config::{get_meter_groups, get_meter_groups_by_channels, make_fallback_channel, MeterGroupSpec};
+use sotf_plugins::speaker_config::{
+    MeterGroupSpec, get_meter_groups, get_meter_groups_by_channels, make_fallback_channel,
+};
 use std::panic;
 
 use super::{MeterTheme, TickConfig, render_tick_row};
@@ -1373,7 +1375,11 @@ impl AppState {
                         .map(|ch| ChannelInfo {
                             index: ch.index,
                             name: ch.label.to_string(),
-                            display_name: ch.display_chars.iter().map(|s| (*s).to_string()).collect(),
+                            display_name: ch
+                                .display_chars
+                                .iter()
+                                .map(|s| (*s).to_string())
+                                .collect(),
                         })
                         .collect(),
                     muted: false,
@@ -1445,7 +1451,11 @@ impl AppState {
                             ChannelInfo {
                                 index: spec.index,
                                 name: spec.label.to_string(),
-                                display_name: spec.display_chars.iter().map(|s| (*s).to_string()).collect(),
+                                display_name: spec
+                                    .display_chars
+                                    .iter()
+                                    .map(|s| (*s).to_string())
+                                    .collect(),
                             }
                         })
                         .collect();

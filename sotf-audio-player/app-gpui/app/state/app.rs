@@ -486,7 +486,7 @@ impl App {
             rack_detail_collapsed: false,
             input_meter_collapsed: false,
             output_meter_collapsed: false,
-            input_meter_width: 80.0,  // Default width for input meter panel
+            input_meter_width: 80.0,   // Default width for input meter panel
             output_meter_width: 140.0, // Default width for output meter panel
             dragging_divider: None,
             startup_db_check_done: false,

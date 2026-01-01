@@ -3,15 +3,15 @@
 // ============================================================================
 
 use super::param_specs::convolution::*;
-use super::parameters::{Parameter, ParameterId, ParameterValue};
+use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use super::smoothing::Smoother;
+use parking_lot::RwLock;
 use rustfft::FftPlanner;
 use rustfft::num_complex::Complex;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
-use parking_lot::RwLock;
 use symphonia::core::audio::{AudioBufferRef, Signal};
 use symphonia::core::codecs::{Decoder, DecoderOptions};
 use symphonia::core::conv::FromSample;
@@ -74,7 +74,7 @@ pub struct ConvolutionPlugin {
     param_gain_db: ParameterId,
 
     ir_file: String,
-    
+
     // Smoothed parameters
     mix: Smoother,
     gain_db: f32, // Stored for get_parameter
@@ -85,10 +85,10 @@ pub struct ConvolutionPlugin {
 
     // Overlap-add buffers (per channel)
     // These need to be resized if FFT size changes
-    input_buffer: Vec<Vec<f32>>,       
-    input_buffer_fill: Vec<usize>,     
-    output_accumulator: Vec<Vec<f32>>, 
-    output_accumulator_fill: usize,    
+    input_buffer: Vec<Vec<f32>>,
+    input_buffer_fill: Vec<usize>,
+    output_accumulator: Vec<Vec<f32>>,
+    output_accumulator_fill: usize,
 
     // Processing buffers (reused to avoid allocations, resized as needed)
     fft_buffer: Vec<Complex<f32>>,
@@ -100,7 +100,7 @@ impl ConvolutionPlugin {
     pub fn new(channels: usize, sample_rate: u32) -> Self {
         // Initial dummy state
         let fft_size = 2048;
-        
+
         Self {
             channels,
             sample_rate,
@@ -163,7 +163,11 @@ impl ConvolutionPlugin {
             // Load IR using Symphonia
             let ir_samples = Self::load_wav_file(&path_owned)?;
             let ir_channels = ir_samples.len();
-            let ir_length = if !ir_samples.is_empty() { ir_samples[0].len() } else { 0 };
+            let ir_length = if !ir_samples.is_empty() {
+                ir_samples[0].len()
+            } else {
+                0
+            };
 
             if ir_length == 0 {
                 return Ok(());
@@ -173,7 +177,7 @@ impl ConvolutionPlugin {
             let hop_size = 1024; // Base hop size
             let required_size = ir_length + hop_size;
             let fft_size = required_size.next_power_of_two().max(2048);
-            let effective_hop = fft_size / 2; 
+            let effective_hop = fft_size / 2;
 
             // Rebuild FFT planners
             let mut planner = FftPlanner::<f32>::new();
@@ -204,7 +208,7 @@ impl ConvolutionPlugin {
                 let mut lock = state_arc.write();
                 *lock = Some(new_state);
             }
-            
+
             Ok(())
         };
 
@@ -301,7 +305,7 @@ impl ConvolutionPlugin {
                     AudioBufferRef::S24(buf) => {
                         for i in 0..duration {
                             let sample = buf.chan(ch)[i];
-                            let sample_f32 = sample.inner() as f32 / 8388608.0; 
+                            let sample_f32 = sample.inner() as f32 / 8388608.0;
                             sample_vec.push(sample_f32);
                         }
                     }
@@ -339,7 +343,7 @@ impl ConvolutionPlugin {
             for ch in 0..self.channels {
                 self.input_buffer[ch].resize(fft_size, 0.0);
                 // Important: clear fill count if resized to avoid invalid indices
-                self.input_buffer_fill[ch] = 0; 
+                self.input_buffer_fill[ch] = 0;
                 self.output_accumulator[ch].resize(fft_size * 2, 0.0);
                 self.output_accumulator[ch].fill(0.0); // Safe clear
             }
@@ -370,7 +374,7 @@ impl ConvolutionPlugin {
         let mut output_pos = 0;
 
         let ir_channel = if state.ir_channels == 1 {
-            0 
+            0
         } else {
             channel.min(state.ir_channels - 1)
         };
@@ -381,8 +385,7 @@ impl ConvolutionPlugin {
             let samples_available = num_frames - input_pos;
             let to_copy = space_in_buffer.min(samples_available);
 
-            input_buffer
-                [*input_buffer_fill..*input_buffer_fill + to_copy]
+            input_buffer[*input_buffer_fill..*input_buffer_fill + to_copy]
                 .copy_from_slice(&input[input_pos..input_pos + to_copy]);
 
             *input_buffer_fill += to_copy;
@@ -470,7 +473,7 @@ impl Plugin for ConvolutionPlugin {
         self.sample_rate = sample_rate;
         self.mix.set_time(20.0, sample_rate);
         self.gain_linear.set_time(20.0, sample_rate);
-        
+
         // Reload IR if it was previously loaded (sample rate changed)
         if !self.ir_file.is_empty() {
             let path = self.ir_file.clone();
@@ -491,9 +494,13 @@ impl Plugin for ConvolutionPlugin {
     fn parameters(&self) -> Vec<Parameter> {
         vec![
             Parameter::new_float("mix", "Mix", MIX_DEFAULT, MIX_MIN, MIX_MAX)
-                .with_description("Dry/wet mix (0.0 = dry, 1.0 = wet)"),
+                .with_description("Dry/wet mix (0.0 = dry, 1.0 = wet)")
+                .with_group("Output")
+                .with_importance(ParameterImportance::Useful),
             Parameter::new_float("gain_db", "Gain", GAIN_DB_DEFAULT, GAIN_DB_MIN, GAIN_DB_MAX)
-                .with_description("Output gain in dB"),
+                .with_description("Output gain in dB")
+                .with_group("Output")
+                .with_importance(ParameterImportance::Useful),
         ]
     }
 
@@ -572,13 +579,13 @@ impl Plugin for ConvolutionPlugin {
 
         // 3. Process
         let state_guard = self.state.read();
-        
+
         if let Some(ref state) = *state_guard {
             let num_frames = input.len() / self.channels;
 
             // Process each channel
             for ch in 0..self.channels {
-                // Extract channel samples (allocation here is acceptable for safety refactor, 
+                // Extract channel samples (allocation here is acceptable for safety refactor,
                 // typically we'd use pre-allocated buffers but process is mut self so we can't easily iterate)
                 // Actually, we can iterate indices.
                 // Let's create temp vectors for this frame.
@@ -592,17 +599,17 @@ impl Plugin for ConvolutionPlugin {
                 // Process (pass disjoint borrows)
                 Self::process_channel_internal(
                     ch,
-                    &channel_input, 
-                    &mut channel_output, 
-                    state, 
+                    &channel_input,
+                    &mut channel_output,
+                    state,
                     &mut self.input_buffer[ch],
                     &mut self.input_buffer_fill[ch],
                     &mut self.output_accumulator[ch],
                     &mut self.output_accumulator_fill,
                     &mut self.fft_buffer,
                     &mut self.conv_result,
-                    dry_gain, 
-                    wet_gain
+                    dry_gain,
+                    wet_gain,
                 );
 
                 // Interleave back

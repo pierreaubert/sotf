@@ -2,7 +2,7 @@
 // Channel Mute/Solo Plugin - Mute or solo individual channels
 // ============================================================================
 
-use super::parameters::{Parameter, ParameterId, ParameterValue};
+use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use serde::{Deserialize, Serialize};
 
@@ -148,7 +148,9 @@ impl InPlacePlugin for ChannelMuteSoloPlugin {
     fn parameters(&self) -> Vec<Parameter> {
         vec![
             Parameter::new_bool("enabled", "Enabled", self.enabled)
-                .with_description("Enable/disable the plugin (false = bypass)"),
+                .with_description("Enable/disable the plugin (false = bypass)")
+                .with_group("General")
+                .with_importance(ParameterImportance::Critical),
             // Note: channel_states are set via plugin configuration, not runtime parameters
         ]
     }

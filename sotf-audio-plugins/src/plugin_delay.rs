@@ -9,7 +9,7 @@
 // - feedback: Feedback amount (0.0 to 1.0)
 // - mix: Dry/wet mix (0.0 = all dry, 1.0 = all wet)
 
-use super::parameters::{Parameter, ParameterId, ParameterValue};
+use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use serde::{Deserialize, Serialize};
 
@@ -183,11 +183,17 @@ impl InPlacePlugin for DelayPlugin {
     fn parameters(&self) -> Vec<Parameter> {
         vec![
             Parameter::new_float("delay_ms", "Delay Time", 100.0, 0.1, 5000.0)
-                .with_description("Delay time in milliseconds"),
+                .with_description("Delay time in milliseconds")
+                .with_group("Time")
+                .with_importance(ParameterImportance::Critical),
             Parameter::new_float("feedback", "Feedback", 0.3, 0.0, 0.95)
-                .with_description("Feedback amount (0.0 = no feedback, 0.95 = maximum)"),
+                .with_description("Feedback amount (0.0 = no feedback, 0.95 = maximum)")
+                .with_group("Feedback")
+                .with_importance(ParameterImportance::Critical),
             Parameter::new_float("mix", "Mix", 0.5, 0.0, 1.0)
-                .with_description("Dry/wet mix (0.0 = all dry, 1.0 = all wet)"),
+                .with_description("Dry/wet mix (0.0 = all dry, 1.0 = all wet)")
+                .with_group("Output")
+                .with_importance(ParameterImportance::Useful),
         ]
     }
 

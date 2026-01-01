@@ -60,9 +60,7 @@ impl Player {
         self.spectrum_index = plugins
             .iter()
             .position(|p| p.plugin_type == "spectrum_analyzer");
-        self.compressor_index = plugins
-            .iter()
-            .position(|p| p.plugin_type == "compressor");
+        self.compressor_index = plugins.iter().position(|p| p.plugin_type == "compressor");
     }
 
     pub fn load_and_play(
@@ -308,7 +306,8 @@ mod tests {
 
         assert_eq!(state.position_secs, 0.0);
         assert!(!state.is_playing);
-        assert!(state.loudness.is_none());
+        assert!(state.input_loudness.is_none());
+        assert!(state.output_loudness.is_none());
         assert!(state.spectrum.is_none());
         assert!(state.last_error.is_none());
     }

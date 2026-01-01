@@ -1310,7 +1310,15 @@ impl PlayerView {
             {
                 // Update existing EQ plugin
                 if let Some(eq_plugin) = plugin_chain.get_plugin_mut(eq_idx) {
+                    let channels = if let sotf_audio_player::PluginSettings::EQ { channels, .. } =
+                        &eq_plugin.settings
+                    {
+                        *channels
+                    } else {
+                        2
+                    };
                     eq_plugin.settings = sotf_audio_player::PluginSettings::EQ {
+                        channels,
                         filters: eq_filters.clone(),
                     };
                     log::info!("Updated existing EQ plugin at index {}", eq_idx);
@@ -1323,6 +1331,7 @@ impl PlayerView {
                 // Configure the newly inserted plugin
                 if let Some(eq_plugin) = plugin_chain.get_plugin_mut(insert_idx) {
                     eq_plugin.settings = sotf_audio_player::PluginSettings::EQ {
+                        channels: 2,
                         filters: eq_filters.clone(),
                     };
                 }

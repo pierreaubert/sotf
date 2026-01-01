@@ -409,8 +409,8 @@ fn optimize_single_driver(
     mut callback: Option<SpeakerOptimizationCallback>,
 ) -> Result<SpeakerOptimizationResult, String> {
     // Create tokio runtime for async operations
-    let rt = tokio::runtime::Runtime::new()
-        .map_err(|e| format!("Failed to create runtime: {}", e))?;
+    let rt =
+        tokio::runtime::Runtime::new().map_err(|e| format!("Failed to create runtime: {}", e))?;
 
     rt.block_on(async {
         // Extract spinorama parameters from input
@@ -489,12 +489,9 @@ fn optimize_from_curve(
     let input_normalized = autoeq::normalize_and_interpolate_response(&standard_freq, curve);
 
     // Build target curve
-    let target_curve = autoeq::workflow::build_target_curve(
-        &config.args,
-        &standard_freq,
-        &input_normalized,
-    )
-    .map_err(|e| e.to_string())?;
+    let target_curve =
+        autoeq::workflow::build_target_curve(&config.args, &standard_freq, &input_normalized)
+            .map_err(|e| e.to_string())?;
 
     // Create deviation curve
     let deviation_curve = autoeq::Curve {
@@ -544,11 +541,14 @@ fn optimize_from_curve(
     .map_err(|e| e.to_string())?;
 
     // Convert to biquads
-    let biquads: Vec<autoeq_iir::Biquad> =
-        autoeq::x2peq(&output.params, config.args.sample_rate, config.args.peq_model)
-            .into_iter()
-            .map(|(_, b)| b)
-            .collect();
+    let biquads: Vec<autoeq_iir::Biquad> = autoeq::x2peq(
+        &output.params,
+        config.args.sample_rate,
+        config.args.peq_model,
+    )
+    .into_iter()
+    .map(|(_, b)| b)
+    .collect();
 
     // Compute visualization curves
     let frequencies: Vec<f64> = standard_freq.iter().copied().collect();
@@ -559,7 +559,10 @@ fn optimize_from_curve(
         &biquads,
     );
 
-    let history_vec = history.lock().map_err(|_| "Failed to lock history")?.clone();
+    let history_vec = history
+        .lock()
+        .map_err(|_| "Failed to lock history")?
+        .clone();
     let initial_loss = history_vec.first().map(|x| x.1).unwrap_or(0.0);
     let final_loss = history_vec.last().map(|x| x.1).unwrap_or(0.0);
 
@@ -621,10 +624,15 @@ pub fn load_preview_curves(
     measurement: &str,
     curve_name: &str,
 ) -> Result<PreviewCurves, String> {
-    let rt = tokio::runtime::Runtime::new()
-        .map_err(|e| format!("Failed to create runtime: {}", e))?;
+    let rt =
+        tokio::runtime::Runtime::new().map_err(|e| format!("Failed to create runtime: {}", e))?;
 
-    rt.block_on(load_preview_curves_async(speaker, version, measurement, curve_name))
+    rt.block_on(load_preview_curves_async(
+        speaker,
+        version,
+        measurement,
+        curve_name,
+    ))
 }
 
 /// Async version of load_preview_curves
@@ -648,8 +656,9 @@ pub async fn load_preview_curves_async(
 
     // Build target curve using default args
     let args = autoeq::Args::speaker_defaults();
-    let target_curve = autoeq::workflow::build_target_curve(&args, &standard_freq, &input_normalized)
-        .map_err(|e| e.to_string())?;
+    let target_curve =
+        autoeq::workflow::build_target_curve(&args, &standard_freq, &input_normalized)
+            .map_err(|e| e.to_string())?;
 
     // Compute deviation
     let frequencies: Vec<f64> = standard_freq.iter().copied().collect();

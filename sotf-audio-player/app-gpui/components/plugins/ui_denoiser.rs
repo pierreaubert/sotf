@@ -25,6 +25,7 @@ pub struct DenoiserRenderState {
     pub attack_ms: f64,
     pub release_ms: f64,
     pub low_latency: bool,
+    pub polyphonic_detection: bool,
     pub is_editing: bool,
     pub selected_param: usize,
 }
@@ -185,6 +186,29 @@ pub fn render_denoiser_plugin(
                                             plugin_idx,
                                             state.low_latency,
                                             5,
+                                            state.selected_param,
+                                            state.is_editing,
+                                            theme,
+                                        )),
+                                )
+                                // Polyphonic Detection toggle
+                                .child(
+                                    div()
+                                        .flex()
+                                        .justify_between()
+                                        .items_center()
+                                        .w_full()
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(theme.text_muted)
+                                                .child("Polyphonic"),
+                                        )
+                                        .child(render_toggle_button(
+                                            entity.clone(),
+                                            plugin_idx,
+                                            state.polyphonic_detection,
+                                            6,
                                             state.selected_param,
                                             state.is_editing,
                                             theme,

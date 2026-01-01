@@ -16,7 +16,7 @@
 // - Per-band: threshold, ratio, attack, release, knee, makeup_gain, solo, bypass
 
 use super::param_specs::multiband_compressor::*;
-use super::parameters::{Parameter, ParameterId, ParameterValue};
+use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use super::smoothing::Smoother;
 use autoeq_iir::{Biquad, BiquadFilterType};
@@ -31,9 +31,9 @@ use std::sync::Arc;
 
 /// Crossover presets
 pub const CROSSOVER_PRESETS: &[(f32, f32, f32, f32)] = &[
-    (200.0, 2000.0, 8000.0, 12000.0),   // Preset 1: Classic 200/2k
-    (100.0, 3000.0, 8000.0, 12000.0),   // Preset 2: Wide mid 100/3k
-    (250.0, 4000.0, 10000.0, 14000.0),  // Preset 3: Hi emphasis 250/4k
+    (200.0, 2000.0, 8000.0, 12000.0),  // Preset 1: Classic 200/2k
+    (100.0, 3000.0, 8000.0, 12000.0),  // Preset 2: Wide mid 100/3k
+    (250.0, 4000.0, 10000.0, 14000.0), // Preset 3: Hi emphasis 250/4k
 ];
 
 /// Per-band compressor parameters (optional overrides)
@@ -361,8 +361,8 @@ pub struct MultibandCompressorPlugin {
     band_compressors: Vec<BandCompressor>,
 
     // Temporary buffers for band processing (Flattened: [band * stride + index])
-    band_buffers: Vec<f32>, 
-    band_levels_db: Vec<f32>,    // RMS per band
+    band_buffers: Vec<f32>,
+    band_levels_db: Vec<f32>, // RMS per band
 
     // Smoothing
     threshold_smoother: Smoother,
@@ -406,17 +406,15 @@ impl MultibandCompressorPlugin {
             .collect();
 
         // Get crossover frequencies from preset or custom
-        let crossover_frequencies = Self::get_crossover_frequencies(
-            params.crossover_preset,
-            &params.crossover_frequencies,
-        );
-        
+        let crossover_frequencies =
+            Self::get_crossover_frequencies(params.crossover_preset, &params.crossover_frequencies);
+
         // Initialize smoother (50ms smoothing time)
         let threshold_smoother = Smoother::new(params.threshold_db, 50.0, sample_rate);
 
         Self {
             channels,
-            sample_rate, 
+            sample_rate,
             num_bands,
             crossover_preset: params.crossover_preset,
             crossover_frequencies,
@@ -477,11 +475,8 @@ impl MultibandCompressorPlugin {
         let num_crossovers = self.num_bands - 1;
         for i in 0..num_crossovers {
             let freq = self.crossover_frequencies.get(i).copied().unwrap_or(1000.0);
-            self.crossover_points.push(CrossoverPoint::new(
-                self.channels,
-                freq,
-                self.sample_rate,
-            ));
+            self.crossover_points
+                .push(CrossoverPoint::new(self.channels, freq, self.sample_rate));
         }
     }
 
@@ -567,15 +562,15 @@ impl MultibandCompressorPlugin {
     /// Split input into frequency bands
     fn split_bands(&mut self, input: &[f32], num_frames: usize) {
         let required_len = self.num_bands * num_frames * self.channels;
-        
+
         // Ensure band buffers are allocated (flat buffer)
         if self.band_buffers.len() < required_len {
             self.band_buffers.resize(required_len, 0.0);
         }
-        
+
         // Reset buffers
         self.band_buffers[0..required_len].fill(0.0);
-        
+
         let stride = num_frames * self.channels;
 
         // Process each sample through the crossover network
@@ -588,7 +583,7 @@ impl MultibandCompressorPlugin {
                 for (xover_idx, crossover) in self.crossover_points.iter_mut().enumerate() {
                     // Low band gets the lowpass output
                     let low = crossover.process_lowpass(ch, remaining);
-                    
+
                     // Add to appropriate band buffer section
                     // Band buffer index = band * stride + frame * channels + channel
                     let band_idx = xover_idx * stride + idx;
@@ -610,25 +605,25 @@ impl MultibandCompressorPlugin {
         // Check if any band is soloed
         let any_solo = (0..self.num_bands).any(|b| self.is_band_solo(b));
         let stride = num_frames * self.channels;
-        
-        // Update global smoothers once per block is usually fine for efficiency, 
+
+        // Update global smoothers once per block is usually fine for efficiency,
         // but here we demonstrate per-sample smoothing for high quality automation.
         // However, since we iterate bands -> samples, and bands share the global threshold,
         // we can't tick the smoother in every band loop.
         // We will tick it once, store values, or just use block update.
-        // Let's use block-start value for simplicity in this refactor, 
+        // Let's use block-start value for simplicity in this refactor,
         // as correct per-sample shared smoothing requires a separate pass.
         // Or better: tick it in the loop for the first band, but that's messy if first band is bypassed.
         // DECISION: Update smoother target in set_parameter, and tick it here for the whole block?
-        // No, let's just use the current value for the whole block for now to keep logic simple, 
+        // No, let's just use the current value for the whole block for now to keep logic simple,
         // but the infrastructure (Smoother struct) is ready for per-sample if we change loop order.
-        let smoothed_threshold = self.threshold_smoother.next(); 
+        let smoothed_threshold = self.threshold_smoother.next();
 
         for band in 0..self.num_bands {
             let bypass = self.is_band_bypass(band);
             let solo = self.is_band_solo(band);
             let muted = any_solo && !solo;
-            
+
             let band_offset = band * stride;
 
             if muted {
@@ -643,12 +638,13 @@ impl MultibandCompressorPlugin {
             }
 
             // Determine threshold to use (override or global smoothed)
-            let threshold = if let Some(p) = self.band_params.get(band).and_then(|b| b.threshold_db) {
+            let threshold = if let Some(p) = self.band_params.get(band).and_then(|b| b.threshold_db)
+            {
                 p
             } else {
                 smoothed_threshold
             };
-            
+
             let ratio = self.get_band_ratio(band);
             let knee = self.get_band_knee(band);
             let makeup_linear = 10.0_f32.powf(self.get_band_makeup(band) / 20.0);
@@ -667,7 +663,8 @@ impl MultibandCompressorPlugin {
                     }
 
                     let input_db = 20.0 * max_level.max(1e-10).log10();
-                    let target_gr = Self::calculate_gain_reduction(input_db, threshold, ratio, knee);
+                    let target_gr =
+                        Self::calculate_gain_reduction(input_db, threshold, ratio, knee);
 
                     // Apply same gain reduction to all channels
                     for ch in 0..self.channels {
@@ -724,7 +721,7 @@ impl MultibandCompressorPlugin {
     /// Sum bands back together
     fn sum_bands(&self, output: &mut [f32], num_frames: usize) {
         let stride = num_frames * self.channels;
-        
+
         for frame in 0..num_frames {
             for ch in 0..self.channels {
                 let idx = frame * self.channels + ch;
@@ -745,10 +742,7 @@ impl InPlacePlugin for MultibandCompressorPlugin {
             name: "Multiband Compressor".to_string(),
             version: "1.0.0".to_string(),
             author: "AutoEQ".to_string(),
-            description: format!(
-                "{}-band compressor with LR24 crossovers",
-                self.num_bands
-            ),
+            description: format!("{}-band compressor with LR24 crossovers", self.num_bands),
         }
     }
 
@@ -765,7 +759,9 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                 NUM_BANDS_MIN as i32,
                 NUM_BANDS_MAX as i32,
             )
-            .with_description("Number of frequency bands"),
+            .with_description("Number of frequency bands")
+            .with_group("Configuration")
+            .with_importance(ParameterImportance::Critical),
             Parameter::new_int(
                 "crossover_preset",
                 "Preset",
@@ -773,7 +769,9 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                 CROSSOVER_PRESET_MIN,
                 CROSSOVER_PRESET_MAX,
             )
-            .with_description("Crossover preset (0=Custom, 1=200/2k, 2=100/3k, 3=250/4k)"),
+            .with_description("Crossover preset (0=Custom, 1=200/2k, 2=100/3k, 3=250/4k)")
+            .with_group("Crossover")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_float(
                 "crossover_freq_1",
                 "Xover 1",
@@ -781,7 +779,9 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                 CROSSOVER_FREQ_1_MIN,
                 CROSSOVER_FREQ_1_MAX,
             )
-            .with_description("Low/Mid crossover frequency (Hz)"),
+            .with_description("Low/Mid crossover frequency (Hz)")
+            .with_group("Crossover")
+            .with_importance(ParameterImportance::FineTuning),
             Parameter::new_float(
                 "crossover_freq_2",
                 "Xover 2",
@@ -789,7 +789,9 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                 CROSSOVER_FREQ_2_MIN,
                 CROSSOVER_FREQ_2_MAX,
             )
-            .with_description("Mid/High crossover frequency (Hz)"),
+            .with_description("Mid/High crossover frequency (Hz)")
+            .with_group("Crossover")
+            .with_importance(ParameterImportance::FineTuning),
             Parameter::new_float(
                 "crossover_freq_3",
                 "Xover 3",
@@ -797,7 +799,9 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                 CROSSOVER_FREQ_3_MIN,
                 CROSSOVER_FREQ_3_MAX,
             )
-            .with_description("High/Ultra crossover frequency (Hz)"),
+            .with_description("High/Ultra crossover frequency (Hz)")
+            .with_group("Crossover")
+            .with_importance(ParameterImportance::FineTuning),
             Parameter::new_float(
                 "crossover_freq_4",
                 "Xover 4",
@@ -805,7 +809,9 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                 CROSSOVER_FREQ_4_MIN,
                 CROSSOVER_FREQ_4_MAX,
             )
-            .with_description("Ultra/Air crossover frequency (Hz)"),
+            .with_description("Ultra/Air crossover frequency (Hz)")
+            .with_group("Crossover")
+            .with_importance(ParameterImportance::FineTuning),
             Parameter::new_float(
                 "threshold",
                 "Threshold",
@@ -813,11 +819,17 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                 THRESHOLD_MIN,
                 THRESHOLD_MAX,
             )
-            .with_description("Global compression threshold (dB)"),
+            .with_description("Global compression threshold (dB)")
+            .with_group("Dynamics")
+            .with_importance(ParameterImportance::Critical),
             Parameter::new_float("ratio", "Ratio", RATIO_DEFAULT, RATIO_MIN, RATIO_MAX)
-                .with_description("Global compression ratio"),
+                .with_description("Global compression ratio")
+                .with_group("Dynamics")
+                .with_importance(ParameterImportance::Critical),
             Parameter::new_float("attack", "Attack", ATTACK_DEFAULT, ATTACK_MIN, ATTACK_MAX)
-                .with_description("Global attack time (ms)"),
+                .with_description("Global attack time (ms)")
+                .with_group("Timing")
+                .with_importance(ParameterImportance::Critical),
             Parameter::new_float(
                 "release",
                 "Release",
@@ -825,13 +837,21 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                 RELEASE_MIN,
                 RELEASE_MAX,
             )
-            .with_description("Global release time (ms)"),
+            .with_description("Global release time (ms)")
+            .with_group("Timing")
+            .with_importance(ParameterImportance::Critical),
             Parameter::new_float("knee", "Knee", KNEE_DEFAULT, KNEE_MIN, KNEE_MAX)
-                .with_description("Global soft knee width (dB)"),
+                .with_description("Global soft knee width (dB)")
+                .with_group("Dynamics")
+                .with_importance(ParameterImportance::Useful),
             Parameter::new_bool("link_channels", "Link Channels", LINK_CHANNELS_DEFAULT)
-                .with_description("Link stereo detection"),
+                .with_description("Link stereo detection")
+                .with_group("Channels")
+                .with_importance(ParameterImportance::Useful),
             Parameter::new_float("mix", "Mix", MIX_DEFAULT, MIX_MIN, MIX_MAX)
-                .with_description("Dry/wet mix"),
+                .with_description("Dry/wet mix")
+                .with_group("Output")
+                .with_importance(ParameterImportance::Useful),
         ]
     }
 
@@ -840,7 +860,8 @@ impl InPlacePlugin for MultibandCompressorPlugin {
             let new_bands = value
                 .as_int()
                 .ok_or("Invalid num_bands value")?
-                .clamp(NUM_BANDS_MIN as i32, NUM_BANDS_MAX as i32) as usize;
+                .clamp(NUM_BANDS_MIN as i32, NUM_BANDS_MAX as i32)
+                as usize;
             if new_bands != self.num_bands {
                 self.num_bands = new_bands;
                 // Resize band structures
@@ -848,7 +869,8 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                     self.band_params.push(BandCompressorParams::default());
                 }
                 while self.band_compressors.len() < new_bands {
-                    self.band_compressors.push(BandCompressor::new(self.channels));
+                    self.band_compressors
+                        .push(BandCompressor::new(self.channels));
                 }
                 self.band_levels_db.resize(new_bands, 0.0);
                 self.build_crossovers();

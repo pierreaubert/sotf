@@ -2,13 +2,14 @@
 // Binaural Decoder Plugin - Multi-channel to Binaural Stereo
 // ============================================================================
 
-use super::parameters::{Parameter, ParameterId, ParameterValue};
+use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use super::simd::{complex_mul_add_simd, complex_mul_simd};
-use super::speaker_config::{SpeakerConfig, get_speaker_config_by_channels};
 use super::smoothing::Smoother;
+use super::speaker_config::{SpeakerConfig, get_speaker_config_by_channels};
 
 use crate::sofa::SofaFile;
+use parking_lot::RwLock;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rubato::{
     Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
@@ -16,7 +17,6 @@ use rubato::{
 use rustfft::num_complex::Complex;
 use std::path::PathBuf;
 use std::sync::Arc;
-use parking_lot::RwLock;
 
 pub mod error;
 pub mod filter;
@@ -38,10 +38,10 @@ pub use self::room::{Reflection, RoomModel};
 struct BinauralState {
     /// HRTF filters in frequency domain [channels × 2 × freq_size]
     hrtf_filters_freq: Vec<Vec<Complex<f32>>>,
-    
+
     /// Diffuse-field equalization filter
     diffuse_field_eq_filter: Option<[Vec<Complex<f32>>; 2]>,
-    
+
     /// Loaded HRTF data (needed for updates)
     hrtf_data: Option<SofaFile>,
 }
@@ -99,13 +99,13 @@ pub struct BinauralDecoderPlugin {
     // Parameters
     param_enable_optimization: ParameterId,
     enable_optimization: bool,
-    
+
     param_externalization: ParameterId,
     externalization: Smoother, // Smoothed
-    
+
     param_near_field_strength: ParameterId,
     near_field_strength: f32,
-    
+
     param_diffuse_field_eq: ParameterId,
     diffuse_field_eq: bool,
 
@@ -147,9 +147,7 @@ impl BinauralDecoderPlugin {
             .checked_mul(input_channels)
             .expect("Buffer size overflow");
         let freq_size = fft_size / 2 + 1;
-        let output_acc_size = fft_size
-            .checked_mul(2)
-            .expect("Buffer size overflow");
+        let output_acc_size = fft_size.checked_mul(2).expect("Buffer size overflow");
 
         assert!(
             input_buffer_size <= 1 << 24,
@@ -160,7 +158,7 @@ impl BinauralDecoderPlugin {
         let mut planner = RealFftPlanner::<f32>::new();
         let fft_r2c = planner.plan_fft_forward(fft_size);
         let fft_c2r = planner.plan_fft_inverse(fft_size);
-        
+
         let speaker_config = get_speaker_config_by_channels(input_channels)
             .unwrap_or_else(|| {
                 log::warn!(
@@ -228,13 +226,13 @@ impl BinauralDecoderPlugin {
 
             param_enable_optimization: ParameterId::from("enable_optimization"),
             enable_optimization,
-            
+
             param_externalization: ParameterId::from("externalization"),
             externalization: Smoother::new(externalization, 50.0, sample_rate),
-            
+
             param_near_field_strength: ParameterId::from("near_field_strength"),
             near_field_strength,
-            
+
             param_diffuse_field_eq: ParameterId::from("diffuse_field_eq"),
             diffuse_field_eq,
 
@@ -284,7 +282,7 @@ impl BinauralDecoderPlugin {
         let freq_size = self.freq_size;
         let input_channels = self.input_channels;
         // Cloning Vec<usize> is cheap enough
-        let lfe_channels = self.lfe_channels.clone(); 
+        let lfe_channels = self.lfe_channels.clone();
 
         let task = move || {
             // Read existing SOFA data
@@ -295,10 +293,13 @@ impl BinauralDecoderPlugin {
 
             if let Some(sofa) = sofa_opt {
                 // Compute new filters
-                let mut new_filters = vec![vec![Complex::new(0.0, 0.0); freq_size * 2]; input_channels];
-                
+                let mut new_filters =
+                    vec![vec![Complex::new(0.0, 0.0); freq_size * 2]; input_channels];
+
                 for (i, speaker) in speaker_config.speakers.iter().enumerate() {
-                    if speaker.is_lfe { continue; }
+                    if speaker.is_lfe {
+                        continue;
+                    }
 
                     let target_pos = room::speaker_to_source_position(speaker);
                     let nearest: [(usize, f32); 3] = sofa.find_three_nearest(&target_pos);
@@ -316,15 +317,23 @@ impl BinauralDecoderPlugin {
                         speaker.elevation,
                     );
 
-                    let combined: Vec<Complex<f32>> = left_fft.into_iter().chain(right_fft.into_iter()).collect();
+                    let combined: Vec<Complex<f32>> =
+                        left_fft.into_iter().chain(right_fft.into_iter()).collect();
                     new_filters[i] = combined;
                 }
 
-                hrtf::normalize_hrtf_gains(&mut new_filters, &lfe_channels, freq_size, input_channels);
+                hrtf::normalize_hrtf_gains(
+                    &mut new_filters,
+                    &lfe_channels,
+                    freq_size,
+                    input_channels,
+                );
 
                 let mut new_df_eq = None;
                 if diffuse_field_eq {
-                    if let Ok(eq) = filter::compute_diffuse_field_eq(&sofa, fft_size, sample_rate, &fft_r2c) {
+                    if let Ok(eq) =
+                        filter::compute_diffuse_field_eq(&sofa, fft_size, sample_rate, &fft_r2c)
+                    {
                         new_df_eq = Some(eq);
                     }
                 }
@@ -845,13 +854,21 @@ impl Plugin for BinauralDecoderPlugin {
     fn parameters(&self) -> Vec<Parameter> {
         vec![
             Parameter::new_bool("enable_optimization", "Optimization", true)
-                .with_description("Enable Sum-Before-IFFT optimization"),
+                .with_description("Enable Sum-Before-IFFT optimization")
+                .with_group("Optimization")
+                .with_importance(ParameterImportance::FineTuning),
             Parameter::new_float("externalization", "Externalization", 0.0, 0.0, 1.0)
-                .with_description("Room simulation / externalization factor"),
+                .with_description("Room simulation / externalization factor")
+                .with_group("Space")
+                .with_importance(ParameterImportance::Critical),
             Parameter::new_float("near_field_strength", "Near-Field", 0.0, 0.0, 1.0)
-                .with_description("Near-field shadowing strength"),
+                .with_description("Near-field shadowing strength")
+                .with_group("Space")
+                .with_importance(ParameterImportance::Useful),
             Parameter::new_bool("diffuse_field_eq", "Diffuse-Field EQ", true)
-                .with_description("Compensate for HRTF coloration (improves timbre)"),
+                .with_description("Compensate for HRTF coloration (improves timbre)")
+                .with_group("Tone")
+                .with_importance(ParameterImportance::Useful),
         ]
     }
 

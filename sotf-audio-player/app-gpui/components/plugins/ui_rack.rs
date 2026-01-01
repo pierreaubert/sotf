@@ -1112,14 +1112,16 @@ impl PlayerView {
                                                     >
                                             })
                                         }
-                                        sotf_audio_player::PluginSettings::Compressor { .. } => {
-                                            self.state.read(cx).app.compressor_info.clone().map(|c| {
+                                        sotf_audio_player::PluginSettings::Compressor {
+                                            ..
+                                        } => self.state.read(cx).app.compressor_info.clone().map(
+                                            |c| {
                                                 std::sync::Arc::new(c)
                                                     as std::sync::Arc<
                                                         dyn std::any::Any + Send + Sync,
                                                     >
-                                            })
-                                        }
+                                            },
+                                        ),
                                         _ => None,
                                     };
 
@@ -1140,28 +1142,25 @@ impl PlayerView {
                         )
                         // Divider 2: Between main zone and output meter (always shown)
                         .child(
-                            PaneDivider::vertical(
-                                "output-meter-divider",
-                                CollapseDirection::Right,
-                            )
-                            .label("OUT")
-                            .theme(divider_theme.clone())
-                            .thickness(px(6.0))
-                            .collapsed(output_collapsed)
-                            .on_toggle(move |collapsed, _window, cx| {
-                                state_for_output_toggle.update(cx, |s, _| {
-                                    s.app.output_meter_collapsed = collapsed;
-                                });
-                            })
-                            .on_drag_start(move |pos, _window, cx| {
-                                state_for_output_drag.update(cx, |s, _| {
-                                    s.app.dragging_divider = Some(DividerDragState {
-                                        divider_type: DividerType::OutputMeter,
-                                        start_x: pos,
-                                        start_width: s.app.output_meter_width,
+                            PaneDivider::vertical("output-meter-divider", CollapseDirection::Right)
+                                .label("OUT")
+                                .theme(divider_theme.clone())
+                                .thickness(px(6.0))
+                                .collapsed(output_collapsed)
+                                .on_toggle(move |collapsed, _window, cx| {
+                                    state_for_output_toggle.update(cx, |s, _| {
+                                        s.app.output_meter_collapsed = collapsed;
                                     });
-                                });
-                            }),
+                                })
+                                .on_drag_start(move |pos, _window, cx| {
+                                    state_for_output_drag.update(cx, |s, _| {
+                                        s.app.dragging_divider = Some(DividerDragState {
+                                            divider_type: DividerType::OutputMeter,
+                                            start_x: pos,
+                                            start_width: s.app.output_meter_width,
+                                        });
+                                    });
+                                }),
                         )
                         // Right: Output Meter (always shown when not collapsed)
                         .when(!output_collapsed, |d| {
@@ -1170,7 +1169,13 @@ impl PlayerView {
                                     .w(px(output_meter_width))
                                     .h_full()
                                     .flex_shrink_0()
-                                    .child(self.render_side_meter(cx, output_channels, "OUT", true, false)),
+                                    .child(self.render_side_meter(
+                                        cx,
+                                        output_channels,
+                                        "OUT",
+                                        true,
+                                        false,
+                                    )),
                             )
                         })
                 })

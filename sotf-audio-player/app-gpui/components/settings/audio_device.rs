@@ -155,149 +155,143 @@ impl PlayerView {
         );
 
         content.child(
-                // Grid layout with 2 equal-width columns
-                div().grid().grid_cols(2).gap_3().w_full().children(
-                    state
-                        .app
-                        .output_devices
-                        .iter()
-                        .enumerate()
-                        .map(|(idx, device)| {
-                            let is_selected = state.app.selected_output_device_index == idx;
-                            let sample_rate = device
-                                .default_config
-                                .as_ref()
-                                .map(|c| c.sample_rate)
-                                .unwrap_or(0);
-                            let channels = device
-                                .default_config
-                                .as_ref()
-                                .map(|c| c.channels)
-                                .unwrap_or(0);
-                            let theme = theme.clone();
-                            let device_name = device.name.clone();
-                            let is_default = device.is_default;
+            // Grid layout with 2 equal-width columns
+            div().grid().grid_cols(2).gap_3().w_full().children(
+                state
+                    .app
+                    .output_devices
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, device)| {
+                        let is_selected = state.app.selected_output_device_index == idx;
+                        let sample_rate = device
+                            .default_config
+                            .as_ref()
+                            .map(|c| c.sample_rate)
+                            .unwrap_or(0);
+                        let channels = device
+                            .default_config
+                            .as_ref()
+                            .map(|c| c.channels)
+                            .unwrap_or(0);
+                        let theme = theme.clone();
+                        let device_name = device.name.clone();
+                        let is_default = device.is_default;
 
-                            // Try to find a brand image
-                            let brand_image = get_brand_image_path(&device_name);
+                        // Try to find a brand image
+                        let brand_image = get_brand_image_path(&device_name);
 
-                            div()
-                                .w_full()
-                                .p_3()
-                                .rounded_md()
-                                .cursor_pointer()
-                                .border_1()
-                                .when(is_selected, |d| {
-                                    d.bg(theme.accent).border_color(theme.accent)
-                                })
-                                .when(!is_selected, |d| {
-                                    d.bg(theme.surface)
-                                        .border_color(theme.border)
-                                        .hover(|s| s.bg(theme.surface_hover))
-                                })
-                                .child(
-                                    HStack::new()
-                                        .spacing(StackSpacing::Md)
-                                        .align(StackAlign::Center)
-                                        .when_some(brand_image, |stack, image_path| {
-                                            stack.child(
-                                                div()
-                                                    .w(px(60.0))
-                                                    .h(px(60.0))
-                                                    .rounded_md()
-                                                    .bg(theme.background)
-                                                    .overflow_hidden()
+                        div()
+                            .w_full()
+                            .p_3()
+                            .rounded_md()
+                            .cursor_pointer()
+                            .border_1()
+                            .when(is_selected, |d| {
+                                d.bg(theme.accent).border_color(theme.accent)
+                            })
+                            .when(!is_selected, |d| {
+                                d.bg(theme.surface)
+                                    .border_color(theme.border)
+                                    .hover(|s| s.bg(theme.surface_hover))
+                            })
+                            .child(
+                                HStack::new()
+                                    .spacing(StackSpacing::Md)
+                                    .align(StackAlign::Center)
+                                    .when_some(brand_image, |stack, image_path| {
+                                        stack.child(
+                                            div()
+                                                .w(px(60.0))
+                                                .h(px(60.0))
+                                                .rounded_md()
+                                                .bg(theme.background)
+                                                .overflow_hidden()
+                                                .child(
+                                                    img(image_path)
+                                                        .w_full()
+                                                        .h_full()
+                                                        .object_fit(ObjectFit::Contain), // Contain to show full brand
+                                                ),
+                                        )
+                                    })
+                                    .child(
+                                        VStack::new()
+                                            .spacing(StackSpacing::Sm)
+                                            .child(
+                                                Text::new(device_name)
+                                                    .size(TextSize::Sm)
+                                                    .weight(TextWeight::Semibold)
+                                                    .color(if is_selected {
+                                                        theme.text_on_accent
+                                                    } else {
+                                                        theme.text_primary
+                                                    }),
+                                            )
+                                            .child(
+                                                HStack::new()
+                                                    .spacing(StackSpacing::Md)
                                                     .child(
-                                                        img(image_path)
-                                                            .w_full()
-                                                            .h_full()
-                                                            .object_fit(ObjectFit::Contain), // Contain to show full brand
+                                                        Badge::new(format!("{} ch", channels))
+                                                            .variant(BadgeVariant::Info),
+                                                    )
+                                                    .child(
+                                                        Badge::new(if sample_rate >= 1000 {
+                                                            format!("{} kHz", sample_rate / 1000)
+                                                        } else {
+                                                            format!("{} Hz", sample_rate)
+                                                        })
+                                                        .variant(BadgeVariant::Info),
                                                     ),
                                             )
-                                        })
-                                        .child(
-                                            VStack::new()
-                                                .spacing(StackSpacing::Sm)
-                                                .child(
-                                                    Text::new(device_name)
-                                                        .size(TextSize::Sm)
-                                                        .weight(TextWeight::Semibold)
-                                                        .color(if is_selected {
-                                                            theme.text_on_accent
-                                                        } else {
-                                                            theme.text_primary
-                                                        }),
+                                            .when(is_default, |stack| {
+                                                stack.child(
+                                                    Badge::new(format!(
+                                                        "✓ {}",
+                                                        translations.settings_default_badge
+                                                    ))
+                                                    .variant(BadgeVariant::Success),
                                                 )
-                                                .child(
-                                                    HStack::new()
-                                                        .spacing(StackSpacing::Md)
-                                                        .child(
-                                                            Badge::new(format!("{} ch", channels))
-                                                                .variant(BadgeVariant::Info),
-                                                        )
-                                                        .child(
-                                                            Badge::new(if sample_rate >= 1000 {
-                                                                format!(
-                                                                    "{} kHz",
-                                                                    sample_rate / 1000
-                                                                )
-                                                            } else {
-                                                                format!("{} Hz", sample_rate)
-                                                            })
-                                                            .variant(BadgeVariant::Info),
-                                                        ),
-                                                )
-                                                .when(is_default, |stack| {
-                                                    stack.child(
-                                                        Badge::new(format!("✓ {}", translations.settings_default_badge))
-                                                            .variant(BadgeVariant::Success),
-                                                    )
-                                                }),
-                                        ),
-                                )
-                                .on_mouse_up(
-                                    MouseButton::Left,
-                                    cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                        view.state.update(cx, |state, _cx| {
-                                            state.app.selected_output_device_index = idx;
-                                            if let Some(device) = state.app.output_devices.get(idx)
-                                            {
-                                                state.app.current_output_device_name =
-                                                    Some(device.name.clone());
+                                            }),
+                                    ),
+                            )
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                                    view.state.update(cx, |state, _cx| {
+                                        state.app.selected_output_device_index = idx;
+                                        if let Some(device) = state.app.output_devices.get(idx) {
+                                            state.app.current_output_device_name =
+                                                Some(device.name.clone());
 
-                                                // If playing, restart track with new device
-                                                if state.app.is_playing {
-                                                    if let Some(queue_idx) =
-                                                        state.app.current_queue_index
+                                            // If playing, restart track with new device
+                                            if state.app.is_playing {
+                                                if let Some(queue_idx) =
+                                                    state.app.current_queue_index
+                                                {
+                                                    if let Some(item) =
+                                                        state.app.queue.get(queue_idx)
                                                     {
-                                                        if let Some(item) =
-                                                            state.app.queue.get(queue_idx)
-                                                        {
-                                                            if let Some(track) =
-                                                                item.current_track()
-                                                            {
-                                                                let path = track.path.clone();
-                                                                Self::play_track(state, path);
-                                                            }
+                                                        if let Some(track) = item.current_track() {
+                                                            let path = track.path.clone();
+                                                            Self::play_track(state, path);
                                                         }
                                                     }
                                                 }
                                             }
-                                        });
-                                        cx.notify();
-                                    }),
-                                )
-                        }),
-                ),
-            )
+                                        }
+                                    });
+                                    cx.notify();
+                                }),
+                            )
+                    }),
+            ),
+        )
     }
 
     /// Start HAL playback from the UI settings toggle
     #[cfg(all(target_os = "macos", feature = "hal"))]
-    fn start_hal_playback_from_ui(
-        state_entity: &Entity<crate::app::AppState>,
-        cx: &mut App,
-    ) {
+    fn start_hal_playback_from_ui(state_entity: &Entity<crate::app::AppState>, cx: &mut App) {
         use sotf_audio::engine::PluginConfig;
 
         state_entity.update(cx, |state, _cx| {

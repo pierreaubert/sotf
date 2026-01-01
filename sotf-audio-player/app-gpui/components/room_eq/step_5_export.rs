@@ -1,12 +1,9 @@
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{
-    Button, ButtonVariant, Card, StackSpacing, Text, TextSize, TextWeight, VStack,
-};
+use gpui_ui_kit::{Button, ButtonVariant, Card, StackSpacing, Text, TextSize, TextWeight, VStack};
 
 impl PlayerView {
-
     pub(crate) fn render_room_eq_export(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
@@ -303,7 +300,13 @@ impl PlayerView {
             if let Some(eq_idx) = plugin_chain.find_plugin_index(&PluginType::EQ) {
                 // Update existing EQ plugin
                 if let Some(eq_plugin) = plugin_chain.get_plugin_mut(eq_idx) {
+                    let channels = if let PluginSettings::EQ { channels, .. } = &eq_plugin.settings {
+                        *channels
+                    } else {
+                        2
+                    };
                     eq_plugin.settings = PluginSettings::EQ {
+                        channels,
                         filters: eq_filters.clone(),
                     };
                     log::info!("Updated existing EQ plugin at index {}", eq_idx);
@@ -316,6 +319,7 @@ impl PlayerView {
                 // Configure the newly inserted plugin
                 if let Some(eq_plugin) = plugin_chain.get_plugin_mut(insert_idx) {
                     eq_plugin.settings = PluginSettings::EQ {
+                        channels: 2,
                         filters: eq_filters.clone(),
                     };
                 }

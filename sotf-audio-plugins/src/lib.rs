@@ -30,12 +30,12 @@ mod plugin_binaural;
 mod plugin_channel_mute_solo;
 mod plugin_compressor;
 mod plugin_convolution;
-mod plugin_denoiser;
 mod plugin_crossover;
 mod plugin_delay;
+mod plugin_denoiser;
 mod plugin_eq;
-mod plugin_gain;
 mod plugin_expander;
+mod plugin_gain;
 mod plugin_gate;
 mod plugin_limiter;
 mod plugin_loudness_compensation;
@@ -68,14 +68,18 @@ pub use plugin_binaural::{
 pub use plugin_channel_mute_solo::{ChannelMuteSoloParams, ChannelMuteSoloPlugin, ChannelState};
 pub use plugin_compressor::{CompressorData, CompressorPlugin, CompressorPluginParams};
 pub use plugin_convolution::{ConvolutionPlugin, ConvolutionPluginParams};
-pub use plugin_denoiser::{DenoiserData, DenoiserPlugin, DenoiserPluginParams};
 pub use plugin_crossover::{CrossoverPlugin, CrossoverPluginParams};
 pub use plugin_delay::{DelayPlugin, DelayPluginParams};
+pub use plugin_denoiser::{DenoiserData, DenoiserPlugin, DenoiserPluginParams};
 pub use plugin_eq::{BiquadFilterConfig, EqPlugin, EqPluginParams};
-pub use plugin_gain::{GainPlugin, GainPluginParams};
 pub use plugin_expander::{ExpanderData, ExpanderPlugin, ExpanderPluginParams};
+pub use plugin_gain::{GainPlugin, GainPluginParams};
 pub use plugin_gate::{GateData, GatePlugin, GatePluginParams};
 pub use plugin_limiter::{LimiterPlugin, LimiterPluginParams};
+pub use plugin_loudness_compensation::{
+    LoudnessCompensationPlugin, LoudnessCompensationPluginParams,
+};
+pub use plugin_matrix::MatrixPlugin;
 pub use plugin_multiband_compressor::{
     BandCompressorParams, MultibandCompressorData, MultibandCompressorPlugin,
     MultibandCompressorPluginParams,
@@ -85,10 +89,6 @@ pub use plugin_multiband_expander::{
     MultibandExpanderPluginParams,
 };
 pub use plugin_pnd::{PndPlugin, PndPluginParams};
-pub use plugin_loudness_compensation::{
-    LoudnessCompensationPlugin, LoudnessCompensationPluginParams,
-};
-pub use plugin_matrix::MatrixPlugin;
 pub use plugin_resampler::ResamplerPlugin;
 pub use plugin_upmixer::{
     UpmixerPlugin,

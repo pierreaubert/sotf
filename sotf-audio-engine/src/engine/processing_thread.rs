@@ -509,7 +509,10 @@ fn create_plugin(
         "multiband_compressor" => {
             let params: MultibandCompressorPluginParams =
                 serde_json::from_value(parameters.clone()).map_err(|e| {
-                    format!("Failed to parse multiband compressor plugin parameters: {}", e)
+                    format!(
+                        "Failed to parse multiband compressor plugin parameters: {}",
+                        e
+                    )
                 })?;
 
             let plugin = MultibandCompressorPlugin::from_params(channels, params);
@@ -517,9 +520,12 @@ fn create_plugin(
         }
 
         "multiband_expander" => {
-            let params: MultibandExpanderPluginParams =
-                serde_json::from_value(parameters.clone()).map_err(|e| {
-                    format!("Failed to parse multiband expander plugin parameters: {}", e)
+            let params: MultibandExpanderPluginParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| {
+                    format!(
+                        "Failed to parse multiband expander plugin parameters: {}",
+                        e
+                    )
                 })?;
 
             let plugin = MultibandExpanderPlugin::from_params(channels, params);

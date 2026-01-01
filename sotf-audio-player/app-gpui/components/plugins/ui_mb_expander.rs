@@ -59,7 +59,7 @@ pub fn render_mb_expander_plugin(
         .child(
             div()
                 .flex()
-                .gap_6()
+                .gap_4()
                 // Column 1: Band configuration and crossover
                 .child(
                     div()
@@ -161,7 +161,7 @@ pub fn render_mb_expander_plugin(
                                 }),
                         ),
                 )
-                // Column 2: Threshold and Ratio sliders
+                // Column 2: Dynamics (Threshold, Ratio, Knee)
                 .child(
                     div()
                         .flex()
@@ -201,10 +201,25 @@ pub fn render_mb_expander_plugin(
                                     Some('r'),
                                     Some(SLIDER_HEIGHT),
                                     theme,
+                                ))
+                                .child(render_vertical_slider_sized(
+                                    entity.clone(),
+                                    plugin_idx,
+                                    "Knee",
+                                    state.knee_db,
+                                    KNEE_MIN as f64,
+                                    KNEE_MAX as f64,
+                                    "dB",
+                                    11,
+                                    state.selected_param,
+                                    state.is_editing,
+                                    Some('k'),
+                                    Some(SLIDER_HEIGHT),
+                                    theme,
                                 )),
                         ),
                 )
-                // Column 3: Attack and Release sliders
+                // Column 3: Timing (Attack, Release, Hold)
                 .child(
                     div()
                         .flex()
@@ -233,6 +248,21 @@ pub fn render_mb_expander_plugin(
                                 .child(render_vertical_slider_sized(
                                     entity.clone(),
                                     plugin_idx,
+                                    "Hold",
+                                    state.hold_ms,
+                                    HOLD_MIN as f64,
+                                    HOLD_MAX as f64,
+                                    "ms",
+                                    13,
+                                    state.selected_param,
+                                    state.is_editing,
+                                    Some('h'),
+                                    Some(SLIDER_HEIGHT),
+                                    theme,
+                                ))
+                                .child(render_vertical_slider_sized(
+                                    entity.clone(),
+                                    plugin_idx,
                                     "Release",
                                     state.release_ms,
                                     RELEASE_MIN as f64,
@@ -247,20 +277,18 @@ pub fn render_mb_expander_plugin(
                                 )),
                         ),
                 )
-                // Column 4: Shape controls (Range, Knee, Hysteresis, Hold)
+                // Column 4: Shape (Range, Hysteresis)
                 .child(
                     div()
                         .flex()
                         .flex_col()
-                        .justify_between()
+                        .gap_2()
+                        .child(render_section_title("SHAPE", theme))
                         .child(
                             div()
                                 .flex()
-                                .flex_col()
                                 .gap_2()
-                                .child(render_section_title("SHAPE", theme))
-                                // Range knob
-                                .child(render_knob(
+                                .child(render_vertical_slider_sized(
                                     entity.clone(),
                                     plugin_idx,
                                     "Range",
@@ -272,31 +300,10 @@ pub fn render_mb_expander_plugin(
                                     state.selected_param,
                                     state.is_editing,
                                     Some('g'),
+                                    Some(SLIDER_HEIGHT),
                                     theme,
                                 ))
-                                // Knee knob
-                                .child(render_knob(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "Knee",
-                                    state.knee_db,
-                                    KNEE_MIN as f64,
-                                    KNEE_MAX as f64,
-                                    "dB",
-                                    11,
-                                    state.selected_param,
-                                    state.is_editing,
-                                    Some('k'),
-                                    theme,
-                                )),
-                        )
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap_2()
-                                // Hysteresis knob
-                                .child(render_knob(
+                                .child(render_vertical_slider_sized(
                                     entity.clone(),
                                     plugin_idx,
                                     "Hysteresis",
@@ -308,21 +315,7 @@ pub fn render_mb_expander_plugin(
                                     state.selected_param,
                                     state.is_editing,
                                     Some('y'),
-                                    theme,
-                                ))
-                                // Hold knob
-                                .child(render_knob(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "Hold",
-                                    state.hold_ms,
-                                    HOLD_MIN as f64,
-                                    HOLD_MAX as f64,
-                                    "ms",
-                                    13,
-                                    state.selected_param,
-                                    state.is_editing,
-                                    Some('h'),
+                                    Some(SLIDER_HEIGHT),
                                     theme,
                                 )),
                         ),
@@ -354,20 +347,15 @@ pub fn render_mb_expander_plugin(
                                         ),
                                 )
                                 // Toggle button
-                                .child(
-                                    div()
-                                        .flex()
-                                        .justify_end()
-                                        .child(render_toggle_button(
-                                            entity.clone(),
-                                            plugin_idx,
-                                            state.link_channels,
-                                            15,
-                                            state.selected_param,
-                                            state.is_editing,
-                                            theme,
-                                        )),
-                                ),
+                                .child(div().flex().justify_end().child(render_toggle_button(
+                                    entity.clone(),
+                                    plugin_idx,
+                                    state.link_channels,
+                                    15,
+                                    state.selected_param,
+                                    state.is_editing,
+                                    theme,
+                                ))),
                         )
                         // Mix knob at bottom
                         .child(render_knob(

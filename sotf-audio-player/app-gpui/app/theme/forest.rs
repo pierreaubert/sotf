@@ -1,5 +1,5 @@
 use super::{
-    rgba, EQCurveColors, GraphLineColors, MeterColors, PluginColorMap, SpectrumColors, Theme,
+    EQCurveColors, GraphLineColors, MeterColors, PluginColorMap, SpectrumColors, Theme, rgba,
 };
 use gpui::Rgba;
 
@@ -197,5 +197,4 @@ impl Theme {
             font_family: ".SystemUI".into(),
         }
     }
-
 }

@@ -17,7 +17,7 @@
 // - sidechain_hpf_hz: High-pass filter cutoff for the detector sidechain (Hz)
 
 use super::param_specs::compressor::*;
-use super::parameters::{Parameter, ParameterId, ParameterValue};
+use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use super::smoothing::Smoother;
 use serde::{Deserialize, Serialize};
@@ -347,11 +347,17 @@ impl InPlacePlugin for CompressorPlugin {
                 THRESHOLD_MIN,
                 THRESHOLD_MAX,
             )
-            .with_description("Level above which compression starts (dB)"),
+            .with_description("Level above which compression starts (dB)")
+            .with_group("Dynamics")
+            .with_importance(ParameterImportance::Critical),
             Parameter::new_float("ratio", "Ratio", RATIO_DEFAULT, RATIO_MIN, RATIO_MAX)
-                .with_description("Compression ratio (1:1 to 20:1)"),
+                .with_description("Compression ratio (1:1 to 20:1)")
+                .with_group("Dynamics")
+                .with_importance(ParameterImportance::Critical),
             Parameter::new_float("attack", "Attack", ATTACK_DEFAULT, ATTACK_MIN, ATTACK_MAX)
-                .with_description("Attack time (ms)"),
+                .with_description("Attack time (ms)")
+                .with_group("Timing")
+                .with_importance(ParameterImportance::Critical),
             Parameter::new_float(
                 "release",
                 "Release",
@@ -359,9 +365,13 @@ impl InPlacePlugin for CompressorPlugin {
                 RELEASE_MIN,
                 RELEASE_MAX,
             )
-            .with_description("Release time (ms)"),
+            .with_description("Release time (ms)")
+            .with_group("Timing")
+            .with_importance(ParameterImportance::Critical),
             Parameter::new_float("knee", "Knee", KNEE_DEFAULT, KNEE_MIN, KNEE_MAX)
-                .with_description("Soft knee width (dB)"),
+                .with_description("Soft knee width (dB)")
+                .with_group("Dynamics")
+                .with_importance(ParameterImportance::FineTuning),
             Parameter::new_float(
                 "makeup_gain",
                 "Makeup Gain",
@@ -369,13 +379,21 @@ impl InPlacePlugin for CompressorPlugin {
                 MAKEUP_GAIN_MIN,
                 MAKEUP_GAIN_MAX,
             )
-            .with_description("Output gain compensation (dB)"),
+            .with_description("Output gain compensation (dB)")
+            .with_group("Output")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_float("mix", "Mix", MIX_DEFAULT, MIX_MIN, MIX_MAX)
-                .with_description("Dry/wet mix (0 = dry, 1 = compressed)"),
+                .with_description("Dry/wet mix (0 = dry, 1 = compressed)")
+                .with_group("Output")
+                .with_importance(ParameterImportance::Useful),
             Parameter::new_bool("auto_makeup", "Auto Makeup", AUTO_MAKEUP_DEFAULT)
-                .with_description("Automatically compensate for gain reduction"),
+                .with_description("Automatically compensate for gain reduction")
+                .with_group("Output")
+                .with_importance(ParameterImportance::Useful),
             Parameter::new_bool("link_channels", "Link Channels", LINK_CHANNELS_DEFAULT)
-                .with_description("Use linked sidechain for all channels"),
+                .with_description("Use linked sidechain for all channels")
+                .with_group("Channels")
+                .with_importance(ParameterImportance::Useful),
             Parameter::new_float(
                 "sidechain_hpf_hz",
                 "Sidechain HPF",
@@ -383,7 +401,9 @@ impl InPlacePlugin for CompressorPlugin {
                 SIDECHAIN_HPF_HZ_MIN,
                 SIDECHAIN_HPF_HZ_MAX,
             )
-            .with_description("High-pass filter frequency for sidechain (Hz)"),
+            .with_description("High-pass filter frequency for sidechain (Hz)")
+            .with_group("Sidechain")
+            .with_importance(ParameterImportance::FineTuning),
         ]
     }
 
@@ -472,7 +492,7 @@ impl InPlacePlugin for CompressorPlugin {
         let num_frames = context.num_frames;
         let ratio = self.ratio.max(1.0);
         let compression_slope = 1.0 - 1.0 / ratio;
-        
+
         let dry_mix = 1.0 - self.mix;
         let wet_mix = self.mix;
 

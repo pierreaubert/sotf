@@ -1223,16 +1223,15 @@ impl PlayerView {
 
     fn fill_queue_magic(&mut self, _: &FillQueueMagic, _: &mut Window, cx: &mut Context<Self>) {
         log::info!("[UI] FillQueueMagic action handler triggered");
-        self.state.update(cx, |state, _cx| {
-            match state.app.fill_queue_magic() {
+        self.state
+            .update(cx, |state, _cx| match state.app.fill_queue_magic() {
                 Ok(count) => {
                     log::info!("[UI] fill_queue_magic added {} tracks", count);
                 }
                 Err(e) => {
                     log::error!("[UI] fill_queue_magic error: {}", e);
                 }
-            }
-        });
+            });
         cx.notify();
     }
 

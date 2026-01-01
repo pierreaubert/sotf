@@ -2,7 +2,6 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 
 impl PlayerView {
-
     pub(crate) fn load_room_eq_from_recording(&mut self, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             state
@@ -154,5 +153,4 @@ impl PlayerView {
         })
         .detach();
     }
-
 }

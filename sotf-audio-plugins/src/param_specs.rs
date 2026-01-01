@@ -545,10 +545,10 @@ pub mod denoiser {
     pub const LOW_LATENCY_DEFAULT: bool = false;
 
     // MCRA-specific parameters (advanced/expert use)
-    pub const MCRA_ALPHA_S_DEFAULT: f32 = 0.9;   // Noise PSD smoothing
-    pub const MCRA_ALPHA_P_DEFAULT: f32 = 0.2;   // Speech presence probability smoothing
-    pub const MCRA_L_DEFAULT: usize = 50;        // Minimum tracking window (frames)
-    pub const MCRA_DELTA_DEFAULT: f32 = 5.0;     // Speech presence threshold
+    pub const MCRA_ALPHA_S_DEFAULT: f32 = 0.9; // Noise PSD smoothing
+    pub const MCRA_ALPHA_P_DEFAULT: f32 = 0.2; // Speech presence probability smoothing
+    pub const MCRA_L_DEFAULT: usize = 50; // Minimum tracking window (frames)
+    pub const MCRA_DELTA_DEFAULT: f32 = 5.0; // Speech presence threshold
 
     pub const POLYPHONIC_DETECTION_DEFAULT: bool = false;
 }

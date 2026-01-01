@@ -1461,18 +1461,13 @@ mod upmixer_tests {
         // should be minimal. This means most energy should be in the front channels,
         // especially the center, and very little in surround/height channels.
         let mut plugin = UpmixerPlugin::new(
-            2048,
-            "5.1.4", // Use a config with height channels
+            2048, "5.1.4", // Use a config with height channels
             1.0,     // gain_front_direct
             1.0,     // gain_front_ambient
             1.0,     // gain_rear_ambient
-            120.0,
-            0.5,
-            250.0,
-            1.0, // height_gain
+            120.0, 0.5, 250.0, 1.0, // height_gain
             1.0, // lfe_gain
-            false,
-            0.5,
+            false, 0.5,
         );
         plugin.initialize(44100).unwrap();
         plugin.center_spread = 0.0; // Focus direct sound to center speaker
@@ -1505,7 +1500,10 @@ mod upmixer_tests {
         }
 
         let total_energy: f32 = energies.iter().sum();
-        assert!(total_energy > 0.01, "Total output energy should be significant.");
+        assert!(
+            total_energy > 0.01,
+            "Total output energy should be significant."
+        );
 
         let center_energy = energies[2];
         let front_left_energy = energies[0];
@@ -1519,7 +1517,9 @@ mod upmixer_tests {
         assert!(
             center_energy > front_left_energy && center_energy > front_right_energy,
             "Center energy ({}) should be greater than front L/R energy (L={}, R={}) for mono input with center_spread=0.0",
-            center_energy, front_left_energy, front_right_energy
+            center_energy,
+            front_left_energy,
+            front_right_energy
         );
 
         // The combined energy of ambient-driven channels (surround + height) should be
@@ -1530,7 +1530,8 @@ mod upmixer_tests {
         assert!(
             ambient_energy < direct_energy * 0.1,
             "Ambient energy ({}) should be less than 10% of direct energy ({}) for a mono signal.",
-            ambient_energy, direct_energy
+            ambient_energy,
+            direct_energy
         );
 
         // LFE energy should be low as the input frequency (440Hz) is above the cutoff (120Hz).
@@ -1546,18 +1547,7 @@ mod upmixer_tests {
         // This test verifies that the high-resolution (HR) path correctly
         // detects and processes a transient signal.
         let mut plugin = UpmixerPlugin::new(
-            2048,
-            "5.1",
-            1.0,
-            0.5,
-            1.0,
-            120.0,
-            0.5,
-            250.0,
-            1.0,
-            1.0,
-            false,
-            0.5,
+            2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
         );
         plugin.initialize(44100).unwrap();
         plugin.enable_hr_direct = true;
@@ -1572,9 +1562,13 @@ mod upmixer_tests {
         // --- Block 1: Silence to get a baseline envelope value ---
         let input_silent = vec![0.0_f32; buffer_size * 2];
         let mut output_buffer = vec![0.0_f32; buffer_size * plugin.output_channels()];
-        plugin.process(&input_silent, &mut output_buffer, &context).unwrap();
+        plugin
+            .process(&input_silent, &mut output_buffer, &context)
+            .unwrap();
         // Process again to let internal states settle
-        plugin.process(&input_silent, &mut output_buffer, &context).unwrap();
+        plugin
+            .process(&input_silent, &mut output_buffer, &context)
+            .unwrap();
         let env_after_silence = plugin.hr_transient_env;
 
         // --- Block 2 & 3: Transient ---
@@ -1588,12 +1582,16 @@ mod upmixer_tests {
         }
 
         // Process the first transient block. This will set the baseline energy.
-        plugin.process(&input_transient, &mut output_buffer, &context).unwrap();
+        plugin
+            .process(&input_transient, &mut output_buffer, &context)
+            .unwrap();
 
         // Process the second transient block. This should trigger the ratio logic.
-        plugin.process(&input_transient, &mut output_buffer, &context).unwrap();
+        plugin
+            .process(&input_transient, &mut output_buffer, &context)
+            .unwrap();
         let env_after_transient = plugin.hr_transient_env;
-        
+
         // --- Assertions ---
         assert!(
             env_after_transient > env_after_silence,
@@ -1614,14 +1612,16 @@ mod upmixer_tests {
         // passes through the stereo input to the front L/R channels,
         // (and L+R/2 to center if present) and silences other channels.
         let mut plugin = UpmixerPlugin::new(
-            2048,
-            "5.1", // Test with a 5.1 configuration
+            2048, "5.1", // Test with a 5.1 configuration
             1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
         );
         plugin.initialize(44100).unwrap();
         // Explicitly enable bypass for this test
         plugin
-            .set_parameter(ParameterId::from("bypass_all_processing"), ParameterValue::Bool(true))
+            .set_parameter(
+                ParameterId::from("bypass_all_processing"),
+                ParameterValue::Bool(true),
+            )
             .unwrap();
 
         let buffer_size = 1024;
@@ -1644,18 +1644,30 @@ mod upmixer_tests {
         // Check output channels
         let fl_idx = 0; // Front Left
         let fr_idx = 1; // Front Right
-        let c_idx = 2;  // Center
+        let c_idx = 2; // Center
         let lfe_idx = 3; // LFE
         let sl_idx = 4; // Surround Left
         let sr_idx = 5; // Surround Right
 
         for i in 0..buffer_size {
             // Front Left and Right should match input *exactly*
-            assert_eq!(output[i * plugin.output_channels() + fl_idx], input[i * 2], "FL output does not match input");
-            assert_eq!(output[i * plugin.output_channels() + fr_idx], input[i * 2 + 1], "FR output does not match input");
+            assert_eq!(
+                output[i * plugin.output_channels() + fl_idx],
+                input[i * 2],
+                "FL output does not match input"
+            );
+            assert_eq!(
+                output[i * plugin.output_channels() + fr_idx],
+                input[i * 2 + 1],
+                "FR output does not match input"
+            );
 
             // Center channel should be (L+R)/2 *exactly*
-            assert_eq!(output[i * plugin.output_channels() + c_idx], (input[i * 2] + input[i * 2 + 1]) * 0.5, "Center output does not match (L+R)/2");
+            assert_eq!(
+                output[i * plugin.output_channels() + c_idx],
+                (input[i * 2] + input[i * 2 + 1]) * 0.5,
+                "Center output does not match (L+R)/2"
+            );
 
             // Other channels should be effectively silent
             assert!(

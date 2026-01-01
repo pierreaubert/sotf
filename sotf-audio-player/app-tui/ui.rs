@@ -4,11 +4,13 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Cell, Clear, List, ListItem, ListState, Paragraph, Row, Table, Wrap},
+    widgets::{
+        Block, BorderType, Borders, Cell, Clear, List, ListItem, ListState, Paragraph, Row, Table,
+        Wrap,
+    },
 };
 use sotf_audio_player::{
-    PluginSettings, PluginType,
-    detect_matrix_preset, get_channel_label, linear_to_db_string,
+    PluginSettings, PluginType, detect_matrix_preset, get_channel_label, linear_to_db_string,
 };
 
 /// Format channel count as common surround notation (e.g., Mono, 2.0, 5.1, 7.1)
@@ -2329,23 +2331,21 @@ fn draw_matrix_editor_modal(f: &mut Frame, app: &App) {
         .split(inner);
 
     // === Header Section ===
-    draw_matrix_header(f, app, chunks[0], *input_channels, *output_channels, preset_name);
-
-    // === Grid Section ===
-    draw_matrix_grid(
+    draw_matrix_header(
         f,
         app,
-        chunks[1],
+        chunks[0],
         *input_channels,
         *output_channels,
-        matrix,
+        preset_name,
     );
+
+    // === Grid Section ===
+    draw_matrix_grid(f, app, chunks[1], *input_channels, *output_channels, matrix);
 
     // === Help Line ===
     let help_text = match app.matrix_edit_mode {
-        MatrixEditMode::Header => {
-            "↑↓: Select | ←→: Adjust | Tab: Grid Mode | Esc: Exit"
-        }
+        MatrixEditMode::Header => "↑↓: Select | ←→: Adjust | Tab: Grid Mode | Esc: Exit",
         MatrixEditMode::Grid => {
             "↑↓←→: Navigate | -/+: Adjust ±0.5dB | 0: Zero | 1: Unity | Tab: Header Mode | Esc: Exit"
         }
@@ -2463,14 +2463,19 @@ fn draw_matrix_grid(
 
     // Calculate column widths: first column for row labels, then one per input
     let label_width = 5u16; // "Out" label column
-    let cell_width = 7u16;  // Each gain cell (e.g., "-12.5" or "-∞")
+    let cell_width = 7u16; // Each gain cell (e.g., "-12.5" or "-∞")
 
     // Build header row (empty corner + input channel labels)
-    let mut header_cells = vec![Cell::from("Out\\In").style(Style::default().fg(app.theme.fg_secondary))];
+    let mut header_cells =
+        vec![Cell::from("Out\\In").style(Style::default().fg(app.theme.fg_secondary))];
     for inp in 0..input_channels {
         let label = get_channel_label(inp, input_channels);
         header_cells.push(
-            Cell::from(label).style(Style::default().fg(app.theme.accent_primary).add_modifier(Modifier::BOLD)),
+            Cell::from(label).style(
+                Style::default()
+                    .fg(app.theme.accent_primary)
+                    .add_modifier(Modifier::BOLD),
+            ),
         );
     }
     let header = Row::new(header_cells).height(1);
@@ -2483,12 +2488,19 @@ fn draw_matrix_grid(
         // Row label (output channel)
         let row_label = get_channel_label(out, output_channels);
         cells.push(
-            Cell::from(row_label).style(Style::default().fg(app.theme.accent_primary).add_modifier(Modifier::BOLD)),
+            Cell::from(row_label).style(
+                Style::default()
+                    .fg(app.theme.accent_primary)
+                    .add_modifier(Modifier::BOLD),
+            ),
         );
 
         // Gain cells
         for inp in 0..input_channels {
-            let gain = matrix.get(out * input_channels + inp).copied().unwrap_or(0.0);
+            let gain = matrix
+                .get(out * input_channels + inp)
+                .copied()
+                .unwrap_or(0.0);
             let db_str = linear_to_db_string(gain);
 
             let is_selected = in_grid && out == app.matrix_grid_row && inp == app.matrix_grid_col;
@@ -2519,9 +2531,11 @@ fn draw_matrix_grid(
         widths.push(Constraint::Length(cell_width));
     }
 
-    let table = Table::new(rows, widths)
-        .header(header)
-        .block(Block::default().borders(Borders::TOP).title(" Matrix Grid "));
+    let table = Table::new(rows, widths).header(header).block(
+        Block::default()
+            .borders(Borders::TOP)
+            .title(" Matrix Grid "),
+    );
 
     f.render_widget(table, area);
 }
@@ -2600,7 +2614,12 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             ),
             (
                 "Bypass Transient Det.".to_string(),
-                if *bypass_transient_detection { "On" } else { "Off" }.to_string(),
+                if *bypass_transient_detection {
+                    "On"
+                } else {
+                    "Off"
+                }
+                .to_string(),
             ),
             (
                 "Bypass All Processing".to_string(),
@@ -2649,16 +2668,24 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
         PluginSettings::Limiter {
             threshold_db,
             release_ms,
+            lookahead_ms,
+            soft,
             mix,
         } => vec![
             ("Threshold".to_string(), format!("{:.1} dB", threshold_db)),
             ("Release".to_string(), format!("{:.1} ms", release_ms)),
+            ("Lookahead".to_string(), format!("{:.1} ms", lookahead_ms)),
+            (
+                "Soft Limit".to_string(),
+                if *soft { "On" } else { "Off" }.to_string(),
+            ),
             ("Mix".to_string(), format!("{:.2}", mix)),
         ],
         PluginSettings::Gate {
             threshold_db,
             ratio,
             attack_ms,
+            hold_ms,
             release_ms,
             mix,
             link_channels,
@@ -2667,6 +2694,7 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             ("Threshold".to_string(), format!("{:.1} dB", threshold_db)),
             ("Ratio".to_string(), format!("{:.1}:1", ratio)),
             ("Attack".to_string(), format!("{:.1} ms", attack_ms)),
+            ("Hold".to_string(), format!("{:.1} ms", hold_ms)),
             ("Release".to_string(), format!("{:.1} ms", release_ms)),
             ("Mix".to_string(), format!("{:.2}", mix)),
             (
@@ -2697,7 +2725,7 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             ("High Freq".to_string(), format!("{:.0} Hz", high_freq)),
             ("High Gain".to_string(), format!("{:.1} dB", high_gain)),
         ],
-        PluginSettings::EQ { filters } => {
+        PluginSettings::EQ { filters, .. } => {
             let mut params = Vec::new();
             for (i, filter) in filters.iter().enumerate() {
                 params.push((
@@ -2716,7 +2744,7 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             }
             params
         }
-        PluginSettings::Gain { gain_db } => {
+        PluginSettings::Gain { gain_db, .. } => {
             vec![("Gain".to_string(), format!("{:.1} dB", gain_db))]
         }
         PluginSettings::BinauralDecoder {
@@ -2812,10 +2840,7 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             output_channels,
             ..
         } => vec![
-            (
-                "Input Channels".to_string(),
-                format!("{}", input_channels),
-            ),
+            ("Input Channels".to_string(), format!("{}", input_channels)),
             (
                 "Output Channels".to_string(),
                 format!("{}", output_channels),
@@ -2843,8 +2868,18 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             ("Hysteresis".to_string(), format!("{:.1} dB", hysteresis_db)),
             ("Hold".to_string(), format!("{:.0} ms", hold_ms)),
             ("Mix".to_string(), format!("{:.0}%", mix * 100.0)),
-            ("Link Channels".to_string(), if *link_channels { "Yes".to_string() } else { "No".to_string() }),
-            ("Sidechain HPF".to_string(), format!("{:.0} Hz", sidechain_hpf_hz)),
+            (
+                "Link Channels".to_string(),
+                if *link_channels {
+                    "Yes".to_string()
+                } else {
+                    "No".to_string()
+                },
+            ),
+            (
+                "Sidechain HPF".to_string(),
+                format!("{:.0} Hz", sidechain_hpf_hz),
+            ),
         ],
         PluginSettings::MultibandCompressor {
             num_bands,
@@ -2862,17 +2897,36 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             ..
         } => vec![
             ("Bands".to_string(), format!("{}", num_bands)),
-            ("Crossover 1".to_string(), format!("{:.0} Hz", crossover_freq_1)),
-            ("Crossover 2".to_string(), format!("{:.0} Hz", crossover_freq_2)),
-            ("Crossover 3".to_string(), format!("{:.0} Hz", crossover_freq_3)),
-            ("Crossover 4".to_string(), format!("{:.0} Hz", crossover_freq_4)),
+            (
+                "Crossover 1".to_string(),
+                format!("{:.0} Hz", crossover_freq_1),
+            ),
+            (
+                "Crossover 2".to_string(),
+                format!("{:.0} Hz", crossover_freq_2),
+            ),
+            (
+                "Crossover 3".to_string(),
+                format!("{:.0} Hz", crossover_freq_3),
+            ),
+            (
+                "Crossover 4".to_string(),
+                format!("{:.0} Hz", crossover_freq_4),
+            ),
             ("Threshold".to_string(), format!("{:.1} dB", threshold_db)),
             ("Ratio".to_string(), format!("{:.1}:1", ratio)),
             ("Attack".to_string(), format!("{:.1} ms", attack_ms)),
             ("Release".to_string(), format!("{:.0} ms", release_ms)),
             ("Knee".to_string(), format!("{:.1} dB", knee_db)),
             ("Mix".to_string(), format!("{:.0}%", mix * 100.0)),
-            ("Link Channels".to_string(), if *link_channels { "Yes".to_string() } else { "No".to_string() }),
+            (
+                "Link Channels".to_string(),
+                if *link_channels {
+                    "Yes".to_string()
+                } else {
+                    "No".to_string()
+                },
+            ),
         ],
         PluginSettings::MultibandExpander {
             num_bands,
@@ -2893,10 +2947,22 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             ..
         } => vec![
             ("Bands".to_string(), format!("{}", num_bands)),
-            ("Crossover 1".to_string(), format!("{:.0} Hz", crossover_freq_1)),
-            ("Crossover 2".to_string(), format!("{:.0} Hz", crossover_freq_2)),
-            ("Crossover 3".to_string(), format!("{:.0} Hz", crossover_freq_3)),
-            ("Crossover 4".to_string(), format!("{:.0} Hz", crossover_freq_4)),
+            (
+                "Crossover 1".to_string(),
+                format!("{:.0} Hz", crossover_freq_1),
+            ),
+            (
+                "Crossover 2".to_string(),
+                format!("{:.0} Hz", crossover_freq_2),
+            ),
+            (
+                "Crossover 3".to_string(),
+                format!("{:.0} Hz", crossover_freq_3),
+            ),
+            (
+                "Crossover 4".to_string(),
+                format!("{:.0} Hz", crossover_freq_4),
+            ),
             ("Threshold".to_string(), format!("{:.1} dB", threshold_db)),
             ("Ratio".to_string(), format!("{:.1}:1", ratio)),
             ("Attack".to_string(), format!("{:.1} ms", attack_ms)),
@@ -2906,7 +2972,14 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             ("Hysteresis".to_string(), format!("{:.1} dB", hysteresis_db)),
             ("Hold".to_string(), format!("{:.0} ms", hold_ms)),
             ("Mix".to_string(), format!("{:.0}%", mix * 100.0)),
-            ("Link Channels".to_string(), if *link_channels { "Yes".to_string() } else { "No".to_string() }),
+            (
+                "Link Channels".to_string(),
+                if *link_channels {
+                    "Yes".to_string()
+                } else {
+                    "No".to_string()
+                },
+            ),
         ],
         PluginSettings::XTC {
             distance_m,
@@ -2919,13 +2992,28 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             head_shadow_slope_db_per_octave,
         } => vec![
             ("Distance".to_string(), format!("{:.2} m", distance_m)),
-            ("Speaker Angle".to_string(), format!("{:.1}°", speaker_angle_deg)),
+            (
+                "Speaker Angle".to_string(),
+                format!("{:.1}°", speaker_angle_deg),
+            ),
             ("Head Radius".to_string(), format!("{:.4} m", head_radius_m)),
             ("Beta Base".to_string(), format!("{:.4}", beta_base)),
-            ("Beta Low Boost".to_string(), format!("{:.1}", beta_low_freq_boost)),
-            ("Beta High Boost".to_string(), format!("{:.1}", beta_high_freq_boost)),
-            ("Head Shadow Cutoff".to_string(), format!("{:.0} Hz", head_shadow_cutoff_hz)),
-            ("Head Shadow Slope".to_string(), format!("{:.1} dB/oct", head_shadow_slope_db_per_octave)),
+            (
+                "Beta Low Boost".to_string(),
+                format!("{:.1}", beta_low_freq_boost),
+            ),
+            (
+                "Beta High Boost".to_string(),
+                format!("{:.1}", beta_high_freq_boost),
+            ),
+            (
+                "Head Shadow Cutoff".to_string(),
+                format!("{:.0} Hz", head_shadow_cutoff_hz),
+            ),
+            (
+                "Head Shadow Slope".to_string(),
+                format!("{:.1} dB/oct", head_shadow_slope_db_per_octave),
+            ),
         ],
         PluginSettings::Denoiser {
             reduction_db,
@@ -2934,22 +3022,39 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             attack_ms,
             release_ms,
             low_latency,
+            polyphonic_detection,
         } => vec![
             ("Reduction".to_string(), format!("{:.1} dB", reduction_db)),
             ("Floor".to_string(), format!("{:.1} dB", floor_db)),
             ("Smoothing".to_string(), format!("{:.2}", smoothing)),
             ("Attack".to_string(), format!("{:.1} ms", attack_ms)),
             ("Release".to_string(), format!("{:.1} ms", release_ms)),
-            ("Low Latency".to_string(), if *low_latency { "On" } else { "Off" }.to_string()),
+            (
+                "Low Latency".to_string(),
+                if *low_latency { "On" } else { "Off" }.to_string(),
+            ),
+            (
+                "Polyphonic Det.".to_string(),
+                if *polyphonic_detection { "On" } else { "Off" }.to_string(),
+            ),
         ],
         PluginSettings::Pnd {
             correction_strength,
             analysis_window_ms,
             drift_smoothing,
         } => vec![
-            ("Correction Strength".to_string(), format!("{:.2}", correction_strength)),
-            ("Analysis Window".to_string(), format!("{:.1} ms", analysis_window_ms)),
-            ("Drift Smoothing".to_string(), format!("{:.3}", drift_smoothing)),
+            (
+                "Correction Strength".to_string(),
+                format!("{:.2}", correction_strength),
+            ),
+            (
+                "Analysis Window".to_string(),
+                format!("{:.1} ms", analysis_window_ms),
+            ),
+            (
+                "Drift Smoothing".to_string(),
+                format!("{:.3}", drift_smoothing),
+            ),
         ],
     }
 }

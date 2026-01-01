@@ -71,26 +71,46 @@ pub struct MeterGroupSpec {
 const METER_GROUPS_2_0: &[MeterGroupSpec] = &[
     MeterGroupSpec {
         name: "Left",
-        channels: &[MeterChannelSpec { index: 0, label: "L", display_chars: &["L"] }],
+        channels: &[MeterChannelSpec {
+            index: 0,
+            label: "L",
+            display_chars: &["L"],
+        }],
     },
     MeterGroupSpec {
         name: "Right",
-        channels: &[MeterChannelSpec { index: 1, label: "R", display_chars: &["R"] }],
+        channels: &[MeterChannelSpec {
+            index: 1,
+            label: "R",
+            display_chars: &["R"],
+        }],
     },
 ];
 
 const METER_GROUPS_2_1: &[MeterGroupSpec] = &[
     MeterGroupSpec {
         name: "Left",
-        channels: &[MeterChannelSpec { index: 0, label: "L", display_chars: &["L"] }],
+        channels: &[MeterChannelSpec {
+            index: 0,
+            label: "L",
+            display_chars: &["L"],
+        }],
     },
     MeterGroupSpec {
         name: "Right",
-        channels: &[MeterChannelSpec { index: 1, label: "R", display_chars: &["R"] }],
+        channels: &[MeterChannelSpec {
+            index: 1,
+            label: "R",
+            display_chars: &["R"],
+        }],
     },
     MeterGroupSpec {
         name: "LFE",
-        channels: &[MeterChannelSpec { index: 2, label: "LFE", display_chars: &["L", "F", "E"] }],
+        channels: &[MeterChannelSpec {
+            index: 2,
+            label: "LFE",
+            display_chars: &["L", "F", "E"],
+        }],
     },
 ];
 
@@ -98,19 +118,39 @@ const METER_GROUPS_5_0: &[MeterGroupSpec] = &[
     MeterGroupSpec {
         name: "L/R",
         channels: &[
-            MeterChannelSpec { index: 0, label: "L", display_chars: &["L"] },
-            MeterChannelSpec { index: 1, label: "R", display_chars: &["R"] },
+            MeterChannelSpec {
+                index: 0,
+                label: "L",
+                display_chars: &["L"],
+            },
+            MeterChannelSpec {
+                index: 1,
+                label: "R",
+                display_chars: &["R"],
+            },
         ],
     },
     MeterGroupSpec {
         name: "Center",
-        channels: &[MeterChannelSpec { index: 2, label: "C", display_chars: &["C"] }],
+        channels: &[MeterChannelSpec {
+            index: 2,
+            label: "C",
+            display_chars: &["C"],
+        }],
     },
     MeterGroupSpec {
         name: "Surrounds",
         channels: &[
-            MeterChannelSpec { index: 3, label: "SL", display_chars: &["S", "L"] },
-            MeterChannelSpec { index: 4, label: "SR", display_chars: &["S", "R"] },
+            MeterChannelSpec {
+                index: 3,
+                label: "SL",
+                display_chars: &["S", "L"],
+            },
+            MeterChannelSpec {
+                index: 4,
+                label: "SR",
+                display_chars: &["S", "R"],
+            },
         ],
     },
 ];
@@ -119,23 +159,47 @@ const METER_GROUPS_5_1: &[MeterGroupSpec] = &[
     MeterGroupSpec {
         name: "L/R",
         channels: &[
-            MeterChannelSpec { index: 0, label: "L", display_chars: &["L"] },
-            MeterChannelSpec { index: 1, label: "R", display_chars: &["R"] },
+            MeterChannelSpec {
+                index: 0,
+                label: "L",
+                display_chars: &["L"],
+            },
+            MeterChannelSpec {
+                index: 1,
+                label: "R",
+                display_chars: &["R"],
+            },
         ],
     },
     MeterGroupSpec {
         name: "Center",
-        channels: &[MeterChannelSpec { index: 2, label: "C", display_chars: &["C"] }],
+        channels: &[MeterChannelSpec {
+            index: 2,
+            label: "C",
+            display_chars: &["C"],
+        }],
     },
     MeterGroupSpec {
         name: "LFE",
-        channels: &[MeterChannelSpec { index: 3, label: "LFE", display_chars: &["L", "F", "E"] }],
+        channels: &[MeterChannelSpec {
+            index: 3,
+            label: "LFE",
+            display_chars: &["L", "F", "E"],
+        }],
     },
     MeterGroupSpec {
         name: "Surrounds",
         channels: &[
-            MeterChannelSpec { index: 4, label: "SL", display_chars: &["S", "L"] },
-            MeterChannelSpec { index: 5, label: "SR", display_chars: &["S", "R"] },
+            MeterChannelSpec {
+                index: 4,
+                label: "SL",
+                display_chars: &["S", "L"],
+            },
+            MeterChannelSpec {
+                index: 5,
+                label: "SR",
+                display_chars: &["S", "R"],
+            },
         ],
     },
 ];
@@ -144,25 +208,57 @@ const METER_GROUPS_7_1: &[MeterGroupSpec] = &[
     MeterGroupSpec {
         name: "L/R",
         channels: &[
-            MeterChannelSpec { index: 0, label: "L", display_chars: &["L"] },
-            MeterChannelSpec { index: 1, label: "R", display_chars: &["R"] },
+            MeterChannelSpec {
+                index: 0,
+                label: "L",
+                display_chars: &["L"],
+            },
+            MeterChannelSpec {
+                index: 1,
+                label: "R",
+                display_chars: &["R"],
+            },
         ],
     },
     MeterGroupSpec {
         name: "Center",
-        channels: &[MeterChannelSpec { index: 2, label: "C", display_chars: &["C"] }],
+        channels: &[MeterChannelSpec {
+            index: 2,
+            label: "C",
+            display_chars: &["C"],
+        }],
     },
     MeterGroupSpec {
         name: "LFE",
-        channels: &[MeterChannelSpec { index: 3, label: "LFE", display_chars: &["L", "F", "E"] }],
+        channels: &[MeterChannelSpec {
+            index: 3,
+            label: "LFE",
+            display_chars: &["L", "F", "E"],
+        }],
     },
     MeterGroupSpec {
         name: "Surrounds",
         channels: &[
-            MeterChannelSpec { index: 4, label: "SL", display_chars: &["S", "L"] },
-            MeterChannelSpec { index: 5, label: "SR", display_chars: &["S", "R"] },
-            MeterChannelSpec { index: 6, label: "BL", display_chars: &["B", "L"] },
-            MeterChannelSpec { index: 7, label: "BR", display_chars: &["B", "R"] },
+            MeterChannelSpec {
+                index: 4,
+                label: "SL",
+                display_chars: &["S", "L"],
+            },
+            MeterChannelSpec {
+                index: 5,
+                label: "SR",
+                display_chars: &["S", "R"],
+            },
+            MeterChannelSpec {
+                index: 6,
+                label: "BL",
+                display_chars: &["B", "L"],
+            },
+            MeterChannelSpec {
+                index: 7,
+                label: "BR",
+                display_chars: &["B", "R"],
+            },
         ],
     },
 ];
@@ -171,30 +267,62 @@ const METER_GROUPS_5_1_2: &[MeterGroupSpec] = &[
     MeterGroupSpec {
         name: "L/R",
         channels: &[
-            MeterChannelSpec { index: 0, label: "L", display_chars: &["L"] },
-            MeterChannelSpec { index: 1, label: "R", display_chars: &["R"] },
+            MeterChannelSpec {
+                index: 0,
+                label: "L",
+                display_chars: &["L"],
+            },
+            MeterChannelSpec {
+                index: 1,
+                label: "R",
+                display_chars: &["R"],
+            },
         ],
     },
     MeterGroupSpec {
         name: "Center",
-        channels: &[MeterChannelSpec { index: 2, label: "C", display_chars: &["C"] }],
+        channels: &[MeterChannelSpec {
+            index: 2,
+            label: "C",
+            display_chars: &["C"],
+        }],
     },
     MeterGroupSpec {
         name: "LFE",
-        channels: &[MeterChannelSpec { index: 3, label: "LFE", display_chars: &["L", "F", "E"] }],
+        channels: &[MeterChannelSpec {
+            index: 3,
+            label: "LFE",
+            display_chars: &["L", "F", "E"],
+        }],
     },
     MeterGroupSpec {
         name: "Surrounds",
         channels: &[
-            MeterChannelSpec { index: 4, label: "SL", display_chars: &["S", "L"] },
-            MeterChannelSpec { index: 5, label: "SR", display_chars: &["S", "R"] },
+            MeterChannelSpec {
+                index: 4,
+                label: "SL",
+                display_chars: &["S", "L"],
+            },
+            MeterChannelSpec {
+                index: 5,
+                label: "SR",
+                display_chars: &["S", "R"],
+            },
         ],
     },
     MeterGroupSpec {
         name: "Height",
         channels: &[
-            MeterChannelSpec { index: 6, label: "TFL", display_chars: &["T", "F", "L"] },
-            MeterChannelSpec { index: 7, label: "TFR", display_chars: &["T", "F", "R"] },
+            MeterChannelSpec {
+                index: 6,
+                label: "TFL",
+                display_chars: &["T", "F", "L"],
+            },
+            MeterChannelSpec {
+                index: 7,
+                label: "TFR",
+                display_chars: &["T", "F", "R"],
+            },
         ],
     },
 ];
@@ -203,32 +331,72 @@ const METER_GROUPS_5_1_4: &[MeterGroupSpec] = &[
     MeterGroupSpec {
         name: "L/R",
         channels: &[
-            MeterChannelSpec { index: 0, label: "L", display_chars: &["L"] },
-            MeterChannelSpec { index: 1, label: "R", display_chars: &["R"] },
+            MeterChannelSpec {
+                index: 0,
+                label: "L",
+                display_chars: &["L"],
+            },
+            MeterChannelSpec {
+                index: 1,
+                label: "R",
+                display_chars: &["R"],
+            },
         ],
     },
     MeterGroupSpec {
         name: "Center",
-        channels: &[MeterChannelSpec { index: 2, label: "C", display_chars: &["C"] }],
+        channels: &[MeterChannelSpec {
+            index: 2,
+            label: "C",
+            display_chars: &["C"],
+        }],
     },
     MeterGroupSpec {
         name: "LFE",
-        channels: &[MeterChannelSpec { index: 3, label: "LFE", display_chars: &["L", "F", "E"] }],
+        channels: &[MeterChannelSpec {
+            index: 3,
+            label: "LFE",
+            display_chars: &["L", "F", "E"],
+        }],
     },
     MeterGroupSpec {
         name: "Surrounds",
         channels: &[
-            MeterChannelSpec { index: 4, label: "SL", display_chars: &["S", "L"] },
-            MeterChannelSpec { index: 5, label: "SR", display_chars: &["S", "R"] },
+            MeterChannelSpec {
+                index: 4,
+                label: "SL",
+                display_chars: &["S", "L"],
+            },
+            MeterChannelSpec {
+                index: 5,
+                label: "SR",
+                display_chars: &["S", "R"],
+            },
         ],
     },
     MeterGroupSpec {
         name: "Height",
         channels: &[
-            MeterChannelSpec { index: 6, label: "TFL", display_chars: &["T", "F", "L"] },
-            MeterChannelSpec { index: 7, label: "TFR", display_chars: &["T", "F", "R"] },
-            MeterChannelSpec { index: 8, label: "TBL", display_chars: &["T", "B", "L"] },
-            MeterChannelSpec { index: 9, label: "TBR", display_chars: &["T", "B", "R"] },
+            MeterChannelSpec {
+                index: 6,
+                label: "TFL",
+                display_chars: &["T", "F", "L"],
+            },
+            MeterChannelSpec {
+                index: 7,
+                label: "TFR",
+                display_chars: &["T", "F", "R"],
+            },
+            MeterChannelSpec {
+                index: 8,
+                label: "TBL",
+                display_chars: &["T", "B", "L"],
+            },
+            MeterChannelSpec {
+                index: 9,
+                label: "TBR",
+                display_chars: &["T", "B", "R"],
+            },
         ],
     },
 ];
@@ -237,37 +405,77 @@ const METER_GROUPS_7_1_2: &[MeterGroupSpec] = &[
     MeterGroupSpec {
         name: "L/R",
         channels: &[
-            MeterChannelSpec { index: 0, label: "L", display_chars: &["L"] },
-            MeterChannelSpec { index: 1, label: "R", display_chars: &["R"] },
+            MeterChannelSpec {
+                index: 0,
+                label: "L",
+                display_chars: &["L"],
+            },
+            MeterChannelSpec {
+                index: 1,
+                label: "R",
+                display_chars: &["R"],
+            },
         ],
     },
     MeterGroupSpec {
         name: "Center",
-        channels: &[MeterChannelSpec { index: 2, label: "C", display_chars: &["C"] }],
+        channels: &[MeterChannelSpec {
+            index: 2,
+            label: "C",
+            display_chars: &["C"],
+        }],
     },
     MeterGroupSpec {
         name: "LFE",
-        channels: &[MeterChannelSpec { index: 3, label: "LFE", display_chars: &["L", "F", "E"] }],
+        channels: &[MeterChannelSpec {
+            index: 3,
+            label: "LFE",
+            display_chars: &["L", "F", "E"],
+        }],
     },
     MeterGroupSpec {
         name: "Side",
         channels: &[
-            MeterChannelSpec { index: 4, label: "SL", display_chars: &["S", "L"] },
-            MeterChannelSpec { index: 5, label: "SR", display_chars: &["S", "R"] },
+            MeterChannelSpec {
+                index: 4,
+                label: "SL",
+                display_chars: &["S", "L"],
+            },
+            MeterChannelSpec {
+                index: 5,
+                label: "SR",
+                display_chars: &["S", "R"],
+            },
         ],
     },
     MeterGroupSpec {
         name: "Rear",
         channels: &[
-            MeterChannelSpec { index: 6, label: "BL", display_chars: &["B", "L"] },
-            MeterChannelSpec { index: 7, label: "BR", display_chars: &["B", "R"] },
+            MeterChannelSpec {
+                index: 6,
+                label: "BL",
+                display_chars: &["B", "L"],
+            },
+            MeterChannelSpec {
+                index: 7,
+                label: "BR",
+                display_chars: &["B", "R"],
+            },
         ],
     },
     MeterGroupSpec {
         name: "Height",
         channels: &[
-            MeterChannelSpec { index: 8, label: "TFL", display_chars: &["T", "F", "L"] },
-            MeterChannelSpec { index: 9, label: "TFR", display_chars: &["T", "F", "R"] },
+            MeterChannelSpec {
+                index: 8,
+                label: "TFL",
+                display_chars: &["T", "F", "L"],
+            },
+            MeterChannelSpec {
+                index: 9,
+                label: "TFR",
+                display_chars: &["T", "F", "R"],
+            },
         ],
     },
 ];
@@ -276,39 +484,87 @@ const METER_GROUPS_7_1_4: &[MeterGroupSpec] = &[
     MeterGroupSpec {
         name: "L/R",
         channels: &[
-            MeterChannelSpec { index: 0, label: "L", display_chars: &["L"] },
-            MeterChannelSpec { index: 1, label: "R", display_chars: &["R"] },
+            MeterChannelSpec {
+                index: 0,
+                label: "L",
+                display_chars: &["L"],
+            },
+            MeterChannelSpec {
+                index: 1,
+                label: "R",
+                display_chars: &["R"],
+            },
         ],
     },
     MeterGroupSpec {
         name: "Center",
-        channels: &[MeterChannelSpec { index: 2, label: "C", display_chars: &["C"] }],
+        channels: &[MeterChannelSpec {
+            index: 2,
+            label: "C",
+            display_chars: &["C"],
+        }],
     },
     MeterGroupSpec {
         name: "LFE",
-        channels: &[MeterChannelSpec { index: 3, label: "LFE", display_chars: &["L", "F", "E"] }],
+        channels: &[MeterChannelSpec {
+            index: 3,
+            label: "LFE",
+            display_chars: &["L", "F", "E"],
+        }],
     },
     MeterGroupSpec {
         name: "Side",
         channels: &[
-            MeterChannelSpec { index: 4, label: "SL", display_chars: &["S", "L"] },
-            MeterChannelSpec { index: 5, label: "SR", display_chars: &["S", "R"] },
+            MeterChannelSpec {
+                index: 4,
+                label: "SL",
+                display_chars: &["S", "L"],
+            },
+            MeterChannelSpec {
+                index: 5,
+                label: "SR",
+                display_chars: &["S", "R"],
+            },
         ],
     },
     MeterGroupSpec {
         name: "Rear",
         channels: &[
-            MeterChannelSpec { index: 6, label: "BL", display_chars: &["B", "L"] },
-            MeterChannelSpec { index: 7, label: "BR", display_chars: &["B", "R"] },
+            MeterChannelSpec {
+                index: 6,
+                label: "BL",
+                display_chars: &["B", "L"],
+            },
+            MeterChannelSpec {
+                index: 7,
+                label: "BR",
+                display_chars: &["B", "R"],
+            },
         ],
     },
     MeterGroupSpec {
         name: "Height",
         channels: &[
-            MeterChannelSpec { index: 8, label: "TFL", display_chars: &["T", "F", "L"] },
-            MeterChannelSpec { index: 9, label: "TFR", display_chars: &["T", "F", "R"] },
-            MeterChannelSpec { index: 10, label: "TBL", display_chars: &["T", "B", "L"] },
-            MeterChannelSpec { index: 11, label: "TBR", display_chars: &["T", "B", "R"] },
+            MeterChannelSpec {
+                index: 8,
+                label: "TFL",
+                display_chars: &["T", "F", "L"],
+            },
+            MeterChannelSpec {
+                index: 9,
+                label: "TFR",
+                display_chars: &["T", "F", "R"],
+            },
+            MeterChannelSpec {
+                index: 10,
+                label: "TBL",
+                display_chars: &["T", "B", "L"],
+            },
+            MeterChannelSpec {
+                index: 11,
+                label: "TBR",
+                display_chars: &["T", "B", "R"],
+            },
         ],
     },
 ];
@@ -317,41 +573,97 @@ const METER_GROUPS_9_1_4: &[MeterGroupSpec] = &[
     MeterGroupSpec {
         name: "Front",
         channels: &[
-            MeterChannelSpec { index: 0, label: "L", display_chars: &["L"] },
-            MeterChannelSpec { index: 1, label: "R", display_chars: &["R"] },
-            MeterChannelSpec { index: 2, label: "WL", display_chars: &["W", "L"] },
-            MeterChannelSpec { index: 3, label: "WR", display_chars: &["W", "R"] },
+            MeterChannelSpec {
+                index: 0,
+                label: "L",
+                display_chars: &["L"],
+            },
+            MeterChannelSpec {
+                index: 1,
+                label: "R",
+                display_chars: &["R"],
+            },
+            MeterChannelSpec {
+                index: 2,
+                label: "WL",
+                display_chars: &["W", "L"],
+            },
+            MeterChannelSpec {
+                index: 3,
+                label: "WR",
+                display_chars: &["W", "R"],
+            },
         ],
     },
     MeterGroupSpec {
         name: "Center",
-        channels: &[MeterChannelSpec { index: 4, label: "C", display_chars: &["C"] }],
+        channels: &[MeterChannelSpec {
+            index: 4,
+            label: "C",
+            display_chars: &["C"],
+        }],
     },
     MeterGroupSpec {
         name: "LFE",
-        channels: &[MeterChannelSpec { index: 5, label: "LFE", display_chars: &["L", "F", "E"] }],
+        channels: &[MeterChannelSpec {
+            index: 5,
+            label: "LFE",
+            display_chars: &["L", "F", "E"],
+        }],
     },
     MeterGroupSpec {
         name: "Side",
         channels: &[
-            MeterChannelSpec { index: 6, label: "SL", display_chars: &["S", "L"] },
-            MeterChannelSpec { index: 7, label: "SR", display_chars: &["S", "R"] },
+            MeterChannelSpec {
+                index: 6,
+                label: "SL",
+                display_chars: &["S", "L"],
+            },
+            MeterChannelSpec {
+                index: 7,
+                label: "SR",
+                display_chars: &["S", "R"],
+            },
         ],
     },
     MeterGroupSpec {
         name: "Rear",
         channels: &[
-            MeterChannelSpec { index: 8, label: "BL", display_chars: &["B", "L"] },
-            MeterChannelSpec { index: 9, label: "BR", display_chars: &["B", "R"] },
+            MeterChannelSpec {
+                index: 8,
+                label: "BL",
+                display_chars: &["B", "L"],
+            },
+            MeterChannelSpec {
+                index: 9,
+                label: "BR",
+                display_chars: &["B", "R"],
+            },
         ],
     },
     MeterGroupSpec {
         name: "Height",
         channels: &[
-            MeterChannelSpec { index: 10, label: "TFL", display_chars: &["T", "F", "L"] },
-            MeterChannelSpec { index: 11, label: "TFR", display_chars: &["T", "F", "R"] },
-            MeterChannelSpec { index: 12, label: "TBL", display_chars: &["T", "B", "L"] },
-            MeterChannelSpec { index: 13, label: "TBR", display_chars: &["T", "B", "R"] },
+            MeterChannelSpec {
+                index: 10,
+                label: "TFL",
+                display_chars: &["T", "F", "L"],
+            },
+            MeterChannelSpec {
+                index: 11,
+                label: "TFR",
+                display_chars: &["T", "F", "R"],
+            },
+            MeterChannelSpec {
+                index: 12,
+                label: "TBL",
+                display_chars: &["T", "B", "L"],
+            },
+            MeterChannelSpec {
+                index: 13,
+                label: "TBR",
+                display_chars: &["T", "B", "R"],
+            },
         ],
     },
 ];
@@ -360,53 +672,117 @@ const METER_GROUPS_9_1_6: &[MeterGroupSpec] = &[
     MeterGroupSpec {
         name: "Front",
         channels: &[
-            MeterChannelSpec { index: 0, label: "L", display_chars: &["L"] },
-            MeterChannelSpec { index: 1, label: "R", display_chars: &["R"] },
-            MeterChannelSpec { index: 2, label: "WL", display_chars: &["W", "L"] },
-            MeterChannelSpec { index: 3, label: "WR", display_chars: &["W", "R"] },
+            MeterChannelSpec {
+                index: 0,
+                label: "L",
+                display_chars: &["L"],
+            },
+            MeterChannelSpec {
+                index: 1,
+                label: "R",
+                display_chars: &["R"],
+            },
+            MeterChannelSpec {
+                index: 2,
+                label: "WL",
+                display_chars: &["W", "L"],
+            },
+            MeterChannelSpec {
+                index: 3,
+                label: "WR",
+                display_chars: &["W", "R"],
+            },
         ],
     },
     MeterGroupSpec {
         name: "Center",
-        channels: &[MeterChannelSpec { index: 4, label: "C", display_chars: &["C"] }],
+        channels: &[MeterChannelSpec {
+            index: 4,
+            label: "C",
+            display_chars: &["C"],
+        }],
     },
     MeterGroupSpec {
         name: "LFE",
-        channels: &[MeterChannelSpec { index: 5, label: "LFE", display_chars: &["L", "F", "E"] }],
+        channels: &[MeterChannelSpec {
+            index: 5,
+            label: "LFE",
+            display_chars: &["L", "F", "E"],
+        }],
     },
     MeterGroupSpec {
         name: "Side",
         channels: &[
-            MeterChannelSpec { index: 6, label: "SL", display_chars: &["S", "L"] },
-            MeterChannelSpec { index: 7, label: "SR", display_chars: &["S", "R"] },
+            MeterChannelSpec {
+                index: 6,
+                label: "SL",
+                display_chars: &["S", "L"],
+            },
+            MeterChannelSpec {
+                index: 7,
+                label: "SR",
+                display_chars: &["S", "R"],
+            },
         ],
     },
     MeterGroupSpec {
         name: "Rear",
         channels: &[
-            MeterChannelSpec { index: 8, label: "BL", display_chars: &["B", "L"] },
-            MeterChannelSpec { index: 9, label: "BR", display_chars: &["B", "R"] },
+            MeterChannelSpec {
+                index: 8,
+                label: "BL",
+                display_chars: &["B", "L"],
+            },
+            MeterChannelSpec {
+                index: 9,
+                label: "BR",
+                display_chars: &["B", "R"],
+            },
         ],
     },
     MeterGroupSpec {
         name: "Top Front",
         channels: &[
-            MeterChannelSpec { index: 10, label: "TFL", display_chars: &["T", "F", "L"] },
-            MeterChannelSpec { index: 11, label: "TFR", display_chars: &["T", "F", "R"] },
+            MeterChannelSpec {
+                index: 10,
+                label: "TFL",
+                display_chars: &["T", "F", "L"],
+            },
+            MeterChannelSpec {
+                index: 11,
+                label: "TFR",
+                display_chars: &["T", "F", "R"],
+            },
         ],
     },
     MeterGroupSpec {
         name: "Top Mid",
         channels: &[
-            MeterChannelSpec { index: 12, label: "TML", display_chars: &["T", "M", "L"] },
-            MeterChannelSpec { index: 13, label: "TMR", display_chars: &["T", "M", "R"] },
+            MeterChannelSpec {
+                index: 12,
+                label: "TML",
+                display_chars: &["T", "M", "L"],
+            },
+            MeterChannelSpec {
+                index: 13,
+                label: "TMR",
+                display_chars: &["T", "M", "R"],
+            },
         ],
     },
     MeterGroupSpec {
         name: "Top Rear",
         channels: &[
-            MeterChannelSpec { index: 14, label: "TBL", display_chars: &["T", "B", "L"] },
-            MeterChannelSpec { index: 15, label: "TBR", display_chars: &["T", "B", "R"] },
+            MeterChannelSpec {
+                index: 14,
+                label: "TBL",
+                display_chars: &["T", "B", "L"],
+            },
+            MeterChannelSpec {
+                index: 15,
+                label: "TBR",
+                display_chars: &["T", "B", "R"],
+            },
         ],
     },
 ];

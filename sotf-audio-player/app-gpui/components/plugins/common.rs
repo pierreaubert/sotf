@@ -19,7 +19,7 @@ pub fn param_index_to_engine_param(
     param_idx: usize,
 ) -> Option<(String, String)> {
     match settings {
-        PluginSettings::Gain { gain_db } => match param_idx {
+        PluginSettings::Gain { gain_db, .. } => match param_idx {
             0 => Some(("gain_db".to_string(), format!("{}", gain_db))),
             _ => None,
         },
@@ -112,6 +112,46 @@ pub fn param_index_to_engine_param(
         },
         // EQ doesn't support individual parameter updates
         PluginSettings::EQ { .. } => None,
+        PluginSettings::Denoiser {
+            reduction_db,
+            floor_db,
+            smoothing,
+            attack_ms,
+            release_ms,
+            low_latency,
+            polyphonic_detection,
+        } => match param_idx {
+            0 => Some(("reduction_db".to_string(), format!("{}", reduction_db))),
+            1 => Some(("floor_db".to_string(), format!("{}", floor_db))),
+            2 => Some(("smoothing".to_string(), format!("{}", smoothing))),
+            3 => Some(("attack_ms".to_string(), format!("{}", attack_ms))),
+            4 => Some(("release_ms".to_string(), format!("{}", release_ms))),
+            5 => Some(("low_latency".to_string(), low_latency.to_string())),
+            6 => Some((
+                "polyphonic_detection".to_string(),
+                polyphonic_detection.to_string(),
+            )),
+            _ => None,
+        },
+        PluginSettings::Pnd {
+            correction_strength,
+            analysis_window_ms,
+            drift_smoothing,
+        } => match param_idx {
+            0 => Some((
+                "correction_strength".to_string(),
+                format!("{}", correction_strength),
+            )),
+            1 => Some((
+                "analysis_window_ms".to_string(),
+                format!("{}", analysis_window_ms),
+            )),
+            2 => Some((
+                "drift_smoothing".to_string(),
+                format!("{}", drift_smoothing),
+            )),
+            _ => None,
+        },
         // Other plugins: use Structural for now
         _ => None,
     }
@@ -694,6 +734,39 @@ pub fn render_knob(
     shortcut_key: Option<char>,
     theme: &Theme,
 ) -> impl IntoElement {
+    render_knob_sized(
+        entity,
+        plugin_idx,
+        label,
+        value,
+        min,
+        max,
+        unit,
+        idx,
+        selected_param,
+        is_editing,
+        shortcut_key,
+        PotentiometerSize::Md,
+        theme,
+    )
+}
+
+/// Render a rotary knob control with custom size
+pub fn render_knob_sized(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    label: &str,
+    value: f64,
+    min: f64,
+    max: f64,
+    unit: &str,
+    idx: usize,
+    selected_param: usize,
+    is_editing: bool,
+    shortcut_key: Option<char>,
+    size: PotentiometerSize,
+    theme: &Theme,
+) -> impl IntoElement {
     let is_selected = selected_param == idx && is_editing;
 
     // Determine scale type based on unit (Hz parameters use logarithmic scale)
@@ -709,7 +782,7 @@ pub fn render_knob(
         .max(max)
         .unit(unit.to_string())
         .label(label.to_string())
-        .size(PotentiometerSize::Md)
+        .size(size)
         .scale(scale)
         .selected(is_selected)
         .theme(theme.to_potentiometer_theme())

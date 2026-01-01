@@ -71,7 +71,11 @@ pub fn render_convolution_plugin(
                                                 .text_sm()
                                                 .font_weight(FontWeight::MEDIUM)
                                                 .text_color(theme.text_primary)
-                                                .child(if has_ir { "IR Loaded" } else { "No IR File" }),
+                                                .child(if has_ir {
+                                                    "IR Loaded"
+                                                } else {
+                                                    "No IR File"
+                                                }),
                                         )
                                         .child(
                                             div()

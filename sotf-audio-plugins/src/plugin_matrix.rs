@@ -2,7 +2,7 @@
 // Matrix Plugin - Channel mixer with configurable gain matrix
 // ============================================================================
 
-use super::parameters::{Parameter, ParameterId, ParameterValue};
+use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 
 /// Matrix mixer plugin that routes N input channels to P output channels
@@ -365,12 +365,13 @@ impl Plugin for MatrixPlugin {
                 let param_id = format!("gain_{}_{}", in_ch, out_ch);
                 let param_name = format!("In{} → Out{}", in_ch, out_ch);
                 params.push(
-                    Parameter::new_float(&param_id, &param_name, 0.0, 0.0, 1.0).with_description(
-                        &format!(
+                    Parameter::new_float(&param_id, &param_name, 0.0, 0.0, 1.0)
+                        .with_description(&format!(
                             "Gain from input channel {} to output channel {}",
                             in_ch, out_ch
-                        ),
-                    ),
+                        ))
+                        .with_group("Matrix")
+                        .with_importance(ParameterImportance::Useful),
                 );
             }
         }

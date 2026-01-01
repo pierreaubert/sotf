@@ -479,13 +479,21 @@ impl PlayerView {
             let max_artist_chars = state.app.max_chars_now_playing_artist();
 
             let album_title = if album_title_full.chars().count() > max_title_chars {
-                album_title_full.chars().take(max_title_chars).collect::<String>() + "..."
+                album_title_full
+                    .chars()
+                    .take(max_title_chars)
+                    .collect::<String>()
+                    + "..."
             } else {
                 album_title_full.clone()
             };
 
             let artist = if artist_raw.chars().count() > max_artist_chars {
-                artist_raw.chars().take(max_artist_chars).collect::<String>() + "..."
+                artist_raw
+                    .chars()
+                    .take(max_artist_chars)
+                    .collect::<String>()
+                    + "..."
             } else {
                 artist_raw
             };
@@ -722,7 +730,11 @@ impl PlayerView {
 
                 // Dynamic truncation based on window size
                 let title = if title_stripped.chars().count() > max_track_chars {
-                    title_stripped.chars().take(max_track_chars).collect::<String>() + "..."
+                    title_stripped
+                        .chars()
+                        .take(max_track_chars)
+                        .collect::<String>()
+                        + "..."
                 } else {
                     title_stripped
                 };

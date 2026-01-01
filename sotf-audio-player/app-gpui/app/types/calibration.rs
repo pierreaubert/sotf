@@ -57,4 +57,3 @@ impl CalibrationData {
         !self.frequencies.is_empty() && self.frequencies.len() == self.spl_db.len()
     }
 }
-

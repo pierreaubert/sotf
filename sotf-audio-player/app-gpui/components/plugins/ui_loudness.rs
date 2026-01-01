@@ -1,6 +1,6 @@
 //! Loudness Plugin UI Components
 
-use super::common::{render_edit_hints, render_knob, render_section_title, ParamSectionStyle};
+use super::common::{ParamSectionStyle, render_edit_hints, render_knob, render_section_title};
 use super::level_meters::render_lufs_with_true_peak;
 use crate::app::AppState;
 use crate::theme::Theme;

@@ -54,8 +54,8 @@ pub fn render_mb_compressor_plugin(
         .child(
             div()
                 .flex()
-                .gap_6()
-                // Column 1: Band configuration and crossover
+                .gap_4()
+                // Column 1: Setup (Bands, XOver 1)
                 .child(
                     div()
                         .flex()
@@ -66,97 +66,109 @@ pub fn render_mb_compressor_plugin(
                                 .flex()
                                 .flex_col()
                                 .gap_2()
-                                .child(render_section_title("CROSSOVER", theme))
-                                // Band count selector
-                                .child(
-                                    div()
-                                        .flex()
-                                        .gap_2()
-                                        .items_center()
-                                        .child(
-                                            div()
-                                                .text_xs()
-                                                .text_color(theme.text_muted)
-                                                .child("Bands:"),
-                                        )
-                                        .child(
-                                            div()
-                                                .text_sm()
-                                                .font_weight(FontWeight::BOLD)
-                                                .text_color(theme.text_primary)
-                                                .child(format!("{}", state.num_bands)),
-                                        ),
-                                )
-                                // Crossover frequency knobs
+                                .child(render_section_title("SETUP", theme))
+                                // Bands knob
                                 .child(render_knob(
                                     entity.clone(),
                                     plugin_idx,
-                                    "XOver 1",
-                                    state.crossover_freq_1,
-                                    CROSSOVER_FREQ_1_MIN as f64,
-                                    CROSSOVER_FREQ_1_MAX as f64,
-                                    "Hz",
-                                    2,
+                                    "Bands",
+                                    state.num_bands as f64,
+                                    NUM_BANDS_MIN as f64,
+                                    NUM_BANDS_MAX as f64,
+                                    "",
+                                    0,
                                     state.selected_param,
                                     state.is_editing,
-                                    Some('1'),
-                                    theme,
-                                ))
-                                .child(render_knob(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "XOver 2",
-                                    state.crossover_freq_2,
-                                    CROSSOVER_FREQ_2_MIN as f64,
-                                    CROSSOVER_FREQ_2_MAX as f64,
-                                    "Hz",
-                                    3,
-                                    state.selected_param,
-                                    state.is_editing,
-                                    Some('2'),
+                                    Some('b'),
                                     theme,
                                 )),
                         )
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap_2()
-                                .when(state.num_bands >= 4, |d| {
-                                    d.child(render_knob(
-                                        entity.clone(),
-                                        plugin_idx,
-                                        "XOver 3",
-                                        state.crossover_freq_3,
-                                        CROSSOVER_FREQ_3_MIN as f64,
-                                        CROSSOVER_FREQ_3_MAX as f64,
-                                        "Hz",
-                                        4,
-                                        state.selected_param,
-                                        state.is_editing,
-                                        Some('3'),
-                                        theme,
-                                    ))
-                                })
-                                .when(state.num_bands >= 5, |d| {
-                                    d.child(render_knob(
-                                        entity.clone(),
-                                        plugin_idx,
-                                        "XOver 4",
-                                        state.crossover_freq_4,
-                                        CROSSOVER_FREQ_4_MIN as f64,
-                                        CROSSOVER_FREQ_4_MAX as f64,
-                                        "Hz",
-                                        5,
-                                        state.selected_param,
-                                        state.is_editing,
-                                        Some('4'),
-                                        theme,
-                                    ))
-                                }),
-                        ),
+                        // XOver 1 (Always present for 2+ bands)
+                        .child(render_knob(
+                            entity.clone(),
+                            plugin_idx,
+                            "XOver 1",
+                            state.crossover_freq_1,
+                            CROSSOVER_FREQ_1_MIN as f64,
+                            CROSSOVER_FREQ_1_MAX as f64,
+                            "Hz",
+                            2,
+                            state.selected_param,
+                            state.is_editing,
+                            Some('1'),
+                            theme,
+                        )),
                 )
-                // Column 2: Threshold and Ratio sliders
+                // Column 2: Extra Crossovers (if bands > 2)
+                .when(state.num_bands > 2, |d| {
+                    d.child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .justify_between()
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap_2()
+                                    .child(render_section_title("XOVERS", theme))
+                                    // XOver 2
+                                    .child(render_knob(
+                                        entity.clone(),
+                                        plugin_idx,
+                                        "XOver 2",
+                                        state.crossover_freq_2,
+                                        CROSSOVER_FREQ_2_MIN as f64,
+                                        CROSSOVER_FREQ_2_MAX as f64,
+                                        "Hz",
+                                        3,
+                                        state.selected_param,
+                                        state.is_editing,
+                                        Some('2'),
+                                        theme,
+                                    )),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap_2()
+                                    .when(state.num_bands >= 4, |d| {
+                                        d.child(render_knob(
+                                            entity.clone(),
+                                            plugin_idx,
+                                            "XOver 3",
+                                            state.crossover_freq_3,
+                                            CROSSOVER_FREQ_3_MIN as f64,
+                                            CROSSOVER_FREQ_3_MAX as f64,
+                                            "Hz",
+                                            4,
+                                            state.selected_param,
+                                            state.is_editing,
+                                            Some('3'),
+                                            theme,
+                                        ))
+                                    })
+                                    .when(state.num_bands >= 5, |d| {
+                                        d.child(render_knob(
+                                            entity.clone(),
+                                            plugin_idx,
+                                            "XOver 4",
+                                            state.crossover_freq_4,
+                                            CROSSOVER_FREQ_4_MIN as f64,
+                                            CROSSOVER_FREQ_4_MAX as f64,
+                                            "Hz",
+                                            5,
+                                            state.selected_param,
+                                            state.is_editing,
+                                            Some('4'),
+                                            theme,
+                                        ))
+                                    }),
+                            ),
+                    )
+                })
+                // Column 3: Dynamics (Threshold, Ratio, Knee)
                 .child(
                     div()
                         .flex()
@@ -196,10 +208,25 @@ pub fn render_mb_compressor_plugin(
                                     Some('r'),
                                     Some(SLIDER_HEIGHT),
                                     theme,
+                                ))
+                                .child(render_vertical_slider_sized(
+                                    entity.clone(),
+                                    plugin_idx,
+                                    "Knee",
+                                    state.knee_db,
+                                    KNEE_MIN as f64,
+                                    KNEE_MAX as f64,
+                                    "dB",
+                                    10,
+                                    state.selected_param,
+                                    state.is_editing,
+                                    Some('k'),
+                                    Some(SLIDER_HEIGHT),
+                                    theme,
                                 )),
                         ),
                 )
-                // Column 3: Attack and Release sliders
+                // Column 4: Timing (Attack, Release)
                 .child(
                     div()
                         .flex()
@@ -242,7 +269,7 @@ pub fn render_mb_compressor_plugin(
                                 )),
                         ),
                 )
-                // Column 4: Output controls
+                // Column 5: Output (Link, Mix)
                 .child(
                     div()
                         .flex()
@@ -253,26 +280,18 @@ pub fn render_mb_compressor_plugin(
                                 .flex()
                                 .flex_col()
                                 .gap_2()
-                                // Header row with OUTPUT and Link Channels
+                                .child(render_section_title("OUTPUT", theme))
                                 .child(
                                     div()
                                         .flex()
                                         .justify_between()
                                         .items_center()
-                                        .w_full()
-                                        .child(render_section_title("OUTPUT", theme))
                                         .child(
                                             div()
                                                 .text_xs()
                                                 .text_color(theme.text_muted)
                                                 .child("Link Ch."),
-                                        ),
-                                )
-                                // Toggle button
-                                .child(
-                                    div()
-                                        .flex()
-                                        .justify_end()
+                                        )
                                         .child(render_toggle_button(
                                             entity.clone(),
                                             plugin_idx,
@@ -282,24 +301,8 @@ pub fn render_mb_compressor_plugin(
                                             state.is_editing,
                                             theme,
                                         )),
-                                )
-                                // Knee knob
-                                .child(render_knob(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "Knee",
-                                    state.knee_db,
-                                    KNEE_MIN as f64,
-                                    KNEE_MAX as f64,
-                                    "dB",
-                                    10,
-                                    state.selected_param,
-                                    state.is_editing,
-                                    Some('k'),
-                                    theme,
-                                )),
+                                ),
                         )
-                        // Mix knob at bottom
                         .child(render_knob(
                             entity.clone(),
                             plugin_idx,

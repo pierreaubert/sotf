@@ -74,8 +74,7 @@ impl DenoiserPlugin {
             // When p is high (speech present), alpha_d approaches 1 -> slow/no update
             // When p is low (speech absent), alpha_d approaches alpha_s -> normal update
             let alpha_d = alpha_s + (1.0 - alpha_s) * p;
-            let noise_est =
-                alpha_d * self.noise_psd[channel][k] + (1.0 - alpha_d) * power;
+            let noise_est = alpha_d * self.noise_psd[channel][k] + (1.0 - alpha_d) * power;
             self.noise_psd[channel][k] = noise_est;
 
             // Count quiet bins for learning indicator

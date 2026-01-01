@@ -7,7 +7,7 @@
 // 2. Per-channel gain with independent values for each channel
 
 use super::param_specs::gain::*;
-use super::parameters::{Parameter, ParameterId, ParameterValue};
+use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use super::smoothing::Smoother;
 use serde::{Deserialize, Serialize};
@@ -55,13 +55,13 @@ pub struct GainPlugin {
 
     /// Global gain in dB (stored for parameter retrieval)
     global_gain_db: f32,
-    
+
     /// Smoother for global linear gain
     global_gain_smoother: Smoother,
 
     /// Per-channel gains in dB (empty = use global gain)
     channel_gains_db: Vec<f32>,
-    
+
     /// Smoothers for per-channel linear gains
     channel_gains_smoothers: Vec<Smoother>,
 
@@ -78,7 +78,7 @@ impl GainPlugin {
     pub fn new(channels: usize, gain_db: f32) -> Self {
         let sample_rate = 44100; // Default
         let gain_linear = Self::db_to_linear(gain_db);
-        
+
         Self {
             channels,
             sample_rate,
@@ -104,7 +104,7 @@ impl GainPlugin {
 
         let channels = channel_gains.len();
         let sample_rate = 44100;
-        
+
         let channel_gains_smoothers: Vec<Smoother> = channel_gains
             .iter()
             .map(|&db| Smoother::new(Self::db_to_linear(db), 20.0, sample_rate))
@@ -114,7 +114,11 @@ impl GainPlugin {
             channels,
             sample_rate,
             global_gain_db: GAIN_DB_DEFAULT,
-            global_gain_smoother: Smoother::new(Self::db_to_linear(GAIN_DB_DEFAULT), 20.0, sample_rate),
+            global_gain_smoother: Smoother::new(
+                Self::db_to_linear(GAIN_DB_DEFAULT),
+                20.0,
+                sample_rate,
+            ),
             channel_gains_db: channel_gains,
             channel_gains_smoothers,
             param_gain_db: ParameterId::from("gain_db"),
@@ -149,7 +153,7 @@ impl GainPlugin {
         self.global_gain_db = gain_db;
         let gain_linear = Self::db_to_linear(gain_db);
         self.global_gain_smoother.set_target(gain_linear);
-        
+
         // Clear per-channel gains to switch to global mode
         self.channel_gains_db.clear();
         self.channel_gains_smoothers.clear();
@@ -202,7 +206,8 @@ impl GainPlugin {
         if self.channel_gains_db.is_empty() {
             self.channel_gains_db = vec![self.global_gain_db; self.channels];
             let current_linear = self.global_gain_smoother.current(); // Use current smooth value to prevent jump
-            self.channel_gains_smoothers = vec![Smoother::new(current_linear, 20.0, self.sample_rate); self.channels];
+            self.channel_gains_smoothers =
+                vec![Smoother::new(current_linear, 20.0, self.sample_rate); self.channels];
         }
 
         self.channel_gains_db[channel] = gain_db;
@@ -248,7 +253,8 @@ impl InPlacePlugin for GainPlugin {
             name: "Gain".to_string(),
             version: "1.1.0".to_string(),
             author: "AutoEQ".to_string(),
-            description: "Gain/volume control plugin with per-channel support (Smoothed)".to_string(),
+            description: "Gain/volume control plugin with per-channel support (Smoothed)"
+                .to_string(),
         }
     }
 
@@ -258,10 +264,18 @@ impl InPlacePlugin for GainPlugin {
 
     fn parameters(&self) -> Vec<Parameter> {
         let mut params = vec![
-            Parameter::new_float("gain_db", "Gain (dB)", GAIN_DB_DEFAULT, GAIN_DB_MIN, GAIN_DB_MAX)
-                .with_description(
-                    "Global gain in dB. 0dB = unity, negative = attenuation, positive = boost",
-                ),
+            Parameter::new_float(
+                "gain_db",
+                "Gain (dB)",
+                GAIN_DB_DEFAULT,
+                GAIN_DB_MIN,
+                GAIN_DB_MAX,
+            )
+            .with_description(
+                "Global gain in dB. 0dB = unity, negative = attenuation, positive = boost",
+            )
+            .with_group("General")
+            .with_importance(ParameterImportance::Critical),
         ];
 
         // Add per-channel parameters
@@ -277,7 +291,9 @@ impl InPlacePlugin for GainPlugin {
                 .with_description(&format!(
                     "Channel {} gain in dB. Setting this enables per-channel mode.",
                     ch
-                )),
+                ))
+                .with_group("Channels")
+                .with_importance(ParameterImportance::FineTuning),
             );
         }
 
@@ -330,7 +346,7 @@ impl InPlacePlugin for GainPlugin {
 
         None
     }
-    
+
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
         self.global_gain_smoother.set_time(20.0, sample_rate);

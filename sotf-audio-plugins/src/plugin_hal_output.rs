@@ -126,7 +126,9 @@ impl InPlacePlugin for HalOutputPlugin {
     fn parameters(&self) -> Vec<Parameter> {
         vec![
             Parameter::new_int("channels", "Channels", 2, 1, 16)
-                .with_description("Number of audio channels"),
+                .with_description("Number of audio channels")
+                .with_group("Configuration")
+                .with_importance(ParameterImportance::Critical),
         ]
     }
 

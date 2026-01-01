@@ -19,15 +19,10 @@ mod converter {
 
     // Helper to convert Vec<f32> to bytes and back
     fn f32_vec_to_bytes(vec: &[f32]) -> Vec<u8> {
-        vec.iter()
-            .flat_map(|&f| f.to_le_bytes().to_vec())
-            .collect()
+        vec.iter().flat_map(|&f| f.to_le_bytes().to_vec()).collect()
     }
 
-    pub fn convert_sofa_to_sqlite(
-        sofa_path: &Path,
-        db_path: &Path,
-    ) -> Result<(), anyhow::Error> {
+    pub fn convert_sofa_to_sqlite(sofa_path: &Path, db_path: &Path) -> Result<(), anyhow::Error> {
         // Load SOFA file
         log::info!("Loading SOFA file: {:?}", sofa_path);
         let sofa = SofaFile::load(sofa_path).map_err(|e| anyhow::anyhow!(e))?;
@@ -56,12 +51,27 @@ mod converter {
 
         // Insert metadata
         let tx = conn.transaction()?;
-        tx.execute("INSERT INTO metadata (key, value) VALUES (?1, ?2)", ["convention", &sofa.convention])?;
-        tx.execute("INSERT INTO metadata (key, value) VALUES (?1, ?2)", ["sample_rate", &sofa.sample_rate.to_string()])?;
-        tx.execute("INSERT INTO metadata (key, value) VALUES (?1, ?2)", ["ir_length", &sofa.ir_length.to_string()])?;
-        tx.execute("INSERT INTO metadata (key, value) VALUES (?1, ?2)", ["num_measurements", &sofa.num_measurements.to_string()])?;
+        tx.execute(
+            "INSERT INTO metadata (key, value) VALUES (?1, ?2)",
+            ["convention", &sofa.convention],
+        )?;
+        tx.execute(
+            "INSERT INTO metadata (key, value) VALUES (?1, ?2)",
+            ["sample_rate", &sofa.sample_rate.to_string()],
+        )?;
+        tx.execute(
+            "INSERT INTO metadata (key, value) VALUES (?1, ?2)",
+            ["ir_length", &sofa.ir_length.to_string()],
+        )?;
+        tx.execute(
+            "INSERT INTO metadata (key, value) VALUES (?1, ?2)",
+            ["num_measurements", &sofa.num_measurements.to_string()],
+        )?;
         if let Some(dsr) = sofa.data_sample_rate {
-            tx.execute("INSERT INTO metadata (key, value) VALUES (?1, ?2)", ["data_sample_rate", &dsr.to_string()])?;
+            tx.execute(
+                "INSERT INTO metadata (key, value) VALUES (?1, ?2)",
+                ["data_sample_rate", &dsr.to_string()],
+            )?;
         }
 
         // Serialize and insert large data as blobs
@@ -69,8 +79,14 @@ mod converter {
             .map_err(|e| anyhow::anyhow!("Failed to serialize positions: {}", e))?;
         let ir_blob = f32_vec_to_bytes(&sofa.impulse_responses);
 
-        tx.execute("INSERT INTO data (key, value) VALUES (?1, ?2)", rusqlite::params!["positions", &positions_blob])?;
-        tx.execute("INSERT INTO data (key, value) VALUES (?1, ?2)", rusqlite::params!["impulse_responses", &ir_blob])?;
+        tx.execute(
+            "INSERT INTO data (key, value) VALUES (?1, ?2)",
+            rusqlite::params!["positions", &positions_blob],
+        )?;
+        tx.execute(
+            "INSERT INTO data (key, value) VALUES (?1, ?2)",
+            rusqlite::params!["impulse_responses", &ir_blob],
+        )?;
 
         tx.commit()?;
         log::info!("Data inserted into database.");
@@ -102,7 +118,9 @@ fn main() {
     #[cfg(not(feature = "sofa_support"))]
     {
         log::error!("This tool was compiled without the 'sofa_support' feature.");
-        log::error!("Please re-run with 'cargo run --bin sofa_to_sqlite --features=sofa_support -- ...'");
+        log::error!(
+            "Please re-run with 'cargo run --bin sofa_to_sqlite --features=sofa_support -- ...'"
+        );
         std::process::exit(1);
     }
 }

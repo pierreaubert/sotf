@@ -331,11 +331,12 @@ open ~/Library/Logs/DiagnosticReports/
 
    impl Plugin for EqPlugin {
        fn parameters(&self) -> Vec<Parameter> {
-           vec![Parameter {
-               id: ParameterId::String("bypass".to_string()),
-               value: ParameterValue::Bool(self.bypass),
-               // ...
-           }]
+           vec![
+               Parameter::new_bool("bypass", "Bypass", false)
+                   .with_description("Bypass the plugin")
+                   .with_group("General")
+                   .with_importance(ParameterImportance::Useful)
+           ]
        }
    }
    ```

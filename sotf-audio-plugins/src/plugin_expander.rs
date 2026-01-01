@@ -20,7 +20,7 @@
 // - sidechain_hpf_hz: High-pass filter cutoff for the detector sidechain (Hz)
 
 use super::param_specs::expander::*;
-use super::parameters::{Parameter, ParameterId, ParameterValue};
+use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use serde::{Deserialize, Serialize};
 use std::f32::consts::PI;
@@ -192,10 +192,10 @@ pub struct ExpanderPlugin {
     sidechain_hpf_hz: f32,
 
     // State per channel
-    envelope: Vec<f32>,           // Current attenuation envelope per channel
-    gate_state: Vec<GateState>,   // Hysteresis state per channel
-    hold_counter: Vec<usize>,     // Samples remaining in hold state
-    input_levels_db: Vec<f32>,    // Last input level for monitoring
+    envelope: Vec<f32>,         // Current attenuation envelope per channel
+    gate_state: Vec<GateState>, // Hysteresis state per channel
+    hold_counter: Vec<usize>,   // Samples remaining in hold state
+    input_levels_db: Vec<f32>,  // Last input level for monitoring
 
     // Sidechain HPF state
     sidechain_hpf_prev_input: Vec<f32>,
@@ -358,12 +358,7 @@ impl ExpanderPlugin {
     }
 
     /// Process a single channel's gate state and envelope
-    fn process_channel(
-        &mut self,
-        channel: usize,
-        input_db: f32,
-        hold_samples: usize,
-    ) -> f32 {
+    fn process_channel(&mut self, channel: usize, input_db: f32, hold_samples: usize) -> f32 {
         let open_threshold = self.threshold_db;
         let close_threshold = self.threshold_db - self.hysteresis_db;
 
@@ -452,11 +447,17 @@ impl InPlacePlugin for ExpanderPlugin {
                 THRESHOLD_MIN,
                 THRESHOLD_MAX,
             )
-            .with_description("Level below which expansion starts (dB)"),
+            .with_description("Level below which expansion starts (dB)")
+            .with_group("Dynamics")
+            .with_importance(ParameterImportance::Critical),
             Parameter::new_float("ratio", "Ratio", RATIO_DEFAULT, RATIO_MIN, RATIO_MAX)
-                .with_description("Expansion ratio (higher = more attenuation)"),
+                .with_description("Expansion ratio (higher = more attenuation)")
+                .with_group("Dynamics")
+                .with_importance(ParameterImportance::Critical),
             Parameter::new_float("attack", "Attack", ATTACK_DEFAULT, ATTACK_MIN, ATTACK_MAX)
-                .with_description("Time to open gate (ms)"),
+                .with_description("Time to open gate (ms)")
+                .with_group("Timing")
+                .with_importance(ParameterImportance::Critical),
             Parameter::new_float(
                 "release",
                 "Release",
@@ -464,11 +465,17 @@ impl InPlacePlugin for ExpanderPlugin {
                 RELEASE_MIN,
                 RELEASE_MAX,
             )
-            .with_description("Time to close gate (ms)"),
+            .with_description("Time to close gate (ms)")
+            .with_group("Timing")
+            .with_importance(ParameterImportance::Critical),
             Parameter::new_float("range", "Range", RANGE_DEFAULT, RANGE_MIN, RANGE_MAX)
-                .with_description("Maximum attenuation / floor limit (dB)"),
+                .with_description("Maximum attenuation / floor limit (dB)")
+                .with_group("Dynamics")
+                .with_importance(ParameterImportance::Useful),
             Parameter::new_float("knee", "Knee", KNEE_DEFAULT, KNEE_MIN, KNEE_MAX)
-                .with_description("Soft knee width (dB)"),
+                .with_description("Soft knee width (dB)")
+                .with_group("Dynamics")
+                .with_importance(ParameterImportance::Useful),
             Parameter::new_float(
                 "hysteresis",
                 "Hysteresis",
@@ -476,13 +483,21 @@ impl InPlacePlugin for ExpanderPlugin {
                 HYSTERESIS_MIN,
                 HYSTERESIS_MAX,
             )
-            .with_description("Difference between open and close thresholds (dB)"),
+            .with_description("Difference between open and close thresholds (dB)")
+            .with_group("Dynamics")
+            .with_importance(ParameterImportance::FineTuning),
             Parameter::new_float("hold", "Hold", HOLD_DEFAULT, HOLD_MIN, HOLD_MAX)
-                .with_description("Time to keep gate open after signal drops (ms)"),
+                .with_description("Time to keep gate open after signal drops (ms)")
+                .with_group("Timing")
+                .with_importance(ParameterImportance::FineTuning),
             Parameter::new_float("mix", "Mix", MIX_DEFAULT, MIX_MIN, MIX_MAX)
-                .with_description("Dry/wet mix (0 = dry, 1 = expanded)"),
+                .with_description("Dry/wet mix (0 = dry, 1 = expanded)")
+                .with_group("Output")
+                .with_importance(ParameterImportance::Useful),
             Parameter::new_bool("link_channels", "Link Channels", LINK_CHANNELS_DEFAULT)
-                .with_description("Use linked sidechain for all channels"),
+                .with_description("Use linked sidechain for all channels")
+                .with_group("Channels")
+                .with_importance(ParameterImportance::Useful),
             Parameter::new_float(
                 "sidechain_hpf_hz",
                 "Sidechain HPF",
@@ -490,7 +505,9 @@ impl InPlacePlugin for ExpanderPlugin {
                 SIDECHAIN_HPF_HZ_MIN,
                 SIDECHAIN_HPF_HZ_MAX,
             )
-            .with_description("High-pass filter frequency for sidechain (Hz)"),
+            .with_description("High-pass filter frequency for sidechain (Hz)")
+            .with_group("Sidechain")
+            .with_importance(ParameterImportance::FineTuning),
         ]
     }
 
@@ -718,9 +735,9 @@ mod tests {
             2,
             ExpanderPluginParams {
                 threshold_db: -40.0,
-                ratio: 10.0,      // High ratio
-                knee_db: 0.0,     // Hard knee
-                range_db: 20.0,   // Limit to 20 dB
+                ratio: 10.0,    // High ratio
+                knee_db: 0.0,   // Hard knee
+                range_db: 20.0, // Limit to 20 dB
                 ..Default::default()
             },
         );

@@ -124,7 +124,9 @@ impl Plugin for HalInputPlugin {
     fn parameters(&self) -> Vec<Parameter> {
         vec![
             Parameter::new_int("channels", "Output Channels", 2, 1, 16)
-                .with_description("Number of output channels"),
+                .with_description("Number of output channels")
+                .with_group("Configuration")
+                .with_importance(ParameterImportance::Critical),
         ]
     }
 

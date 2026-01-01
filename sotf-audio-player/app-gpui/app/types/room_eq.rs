@@ -656,4 +656,3 @@ impl RoomEqState {
         }
     }
 }
-

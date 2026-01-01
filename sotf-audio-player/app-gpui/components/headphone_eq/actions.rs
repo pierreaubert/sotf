@@ -81,7 +81,8 @@ impl PlayerView {
                     params.maxeval = config.max_iter;
                     params.loss = sotf_audio_player::autoeq::parse_loss_type(&config.loss);
                     params.algo = config.algorithm.to_autoeq_string().to_string();
-                    params.peq_model = sotf_audio_player::autoeq::parse_peq_model(&config.peq_model);
+                    params.peq_model =
+                        sotf_audio_player::autoeq::parse_peq_model(&config.peq_model);
                     params.population = config.population;
                     params.recombination = config.de_cr;
                     params.strategy = config.strategy.clone();
@@ -190,7 +191,7 @@ impl PlayerView {
                     .collect();
 
                 // Create new EQ plugin settings
-                let settings = PluginSettings::EQ { filters };
+                let settings = PluginSettings::EQ { channels: 2, filters };
 
                 // Add to chain
                 let plugin_id = state.app.plugin_chain.add_plugin(&PluginType::EQ);

@@ -73,8 +73,8 @@ pub fn render_compressor_plugin(
         .child(
             div()
                 .flex()
-                .gap_6()
-                // Column 1: Vertical sliders for main dynamics controls
+                .gap_4() // Reduce gap slightly to fit more columns
+                // Column 1: Dynamics (Threshold, Ratio, Knee)
                 .child(
                     div()
                         .flex()
@@ -118,6 +118,34 @@ pub fn render_compressor_plugin(
                                 .child(render_vertical_slider_sized(
                                     entity.clone(),
                                     plugin_idx,
+                                    "Knee",
+                                    state.knee_db,
+                                    KNEE_MIN as f64,
+                                    KNEE_MAX as f64,
+                                    "dB",
+                                    4,
+                                    state.selected_param,
+                                    state.is_editing,
+                                    Some('k'),
+                                    Some(SLIDER_HEIGHT),
+                                    theme,
+                                )),
+                        ),
+                )
+                // Column 2: Timing (Attack, Release)
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(render_section_title("TIMING", theme))
+                        .child(
+                            div()
+                                .flex()
+                                .gap_2()
+                                .child(render_vertical_slider_sized(
+                                    entity.clone(),
+                                    plugin_idx,
                                     "Attack",
                                     state.attack_ms,
                                     ATTACK_MIN as f64,
@@ -144,85 +172,35 @@ pub fn render_compressor_plugin(
                                     Some('e'),
                                     Some(SLIDER_HEIGHT),
                                     theme,
-                                ))
-                                .child(render_vertical_slider_sized(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "Knee",
-                                    state.knee_db,
-                                    KNEE_MIN as f64,
-                                    KNEE_MAX as f64,
-                                    "dB",
-                                    4,
-                                    state.selected_param,
-                                    state.is_editing,
-                                    Some('k'),
-                                    Some(SLIDER_HEIGHT),
-                                    theme,
                                 )),
                         ),
                 )
-                // Column 2: Link channels, Auto makeup, Makeup knob - with vertical distribution
+                // Column 3: Output (Makeup, Mix, Auto)
                 .child(
                     div()
                         .flex()
                         .flex_col()
-                        .justify_between() // Distribute elements vertically
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap_2()
-                                .child(render_section_title("GAIN", theme))
-                                .child(render_toggle(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "Link Channels",
-                                    state.link_channels,
-                                    8,
-                                    state.selected_param,
-                                    state.is_editing,
-                                    theme,
-                                ))
-                                .child(render_toggle(
-                                    entity.clone(),
-                                    plugin_idx,
-                                    "Auto Makeup",
-                                    state.auto_makeup,
-                                    7,
-                                    state.selected_param,
-                                    state.is_editing,
-                                    theme,
-                                )),
-                        )
-                        // Makeup gain knob at the bottom
-                        .child(render_knob(
-                            entity.clone(),
-                            plugin_idx,
-                            "Makeup",
-                            state.makeup_gain_db,
-                            MAKEUP_GAIN_MIN as f64,
-                            MAKEUP_GAIN_MAX as f64,
-                            "dB",
-                            5,
-                            state.selected_param,
-                            state.is_editing,
-                            Some('m'),
-                            theme,
-                        )),
-                )
-                // Column 3: Mix and Sidechain HPF knobs - with vertical distribution
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .justify_between() // Distribute elements vertically
+                        .justify_between()
                         .child(
                             div()
                                 .flex()
                                 .flex_col()
                                 .gap_2()
                                 .child(render_section_title("OUTPUT", theme))
+                                .child(render_knob(
+                                    entity.clone(),
+                                    plugin_idx,
+                                    "Makeup",
+                                    state.makeup_gain_db,
+                                    MAKEUP_GAIN_MIN as f64,
+                                    MAKEUP_GAIN_MAX as f64,
+                                    "dB",
+                                    5,
+                                    state.selected_param,
+                                    state.is_editing,
+                                    Some('m'),
+                                    theme,
+                                ))
                                 .child(render_knob(
                                     entity.clone(),
                                     plugin_idx,
@@ -238,23 +216,56 @@ pub fn render_compressor_plugin(
                                     theme,
                                 )),
                         )
-                        // SC HPF knob at the bottom
-                        .child(render_knob(
+                        .child(render_toggle(
                             entity.clone(),
                             plugin_idx,
-                            "SC HPF",
-                            state.sidechain_hpf_hz,
-                            SIDECHAIN_HPF_UI_MIN,
-                            SIDECHAIN_HPF_UI_MAX,
-                            "Hz",
-                            9,
+                            "Auto Makeup",
+                            state.auto_makeup,
+                            7,
                             state.selected_param,
                             state.is_editing,
-                            Some('s'),
                             theme,
                         )),
                 )
-                // Column 4: Transfer curve and Gain reduction meter - aligned width
+                // Column 4: Setup (Sidechain HPF, Link)
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .justify_between()
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap_2()
+                                .child(render_section_title("SETUP", theme))
+                                .child(render_knob(
+                                    entity.clone(),
+                                    plugin_idx,
+                                    "SC HPF",
+                                    state.sidechain_hpf_hz,
+                                    SIDECHAIN_HPF_UI_MIN,
+                                    SIDECHAIN_HPF_UI_MAX,
+                                    "Hz",
+                                    9,
+                                    state.selected_param,
+                                    state.is_editing,
+                                    Some('s'),
+                                    theme,
+                                )),
+                        )
+                        .child(render_toggle(
+                            entity.clone(),
+                            plugin_idx,
+                            "Link Ch",
+                            state.link_channels,
+                            8,
+                            state.selected_param,
+                            state.is_editing,
+                            theme,
+                        )),
+                )
+                // Column 5: Meter
                 .child(
                     div()
                         .flex()
@@ -262,12 +273,11 @@ pub fn render_compressor_plugin(
                         .w(px(METER_WIDTH))
                         .gap_2()
                         .child(render_section_title("METER", theme))
-                        // Transfer curve section - grows to fill space
                         .child(
                             div()
                                 .flex()
                                 .flex_col()
-                                .flex_1() // Grow to fill available space
+                                .flex_1()
                                 .child(render_transfer_curve_sized(
                                     state.threshold_db,
                                     state.ratio,
@@ -277,7 +287,6 @@ pub fn render_compressor_plugin(
                                     theme,
                                 )),
                         )
-                        // Gain reduction meter at the bottom
                         .child(render_gr_meter(meter_value, -30.0, theme)),
                 ),
         )

@@ -5,13 +5,14 @@
 //! - Band controls with color coding
 //! - Interactive editing
 
-use super::common::render_knob;
+use super::common::render_knob_sized;
 use crate::app::AppState;
 use crate::theme::Theme;
 use autoeq_iir::{Biquad, BiquadFilterType};
 use gpui::prelude::*;
 use gpui::*;
 use gpui_px::{ChartTheme, ScaleType, line};
+use gpui_ui_kit::PotentiometerSize;
 // Tabs are now custom-rendered to avoid context issues
 use sotf_audio_player::EQFilter;
 use sotf_audio_player::param_specs::eq::*;
@@ -175,8 +176,8 @@ pub fn render_eq_plugin(
     let num_bands = state.filters.len();
 
     // Determine layout mode based on available width
-    // For now, we'll default to horizontal layout
-    let use_horizontal_layout = true;
+    // For now, we'll default to vertical layout
+    let use_horizontal_layout = false;
 
     // Get the selected filter
     let selected_filter = if num_bands > 0 {
@@ -201,7 +202,7 @@ pub fn render_eq_plugin(
             state.filters,
             highlight_band_idx,
             theme,
-            if use_horizontal_layout { 500.0 } else { 700.0 },
+            if use_horizontal_layout { 500.0 } else { 800.0 },
         ));
 
     let controls_section = div()
@@ -316,7 +317,7 @@ pub fn render_eq_plugin(
                             .flex()
                             .gap_2()
                             .justify_around()
-                            .child(render_knob(
+                            .child(render_knob_sized(
                                 entity.clone(),
                                 plugin_idx,
                                 "Freq",
@@ -328,9 +329,10 @@ pub fn render_eq_plugin(
                                 state.selected_param,
                                 state.is_editing,
                                 None,
+                                PotentiometerSize::Sm,
                                 theme,
                             ))
-                            .child(render_knob(
+                            .child(render_knob_sized(
                                 entity.clone(),
                                 plugin_idx,
                                 "Q",
@@ -342,9 +344,10 @@ pub fn render_eq_plugin(
                                 state.selected_param,
                                 state.is_editing,
                                 None,
+                                PotentiometerSize::Sm,
                                 theme,
                             ))
-                            .child(render_knob(
+                            .child(render_knob_sized(
                                 entity.clone(),
                                 plugin_idx,
                                 "Gain",
@@ -356,6 +359,7 @@ pub fn render_eq_plugin(
                                 state.selected_param,
                                 state.is_editing,
                                 None,
+                                PotentiometerSize::Sm,
                                 theme,
                             )),
                     ),

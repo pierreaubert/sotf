@@ -1,7 +1,7 @@
 //! Directory manager screen rendering functions
 
-use crate::app::types::Screen;
 use crate::app::InputMode;
+use crate::app::types::Screen;
 use crate::components::icons::{Icon, IconName};
 use crate::theme::Theme;
 use crate::ui::PlayerView;
@@ -112,27 +112,27 @@ impl PlayerView {
                     .flex_1()
                     .p_4()
                     .gap_4()
-            // Add Directory Input Box (always visible, styled differently when active)
-            .child(self.render_add_directory_box(
-                &theme,
-                is_add_mode,
-                &directory_input,
-                &autocomplete_suggestions,
-                autocomplete_index,
-                cx,
-            ))
-            // Directory List with click handlers
-            .child(self.render_directory_list(directory_items, cx))
-            // Scan Progress (when scanning)
-            .when(scan_in_progress, |parent| {
-                parent.child(render_scan_progress(
-                    scan_progress_tracks,
-                    scan_progress_albums,
-                    &theme,
-                ))
-            })
-            // Help Text Footer
-            .child(render_directory_help_footer(&theme, is_add_mode)),
+                    // Add Directory Input Box (always visible, styled differently when active)
+                    .child(self.render_add_directory_box(
+                        &theme,
+                        is_add_mode,
+                        &directory_input,
+                        &autocomplete_suggestions,
+                        autocomplete_index,
+                        cx,
+                    ))
+                    // Directory List with click handlers
+                    .child(self.render_directory_list(directory_items, cx))
+                    // Scan Progress (when scanning)
+                    .when(scan_in_progress, |parent| {
+                        parent.child(render_scan_progress(
+                            scan_progress_tracks,
+                            scan_progress_albums,
+                            &theme,
+                        ))
+                    })
+                    // Help Text Footer
+                    .child(render_directory_help_footer(&theme, is_add_mode)),
             )
     }
 

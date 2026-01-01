@@ -153,10 +153,7 @@ impl PlayerView {
                                     .bg(theme.surface_hover)
                                     .cursor_pointer()
                                     .hover(|s| s.bg(theme.accent_muted))
-                                    .child(
-                                        Text::new("🚀")
-                                            .size(TextSize::Xl),
-                                    )
+                                    .child(Text::new("🚀").size(TextSize::Xl))
                                     .child(
                                         VStack::new()
                                             .spacing(StackSpacing::Xs)
@@ -173,7 +170,9 @@ impl PlayerView {
                                             ),
                                     )
                                     .on_click(|_, _window, cx| {
-                                        cx.open_url("https://github.com/pierreaubert/sotf/discussions/117");
+                                        cx.open_url(
+                                            "https://github.com/pierreaubert/sotf/discussions/117",
+                                        );
                                     }),
                             )
                             .child(
@@ -188,10 +187,7 @@ impl PlayerView {
                                     .bg(theme.surface_hover)
                                     .cursor_pointer()
                                     .hover(|s| s.bg(theme.accent_muted))
-                                    .child(
-                                        Text::new("🐛")
-                                            .size(TextSize::Xl),
-                                    )
+                                    .child(Text::new("🐛").size(TextSize::Xl))
                                     .child(
                                         VStack::new()
                                             .spacing(StackSpacing::Xs)
@@ -208,7 +204,9 @@ impl PlayerView {
                                             ),
                                     )
                                     .on_click(|_, _window, cx| {
-                                        cx.open_url("https://github.com/pierreaubert/sotf/discussions/116");
+                                        cx.open_url(
+                                            "https://github.com/pierreaubert/sotf/discussions/116",
+                                        );
                                     }),
                             )
                             .child(
@@ -223,10 +221,7 @@ impl PlayerView {
                                     .bg(theme.surface_hover)
                                     .cursor_pointer()
                                     .hover(|s| s.bg(theme.accent_muted))
-                                    .child(
-                                        Text::new("📦")
-                                            .size(TextSize::Xl),
-                                    )
+                                    .child(Text::new("📦").size(TextSize::Xl))
                                     .child(
                                         VStack::new()
                                             .spacing(StackSpacing::Xs)

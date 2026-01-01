@@ -23,11 +23,11 @@ impl DenoiserPlugin {
     /// 3. Smooths gains with attack/release envelope to prevent clicking
     pub(super) fn calculate_polyphonic_gains(&mut self) {
         let floor_linear = 10.0_f32.powf(self.floor_db / 20.0);
-        
+
         // Threshold: We consider something a "note" if it is significantly above the noise floor.
         // We use a fixed threshold of 6dB for now, or we could make it a parameter.
         // 6dB roughly corresponds to signal being 2x amplitude of noise (4x power).
-        let snr_threshold_db = 6.0; 
+        let snr_threshold_db = 6.0;
         let snr_threshold_linear = 10.0_f32.powf(snr_threshold_db / 10.0);
 
         let mut total_reduction = 0.0_f32;
@@ -35,12 +35,12 @@ impl DenoiserPlugin {
 
         for ch in 0..self.channels {
             for k in 0..self.spectrum_size {
-                 // Get signal and noise power
+                // Get signal and noise power
                 let signal_power = self.get_power_at_bin(ch, k);
                 let noise_power = self.get_noise_power(ch, k);
 
                 let snr = signal_power / noise_power.max(EPSILON);
-                
+
                 // Detection logic:
                 // If SNR is high, it's a note (or strong signal).
                 // We apply a binary gate behavior (softened by the envelope follower later).
@@ -56,7 +56,7 @@ impl DenoiserPlugin {
                 // Apply temporal smoothing with attack/release
                 // This converts the binary spectral gate into a smooth spectral expander/gate
                 let prev_gain = self.smoothed_gain[ch][k];
-                
+
                 // Logic:
                 // If target > prev (Note onset), use attack (fast)
                 // If target < prev (Note release), use release (slow)
@@ -65,7 +65,7 @@ impl DenoiserPlugin {
                 } else {
                     self.release_coeff
                 };
-                
+
                 let smoothed = target_gain + coeff * (prev_gain - target_gain);
                 self.smoothed_gain[ch][k] = smoothed;
 
@@ -74,7 +74,7 @@ impl DenoiserPlugin {
                 bin_count += 1;
             }
         }
-        
+
         // Update average reduction in dB for monitoring
         if bin_count > 0 {
             let avg_gain = 1.0 - (total_reduction / bin_count as f32);

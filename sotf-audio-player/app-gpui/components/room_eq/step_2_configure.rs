@@ -9,7 +9,6 @@ use gpui_ui_kit::{
 use super::render::render_channel_config_row;
 
 impl PlayerView {
-
     pub(crate) fn render_room_eq_configure(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();

@@ -22,6 +22,7 @@ pub struct GateRenderState<'a> {
     pub threshold_db: f64,
     pub ratio: f64,
     pub attack_ms: f64,
+    pub hold_ms: f64,
     pub release_ms: f64,
     pub mix: f64,
     pub link_channels: bool,
@@ -138,12 +139,27 @@ pub fn render_gate_plugin(
                                 .child(render_vertical_slider_sized(
                                     entity.clone(),
                                     plugin_idx,
+                                    "Hold",
+                                    state.hold_ms,
+                                    HOLD_MIN as f64,
+                                    HOLD_MAX as f64,
+                                    "ms",
+                                    3,
+                                    state.selected_param,
+                                    state.is_editing,
+                                    Some('h'),
+                                    Some(SLIDER_HEIGHT),
+                                    theme,
+                                ))
+                                .child(render_vertical_slider_sized(
+                                    entity.clone(),
+                                    plugin_idx,
                                     "Release",
                                     state.release_ms,
                                     RELEASE_MIN as f64,
                                     RELEASE_MAX as f64,
                                     "ms",
-                                    3,
+                                    4,
                                     state.selected_param,
                                     state.is_editing,
                                     Some('e'),
@@ -179,20 +195,15 @@ pub fn render_gate_plugin(
                                         ),
                                 )
                                 // Toggle button
-                                .child(
-                                    div()
-                                        .flex()
-                                        .justify_end()
-                                        .child(render_toggle_button(
-                                            entity.clone(),
-                                            plugin_idx,
-                                            state.link_channels,
-                                            5,
-                                            state.selected_param,
-                                            state.is_editing,
-                                            theme,
-                                        )),
-                                )
+                                .child(div().flex().justify_end().child(render_toggle_button(
+                                    entity.clone(),
+                                    plugin_idx,
+                                    state.link_channels,
+                                    6,
+                                    state.selected_param,
+                                    state.is_editing,
+                                    theme,
+                                )))
                                 // Mix knob
                                 .child(render_knob(
                                     entity.clone(),
@@ -202,7 +213,7 @@ pub fn render_gate_plugin(
                                     MIX_MIN as f64 * 100.0,
                                     MIX_MAX as f64 * 100.0,
                                     "%",
-                                    4,
+                                    5,
                                     state.selected_param,
                                     state.is_editing,
                                     Some('m'),
@@ -218,7 +229,7 @@ pub fn render_gate_plugin(
                             SIDECHAIN_HPF_UI_MIN,
                             SIDECHAIN_HPF_UI_MAX,
                             "Hz",
-                            6,
+                            7,
                             state.selected_param,
                             state.is_editing,
                             Some('s'),

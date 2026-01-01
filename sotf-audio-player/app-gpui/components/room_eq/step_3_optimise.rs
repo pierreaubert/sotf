@@ -2,12 +2,11 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Button, ButtonVariant, Card, HStack, StackAlign, StackSpacing, Text, TextSize,
-    TextWeight, VStack,
+    Button, ButtonVariant, Card, HStack, StackAlign, StackSpacing, Text, TextSize, TextWeight,
+    VStack,
 };
 
 impl PlayerView {
-
     pub(crate) fn render_room_eq_optimize(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.theme.clone();
@@ -295,9 +294,7 @@ impl PlayerView {
                 crate::app::types::RoomEqAlgorithm::DifferentialEvolution => {
                     "autoeq:de".to_string()
                 }
-                crate::app::types::RoomEqAlgorithm::NelderMead => {
-                    "nlopt:neldermead".to_string()
-                }
+                crate::app::types::RoomEqAlgorithm::NelderMead => "nlopt:neldermead".to_string(),
             };
             opt_params.maxeval = room_eq.optimizer_config.max_iter;
             opt_params.loss = autoeq::LossType::SpeakerFlat;

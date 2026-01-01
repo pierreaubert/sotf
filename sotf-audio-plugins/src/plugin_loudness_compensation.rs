@@ -15,7 +15,7 @@
 // for the Fletcher-Munson equal-loudness contours.
 
 use super::param_specs::loudness_compensation::*;
-use super::parameters::{Parameter, ParameterId, ParameterValue};
+use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use autoeq_iir::{Biquad, BiquadFilterType};
 use serde::{Deserialize, Serialize};
@@ -385,13 +385,29 @@ impl LoudnessCompensationPlugin {
 
             let target_configs = [
                 // Low-shelf stage 1
-                (BiquadFilterType::Lowshelf, params.low_freq, low_gain_per_stage),
+                (
+                    BiquadFilterType::Lowshelf,
+                    params.low_freq,
+                    low_gain_per_stage,
+                ),
                 // Low-shelf stage 2
-                (BiquadFilterType::Lowshelf, params.low_freq, low_gain_per_stage),
+                (
+                    BiquadFilterType::Lowshelf,
+                    params.low_freq,
+                    low_gain_per_stage,
+                ),
                 // High-shelf stage 1
-                (BiquadFilterType::Highshelf, params.high_freq, high_gain_per_stage),
+                (
+                    BiquadFilterType::Highshelf,
+                    params.high_freq,
+                    high_gain_per_stage,
+                ),
                 // High-shelf stage 2
-                (BiquadFilterType::Highshelf, params.high_freq, high_gain_per_stage),
+                (
+                    BiquadFilterType::Highshelf,
+                    params.high_freq,
+                    high_gain_per_stage,
+                ),
             ];
 
             // Initialize or update filters
@@ -400,26 +416,15 @@ impl LoudnessCompensationPlugin {
                 self.filters[ch] = target_configs
                     .iter()
                     .map(|(ft, freq, gain)| {
-                        Biquad::new(
-                            *ft,
-                            *freq as f64,
-                            self.sample_rate as f64,
-                            q,
-                            *gain as f64,
-                        )
+                        Biquad::new(*ft, *freq as f64, self.sample_rate as f64, q, *gain as f64)
                     })
                     .collect();
             } else {
                 // Recreate filters with new coefficients
                 // Note: This resets filter state which may cause brief transients
                 for (i, (ft, freq, gain)) in target_configs.iter().enumerate() {
-                    self.filters[ch][i] = Biquad::new(
-                        *ft,
-                        *freq as f64,
-                        self.sample_rate as f64,
-                        q,
-                        *gain as f64,
-                    );
+                    self.filters[ch][i] =
+                        Biquad::new(*ft, *freq as f64, self.sample_rate as f64, q, *gain as f64);
                 }
             }
         }
@@ -459,9 +464,8 @@ impl Plugin for LoudnessCompensationPlugin {
             name: "Loudness Compensation".to_string(),
             version: "1.1.0".to_string(),
             author: "AutoEQ".to_string(),
-            description:
-                "Bass and treble boost for low-volume listening with per-channel support"
-                    .to_string(),
+            description: "Bass and treble boost for low-volume listening with per-channel support"
+                .to_string(),
         }
     }
 
@@ -475,14 +479,46 @@ impl Plugin for LoudnessCompensationPlugin {
 
     fn parameters(&self) -> Vec<Parameter> {
         let mut params = vec![
-            Parameter::new_float("low_freq", "Low-shelf Frequency", LOW_FREQ_DEFAULT, LOW_FREQ_MIN, LOW_FREQ_MAX)
-                .with_description("Global frequency for bass boost (Hz)"),
-            Parameter::new_float("low_gain", "Low-shelf Gain", LOW_GAIN_DEFAULT, LOW_GAIN_MIN, LOW_GAIN_MAX)
-                .with_description("Global bass boost amount (dB)"),
-            Parameter::new_float("high_freq", "High-shelf Frequency", HIGH_FREQ_DEFAULT, HIGH_FREQ_MIN, HIGH_FREQ_MAX)
-                .with_description("Global frequency for treble boost (Hz)"),
-            Parameter::new_float("high_gain", "High-shelf Gain", HIGH_GAIN_DEFAULT, HIGH_GAIN_MIN, HIGH_GAIN_MAX)
-                .with_description("Global treble boost amount (dB)"),
+            Parameter::new_float(
+                "low_freq",
+                "Low-shelf Frequency",
+                LOW_FREQ_DEFAULT,
+                LOW_FREQ_MIN,
+                LOW_FREQ_MAX,
+            )
+            .with_description("Global frequency for bass boost (Hz)")
+            .with_group("Low Shelf")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "low_gain",
+                "Low-shelf Gain",
+                LOW_GAIN_DEFAULT,
+                LOW_GAIN_MIN,
+                LOW_GAIN_MAX,
+            )
+            .with_description("Global bass boost amount (dB)")
+            .with_group("Low Shelf")
+            .with_importance(ParameterImportance::Critical),
+            Parameter::new_float(
+                "high_freq",
+                "High-shelf Frequency",
+                HIGH_FREQ_DEFAULT,
+                HIGH_FREQ_MIN,
+                HIGH_FREQ_MAX,
+            )
+            .with_description("Global frequency for treble boost (Hz)")
+            .with_group("High Shelf")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "high_gain",
+                "High-shelf Gain",
+                HIGH_GAIN_DEFAULT,
+                HIGH_GAIN_MIN,
+                HIGH_GAIN_MAX,
+            )
+            .with_description("Global treble boost amount (dB)")
+            .with_group("High Shelf")
+            .with_importance(ParameterImportance::Critical),
         ];
 
         // Add per-channel parameters
@@ -495,7 +531,9 @@ impl Plugin for LoudnessCompensationPlugin {
                     LOW_FREQ_MIN,
                     LOW_FREQ_MAX,
                 )
-                .with_description(&format!("Channel {} bass frequency (Hz)", ch)),
+                .with_description(&format!("Channel {} bass frequency (Hz)", ch))
+                .with_group("Channels")
+                .with_importance(ParameterImportance::FineTuning),
             );
             params.push(
                 Parameter::new_float(
@@ -505,7 +543,9 @@ impl Plugin for LoudnessCompensationPlugin {
                     LOW_GAIN_MIN,
                     LOW_GAIN_MAX,
                 )
-                .with_description(&format!("Channel {} bass boost (dB)", ch)),
+                .with_description(&format!("Channel {} bass boost (dB)", ch))
+                .with_group("Channels")
+                .with_importance(ParameterImportance::FineTuning),
             );
             params.push(
                 Parameter::new_float(
@@ -515,7 +555,9 @@ impl Plugin for LoudnessCompensationPlugin {
                     HIGH_FREQ_MIN,
                     HIGH_FREQ_MAX,
                 )
-                .with_description(&format!("Channel {} treble frequency (Hz)", ch)),
+                .with_description(&format!("Channel {} treble frequency (Hz)", ch))
+                .with_group("Channels")
+                .with_importance(ParameterImportance::FineTuning),
             );
             params.push(
                 Parameter::new_float(
@@ -525,7 +567,9 @@ impl Plugin for LoudnessCompensationPlugin {
                     HIGH_GAIN_MIN,
                     HIGH_GAIN_MAX,
                 )
-                .with_description(&format!("Channel {} treble boost (dB)", ch)),
+                .with_description(&format!("Channel {} treble boost (dB)", ch))
+                .with_group("Channels")
+                .with_importance(ParameterImportance::FineTuning),
             );
         }
 
@@ -848,10 +892,7 @@ mod tests {
 
         // Set per-channel parameter
         plugin
-            .set_parameter(
-                ParameterId::from("low_gain_0"),
-                ParameterValue::Float(12.0),
-            )
+            .set_parameter(ParameterId::from("low_gain_0"), ParameterValue::Float(12.0))
             .unwrap();
 
         assert!(plugin.is_per_channel());
@@ -986,10 +1027,7 @@ mod tests {
 
         // Switch to per-channel mode
         plugin
-            .set_parameter(
-                ParameterId::from("low_gain_0"),
-                ParameterValue::Float(12.0),
-            )
+            .set_parameter(ParameterId::from("low_gain_0"), ParameterValue::Float(12.0))
             .unwrap();
         assert!(plugin.is_per_channel());
 

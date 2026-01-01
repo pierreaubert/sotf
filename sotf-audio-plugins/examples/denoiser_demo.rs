@@ -35,7 +35,9 @@ fn main() {
     let mut plugin = InPlacePluginAdapter::new(denoiser);
 
     // Initialize plugin
-    plugin.initialize(sample_rate).expect("Failed to initialize");
+    plugin
+        .initialize(sample_rate)
+        .expect("Failed to initialize");
 
     let info = plugin.info();
     println!("Plugin Info:");

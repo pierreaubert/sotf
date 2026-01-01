@@ -2,7 +2,9 @@ use crate::theme::Theme;
 use sotf_audio::LoudnessData;
 use sotf_audio::devices::AudioDevice;
 use sotf_audio_player::{Album, MusicLibrary, PluginChain, PluginType, Track};
-use sotf_plugins::speaker_config::{get_meter_groups, get_meter_groups_by_channels, make_fallback_channel, MeterGroupSpec};
+use sotf_plugins::speaker_config::{
+    MeterGroupSpec, get_meter_groups, get_meter_groups_by_channels, make_fallback_channel,
+};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -41,7 +43,7 @@ pub enum FocusedPane {
 pub enum MatrixEditMode {
     #[default]
     Header, // Editing input/output channels, preset
-    Grid,   // Editing matrix cells
+    Grid, // Editing matrix cells
 }
 
 /// Tree view mode for library
@@ -1052,7 +1054,7 @@ impl App {
             match self.plugin_chain.load_from_file(preset_name) {
                 Ok(_) => {
                     // Update BinauralDecoder input channels after loading
-                    self.plugin_chain.update_binaural_decoder_channels();
+                    self.plugin_chain.update_channel_dependent_plugins();
 
                     self.last_loaded_preset = Some(preset_name.clone());
                     self.request_plugin_update();
@@ -1463,7 +1465,7 @@ impl App {
     pub fn add_plugin(&mut self, plugin_type: &PluginType) {
         self.plugin_chain.add_plugin(plugin_type);
         // Update BinauralDecoder input channels after adding
-        self.plugin_chain.update_binaural_decoder_channels();
+        self.plugin_chain.update_channel_dependent_plugins();
         self.request_plugin_update();
     }
 
@@ -1473,14 +1475,14 @@ impl App {
             self.selected_plugin_index = self.plugin_chain.len() - 1;
         }
         // Update BinauralDecoder input channels after removal
-        self.plugin_chain.update_binaural_decoder_channels();
+        self.plugin_chain.update_channel_dependent_plugins();
         self.request_plugin_update();
     }
 
     pub fn toggle_plugin(&mut self, index: usize) {
         self.plugin_chain.toggle_plugin(index);
         // Update BinauralDecoder input channels after toggle
-        self.plugin_chain.update_binaural_decoder_channels();
+        self.plugin_chain.update_channel_dependent_plugins();
         self.request_plugin_update();
     }
 
@@ -1489,7 +1491,7 @@ impl App {
             self.plugin_chain.move_plugin(index, index - 1);
             self.selected_plugin_index = index - 1;
             // Update BinauralDecoder input channels after move
-            self.plugin_chain.update_binaural_decoder_channels();
+            self.plugin_chain.update_channel_dependent_plugins();
             self.request_plugin_update();
         }
     }
@@ -1499,7 +1501,7 @@ impl App {
             self.plugin_chain.move_plugin(index, index + 1);
             self.selected_plugin_index = index + 1;
             // Update BinauralDecoder input channels after move
-            self.plugin_chain.update_binaural_decoder_channels();
+            self.plugin_chain.update_channel_dependent_plugins();
             self.request_plugin_update();
         }
     }
@@ -1762,14 +1764,14 @@ impl App {
                     }
                     true
                 }
-                PluginSettings::Gain { gain_db } => match param_idx {
+                PluginSettings::Gain { gain_db, .. } => match param_idx {
                     0 => {
                         *gain_db = (*gain_db + delta * 0.5).clamp(-40.0, 40.0);
                         true
                     }
                     _ => false,
                 },
-                PluginSettings::EQ { filters } => {
+                PluginSettings::EQ { filters, .. } => {
                     if filters.is_empty() {
                         return false;
                     }
@@ -1964,10 +1966,22 @@ impl App {
                 } => {
                     match param_idx {
                         0 => *num_bands = (*num_bands as i32 + delta as i32).clamp(2, 5) as usize,
-                        1 => *crossover_freq_1 = (*crossover_freq_1 + delta * 10.0).clamp(20.0, 500.0),
-                        2 => *crossover_freq_2 = (*crossover_freq_2 + delta * 10.0).clamp(500.0, 5000.0),
-                        3 => *crossover_freq_3 = (*crossover_freq_3 + delta * 10.0).clamp(5000.0, 15000.0),
-                        4 => *crossover_freq_4 = (*crossover_freq_4 + delta * 10.0).clamp(10000.0, 18000.0),
+                        1 => {
+                            *crossover_freq_1 =
+                                (*crossover_freq_1 + delta * 10.0).clamp(20.0, 500.0)
+                        }
+                        2 => {
+                            *crossover_freq_2 =
+                                (*crossover_freq_2 + delta * 10.0).clamp(500.0, 5000.0)
+                        }
+                        3 => {
+                            *crossover_freq_3 =
+                                (*crossover_freq_3 + delta * 10.0).clamp(5000.0, 15000.0)
+                        }
+                        4 => {
+                            *crossover_freq_4 =
+                                (*crossover_freq_4 + delta * 10.0).clamp(10000.0, 18000.0)
+                        }
                         5 => *threshold_db = (*threshold_db + delta).clamp(-60.0, 0.0),
                         6 => *ratio = (*ratio + delta * 0.1).clamp(1.0, 20.0),
                         7 => *attack_ms = (*attack_ms + delta * 0.1).clamp(0.1, 100.0),
@@ -2003,10 +2017,22 @@ impl App {
                 } => {
                     match param_idx {
                         0 => *num_bands = (*num_bands as i32 + delta as i32).clamp(2, 5) as usize,
-                        1 => *crossover_freq_1 = (*crossover_freq_1 + delta * 10.0).clamp(20.0, 500.0),
-                        2 => *crossover_freq_2 = (*crossover_freq_2 + delta * 10.0).clamp(500.0, 5000.0),
-                        3 => *crossover_freq_3 = (*crossover_freq_3 + delta * 10.0).clamp(5000.0, 15000.0),
-                        4 => *crossover_freq_4 = (*crossover_freq_4 + delta * 10.0).clamp(10000.0, 18000.0),
+                        1 => {
+                            *crossover_freq_1 =
+                                (*crossover_freq_1 + delta * 10.0).clamp(20.0, 500.0)
+                        }
+                        2 => {
+                            *crossover_freq_2 =
+                                (*crossover_freq_2 + delta * 10.0).clamp(500.0, 5000.0)
+                        }
+                        3 => {
+                            *crossover_freq_3 =
+                                (*crossover_freq_3 + delta * 10.0).clamp(5000.0, 15000.0)
+                        }
+                        4 => {
+                            *crossover_freq_4 =
+                                (*crossover_freq_4 + delta * 10.0).clamp(10000.0, 18000.0)
+                        }
                         5 => *threshold_db = (*threshold_db + delta).clamp(-80.0, 0.0),
                         6 => *ratio = (*ratio + delta * 0.1).clamp(1.0, 20.0),
                         7 => *attack_ms = (*attack_ms + delta * 0.1).clamp(0.1, 50.0),
@@ -2040,10 +2066,21 @@ impl App {
                         1 => *speaker_angle_deg = (*speaker_angle_deg + delta).clamp(10.0, 60.0),
                         2 => *head_radius_m = (*head_radius_m + delta * 0.001).clamp(0.07, 0.12),
                         3 => *beta_base = (*beta_base + delta * 0.0001).clamp(0.0001, 0.1),
-                        4 => *beta_low_freq_boost = (*beta_low_freq_boost + delta).clamp(1.0, 100.0),
-                        5 => *beta_high_freq_boost = (*beta_high_freq_boost + delta).clamp(1.0, 100.0),
-                        6 => *head_shadow_cutoff_hz = (*head_shadow_cutoff_hz + delta * 100.0).clamp(1000.0, 10000.0),
-                        7 => *head_shadow_slope_db_per_octave = (*head_shadow_slope_db_per_octave + delta * 0.1).clamp(0.0, 12.0),
+                        4 => {
+                            *beta_low_freq_boost = (*beta_low_freq_boost + delta).clamp(1.0, 100.0)
+                        }
+                        5 => {
+                            *beta_high_freq_boost =
+                                (*beta_high_freq_boost + delta).clamp(1.0, 100.0)
+                        }
+                        6 => {
+                            *head_shadow_cutoff_hz =
+                                (*head_shadow_cutoff_hz + delta * 100.0).clamp(1000.0, 10000.0)
+                        }
+                        7 => {
+                            *head_shadow_slope_db_per_octave =
+                                (*head_shadow_slope_db_per_octave + delta * 0.1).clamp(0.0, 12.0)
+                        }
                         _ => return false,
                     }
                     true
@@ -2075,8 +2112,14 @@ impl App {
                     drift_smoothing,
                 } => {
                     match param_idx {
-                        0 => *correction_strength = (*correction_strength + delta * 0.1).clamp(0.0, 2.0),
-                        1 => *analysis_window_ms = (*analysis_window_ms + delta * 10.0).clamp(20.0, 500.0),
+                        0 => {
+                            *correction_strength =
+                                (*correction_strength + delta * 0.1).clamp(0.0, 2.0)
+                        }
+                        1 => {
+                            *analysis_window_ms =
+                                (*analysis_window_ms + delta * 10.0).clamp(20.0, 500.0)
+                        }
                         2 => *drift_smoothing = (*drift_smoothing + delta * 0.01).clamp(0.001, 1.0),
                         _ => return false,
                     }
@@ -2089,7 +2132,7 @@ impl App {
 
         // If speaker config changed, update downstream BinauralDecoder plugins
         if channel_count_changed {
-            self.plugin_chain.update_binaural_decoder_channels();
+            self.plugin_chain.update_channel_dependent_plugins();
         }
 
         result
@@ -2359,7 +2402,7 @@ impl App {
         match self.plugin_chain.load_from_file(&self.plugin_file_input) {
             Ok(_) => {
                 // Update BinauralDecoder input channels after loading
-                self.plugin_chain.update_binaural_decoder_channels();
+                self.plugin_chain.update_channel_dependent_plugins();
 
                 // Get the final filename (with .json appended if needed)
                 let filename = if self.plugin_file_input.ends_with(".json") {
@@ -2449,7 +2492,7 @@ impl App {
             match self.plugin_chain.load_from_file(&preset_filename) {
                 Ok(_) => {
                     // Update BinauralDecoder input channels after loading
-                    self.plugin_chain.update_binaural_decoder_channels();
+                    self.plugin_chain.update_channel_dependent_plugins();
 
                     log::info!(
                         "Successfully loaded preset: {} ({} plugins)",
@@ -2734,8 +2777,9 @@ impl App {
 
         // Update the currently selected plugin if it's an EQ
         if let Some(plugin) = self.plugin_chain.get_plugin_mut(self.selected_plugin_index) {
-            if matches!(plugin.settings, PluginSettings::EQ { .. }) {
-                plugin.settings = PluginSettings::EQ { filters };
+            if let PluginSettings::EQ { channels, .. } = &plugin.settings {
+                let channels = *channels;
+                plugin.settings = PluginSettings::EQ { channels, filters };
                 Ok(())
             } else {
                 Err("Selected plugin is not an EQ".to_string())
@@ -2897,7 +2941,11 @@ impl App {
                         .map(|ch| ChannelInfo {
                             index: ch.index,
                             name: ch.label.to_string(),
-                            display_name: ch.display_chars.iter().map(|s| (*s).to_string()).collect(),
+                            display_name: ch
+                                .display_chars
+                                .iter()
+                                .map(|s| (*s).to_string())
+                                .collect(),
                         })
                         .collect(),
                     muted: false,
@@ -2969,7 +3017,11 @@ impl App {
                             ChannelInfo {
                                 index: spec.index,
                                 name: spec.label.to_string(),
-                                display_name: spec.display_chars.iter().map(|s| (*s).to_string()).collect(),
+                                display_name: spec
+                                    .display_chars
+                                    .iter()
+                                    .map(|s| (*s).to_string())
+                                    .collect(),
                             }
                         })
                         .collect();
@@ -3197,11 +3249,11 @@ impl App {
 fn get_param_count(settings: &sotf_audio_player::PluginSettings) -> usize {
     use sotf_audio_player::PluginSettings;
     match settings {
-        PluginSettings::EQ { filters } => filters.len() * 4, // freq, q, gain, type for each filter
+        PluginSettings::EQ { filters, .. } => filters.len() * 4, // freq, q, gain, type for each filter
         PluginSettings::Gain { .. } => 1,                    // gain_db
         PluginSettings::Upmixer { .. } => 18, // speaker_config, gains (5), lfe_cutoff_hz, stereo_width, bandpass_hz, subharmonic (2), hr (2), safety_cap_db, decorrelation_mode, bypass_decorrelation, bypass_transient_detection, bypass_all_processing
         PluginSettings::Compressor { .. } => 10, // threshold, ratio, attack, release, knee, makeup_gain, mix, auto_makeup, link_channels, sidechain_hpf_hz
-        PluginSettings::Limiter { .. } => 5, // threshold, release, lookahead, soft, mix
+        PluginSettings::Limiter { .. } => 5,     // threshold, release, lookahead, soft, mix
         PluginSettings::Gate { .. } => 8, // threshold, ratio, attack, hold, release, mix, link_channels, sidechain_hpf_hz
         PluginSettings::LoudnessCompensation { .. } => 3, // target_lufs, min_gain, max_gain
         PluginSettings::BinauralDecoder { .. } => 5, // sofa_file, input_channels, enable_optimization, externalization, near_field_strength
@@ -3215,7 +3267,7 @@ fn get_param_count(settings: &sotf_audio_player::PluginSettings) -> usize {
         PluginSettings::MultibandExpander { .. } => 15, // num_bands, crossover_freq_1-4, threshold, ratio, attack, release, range, knee, hysteresis, hold, mix, link_channels
         PluginSettings::XTC { .. } => 8, // distance, speaker_angle, head_radius, beta_base, beta_low_boost, beta_high_boost, head_shadow_cutoff, head_shadow_slope
         PluginSettings::Denoiser { .. } => 7, // reduction_db, floor_db, smoothing, attack_ms, release_ms, low_latency, polyphonic_detection
-        PluginSettings::Pnd { .. } => 3,     // correction_strength, analysis_window_ms, drift_smoothing
+        PluginSettings::Pnd { .. } => 3, // correction_strength, analysis_window_ms, drift_smoothing
     }
 }
 
@@ -3498,7 +3550,7 @@ mod tests {
 
         let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
         let filters = match &plugin.settings {
-            PluginSettings::EQ { filters } => filters,
+            PluginSettings::EQ { filters, .. } => filters,
             _ => panic!("Expected EQ plugin"),
         };
         assert!(!filters.is_empty());
@@ -3513,7 +3565,7 @@ mod tests {
         assert!(app.adjust_selected_param(1.0));
         let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
         let filters = match &plugin.settings {
-            PluginSettings::EQ { filters } => filters,
+            PluginSettings::EQ { filters, .. } => filters,
             _ => panic!("Expected EQ plugin"),
         };
         assert_ne!(filters[0].frequency, orig_freq);
@@ -3523,7 +3575,7 @@ mod tests {
         assert!(app.adjust_selected_param(1.0));
         let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
         let filters = match &plugin.settings {
-            PluginSettings::EQ { filters } => filters,
+            PluginSettings::EQ { filters, .. } => filters,
             _ => panic!("Expected EQ plugin"),
         };
         assert_ne!(filters[0].q, orig_q);
@@ -3533,7 +3585,7 @@ mod tests {
         assert!(app.adjust_selected_param(1.0));
         let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
         let filters = match &plugin.settings {
-            PluginSettings::EQ { filters } => filters,
+            PluginSettings::EQ { filters, .. } => filters,
             _ => panic!("Expected EQ plugin"),
         };
         assert_ne!(filters[0].gain_db, orig_gain);
@@ -3543,7 +3595,7 @@ mod tests {
         assert!(app.adjust_selected_param(1.0));
         let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
         let filters = match &plugin.settings {
-            PluginSettings::EQ { filters } => filters,
+            PluginSettings::EQ { filters, .. } => filters,
             _ => panic!("Expected EQ plugin"),
         };
         assert_ne!(filters[0].filter_type, orig_type);
@@ -3717,15 +3769,17 @@ mod tests {
         let plugin_idx = app.plugin_chain.add_plugin(&PluginType::Limiter);
         app.editing_plugin_index = Some(plugin_idx);
         let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
-        let (orig_thresh, orig_rel, orig_mix) = match &plugin.settings {
+        let (orig_thresh, orig_rel, orig_look, orig_soft, orig_mix) = match &plugin.settings {
             PluginSettings::Limiter {
                 threshold_db,
                 release_ms,
+                lookahead_ms,
+                soft,
                 mix,
-            } => (*threshold_db, *release_ms, *mix),
+            } => (*threshold_db, *release_ms, *lookahead_ms, *soft, *mix),
             _ => panic!("Expected Limiter plugin"),
         };
-        for idx in 0..3 {
+        for idx in 0..5 {
             app.plugin_param_selection = idx;
             assert!(app.adjust_selected_param(-1.0));
         }
@@ -3733,11 +3787,15 @@ mod tests {
         if let PluginSettings::Limiter {
             threshold_db,
             release_ms,
+            lookahead_ms,
+            soft,
             mix,
         } = &plugin.settings
         {
             assert_ne!(*threshold_db, orig_thresh);
             assert_ne!(*release_ms, orig_rel);
+            assert_ne!(*lookahead_ms, orig_look);
+            assert_ne!(*soft, orig_soft);
             assert_ne!(*mix, orig_mix);
         }
 
@@ -3746,31 +3804,41 @@ mod tests {
         let plugin_idx = app.plugin_chain.add_plugin(&PluginType::Gate);
         app.editing_plugin_index = Some(plugin_idx);
         let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
-        let (orig_thresh, orig_ratio, orig_attack, orig_release, orig_mix, orig_link, orig_hpf) =
-            match &plugin.settings {
-                PluginSettings::Gate {
-                    threshold_db,
-                    ratio,
-                    attack_ms,
-                    release_ms,
-                    mix,
-                    link_channels,
-                    sidechain_hpf_hz,
-                } => (
-                    *threshold_db,
-                    *ratio,
-                    *attack_ms,
-                    *release_ms,
-                    *mix,
-                    *link_channels,
-                    *sidechain_hpf_hz,
-                ),
-                _ => panic!("Expected Gate plugin"),
-            };
-        // Adjust each parameter - mix (idx 4) decreases, hpf (idx 6) increases, others can go either way
-        for idx in 0..7 {
+        let (
+            orig_thresh,
+            orig_ratio,
+            orig_attack,
+            orig_hold,
+            orig_release,
+            orig_mix,
+            orig_link,
+            orig_hpf,
+        ) = match &plugin.settings {
+            PluginSettings::Gate {
+                threshold_db,
+                ratio,
+                attack_ms,
+                hold_ms,
+                release_ms,
+                mix,
+                link_channels,
+                sidechain_hpf_hz,
+            } => (
+                *threshold_db,
+                *ratio,
+                *attack_ms,
+                *hold_ms,
+                *release_ms,
+                *mix,
+                *link_channels,
+                *sidechain_hpf_hz,
+            ),
+            _ => panic!("Expected Gate plugin"),
+        };
+        // Adjust each parameter - mix (idx 5) decreases, hpf (idx 7) increases, others can go either way
+        for idx in 0..8 {
             app.plugin_param_selection = idx;
-            let delta = if idx == 4 { -1.0 } else { 1.0 }; // mix starts at max, decrease it
+            let delta = if idx == 5 { -1.0 } else { 1.0 }; // mix starts at max, decrease it
             assert!(app.adjust_selected_param(delta));
         }
         let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();
@@ -3778,6 +3846,7 @@ mod tests {
             threshold_db,
             ratio,
             attack_ms,
+            hold_ms,
             release_ms,
             mix,
             link_channels,
@@ -3787,6 +3856,7 @@ mod tests {
             assert_ne!(*threshold_db, orig_thresh);
             assert_ne!(*ratio, orig_ratio);
             assert_ne!(*attack_ms, orig_attack);
+            assert_ne!(*hold_ms, orig_hold);
             assert_ne!(*release_ms, orig_release);
             assert_ne!(*mix, orig_mix);
             assert_ne!(*link_channels, orig_link);

@@ -291,4 +291,3 @@ impl HeadphoneEqState {
         self.error_message = None;
     }
 }
-

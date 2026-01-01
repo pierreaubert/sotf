@@ -205,11 +205,11 @@ pub struct OptimizationUiState {
 pub mod calibration;
 pub mod queue;
 pub mod settings;
-pub mod toast;
 pub mod stats;
+pub mod toast;
 
-pub mod recording;
 pub mod headphone_eq;
+pub mod recording;
 pub mod room_eq;
 pub mod spinorama_eq;
 
@@ -225,8 +225,8 @@ pub use recording::{
     SpeakerConfiguration,
 };
 pub use room_eq::{
-    ChannelDspChain, ChannelMeasurement, ChannelOptResult, CrossoverType, DspChainMetadata,
-    DspChainOutput, DspPluginConfig, DriverDspChain, EqFilterConfig, OptimizationStatus,
+    ChannelDspChain, ChannelMeasurement, ChannelOptResult, CrossoverType, DriverDspChain,
+    DspChainMetadata, DspChainOutput, DspPluginConfig, EqFilterConfig, OptimizationStatus,
     RecordingConfiguration, RoomEqAlgorithm, RoomEqDataSource, RoomEqMeasurementsFile,
     RoomEqOptimizerConfig, RoomEqSpeakerConfig, RoomEqState, RoomEqStep, SpeakerConfigType,
 };

@@ -235,7 +235,7 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
 
                     // Update app state
                     app.position_secs = state.position_secs;
-                    app.loudness_info = state.loudness;
+                    app.loudness_info = state.output_loudness;
 
                     // Check if we should record a play (30s threshold)
                     if app.is_playing && state.is_playing {

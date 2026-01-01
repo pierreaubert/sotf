@@ -46,4 +46,3 @@ pub struct LibraryStats {
     /// Whether stats are valid (false = need recomputation)
     pub valid: bool,
 }
-

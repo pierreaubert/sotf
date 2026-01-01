@@ -46,25 +46,24 @@ pub use types::{CrossoverType, SpeakerConfigType};
 
 // Re-export params types
 pub use params::{
-    OptimizationParams, OptimizationParamsSerializable, ParamLimits,
     ALGORITHM_OPTIONS, CURVE_NAME_OPTIONS, DE_STRATEGY_OPTIONS, EQ_EXPORT_FORMAT_OPTIONS,
-    HEADPHONE_LOSS_OPTIONS, LOCAL_ALGO_OPTIONS, PEQ_MODEL_OPTIONS, SPEAKER_LOSS_OPTIONS,
-    get_export_extension, parse_loss_type, parse_peq_model,
+    HEADPHONE_LOSS_OPTIONS, LOCAL_ALGO_OPTIONS, OptimizationParams, OptimizationParamsSerializable,
+    PEQ_MODEL_OPTIONS, ParamLimits, SPEAKER_LOSS_OPTIONS, get_export_extension, parse_loss_type,
+    parse_peq_model,
 };
 
 // Re-export headphone types
 pub use headphone::{
-    HeadphoneOptResult, HeadphoneOptimizationResult, VisualizationCurves,
-    load_target_curve, parse_csv_curve, run_headphone_optimization, target_curves,
+    HeadphoneOptResult, HeadphoneOptimizationResult, VisualizationCurves, load_target_curve,
+    parse_csv_curve, run_headphone_optimization, target_curves,
 };
 
 // Re-export speaker types
 pub use speaker::{
     CallbackAction, CallbackConfig, Cea2034Data, MeasurementInput, OptimizationOutput,
-    OptimizationStage, PreviewCurves, ProgressCallbackConfig, ProgressUpdate,
-    SpeakerConfigTypeExt, SpeakerOptResult, SpeakerOptimizationCallback,
-    SpeakerOptimizationConfig, SpeakerOptimizationConfigExt, SpeakerOptimizationProgress,
-    SpeakerOptimizationResult, load_preview_curves, load_preview_curves_async,
-    run_speaker_optimization, run_speaker_optimization_extended,
-    run_speaker_optimization_with_callback,
+    OptimizationStage, PreviewCurves, ProgressCallbackConfig, ProgressUpdate, SpeakerConfigTypeExt,
+    SpeakerOptResult, SpeakerOptimizationCallback, SpeakerOptimizationConfig,
+    SpeakerOptimizationConfigExt, SpeakerOptimizationProgress, SpeakerOptimizationResult,
+    load_preview_curves, load_preview_curves_async, run_speaker_optimization,
+    run_speaker_optimization_extended, run_speaker_optimization_with_callback,
 };

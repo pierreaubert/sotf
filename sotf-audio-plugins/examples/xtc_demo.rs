@@ -28,7 +28,9 @@ fn main() {
     let mut plugin = XtcPlugin::from_params(params, sample_rate).expect("Failed to create plugin");
 
     // Initialize plugin
-    plugin.initialize(sample_rate).expect("Failed to initialize");
+    plugin
+        .initialize(sample_rate)
+        .expect("Failed to initialize");
 
     let info = plugin.info();
     println!("Plugin Info:");
@@ -37,7 +39,8 @@ fn main() {
     println!("  Description: {}", info.description);
     println!("  Input channels: {}", plugin.input_channels());
     println!("  Output channels: {}", plugin.output_channels());
-    println!("  Latency: {} samples ({:.2}ms @ {}Hz)",
+    println!(
+        "  Latency: {} samples ({:.2}ms @ {}Hz)",
         plugin.latency_samples(),
         plugin.latency_samples() as f32 * 1000.0 / sample_rate as f32,
         sample_rate
@@ -63,25 +66,25 @@ fn main() {
     };
 
     // Process audio
-    plugin.process(&input, &mut output, &context).expect("Failed to process audio");
+    plugin
+        .process(&input, &mut output, &context)
+        .expect("Failed to process audio");
 
     // Compute energy (skip initial latency period)
     let skip_samples = 2048;
-    let input_energy: f32 = input[skip_samples * 2..]
-        .iter()
-        .map(|x| x.powi(2))
-        .sum();
-    let output_energy: f32 = output[skip_samples * 2..]
-        .iter()
-        .map(|x| x.powi(2))
-        .sum();
+    let input_energy: f32 = input[skip_samples * 2..].iter().map(|x| x.powi(2)).sum();
+    let output_energy: f32 = output[skip_samples * 2..].iter().map(|x| x.powi(2)).sum();
 
     let energy_ratio = output_energy / input_energy;
 
     println!("Processing Results (stereo signal):");
     println!("  Input energy:  {:.2}", input_energy);
     println!("  Output energy: {:.2}", output_energy);
-    println!("  Energy ratio:  {:.3} ({:.1} dB)", energy_ratio, 10.0 * energy_ratio.log10());
+    println!(
+        "  Energy ratio:  {:.3} ({:.1} dB)",
+        energy_ratio,
+        10.0 * energy_ratio.log10()
+    );
     println!();
 
     // Demonstrate parameter adjustment
@@ -90,10 +93,7 @@ fn main() {
     // Change speaker distance
     use sotf_plugins::{ParameterId, ParameterValue};
     plugin
-        .set_parameter(
-            ParameterId::from("distance_m"),
-            ParameterValue::Float(3.0),
-        )
+        .set_parameter(ParameterId::from("distance_m"), ParameterValue::Float(3.0))
         .expect("Failed to set distance");
     println!("  Set distance to 3.0m");
 
@@ -108,10 +108,7 @@ fn main() {
 
     // Disable plugin
     plugin
-        .set_parameter(
-            ParameterId::from("enabled"),
-            ParameterValue::Bool(false),
-        )
+        .set_parameter(ParameterId::from("enabled"), ParameterValue::Bool(false))
         .expect("Failed to disable plugin");
     println!("  Disabled plugin");
 
@@ -126,7 +123,8 @@ fn main() {
         sample_rate,
         num_frames: bypass_frames,
     };
-    plugin.process(&bypass_input, &mut bypass_output, &bypass_context)
+    plugin
+        .process(&bypass_input, &mut bypass_output, &bypass_context)
         .expect("Failed to process audio");
 
     // Verify bypass
@@ -138,7 +136,10 @@ fn main() {
         }
     }
 
-    println!("  Bypass test: {}", if bypass_ok { "PASSED" } else { "FAILED" });
+    println!(
+        "  Bypass test: {}",
+        if bypass_ok { "PASSED" } else { "FAILED" }
+    );
     println!();
 
     println!("=== Demo Complete ===");

@@ -290,11 +290,13 @@ fn render_response_comparison_graph(
     let corrected_values: Vec<f64> = corrected.iter().map(|(_, db)| *db).collect();
 
     if frequencies.is_empty() {
-        return div().child(
-            Text::new("No data available")
-                .size(TextSize::Sm)
-                .color(theme.text_muted),
-        ).into_any_element();
+        return div()
+            .child(
+                Text::new("No data available")
+                    .size(TextSize::Sm)
+                    .color(theme.text_muted),
+            )
+            .into_any_element();
     }
 
     let chart_theme = theme_to_chart_theme(theme);
@@ -356,13 +358,7 @@ fn render_response_comparison_graph(
         .opacity(1.0)
         .theme(chart_theme.clone())
         .size(GRAPH_WIDTH, GRAPH_HEIGHT)
-        .add_series(
-            &corrected_values,
-            Some("Corrected"),
-            ORANGE,
-            2.0,
-            1.0,
-        );
+        .add_series(&corrected_values, Some("Corrected"), ORANGE, 2.0, 1.0);
 
     // Add trend lines if calculated
     if let Some((slope, intercept)) = orig_trend {
@@ -396,7 +392,9 @@ fn render_response_comparison_graph(
     let line_chart = chart_builder.build();
 
     // Build histogram if we have trend data
-    let hist_chart = if let (Some((slope_orig, int_orig)), Some((slope_corr, int_corr))) = (orig_trend, corr_trend) {
+    let hist_chart = if let (Some((slope_orig, int_orig)), Some((slope_corr, int_corr))) =
+        (orig_trend, corr_trend)
+    {
         let calculate_histogram =
             |freqs: &[f64], values: &[f64], slope: f64, intercept: f64| -> Vec<f64> {
                 let min_freq = 100.0;
@@ -422,18 +420,8 @@ fn render_response_comparison_graph(
                 bins
             };
 
-        let hist_orig = calculate_histogram(
-            &frequencies,
-            &original_values,
-            slope_orig,
-            int_orig,
-        );
-        let hist_corr = calculate_histogram(
-            &frequencies,
-            &corrected_values,
-            slope_corr,
-            int_corr,
-        );
+        let hist_orig = calculate_histogram(&frequencies, &original_values, slope_orig, int_orig);
+        let hist_corr = calculate_histogram(&frequencies, &corrected_values, slope_corr, int_corr);
 
         let labels = vec![
             "0-0.5", "0.5-1", "1-1.5", "1.5-2", "2-2.5", "2.5-3", "3-3.5", "3.5-4", ">4",

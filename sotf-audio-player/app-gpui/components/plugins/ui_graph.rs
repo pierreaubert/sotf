@@ -5,10 +5,10 @@
 
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::MenuItem;
 use gpui_ui_kit::workflow::{
     NodeId, Position, WorkflowCanvas, WorkflowGraph, WorkflowNodeData, WorkflowTheme,
 };
-use gpui_ui_kit::MenuItem;
 use sotf_audio::devices::AudioDevice;
 use sotf_audio_player::{PluginGraph, PluginSettings, PluginType, SpecialNodeType};
 
@@ -72,7 +72,14 @@ impl PlayerView {
 
         if !has_canvas {
             // Build workflow graph from plugin graph, or create a default graph
-            let (plugin_graph, output_device_name, output_channels, theme, input_devices, output_devices) = {
+            let (
+                plugin_graph,
+                output_device_name,
+                output_channels,
+                theme,
+                input_devices,
+                output_devices,
+            ) = {
                 let state = self.state.read(cx);
                 let output_device_name = state
                     .app
@@ -182,11 +189,9 @@ impl PlayerView {
                             .drag_over::<PaletteDragData>(|style, _, _, _| {
                                 style.bg(rgba(0x3b82f610))
                             })
-                            .on_drop(cx.listener(
-                                |view, data: &PaletteDragData, _window, cx| {
-                                    view.handle_palette_drop(data, cx);
-                                },
-                            ))
+                            .on_drop(cx.listener(|view, data: &PaletteDragData, _window, cx| {
+                                view.handle_palette_drop(data, cx);
+                            }))
                             .when_some(workflow_canvas, |el, canvas| el.child(canvas)),
                     ),
             )
@@ -396,35 +401,31 @@ impl PlayerView {
                     .text_color(theme.text_muted)
                     .child("INPUT"),
             )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_1()
-                    .px_2()
-                    .mb_3()
-                    .children(input_items.into_iter().map(|(label, item_type, color)| {
-                        let drag_data = PaletteDragData {
-                            item_type,
-                            label: label.to_string(),
-                            color,
-                        };
-                        div()
-                            .id(SharedString::from(format!("palette-{}", label)))
-                            .px_2()
-                            .py_1()
-                            .rounded_md()
-                            .bg(theme.background)
-                            .border_l_2()
-                            .border_color(color)
-                            .text_xs()
-                            .text_color(theme.text_secondary)
-                            .cursor_grab()
-                            .hover(|s| s.bg(theme.background_secondary))
-                            .on_drag(drag_data, |info, _pos, _window, cx| cx.new(|_| info.clone()))
-                            .child(label)
-                    })),
-            )
+            .child(div().flex().flex_col().gap_1().px_2().mb_3().children(
+                input_items.into_iter().map(|(label, item_type, color)| {
+                    let drag_data = PaletteDragData {
+                        item_type,
+                        label: label.to_string(),
+                        color,
+                    };
+                    div()
+                        .id(SharedString::from(format!("palette-{}", label)))
+                        .px_2()
+                        .py_1()
+                        .rounded_md()
+                        .bg(theme.background)
+                        .border_l_2()
+                        .border_color(color)
+                        .text_xs()
+                        .text_color(theme.text_secondary)
+                        .cursor_grab()
+                        .hover(|s| s.bg(theme.background_secondary))
+                        .on_drag(drag_data, |info, _pos, _window, cx| {
+                            cx.new(|_| info.clone())
+                        })
+                        .child(label)
+                }),
+            ))
             // Plugins section header
             .child(
                 div()
@@ -444,12 +445,7 @@ impl PlayerView {
                     .gap_1()
                     .px_2()
                     .mb_2()
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(theme.text_muted)
-                            .child(category),
-                    )
+                    .child(div().text_xs().text_color(theme.text_muted).child(category))
                     .children(plugins.into_iter().map(|(plugin_type, label)| {
                         let color = plugin_color(&plugin_type, &theme);
                         let drag_data = PaletteDragData {
@@ -469,7 +465,9 @@ impl PlayerView {
                             .text_color(theme.text_secondary)
                             .cursor_grab()
                             .hover(|s| s.bg(theme.background_secondary))
-                            .on_drag(drag_data, |info, _pos, _window, cx| cx.new(|_| info.clone()))
+                            .on_drag(drag_data, |info, _pos, _window, cx| {
+                                cx.new(|_| info.clone())
+                            })
                             .child(label)
                     }))
             }))
@@ -637,10 +635,7 @@ fn convert_plugin_graph(graph: &PluginGraph) -> WorkflowGraph {
     // Convert plugin nodes to workflow nodes
     for (graph_node_id, node) in &graph.nodes {
         let plugin_type = node.plugin.plugin_type();
-        let (input_ports, output_ports) = (
-            node.input_channels.min(8),
-            node.output_channels.min(8),
-        );
+        let (input_ports, output_ports) = (node.input_channels.min(8), node.output_channels.min(8));
 
         let height = 90.0 + ((input_ports.max(output_ports)).saturating_sub(2) as f32 * 8.0);
         let workflow_node = WorkflowNodeData::new(
@@ -663,10 +658,9 @@ fn convert_plugin_graph(graph: &PluginGraph) -> WorkflowGraph {
 
     // Convert connections
     for conn in &graph.connections {
-        if let (Some(&from_id), Some(&to_id)) = (
-            id_map.get(&conn.from_node),
-            id_map.get(&conn.to_node),
-        ) {
+        if let (Some(&from_id), Some(&to_id)) =
+            (id_map.get(&conn.from_node), id_map.get(&conn.to_node))
+        {
             let _ = workflow_graph.add_connection(from_id, conn.from_port, to_id, conn.to_port);
         }
     }
@@ -698,7 +692,7 @@ fn create_workflow_theme(theme: &Theme) -> WorkflowTheme {
         node_border_radius: 8.0,
         node_header_height: 28.0,
         node_content_padding: 8.0,
-        port_input: theme.info,    // Blue for input ports
+        port_input: theme.info,     // Blue for input ports
         port_output: theme.success, // Green for output ports
         port_hover: theme.accent_hover,
         port_valid: theme.success,
@@ -706,8 +700,8 @@ fn create_workflow_theme(theme: &Theme) -> WorkflowTheme {
         port_radius: 6.0,
         connection_color: theme.text_secondary,
         connection_selected: theme.accent,
-        connection_width: 4.0,       // Fat links (all channels)
-        connection_width_thin: 1.5,  // Thin links (single channel)
+        connection_width: 4.0,      // Fat links (all channels)
+        connection_width_thin: 1.5, // Thin links (single channel)
         connection_preview: Rgba {
             r: theme.accent.r,
             g: theme.accent.g,
@@ -725,7 +719,10 @@ fn create_workflow_theme(theme: &Theme) -> WorkflowTheme {
 }
 
 /// Build menu items for the workflow canvas context menu
-fn build_menu_items(input_devices: &[AudioDevice], output_devices: &[AudioDevice]) -> Vec<MenuItem> {
+fn build_menu_items(
+    input_devices: &[AudioDevice],
+    output_devices: &[AudioDevice],
+) -> Vec<MenuItem> {
     let mut items = Vec::new();
 
     // Input sources section
@@ -772,7 +769,10 @@ fn build_menu_items(input_devices: &[AudioDevice], output_devices: &[AudioDevice
     items.push(MenuItem::new("plugin-upmixer", "Upmixer"));
     items.push(MenuItem::new("plugin-binaural", "Binaural Decoder"));
     items.push(MenuItem::new("plugin-convolution", "Convolution"));
-    items.push(MenuItem::new("plugin-loudness-comp", "Loudness Compensation"));
+    items.push(MenuItem::new(
+        "plugin-loudness-comp",
+        "Loudness Compensation",
+    ));
     items.push(MenuItem::new("plugin-loudness-mon", "Loudness Monitor"));
     items.push(MenuItem::new("plugin-spectrum", "Spectrum Analyzer"));
     items.push(MenuItem::new("plugin-mute-solo", "Channel Mute/Solo"));
@@ -819,19 +819,21 @@ impl PlayerView {
             })
         });
 
-        let (node_name, node_type, plugin_type, plugin_node_id) = node_info
-            .unwrap_or_else(|| ("Unknown".to_string(), "unknown".to_string(), None, None));
+        let (node_name, node_type, plugin_type, plugin_node_id) =
+            node_info.unwrap_or_else(|| ("Unknown".to_string(), "unknown".to_string(), None, None));
 
         // Look up the actual plugin settings from the plugin graph
         let plugin_settings = plugin_node_id.as_ref().and_then(|id_str| {
-            sotf_audio_player::GraphNodeId::parse_str(id_str).ok().and_then(|uuid| {
-                state
-                    .app
-                    .plugin_graph
-                    .as_ref()
-                    .and_then(|graph| graph.nodes.get(&uuid))
-                    .map(|node| node.plugin.settings.clone())
-            })
+            sotf_audio_player::GraphNodeId::parse_str(id_str)
+                .ok()
+                .and_then(|uuid| {
+                    state
+                        .app
+                        .plugin_graph
+                        .as_ref()
+                        .and_then(|graph| graph.nodes.get(&uuid))
+                        .map(|node| node.plugin.settings.clone())
+                })
         });
 
         let state_for_close = self.state.clone();
@@ -1034,10 +1036,7 @@ impl PlayerView {
                     _ => div()
                         .text_sm()
                         .text_color(theme.text_muted)
-                        .child(format!(
-                            "Plugin type: {}",
-                            plugin_type.unwrap_or("Unknown")
-                        ))
+                        .child(format!("Plugin type: {}", plugin_type.unwrap_or("Unknown")))
                         .into_any_element(),
                 }
             }
@@ -1114,7 +1113,7 @@ impl PlayerView {
         let plugin_idx = 0; // Modal doesn't need actual index for display
 
         match settings {
-            PluginSettings::EQ { filters } => render_eq_plugin(
+            PluginSettings::EQ { filters, .. } => render_eq_plugin(
                 entity,
                 plugin_idx,
                 ui_eq::EqRenderState {
@@ -1127,7 +1126,7 @@ impl PlayerView {
             )
             .into_any_element(),
 
-            PluginSettings::Gain { gain_db } => render_gain_plugin(
+            PluginSettings::Gain { gain_db, .. } => render_gain_plugin(
                 entity,
                 plugin_idx,
                 ui_gain::GainRenderState {
@@ -1175,6 +1174,8 @@ impl PlayerView {
             PluginSettings::Limiter {
                 threshold_db,
                 release_ms,
+                lookahead_ms,
+                soft,
                 mix,
             } => render_limiter_plugin(
                 entity,
@@ -1182,6 +1183,8 @@ impl PlayerView {
                 ui_limiter::LimiterRenderState {
                     threshold_db: *threshold_db,
                     release_ms: *release_ms,
+                    lookahead_ms: *lookahead_ms,
+                    soft: *soft,
                     mix: *mix,
                     is_editing: false,
                     selected_param: 0,
@@ -1194,6 +1197,7 @@ impl PlayerView {
                 threshold_db,
                 ratio,
                 attack_ms,
+                hold_ms,
                 release_ms,
                 mix,
                 link_channels,
@@ -1205,6 +1209,7 @@ impl PlayerView {
                     threshold_db: *threshold_db,
                     ratio: *ratio,
                     attack_ms: *attack_ms,
+                    hold_ms: *hold_ms,
                     release_ms: *release_ms,
                     mix: *mix,
                     link_channels: *link_channels,

@@ -250,7 +250,6 @@ impl Theme {
             ThemeId::BlackAndWhite => Self::black_and_white(),
         }
     }
-
 }
 
 /// Helper function to create Rgba from hex value

@@ -19,7 +19,7 @@ impl App {
     pub fn add_plugin(&mut self, plugin_type: &sotf_audio_player::PluginType) {
         let new_index = self.plugin_chain.add_plugin(plugin_type);
         self.selected_plugin_index = new_index;
-        self.plugin_chain.update_binaural_decoder_channels();
+        self.plugin_chain.update_channel_dependent_plugins();
         self.pending_plugin_update = Some(PluginUpdateType::Structural);
         self.sync_spectrum_visible();
     }
@@ -27,7 +27,7 @@ impl App {
     pub fn toggle_plugin(&mut self, index: usize) {
         self.plugin_chain.toggle_plugin(index);
         // Update BinauralDecoder input channels after toggle
-        self.plugin_chain.update_binaural_decoder_channels();
+        self.plugin_chain.update_channel_dependent_plugins();
         self.pending_plugin_update = Some(PluginUpdateType::Structural);
         self.sync_spectrum_visible();
     }
@@ -37,7 +37,7 @@ impl App {
             self.plugin_chain.move_plugin(index, index - 1);
             self.selected_plugin_index = index - 1;
             // Update BinauralDecoder input channels after move
-            self.plugin_chain.update_binaural_decoder_channels();
+            self.plugin_chain.update_channel_dependent_plugins();
             self.pending_plugin_update = Some(PluginUpdateType::Structural);
         }
     }
@@ -47,7 +47,7 @@ impl App {
             self.plugin_chain.move_plugin(index, index + 1);
             self.selected_plugin_index = index + 1;
             // Update BinauralDecoder input channels after move
-            self.plugin_chain.update_binaural_decoder_channels();
+            self.plugin_chain.update_channel_dependent_plugins();
             self.pending_plugin_update = Some(PluginUpdateType::Structural);
         }
     }
@@ -72,7 +72,7 @@ impl App {
         if index < self.plugin_chain.len() {
             self.plugin_chain.remove_plugin(index);
             // Update BinauralDecoder input channels after removal
-            self.plugin_chain.update_binaural_decoder_channels();
+            self.plugin_chain.update_channel_dependent_plugins();
             self.pending_plugin_update = Some(PluginUpdateType::Structural);
             self.sync_spectrum_visible();
             // Adjust selection
@@ -427,6 +427,8 @@ impl App {
                 PluginSettings::Limiter {
                     threshold_db,
                     release_ms,
+                    lookahead_ms,
+                    soft,
                     mix,
                 } => match param_idx {
                     0 => {
@@ -438,6 +440,14 @@ impl App {
                         true
                     }
                     2 => {
+                        *lookahead_ms = (*lookahead_ms + delta as f64 * 0.1).max(0.0).min(20.0);
+                        true
+                    }
+                    3 => {
+                        *soft = !*soft;
+                        true
+                    }
+                    4 => {
                         *mix = (*mix + delta as f64 * 0.05).max(0.0).min(1.0);
                         true
                     }
@@ -447,6 +457,7 @@ impl App {
                     threshold_db,
                     ratio,
                     attack_ms,
+                    hold_ms,
                     release_ms,
                     mix,
                     link_channels,
@@ -465,18 +476,22 @@ impl App {
                         true
                     }
                     3 => {
-                        *release_ms = (*release_ms + delta as f64).max(1.0).min(1000.0);
+                        *hold_ms = (*hold_ms + delta as f64 * 5.0).max(0.0).min(1000.0);
                         true
                     }
                     4 => {
-                        *mix = (*mix + delta as f64 * 0.05).max(0.0).min(1.0);
+                        *release_ms = (*release_ms + delta as f64).max(1.0).min(1000.0);
                         true
                     }
                     5 => {
-                        *link_channels = !*link_channels;
+                        *mix = (*mix + delta as f64 * 0.05).max(0.0).min(1.0);
                         true
                     }
                     6 => {
+                        *link_channels = !*link_channels;
+                        true
+                    }
+                    7 => {
                         *sidechain_hpf_hz =
                             (*sidechain_hpf_hz + delta as f64 * 5.0).max(0.0).min(200.0);
                         true
@@ -507,7 +522,7 @@ impl App {
                     }
                     _ => false,
                 },
-                PluginSettings::EQ { filters } => {
+                PluginSettings::EQ { filters, .. } => {
                     if filters.is_empty() {
                         return false;
                     }
@@ -650,7 +665,7 @@ impl App {
                     }
                     _ => false,
                 },
-                PluginSettings::Gain { gain_db } => match param_idx {
+                PluginSettings::Gain { gain_db, .. } => match param_idx {
                     0 => {
                         *gain_db = (*gain_db + delta).clamp(-24.0, 24.0);
                         true
@@ -945,8 +960,7 @@ impl App {
                         }
                         2 => {
                             // head_radius stored in meters, display in cm, so /100 back
-                            *head_radius_m =
-                                (*head_radius_m + delta * 0.001).clamp(0.05, 0.15);
+                            *head_radius_m = (*head_radius_m + delta * 0.001).clamp(0.05, 0.15);
                             true
                         }
                         3 => {
@@ -983,6 +997,7 @@ impl App {
                     attack_ms,
                     release_ms,
                     low_latency,
+                    polyphonic_detection,
                 } => {
                     use sotf_audio_player::param_specs::denoiser::*;
                     match param_idx {
@@ -1015,6 +1030,10 @@ impl App {
                             *low_latency = !*low_latency;
                             true
                         }
+                        6 => {
+                            *polyphonic_detection = !*polyphonic_detection;
+                            true
+                        }
                         _ => false,
                     }
                 }
@@ -1026,13 +1045,17 @@ impl App {
                     use sotf_audio_player::param_specs::pnd::*;
                     match param_idx {
                         0 => {
-                            *correction_strength = (*correction_strength + delta * 0.1)
-                                .clamp(CORRECTION_STRENGTH_MIN as f64, CORRECTION_STRENGTH_MAX as f64);
+                            *correction_strength = (*correction_strength + delta * 0.1).clamp(
+                                CORRECTION_STRENGTH_MIN as f64,
+                                CORRECTION_STRENGTH_MAX as f64,
+                            );
                             true
                         }
                         1 => {
-                            *analysis_window_ms = (*analysis_window_ms + delta * 10.0)
-                                .clamp(ANALYSIS_WINDOW_MS_MIN as f64, ANALYSIS_WINDOW_MS_MAX as f64);
+                            *analysis_window_ms = (*analysis_window_ms + delta * 10.0).clamp(
+                                ANALYSIS_WINDOW_MS_MIN as f64,
+                                ANALYSIS_WINDOW_MS_MAX as f64,
+                            );
                             true
                         }
                         2 => {
@@ -1049,7 +1072,7 @@ impl App {
         };
 
         if result && channel_count_changed {
-            self.plugin_chain.update_binaural_decoder_channels();
+            self.plugin_chain.update_channel_dependent_plugins();
         }
 
         if result {
@@ -1314,7 +1337,7 @@ impl App {
                         channel_count_changed = true;
                     }
                 }
-                PluginSettings::EQ { filters } => {
+                PluginSettings::EQ { filters, .. } => {
                     let filter_idx = param_idx / 4;
                     let field_idx = param_idx % 4;
 
@@ -1357,7 +1380,7 @@ impl App {
                     }
                 }
                 // Implement other plugins as needed, Upmixer is priority
-                PluginSettings::Gain { gain_db } => {
+                PluginSettings::Gain { gain_db, .. } => {
                     if param_idx == 0 {
                         *gain_db = value.clamp(-60.0, 12.0);
                         update_needed = true;
@@ -1444,6 +1467,8 @@ impl App {
                 PluginSettings::Limiter {
                     threshold_db,
                     release_ms,
+                    lookahead_ms,
+                    soft,
                     mix,
                 } => match param_idx {
                     0 => {
@@ -1455,6 +1480,14 @@ impl App {
                         update_needed = true;
                     }
                     2 => {
+                        *lookahead_ms = value.clamp(0.0, 20.0);
+                        update_needed = true;
+                    }
+                    3 => {
+                        *soft = value > 0.5;
+                        update_needed = true;
+                    }
+                    4 => {
                         *mix = (value / 100.0).clamp(0.0, 1.0); // Convert from 0-100% to 0-1
                         update_needed = true;
                     }
@@ -1464,6 +1497,7 @@ impl App {
                     threshold_db,
                     ratio,
                     attack_ms,
+                    hold_ms,
                     release_ms,
                     mix,
                     link_channels,
@@ -1478,23 +1512,27 @@ impl App {
                         update_needed = true;
                     }
                     2 => {
-                        *attack_ms = value.clamp(0.01, 50.0);
+                        *attack_ms = value.clamp(0.1, 100.0);
                         update_needed = true;
                     }
                     3 => {
-                        *release_ms = value.clamp(1.0, 1000.0);
+                        *hold_ms = value.clamp(0.0, 1000.0);
                         update_needed = true;
                     }
                     4 => {
-                        *mix = (value / 100.0).clamp(0.0, 1.0); // Convert from 0-100% to 0-1
+                        *release_ms = value.clamp(1.0, 1000.0);
                         update_needed = true;
                     }
                     5 => {
-                        *link_channels = value > 0.5;
+                        *mix = (value / 100.0).clamp(0.0, 1.0); // Convert from 0-100% to 0-1
                         update_needed = true;
                     }
                     6 => {
-                        *sidechain_hpf_hz = value.clamp(20.0, 500.0);
+                        *link_channels = value > 0.5;
+                        update_needed = true;
+                    }
+                    7 => {
+                        *sidechain_hpf_hz = value.clamp(0.0, 200.0);
                         update_needed = true;
                     }
                     _ => {}
@@ -1580,8 +1618,7 @@ impl App {
                     use sotf_audio_player::param_specs::expander::*;
                     match param_idx {
                         0 => {
-                            *threshold_db =
-                                value.clamp(THRESHOLD_MIN as f64, THRESHOLD_MAX as f64);
+                            *threshold_db = value.clamp(THRESHOLD_MIN as f64, THRESHOLD_MAX as f64);
                             update_needed = true;
                         }
                         1 => {
@@ -1647,13 +1684,12 @@ impl App {
                     use sotf_audio_player::param_specs::multiband_compressor::*;
                     match param_idx {
                         0 => {
-                            *num_bands =
-                                (value as usize).clamp(NUM_BANDS_MIN, NUM_BANDS_MAX);
+                            *num_bands = (value as usize).clamp(NUM_BANDS_MIN, NUM_BANDS_MAX);
                             update_needed = true;
                         }
                         1 => {
-                            *crossover_preset = (value as i32)
-                                .clamp(CROSSOVER_PRESET_MIN, CROSSOVER_PRESET_MAX);
+                            *crossover_preset =
+                                (value as i32).clamp(CROSSOVER_PRESET_MIN, CROSSOVER_PRESET_MAX);
                             update_needed = true;
                         }
                         2 => {
@@ -1677,8 +1713,7 @@ impl App {
                             update_needed = true;
                         }
                         6 => {
-                            *threshold_db =
-                                value.clamp(THRESHOLD_MIN as f64, THRESHOLD_MAX as f64);
+                            *threshold_db = value.clamp(THRESHOLD_MIN as f64, THRESHOLD_MAX as f64);
                             update_needed = true;
                         }
                         7 => {
@@ -1729,13 +1764,12 @@ impl App {
                     use sotf_audio_player::param_specs::multiband_expander::*;
                     match param_idx {
                         0 => {
-                            *num_bands =
-                                (value as usize).clamp(NUM_BANDS_MIN, NUM_BANDS_MAX);
+                            *num_bands = (value as usize).clamp(NUM_BANDS_MIN, NUM_BANDS_MAX);
                             update_needed = true;
                         }
                         1 => {
-                            *crossover_preset = (value as i32)
-                                .clamp(CROSSOVER_PRESET_MIN, CROSSOVER_PRESET_MAX);
+                            *crossover_preset =
+                                (value as i32).clamp(CROSSOVER_PRESET_MIN, CROSSOVER_PRESET_MAX);
                             update_needed = true;
                         }
                         2 => {
@@ -1759,8 +1793,7 @@ impl App {
                             update_needed = true;
                         }
                         6 => {
-                            *threshold_db =
-                                value.clamp(THRESHOLD_MIN as f64, THRESHOLD_MAX as f64);
+                            *threshold_db = value.clamp(THRESHOLD_MIN as f64, THRESHOLD_MAX as f64);
                             update_needed = true;
                         }
                         7 => {
@@ -1849,12 +1882,88 @@ impl App {
                     }
                     _ => {}
                 },
+                PluginSettings::Denoiser {
+                    reduction_db,
+                    floor_db,
+                    smoothing,
+                    attack_ms,
+                    release_ms,
+                    low_latency,
+                    polyphonic_detection,
+                } => {
+                    use sotf_audio_player::param_specs::denoiser::*;
+                    match param_idx {
+                        0 => {
+                            *reduction_db =
+                                value.clamp(REDUCTION_DB_MIN as f64, REDUCTION_DB_MAX as f64);
+                            update_needed = true;
+                        }
+                        1 => {
+                            *floor_db = value.clamp(FLOOR_DB_MIN as f64, FLOOR_DB_MAX as f64);
+                            update_needed = true;
+                        }
+                        2 => {
+                            // Value comes as percentage, convert to 0-0.99
+                            *smoothing =
+                                (value / 100.0).clamp(SMOOTHING_MIN as f64, SMOOTHING_MAX as f64);
+                            update_needed = true;
+                        }
+                        3 => {
+                            *attack_ms = value.clamp(ATTACK_MS_MIN as f64, ATTACK_MS_MAX as f64);
+                            update_needed = true;
+                        }
+                        4 => {
+                            *release_ms = value.clamp(RELEASE_MS_MIN as f64, RELEASE_MS_MAX as f64);
+                            update_needed = true;
+                        }
+                        5 => {
+                            *low_latency = value > 0.5;
+                            update_needed = true;
+                        }
+                        6 => {
+                            *polyphonic_detection = value > 0.5;
+                            update_needed = true;
+                        }
+                        _ => {}
+                    }
+                }
+                PluginSettings::Pnd {
+                    correction_strength,
+                    analysis_window_ms,
+                    drift_smoothing,
+                } => {
+                    use sotf_audio_player::param_specs::pnd::*;
+                    match param_idx {
+                        0 => {
+                            // Value comes as percentage, convert to 0-2.0
+                            *correction_strength = (value / 100.0).clamp(
+                                CORRECTION_STRENGTH_MIN as f64,
+                                CORRECTION_STRENGTH_MAX as f64,
+                            );
+                            update_needed = true;
+                        }
+                        1 => {
+                            *analysis_window_ms = value.clamp(
+                                ANALYSIS_WINDOW_MS_MIN as f64,
+                                ANALYSIS_WINDOW_MS_MAX as f64,
+                            );
+                            update_needed = true;
+                        }
+                        2 => {
+                            // Value comes as ×1000, convert back
+                            *drift_smoothing = (value / 1000.0)
+                                .clamp(DRIFT_SMOOTHING_MIN as f64, DRIFT_SMOOTHING_MAX as f64);
+                            update_needed = true;
+                        }
+                        _ => {}
+                    }
+                }
                 _ => {}
             }
         }
 
         if channel_count_changed {
-            self.plugin_chain.update_binaural_decoder_channels();
+            self.plugin_chain.update_channel_dependent_plugins();
         }
 
         if update_needed {
@@ -1973,7 +2082,7 @@ impl App {
                     _ => return, // No reset for others or unknown
                 }
             }
-            PluginSettings::Gain { gain_db } => {
+            PluginSettings::Gain { gain_db, .. } => {
                 if param_idx == 0 {
                     *gain_db
                 } else {
@@ -1983,6 +2092,46 @@ impl App {
             PluginSettings::Convolution { mix, gain_db, .. } => match param_idx {
                 0 => *mix,
                 1 => *gain_db,
+                _ => return,
+            },
+            PluginSettings::Denoiser {
+                reduction_db,
+                floor_db,
+                smoothing,
+                attack_ms,
+                release_ms,
+                low_latency,
+                polyphonic_detection,
+            } => match param_idx {
+                0 => *reduction_db,
+                1 => *floor_db,
+                2 => *smoothing * 100.0, // Convert to percentage for UI
+                3 => *attack_ms,
+                4 => *release_ms,
+                5 => {
+                    if *low_latency {
+                        1.0
+                    } else {
+                        0.0
+                    }
+                }
+                6 => {
+                    if *polyphonic_detection {
+                        1.0
+                    } else {
+                        0.0
+                    }
+                }
+                _ => return,
+            },
+            PluginSettings::Pnd {
+                correction_strength,
+                analysis_window_ms,
+                drift_smoothing,
+            } => match param_idx {
+                0 => *correction_strength * 100.0, // Convert to percentage for UI
+                1 => *analysis_window_ms,
+                2 => *drift_smoothing * 1000.0, // Convert to ×1000 for UI
                 _ => return,
             },
             _ => return,
@@ -2013,8 +2162,9 @@ impl App {
 
         // Update the currently editing plugin
         if let Some(plugin) = self.get_editing_plugin_mut() {
-            if matches!(plugin.settings, PluginSettings::EQ { .. }) {
-                plugin.settings = PluginSettings::EQ { filters };
+            if let PluginSettings::EQ { channels, .. } = &plugin.settings {
+                let channels = *channels;
+                plugin.settings = PluginSettings::EQ { channels, filters };
                 self.pending_plugin_update = Some(PluginUpdateType::Structural);
                 Ok(())
             } else {
@@ -2168,7 +2318,7 @@ impl App {
         match self.plugin_chain.load_from_file(&self.plugin_file_input) {
             Ok(_) => {
                 // Update BinauralDecoder input channels after loading
-                self.plugin_chain.update_binaural_decoder_channels();
+                self.plugin_chain.update_channel_dependent_plugins();
 
                 // Get the final filename (with .json appended if needed)
                 let filename = if self.plugin_file_input.ends_with(".json") {
@@ -2207,7 +2357,7 @@ impl App {
             match self.plugin_chain.load_from_file(&preset_filename) {
                 Ok(_) => {
                     // Update BinauralDecoder input channels after loading
-                    self.plugin_chain.update_binaural_decoder_channels();
+                    self.plugin_chain.update_channel_dependent_plugins();
 
                     self.toast_message = Some(ToastMessage::success(format!(
                         "Loaded preset: {} ({} plugins)",
@@ -2251,10 +2401,10 @@ impl App {
 pub fn get_param_count(settings: &PluginSettings) -> usize {
     match settings {
         PluginSettings::Upmixer { .. } => 32, // All 32 upmixer parameters
-        PluginSettings::EQ { filters } => filters.len() * 4, // freq, q, gain, type for each filter
+        PluginSettings::EQ { filters, .. } => filters.len() * 4, // freq, q, gain, type for each filter
         PluginSettings::Compressor { .. } => 10, // threshold, ratio, attack, release, knee, makeup_gain, mix, auto_makeup, link_channels, sidechain_hpf_hz
-        PluginSettings::Gate { .. } => 7, // threshold, ratio, attack, release, mix, link_channels, sidechain_hpf_hz
-        PluginSettings::Limiter { .. } => 3, // threshold, release, mix
+        PluginSettings::Gate { .. } => 8, // threshold, ratio, attack, hold, release, mix, link_channels, sidechain_hpf_hz
+        PluginSettings::Limiter { .. } => 5, // threshold, release, lookahead, soft, mix
         PluginSettings::LoudnessCompensation { .. } => 4, // low_freq, low_gain, high_freq, high_gain
         PluginSettings::BinauralDecoder { .. } => 5, // sofa_file, input_channels, enable_optimization, externalization, near_field_strength
         PluginSettings::Convolution { .. } => 2,     // mix, gain_db
@@ -2267,7 +2417,7 @@ pub fn get_param_count(settings: &PluginSettings) -> usize {
         PluginSettings::MultibandCompressor { .. } => 13, // num_bands, crossover_preset, crossover_freq_1-4, threshold, ratio, attack, release, knee, mix, link_channels
         PluginSettings::MultibandExpander { .. } => 16, // num_bands, crossover_preset, crossover_freq_1-4, threshold, ratio, attack, release, range, knee, hysteresis, hold, mix, link_channels
         PluginSettings::XTC { .. } => 8, // distance, angle, head_radius, beta_base, beta_low_freq_boost, beta_high_freq_boost, head_shadow_cutoff, head_shadow_slope
-        PluginSettings::Denoiser { .. } => 6, // reduction_db, floor_db, smoothing, attack_ms, release_ms, low_latency
-        PluginSettings::Pnd { .. } => 3,     // correction_strength, analysis_window_ms, drift_smoothing
+        PluginSettings::Denoiser { .. } => 7, // reduction_db, floor_db, smoothing, attack_ms, release_ms, low_latency, polyphonic_detection
+        PluginSettings::Pnd { .. } => 3, // correction_strength, analysis_window_ms, drift_smoothing
     }
 }

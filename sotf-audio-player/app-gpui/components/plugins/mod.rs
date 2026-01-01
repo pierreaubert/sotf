@@ -86,7 +86,7 @@ pub fn render_plugin_content(
     plugin_data: Option<std::sync::Arc<dyn std::any::Any + Send + Sync>>,
 ) -> AnyElement {
     match settings {
-        PluginSettings::EQ { filters } => {
+        PluginSettings::EQ { filters, .. } => {
             let selected_band_idx = selected_band_idx.min(filters.len().saturating_sub(1));
             render_eq_plugin(
                 entity.clone(),
@@ -101,7 +101,7 @@ pub fn render_plugin_content(
             )
             .into_any_element()
         }
-        PluginSettings::Gain { gain_db } => render_gain_plugin(
+        PluginSettings::Gain { gain_db, .. } => render_gain_plugin(
             entity.clone(),
             plugin_idx,
             ui_gain::GainRenderState {
@@ -147,6 +147,8 @@ pub fn render_plugin_content(
         PluginSettings::Limiter {
             threshold_db,
             release_ms,
+            lookahead_ms,
+            soft,
             mix,
         } => render_limiter_plugin(
             entity.clone(),
@@ -154,6 +156,8 @@ pub fn render_plugin_content(
             ui_limiter::LimiterRenderState {
                 threshold_db: *threshold_db,
                 release_ms: *release_ms,
+                lookahead_ms: *lookahead_ms,
+                soft: *soft,
                 mix: *mix,
                 is_editing,
                 selected_param,
@@ -165,6 +169,7 @@ pub fn render_plugin_content(
             threshold_db,
             ratio,
             attack_ms,
+            hold_ms,
             release_ms,
             mix,
             link_channels,
@@ -176,6 +181,7 @@ pub fn render_plugin_content(
                 threshold_db: *threshold_db,
                 ratio: *ratio,
                 attack_ms: *attack_ms,
+                hold_ms: *hold_ms,
                 release_ms: *release_ms,
                 mix: *mix,
                 link_channels: *link_channels,
@@ -540,6 +546,7 @@ pub fn render_plugin_content(
             attack_ms,
             release_ms,
             low_latency,
+            polyphonic_detection,
         } => render_denoiser_plugin(
             entity.clone(),
             plugin_idx,
@@ -550,6 +557,7 @@ pub fn render_plugin_content(
                 attack_ms: *attack_ms,
                 release_ms: *release_ms,
                 low_latency: *low_latency,
+                polyphonic_detection: *polyphonic_detection,
                 is_editing,
                 selected_param,
             },
@@ -572,6 +580,6 @@ pub fn render_plugin_content(
             },
             theme,
         )
-        .into_any_element()
+        .into_any_element(),
     }
 }

@@ -81,6 +81,17 @@ impl fmt::Display for ParameterValue {
     }
 }
 
+/// Importance level for UI generation and responsive design
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ParameterImportance {
+    /// Always visible, core functionality
+    Critical,
+    /// Often used, visible in detailed view
+    Useful,
+    /// Rarely used, visible in expert mode or expanded view
+    FineTuning,
+}
+
 /// Parameter definition with metadata
 #[derive(Debug, Clone)]
 pub struct Parameter {
@@ -90,6 +101,10 @@ pub struct Parameter {
     pub name: String,
     /// Optional description
     pub description: Option<String>,
+    /// Logical group name (e.g., "Dynamics", "EQ")
+    pub group: String,
+    /// Importance level
+    pub importance: ParameterImportance,
     /// Default value
     pub default_value: ParameterValue,
     /// Minimum value (for numeric parameters)
@@ -105,6 +120,8 @@ impl Parameter {
             id: ParameterId::from(id),
             name: name.to_string(),
             description: None,
+            group: "General".to_string(),
+            importance: ParameterImportance::Useful,
             default_value: ParameterValue::Float(default),
             min_value: Some(ParameterValue::Float(min)),
             max_value: Some(ParameterValue::Float(max)),
@@ -117,6 +134,8 @@ impl Parameter {
             id: ParameterId::from(id),
             name: name.to_string(),
             description: None,
+            group: "General".to_string(),
+            importance: ParameterImportance::Useful,
             default_value: ParameterValue::Int(default),
             min_value: Some(ParameterValue::Int(min)),
             max_value: Some(ParameterValue::Int(max)),
@@ -129,6 +148,8 @@ impl Parameter {
             id: ParameterId::from(id),
             name: name.to_string(),
             description: None,
+            group: "General".to_string(),
+            importance: ParameterImportance::Useful,
             default_value: ParameterValue::Bool(default),
             min_value: None,
             max_value: None,
@@ -138,6 +159,18 @@ impl Parameter {
     /// Set description
     pub fn with_description(mut self, description: &str) -> Self {
         self.description = Some(description.to_string());
+        self
+    }
+
+    /// Set group
+    pub fn with_group(mut self, group: &str) -> Self {
+        self.group = group.to_string();
+        self
+    }
+
+    /// Set importance
+    pub fn with_importance(mut self, importance: ParameterImportance) -> Self {
+        self.importance = importance;
         self
     }
 

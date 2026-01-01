@@ -12,7 +12,9 @@ use crate::app::types::PluginUpdateType;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use sotf_audio_player::{apply_matrix_preset, db_to_linear, detect_matrix_preset, get_channel_label};
+use sotf_audio_player::{
+    apply_matrix_preset, db_to_linear, detect_matrix_preset, get_channel_label,
+};
 
 // Constants for matrix cell sizing
 const CELL_SIZE: f32 = 48.0;
@@ -60,7 +62,8 @@ pub fn render_matrix_plugin(
     state: MatrixRenderState,
     theme: &Theme,
 ) -> impl IntoElement {
-    let preset_name = detect_matrix_preset(state.input_channels, state.output_channels, state.matrix);
+    let preset_name =
+        detect_matrix_preset(state.input_channels, state.output_channels, state.matrix);
 
     div()
         .flex()
@@ -171,7 +174,13 @@ fn render_preset_buttons(
                 } else {
                     theme.text_secondary
                 })
-                .hover(|s| s.bg(if is_active { theme.accent } else { theme.surface_hover }))
+                .hover(|s| {
+                    s.bg(if is_active {
+                        theme.accent
+                    } else {
+                        theme.surface_hover
+                    })
+                })
                 .child(preset)
                 .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                     entity_clone.update(cx, |state, _| {
@@ -184,7 +193,8 @@ fn render_preset_buttons(
                             } = plugin.settings
                             {
                                 apply_matrix_preset(in_ch, out_ch, matrix, &preset_owned);
-                                state.app.pending_plugin_update = Some(PluginUpdateType::Structural);
+                                state.app.pending_plugin_update =
+                                    Some(PluginUpdateType::Structural);
                             }
                         }
                     });
@@ -234,15 +244,11 @@ fn render_matrix_grid(
                 })),
         )
         // Grid rows
-        .children((0..state.output_channels).map(|out_idx| {
-            render_matrix_row(
-                entity.clone(),
-                plugin_idx,
-                out_idx,
-                state,
-                theme,
-            )
-        }))
+        .children(
+            (0..state.output_channels).map(|out_idx| {
+                render_matrix_row(entity.clone(), plugin_idx, out_idx, state, theme)
+            }),
+        )
 }
 
 /// Render a single row of the matrix grid
@@ -376,7 +382,8 @@ fn render_matrix_cell(
                             let idx = cell_index(input_idx, output_idx, input_channels);
                             if idx < matrix.len() {
                                 matrix[idx] = 0.0;
-                                state.app.pending_plugin_update = Some(PluginUpdateType::Structural);
+                                state.app.pending_plugin_update =
+                                    Some(PluginUpdateType::Structural);
                             }
                         }
                     }
@@ -398,7 +405,8 @@ fn render_matrix_cell(
                             if idx < matrix.len() {
                                 // Toggle: if > 0.5, set to 0; otherwise set to 1
                                 matrix[idx] = if matrix[idx] > 0.5 { 0.0 } else { 1.0 };
-                                state.app.pending_plugin_update = Some(PluginUpdateType::Structural);
+                                state.app.pending_plugin_update =
+                                    Some(PluginUpdateType::Structural);
                             }
                         }
                     }
@@ -434,7 +442,8 @@ fn render_matrix_cell(
                                 };
                                 let new_db = (current_db + delta).clamp(MIN_DB, MAX_DB);
                                 matrix[idx] = db_to_linear(new_db);
-                                state.app.pending_plugin_update = Some(PluginUpdateType::Structural);
+                                state.app.pending_plugin_update =
+                                    Some(PluginUpdateType::Structural);
                             }
                         }
                     }

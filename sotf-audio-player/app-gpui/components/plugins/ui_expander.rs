@@ -140,20 +140,18 @@ pub fn render_expander_plugin(
                                 )),
                         ),
                 )
-                // Column 3: Range, Knee, Hysteresis, Hold knobs
+                // Column 3: Shape sliders (Range, Knee, Hysteresis, Hold)
                 .child(
                     div()
                         .flex()
                         .flex_col()
-                        .justify_between()
+                        .gap_2()
+                        .child(render_section_title("SHAPE", theme))
                         .child(
                             div()
                                 .flex()
-                                .flex_col()
                                 .gap_2()
-                                .child(render_section_title("SHAPE", theme))
-                                // Range knob
-                                .child(render_knob(
+                                .child(render_vertical_slider_sized(
                                     entity.clone(),
                                     plugin_idx,
                                     "Range",
@@ -165,10 +163,10 @@ pub fn render_expander_plugin(
                                     state.selected_param,
                                     state.is_editing,
                                     Some('g'),
+                                    Some(SLIDER_HEIGHT),
                                     theme,
                                 ))
-                                // Knee knob
-                                .child(render_knob(
+                                .child(render_vertical_slider_sized(
                                     entity.clone(),
                                     plugin_idx,
                                     "Knee",
@@ -180,19 +178,13 @@ pub fn render_expander_plugin(
                                     state.selected_param,
                                     state.is_editing,
                                     Some('k'),
+                                    Some(SLIDER_HEIGHT),
                                     theme,
-                                )),
-                        )
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap_2()
-                                // Hysteresis knob
-                                .child(render_knob(
+                                ))
+                                .child(render_vertical_slider_sized(
                                     entity.clone(),
                                     plugin_idx,
-                                    "Hysteresis",
+                                    "Hyst.",
                                     state.hysteresis_db,
                                     HYSTERESIS_MIN as f64,
                                     HYSTERESIS_MAX as f64,
@@ -201,10 +193,10 @@ pub fn render_expander_plugin(
                                     state.selected_param,
                                     state.is_editing,
                                     Some('y'),
+                                    Some(SLIDER_HEIGHT),
                                     theme,
                                 ))
-                                // Hold knob
-                                .child(render_knob(
+                                .child(render_vertical_slider_sized(
                                     entity.clone(),
                                     plugin_idx,
                                     "Hold",
@@ -216,6 +208,7 @@ pub fn render_expander_plugin(
                                     state.selected_param,
                                     state.is_editing,
                                     Some('h'),
+                                    Some(SLIDER_HEIGHT),
                                     theme,
                                 )),
                         ),
@@ -247,20 +240,15 @@ pub fn render_expander_plugin(
                                         ),
                                 )
                                 // Toggle button
-                                .child(
-                                    div()
-                                        .flex()
-                                        .justify_end()
-                                        .child(render_toggle_button(
-                                            entity.clone(),
-                                            plugin_idx,
-                                            state.link_channels,
-                                            9, // link_channels param index
-                                            state.selected_param,
-                                            state.is_editing,
-                                            theme,
-                                        )),
-                                )
+                                .child(div().flex().justify_end().child(render_toggle_button(
+                                    entity.clone(),
+                                    plugin_idx,
+                                    state.link_channels,
+                                    9, // link_channels param index
+                                    state.selected_param,
+                                    state.is_editing,
+                                    theme,
+                                )))
                                 // Mix knob
                                 .child(render_knob(
                                     entity.clone(),

@@ -1,6 +1,6 @@
-// ============================================================================ 
+// ============================================================================
 // Upmixer Plugin - Stereo to Multi-Channel Surround
-// ============================================================================ 
+// ============================================================================
 //
 // This plugin converts stereo (2 channels) to multichannel surround sound
 // using FFT-based Direct/Ambient decomposition and VBAP panning.
@@ -16,10 +16,10 @@
 // Output channel mapping depends on selected configuration
 
 use super::param_specs::upmixer::*;
-use super::parameters::{Parameter, ParameterId, ParameterValue};
+use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
-use super::speaker_config::{SpeakerConfig, get_speaker_config};
 use super::smoothing::Smoother;
+use super::speaker_config::{SpeakerConfig, get_speaker_config};
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
 use std::sync::Arc;
@@ -48,9 +48,9 @@ const PHASE_SHIFT_180: Complex<f32> = Complex::new(-1.0, 0.0); // -1
 const PHASE_SHIFT_270: Complex<f32> = Complex::new(0.0, -1.0); // -i
 */
 
-// ============================================================================ 
+// ============================================================================
 // Plugin Implementation
-// ============================================================================ 
+// ============================================================================
 
 /// Stereo to multi-channel surround upmixer using FFT-based Direct/Ambient decomposition
 pub struct UpmixerPlugin {
@@ -414,7 +414,7 @@ impl UpmixerPlugin {
         let mut plugin = Self {
             fft_size,
             hop_size,
-            sample_rate, 
+            sample_rate,
             speaker_config,
             num_output_channels,
 
@@ -694,7 +694,9 @@ impl Plugin for UpmixerPlugin {
 4=7.1.2, 5=7.1.4, 6=9.1.4, 7=9.1.6,
 8=2.0, 9=5.0.
 Controls output layout and number of channels.",
-            ),
+            )
+            .with_group("Output")
+            .with_importance(ParameterImportance::Critical),
             Parameter::new_float(
                 "gain_front_direct",
                 "Front Direct Gain",
@@ -707,7 +709,9 @@ Controls output layout and number of channels.",
 Range: 0.0-2.0, default 1.0.
 Higher values make the front image more focused and dry;
 lower values rely more on ambient and surround energy.",
-            ),
+            )
+            .with_group("Front")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_float(
                 "gain_front_ambient",
                 "Front Ambient Gain",
@@ -720,7 +724,9 @@ lower values rely more on ambient and surround energy.",
 Range: 0.0-2.0, default 0.5.
 Increase to widen and enliven the front stage;
 decrease for a more center-focused, direct front.",
-            ),
+            )
+            .with_group("Front")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_float(
                 "gain_rear_ambient",
                 "Rear Ambient Gain",
@@ -732,7 +738,9 @@ decrease for a more center-focused, direct front.",
                 "Ambient gain for surround and rear channels.
 Range: 0.0-2.0, default 1.0.
 Use <1.0 for subtle ambience, >1.0 for a more enveloping surround field.",
-            ),
+            )
+            .with_group("Surround")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_float(
                 "height_gain",
                 "Height Gain",
@@ -745,7 +753,9 @@ Use <1.0 for subtle ambience, >1.0 for a more enveloping surround field.",
 Range: 0.0-2.0, default 1.0.
 0.0 disables height channels; higher values raise the contribution
 of height speakers relative to the bed layer.",
-            ),
+            )
+            .with_group("Height")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_float(
                 "lfe_gain",
                 "LFE Gain",
@@ -757,7 +767,9 @@ of height speakers relative to the bed layer.",
                 "Gain for LFE/subwoofer channel.
 Range: 0.0-2.0, default 1.0.
 Controls overall subwoofer level after the mains/LFE crossover.",
-            ),
+            )
+            .with_group("LFE")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_float(
                 "lfe_cutoff_hz",
                 "LFE Cutoff (Hz)",
@@ -770,7 +782,9 @@ Controls overall subwoofer level after the mains/LFE crossover.",
 Range: 20-180 Hz, default 120 Hz.
 Lower values keep more bass in mains; higher values route
 more low-frequency energy into the subwoofer.",
-            ),
+            )
+            .with_group("LFE")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_float(
                 "stereo_width",
                 "Stereo Width",
@@ -783,7 +797,9 @@ more low-frequency energy into the subwoofer.",
 Range: 0.0-1.0, default 0.5.
 0.0 keeps L/R wide; 1.0 collapses toward mono/center;
 intermediate values balance width and center focus.",
-            ),
+            )
+            .with_group("Front")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_float(
                 "center_spread",
                 "Center Spread",
@@ -796,7 +812,9 @@ intermediate values balance width and center focus.",
 Range: 0.0-1.0, default 0.0.
 0.0 sends coherent center energy to the C speaker;
 1.0 moves it into a phantom center across L/R.",
-            ),
+            )
+            .with_group("Front")
+            .with_importance(ParameterImportance::FineTuning),
             Parameter::new_float(
                 "bandpass_hz",
                 "Upmix Crossover (Hz)",
@@ -809,7 +827,9 @@ Range: 0.0-1.0, default 0.0.
 Range: 150-350 Hz, default 250 Hz.
 Below this frequency content stays mainly in fronts + LFE;
 above it participates in the direct/ambient upmix.",
-            ),
+            )
+            .with_group("Analysis")
+            .with_importance(ParameterImportance::FineTuning),
             Parameter::new_bool(
                 "enable_subharmonic_synth",
                 "Sub-Harmonic Synth",
@@ -819,7 +839,9 @@ above it participates in the direct/ambient upmix.",
                 "Enables optional sub-harmonic synthesis on the LFE.
 Default: off. When enabled, a low-frequency tone is added to the
 subwoofer, driven by the LFE envelope for extra rumble.",
-            ),
+            )
+            .with_group("LFE")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_float(
                 "subharmonic_gain",
                 "Sub-Harmonic Gain",
@@ -832,7 +854,9 @@ subwoofer, driven by the LFE envelope for extra rumble.",
 Range: 0.0-1.0, default 0.5.
 Controls how loud the synthesized low-frequency component is
 relative to the original LFE signal.",
-            ),
+            )
+            .with_group("LFE")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_bool(
                 "enable_hr_direct",
                 "Multi-Resolution Analysis",
@@ -842,7 +866,9 @@ relative to the original LFE signal.",
                 "Enables multi-resolution analysis for optimal time/frequency resolution.
 Default: ON. Uses short FFT (512 samples) for transients and long FFT (2048) for ambient.
 Adaptively blends based on transient detection for sharper attacks and smooth ambience.",
-            ),
+            )
+            .with_group("Enhancement")
+            .with_importance(ParameterImportance::FineTuning),
             Parameter::new_float(
                 "hr_sharpen",
                 "HR Sharpen",
@@ -856,7 +882,9 @@ Range: 0.0-1.0, default 1.0.
 0.0 effectively disables the HR contribution even if enabled;
 1.0 applies the full transient-driven HR emphasis and ducking
 of the main front field.",
-            ),
+            )
+            .with_group("Enhancement")
+            .with_importance(ParameterImportance::FineTuning),
             Parameter::new_float(
                 "safety_cap_db",
                 "Safety Cap (dB)",
@@ -869,7 +897,9 @@ of the main front field.",
 Range: 0.0-3.0 dB, default 3.0 dB.
 If a block's peak level after upmixing would exceed this value
 above unity, the block is scaled down to stay within the cap.",
-            ),
+            )
+            .with_group("Output")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_int(
                 "decorrelation_mode",
                 "Decorrelation Mode",
@@ -881,7 +911,9 @@ above unity, the block is scaled down to stay within the cap.",
                 "Mode for ambient decorrelation.
 0 = Velvet Noise (Static, smooth, no artifacts) - Default
 1 = LFO Phase (Dynamic, subtle motion, may have metallic artifacts)",
-            ),
+            )
+            .with_group("Analysis")
+            .with_importance(ParameterImportance::FineTuning),
             // Sub-harmonic synthesis parameters
             Parameter::new_float(
                 "subharmonic_freq_hz",
@@ -894,7 +926,9 @@ above unity, the block is scaled down to stay within the cap.",
                 "Sub-harmonic synthesis frequency in Hz.
 Range: 20-80 Hz, default 40 Hz.
 Lower values produce deeper rumble, higher values are more audible.",
-            ),
+            )
+            .with_group("LFE")
+            .with_importance(ParameterImportance::FineTuning),
             Parameter::new_float(
                 "subharmonic_attack_ms",
                 "Sub-Harmonic Attack",
@@ -906,7 +940,9 @@ Lower values produce deeper rumble, higher values are more audible.",
                 "Sub-harmonic envelope attack time in milliseconds.
 Range: 1-100 ms, default 10 ms.
 Faster attack follows LFE transients more closely.",
-            ),
+            )
+            .with_group("LFE")
+            .with_importance(ParameterImportance::FineTuning),
             Parameter::new_float(
                 "subharmonic_release_ms",
                 "Sub-Harmonic Release",
@@ -918,7 +954,9 @@ Faster attack follows LFE transients more closely.",
                 "Sub-harmonic envelope release time in milliseconds.
 Range: 10-500 ms, default 50 ms.
 Longer release creates smoother decay.",
-            ),
+            )
+            .with_group("LFE")
+            .with_importance(ParameterImportance::FineTuning),
             // Decorrelation parameters
             Parameter::new_float(
                 "decorrelation_lfo_rate_hz",
@@ -931,7 +969,9 @@ Longer release creates smoother decay.",
                 "LFO rate for decorrelation phase modulation.
 Range: 0.01-1.0 Hz, default 0.15 Hz.
 Higher values add more motion but may cause artifacts.",
-            ),
+            )
+            .with_group("Enhancement")
+            .with_importance(ParameterImportance::FineTuning),
             Parameter::new_float(
                 "velvet_noise_duration_ms",
                 "Velvet Noise Duration",
@@ -943,7 +983,9 @@ Higher values add more motion but may cause artifacts.",
                 "Velvet noise decorrelator duration in milliseconds.
 Range: 10-100 ms, default 30 ms.
 Longer duration creates smoother diffusion.",
-            ),
+            )
+            .with_group("Enhancement")
+            .with_importance(ParameterImportance::FineTuning),
             Parameter::new_float(
                 "velvet_noise_density",
                 "Velvet Noise Density",
@@ -955,7 +997,9 @@ Longer duration creates smoother diffusion.",
                 "Velvet noise pulse density (pulses per second).
 Range: 500-5000, default 2000.
 Higher density creates denser, smoother decorrelation.",
-            ),
+            )
+            .with_group("Enhancement")
+            .with_importance(ParameterImportance::FineTuning),
             // Height channel parameters
             Parameter::new_float(
                 "height_hf_cap_hz",
@@ -968,7 +1012,9 @@ Higher density creates denser, smoother decorrelation.",
                 "High-frequency cap for height channels in Hz.
 Range: 8000-20000 Hz, default 16000 Hz.
 Limits extreme highs in overhead speakers.",
-            ),
+            )
+            .with_group("Height")
+            .with_importance(ParameterImportance::FineTuning),
             Parameter::new_float(
                 "height_transient_reduction",
                 "Height Transient Reduction",
@@ -980,7 +1026,9 @@ Limits extreme highs in overhead speakers.",
                 "Transient reduction for height channels.
 Range: 0.0-1.0, default 0.6.
 Reduces height channel level during transients for coherence.",
-            ),
+            )
+            .with_group("Height")
+            .with_importance(ParameterImportance::FineTuning),
             Parameter::new_float(
                 "height_direct_leak",
                 "Height Direct Leak",
@@ -992,7 +1040,9 @@ Reduces height channel level during transients for coherence.",
                 "Direct signal leak into height channels.
 Range: 0.0-0.5, default 0.15.
 Allows some direct sound into overheads for air and presence.",
-            ),
+            )
+            .with_group("Height")
+            .with_importance(ParameterImportance::FineTuning),
             // Surround routing parameters
             Parameter::new_float(
                 "surround_direct_bleed",
@@ -1005,7 +1055,9 @@ Allows some direct sound into overheads for air and presence.",
                 "Direct signal bleed into surround channels.
 Range: 0.0-1.0, default 0.50.
 Higher values create more cohesive surround image.",
-            ),
+            )
+            .with_group("Surround")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_float(
                 "rear_ambient_boost",
                 "Rear Ambient Boost",
@@ -1017,7 +1069,9 @@ Higher values create more cohesive surround image.",
                 "Ambient gain boost for rear channels.
 Range: 1.0-3.0x, default 1.5x.
 Increases envelopment from rear speakers.",
-            ),
+            )
+            .with_group("Surround")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_float(
                 "rear_late_reflection",
                 "Rear Late Reflection",
@@ -1029,7 +1083,9 @@ Increases envelopment from rear speakers.",
                 "Late reflection level for rear height channels.
 Range: 0.0-0.5, default 0.10.
 Adds late reflections to rear heights for depth.",
-            ),
+            )
+            .with_group("Surround")
+            .with_importance(ParameterImportance::FineTuning),
             // Ambient parameters
             Parameter::new_float(
                 "ambient_boost",
@@ -1042,7 +1098,9 @@ Adds late reflections to rear heights for depth.",
                 "Ambient gain boost factor.
 Range: 0.5-2.0x, default 1.2x.
 Multiplier applied to coherence-derived ambient gain.",
-            ),
+            )
+            .with_group("Enhancement")
+            .with_importance(ParameterImportance::Useful),
             // Dialogue detection parameters
             Parameter::new_float(
                 "dialogue_weight",
@@ -1055,7 +1113,9 @@ Multiplier applied to coherence-derived ambient gain.",
                 "Maximum dialogue routing weight.
 Range: 0.0-1.0, default 0.4.
 Higher values route more detected dialogue to center.",
-            ),
+            )
+            .with_group("Enhancement")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_float(
                 "voice_freq_min_hz",
                 "Voice Freq Min",
@@ -1067,7 +1127,9 @@ Higher values route more detected dialogue to center.",
                 "Voice detection frequency range minimum.
 Range: 200-800 Hz, default 500 Hz.
 Lower bound for dialogue detection analysis.",
-            ),
+            )
+            .with_group("Analysis")
+            .with_importance(ParameterImportance::FineTuning),
             Parameter::new_float(
                 "voice_freq_max_hz",
                 "Voice Freq Max",
@@ -1079,7 +1141,9 @@ Lower bound for dialogue detection analysis.",
                 "Voice detection frequency range maximum.
 Range: 2000-5000 Hz, default 3000 Hz.
 Upper bound for dialogue detection analysis.",
-            ),
+            )
+            .with_group("Analysis")
+            .with_importance(ParameterImportance::FineTuning),
         ]
     }
 
@@ -1449,7 +1513,7 @@ Upper bound for dialogue detection analysis.",
 
         // Precompute LR4 crossover gains for mains/LFE split
         self.update_crossover_gains();
-        
+
         // Initialize smoothers
         let time_ms = 50.0;
         self.gain_front_direct.set_time(time_ms, sample_rate);
@@ -1530,7 +1594,6 @@ Upper bound for dialogue detection analysis.",
         output: &mut [f32],
         context: &ProcessContext,
     ) -> PluginResult<()> {
-        
         // Update smoothers once per block
         // (For optimal quality this would be per-sample, but block-rate is acceptable for these gains)
         self.gain_front_direct.next();
@@ -1539,7 +1602,7 @@ Upper bound for dialogue detection analysis.",
         self.height_gain.next();
         self.lfe_gain.next();
         self.subharmonic_gain.next();
-    
+
         // If bypass is enabled, just copy stereo input to output and return
         if self.bypass_all_processing {
             let num_frames = context.num_frames;

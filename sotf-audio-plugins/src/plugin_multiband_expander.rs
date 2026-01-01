@@ -16,7 +16,7 @@
 // - Per-band overrides with solo/bypass
 
 use super::param_specs::multiband_expander::*;
-use super::parameters::{Parameter, ParameterId, ParameterValue};
+use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use super::smoothing::Smoother;
 use autoeq_iir::{Biquad, BiquadFilterType};
@@ -31,9 +31,9 @@ use std::sync::Arc;
 
 /// Crossover presets (same as multiband compressor)
 pub const CROSSOVER_PRESETS: &[(f32, f32, f32, f32)] = &[
-    (200.0, 2000.0, 8000.0, 12000.0),   // Preset 1: Classic 200/2k
-    (100.0, 3000.0, 8000.0, 12000.0),   // Preset 2: Wide mid 100/3k
-    (250.0, 4000.0, 10000.0, 14000.0),  // Preset 3: Hi emphasis 250/4k
+    (200.0, 2000.0, 8000.0, 12000.0),  // Preset 1: Classic 200/2k
+    (100.0, 3000.0, 8000.0, 12000.0),  // Preset 2: Wide mid 100/3k
+    (250.0, 4000.0, 10000.0, 14000.0), // Preset 3: Hi emphasis 250/4k
 ];
 
 /// Per-band expander parameters (optional overrides)
@@ -373,7 +373,7 @@ pub struct MultibandExpanderPlugin {
     band_params: Vec<BandExpanderParams>,
     crossover_points: Vec<CrossoverPoint>,
     band_expanders: Vec<BandExpander>,
-    
+
     // Flat buffer for better cache locality [band * stride + index]
     band_buffers: Vec<f32>,
     band_levels_db: Vec<f32>,
@@ -417,10 +417,8 @@ impl MultibandExpanderPlugin {
             .map(|_| BandExpander::new(channels))
             .collect();
 
-        let crossover_frequencies = Self::get_crossover_frequencies(
-            params.crossover_preset,
-            &params.crossover_frequencies,
-        );
+        let crossover_frequencies =
+            Self::get_crossover_frequencies(params.crossover_preset, &params.crossover_frequencies);
 
         // Initialize smoother (50ms smoothing time)
         let threshold_smoother = Smoother::new(params.threshold_db, 50.0, sample_rate);
@@ -488,11 +486,8 @@ impl MultibandExpanderPlugin {
         let num_crossovers = self.num_bands - 1;
         for i in 0..num_crossovers {
             let freq = self.crossover_frequencies.get(i).copied().unwrap_or(1000.0);
-            self.crossover_points.push(CrossoverPoint::new(
-                self.channels,
-                freq,
-                self.sample_rate,
-            ));
+            self.crossover_points
+                .push(CrossoverPoint::new(self.channels, freq, self.sample_rate));
         }
     }
 
@@ -595,15 +590,15 @@ impl MultibandExpanderPlugin {
 
     fn split_bands(&mut self, input: &[f32], num_frames: usize) {
         let required_len = self.num_bands * num_frames * self.channels;
-        
+
         // Ensure band buffers are allocated
         if self.band_buffers.len() < required_len {
             self.band_buffers.resize(required_len, 0.0);
         }
-        
+
         // Reset buffers
         self.band_buffers[0..required_len].fill(0.0);
-        
+
         let stride = num_frames * self.channels;
 
         for frame in 0..num_frames {
@@ -613,10 +608,10 @@ impl MultibandExpanderPlugin {
 
                 for (xover_idx, crossover) in self.crossover_points.iter_mut().enumerate() {
                     let low = crossover.process_lowpass(ch, remaining);
-                    
+
                     let band_idx = xover_idx * stride + idx;
                     self.band_buffers[band_idx] += low;
-                    
+
                     remaining = crossover.process_highpass(ch, remaining);
                 }
 
@@ -629,14 +624,14 @@ impl MultibandExpanderPlugin {
     fn process_bands(&mut self, num_frames: usize) {
         let any_solo = (0..self.num_bands).any(|b| self.is_band_solo(b));
         let stride = num_frames * self.channels;
-        
+
         let smoothed_threshold = self.threshold_smoother.next();
 
         for band in 0..self.num_bands {
             let bypass = self.is_band_bypass(band);
             let solo = self.is_band_solo(band);
             let muted = any_solo && !solo;
-            
+
             let band_offset = band * stride;
 
             if muted {
@@ -649,12 +644,13 @@ impl MultibandExpanderPlugin {
                 continue;
             }
 
-            let threshold = if let Some(p) = self.band_params.get(band).and_then(|b| b.threshold_db) {
+            let threshold = if let Some(p) = self.band_params.get(band).and_then(|b| b.threshold_db)
+            {
                 p
             } else {
                 smoothed_threshold
             };
-            
+
             let ratio = self.get_band_ratio(band);
             let knee = self.get_band_knee(band);
             let range = self.get_band_range(band);
@@ -774,7 +770,9 @@ impl MultibandExpanderPlugin {
                 } else {
                     if input_db < close_threshold {
                         band_exp.gate_state[ch] = GateState::Closing;
-                        Self::calculate_expansion_attenuation(input_db, threshold, ratio, knee, range)
+                        Self::calculate_expansion_attenuation(
+                            input_db, threshold, ratio, knee, range,
+                        )
                     } else {
                         0.0
                     }
@@ -805,7 +803,7 @@ impl MultibandExpanderPlugin {
 
     fn sum_bands(&self, output: &mut [f32], num_frames: usize) {
         let stride = num_frames * self.channels;
-        
+
         for frame in 0..num_frames {
             for ch in 0..self.channels {
                 let idx = frame * self.channels + ch;
@@ -846,7 +844,9 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                 NUM_BANDS_MIN as i32,
                 NUM_BANDS_MAX as i32,
             )
-            .with_description("Number of frequency bands"),
+            .with_description("Number of frequency bands")
+            .with_group("Configuration")
+            .with_importance(ParameterImportance::Critical),
             Parameter::new_int(
                 "crossover_preset",
                 "Preset",
@@ -854,7 +854,9 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                 CROSSOVER_PRESET_MIN,
                 CROSSOVER_PRESET_MAX,
             )
-            .with_description("Crossover preset"),
+            .with_description("Crossover preset")
+            .with_group("Crossover")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_float(
                 "crossover_freq_1",
                 "Xover 1",
@@ -862,7 +864,9 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                 CROSSOVER_FREQ_1_MIN,
                 CROSSOVER_FREQ_1_MAX,
             )
-            .with_description("Low/Mid crossover (Hz)"),
+            .with_description("Low/Mid crossover (Hz)")
+            .with_group("Crossover")
+            .with_importance(ParameterImportance::FineTuning),
             Parameter::new_float(
                 "crossover_freq_2",
                 "Xover 2",
@@ -870,7 +874,9 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                 CROSSOVER_FREQ_2_MIN,
                 CROSSOVER_FREQ_2_MAX,
             )
-            .with_description("Mid/High crossover (Hz)"),
+            .with_description("Mid/High crossover (Hz)")
+            .with_group("Crossover")
+            .with_importance(ParameterImportance::FineTuning),
             Parameter::new_float(
                 "crossover_freq_3",
                 "Xover 3",
@@ -878,7 +884,9 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                 CROSSOVER_FREQ_3_MIN,
                 CROSSOVER_FREQ_3_MAX,
             )
-            .with_description("High/Ultra crossover (Hz)"),
+            .with_description("High/Ultra crossover (Hz)")
+            .with_group("Crossover")
+            .with_importance(ParameterImportance::FineTuning),
             Parameter::new_float(
                 "crossover_freq_4",
                 "Xover 4",
@@ -886,7 +894,9 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                 CROSSOVER_FREQ_4_MIN,
                 CROSSOVER_FREQ_4_MAX,
             )
-            .with_description("Ultra/Air crossover (Hz)"),
+            .with_description("Ultra/Air crossover (Hz)")
+            .with_group("Crossover")
+            .with_importance(ParameterImportance::FineTuning),
             Parameter::new_float(
                 "threshold",
                 "Threshold",
@@ -894,11 +904,17 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                 THRESHOLD_MIN,
                 THRESHOLD_MAX,
             )
-            .with_description("Global expansion threshold (dB)"),
+            .with_description("Global expansion threshold (dB)")
+            .with_group("Dynamics")
+            .with_importance(ParameterImportance::Critical),
             Parameter::new_float("ratio", "Ratio", RATIO_DEFAULT, RATIO_MIN, RATIO_MAX)
-                .with_description("Global expansion ratio"),
+                .with_description("Global expansion ratio")
+                .with_group("Dynamics")
+                .with_importance(ParameterImportance::Critical),
             Parameter::new_float("attack", "Attack", ATTACK_DEFAULT, ATTACK_MIN, ATTACK_MAX)
-                .with_description("Global attack time (ms)"),
+                .with_description("Global attack time (ms)")
+                .with_group("Timing")
+                .with_importance(ParameterImportance::Critical),
             Parameter::new_float(
                 "release",
                 "Release",
@@ -906,11 +922,17 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                 RELEASE_MIN,
                 RELEASE_MAX,
             )
-            .with_description("Global release time (ms)"),
+            .with_description("Global release time (ms)")
+            .with_group("Timing")
+            .with_importance(ParameterImportance::Critical),
             Parameter::new_float("knee", "Knee", KNEE_DEFAULT, KNEE_MIN, KNEE_MAX)
-                .with_description("Global soft knee (dB)"),
+                .with_description("Global soft knee (dB)")
+                .with_group("Dynamics")
+                .with_importance(ParameterImportance::Useful),
             Parameter::new_float("range", "Range", RANGE_DEFAULT, RANGE_MIN, RANGE_MAX)
-                .with_description("Maximum attenuation (dB)"),
+                .with_description("Maximum attenuation (dB)")
+                .with_group("Dynamics")
+                .with_importance(ParameterImportance::Useful),
             Parameter::new_float(
                 "hysteresis",
                 "Hysteresis",
@@ -918,13 +940,21 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                 HYSTERESIS_MIN,
                 HYSTERESIS_MAX,
             )
-            .with_description("Hysteresis range (dB)"),
+            .with_description("Hysteresis range (dB)")
+            .with_group("Dynamics")
+            .with_importance(ParameterImportance::FineTuning),
             Parameter::new_float("hold", "Hold", HOLD_DEFAULT, HOLD_MIN, HOLD_MAX)
-                .with_description("Hold time (ms)"),
+                .with_description("Hold time (ms)")
+                .with_group("Timing")
+                .with_importance(ParameterImportance::FineTuning),
             Parameter::new_bool("link_channels", "Link Channels", LINK_CHANNELS_DEFAULT)
-                .with_description("Link stereo detection"),
+                .with_description("Link stereo detection")
+                .with_group("Channels")
+                .with_importance(ParameterImportance::Useful),
             Parameter::new_float("mix", "Mix", MIX_DEFAULT, MIX_MIN, MIX_MAX)
-                .with_description("Dry/wet mix"),
+                .with_description("Dry/wet mix")
+                .with_group("Output")
+                .with_importance(ParameterImportance::Useful),
         ]
     }
 
@@ -933,7 +963,8 @@ impl InPlacePlugin for MultibandExpanderPlugin {
             let new_bands = value
                 .as_int()
                 .ok_or("Invalid num_bands")?
-                .clamp(NUM_BANDS_MIN as i32, NUM_BANDS_MAX as i32) as usize;
+                .clamp(NUM_BANDS_MIN as i32, NUM_BANDS_MAX as i32)
+                as usize;
             if new_bands != self.num_bands {
                 self.num_bands = new_bands;
                 while self.band_params.len() < new_bands {
@@ -1117,16 +1148,14 @@ mod tests {
     #[test]
     fn test_expansion_attenuation_calculation() {
         // Hard knee, 2:1 ratio, -40dB threshold, 60dB range
-        let atten = MultibandExpanderPlugin::calculate_expansion_attenuation(
-            -50.0, -40.0, 2.0, 0.0, 60.0,
-        );
+        let atten =
+            MultibandExpanderPlugin::calculate_expansion_attenuation(-50.0, -40.0, 2.0, 0.0, 60.0);
         // 10dB below threshold, slope = 1 - 1/2 = 0.5, atten = 10 * 0.5 = 5dB
         assert!((atten - 5.0).abs() < 0.01);
 
         // Above threshold
-        let atten = MultibandExpanderPlugin::calculate_expansion_attenuation(
-            -30.0, -40.0, 2.0, 0.0, 60.0,
-        );
+        let atten =
+            MultibandExpanderPlugin::calculate_expansion_attenuation(-30.0, -40.0, 2.0, 0.0, 60.0);
         assert_eq!(atten, 0.0);
 
         // Range limited

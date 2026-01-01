@@ -13,7 +13,7 @@
 // - mix: Dry/wet mix between unprocessed and limited signal (0.0 = dry, 1.0 = limited)
 
 use super::param_specs::limiter::*;
-use super::parameters::{Parameter, ParameterId, ParameterValue};
+use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -211,7 +211,9 @@ impl InPlacePlugin for LimiterPlugin {
                 THRESHOLD_MIN,
                 THRESHOLD_MAX,
             )
-            .with_description("Maximum output level (dB)"),
+            .with_description("Maximum output level (dB)")
+            .with_group("Dynamics")
+            .with_importance(ParameterImportance::Critical),
             Parameter::new_float(
                 "release",
                 "Release",
@@ -219,7 +221,9 @@ impl InPlacePlugin for LimiterPlugin {
                 RELEASE_MIN,
                 RELEASE_MAX,
             )
-            .with_description("Release time (ms)"),
+            .with_description("Release time (ms)")
+            .with_group("Timing")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_float(
                 "lookahead",
                 "Lookahead",
@@ -227,11 +231,17 @@ impl InPlacePlugin for LimiterPlugin {
                 LOOKAHEAD_MIN,
                 LOOKAHEAD_MAX,
             )
-            .with_description("Lookahead time for predictive limiting (ms)"),
+            .with_description("Lookahead time for predictive limiting (ms)")
+            .with_group("Timing")
+            .with_importance(ParameterImportance::FineTuning),
             Parameter::new_bool("soft", "Soft", SOFT_DEFAULT)
-                .with_description("Enable soft limiting with saturation curve (more musical)"),
+                .with_description("Enable soft limiting with saturation curve (more musical)")
+                .with_group("Character")
+                .with_importance(ParameterImportance::Useful),
             Parameter::new_float("mix", "Mix", MIX_DEFAULT, MIX_MIN, MIX_MAX)
-                .with_description("Dry/wet mix (0 = dry, 1 = limited)"),
+                .with_description("Dry/wet mix (0 = dry, 1 = limited)")
+                .with_group("Output")
+                .with_importance(ParameterImportance::Useful),
         ]
     }
 

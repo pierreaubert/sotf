@@ -131,7 +131,7 @@ fn render_spinorama_main_response_plot(
         .stroke_width(1.5)
         .theme(chart_theme)
         .size(width, height)
-	.legend_position(LegendPosition::Bottom)
+        .legend_position(LegendPosition::Bottom)
         .add_series(
             &result.target_curve,
             Some("Target"),
@@ -168,7 +168,7 @@ fn render_speaker_filter_response_plot(
     let mut chart_builder = line(&result.frequencies, &result.filter_response)
         .x_scale(ScaleType::Log)
         .label("Total")
-	.legend_position(LegendPosition::Bottom)
+        .legend_position(LegendPosition::Bottom)
         .color(rgba_to_u32(colors::filter(theme)))
         .stroke_width(2.5)
         .theme(chart_theme)
@@ -282,7 +282,7 @@ pub fn render_spinorama_cea2034_graph(
         .stroke_width(2.0)
         .theme(chart_theme)
         .size(width, height)
-	.legend_position(LegendPosition::Bottom)
+        .legend_position(LegendPosition::Bottom)
         // Primary axis series (SPL curves)
         .add_series(
             &curves.listening_window,
@@ -342,7 +342,7 @@ pub fn render_spinorama_pir_graph(
         .stroke_width(2.0)
         .theme(chart_theme)
         .size(width, height)
-	.legend_position(LegendPosition::Bottom)
+        .legend_position(LegendPosition::Bottom)
         .build();
 
     div()
@@ -403,7 +403,7 @@ pub fn render_spinorama_horizontal_graph(
         .y_label("SPL (dB)")
         .y_range(-40.0, 10.0)
         .label(&format!("{:.0}°", base.angle))
-	.legend_position(LegendPosition::Bottom)
+        .legend_position(LegendPosition::Bottom)
         .color(angle_colors[0])
         .stroke_width(2.0)
         .theme(chart_theme)
@@ -485,7 +485,7 @@ pub fn render_spinorama_vertical_graph(
         .color(angle_colors[0])
         .stroke_width(2.0)
         .theme(chart_theme)
-	.legend_position(LegendPosition::Bottom)
+        .legend_position(LegendPosition::Bottom)
         .size(width, height);
 
     // Add other curves
@@ -697,18 +697,10 @@ fn render_tonal_balance_plot(
                 bins
             };
 
-        let hist_orig = calculate_histogram(
-            &result.frequencies,
-            &original_curve,
-            slope_orig,
-            int_orig,
-        );
-        let hist_corr = calculate_histogram(
-            &result.frequencies,
-            &corrected_curve,
-            slope_corr,
-            int_corr,
-        );
+        let hist_orig =
+            calculate_histogram(&result.frequencies, &original_curve, slope_orig, int_orig);
+        let hist_corr =
+            calculate_histogram(&result.frequencies, &corrected_curve, slope_corr, int_corr);
 
         let labels = vec![
             "0-0.5", "0.5-1", "1-1.5", "1.5-2", "2-2.5", "2.5-3", "3-3.5", "3.5-4", ">4",
@@ -729,7 +721,12 @@ fn render_tonal_balance_plot(
             .bar_gap(4.0)
             .opacity(0.8)
             .legend_position(LegendPosition::Bottom)
-            .add_series(&hist_corr, Some(&format!("{} Corrected", curve_type)), ORANGE, 0.8);
+            .add_series(
+                &hist_corr,
+                Some(&format!("{} Corrected", curve_type)),
+                ORANGE,
+                0.8,
+            );
 
         hist_chart = chart.build().ok();
     }
@@ -770,6 +767,6 @@ fn render_tonal_balance_plot(
         .flex()
         .flex_col()
         .when_some(chart.ok(), |el, c| el.child(c))
-	.gap_2()
+        .gap_2()
         .when_some(hist_chart, |el, c| el.child(c))
 }

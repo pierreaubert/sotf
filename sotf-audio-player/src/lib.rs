@@ -13,7 +13,6 @@ pub mod autoeq;
 /// - Bliss audio analysis (`bliss`)
 /// - Music recommendation engine (`recommendation`)
 pub mod bliss;
-pub mod recommendation;
 pub mod config;
 pub mod database;
 pub mod library;
@@ -21,6 +20,7 @@ pub mod library_scanner;
 pub mod player;
 pub mod plugin_graph;
 pub mod plugins;
+pub mod recommendation;
 pub mod replay_gain_scanner;
 // Backward compatibility alias
 pub use autoeq as room_eq;
@@ -41,10 +41,18 @@ pub use plugin_graph::{
     PluginGraph, PluginGraphNode, SpecialNode, SpecialNodeType,
 };
 pub use plugins::{
-    EQFilter, Plugin, PluginChain, PluginSettings, PluginType,
+    EQFilter,
+    Plugin,
+    PluginChain,
+    PluginSettings,
+    PluginType,
     // Matrix helper functions
-    apply_matrix_preset, db_to_linear, detect_matrix_preset, get_channel_label,
-    linear_to_db_string, resize_matrix,
+    apply_matrix_preset,
+    db_to_linear,
+    detect_matrix_preset,
+    get_channel_label,
+    linear_to_db_string,
+    resize_matrix,
 };
 pub use replay_gain_scanner::{ReplayGainScanManager, ReplayGainScanner, ScanMessage};
 pub use sotf_audio::replaygain::ReplayGainInfo;

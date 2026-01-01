@@ -1,18 +1,18 @@
-// ============================================================================ // Crosstalk Cancellation (XTC) Plugin // ============================================================================ // // Implements crosstalk cancellation for stereo playback over speakers. // This plugin removes acoustic crosstalk to create a binaural-like experience // from conventional stereo speakers. // // Algorithm: // 1. Signal Windowing & FFT: Convert to frequency domain (1024 samples, 75% overlap, Hann window) // 2. Transfer Functions: Model ipsilateral (direct) and contralateral (crosstalk) paths // 3. Inverse with smoothing: Compute regularized inverse filter matrix // 4. Apply Filter: Process stereo signal with crosstalk cancellation // 5. IFFT & Overlap-Add: Reconstruct time-domain signal // // Geometry: // - d: Distance to speakers (m) // - θ: Speaker angle (degrees, typically 30°) // - a: Head radius (m, typically 0.0875m) // // Physical Model: // - l_ipsi: Same-side path length // - l_contra: Opposite-side path length // - Δt: Time difference between paths // - g(f): Head shadowing filter (low-pass) 
-use super::parameters::{Parameter, ParameterId, ParameterValue};
+// ============================================================================ // Crosstalk Cancellation (XTC) Plugin // ============================================================================ // // Implements crosstalk cancellation for stereo playback over speakers. // This plugin removes acoustic crosstalk to create a binaural-like experience // from conventional stereo speakers. // // Algorithm: // 1. Signal Windowing & FFT: Convert to frequency domain (1024 samples, 75% overlap, Hann window) // 2. Transfer Functions: Model ipsilateral (direct) and contralateral (crosstalk) paths // 3. Inverse with smoothing: Compute regularized inverse filter matrix // 4. Apply Filter: Process stereo signal with crosstalk cancellation // 5. IFFT & Overlap-Add: Reconstruct time-domain signal // // Geometry: // - d: Distance to speakers (m) // - θ: Speaker angle (degrees, typically 30°) // - a: Head radius (m, typically 0.0875m) // // Physical Model: // - l_ipsi: Same-side path length // - l_contra: Opposite-side path length // - Δt: Time difference between paths // - g(f): Head shadowing filter (low-pass)
+use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use super::simd::{
     complex_mul_add_simd, complex_mul_simd, deinterleave_stereo, window_mul_add_simd,
     window_mul_simd,
 };
+use parking_lot::RwLock;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
 use serde::{Deserialize, Serialize};
 use std::f32::consts::PI;
 use std::sync::Arc;
-use parking_lot::RwLock;
 
-// ============================================================================ // Configuration // ============================================================================ 
+// ============================================================================ // Configuration // ============================================================================
 
 /// XTC plugin configuration parameters
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -125,7 +125,7 @@ impl Default for XtcPluginParams {
     }
 }
 
-// ============================================================================ // Plugin Implementation // ============================================================================ 
+// ============================================================================ // Plugin Implementation // ============================================================================
 
 /// Crosstalk cancellation filters in frequency domain
 struct XtcFilters {
@@ -251,7 +251,10 @@ impl XtcPlugin {
         // Compute frequency-domain filters (only need 2 due to symmetry)
         let num_bins = fft_size / 2 + 1;
         let (filter_ll, filter_lr) = compute_xtc_filters_symmetric(&params, sample_rate, num_bins);
-        let filters = Arc::new(RwLock::new(XtcFilters { filter_ll, filter_lr }));
+        let filters = Arc::new(RwLock::new(XtcFilters {
+            filter_ll,
+            filter_lr,
+        }));
 
         Ok(Self {
             fft_size,
@@ -300,14 +303,16 @@ impl XtcPlugin {
         let shared_filters = self.filters.clone();
 
         if sync {
-            let (filter_ll, filter_lr) = compute_xtc_filters_symmetric(&params, sample_rate, num_bins);
+            let (filter_ll, filter_lr) =
+                compute_xtc_filters_symmetric(&params, sample_rate, num_bins);
             let mut lock = shared_filters.write();
             lock.filter_ll = filter_ll;
             lock.filter_lr = filter_lr;
         } else {
             // Asynchronous update using rayon
             rayon::spawn(move || {
-                let (filter_ll, filter_lr) = compute_xtc_filters_symmetric(&params, sample_rate, num_bins);
+                let (filter_ll, filter_lr) =
+                    compute_xtc_filters_symmetric(&params, sample_rate, num_bins);
                 let mut lock = shared_filters.write();
                 lock.filter_ll = filter_ll;
                 lock.filter_lr = filter_lr;
@@ -343,16 +348,8 @@ impl XtcPlugin {
 
         // Apply XTC filter for LEFT output using SIMD:
         // L_out = filter_ll * L_in + filter_lr * R_in
-        complex_mul_simd(
-            &mut self.ifft_input,
-            &self.fft_output_l,
-            &filters.filter_ll,
-        );
-        complex_mul_add_simd(
-            &mut self.ifft_input,
-            &self.fft_output_r,
-            &filters.filter_lr,
-        );
+        complex_mul_simd(&mut self.ifft_input, &self.fft_output_l, &filters.filter_ll);
+        complex_mul_add_simd(&mut self.ifft_input, &self.fft_output_r, &filters.filter_lr);
 
         // Ensure DC and Nyquist bins are real
         let num_bins = self.ifft_input.len();
@@ -374,16 +371,8 @@ impl XtcPlugin {
 
         // Apply XTC filter for RIGHT output using SIMD:
         // R_out = filter_lr * L_in + filter_ll * R_in (symmetric)
-        complex_mul_simd(
-            &mut self.ifft_input,
-            &self.fft_output_l,
-            &filters.filter_lr,
-        );
-        complex_mul_add_simd(
-            &mut self.ifft_input,
-            &self.fft_output_r,
-            &filters.filter_ll,
-        );
+        complex_mul_simd(&mut self.ifft_input, &self.fft_output_l, &filters.filter_lr);
+        complex_mul_add_simd(&mut self.ifft_input, &self.fft_output_r, &filters.filter_ll);
 
         // Ensure DC and Nyquist bins are real
         self.ifft_input[0].im = 0.0;
@@ -453,35 +442,45 @@ impl Plugin for XtcPlugin {
 
     fn parameters(&self) -> Vec<Parameter> {
         vec![
-            Parameter::new_bool("enabled", "Enabled", self.params.enabled),
+            Parameter::new_bool("enabled", "Enabled", self.params.enabled)
+                .with_group("General")
+                .with_importance(ParameterImportance::Critical),
             Parameter::new_float(
                 "distance_m",
                 "Distance (m)",
                 self.params.distance_m,
                 0.5,
                 5.0,
-            ),
+            )
+            .with_group("Geometry")
+            .with_importance(ParameterImportance::Critical),
             Parameter::new_float(
                 "speaker_angle_deg",
                 "Speaker Angle (deg)",
                 self.params.speaker_angle_deg,
                 15.0,
                 60.0,
-            ),
+            )
+            .with_group("Geometry")
+            .with_importance(ParameterImportance::Critical),
             Parameter::new_float(
                 "head_offset_x",
                 "Head Offset X (m)",
                 self.params.head_offset_x,
                 -0.5,
                 0.5,
-            ),
+            )
+            .with_group("Head Tracking")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_float(
                 "head_offset_z",
                 "Head Offset Z (m)",
                 self.params.head_offset_z,
                 -0.5,
                 0.5,
-            ),
+            )
+            .with_group("Head Tracking")
+            .with_importance(ParameterImportance::Useful),
         ]
     }
 
@@ -592,7 +591,7 @@ impl Plugin for XtcPlugin {
         // Bypass if disabled
         if !self.params.enabled {
             output.copy_from_slice(input);
-            return Ok(())
+            return Ok(());
         }
 
         // Ensure temp buffers are large enough
@@ -684,7 +683,7 @@ impl Plugin for XtcPlugin {
     }
 }
 
-// ============================================================================ // Crosstalk Cancellation Filter Computation // ============================================================================ 
+// ============================================================================ // Crosstalk Cancellation Filter Computation // ============================================================================
 
 /// Compute crosstalk cancellation filters in frequency domain (symmetric version)
 ///
@@ -713,9 +712,8 @@ fn compute_xtc_filters_symmetric(
 
     // Compute path lengths (considering head offset)
     let l_ipsi = ((d * theta_rad.sin() - x_offset).powi(2) + (d * theta_rad.cos()).powi(2)).sqrt();
-    let l_contra = ((d * theta_rad.sin() + x_offset).powi(2) + (d * theta_rad.cos()).powi(2))
-        .sqrt()
-        + PI * a; // Add head shadow path
+    let l_contra =
+        ((d * theta_rad.sin() + x_offset).powi(2) + (d * theta_rad.cos()).powi(2)).sqrt() + PI * a; // Add head shadow path
 
     // Time difference
     let delta_t = (l_contra - l_ipsi) / speed_of_sound;
@@ -802,9 +800,8 @@ fn compute_xtc_filters(
     // l_contra: crosstalk path (opposite side)
     let l_ipsi = ((d * theta_rad.sin() - x_offset).powi(2) + (d * theta_rad.cos()).powi(2)).sqrt();
 
-    let l_contra = ((d * theta_rad.sin() + x_offset).powi(2) + (d * theta_rad.cos()).powi(2))
-        .sqrt()
-        + PI * a; // Add head shadow path
+    let l_contra =
+        ((d * theta_rad.sin() + x_offset).powi(2) + (d * theta_rad.cos()).powi(2)).sqrt() + PI * a; // Add head shadow path
 
     // Time difference
     let delta_t = (l_contra - l_ipsi) / speed_of_sound;
@@ -867,10 +864,10 @@ fn compute_xtc_filters(
         // C^H = [[h_ipsi^*, h_contra^*],
         //        [h_contra^*, h_ipsi^*]]
 
-        // W[0,0] = inv_diag * h_ipsi^* + inv_off_diag * h_contra^* 
-        // W[0,1] = inv_off_diag * h_ipsi^* + inv_diag * h_contra^* 
-        // W[1,0] = inv_off_diag * h_ipsi^* + inv_diag * h_contra^* 
-        // W[1,1] = inv_diag * h_ipsi^* + inv_off_diag * h_contra^* 
+        // W[0,0] = inv_diag * h_ipsi^* + inv_off_diag * h_contra^*
+        // W[0,1] = inv_off_diag * h_ipsi^* + inv_diag * h_contra^*
+        // W[1,0] = inv_off_diag * h_ipsi^* + inv_diag * h_contra^*
+        // W[1,1] = inv_diag * h_ipsi^* + inv_off_diag * h_contra^*
 
         let h_ipsi_conj = h_ipsi.conj();
         let h_contra_conj = h_contra.conj();
@@ -932,7 +929,7 @@ fn compute_beta(freq: f32, params: &XtcPluginParams) -> f32 {
     beta_base * low_freq_factor * high_freq_factor
 }
 
-// ============================================================================ // Tests // ============================================================================ 
+// ============================================================================ // Tests // ============================================================================
 
 #[cfg(test)]
 mod tests {
@@ -1042,10 +1039,7 @@ mod tests {
 
         // Update distance
         plugin
-            .set_parameter(
-                ParameterId::from("distance_m"),
-                ParameterValue::Float(2.5),
-            )
+            .set_parameter(ParameterId::from("distance_m"), ParameterValue::Float(2.5))
             .unwrap();
         assert_eq!(plugin.params.distance_m, 2.5);
 
@@ -1100,14 +1094,8 @@ mod tests {
 
         // Calculate energy (skip initial latency period)
         let skip_samples = 2048; // Skip latency
-        let input_energy: f32 = input[skip_samples * 2..]
-            .iter()
-            .map(|x| x * x)
-            .sum();
-        let output_energy: f32 = output[skip_samples * 2..]
-            .iter()
-            .map(|x| x * x)
-            .sum();
+        let input_energy: f32 = input[skip_samples * 2..].iter().map(|x| x * x).sum();
+        let output_energy: f32 = output[skip_samples * 2..].iter().map(|x| x * x).sum();
 
         // Energy ratio should be between 0.5 and 2.0 (within 3dB)
         // XTC can boost some frequencies while attenuating others,
@@ -1152,14 +1140,8 @@ mod tests {
 
         // Skip latency
         let skip_samples = 2048;
-        let input_energy: f32 = input[skip_samples * 2..]
-            .iter()
-            .map(|x| x * x)
-            .sum();
-        let output_energy: f32 = output[skip_samples * 2..]
-            .iter()
-            .map(|x| x * x)
-            .sum();
+        let input_energy: f32 = input[skip_samples * 2..].iter().map(|x| x * x).sum();
+        let output_energy: f32 = output[skip_samples * 2..].iter().map(|x| x * x).sum();
 
         let energy_ratio = output_energy / input_energy;
         // Mono is expected to be attenuated by XTC (typically 0.3-0.7)
@@ -1231,7 +1213,7 @@ mod tests {
     fn test_filter_magnitudes() {
         let params = XtcPluginParams::default();
         let num_bins = 513; // For 1024-point FFT
-        let (filter_ll, filter_lr, filter_rl, filter_rr) = 
+        let (filter_ll, filter_lr, filter_rl, filter_rr) =
             compute_xtc_filters(&params, 48000, num_bins);
 
         // Check mid-frequency bin (around 1kHz)

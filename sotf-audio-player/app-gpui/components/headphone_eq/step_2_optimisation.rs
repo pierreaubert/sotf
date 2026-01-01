@@ -176,7 +176,8 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |strategy, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.headphone_eq_state.optimizer_config.strategy = strategy.to_string();
+                        state.app.headphone_eq_state.optimizer_config.strategy =
+                            strategy.to_string();
                         state.app.headphone_eq_state.dropdowns.strategy_open = false;
                     });
                 }

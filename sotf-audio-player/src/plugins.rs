@@ -244,13 +244,13 @@ use sotf_plugins::{
 };
 
 // Import param_specs for new upmixer defaults
-use sotf_plugins::param_specs::upmixer as upmixer_specs;
-
-// Import param_specs for dynamics plugins
 use sotf_plugins::param_specs::expander as expander_specs;
+use sotf_plugins::param_specs::gate as gate_specs;
+use sotf_plugins::param_specs::limiter as limiter_specs;
 use sotf_plugins::param_specs::multiband_compressor as mb_compressor_specs;
 use sotf_plugins::param_specs::multiband_expander as mb_expander_specs;
 use sotf_plugins::param_specs::pnd as pnd_specs;
+use sotf_plugins::param_specs::upmixer as upmixer_specs;
 
 // Wrapper functions to convert f32 -> f64 for PluginSettings (which uses f64)
 fn default_upmixer_subharmonic_gain() -> f64 {
@@ -347,8 +347,20 @@ fn default_binaural_enable_optimization() -> bool {
 }
 
 // Gate/Limiter defaults (defined locally as they use f64 and match engine defaults)
+fn default_limiter_lookahead_ms() -> f64 {
+    limiter_specs::LOOKAHEAD_DEFAULT as f64
+}
+
+fn default_limiter_soft() -> bool {
+    limiter_specs::SOFT_DEFAULT
+}
+
 fn default_limiter_mix() -> f64 {
     1.0 // Match plugin_limiter default
+}
+
+fn default_gate_hold_ms() -> f64 {
+    gate_specs::HOLD_DEFAULT as f64
 }
 
 fn default_gate_mix() -> f64 {
@@ -589,6 +601,10 @@ fn default_denoiser_low_latency() -> bool {
     false
 }
 
+fn default_denoiser_polyphonic_detection() -> bool {
+    false
+}
+
 // PND defaults
 fn default_pnd_correction_strength() -> f64 {
     pnd_specs::CORRECTION_STRENGTH_DEFAULT as f64
@@ -602,12 +618,20 @@ fn default_pnd_drift_smoothing() -> f64 {
     pnd_specs::DRIFT_SMOOTHING_DEFAULT as f64
 }
 
+fn default_channels() -> usize {
+    2
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PluginSettings {
     EQ {
+        #[serde(default = "default_channels")]
+        channels: usize,
         filters: Vec<EQFilter>,
     },
     Gain {
+        #[serde(default = "default_channels")]
+        channels: usize,
         gain_db: f64,
     },
     Upmixer {
@@ -699,6 +723,10 @@ pub enum PluginSettings {
     Limiter {
         threshold_db: f64,
         release_ms: f64,
+        #[serde(default = "default_limiter_lookahead_ms")]
+        lookahead_ms: f64,
+        #[serde(default = "default_limiter_soft")]
+        soft: bool,
         #[serde(default = "default_limiter_mix")]
         mix: f64,
     },
@@ -707,6 +735,8 @@ pub enum PluginSettings {
         ratio: f64,
         attack_ms: f64,
         release_ms: f64,
+        #[serde(default = "default_gate_hold_ms")]
+        hold_ms: f64,
         #[serde(default = "default_gate_mix")]
         mix: f64,
         #[serde(default = "default_gate_link_channels")]
@@ -872,6 +902,8 @@ pub enum PluginSettings {
         release_ms: f64,
         #[serde(default = "default_denoiser_low_latency")]
         low_latency: bool,
+        #[serde(default = "default_denoiser_polyphonic_detection")]
+        polyphonic_detection: bool,
     },
     Pnd {
         #[serde(default = "default_pnd_correction_strength")]
@@ -910,7 +942,7 @@ impl PluginSettings {
 
     pub fn to_plugin_config(&self, sample_rate: f64) -> PluginConfig {
         match self {
-            Self::EQ { filters } => {
+            Self::EQ { channels, filters } => {
                 let filter_configs: Vec<_> = filters
                     .iter()
                     .map(|f| {
@@ -927,13 +959,15 @@ impl PluginSettings {
                 PluginConfig::new(
                     "eq",
                     json!({
+                        "channels": channels,
                         "filters": filter_configs,
                     }),
                 )
             }
-            Self::Gain { gain_db } => PluginConfig::new(
+            Self::Gain { channels, gain_db } => PluginConfig::new(
                 "gain",
                 json!({
+                    "channels": channels,
                     "gain_db": gain_db,
                 }),
             ),
@@ -1042,12 +1076,16 @@ impl PluginSettings {
             Self::Limiter {
                 threshold_db,
                 release_ms,
+                lookahead_ms,
+                soft,
                 mix,
             } => PluginConfig::new(
                 "limiter",
                 json!({
                     "threshold_db": threshold_db,
                     "release_ms": release_ms,
+                    "lookahead_ms": lookahead_ms,
+                    "soft": soft,
                     "mix": mix,
                 }),
             ),
@@ -1055,6 +1093,7 @@ impl PluginSettings {
                 threshold_db,
                 ratio,
                 attack_ms,
+                hold_ms,
                 release_ms,
                 mix,
                 link_channels,
@@ -1065,6 +1104,7 @@ impl PluginSettings {
                     "threshold_db": threshold_db,
                     "ratio": ratio,
                     "attack_ms": attack_ms,
+                    "hold_ms": hold_ms,
                     "release_ms": release_ms,
                     "mix": mix,
                     "link_channels": link_channels,
@@ -1277,6 +1317,7 @@ impl PluginSettings {
                 attack_ms,
                 release_ms,
                 low_latency,
+                polyphonic_detection,
             } => PluginConfig::new(
                 "denoiser",
                 json!({
@@ -1286,6 +1327,7 @@ impl PluginSettings {
                     "attack_ms": attack_ms,
                     "release_ms": release_ms,
                     "low_latency": low_latency,
+                    "polyphonic_detection": polyphonic_detection,
                 }),
             ),
             Self::Pnd {
@@ -1307,6 +1349,7 @@ impl PluginSettings {
     pub fn default_for(plugin_type: &PluginType) -> Self {
         match plugin_type {
             PluginType::EQ => Self::EQ {
+                channels: default_channels(),
                 filters: vec![
                     // Default: 10-band flat EQ
                     EQFilter::new(BiquadFilterType::Peak, 32.0, 1.4, 0.0),
@@ -1321,7 +1364,10 @@ impl PluginSettings {
                     EQFilter::new(BiquadFilterType::Peak, 16000.0, 1.4, 0.0),
                 ],
             },
-            PluginType::Gain => Self::Gain { gain_db: 0.0 },
+            PluginType::Gain => Self::Gain {
+                channels: default_channels(),
+                gain_db: 0.0,
+            },
             PluginType::Upmixer => Self::Upmixer {
                 speaker_config: "5.1".to_string(),
                 // Gains
@@ -1383,12 +1429,15 @@ impl PluginSettings {
             PluginType::Limiter => Self::Limiter {
                 threshold_db: -1.0,
                 release_ms: 50.0,
+                lookahead_ms: default_limiter_lookahead_ms(),
+                soft: default_limiter_soft(),
                 mix: default_limiter_mix(),
             },
             PluginType::Gate => Self::Gate {
                 threshold_db: -40.0,
                 ratio: 10.0,
                 attack_ms: 1.0,
+                hold_ms: default_gate_hold_ms(),
                 release_ms: 100.0,
                 mix: default_gate_mix(),
                 link_channels: default_gate_link_channels(),
@@ -1491,6 +1540,7 @@ impl PluginSettings {
                 attack_ms: default_denoiser_attack_ms(),
                 release_ms: default_denoiser_release_ms(),
                 low_latency: default_denoiser_low_latency(),
+                polyphonic_detection: default_denoiser_polyphonic_detection(),
             },
             PluginType::Pnd => Self::Pnd {
                 correction_strength: default_pnd_correction_strength(),
@@ -1635,7 +1685,7 @@ pub fn apply_matrix_preset(in_ch: usize, out_ch: usize, matrix: &mut Vec<f32>, p
                 // Swap first two channels
                 matrix[0 * in_ch + 1] = 1.0; // Out 0 <- In 1
                 matrix[1 * in_ch + 0] = 1.0; // Out 1 <- In 0
-                                             // Pass through remaining channels
+                // Pass through remaining channels
                 for i in 2..in_ch.min(out_ch) {
                     matrix[i * in_ch + i] = 1.0;
                 }
@@ -1801,9 +1851,9 @@ impl PluginChain {
 
     /// Check if the chain has an enabled spectrum analyzer plugin
     pub fn has_enabled_spectrum_analyzer(&self) -> bool {
-        self.plugins.iter().any(|p| {
-            p.enabled && matches!(p.settings, PluginSettings::SpectrumAnalyzer { .. })
-        })
+        self.plugins
+            .iter()
+            .any(|p| p.enabled && matches!(p.settings, PluginSettings::SpectrumAnalyzer { .. }))
     }
 
     /// Find the insertion index for a new processing plugin (before monitoring plugins)
@@ -2144,68 +2194,104 @@ impl PluginChain {
         Ok(preset)
     }
 
-    /// Update BinauralDecoder input_channels based on the output of plugins before them
+    /// Update input channels for plugins that depend on the output of previous plugins (BinauralDecoder, Matrix)
     /// This should be called after any plugin chain modification (add, remove, move, toggle)
-    pub fn update_binaural_decoder_channels(&mut self) {
-        for i in 0..self.plugins.len() {
-            if let PluginSettings::BinauralDecoder { sofa_file, .. } = &self.plugins[i].settings {
-                // Calculate output channels from all plugins before this one
-                let input_channels = if i == 0 {
-                    2 // Stereo input by default
-                } else {
-                    // Create a temporary view of plugins before this one
-                    let mut channels = 2; // Start with stereo
-                    for j in 0..i {
-                        if !self.plugins[j].enabled {
-                            continue;
-                        }
-                        match &self.plugins[j].settings {
-                            PluginSettings::Upmixer { speaker_config, .. } => {
-                                channels = match speaker_config.as_str() {
-                                    "2.0" => 2,
-                                    "5.0" => 5,
-                                    "5.1" => 6,
-                                    "7.1" => 8,
-                                    "5.1.2" => 8,
-                                    "5.1.4" => 10,
-                                    "7.1.2" => 10,
-                                    "7.1.4" => 12,
-                                    "9.1.4" => 14,
-                                    "9.1.6" => 16,
-                                    _ => 6, // Default to 5.1
-                                };
-                            }
-                            PluginSettings::BinauralDecoder { .. } => {
-                                channels = 2; // Binaural outputs stereo
-                            }
-                            PluginSettings::Matrix {
-                                output_channels, ..
-                            } => {
-                                channels = *output_channels;
-                            }
-                            _ => {} // Other plugins don't change channel count
-                        }
-                    }
-                    channels
-                };
+    pub fn update_channel_dependent_plugins(&mut self) {
+        let mut current_channels = 2; // Start with stereo
 
-                // Update the BinauralDecoder with the calculated input channels
-                // Preserve existing settings when updating input channels
-                if let PluginSettings::BinauralDecoder {
-                    enable_optimization,
-                    externalization,
-                    near_field_strength,
-                    ..
-                } = &self.plugins[i].settings
-                {
-                    let sofa_file = sofa_file.clone();
-                    self.plugins[i].settings = PluginSettings::BinauralDecoder {
-                        sofa_file,
-                        input_channels,
-                        enable_optimization: *enable_optimization,
-                        externalization: *externalization,
-                        near_field_strength: *near_field_strength,
-                    };
+        for i in 0..self.plugins.len() {
+            // Update plugins that depend on input channels
+            // We use a temporary clone to check if update is needed to avoid borrow checker issues if we modify in place
+            // actually we can modify in place if we match &mut settings
+            
+            let mut updated_settings = None;
+
+            match &self.plugins[i].settings {
+                PluginSettings::EQ { channels, filters } => {
+                    if *channels != current_channels {
+                        updated_settings = Some(PluginSettings::EQ {
+                            channels: current_channels,
+                            filters: filters.clone(),
+                        });
+                    }
+                }
+                PluginSettings::Gain { channels, gain_db } => {
+                    if *channels != current_channels {
+                        updated_settings = Some(PluginSettings::Gain {
+                            channels: current_channels,
+                            gain_db: *gain_db,
+                        });
+                    }
+                }
+                PluginSettings::BinauralDecoder { 
+                    sofa_file, 
+                    input_channels, 
+                    enable_optimization, 
+                    externalization, 
+                    near_field_strength 
+                } => {
+                    if *input_channels != current_channels {
+                        updated_settings = Some(PluginSettings::BinauralDecoder {
+                            sofa_file: sofa_file.clone(),
+                            input_channels: current_channels,
+                            enable_optimization: *enable_optimization,
+                            externalization: *externalization,
+                            near_field_strength: *near_field_strength,
+                        });
+                    }
+                }
+                PluginSettings::Matrix { 
+                    input_channels, 
+                    output_channels, 
+                    matrix: _ 
+                } => {
+                    if *input_channels != current_channels {
+                        // Resize matrix to identity
+                        let mut new_matrix = vec![0.0; *output_channels * current_channels];
+                        let min_ch = (*output_channels).min(current_channels);
+                        for c in 0..min_ch {
+                            new_matrix[c * current_channels + c] = 1.0;
+                        }
+                        
+                        updated_settings = Some(PluginSettings::Matrix {
+                            input_channels: current_channels,
+                            output_channels: *output_channels,
+                            matrix: new_matrix,
+                        });
+                    }
+                }
+                _ => {}
+            }
+
+            if let Some(new_settings) = updated_settings {
+                self.plugins[i].settings = new_settings;
+            }
+
+            // Update output channels for next plugin
+            if self.plugins[i].enabled {
+                match &self.plugins[i].settings {
+                    PluginSettings::Upmixer { speaker_config, .. } => {
+                        current_channels = match speaker_config.as_str() {
+                            "2.0" => 2,
+                            "5.0" => 5,
+                            "5.1" => 6,
+                            "7.1" => 8,
+                            "5.1.2" => 8,
+                            "5.1.4" => 10,
+                            "7.1.2" => 10,
+                            "7.1.4" => 12,
+                            "9.1.4" => 14,
+                            "9.1.6" => 16,
+                            _ => 6,
+                        };
+                    }
+                    PluginSettings::BinauralDecoder { .. } => {
+                        current_channels = 2;
+                    }
+                    PluginSettings::Matrix { output_channels, .. } => {
+                        current_channels = *output_channels;
+                    }
+                    _ => {}
                 }
             }
         }
@@ -2300,7 +2386,7 @@ mod tests {
         }
 
         // Update binaural decoder channels
-        chain.update_binaural_decoder_channels();
+        chain.update_channel_dependent_plugins();
 
         // Now it should be correctly set to 6 (output of upmixer)
         if let Some(plugin) = chain.get_plugin(1) {
@@ -2351,7 +2437,7 @@ mod tests {
         }
 
         // Update binaural decoder channels
-        chain.update_binaural_decoder_channels();
+        chain.update_channel_dependent_plugins();
 
         // Now BinauralDecoder should have 8 input channels
         if let Some(plugin) = chain.get_plugin(1) {
@@ -2362,7 +2448,7 @@ mod tests {
 
         // Remove the upmixer
         chain.remove_plugin(0);
-        chain.update_binaural_decoder_channels();
+        chain.update_channel_dependent_plugins();
 
         // Now BinauralDecoder should have 2 input channels (stereo)
         if let Some(plugin) = chain.get_plugin(0) {
