@@ -16,19 +16,22 @@ impl DenoiserPlugin {
             .collect()
     }
 
-    /// Apply window and perform forward FFT for all channels
+    /// Apply window and forward FFT for all channels
     /// Input: interleaved audio [L0, R0, L1, R1, ...]
     /// Output: freq_domain buffers are filled with complex spectrum
     pub(super) fn apply_window_and_forward_fft(&mut self, input: &[f32]) {
-        for ch in 0..self.channels {
-            // Copy input to time domain buffer with windowing
-            for i in 0..self.fft_size {
+        // Optimization: De-interleave and window in a cache-friendly order
+        // We iterate time (i) then channels (ch) to read 'input' linearly
+        for i in 0..self.fft_size {
+            let window_val = self.window[i];
+            for ch in 0..self.channels {
                 let idx = i * self.channels + ch;
-                let window_val = self.window[i];
                 self.time_domain[ch][i] = input[idx] * window_val;
             }
+        }
 
-            // Forward FFT (Real -> Complex)
+        // Perform Forward FFT (Real -> Complex) for all channels
+        for ch in 0..self.channels {
             self.fft_forward
                 .process(&mut self.time_domain[ch], &mut self.freq_domain[ch])
                 .expect("FFT forward failed");

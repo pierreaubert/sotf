@@ -95,6 +95,9 @@ pub struct DenoiserPlugin {
     param_polyphonic_detection: ParameterId,
     polyphonic_detection: bool,
 
+    param_crack_sensitivity: ParameterId,
+    crack_sensitivity: f32,
+
     // Pre-computed coefficients
     attack_coeff: f32,
     release_coeff: f32,
@@ -211,6 +214,9 @@ impl DenoiserPlugin {
             param_polyphonic_detection: ParameterId::from("polyphonic_detection"),
             polyphonic_detection: POLYPHONIC_DETECTION_DEFAULT,
 
+            param_crack_sensitivity: ParameterId::from("crack_sensitivity"),
+            crack_sensitivity: 10.0,
+
             attack_coeff: 0.0,
             release_coeff: 0.0,
             floor_linear: 10.0_f32.powf(FLOOR_DB_DEFAULT / 20.0),
@@ -261,6 +267,10 @@ impl DenoiserPlugin {
         plugin.attack_ms = params.attack_ms.clamp(ATTACK_MS_MIN, ATTACK_MS_MAX);
         plugin.release_ms = params.release_ms.clamp(RELEASE_MS_MIN, RELEASE_MS_MAX);
         plugin.polyphonic_detection = params.polyphonic_detection;
+        plugin.crack_sensitivity = params.crack_sensitivity.max(1.0);
+        plugin
+            .transient_suppressor
+            .set_sensitivity(plugin.crack_sensitivity);
 
         plugin.mcra_alpha_s = params.mcra_alpha_s;
         plugin.mcra_alpha_p = params.mcra_alpha_p;
@@ -276,15 +286,16 @@ impl DenoiserPlugin {
     fn process_fft_block(&mut self) {
         // Extract block from input buffer (fft_size * channels samples)
         let block_samples = self.fft_size * self.channels;
+
+        // Phase 1: Apply window and forward FFT (must happen before shifting)
+        // Copy the block to avoid borrow conflicts with the shift operation
         let input_block: Vec<f32> = self.input_buffer[..block_samples].to_vec();
+        self.apply_window_and_forward_fft(&input_block);
 
         // Shift input buffer (remove processed samples, keeping hop_size overlap)
         let shift_samples = self.hop_size * self.channels;
         self.input_buffer.copy_within(shift_samples.., 0);
         self.input_buffer_fill -= shift_samples;
-
-        // Phase 1: Apply window and forward FFT
-        self.apply_window_and_forward_fft(&input_block);
 
         // Phase 2: MCRA noise estimation
         for ch in 0..self.channels {
@@ -316,14 +327,20 @@ impl DenoiserPlugin {
         let combined_scale = 2.0 / self.fft_size as f32;
 
         for ch in 0..self.channels {
-            for i in 0..self.fft_size {
-                let pos = self.next_add_position + i;
-                if pos < self.output_accumulator[ch].len() {
-                    let sample = self.time_out_channels[ch][i] * combined_scale;
-                    // Flush denormals
-                    let sample = if sample.abs() < 1e-30 { 0.0 } else { sample };
-                    self.output_accumulator[ch][pos] += sample;
-                }
+            let accum = &mut self.output_accumulator[ch];
+            let time_out = &self.time_out_channels[ch];
+
+            // Determine valid range to avoid bounds checks in the inner loop
+            let start_pos = self.next_add_position;
+            let end_pos = (start_pos + self.fft_size).min(accum.len());
+            let write_len = end_pos.saturating_sub(start_pos);
+
+            // Vectorizable loop: strict bounds derived above allow compiler to optimize
+            for i in 0..write_len {
+                let sample = time_out[i] * combined_scale;
+                // Flush denormals
+                let sample = if sample.abs() < 1e-30 { 0.0 } else { sample };
+                accum[start_pos + i] += sample;
             }
         }
 
@@ -447,6 +464,10 @@ impl InPlacePlugin for DenoiserPlugin {
             .with_description("Enable polyphonic note detection mode (gates non-tonal content)")
             .with_group("Detection")
             .with_importance(ParameterImportance::Useful),
+            Parameter::new_float("crack_sensitivity", "Crack Sens.", 10.0, 1.0, 100.0)
+                .with_description("Sensitivity of transient suppressor (higher = less sensitive)")
+                .with_group("Detection")
+                .with_importance(ParameterImportance::Useful),
         ]
     }
 
@@ -487,6 +508,13 @@ impl InPlacePlugin for DenoiserPlugin {
             self.polyphonic_detection = value
                 .as_bool()
                 .ok_or("Invalid polyphonic_detection value")?;
+        } else if id == self.param_crack_sensitivity {
+            self.crack_sensitivity = value
+                .as_float()
+                .ok_or("Invalid crack_sensitivity value")?
+                .max(1.0);
+            self.transient_suppressor
+                .set_sensitivity(self.crack_sensitivity);
         } else {
             return Err(format!("Unknown parameter: {}", id));
         }
@@ -508,6 +536,8 @@ impl InPlacePlugin for DenoiserPlugin {
             Some(ParameterValue::Bool(self.low_latency))
         } else if id == &self.param_polyphonic_detection {
             Some(ParameterValue::Bool(self.polyphonic_detection))
+        } else if id == &self.param_crack_sensitivity {
+            Some(ParameterValue::Float(self.crack_sensitivity))
         } else {
             None
         }

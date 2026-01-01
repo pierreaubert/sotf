@@ -51,6 +51,10 @@ pub fn default_polyphonic_detection() -> bool {
     POLYPHONIC_DETECTION_DEFAULT
 }
 
+pub fn default_crack_sensitivity() -> f32 {
+    10.0
+}
+
 /// Configuration parameters for DenoiserPlugin
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DenoiserPluginParams {
@@ -82,6 +86,11 @@ pub struct DenoiserPluginParams {
     #[serde(default = "default_polyphonic_detection")]
     pub polyphonic_detection: bool,
 
+    /// Sensitivity of the transient suppressor (1.0-100.0)
+    /// Higher values mean LESS sensitive (higher threshold multiplier)
+    #[serde(default = "default_crack_sensitivity")]
+    pub crack_sensitivity: f32,
+
     // Advanced MCRA parameters (expert use)
     /// Noise PSD smoothing factor
     #[serde(default = "default_mcra_alpha_s")]
@@ -110,6 +119,7 @@ impl Default for DenoiserPluginParams {
             release_ms: default_release_ms(),
             low_latency: default_low_latency(),
             polyphonic_detection: default_polyphonic_detection(),
+            crack_sensitivity: default_crack_sensitivity(),
             mcra_alpha_s: default_mcra_alpha_s(),
             mcra_alpha_p: default_mcra_alpha_p(),
             mcra_l: default_mcra_l(),
