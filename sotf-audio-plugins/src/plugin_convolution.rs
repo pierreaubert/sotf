@@ -1,6 +1,6 @@
-// ============================================================================
-// Convolution Plugin - FFT-based convolution for reverb and IR processing
-// ============================================================================
+//! ============================================================================
+//! Convolution Plugin - FFT-based convolution for reverb and IR processing
+//! ============================================================================
 
 use super::param_specs::convolution::*;
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
@@ -18,9 +18,9 @@ use symphonia::core::conv::FromSample;
 use symphonia::core::formats::{FormatOptions, FormatReader};
 use symphonia::core::io::MediaSourceStream;
 
-// ============================================================================
-// Configuration
-// ============================================================================
+/// ============================================================================
+/// Configuration
+/// ============================================================================
 
 fn default_ir_file() -> String {
     String::new()
@@ -45,9 +45,9 @@ pub struct ConvolutionPluginParams {
     pub gain_db: f32,
 }
 
-// ============================================================================
-// Plugin Implementation
-// ============================================================================
+/// ============================================================================
+/// Plugin Implementation
+/// ============================================================================
 
 struct ConvolutionState {
     ir_fft: Vec<Vec<Complex<f32>>>, // [channel][bin]

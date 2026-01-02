@@ -1,4 +1,30 @@
-// ============================================================================ // Crosstalk Cancellation (XTC) Plugin // ============================================================================ // // Implements crosstalk cancellation for stereo playback over speakers. // This plugin removes acoustic crosstalk to create a binaural-like experience // from conventional stereo speakers. // // Algorithm: // 1. Signal Windowing & FFT: Convert to frequency domain (1024 samples, 75% overlap, Hann window) // 2. Transfer Functions: Model ipsilateral (direct) and contralateral (crosstalk) paths // 3. Inverse with smoothing: Compute regularized inverse filter matrix // 4. Apply Filter: Process stereo signal with crosstalk cancellation // 5. IFFT & Overlap-Add: Reconstruct time-domain signal // // Geometry: // - d: Distance to speakers (m) // - θ: Speaker angle (degrees, typically 30°) // - a: Head radius (m, typically 0.0875m) // // Physical Model: // - l_ipsi: Same-side path length // - l_contra: Opposite-side path length // - Δt: Time difference between paths // - g(f): Head shadowing filter (low-pass)
+//! ============================================================================
+//! Crosstalk Cancellation (XTC) Plugin
+//! ============================================================================
+//!
+//! Implements crosstalk cancellation for stereo playback over speakers.
+//! This plugin removes acoustic crosstalk to create a binaural-like experience
+//! from conventional stereo speakers.
+//!
+//! Algorithm:
+//! 1. Signal Windowing & FFT: Convert to frequency domain (1024 samples, 75% overlap, Hann window)
+//! 2. Transfer Functions: Model ipsilateral (direct) and contralateral (crosstalk) paths
+//! 3. Inverse with smoothing: Compute regularized inverse filter matrix
+//! 4. Apply Filter: Process stereo signal with crosstalk cancellation
+//! 5. IFFT & Overlap-Add: Reconstruct time-domain signal
+//!
+//! Geometry:
+//! - d: Distance to speakers (m)
+//! - θ: Speaker angle (degrees, typically 30°)
+//! - a: Head radius (m, typically 0.0875m)
+//!
+//! Physical Model:
+//! - l_ipsi: Same-side path length
+//! - l_contra: Opposite-side path length
+//! - Δt: Time difference between paths
+//! - g(f): Head shadowing filter (low-pass)
+
+
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use super::simd::{
@@ -12,7 +38,9 @@ use serde::{Deserialize, Serialize};
 use std::f32::consts::PI;
 use std::sync::Arc;
 
-// ============================================================================ // Configuration // ============================================================================
+/// ============================================================================
+/// Configuration
+/// ============================================================================
 
 /// XTC plugin configuration parameters
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -125,7 +153,9 @@ impl Default for XtcPluginParams {
     }
 }
 
-// ============================================================================ // Plugin Implementation // ============================================================================
+/// ============================================================================
+/// Plugin Implementation
+/// ============================================================================
 
 /// Crosstalk cancellation filters in frequency domain
 struct XtcFilters {
@@ -135,7 +165,7 @@ struct XtcFilters {
     filter_lr: Vec<Complex<f32>>,
 }
 
-/// BACCH-style Crosstalk Cancellation plugin
+/// Crosstalk Cancellation plugin
 ///
 /// Optimized with:
 /// - Block-based I/O processing (no sample-by-sample loops)
@@ -683,7 +713,9 @@ impl Plugin for XtcPlugin {
     }
 }
 
-// ============================================================================ // Crosstalk Cancellation Filter Computation // ============================================================================
+/// ============================================================================
+/// Crosstalk Cancellation Filter Computation
+/// ============================================================================
 
 /// Compute crosstalk cancellation filters in frequency domain (symmetric version)
 ///
@@ -929,7 +961,9 @@ fn compute_beta(freq: f32, params: &XtcPluginParams) -> f32 {
     beta_base * low_freq_factor * high_freq_factor
 }
 
-// ============================================================================ // Tests // ============================================================================
+/// ============================================================================
+/// Tests
+/// ============================================================================
 
 #[cfg(test)]
 mod tests {
