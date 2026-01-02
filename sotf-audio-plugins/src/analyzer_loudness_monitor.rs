@@ -126,7 +126,7 @@ impl LoudnessMonitor {
     ///
     /// # Returns
     /// Ok(()) if successful, Err if analysis fails
-    fn add_frames(&self, samples: &[f32]) -> Result<(), String> {
+    pub(crate) fn add_frames(&self, samples: &[f32]) -> Result<(), String> {
         let mut ebur = self.ebur128.lock().unwrap();
 
         // Add frames to the analyzer
@@ -295,13 +295,13 @@ impl LoudnessMonitor {
     }
 
     /// Get the current loudness measurements
-    fn get_loudness(&self) -> LoudnessInfo {
+    pub(crate) fn get_loudness(&self) -> LoudnessInfo {
         let info = self.current_loudness.lock().unwrap();
         info.clone()
     }
 
     /// Reset the monitor (clear all history)
-    fn reset(&self) -> Result<(), String> {
+    pub(crate) fn reset(&self) -> Result<(), String> {
         let mut ebur = self.ebur128.lock().unwrap();
 
         // Create a new EBU R128 instance to reset state

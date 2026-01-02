@@ -21,6 +21,8 @@ pub struct PluginDragInfo {
     pub name: String,
     pub color: Rgba,
     pub icon: &'static str,
+    pub surface: Rgba,
+    pub text_on_accent: Rgba,
 }
 
 impl Render for PluginDragInfo {
@@ -33,12 +35,7 @@ impl Render for PluginDragInfo {
             .flex_col()
             .rounded_lg()
             .border_color(self.color)
-            .bg(Theme::opacity_20pct(Rgba {
-                r: 0.118,
-                g: 0.118,
-                b: 0.180,
-                a: 1.0,
-            })) // Semi-transparent dark background (theme.surface with opacity)
+            .bg(Theme::opacity_20pct(self.surface))
             .shadow_lg()
             .opacity(0.9)
             // Top bar with color
@@ -60,7 +57,7 @@ impl Render for PluginDragInfo {
                     .px_2()
                     .pb_1()
                     .text_xs()
-                    .text_color(rgb(0xffffff)) // text_on_accent color
+                    .text_color(self.text_on_accent)
                     .font_weight(FontWeight::MEDIUM)
                     .overflow_hidden()
                     .text_ellipsis()
@@ -91,6 +88,7 @@ fn plugin_color(plugin_type: &PluginType, theme: &crate::theme::Theme) -> Rgba {
         PluginType::XTC => theme.plugin_colors.binaural,   // Reuse binaural color for XTC
         PluginType::Denoiser => theme.plugin_colors.eq,    // Reuse eq color for denoiser
         PluginType::Pnd => theme.plugin_colors.eq,         // Reuse eq color for pnd
+        PluginType::ABCompare => theme.plugin_colors.compressor, // A/B Compare - use compressor color
     }
 }
 
@@ -115,6 +113,7 @@ fn plugin_icon(plugin_type: &PluginType) -> &'static str {
         PluginType::XTC => "⊗",
         PluginType::Denoiser => "◌",
         PluginType::Pnd => "♪",
+        PluginType::ABCompare => "⇄", // A/B Compare - bidirectional arrow
     }
 }
 
@@ -139,6 +138,7 @@ fn short_name(plugin_type: &PluginType) -> &'static str {
         PluginType::XTC => "XTC",
         PluginType::Denoiser => "Denoiser",
         PluginType::Pnd => "PND",
+        PluginType::ABCompare => "A/B Comp",
     }
 }
 
@@ -401,6 +401,8 @@ impl PlayerView {
                                 name: name.clone(),
                                 color,
                                 icon,
+                                surface: theme_c.surface,
+                                text_on_accent: theme_c.text_on_accent,
                             };
                             div()
                                 .flex()
@@ -434,10 +436,10 @@ impl PlayerView {
                                         .cursor_grab()
                                         .hover(|s| s.border_color(color))
                                         // Drag-over visual feedback - highlight when dragging over
-                                        .drag_over::<PluginDragInfo>(|style, _, _, _| {
-                                            style
-                                                .bg(rgba(0x3b82f640)) // Blue tint when dragging over
-                                                .border_color(rgb(0x3b82f6))
+                                        .drag_over::<PluginDragInfo>({
+                                            let highlight = theme_c.drag_over_highlight;
+                                            let border = theme_c.drag_over_border;
+                                            move |style, _, _, _| style.bg(highlight).border_color(border)
                                         })
                                         // Handle drop - reorder plugins
                                         .on_drop(cx.listener(
@@ -516,7 +518,7 @@ impl PlayerView {
                                                 .items_center()
                                                 .justify_center()
                                                 .text_xs()
-                                                .text_color(rgb(0xffffff))
+                                                .text_color(theme_c.text_on_accent)
                                                 .cursor_pointer()
                                                 .opacity(0.0)
                                                 .group_hover("plugin-module", |s| s.opacity(1.0))
@@ -572,7 +574,7 @@ impl PlayerView {
                                                     theme_c.error
                                                 })
                                                 .text_size(px(8.0))
-                                                .text_color(rgb(0xffffff))
+                                                .text_color(theme_c.text_on_accent)
                                                 .child(if enabled { "●" } else { "○" }),
                                         )
                                         // Icon
@@ -883,6 +885,7 @@ impl PlayerView {
                 let name = short_name(&pt);
                 let theme_c = theme.clone();
 
+                let text_on_accent = theme_c.text_on_accent;
                 Some(
                     div()
                         .id(("add-plugin", i))
@@ -895,7 +898,7 @@ impl PlayerView {
                         .text_xs()
                         .text_color(color)
                         .cursor_pointer()
-                        .hover(|s| s.bg(color).text_color(rgb(0xffffff)))
+                        .hover(move |s| s.bg(color).text_color(text_on_accent))
                         .on_mouse_up(
                             MouseButton::Left,
                             cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
@@ -931,6 +934,7 @@ impl PlayerView {
                 let name = short_name(&pt);
                 let theme_c = theme.clone();
 
+                let text_on_accent = theme_c.text_on_accent;
                 Some(
                     div()
                         .id(("add-plugin", i + 100))
@@ -943,7 +947,7 @@ impl PlayerView {
                         .text_xs()
                         .text_color(color)
                         .cursor_pointer()
-                        .hover(|s| s.bg(color).text_color(rgb(0xffffff)))
+                        .hover(move |s| s.bg(color).text_color(text_on_accent))
                         .on_mouse_up(
                             MouseButton::Left,
                             cx.listener(move |view, _: &MouseUpEvent, _window, cx| {

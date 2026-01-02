@@ -41,6 +41,17 @@ impl Default for SpectrumColors {
     }
 }
 
+impl From<&crate::theme::SpectrumColors> for SpectrumColors {
+    fn from(theme_colors: &crate::theme::SpectrumColors) -> Self {
+        Self {
+            background: theme_colors.background,
+            low: theme_colors.bass,
+            mid: theme_colors.mids,
+            high: theme_colors.treble,
+        }
+    }
+}
+
 /// GPU-accelerated spectrum analyzer element
 ///
 /// Renders a frequency spectrum with bars colored by frequency band
@@ -478,6 +489,7 @@ pub fn render_spectrum_analyzer_plugin(
                                         .height(px(200.0))
                                         .frequency_range(state.min_freq, state.max_freq)
                                         .smoothing(state.smoothing)
+                                        .colors(SpectrumColors::from(&theme.spectrum_colors))
                                         .into_any_element()
                                 } else {
                                     // Fallback if no data available
@@ -595,7 +607,8 @@ impl PlayerView {
                                 SpectrumElement::new(magnitudes)
                                     .height(px(256.0))
                                     .frequency_range(20.0, 20000.0)
-                                    .smoothing(0.3),
+                                    .smoothing(0.3)
+                                    .colors(SpectrumColors::from(&theme.spectrum_colors)),
                             ),
                         ),
                 )

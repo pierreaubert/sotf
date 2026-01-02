@@ -2127,6 +2127,35 @@ impl App {
                     }
                     true
                 }
+                PluginSettings::ABCompare {
+                    mix,
+                    mix_mode,
+                    selected_path,
+                    bypass,
+                    auto_gain_enabled,
+                    loudness_type,
+                    max_auto_gain_db,
+                    gain_smoothing_ms,
+                    mix_transition_ms,
+                    path_a_config: _,
+                    path_b_config: _,
+                } => {
+                    match param_idx {
+                        0 => *mix = (*mix + delta * 0.1).clamp(-1.0, 1.0),
+                        1 => *mix_mode = if *mix_mode == 0 { 1 } else { 0 },
+                        2 => *selected_path = if *selected_path == 0 { 1 } else { 0 },
+                        3 => *bypass = !*bypass,
+                        4 => *auto_gain_enabled = !*auto_gain_enabled,
+                        5 => *loudness_type = if *loudness_type == 0 { 1 } else { 0 },
+                        6 => *max_auto_gain_db = (*max_auto_gain_db + delta).clamp(0.0, 24.0),
+                        7 => *gain_smoothing_ms = (*gain_smoothing_ms + delta * 10.0).clamp(10.0, 500.0),
+                        8 => *mix_transition_ms = (*mix_transition_ms + delta * 5.0).clamp(5.0, 500.0),
+                        // path configs are JSON strings - skip editing for now
+                        9 | 10 => return false,
+                        _ => return false,
+                    }
+                    true
+                }
             }
         } else {
             false
@@ -3277,6 +3306,7 @@ fn get_param_count(settings: &sotf_audio_player::PluginSettings) -> usize {
         PluginSettings::XTC { .. } => 8, // distance, speaker_angle, head_radius, beta_base, beta_low_boost, beta_high_boost, head_shadow_cutoff, head_shadow_slope
         PluginSettings::Denoiser { .. } => 7, // reduction_db, floor_db, smoothing, attack_ms, release_ms, low_latency, polyphonic_detection
         PluginSettings::Pnd { .. } => 3, // correction_strength, analysis_window_ms, drift_smoothing
+        PluginSettings::ABCompare { .. } => 11, // mix, mix_mode, selected_path, bypass, auto_gain_enabled, loudness_type, max_auto_gain_db, gain_smoothing_ms, mix_transition_ms, path_a, path_b
     }
 }
 

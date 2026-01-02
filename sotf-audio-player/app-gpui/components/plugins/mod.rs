@@ -29,6 +29,7 @@ mod ui_matrix;
 mod ui_mb_compressor;
 mod ui_mb_expander;
 mod ui_mute_solo;
+mod ui_ab_compare;
 mod ui_pnd;
 mod ui_rack;
 mod ui_spectrum;
@@ -58,6 +59,7 @@ pub use ui_matrix::render_matrix_plugin;
 pub use ui_mb_compressor::render_mb_compressor_plugin;
 pub use ui_mb_expander::render_mb_expander_plugin;
 pub use ui_mute_solo::render_mute_solo_plugin;
+pub use ui_ab_compare::render_ab_compare_plugin;
 pub use ui_pnd::render_pnd_plugin;
 pub use ui_rack::PluginDragInfo;
 pub use ui_spectrum::{
@@ -575,6 +577,39 @@ pub fn render_plugin_content(
                 correction_strength: *correction_strength,
                 analysis_window_ms: *analysis_window_ms,
                 drift_smoothing: *drift_smoothing,
+                is_editing,
+                selected_param,
+            },
+            theme,
+        )
+        .into_any_element(),
+        PluginSettings::ABCompare {
+            mix,
+            mix_mode,
+            selected_path,
+            bypass,
+            auto_gain_enabled,
+            loudness_type,
+            max_auto_gain_db,
+            gain_smoothing_ms,
+            mix_transition_ms,
+            path_a_config,
+            path_b_config,
+        } => render_ab_compare_plugin(
+            entity.clone(),
+            plugin_idx,
+            ui_ab_compare::ABCompareRenderState {
+                mix: *mix,
+                mix_mode: *mix_mode,
+                selected_path: *selected_path,
+                bypass: *bypass,
+                auto_gain_enabled: *auto_gain_enabled,
+                loudness_type: *loudness_type,
+                max_auto_gain_db: *max_auto_gain_db,
+                gain_smoothing_ms: *gain_smoothing_ms,
+                mix_transition_ms: *mix_transition_ms,
+                path_a_config,
+                path_b_config,
                 is_editing,
                 selected_param,
             },

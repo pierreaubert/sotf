@@ -208,6 +208,7 @@ pub struct Theme {
     pub knob_color: Rgba,
     pub optimization_color: Rgba,
     pub grid_color: Rgba,
+    pub overlay_bg: Rgba,
 
     // Layout sizes
     pub separator_size: f32,
@@ -225,6 +226,13 @@ impl Theme {
             surface: self.surface,
             surface_hover: self.surface_hover,
             muted: self.background_secondary,
+            transparent: Rgba {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 0.0,
+            },
+            overlay_bg: self.overlay_bg,
             text_primary: self.text_primary,
             text_secondary: self.text_secondary,
             text_muted: self.text_muted,
@@ -237,6 +245,17 @@ impl Theme {
             info: self.info,
             border: self.border,
             border_hover: self.border_focused,
+            // Badge colors - derive from semantic colors
+            badge_primary_bg: Self::opacity_20pct(self.accent),
+            badge_primary_text: self.accent,
+            badge_success_bg: Self::opacity_20pct(self.success),
+            badge_success_text: self.success,
+            badge_warning_bg: Self::opacity_20pct(self.warning),
+            badge_warning_text: self.warning,
+            badge_error_bg: Self::opacity_20pct(self.error),
+            badge_error_text: self.error,
+            badge_info_bg: Self::opacity_20pct(self.info),
+            badge_info_text: self.info,
         }
     }
 
@@ -285,6 +304,11 @@ impl Theme {
         Self::with_opacity(color, 0.25)
     }
 
+    /// Common opacity: 50% (~128 alpha)
+    pub fn opacity_50pct(color: Rgba) -> Rgba {
+        Self::with_opacity(color, 0.5)
+    }
+
     /// Convert to ButtonTheme for use with ui_kit Button component
     pub fn to_button_theme(&self) -> gpui_ui_kit::ButtonTheme {
         gpui_ui_kit::ButtonTheme {
@@ -297,7 +321,14 @@ impl Theme {
             // Use text_on_accent for Primary variant buttons (on accent background)
             text_on_accent: self.text_on_accent,
             error: self.error,
+            error_hover: Self::with_opacity(self.error, 0.8),
             border: self.border,
+            transparent: Rgba {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 0.0,
+            },
         }
     }
 
@@ -323,6 +354,8 @@ impl Theme {
             thumb_active: self.accent,
             label: self.text_primary,
             value: self.text_secondary,
+            disabled_label: Self::opacity_50pct(self.text_muted),
+            disabled_fill: self.text_muted,
         }
     }
 
@@ -416,6 +449,9 @@ impl Theme {
             border: self.border,
             text_on_accent: self.text_on_accent,
             text_muted: self.text_muted,
+            text_primary: self.text_primary,
+            surface_hover: self.surface_hover,
+            background: self.background,
         }
     }
 }

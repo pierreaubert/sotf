@@ -42,6 +42,7 @@ pub struct PaletteDragData {
     pub item_type: PaletteItemType,
     pub label: String,
     pub color: Rgba,
+    pub text_on_accent: Rgba,
 }
 
 /// Type of item being dragged from palette
@@ -59,7 +60,7 @@ impl Render for PaletteDragData {
             .bg(self.color)
             .rounded_md()
             .text_sm()
-            .text_color(rgb(0xffffff))
+            .text_color(self.text_on_accent)
             .shadow_lg()
             .child(self.label.clone())
     }
@@ -180,20 +181,21 @@ impl PlayerView {
                     // Sidebar palette
                     .child(self.render_graph_palette(cx))
                     // Canvas area with drop support
-                    .child(
+                    .child({
+                        let drag_highlight = Theme::opacity_8pct(theme.drag_over_border);
                         div()
                             .id("graph-canvas-area")
                             .flex_1()
                             .size_full()
                             .relative()
-                            .drag_over::<PaletteDragData>(|style, _, _, _| {
-                                style.bg(rgba(0x3b82f610))
+                            .drag_over::<PaletteDragData>(move |style, _, _, _| {
+                                style.bg(drag_highlight)
                             })
                             .on_drop(cx.listener(|view, data: &PaletteDragData, _window, cx| {
                                 view.handle_palette_drop(data, cx);
                             }))
-                            .when_some(workflow_canvas, |el, canvas| el.child(canvas)),
-                    ),
+                            .when_some(workflow_canvas, |el, canvas| el.child(canvas))
+                    }),
             )
     }
 
@@ -407,6 +409,7 @@ impl PlayerView {
                         item_type,
                         label: label.to_string(),
                         color,
+                        text_on_accent: theme.text_on_accent,
                     };
                     div()
                         .id(SharedString::from(format!("palette-{}", label)))
@@ -452,6 +455,7 @@ impl PlayerView {
                             item_type: PaletteItemType::Plugin(plugin_type.clone()),
                             label: label.to_string(),
                             color,
+                            text_on_accent: theme.text_on_accent,
                         };
                         div()
                             .id(SharedString::from(format!("palette-{:?}", plugin_type)))
@@ -496,6 +500,7 @@ fn plugin_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
         PluginType::Matrix => theme.accent,
         PluginType::Denoiser => theme.info,
         PluginType::Pnd => theme.info,
+        PluginType::ABCompare => theme.warning, // A/B Compare - use warning color
     }
 }
 
@@ -526,6 +531,8 @@ fn plugin_channel_counts(plugin_type: &PluginType) -> (usize, usize) {
         PluginType::Convolution => (2, 2),
         // Matrix: variable in/out (default to 2x2)
         PluginType::Matrix => (2, 2),
+        // A/B Compare: stereo in/out
+        PluginType::ABCompare => (2, 2),
     }
 }
 
@@ -858,7 +865,7 @@ impl PlayerView {
             .flex()
             .items_center()
             .justify_center()
-            .bg(rgba(0x00000099))
+            .bg(theme.overlay_bg)
             .on_mouse_down(MouseButton::Left, {
                 let state = state_for_close.clone();
                 move |_, _, cx| {
@@ -946,7 +953,7 @@ impl PlayerView {
                                             .rounded_md()
                                             .bg(theme.error)
                                             .text_sm()
-                                            .text_color(rgb(0xffffff))
+                                            .text_color(theme.text_on_accent)
                                             .cursor_pointer()
                                             .hover(|s| s.opacity(0.8))
                                             .on_mouse_down(MouseButton::Left, move |_, _, cx| {

@@ -26,6 +26,7 @@ mod host;
 pub mod param_specs;
 mod parameters;
 mod plugin;
+mod plugin_ab_compare;
 mod plugin_binaural;
 mod plugin_channel_mute_solo;
 mod plugin_compressor;
@@ -61,6 +62,10 @@ pub use analyzer::{AnalyzerData, AnalyzerPlugin, LoudnessData, SpectrumData};
 pub use host::{DawHost, GraphEdge as DawGraphEdge, Host, NodeId as DawNodeId};
 pub use parameters::{Parameter, ParameterId, ParameterValue};
 pub use plugin::{InPlacePlugin, InPlacePluginAdapter, Plugin, PluginInfo, ProcessContext};
+pub use plugin_ab_compare::{
+    ABCompareData, ABComparePlugin, ABComparePluginParams, GraphEdgeConfig, GraphNodeConfig,
+    LoudnessType, MixMode, PathConfig, PluginInRack,
+};
 
 pub use plugin_binaural::{
     BinauralDecoderParams, BinauralDecoderPlugin, RoomModel, binaural_default_enable_optimization,

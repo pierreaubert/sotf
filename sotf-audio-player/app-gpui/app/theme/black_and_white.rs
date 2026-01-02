@@ -173,6 +173,12 @@ impl Theme {
                 b: 1.0,
                 a: 0.083,
             }, // rgba(0xffffff15) = 21/255 ≈ 8.3%
+            overlay_bg: Rgba {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 0.7,
+            }, // Semi-transparent black for modal backdrops (higher contrast for B&W)
 
             // Layout sizes
             separator_size: 20.0,

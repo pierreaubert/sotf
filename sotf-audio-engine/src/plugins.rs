@@ -24,6 +24,7 @@ pub enum PluginType {
     XTC,
     Denoiser,
     Pnd,
+    ABCompare,
 }
 
 impl PluginType {
@@ -48,6 +49,7 @@ impl PluginType {
             Self::XTC => "Crosstalk Cancellation",
             Self::Denoiser => "Denoiser",
             Self::Pnd => "PND Varispeed",
+            Self::ABCompare => "A/B Compare",
         }
     }
 
@@ -72,6 +74,7 @@ impl PluginType {
             Self::XTC => "Crosstalk cancellation for speaker playback",
             Self::Denoiser => "Wiener filter denoiser with MCRA noise estimation",
             Self::Pnd => "Polyphonic note detection and varispeed correction",
+            Self::ABCompare => "A/B comparison with auto-gain loudness matching",
         }
     }
 
@@ -96,6 +99,7 @@ impl PluginType {
             Self::XTC,
             Self::Denoiser,
             Self::Pnd,
+            Self::ABCompare,
         ]
     }
 
@@ -618,6 +622,27 @@ fn default_pnd_drift_smoothing() -> f64 {
     pnd_specs::DRIFT_SMOOTHING_DEFAULT as f64
 }
 
+// ABCompare defaults
+fn default_ab_auto_gain_enabled() -> bool {
+    true
+}
+
+fn default_ab_max_auto_gain_db() -> f64 {
+    12.0
+}
+
+fn default_ab_gain_smoothing_ms() -> f64 {
+    100.0
+}
+
+fn default_ab_mix_transition_ms() -> f64 {
+    50.0
+}
+
+fn default_ab_path_config() -> String {
+    r#"{"type":"None"}"#.to_string()
+}
+
 fn default_channels() -> usize {
     2
 }
@@ -913,6 +938,41 @@ pub enum PluginSettings {
         #[serde(default = "default_pnd_drift_smoothing")]
         drift_smoothing: f64,
     },
+    ABCompare {
+        /// A/B mix: -1.0 = A only, 0.0 = 50/50, 1.0 = B only
+        #[serde(default)]
+        mix: f64,
+        /// Mix mode: 0 = potentiometer (continuous), 1 = binary (A or B)
+        #[serde(default)]
+        mix_mode: i32,
+        /// Selected path in binary mode: 0 = A, 1 = B
+        #[serde(default)]
+        selected_path: i32,
+        /// Bypass: output original input
+        #[serde(default)]
+        bypass: bool,
+        /// Enable automatic loudness matching
+        #[serde(default = "default_ab_auto_gain_enabled")]
+        auto_gain_enabled: bool,
+        /// Loudness measurement type: 0 = momentary (400ms), 1 = short-term (3s)
+        #[serde(default)]
+        loudness_type: i32,
+        /// Maximum auto-gain adjustment in dB
+        #[serde(default = "default_ab_max_auto_gain_db")]
+        max_auto_gain_db: f64,
+        /// Gain smoothing time in ms
+        #[serde(default = "default_ab_gain_smoothing_ms")]
+        gain_smoothing_ms: f64,
+        /// Mix transition time in ms
+        #[serde(default = "default_ab_mix_transition_ms")]
+        mix_transition_ms: f64,
+        /// Path A configuration (JSON)
+        #[serde(default = "default_ab_path_config")]
+        path_a_config: String,
+        /// Path B configuration (JSON)
+        #[serde(default = "default_ab_path_config")]
+        path_b_config: String,
+    },
 }
 
 impl PluginSettings {
@@ -937,6 +997,7 @@ impl PluginSettings {
             Self::XTC { .. } => PluginType::XTC,
             Self::Denoiser { .. } => PluginType::Denoiser,
             Self::Pnd { .. } => PluginType::Pnd,
+            Self::ABCompare { .. } => PluginType::ABCompare,
         }
     }
 
@@ -1342,6 +1403,34 @@ impl PluginSettings {
                     "drift_smoothing": drift_smoothing,
                 }),
             ),
+            Self::ABCompare {
+                mix,
+                mix_mode,
+                selected_path,
+                bypass,
+                auto_gain_enabled,
+                loudness_type,
+                max_auto_gain_db,
+                gain_smoothing_ms,
+                mix_transition_ms,
+                path_a_config,
+                path_b_config,
+            } => PluginConfig::new(
+                "ab_compare",
+                json!({
+                    "mix": mix,
+                    "mix_mode": mix_mode,
+                    "selected_path": selected_path,
+                    "bypass": bypass,
+                    "auto_gain_enabled": auto_gain_enabled,
+                    "loudness_type": loudness_type,
+                    "max_auto_gain_db": max_auto_gain_db,
+                    "gain_smoothing_ms": gain_smoothing_ms,
+                    "mix_transition_ms": mix_transition_ms,
+                    "path_a_config": path_a_config,
+                    "path_b_config": path_b_config,
+                }),
+            ),
         }
     }
 
@@ -1546,6 +1635,19 @@ impl PluginSettings {
                 correction_strength: default_pnd_correction_strength(),
                 analysis_window_ms: default_pnd_analysis_window_ms(),
                 drift_smoothing: default_pnd_drift_smoothing(),
+            },
+            PluginType::ABCompare => Self::ABCompare {
+                mix: 0.0,
+                mix_mode: 0,
+                selected_path: 0,
+                bypass: false,
+                auto_gain_enabled: default_ab_auto_gain_enabled(),
+                loudness_type: 0,
+                max_auto_gain_db: default_ab_max_auto_gain_db(),
+                gain_smoothing_ms: default_ab_gain_smoothing_ms(),
+                mix_transition_ms: default_ab_mix_transition_ms(),
+                path_a_config: default_ab_path_config(),
+                path_b_config: default_ab_path_config(),
             },
         }
     }

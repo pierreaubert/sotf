@@ -1105,7 +1105,7 @@ impl PlayerView {
             .flex()
             .items_center()
             .justify_center()
-            .bg(gpui::rgba(0x00000080))
+            .bg(theme.overlay_bg)
             .child(
                 div()
                     .w(px(400.0))

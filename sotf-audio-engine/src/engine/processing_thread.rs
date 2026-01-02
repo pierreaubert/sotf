@@ -688,6 +688,17 @@ fn create_plugin(
             Ok(Box::new(plugin))
         }
 
+        "ab_compare" | "ab" => {
+            use sotf_plugins::{ABComparePlugin, ABComparePluginParams};
+
+            let params: ABComparePluginParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| format!("Failed to parse A/B compare plugin parameters: {}", e))?;
+
+            let mut plugin = ABComparePlugin::from_params(channels, params)?;
+            plugin.initialize(sample_rate)?;
+            Ok(Box::new(plugin))
+        }
+
         other => Err(format!("Unknown plugin type: {}", other)),
     }
 }

@@ -3056,6 +3056,77 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
                 format!("{:.3}", drift_smoothing),
             ),
         ],
+        PluginSettings::ABCompare {
+            mix,
+            mix_mode,
+            selected_path,
+            bypass,
+            auto_gain_enabled,
+            loudness_type,
+            max_auto_gain_db,
+            gain_smoothing_ms,
+            mix_transition_ms,
+            path_a_config,
+            path_b_config,
+        } => vec![
+            (
+                "Mix (A/B)".to_string(),
+                format!("{:.2} (-1=A, +1=B)", mix),
+            ),
+            (
+                "Mix Mode".to_string(),
+                if *mix_mode == 0 {
+                    "Potentiometer (continuous)".to_string()
+                } else {
+                    "Binary (A or B)".to_string()
+                },
+            ),
+            (
+                "Selected Path".to_string(),
+                if *selected_path == 0 { "A".to_string() } else { "B".to_string() },
+            ),
+            ("Bypass".to_string(), if *bypass { "Yes".to_string() } else { "No".to_string() }),
+            (
+                "Auto Gain".to_string(),
+                if *auto_gain_enabled { "Enabled".to_string() } else { "Disabled".to_string() },
+            ),
+            (
+                "Loudness Type".to_string(),
+                if *loudness_type == 0 {
+                    "Momentary (400ms)".to_string()
+                } else {
+                    "Short-term (3s)".to_string()
+                },
+            ),
+            (
+                "Max Auto Gain".to_string(),
+                format!("{:.1} dB", max_auto_gain_db),
+            ),
+            (
+                "Gain Smoothing".to_string(),
+                format!("{:.1} ms", gain_smoothing_ms),
+            ),
+            (
+                "Mix Transition".to_string(),
+                format!("{:.1} ms", mix_transition_ms),
+            ),
+            (
+                "Path A Config".to_string(),
+                if path_a_config.is_empty() || path_a_config == r#"{"type":"None"}"# {
+                    "[empty - passthrough]".to_string()
+                } else {
+                    path_a_config.chars().take(30).collect::<String>() + "..."
+                },
+            ),
+            (
+                "Path B Config".to_string(),
+                if path_b_config.is_empty() || path_b_config == r#"{"type":"None"}"# {
+                    "[empty - passthrough]".to_string()
+                } else {
+                    path_b_config.chars().take(30).collect::<String>() + "..."
+                },
+            ),
+        ],
     }
 }
 

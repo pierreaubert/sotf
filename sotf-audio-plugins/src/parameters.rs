@@ -156,6 +156,20 @@ impl Parameter {
         }
     }
 
+    /// Create a new string parameter (for JSON-serialized complex types)
+    pub fn new_string(id: &str, name: &str, default: String) -> Self {
+        Self {
+            id: ParameterId::from(id),
+            name: name.to_string(),
+            description: None,
+            group: "General".to_string(),
+            importance: ParameterImportance::Useful,
+            default_value: ParameterValue::String(default),
+            min_value: None,
+            max_value: None,
+        }
+    }
+
     /// Set description
     pub fn with_description(mut self, description: &str) -> Self {
         self.description = Some(description.to_string());
