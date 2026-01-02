@@ -83,7 +83,7 @@ mod param_idx {
     pub const LFE_CUTOFF_HZ: usize = 6;
     pub const STEREO_WIDTH: usize = 7;
     pub const CENTER_SPREAD: usize = 8;
-    pub const BANDPASS_HZ: usize = 9;
+    pub const _BANDPASS_HZ: usize = 9; // Reserved but currently unused in UI
     pub const ENABLE_SUBHARMONIC_SYNTH: usize = 10;
     pub const SUBHARMONIC_GAIN: usize = 11;
     pub const ENABLE_HR_DIRECT: usize = 12;

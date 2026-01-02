@@ -3,6 +3,7 @@
 // ============================================================================
 
 use serde::{Deserialize, Serialize};
+use strsim::jaro_winkler;
 
 use super::room_eq::{AutoEqField, OptimizationStatus, RoomEqAlgorithm};
 
@@ -560,18 +561,24 @@ impl SpinoramaEqState {
         self.error_message = None;
     }
 
-    /// Update speaker suggestions based on search query
+    /// Update speaker suggestions based on search query with fuzzy matching
     pub fn update_suggestions(&mut self) {
-        let query = self.speaker_search.to_lowercase();
-        if query.is_empty() {
+        if self.speaker_search.is_empty() {
             self.speaker_suggestions = self.available_speakers.clone();
         } else {
-            self.speaker_suggestions = self
+            // Score and filter speakers using fuzzy matching
+            let mut scored: Vec<(String, f64)> = self
                 .available_speakers
                 .iter()
-                .filter(|s| s.to_lowercase().contains(&query))
-                .cloned()
+                .filter_map(|s| {
+                    fuzzy_match_score(&self.speaker_search, s).map(|score| (s.clone(), score))
+                })
                 .collect();
+
+            // Sort by score descending (best matches first)
+            scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+            self.speaker_suggestions = scored.into_iter().map(|(s, _)| s).collect();
         }
         // Limit to reasonable number for UI
         self.speaker_suggestions.truncate(50);
@@ -587,4 +594,39 @@ impl SpinoramaEqState {
             None => true,
         }
     }
+}
+
+/// Score how well a query matches a speaker name using fuzzy multi-word matching.
+/// Returns Some(score) if all query words match, None otherwise.
+/// Uses Jaro-Winkler similarity with a 0.8 threshold for typo tolerance.
+fn fuzzy_match_score(query: &str, speaker: &str) -> Option<f64> {
+    let query_lower = query.to_lowercase();
+    let speaker_lower = speaker.to_lowercase();
+
+    let query_words: Vec<&str> = query_lower.split_whitespace().collect();
+    let speaker_words: Vec<&str> = speaker_lower.split_whitespace().collect();
+
+    if query_words.is_empty() {
+        return Some(1.0);
+    }
+
+    let mut total_score = 0.0;
+
+    for query_word in &query_words {
+        // Find best matching word in speaker name
+        let best_match = speaker_words
+            .iter()
+            .map(|sw| jaro_winkler(query_word, sw))
+            .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .unwrap_or(0.0);
+
+        // Require minimum similarity threshold (0.8 = ~80% similar)
+        if best_match < 0.8 {
+            return None; // Word doesn't match
+        }
+        total_score += best_match;
+    }
+
+    // Average score across all query words
+    Some(total_score / query_words.len() as f64)
 }

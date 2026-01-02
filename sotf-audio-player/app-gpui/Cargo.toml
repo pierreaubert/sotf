@@ -44,6 +44,9 @@ rfd = { workspace = true }
 clap = { workspace = true }
 chrono = { workspace = true }
 
+# Fuzzy string matching
+strsim = { workspace = true }
+
 # Audio
 id3 = { workspace = true }
 metaflac = { workspace = true }
