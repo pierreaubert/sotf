@@ -68,8 +68,14 @@ pub struct ButtonTheme {
     pub text_on_accent: Rgba,
     #[theme(default = 0xcc3333, from = error)]
     pub error: Rgba,
+    /// Error hover color (for destructive button hover)
+    #[theme(default = 0xe64545, from = error)]
+    pub error_hover: Rgba,
     #[theme(default = 0x555555, from = border)]
     pub border: Rgba,
+    /// Transparent color (for ghost/outline backgrounds)
+    #[theme(default = 0x00000000, from = transparent)]
+    pub transparent: Rgba,
 }
 
 /// A styled button component
@@ -190,18 +196,18 @@ impl Button {
                 ),
                 ButtonVariant::Destructive => (
                     theme.error,
-                    rgb(0xe64545),
+                    theme.error_hover,
                     theme.text_on_accent,
                     theme.error,
                 ),
                 ButtonVariant::Ghost => (
-                    rgba(0x00000000),
+                    theme.transparent,
                     theme.surface_hover,
                     theme.text_secondary,
-                    rgba(0x00000000),
+                    theme.transparent,
                 ),
                 ButtonVariant::Outline => (
-                    rgba(0x00000000),
+                    theme.transparent,
                     theme.surface,
                     theme.text_secondary,
                     theme.border,

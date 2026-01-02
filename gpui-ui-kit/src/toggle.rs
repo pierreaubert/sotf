@@ -119,6 +119,15 @@ pub struct ToggleTheme {
     /// Muted text color
     #[theme(default = 0x888888ff, from = text_muted)]
     pub text_muted: Rgba,
+    /// Primary text color (for selected labels)
+    #[theme(default = 0xffffffff, from = text_primary)]
+    pub text_primary: Rgba,
+    /// Surface hover color (for active segmented button)
+    #[theme(default = 0x4a4a4aff, from = surface_hover)]
+    pub surface_hover: Rgba,
+    /// Background color (for inactive segmented button)
+    #[theme(default = 0x2a2a2aff, from = background)]
+    pub background: Rgba,
 }
 
 /// A toggle switch component with optional selection highlighting
@@ -365,7 +374,7 @@ impl Toggle {
         // Label
         if let Some(label) = &self.label {
             let label_color = if selected {
-                rgba(0xffffffff) // text_primary
+                theme.text_primary
             } else {
                 theme.label
             };
@@ -398,12 +407,12 @@ impl Toggle {
                     .text_xs()
                     .font_weight(FontWeight::BOLD)
                     .bg(if !checked {
-                        rgba(0x4a4a4aff) // surface_hover
+                        theme.surface_hover
                     } else {
-                        rgba(0x2a2a2aff) // background
+                        theme.background
                     })
                     .text_color(if !checked {
-                        rgba(0xffffffff)
+                        theme.text_primary
                     } else {
                         theme.text_muted
                     })
@@ -421,7 +430,7 @@ impl Toggle {
                     .bg(if checked {
                         theme.success
                     } else {
-                        rgba(0x2a2a2aff)
+                        theme.background
                     })
                     .text_color(if checked {
                         theme.text_on_accent

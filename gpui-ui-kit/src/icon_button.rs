@@ -12,7 +12,7 @@ use gpui::*;
 #[derive(Debug, Clone, ComponentTheme)]
 pub struct IconButtonTheme {
     /// Background color for ghost variant
-    #[theme(default = 0x00000000, from_expr = "gpui::rgba(0x00000000)")]
+    #[theme(default = 0x00000000, from = transparent)]
     pub ghost_bg: Rgba,
     /// Background color on hover for ghost variant
     #[theme(default = 0x3a3a3aff, from = surface_hover)]

@@ -11,7 +11,7 @@ use gpui::*;
 #[derive(Debug, Clone, ComponentTheme)]
 pub struct DialogTheme {
     /// Backdrop background
-    #[theme(default = 0x000000aa, from_expr = "gpui::rgba(0x00000088)")]
+    #[theme(default = 0x00000088, from = overlay_bg)]
     pub backdrop: Rgba,
     /// Dialog background
     #[theme(default = 0x1e1e1e, from = surface)]

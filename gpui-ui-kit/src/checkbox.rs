@@ -18,6 +18,9 @@ pub struct CheckboxTheme {
     /// Background when checked
     #[theme(default = 0x007acc, from = accent)]
     pub checked_bg: Rgba,
+    /// Background when unchecked (transparent)
+    #[theme(default = 0x00000000, from = transparent)]
+    pub unchecked_bg: Rgba,
     /// Border when unchecked
     #[theme(default = 0x555555, from = border)]
     pub unchecked_border: Rgba,
@@ -134,7 +137,7 @@ impl Checkbox {
         let (bg, border_color) = if checked || indeterminate {
             (theme.checked_bg, theme.checked_bg)
         } else {
-            (rgba(0x00000000), theme.unchecked_border)
+            (theme.unchecked_bg, theme.unchecked_border)
         };
 
         let mut container = div()

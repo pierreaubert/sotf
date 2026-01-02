@@ -70,6 +70,10 @@ pub struct Theme {
     pub surface_hover: Rgba,
     /// Muted background for secondary elements
     pub muted: Rgba,
+    /// Transparent color (for invisible backgrounds)
+    pub transparent: Rgba,
+    /// Overlay/backdrop color (semi-transparent for modals/dialogs)
+    pub overlay_bg: Rgba,
 
     // Text colors
     /// Primary text color
@@ -102,6 +106,28 @@ pub struct Theme {
     pub border: Rgba,
     /// Border on hover/focus
     pub border_hover: Rgba,
+
+    // Badge colors
+    /// Badge primary background
+    pub badge_primary_bg: Rgba,
+    /// Badge primary text
+    pub badge_primary_text: Rgba,
+    /// Badge success background
+    pub badge_success_bg: Rgba,
+    /// Badge success text
+    pub badge_success_text: Rgba,
+    /// Badge warning background
+    pub badge_warning_bg: Rgba,
+    /// Badge warning text
+    pub badge_warning_text: Rgba,
+    /// Badge error background
+    pub badge_error_bg: Rgba,
+    /// Badge error text
+    pub badge_error_text: Rgba,
+    /// Badge info background
+    pub badge_info_bg: Rgba,
+    /// Badge info text
+    pub badge_info_text: Rgba,
 }
 
 impl Theme {
@@ -114,6 +140,8 @@ impl Theme {
             surface: rgb(0x2a2a2a),
             surface_hover: rgb(0x3a3a3a),
             muted: rgb(0x252525),
+            transparent: rgba(0x00000000),
+            overlay_bg: rgba(0x00000088),
             // Text
             text_primary: rgb(0xffffff),
             text_secondary: rgb(0xcccccc),
@@ -130,6 +158,17 @@ impl Theme {
             // Border
             border: rgb(0x3a3a3a),
             border_hover: rgb(0x555555),
+            // Badge colors (dark theme)
+            badge_primary_bg: rgb(0x1a4a7a),
+            badge_primary_text: rgb(0x7cc4ff),
+            badge_success_bg: rgb(0x1a3a1a),
+            badge_success_text: rgb(0x7ccc7c),
+            badge_warning_bg: rgb(0x3a3a1a),
+            badge_warning_text: rgb(0xcccc7c),
+            badge_error_bg: rgb(0x3a1a1a),
+            badge_error_text: rgb(0xcc7c7c),
+            badge_info_bg: rgb(0x1a3a3a),
+            badge_info_text: rgb(0x7ccccc),
         }
     }
 
@@ -142,6 +181,8 @@ impl Theme {
             surface: rgb(0xffffff),
             surface_hover: rgb(0xf0f0f0),
             muted: rgb(0xeeeeee),
+            transparent: rgba(0x00000000),
+            overlay_bg: rgba(0x00000088),
             // Text
             text_primary: rgb(0x1a1a1a),
             text_secondary: rgb(0x4a4a4a),
@@ -158,6 +199,17 @@ impl Theme {
             // Border
             border: rgb(0xd4d4d4),
             border_hover: rgb(0xaaaaaa),
+            // Badge colors (light theme)
+            badge_primary_bg: rgb(0xdbeafe),
+            badge_primary_text: rgb(0x1d4ed8),
+            badge_success_bg: rgb(0xdcfce7),
+            badge_success_text: rgb(0x16a34a),
+            badge_warning_bg: rgb(0xfef3c7),
+            badge_warning_text: rgb(0xd97706),
+            badge_error_bg: rgb(0xfee2e2),
+            badge_error_text: rgb(0xdc2626),
+            badge_info_bg: rgb(0xe0f2fe),
+            badge_info_text: rgb(0x0284c7),
         }
     }
 
@@ -170,6 +222,8 @@ impl Theme {
             surface: rgb(0x21262d),
             surface_hover: rgb(0x30363d),
             muted: rgb(0x161b22),
+            transparent: rgba(0x00000000),
+            overlay_bg: rgba(0x00000088),
             // Text
             text_primary: rgb(0xc9d1d9),
             text_secondary: rgb(0x8b949e),
@@ -186,6 +240,17 @@ impl Theme {
             // Border
             border: rgb(0x30363d),
             border_hover: rgb(0x484f58),
+            // Badge colors (dark variant)
+            badge_primary_bg: rgb(0x1a4a7a),
+            badge_primary_text: rgb(0x7cc4ff),
+            badge_success_bg: rgb(0x1a3a1a),
+            badge_success_text: rgb(0x7ccc7c),
+            badge_warning_bg: rgb(0x3a3a1a),
+            badge_warning_text: rgb(0xcccc7c),
+            badge_error_bg: rgb(0x3a1a1a),
+            badge_error_text: rgb(0xcc7c7c),
+            badge_info_bg: rgb(0x1a3a3a),
+            badge_info_text: rgb(0x7ccccc),
         }
     }
 
@@ -198,6 +263,8 @@ impl Theme {
             surface: rgb(0x2a3627),
             surface_hover: rgb(0x3a4a35),
             muted: rgb(0x222d1f),
+            transparent: rgba(0x00000000),
+            overlay_bg: rgba(0x00000088),
             // Text
             text_primary: rgb(0xd4e4d1),
             text_secondary: rgb(0xa8c4a2),
@@ -214,6 +281,17 @@ impl Theme {
             // Border
             border: rgb(0x3a4a35),
             border_hover: rgb(0x556b50),
+            // Badge colors (dark variant)
+            badge_primary_bg: rgb(0x1a4a7a),
+            badge_primary_text: rgb(0x7cc4ff),
+            badge_success_bg: rgb(0x1a3a1a),
+            badge_success_text: rgb(0x7ccc7c),
+            badge_warning_bg: rgb(0x3a3a1a),
+            badge_warning_text: rgb(0xcccc7c),
+            badge_error_bg: rgb(0x3a1a1a),
+            badge_error_text: rgb(0xcc7c7c),
+            badge_info_bg: rgb(0x1a3a3a),
+            badge_info_text: rgb(0x7ccccc),
         }
     }
 
@@ -226,6 +304,8 @@ impl Theme {
             surface: rgb(0x141414),
             surface_hover: rgb(0x222222),
             muted: rgb(0x0a0a0a),
+            transparent: rgba(0x00000000),
+            overlay_bg: rgba(0x00000088),
             // Text
             text_primary: rgb(0xffffff),
             text_secondary: rgb(0x888888),
@@ -242,6 +322,17 @@ impl Theme {
             // Border (white for high contrast)
             border: rgb(0xffffff),
             border_hover: rgb(0xcccccc),
+            // Badge colors (dark variant)
+            badge_primary_bg: rgb(0x1a4a7a),
+            badge_primary_text: rgb(0x7cc4ff),
+            badge_success_bg: rgb(0x1a3a1a),
+            badge_success_text: rgb(0x7ccc7c),
+            badge_warning_bg: rgb(0x3a3a1a),
+            badge_warning_text: rgb(0xcccc7c),
+            badge_error_bg: rgb(0x3a1a1a),
+            badge_error_text: rgb(0xcc7c7c),
+            badge_info_bg: rgb(0x1a3a3a),
+            badge_info_text: rgb(0x7ccccc),
         }
     }
 

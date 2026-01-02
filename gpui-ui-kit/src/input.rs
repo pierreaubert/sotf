@@ -139,6 +139,9 @@ pub struct InputTheme {
         from_expr = "Rgba { r: theme.accent.r, g: theme.accent.g, b: theme.accent.b, a: 0.3 }"
     )]
     pub selection_bg: Rgba,
+    /// Transparent color (for invisible borders/backgrounds)
+    #[theme(default = 0x00000000, from = transparent)]
+    pub transparent: Rgba,
 }
 
 /// Input size variants
@@ -698,11 +701,11 @@ impl RenderOnce for Input {
             InputVariant::Filled => {
                 input_wrapper = input_wrapper
                     .bg(self.bg_color.unwrap_or(theme.filled_bg))
-                    .border_color(rgba(0x00000000));
+                    .border_color(theme.transparent);
             }
             InputVariant::Flushed => {
                 input_wrapper = input_wrapper
-                    .bg(rgba(0x00000000))
+                    .bg(theme.transparent)
                     .border_0()
                     .border_b_1()
                     .border_color(border_color)

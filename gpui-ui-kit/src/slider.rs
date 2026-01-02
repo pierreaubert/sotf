@@ -36,6 +36,12 @@ pub struct SliderTheme {
     /// Value text color
     #[theme(default = 0x999999ff, from = text_muted)]
     pub value: Rgba,
+    /// Disabled label color (muted with transparency)
+    #[theme(default = 0x66666699, from = text_muted)]
+    pub disabled_label: Rgba,
+    /// Disabled fill/border color
+    #[theme(default = 0xccccccff, from = text_muted)]
+    pub disabled_fill: Rgba,
 }
 
 /// Slider size variants
@@ -298,6 +304,8 @@ impl RenderOnce for Slider {
         let thumb_hover = theme.thumb_hover;
         let label_color = theme.label;
         let value_color = theme.value;
+        let disabled_label = theme.disabled_label;
+        let disabled_fill = theme.disabled_fill;
 
         let range = self.max - self.min;
         let progress = if range > 0.0 {
@@ -325,7 +333,7 @@ impl RenderOnce for Slider {
                 label_row = label_row.child(
                     div()
                         .text_color(if disabled {
-                            rgba(0x66666699)
+                            disabled_label
                         } else {
                             label_color
                         })
@@ -374,7 +382,7 @@ impl RenderOnce for Slider {
                     .h(px(track_height))
                     .rounded(px(track_height / 2.0))
                     .bg(if disabled {
-                        rgba(0xccccccff)
+                        disabled_fill
                     } else {
                         fill_color
                     }),
@@ -390,7 +398,7 @@ impl RenderOnce for Slider {
                     .bg(thumb_color)
                     .border_2()
                     .border_color(if disabled {
-                        rgba(0xccccccff)
+                        disabled_fill
                     } else {
                         fill_color
                     })

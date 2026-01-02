@@ -1759,6 +1759,9 @@ impl RenderOnce for AutoEqForm {
                 border: theme.border,
                 text_on_accent: theme.toggle_knob,
                 text_muted: theme.text_muted,
+                text_primary: theme.header_color,
+                surface_hover: theme.toggle_unchecked_bg,
+                background: theme.card_bg,
             };
 
             let mut refine_toggle = Toggle::new("autoeq-refine")
