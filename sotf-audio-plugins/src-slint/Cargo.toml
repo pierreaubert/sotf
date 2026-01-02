@@ -1,0 +1,34 @@
+[package]
+name = "sotf-audio-plugins-slint"
+version = { workspace = true }
+edition = { workspace = true }
+authors = { workspace = true }
+description = "VST3/CLAP EQ plugin with Slint UI using plinth-plugin"
+license = { workspace = true }
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# Plugin framework from local fork of plugin-things (patched for vst3 0.3)
+plinth-plugin = { path = "../../../plugin-things-fork/plinth-plugin" }
+plinth-derive = { path = "../../../plugin-things-fork/plinth-derive" }
+plugin-canvas = { path = "../../../plugin-things-fork/plugin-canvas" }
+plugin-canvas-slint = { path = "../../../plugin-things-fork/plugin-canvas-slint" }
+
+# Slint UI
+slint = { version = "1.13", default-features = false, features = ["std", "compat-1-2"] }
+
+# SOTF audio processing
+autoeq-iir = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Utilities
+log = { workspace = true }
+raw-window-handle = { workspace = true }
+
+[build-dependencies]
+slint-build = "1.13"

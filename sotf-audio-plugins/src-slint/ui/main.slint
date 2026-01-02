@@ -1,0 +1,549 @@
+// SOTF EQ Plugin UI
+// A 4-band parametric equalizer with frequency response visualization
+
+import { VerticalBox, HorizontalBox, Button, ComboBox, CheckBox, Slider, GroupBox } from "std-widgets.slint";
+
+// Color palette matching the egui version
+struct BandColors {
+    band1: color,
+    band2: color,
+    band3: color,
+    band4: color,
+}
+
+// UI parameter for host communication
+export struct UiParameter {
+    id: int,
+    normalized-value: float,
+    default-value: float,
+    display-text: string,
+}
+
+// Band data for display
+export struct BandData {
+    enabled: bool,
+    filter-type: int,
+    frequency: float,
+    frequency-normalized: float,
+    q: float,
+    q-normalized: float,
+    gain-db: float,
+    gain-normalized: float,
+    // For display
+    frequency-text: string,
+    q-text: string,
+    gain-text: string,
+}
+
+// Main plugin window
+export component PluginWindow inherits Window {
+    title: "SOTF EQ";
+    min-width: 800px;
+    min-height: 500px;
+    background: #19191e;
+
+    // Band colors
+    property <BandColors> colors: {
+        band1: #ef4444,  // Red
+        band2: #f97316,  // Orange
+        band3: #22c55e,  // Green
+        band4: #3b82f6,  // Blue
+    };
+
+    // Currently selected band (0-3)
+    in-out property <int> selected-band: 0;
+
+    // Band data
+    in-out property <BandData> band1-data;
+    in-out property <BandData> band2-data;
+    in-out property <BandData> band3-data;
+    in-out property <BandData> band4-data;
+
+    // Output gain
+    in-out property <float> output-gain: 0.0;
+    in-out property <float> output-gain-normalized: 0.5;
+    in-out property <string> output-gain-text: "0.0 dB";
+
+    // Callbacks to host
+    callback start-parameter-change(int);
+    callback change-parameter-value(int, float);
+    callback end-parameter-change(int);
+
+    // Helper function to get band color
+    function band-color(index: int) -> color {
+        if index == 0 { return colors.band1; }
+        if index == 1 { return colors.band2; }
+        if index == 2 { return colors.band3; }
+        return colors.band4;
+    }
+
+    // Helper to get current band data
+    function current-band() -> BandData {
+        if selected-band == 0 { return band1-data; }
+        if selected-band == 1 { return band2-data; }
+        if selected-band == 2 { return band3-data; }
+        return band4-data;
+    }
+
+    VerticalBox {
+        padding: 15px;
+        spacing: 10px;
+
+        // Header
+        HorizontalBox {
+            alignment: start;
+            spacing: 10px;
+
+            Text {
+                text: "SOTF EQ";
+                font-size: 20px;
+                font-weight: 700;
+                color: #e0e0e5;
+            }
+
+            Rectangle {
+                width: 1px;
+                height: 24px;
+                background: #404045;
+            }
+
+            Text {
+                text: "4-Band Parametric Equalizer";
+                font-size: 14px;
+                color: #808090;
+                vertical-alignment: center;
+            }
+        }
+
+        // Frequency response graph area
+        Rectangle {
+            background: #14141a;
+            border-radius: 5px;
+            min-height: 250px;
+
+            // Frequency labels at bottom
+            HorizontalBox {
+                y: parent.height - 20px;
+                x: 0;
+                width: 100%;
+                padding-left: 5px;
+                padding-right: 5px;
+
+                for freq in ["20", "50", "100", "200", "500", "1k", "2k", "5k", "10k", "20k"]: Text {
+                    text: freq;
+                    font-size: 10px;
+                    color: #606070;
+                    horizontal-alignment: center;
+                }
+            }
+
+            // 0dB line indicator
+            Rectangle {
+                y: parent.height / 2;
+                x: 0;
+                width: 100%;
+                height: 1px;
+                background: #505055;
+            }
+
+            // Gain labels
+            VerticalBox {
+                x: 5px;
+                y: 10px;
+                spacing: 30px;
+
+                Text { text: "+24"; font-size: 10px; color: #606070; }
+                Text { text: "+12"; font-size: 10px; color: #606070; }
+                Text { text: "0 dB"; font-size: 10px; color: #808090; }
+                Text { text: "-12"; font-size: 10px; color: #606070; }
+                Text { text: "-24"; font-size: 10px; color: #606070; }
+            }
+
+            // Note: Actual response curves drawn by Rust via image/path
+            Text {
+                x: parent.width / 2 - self.width / 2;
+                y: parent.height / 2 - 30px;
+                text: "(Response graph rendered by backend)";
+                font-size: 12px;
+                color: #404050;
+            }
+        }
+
+        // Band selector and output gain
+        HorizontalBox {
+            spacing: 10px;
+            alignment: start;
+
+            // Band tabs
+            for i in [0, 1, 2, 3]: Rectangle {
+                width: 80px;
+                height: 32px;
+                border-radius: 4px;
+                background: selected-band == i ? band-color(i) : #323237;
+
+                Text {
+                    text: "Band " + (i + 1);
+                    font-size: 13px;
+                    font-weight: selected-band == i ? 600 : 400;
+                    color: selected-band == i ? #ffffff : #a0a0a5;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+
+                TouchArea {
+                    clicked => {
+                        selected-band = i;
+                    }
+                }
+            }
+
+            Rectangle {
+                width: 1px;
+                height: 32px;
+                background: #404045;
+            }
+
+            // Output gain
+            HorizontalBox {
+                spacing: 8px;
+                alignment: center;
+
+                Text {
+                    text: "Output:";
+                    font-size: 13px;
+                    color: #a0a0a5;
+                    vertical-alignment: center;
+                }
+
+                Rectangle {
+                    width: 100px;
+                    height: 28px;
+                    background: #28282d;
+                    border-radius: 4px;
+
+                    Text {
+                        text: output-gain-text;
+                        font-size: 13px;
+                        color: #e0e0e5;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+
+                    // Draggable output gain control
+                    property <float> drag-start-value;
+                    property <length> last-y;
+                    property <bool> is-dragging: false;
+
+                    TouchArea {
+                        mouse-cursor: pointer;
+
+                        scroll-event(event) => {
+                            // Scroll wheel adjusts gain
+                            let delta = event.delta-y / 50px;
+                            let new-norm = clamp(output-gain-normalized + delta, 0.0, 1.0);
+                            start-parameter-change(20);
+                            change-parameter-value(20, new-norm);
+                            end-parameter-change(20);
+                            accept
+                        }
+
+                        pointer-event(event) => {
+                            if event.kind == PointerEventKind.down {
+                                parent.drag-start-value = output-gain-normalized;
+                                parent.is-dragging = true;
+                                start-parameter-change(20);
+                            } else if event.kind == PointerEventKind.up {
+                                parent.is-dragging = false;
+                                end-parameter-change(20);
+                            }
+                        }
+
+                        moved => {
+                            if parent.is-dragging {
+                                // Calculate delta from center of control
+                                let delta = (parent.height / 2 - self.mouse-y) / 100px;
+                                let new-norm = clamp(parent.drag-start-value + delta, 0.0, 1.0);
+                                change-parameter-value(20, new-norm);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Band controls
+        Rectangle {
+            background: #232328;
+            border-radius: 8px;
+            height: 120px;
+
+            HorizontalBox {
+                padding: 15px;
+                spacing: 20px;
+
+                // Enabled checkbox
+                VerticalBox {
+                    alignment: center;
+                    spacing: 5px;
+
+                    CheckBox {
+                        text: "Enabled";
+                        checked: current-band().enabled;
+                        toggled => {
+                            let param-id = selected-band * 5;
+                            start-parameter-change(param-id);
+                            change-parameter-value(param-id, self.checked ? 1.0 : 0.0);
+                            end-parameter-change(param-id);
+                        }
+                    }
+                }
+
+                Rectangle {
+                    width: 1px;
+                    background: #404045;
+                }
+
+                // Filter type
+                VerticalBox {
+                    alignment: center;
+                    spacing: 5px;
+
+                    Text {
+                        text: "Type";
+                        font-size: 12px;
+                        color: #808090;
+                    }
+
+                    ComboBox {
+                        width: 100px;
+                        model: ["Peak", "Low Shelf", "High Shelf", "Low Pass", "High Pass"];
+                        current-index: current-band().filter-type;
+                        selected(new-value) => {
+                            let param-id = selected-band * 5 + 1;
+                            // current-index is already updated, use it for normalized value
+                            let norm = self.current-index / 4.0;
+                            start-parameter-change(param-id);
+                            change-parameter-value(param-id, norm);
+                            end-parameter-change(param-id);
+                        }
+                    }
+                }
+
+                // Frequency control
+                VerticalBox {
+                    alignment: center;
+                    spacing: 5px;
+
+                    Text {
+                        text: "Frequency";
+                        font-size: 12px;
+                        color: #808090;
+                    }
+
+                    Rectangle {
+                        width: 90px;
+                        height: 32px;
+                        background: #28282d;
+                        border-radius: 4px;
+
+                        Text {
+                            text: current-band().frequency-text;
+                            font-size: 13px;
+                            color: #e0e0e5;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        property <float> drag-start-value;
+                        property <bool> is-dragging: false;
+
+                        TouchArea {
+                            mouse-cursor: pointer;
+
+                            scroll-event(event) => {
+                                let delta = event.delta-y / 200px;
+                                let new-norm = clamp(current-band().frequency-normalized + delta, 0.0, 1.0);
+                                let param-id = selected-band * 5 + 2;
+                                start-parameter-change(param-id);
+                                change-parameter-value(param-id, new-norm);
+                                end-parameter-change(param-id);
+                                accept
+                            }
+
+                            pointer-event(event) => {
+                                if event.kind == PointerEventKind.down {
+                                    parent.drag-start-value = current-band().frequency-normalized;
+                                    parent.is-dragging = true;
+                                    let param-id = selected-band * 5 + 2;
+                                    start-parameter-change(param-id);
+                                }
+                                if event.kind == PointerEventKind.up {
+                                    parent.is-dragging = false;
+                                    let param-id = selected-band * 5 + 2;
+                                    end-parameter-change(param-id);
+                                }
+                            }
+
+                            moved => {
+                                if parent.is-dragging {
+                                    let delta = (parent.height / 2 - self.mouse-y) / 100px;
+                                    let new-norm = clamp(parent.drag-start-value + delta, 0.0, 1.0);
+                                    let param-id = selected-band * 5 + 2;
+                                    change-parameter-value(param-id, new-norm);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Q control
+                VerticalBox {
+                    alignment: center;
+                    spacing: 5px;
+
+                    Text {
+                        text: "Q";
+                        font-size: 12px;
+                        color: #808090;
+                    }
+
+                    Rectangle {
+                        width: 70px;
+                        height: 32px;
+                        background: #28282d;
+                        border-radius: 4px;
+
+                        Text {
+                            text: current-band().q-text;
+                            font-size: 13px;
+                            color: #e0e0e5;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        property <float> drag-start-value;
+                        property <bool> is-dragging: false;
+
+                        TouchArea {
+                            mouse-cursor: pointer;
+
+                            scroll-event(event) => {
+                                let delta = event.delta-y / 200px;
+                                let new-norm = clamp(current-band().q-normalized + delta, 0.0, 1.0);
+                                let param-id = selected-band * 5 + 3;
+                                start-parameter-change(param-id);
+                                change-parameter-value(param-id, new-norm);
+                                end-parameter-change(param-id);
+                                accept
+                            }
+
+                            pointer-event(event) => {
+                                if event.kind == PointerEventKind.down {
+                                    parent.drag-start-value = current-band().q-normalized;
+                                    parent.is-dragging = true;
+                                    let param-id = selected-band * 5 + 3;
+                                    start-parameter-change(param-id);
+                                }
+                                if event.kind == PointerEventKind.up {
+                                    parent.is-dragging = false;
+                                    let param-id = selected-band * 5 + 3;
+                                    end-parameter-change(param-id);
+                                }
+                            }
+
+                            moved => {
+                                if parent.is-dragging {
+                                    let delta = (parent.height / 2 - self.mouse-y) / 100px;
+                                    let new-norm = clamp(parent.drag-start-value + delta, 0.0, 1.0);
+                                    let param-id = selected-band * 5 + 3;
+                                    change-parameter-value(param-id, new-norm);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Gain control
+                VerticalBox {
+                    alignment: center;
+                    spacing: 5px;
+
+                    Text {
+                        text: "Gain";
+                        font-size: 12px;
+                        color: #808090;
+                    }
+
+                    Rectangle {
+                        width: 80px;
+                        height: 32px;
+                        background: #28282d;
+                        border-radius: 4px;
+
+                        Text {
+                            text: current-band().gain-text;
+                            font-size: 13px;
+                            color: #e0e0e5;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        property <float> drag-start-value;
+                        property <bool> is-dragging: false;
+
+                        TouchArea {
+                            mouse-cursor: pointer;
+
+                            scroll-event(event) => {
+                                let delta = event.delta-y / 100px;
+                                let new-norm = clamp(current-band().gain-normalized + delta, 0.0, 1.0);
+                                let param-id = selected-band * 5 + 4;
+                                start-parameter-change(param-id);
+                                change-parameter-value(param-id, new-norm);
+                                end-parameter-change(param-id);
+                                accept
+                            }
+
+                            pointer-event(event) => {
+                                if event.kind == PointerEventKind.down {
+                                    parent.drag-start-value = current-band().gain-normalized;
+                                    parent.is-dragging = true;
+                                    let param-id = selected-band * 5 + 4;
+                                    start-parameter-change(param-id);
+                                }
+                                if event.kind == PointerEventKind.up {
+                                    parent.is-dragging = false;
+                                    let param-id = selected-band * 5 + 4;
+                                    end-parameter-change(param-id);
+                                }
+                            }
+
+                            moved => {
+                                if parent.is-dragging {
+                                    let delta = (parent.height / 2 - self.mouse-y) / 80px;
+                                    let new-norm = clamp(parent.drag-start-value + delta, 0.0, 1.0);
+                                    let param-id = selected-band * 5 + 4;
+                                    change-parameter-value(param-id, new-norm);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Band color indicator
+                Rectangle {
+                    width: 1px;
+                    background: transparent;
+                    horizontal-stretch: 1;
+                }
+
+                Rectangle {
+                    width: 40px;
+                    height: 40px;
+                    border-radius: 20px;
+                    background: band-color(selected-band);
+                }
+            }
+        }
+    }
+}

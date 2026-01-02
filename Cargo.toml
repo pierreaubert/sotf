@@ -13,7 +13,8 @@ members = [
     "sotf-audio-midi",
     "sotf-audio-plugins",
     "sotf-audio-plugins/src-ffi",
-    "sotf-audio-plugins/src-vst3",  # VST3/CLAP plugin wrapper
+    "sotf-audio-plugins/src-vst3",  # VST3/CLAP plugin wrapper (egui)
+    "sotf-audio-plugins/src-slint", # VST3/CLAP plugin wrapper (Slint)
     "sotf-hal",         # macOS only
     "sotf-head-tracker", # macOS only (for now)
     "xtask",            # nih-plug bundler for VST3/CLAP
@@ -241,3 +242,4 @@ panic = "unwind"
 lto = true
 codegen-units = 1
 panic = "unwind"  # Changed from "abort" to allow tests to run
+
