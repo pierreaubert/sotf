@@ -1050,18 +1050,20 @@ impl App {
 
         // Restore plugin preset
         if let Some(preset_name) = &config.plugin_preset {
-            // Use the plugin chain's own load method (handles path construction and validation)
-            match self.plugin_chain.load_from_file(preset_name) {
-                Ok(_) => {
-                    // Update BinauralDecoder input channels after loading
-                    self.plugin_chain.update_channel_dependent_plugins();
+            // Use the plugin chain's own load method
+            if let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() {
+                match self.plugin_chain.load_from_file(&presets_dir, preset_name) {
+                    Ok(_) => {
+                        // Update BinauralDecoder input channels after loading
+                        self.plugin_chain.update_channel_dependent_plugins();
 
-                    self.last_loaded_preset = Some(preset_name.clone());
-                    self.request_plugin_update();
-                    log::info!("Restored plugin preset: {}", preset_name);
-                }
-                Err(e) => {
-                    log::warn!("Could not restore preset '{}': {}", preset_name, e);
+                        self.last_loaded_preset = Some(preset_name.clone());
+                        self.request_plugin_update();
+                        log::info!("Restored plugin preset: {}", preset_name);
+                    }
+                    Err(e) => {
+                        log::warn!("Could not restore preset '{}': {}", preset_name, e);
+                    }
                 }
             }
         }
@@ -2348,7 +2350,11 @@ impl App {
         }
 
         // Save using the plugin chain's own save method (handles path, validation, etc.)
-        match self.plugin_chain.save_to_file(&self.plugin_file_input) {
+        let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() else {
+            self.status_message = Some("Error: Could not find presets directory".to_string());
+            return;
+        };
+        match self.plugin_chain.save_to_file(&presets_dir, &self.plugin_file_input) {
             Ok(_) => {
                 self.status_message = Some(format!("Saved preset: {}", filename_with_ext));
                 self.last_loaded_preset = Some(filename_with_ext);
@@ -2376,7 +2382,11 @@ impl App {
         {
             // Pass filename as-is; save_to_file handles .json extension correctly
             // Save using the plugin chain's own save method
-            match self.plugin_chain.save_to_file(&preset_filename) {
+            let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() else {
+                self.status_message = Some("Error: Could not find presets directory".to_string());
+                return;
+            };
+            match self.plugin_chain.save_to_file(&presets_dir, &preset_filename) {
                 Ok(_) => {
                     self.status_message = Some(format!("Overwritten preset: {}", preset_filename));
                     self.last_loaded_preset = Some(preset_filename);
@@ -2399,7 +2409,11 @@ impl App {
         }
 
         // Load using the plugin chain's own load method (handles path, extension, etc.)
-        match self.plugin_chain.load_from_file(&self.plugin_file_input) {
+        let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() else {
+            self.status_message = Some("Error: Could not find presets directory".to_string());
+            return;
+        };
+        match self.plugin_chain.load_from_file(&presets_dir, &self.plugin_file_input) {
             Ok(_) => {
                 // Update BinauralDecoder input channels after loading
                 self.plugin_chain.update_channel_dependent_plugins();
@@ -2489,7 +2503,11 @@ impl App {
                 self.selected_preset_index
             );
             // Use the plugin chain's own load method (handles path construction)
-            match self.plugin_chain.load_from_file(&preset_filename) {
+            let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() else {
+                self.status_message = Some("Error: Could not find presets directory".to_string());
+                return;
+            };
+            match self.plugin_chain.load_from_file(&presets_dir, &preset_filename) {
                 Ok(_) => {
                     // Update BinauralDecoder input channels after loading
                     self.plugin_chain.update_channel_dependent_plugins();
@@ -2817,27 +2835,18 @@ impl App {
         // Initialize image picker if not already done
         if self.image_picker.is_none() {
             // Query terminal for actual font size to avoid mangled images
-            // from_termios() only works on Unix systems
-            #[cfg(unix)]
-            {
-                match ratatui_image::picker::Picker::from_termios() {
-                    Ok(picker) => {
-                        self.image_picker = Some(picker);
-                    }
-                    Err(e) => {
-                        log::warn!(
-                            "Failed to query terminal for font size: {}, using fallback",
-                            e
-                        );
-                        // Fallback to default font size (8x16)
-                        self.image_picker = Some(ratatui_image::picker::Picker::new((8, 16)));
-                    }
+            match ratatui_image::picker::Picker::from_query_stdio() {
+                Ok(picker) => {
+                    self.image_picker = Some(picker);
                 }
-            }
-            #[cfg(not(unix))]
-            {
-                // On Windows, use default font size (8x16)
-                self.image_picker = Some(ratatui_image::picker::Picker::new((8, 16)));
+                Err(e) => {
+                    log::warn!(
+                        "Failed to query terminal for font size: {}, using halfblocks fallback",
+                        e
+                    );
+                    // Fallback to halfblocks which works in all terminals
+                    self.image_picker = Some(ratatui_image::picker::Picker::halfblocks());
+                }
             }
         }
 

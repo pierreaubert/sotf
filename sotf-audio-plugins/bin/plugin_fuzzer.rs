@@ -15,11 +15,14 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use rayon::prelude::*;
 use sotf_plugins::{
-    CompressorPlugin, CompressorPluginParams, CrossoverPlugin, CrossoverPluginParams, DawHost,
-    DelayPlugin, DelayPluginParams, EqPlugin, EqPluginParams, GainPlugin, GainPluginParams,
-    GatePlugin, GatePluginParams, InPlacePluginAdapter, LimiterPlugin, LimiterPluginParams,
-    LoudnessCompensationPlugin, LoudnessCompensationPluginParams, Plugin, UpmixerPlugin,
-    UpmixerPluginParams,
+    ChannelMuteSoloParams, ChannelMuteSoloPlugin, ChannelState, CompressorPlugin,
+    CompressorPluginParams, CrossoverPlugin, CrossoverPluginParams, DawHost, DelayPlugin,
+    DelayPluginParams, DenoiserPlugin, DenoiserPluginParams, EqPlugin, EqPluginParams,
+    ExpanderPlugin, ExpanderPluginParams, GainPlugin, GainPluginParams, GatePlugin,
+    GatePluginParams, InPlacePluginAdapter, LimiterPlugin, LimiterPluginParams,
+    LoudnessCompensationPlugin, LoudnessCompensationPluginParams, MatrixPlugin,
+    MultibandCompressorPlugin, MultibandCompressorPluginParams, MultibandExpanderPlugin,
+    MultibandExpanderPluginParams, Plugin, UpmixerPlugin, UpmixerPluginParams,
 };
 use std::fs::File;
 use std::path::PathBuf;
@@ -44,7 +47,8 @@ struct Args {
     #[arg(short, long)]
     file: PathBuf,
 
-    /// Plugin to test (gain, eq, compressor, limiter, gate, delay, loudness, crossover, upmixer)
+    /// Plugin to test (gain, eq, compressor, limiter, gate, delay, loudness, crossover, upmixer,
+    /// expander, multiband_compressor/mbcomp, multiband_expander/mbexp, matrix, mutesolo, denoiser)
     #[arg(short, long)]
     plugin: String,
 
@@ -387,7 +391,7 @@ struct EqFuzzer {
 
 impl PluginFuzzer for EqFuzzer {
     fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
-        use autoeq_iir::{Biquad, BiquadFilterType, Peq, peq_loudness_gain};
+        use math_audio_iir_fir::{Biquad, BiquadFilterType, Peq, peq_loudness_gain};
         use sotf_plugins::BiquadFilterConfig;
 
         // Generate 1-5 random filters
@@ -662,6 +666,302 @@ impl PluginFuzzer for CrossoverFuzzer {
     }
 }
 
+struct ExpanderFuzzer;
+
+impl PluginFuzzer for ExpanderFuzzer {
+    fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
+        let threshold_db = rng.random_range(-80.0..0.0);
+        let ratio = rng.random_range(1.0..20.0);
+        let attack_ms = rng.random_range(0.1..50.0);
+        let release_ms = rng.random_range(10.0..2000.0);
+        let range_db = rng.random_range(0.0..80.0);
+        let knee_db = rng.random_range(0.0..20.0);
+        let hysteresis_db = rng.random_range(0.0..12.0);
+        let hold_ms = rng.random_range(0.0..500.0);
+        let mix = rng.random_range(0.0..1.0);
+        let link_channels = rng.random_bool(0.5);
+        let sidechain_hpf_hz = rng.random_range(0.0..500.0);
+
+        let params = ExpanderPluginParams {
+            threshold_db,
+            ratio,
+            attack_ms,
+            release_ms,
+            range_db,
+            knee_db,
+            hysteresis_db,
+            hold_ms,
+            mix,
+            link_channels,
+            sidechain_hpf_hz,
+        };
+        let plugin = ExpanderPlugin::from_params(channels, params);
+
+        let desc = format!(
+            "threshold={:.1}dB ratio={:.2}:1 attack={:.1}ms release={:.0}ms range={:.1}dB knee={:.1}dB hyst={:.1}dB hold={:.0}ms mix={:.2} link={} sc_hpf={:.0}Hz",
+            threshold_db,
+            ratio,
+            attack_ms,
+            release_ms,
+            range_db,
+            knee_db,
+            hysteresis_db,
+            hold_ms,
+            mix,
+            link_channels,
+            sidechain_hpf_hz
+        );
+
+        (Box::new(InPlacePluginAdapter::new(plugin)), desc)
+    }
+}
+
+struct MultibandCompressorFuzzer;
+
+impl PluginFuzzer for MultibandCompressorFuzzer {
+    fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
+        let num_bands = rng.random_range(2..=5);
+        let crossover_preset = rng.random_range(0..=3);
+        let threshold_db = rng.random_range(-60.0..0.0);
+        let ratio = rng.random_range(1.0..20.0);
+        let attack_ms = rng.random_range(0.1..100.0);
+        let release_ms = rng.random_range(10.0..1000.0);
+        let knee_db = rng.random_range(0.0..20.0);
+        let mix = rng.random_range(0.0..1.0);
+        let link_channels = rng.random_bool(0.5);
+
+        // Generate random crossover frequencies (sorted ascending)
+        let mut freqs = vec![
+            rng.random_range(20.0..500.0),
+            rng.random_range(500.0..5000.0),
+            rng.random_range(5000.0..15000.0),
+            rng.random_range(10000.0..18000.0),
+        ];
+        freqs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+        let params = MultibandCompressorPluginParams {
+            num_bands,
+            crossover_preset,
+            crossover_frequencies: freqs.clone(),
+            threshold_db,
+            ratio,
+            attack_ms,
+            release_ms,
+            knee_db,
+            link_channels,
+            mix,
+            bands: vec![], // Use defaults for per-band params
+        };
+        let plugin = MultibandCompressorPlugin::from_params(channels, params);
+
+        let desc = format!(
+            "bands={} preset={} threshold={:.1}dB ratio={:.2}:1 attack={:.1}ms release={:.0}ms knee={:.1}dB mix={:.2} link={}",
+            num_bands,
+            crossover_preset,
+            threshold_db,
+            ratio,
+            attack_ms,
+            release_ms,
+            knee_db,
+            mix,
+            link_channels
+        );
+
+        (Box::new(InPlacePluginAdapter::new(plugin)), desc)
+    }
+}
+
+struct MultibandExpanderFuzzer;
+
+impl PluginFuzzer for MultibandExpanderFuzzer {
+    fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
+        let num_bands = rng.random_range(2..=5);
+        let crossover_preset = rng.random_range(0..=3);
+        let threshold_db = rng.random_range(-80.0..0.0);
+        let ratio = rng.random_range(1.0..20.0);
+        let attack_ms = rng.random_range(0.1..50.0);
+        let release_ms = rng.random_range(10.0..2000.0);
+        let knee_db = rng.random_range(0.0..20.0);
+        let range_db = rng.random_range(0.0..80.0);
+        let hysteresis_db = rng.random_range(0.0..12.0);
+        let hold_ms = rng.random_range(0.0..500.0);
+        let mix = rng.random_range(0.0..1.0);
+        let link_channels = rng.random_bool(0.5);
+
+        // Generate random crossover frequencies (sorted ascending)
+        let mut freqs = vec![
+            rng.random_range(20.0..500.0),
+            rng.random_range(500.0..5000.0),
+            rng.random_range(5000.0..15000.0),
+            rng.random_range(10000.0..18000.0),
+        ];
+        freqs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+        let params = MultibandExpanderPluginParams {
+            num_bands,
+            crossover_preset,
+            crossover_frequencies: freqs.clone(),
+            threshold_db,
+            ratio,
+            attack_ms,
+            release_ms,
+            knee_db,
+            range_db,
+            hysteresis_db,
+            hold_ms,
+            link_channels,
+            mix,
+            bands: vec![], // Use defaults for per-band params
+        };
+        let plugin = MultibandExpanderPlugin::from_params(channels, params);
+
+        let desc = format!(
+            "bands={} preset={} threshold={:.1}dB ratio={:.2}:1 attack={:.1}ms release={:.0}ms range={:.1}dB mix={:.2} link={}",
+            num_bands,
+            crossover_preset,
+            threshold_db,
+            ratio,
+            attack_ms,
+            release_ms,
+            range_db,
+            mix,
+            link_channels
+        );
+
+        (Box::new(InPlacePluginAdapter::new(plugin)), desc)
+    }
+}
+
+struct MatrixFuzzer;
+
+impl PluginFuzzer for MatrixFuzzer {
+    fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
+        // Generate a random matrix with values in [0, 1]
+        // Keep it reasonable: output same channel count as input
+        let mut matrix = vec![0.0_f32; channels * channels];
+
+        // Fill with random values
+        for i in 0..matrix.len() {
+            matrix[i] = rng.random_range(0.0..1.0);
+        }
+
+        // Optionally make it more identity-like sometimes
+        if rng.random_bool(0.3) {
+            // 30% chance of mostly-identity matrix
+            matrix.fill(0.0);
+            for i in 0..channels {
+                matrix[i * channels + i] = rng.random_range(0.5..1.0);
+            }
+        }
+
+        let plugin = MatrixPlugin::with_matrix(channels, channels, matrix.clone())
+            .expect("Failed to create MatrixPlugin");
+
+        // Describe the matrix briefly
+        let desc = if channels <= 4 {
+            format!("{}x{} matrix {:?}", channels, channels, &matrix[..matrix.len().min(8)])
+        } else {
+            format!("{}x{} matrix (truncated)", channels, channels)
+        };
+
+        (Box::new(plugin), desc)
+    }
+}
+
+struct ChannelMuteSoloFuzzer;
+
+impl PluginFuzzer for ChannelMuteSoloFuzzer {
+    fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
+        let enabled = rng.random_bool(0.8); // 80% enabled
+
+        let mut channel_states = Vec::with_capacity(channels);
+        let mut desc_parts = Vec::new();
+
+        for ch in 0..channels {
+            let muted = rng.random_bool(0.2);
+            let soloed = rng.random_bool(0.1);
+            let dimmed = rng.random_bool(0.1);
+
+            channel_states.push(ChannelState {
+                muted,
+                soloed,
+                dimmed,
+            });
+
+            if muted || soloed || dimmed {
+                desc_parts.push(format!(
+                    "ch{}:{}{}{}",
+                    ch,
+                    if muted { "M" } else { "" },
+                    if soloed { "S" } else { "" },
+                    if dimmed { "D" } else { "" }
+                ));
+            }
+        }
+
+        let params = ChannelMuteSoloParams {
+            enabled,
+            channel_states,
+        };
+        let plugin = ChannelMuteSoloPlugin::from_params(channels, params);
+
+        let desc = format!(
+            "enabled={} {}",
+            enabled,
+            if desc_parts.is_empty() {
+                "no_changes".to_string()
+            } else {
+                desc_parts.join(" ")
+            }
+        );
+
+        (Box::new(InPlacePluginAdapter::new(plugin)), desc)
+    }
+}
+
+struct DenoiserFuzzer;
+
+impl PluginFuzzer for DenoiserFuzzer {
+    fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
+        let reduction_db = rng.random_range(0.0..40.0);
+        let floor_db = rng.random_range(-60.0..-10.0);
+        let smoothing = rng.random_range(0.0..0.99);
+        let attack_ms = rng.random_range(0.1..100.0);
+        let release_ms = rng.random_range(10.0..500.0);
+        let low_latency = rng.random_bool(0.5);
+        let polyphonic_detection = rng.random_bool(0.3);
+        let crack_sensitivity = rng.random_range(1.0..100.0);
+
+        let params = DenoiserPluginParams {
+            reduction_db,
+            floor_db,
+            smoothing,
+            attack_ms,
+            release_ms,
+            low_latency,
+            polyphonic_detection,
+            crack_sensitivity,
+            ..Default::default()
+        };
+
+        let plugin = DenoiserPlugin::from_params(channels, params);
+
+        let desc = format!(
+            "reduction={:.1}dB floor={:.1}dB smooth={:.2} attack={:.1}ms release={:.0}ms low_lat={} poly={} crack={:.1}",
+            reduction_db,
+            floor_db,
+            smoothing,
+            attack_ms,
+            release_ms,
+            low_latency,
+            polyphonic_detection,
+            crack_sensitivity
+        );
+
+        (Box::new(InPlacePluginAdapter::new(plugin)), desc)
+    }
+}
+
 struct UpmixerFuzzer;
 
 impl PluginFuzzer for UpmixerFuzzer {
@@ -770,8 +1070,16 @@ fn get_fuzzer(plugin_name: &str, sample_rate: u32) -> Result<Box<dyn PluginFuzze
         "loudness" | "loudness_compensation" => Ok(Box::new(LoudnessCompensationFuzzer)),
         "crossover" | "xover" => Ok(Box::new(CrossoverFuzzer)),
         "upmixer" | "upmix" => Ok(Box::new(UpmixerFuzzer)),
+        "expander" | "expand" => Ok(Box::new(ExpanderFuzzer)),
+        "multiband_compressor" | "mbcomp" | "multiband_comp" => {
+            Ok(Box::new(MultibandCompressorFuzzer))
+        }
+        "multiband_expander" | "mbexp" | "multiband_exp" => Ok(Box::new(MultibandExpanderFuzzer)),
+        "matrix" => Ok(Box::new(MatrixFuzzer)),
+        "channel_mute_solo" | "mute_solo" | "mutesolo" => Ok(Box::new(ChannelMuteSoloFuzzer)),
+        "denoiser" | "denoise" => Ok(Box::new(DenoiserFuzzer)),
         _ => Err(format!(
-            "Unknown plugin type: {}. Supported: gain, eq, compressor, limiter, gate, delay, loudness, crossover, upmixer",
+            "Unknown plugin type: {}. Supported: gain, eq, compressor, limiter, gate, delay, loudness, crossover, upmixer, expander, multiband_compressor (mbcomp), multiband_expander (mbexp), matrix, channel_mute_solo (mutesolo), denoiser",
             plugin_name
         )),
     }

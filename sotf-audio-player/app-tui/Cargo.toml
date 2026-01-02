@@ -9,16 +9,16 @@ repository.workspace = true
 
 [dependencies]
 # Shared audio player library (provides business logic, database, plugins, etc.)
-sotf-audio-player = { path = ".." }
+sotf-audio-player = { workspace = true }
 
 # Audio engine
-sotf-audio-plugins = { path = "../../sotf-audio-plugins", default-features = false }
-sotf-audio-engine = { path = "../../sotf-audio-engine" }
+sotf-audio-plugins = { workspace = true }
+sotf-audio-engine = { workspace = true }
 math-iir-fir = { workspace = true }
 
 # TUI framework
 ratatui = { workspace = true }
-ratatui-image = { version = "1.0", features = ["serde"] }
+ratatui-image = { workspace = true }
 crossterm = { workspace = true }
 
 # Synchronous mutex (faster than std::sync::Mutex)
@@ -44,7 +44,7 @@ symphonia-format-isomp4 = { workspace = true }
 ebur128 = { workspace = true }
 
 # Image processing for album art thumbnails
-image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
+image = { workspace = true }
 
 # CLI
 clap = { workspace = true }

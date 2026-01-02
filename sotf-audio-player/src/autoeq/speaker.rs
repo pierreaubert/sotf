@@ -32,7 +32,7 @@ pub struct SpeakerOptimizationProgress {
     /// Current best parameters (raw optimizer params)
     pub current_params: Vec<f64>,
     /// Current best biquad filters (decoded from params)
-    pub current_biquads: Vec<autoeq_iir::Biquad>,
+    pub current_biquads: Vec<math_audio_iir_fir::Biquad>,
     /// Current filter response curve (dB)
     pub current_filter_response: Vec<f64>,
     /// Stage of optimization
@@ -210,7 +210,7 @@ impl Default for SpeakerOptimizationConfigExt {
 /// Result of a speaker optimization run
 #[derive(Clone, Debug)]
 pub struct SpeakerOptimizationResult {
-    pub biquads: Vec<autoeq_iir::Biquad>,
+    pub biquads: Vec<math_audio_iir_fir::Biquad>,
     pub frequencies: Vec<f64>,
     pub input_curve: Vec<f64>,
     pub target_curve: Vec<f64>,
@@ -541,7 +541,7 @@ fn optimize_from_curve(
     .map_err(|e| e.to_string())?;
 
     // Convert to biquads
-    let biquads: Vec<autoeq_iir::Biquad> = autoeq::x2peq(
+    let biquads: Vec<math_audio_iir_fir::Biquad> = autoeq::x2peq(
         &output.params,
         config.args.sample_rate,
         config.args.peq_model,

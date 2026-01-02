@@ -1,9 +1,9 @@
 [package]
 name = "sotf-hal"
-version = "0.2.1"
-edition = "2021"
-authors = ["Pierre F. Aubert pierre@spinorama.org"]
-license = "GPL 3.0"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
 description = "Simplified Core Audio HAL driver with bidirectional audio buffers"
 
 [lib]
@@ -16,24 +16,24 @@ path = "bin/test_loopback.rs"
 
 # This crate is macOS-only (Core Audio HAL driver)
 [target.'cfg(target_os = "macos")'.dependencies]
-libc = "0.2"
+libc = { workspace = true }
 
 # Lock-free ring buffer
-rb = "0.4"
+rb = { workspace = true }
 
 # Logging and error handling
-log = "0.4"
-env_logger = "0.10"
-thiserror = "1.0"
-anyhow = "1.0"
+log = { workspace = true }
+env_logger = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
 
 # Audio
-crossbeam = "0.8"
+crossbeam = { workspace = true }
 
 # Core Audio integration
-coreaudio-sys = "0.2"
-core-foundation = "0.9"
-core-foundation-sys = "0.8"
+coreaudio-sys = { workspace = true }
+core-foundation = { workspace = true }
+core-foundation-sys = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]
-tempfile = "3.23"
+tempfile = { workspace = true }

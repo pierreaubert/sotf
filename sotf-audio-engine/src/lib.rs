@@ -28,6 +28,13 @@ pub mod signal_analysis;
 pub mod engine;
 pub use engine::{AudioEngine, AudioEngineState, EngineConfig, PlaybackState, PluginConfig};
 
+pub mod plugins;
+pub use plugins::{
+    EQFilter, Plugin, PluginChain, PluginSettings, PluginType,
+    apply_matrix_preset, db_to_linear, detect_matrix_preset,
+    get_channel_label, linear_to_db_string, resize_matrix,
+};
+
 // Re-export plugin types for convenience
 pub use sotf_plugins::{
     HrtfData, LoudnessCompensation, LoudnessData, LoudnessInfo, SofaFile, SourcePosition,

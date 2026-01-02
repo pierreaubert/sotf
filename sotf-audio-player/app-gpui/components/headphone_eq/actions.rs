@@ -1,6 +1,6 @@
 use crate::ui::PlayerView;
 use gpui::*;
-use sotf_audio_player::plugins::{EQFilter, PluginSettings, PluginType};
+use sotf_audio_player::{EQFilter, PluginSettings, PluginType};
 
 impl PlayerView {
     // ========================================================================
@@ -286,15 +286,15 @@ fn zip_vectors(x: &[f64], y: &[f64]) -> Vec<(f64, f64)> {
 }
 
 /// Helper to parse filter type string to enum
-fn parse_filter_type(type_str: &str) -> autoeq_iir::BiquadFilterType {
+fn parse_filter_type(type_str: &str) -> math_audio_iir_fir::BiquadFilterType {
     match type_str.to_lowercase().as_str() {
-        "pk" | "peak" => autoeq_iir::BiquadFilterType::Peak,
-        "ls" | "lowshelf" => autoeq_iir::BiquadFilterType::Lowshelf,
-        "hs" | "highshelf" => autoeq_iir::BiquadFilterType::Highshelf,
-        "lp" | "lowpass" => autoeq_iir::BiquadFilterType::Lowpass,
-        "hp" | "highpass" => autoeq_iir::BiquadFilterType::Highpass,
-        "bp" | "bandpass" => autoeq_iir::BiquadFilterType::Bandpass,
-        "no" | "notch" => autoeq_iir::BiquadFilterType::Notch,
-        _ => autoeq_iir::BiquadFilterType::Peak, // Default
+        "pk" | "peak" => math_audio_iir_fir::BiquadFilterType::Peak,
+        "ls" | "lowshelf" => math_audio_iir_fir::BiquadFilterType::Lowshelf,
+        "hs" | "highshelf" => math_audio_iir_fir::BiquadFilterType::Highshelf,
+        "lp" | "lowpass" => math_audio_iir_fir::BiquadFilterType::Lowpass,
+        "hp" | "highpass" => math_audio_iir_fir::BiquadFilterType::Highpass,
+        "bp" | "bandpass" => math_audio_iir_fir::BiquadFilterType::Bandpass,
+        "no" | "notch" => math_audio_iir_fir::BiquadFilterType::Notch,
+        _ => math_audio_iir_fir::BiquadFilterType::Peak, // Default
     }
 }

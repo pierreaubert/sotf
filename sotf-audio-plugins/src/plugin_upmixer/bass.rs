@@ -3,7 +3,7 @@
 // ============================================================================
 
 use super::UpmixerPlugin;
-use autoeq_iir::{Biquad, BiquadFilterType};
+use math_audio_iir_fir::{Biquad, BiquadFilterType};
 
 impl UpmixerPlugin {
     /// Update Linkwitz-Riley crossover gains for mains and LFE separation

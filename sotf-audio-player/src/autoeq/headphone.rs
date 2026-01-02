@@ -24,7 +24,7 @@ pub mod target_curves {
 #[derive(Clone, Debug)]
 pub struct HeadphoneOptimizationResult {
     /// Optimized biquad filters
-    pub biquads: Vec<autoeq_iir::Biquad>,
+    pub biquads: Vec<math_audio_iir_fir::Biquad>,
     /// Frequency points (Hz) - log-spaced
     pub frequencies: Vec<f64>,
     /// Input headphone measurement curve (dB)

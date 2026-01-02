@@ -1,8 +1,8 @@
 [package]
 name = "sotf-audio-engine"
 description = "an audio player and recorder that support audio plugins"
-version = { workspace = true }
-edition = { workspace = true }
+version.workspace = true
+edition.workspace = true
 
 [lib]
 name = "sotf_audio"
@@ -53,19 +53,19 @@ realfft = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }
 directories = { workspace = true }
-rusqlite = { workspace = true, features = ["bundled"] }
+rusqlite = { workspace = true }
 walkdir = { workspace = true }
 autoeq-env = { workspace = true }
 math-iir-fir = { workspace = true }
-sotf-audio-plugins = { path = "../sotf-audio-plugins", default-features = false }
-num-complex = { workspace = true, features = ["serde"] }
+sotf-audio-plugins = { workspace = true }
+num-complex = { workspace = true }
 
 # TUI framework
 ratatui = { workspace = true }
 crossterm = { workspace = true }
 
 # Audio decoding/encoding
-symphonia = { workspace = true, default-features = false }
+symphonia = { workspace = true }
 symphonia-core = { workspace = true }
 symphonia-metadata = { workspace = true }
 symphonia-bundle-flac = { workspace = true }
@@ -92,5 +92,4 @@ sotf-hal = { workspace = true, optional = true }
 
 [dev-dependencies]
 rand = { workspace = true }
-criterion = { version = "0.5", features = ["html_reports"] }
-
+criterion = { workspace = true }

@@ -1,4 +1,4 @@
-use autoeq_iir::{Biquad, BiquadFilterType};
+use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde_json::json;
 use sotf_audio::engine::{AudioEngine, EngineConfig, PluginConfig};

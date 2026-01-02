@@ -327,7 +327,7 @@ impl Drop for MetalView {
 // =============================================================================
 
 /// Create a new Metal-backed view (FFI)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn metal_view_create(width: u32, height: u32) -> *mut MetalView {
     match MetalView::new(width, height) {
         Some(view) => Box::into_raw(Box::new(view)),
@@ -339,7 +339,7 @@ pub extern "C" fn metal_view_create(width: u32, height: u32) -> *mut MetalView {
 }
 
 /// Destroy a Metal-backed view (FFI)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn metal_view_destroy(view: *mut MetalView) {
     if !view.is_null() {
         unsafe {
@@ -349,7 +349,7 @@ pub extern "C" fn metal_view_destroy(view: *mut MetalView) {
 }
 
 /// Get the native NSView pointer (FFI)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn metal_view_get_native(view: *const MetalView) -> *mut c_void {
     if view.is_null() {
         return ptr::null_mut();
@@ -358,7 +358,7 @@ pub extern "C" fn metal_view_get_native(view: *const MetalView) -> *mut c_void {
 }
 
 /// Request a redraw (FFI)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn metal_view_set_needs_display(view: *const MetalView) {
     if !view.is_null() {
         unsafe {

@@ -138,7 +138,7 @@ impl EmbeddedView {
 // =============================================================================
 
 /// Create a new embedded view (FFI)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn embedded_view_create(width: u32, height: u32) -> *mut EmbeddedView {
     // Initialize logging if not already done
     let _ = env_logger::try_init();
@@ -156,7 +156,7 @@ pub extern "C" fn embedded_view_create(width: u32, height: u32) -> *mut Embedded
 }
 
 /// Destroy an embedded view (FFI)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn embedded_view_destroy(view: *mut EmbeddedView) {
     if !view.is_null() {
         unsafe {
@@ -167,7 +167,7 @@ pub extern "C" fn embedded_view_destroy(view: *mut EmbeddedView) {
 }
 
 /// Get the native NSView pointer (FFI)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn embedded_view_get_native(view: *const EmbeddedView) -> *mut c_void {
     if view.is_null() {
         return std::ptr::null_mut();
@@ -176,7 +176,7 @@ pub extern "C" fn embedded_view_get_native(view: *const EmbeddedView) -> *mut c_
 }
 
 /// Check if the view is available (FFI)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn embedded_view_is_available(view: *const EmbeddedView) -> bool {
     if view.is_null() {
         return false;
@@ -185,7 +185,7 @@ pub extern "C" fn embedded_view_is_available(view: *const EmbeddedView) -> bool 
 }
 
 /// Request a redraw (FFI)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn embedded_view_set_needs_display(view: *const EmbeddedView) {
     if !view.is_null() {
         unsafe {
@@ -195,7 +195,7 @@ pub extern "C" fn embedded_view_set_needs_display(view: *const EmbeddedView) {
 }
 
 /// Set clear color (FFI)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn embedded_view_set_clear_color(
     view: *mut EmbeddedView,
     r: f64,
@@ -214,7 +214,7 @@ pub extern "C" fn embedded_view_set_clear_color(
 ///
 /// # Safety
 /// `params` must point to a valid array of `count` f32 values
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn embedded_view_update_parameters(
     view: *mut EmbeddedView,
     params: *const f32,

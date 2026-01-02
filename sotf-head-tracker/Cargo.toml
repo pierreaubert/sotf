@@ -1,9 +1,9 @@
 [package]
 name = "sotf-head-tracker"
 description = "Camera-based head tracking for spatial audio"
-version = { workspace = true }
-edition = { workspace = true }
-license = { workspace = true }
+version.workspace = true
+edition.workspace = true
+license.workspace = true
 
 [features]
 default = ["macos-vision"]
@@ -17,36 +17,32 @@ parking_lot = { workspace = true }
 crossbeam = { workspace = true }
 
 # Image processing (for RGB to JPEG conversion)
-image = { version = "0.25", default-features = false, features = ["jpeg"] }
+image = { workspace = true }
 
 # Camera capture - nokhwa for non-macOS platforms
-[target.'cfg(target_os = "linux")'.dependencies.nokhwa]
-version = "0.10"
-features = ["input-v4l"]
-default-features = false
+[target.'cfg(target_os = "linux")'.dependencies]
+nokhwa = { workspace = true, features = ["input-v4l"] }
 
-[target.'cfg(target_os = "windows")'.dependencies.nokhwa]
-version = "0.10"
-features = ["input-msmf"]
-default-features = false
+[target.'cfg(target_os = "windows")'.dependencies]
+nokhwa = { workspace = true, features = ["input-msmf"] }
 
 # macOS frameworks (Vision + AVFoundation for camera)
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2 = "0.6"
-objc2-foundation = "0.3"
-objc2-core-foundation = "0.3"
-objc2-vision = "0.3"
-objc2-core-image = "0.3"
-objc2-core-video = "0.3"
-objc2-av-foundation = "0.3"
-objc2-core-media = "0.3"
-block2 = "0.6"
-dispatch = "0.2"
+objc2 = { workspace = true }
+objc2-foundation = { workspace = true }
+objc2-core-foundation = { workspace = true }
+objc2-vision = { workspace = true }
+objc2-core-image = { workspace = true }
+objc2-core-video = { workspace = true }
+objc2-av-foundation = { workspace = true }
+objc2-core-media = { workspace = true }
+block2 = { workspace = true }
+dispatch = { workspace = true }
 
 # Optional ONNX support for cross-platform (future)
 # Note: ort 2.0 is still in RC, using latest stable for now
 [dependencies.ort]
-version = "2.0.0-rc.10"
+workspace = true
 optional = true
 
 [dev-dependencies]

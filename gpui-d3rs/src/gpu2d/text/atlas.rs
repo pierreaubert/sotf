@@ -203,7 +203,7 @@ impl TextAtlas {
         // Upload glyph to texture
         if let Some(texture) = &self.texture {
             self.queue.write_texture(
-                wgpu::ImageCopyTexture {
+                wgpu::TexelCopyTextureInfo {
                     texture,
                     mip_level: 0,
                     origin: wgpu::Origin3d {
@@ -214,7 +214,7 @@ impl TextAtlas {
                     aspect: wgpu::TextureAspect::All,
                 },
                 &bitmap,
-                wgpu::ImageDataLayout {
+                wgpu::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(glyph_width),
                     rows_per_image: Some(glyph_height),

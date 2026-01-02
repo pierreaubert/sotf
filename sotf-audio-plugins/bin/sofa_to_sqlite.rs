@@ -75,8 +75,9 @@ mod converter {
         }
 
         // Serialize and insert large data as blobs
-        let positions_blob = bincode::serialize(&sofa.positions)
-            .map_err(|e| anyhow::anyhow!("Failed to serialize positions: {}", e))?;
+        let positions_blob =
+            bincode::serde::encode_to_vec(&sofa.positions, bincode::config::standard())
+                .map_err(|e| anyhow::anyhow!("Failed to serialize positions: {}", e))?;
         let ir_blob = f32_vec_to_bytes(&sofa.impulse_responses);
 
         tx.execute(

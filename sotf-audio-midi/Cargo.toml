@@ -13,7 +13,7 @@ path = "src/lib.rs"
 
 [dependencies]
 # MIDI I/O
-midir = "0.10"
+midir = { workspace = true }
 
 # Serialization for device configuration
 serde = { workspace = true }
@@ -33,7 +33,7 @@ tokio = { workspace = true }
 parking_lot = { workspace = true }
 
 # Configuration directory
-dirs = "5.0"
+dirs = { workspace = true }
 
 # Date/time for timestamps (used in examples)
 chrono = { workspace = true }

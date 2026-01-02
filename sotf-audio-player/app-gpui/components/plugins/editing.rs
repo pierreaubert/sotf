@@ -2251,15 +2251,17 @@ impl App {
             format!("{}.json", self.plugin_file_input)
         };
 
-        if let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() {
-            let full_path = presets_dir.join(&filename_with_ext);
-            if full_path.exists() {
-                log::warn!("Overwriting existing preset: {}", filename_with_ext);
-            }
+        let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() else {
+            self.toast_message = Some(ToastMessage::error("Could not find presets directory".to_string()));
+            return;
+        };
+        let full_path = presets_dir.join(&filename_with_ext);
+        if full_path.exists() {
+            log::warn!("Overwriting existing preset: {}", filename_with_ext);
         }
 
         // Save using the plugin chain's own save method (handles path, validation, etc.)
-        match self.plugin_chain.save_to_file(&self.plugin_file_input) {
+        match self.plugin_chain.save_to_file(&presets_dir, &self.plugin_file_input) {
             Ok(_) => {
                 self.toast_message = Some(ToastMessage::success(format!(
                     "Saved preset: {}",
@@ -2289,7 +2291,11 @@ impl App {
             .cloned()
         {
             // Save using the plugin chain's own save method
-            match self.plugin_chain.save_to_file(&preset_filename) {
+            let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() else {
+                self.toast_message = Some(ToastMessage::error("Could not find presets directory".to_string()));
+                return;
+            };
+            match self.plugin_chain.save_to_file(&presets_dir, &preset_filename) {
                 Ok(_) => {
                     self.toast_message = Some(ToastMessage::success(format!(
                         "Overwritten preset: {}",
@@ -2315,7 +2321,11 @@ impl App {
         }
 
         // Load using the plugin chain's own load method (handles path, extension, etc.)
-        match self.plugin_chain.load_from_file(&self.plugin_file_input) {
+        let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() else {
+            self.toast_message = Some(ToastMessage::error("Could not find presets directory".to_string()));
+            return;
+        };
+        match self.plugin_chain.load_from_file(&presets_dir, &self.plugin_file_input) {
             Ok(_) => {
                 // Update BinauralDecoder input channels after loading
                 self.plugin_chain.update_channel_dependent_plugins();
@@ -2354,7 +2364,11 @@ impl App {
             .get(self.selected_preset_index)
             .cloned()
         {
-            match self.plugin_chain.load_from_file(&preset_filename) {
+            let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() else {
+                self.toast_message = Some(ToastMessage::error("Could not find presets directory".to_string()));
+                return;
+            };
+            match self.plugin_chain.load_from_file(&presets_dir, &preset_filename) {
                 Ok(_) => {
                     // Update BinauralDecoder input channels after loading
                     self.plugin_chain.update_channel_dependent_plugins();

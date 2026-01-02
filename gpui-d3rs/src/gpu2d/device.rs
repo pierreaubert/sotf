@@ -41,7 +41,7 @@ impl Gpu2DContext {
 
 /// Create a new wgpu device and queue
 async fn create_device() -> (wgpu::Device, wgpu::Queue) {
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
         backends: wgpu::Backends::all(),
         ..Default::default()
     });
@@ -56,15 +56,13 @@ async fn create_device() -> (wgpu::Device, wgpu::Queue) {
         .expect("Failed to find suitable GPU adapter");
 
     adapter
-        .request_device(
-            &wgpu::DeviceDescriptor {
-                label: Some("Chart2D Device"),
-                required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::default(),
-                memory_hints: wgpu::MemoryHints::default(),
-            },
-            None,
-        )
+        .request_device(&wgpu::DeviceDescriptor {
+            label: Some("Chart2D Device"),
+            required_features: wgpu::Features::empty(),
+            required_limits: wgpu::Limits::default(),
+            memory_hints: wgpu::MemoryHints::default(),
+            trace: wgpu::Trace::Off,
+        })
         .await
         .expect("Failed to create device")
 }

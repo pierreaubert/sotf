@@ -298,9 +298,11 @@ impl Renderer2D {
         }
 
         // Copy vertices to GPU buffer
-        let data_size = self.vertices.len() * mem::size_of::<Vertex2D>();
+        let _data_size = self.vertices.len() * mem::size_of::<Vertex2D>();
         let buffer_ptr = self.vertex_buffer.contents() as *mut Vertex2D;
-        std::ptr::copy_nonoverlapping(self.vertices.as_ptr(), buffer_ptr, self.vertices.len());
+        unsafe {
+            std::ptr::copy_nonoverlapping(self.vertices.as_ptr(), buffer_ptr, self.vertices.len());
+        }
 
         // Get texture from drawable
         let texture: id = msg_send![drawable, texture];

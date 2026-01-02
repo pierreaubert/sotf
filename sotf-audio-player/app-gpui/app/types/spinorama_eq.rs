@@ -178,6 +178,12 @@ pub struct SpinoramaOptimizerConfig {
     pub algorithm: RoomEqAlgorithm,
     /// Number of PEQ filters
     pub num_filters: usize,
+    /// Sample rate in Hz
+    pub sample_rate: u32,
+    /// Number of FIR taps (for FIR/Mixed mode)
+    pub fir_taps: usize,
+    /// FIR phase type (for FIR/Mixed mode): "linear", "minimum", "kirkeby"
+    pub fir_phase: String,
     /// Minimum Q factor
     pub min_q: f64,
     /// Maximum Q factor
@@ -208,6 +214,16 @@ pub struct SpinoramaOptimizerConfig {
     pub local_algo: String,
     /// Enable smoothing
     pub smooth: bool,
+    /// Smoothing window size (1-24)
+    pub smooth_n: usize,
+    /// Spacing constraint weight (0-1000)
+    pub spacing_weight: f64,
+    /// Minimum spacing between filters in octaves (0.01-1.0)
+    pub min_spacing_oct: f64,
+    /// Relative tolerance for convergence
+    pub tolerance: f64,
+    /// Absolute tolerance for convergence
+    pub atolerance: f64,
 }
 
 impl Default for SpinoramaOptimizerConfig {
@@ -217,12 +233,15 @@ impl Default for SpinoramaOptimizerConfig {
             target_curve: SpinoramaTargetCurve::default(),
             algorithm: RoomEqAlgorithm::DifferentialEvolution,
             num_filters: 5,
+            sample_rate: 48000,
+            fir_taps: 4096,
+            fir_phase: "kirkeby".to_string(),
             min_q: 0.5,
             max_q: 6.0,
             min_db: -12.0,
             max_db: 4.0,
             min_freq: 60.0,
-            max_freq: 160000.0,
+            max_freq: 16000.0,
             max_iter: 10000,
             peq_model: "pk".to_string(),
             population: 40,
@@ -232,6 +251,11 @@ impl Default for SpinoramaOptimizerConfig {
             refine: false,
             local_algo: "cobyla".to_string(),
             smooth: false,
+            smooth_n: 6,
+            spacing_weight: 1.0,
+            min_spacing_oct: 0.08,
+            tolerance: 0.00001,
+            atolerance: 0.00001,
         }
     }
 }
@@ -337,6 +361,8 @@ pub struct SpinoramaEqDropdowns {
     pub opt_mode_open: bool,
     /// Selected EQ mode ("iir", "fir", "mixed")
     pub opt_mode: String,
+    /// AutoEQ form: FIR phase dropdown
+    pub fir_phase_open: bool,
     /// AutoEQ form: PEQ model dropdown
     pub peq_model_open: bool,
     /// AutoEQ form: DE strategy dropdown
@@ -361,6 +387,7 @@ impl Default for SpinoramaEqDropdowns {
             target_curve_open: false,
             opt_mode_open: false,
             opt_mode: "iir".to_string(),
+            fir_phase_open: false,
             peq_model_open: false,
             strategy_open: false,
             local_algo_open: false,

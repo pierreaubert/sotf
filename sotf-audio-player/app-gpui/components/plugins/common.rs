@@ -118,8 +118,8 @@ pub fn param_index_to_engine_param(
             smoothing,
             attack_ms,
             release_ms,
-            low_latency,
             polyphonic_detection,
+            ..
         } => match param_idx {
             0 => Some(("reduction_db".to_string(), format!("{}", reduction_db))),
             1 => Some(("floor_db".to_string(), format!("{}", floor_db))),

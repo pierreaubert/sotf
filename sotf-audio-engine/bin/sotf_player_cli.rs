@@ -1,6 +1,7 @@
-use autoeq_iir::{Biquad, BiquadFilterType};
+use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use clap::{Parser, Subcommand};
 use sotf_audio::LoudnessCompensation;
+use sotf_audio::plugins::{EQFilter, PluginChain, PluginSettings, PluginType};
 use sotf_audio::{AudioEngineManager, PluginConfig, StreamingState, run_preflight_checks};
 use std::fs::OpenOptions;
 use std::path::PathBuf;
@@ -567,6 +568,15 @@ enum Commands {
         /// PND drift smoothing factor (0.001-1.0)
         #[arg(long = "pnd-drift-smoothing", default_value = "0.1")]
         pnd_drift_smoothing: f32,
+
+        /// Use rack mode with specified plugin order (matches GPUI app plugin behavior)
+        ///
+        /// Available plugins: eq, upmixer, binaural, loudness, expander, compressor,
+        /// mb-expander, xtc, denoiser, pnd, lufs
+        ///
+        /// Example: --rack upmixer eq lufs
+        #[arg(long = "rack", value_name = "PLUGIN", num_args = 1..)]
+        rack: Vec<String>,
     },
 
     /// Get current playback status
@@ -668,6 +678,7 @@ fn main() {
             pnd_correction_strength,
             pnd_analysis_window_ms,
             pnd_drift_smoothing,
+            rack,
         } => {
             // Parse filters
             let filter_params = match parse_filters(&filters) {
@@ -733,6 +744,7 @@ fn main() {
                 pnd_correction_strength,
                 pnd_analysis_window_ms,
                 pnd_drift_smoothing,
+                rack,
             ) {
                 log::error!("Error: {}", e);
                 std::process::exit(1);
@@ -1070,6 +1082,7 @@ fn play_stream(
     pnd_correction_strength: f32,
     pnd_analysis_window_ms: f32,
     pnd_drift_smoothing: f32,
+    rack: Vec<String>,
 ) -> Result<(), String> {
     log::info!("Starting streaming playback...");
     log::info!("  File: {:?}", file);
@@ -1112,10 +1125,177 @@ fn play_stream(
     log::info!("");
 
     // Build plugin chain
-    let mut plugins = Vec::new();
+    let (plugins, output_channels, loudness_plugin_index) = if !rack.is_empty() {
+        // Use PluginChain with specified plugin order (matches GPUI app behavior)
+        log::info!("Using rack mode with plugins: {:?}", rack);
+        let sample_rate = audio_info.spec.sample_rate as f64;
+        let mut chain = PluginChain::new();
+        let mut has_lufs = false;
 
-    // Upmixer (if enabled)
-    let output_channels = if upmixer {
+        // Add plugins in the order specified by --rack
+        for plugin_name in &rack {
+            match plugin_name.to_lowercase().as_str() {
+                "upmixer" => {
+                    // Check that input is stereo
+                    if audio_info.spec.channels != 2 {
+                        return Err(format!(
+                            "Upmixer requires stereo input, got {} channels",
+                            audio_info.spec.channels
+                        ));
+                    }
+
+                    let idx = chain.add_plugin(&PluginType::Upmixer);
+                    if let Some(plugin) = chain.get_plugin_mut(idx) {
+                        plugin.settings = PluginSettings::Upmixer {
+                            speaker_config: upmixer_config.clone(),
+                            gain_front_direct: upmixer_gain_front_direct as f64,
+                            gain_front_ambient: upmixer_gain_front_ambient as f64,
+                            gain_rear_ambient: upmixer_gain_rear_ambient as f64,
+                            height_gain: upmixer_height_gain as f64,
+                            stereo_width: upmixer_stereo_width as f64,
+                            center_spread: 0.5,
+                            surround_direct_bleed: 0.3,
+                            rear_late_reflection: 0.2,
+                            lfe_cutoff_hz: upmixer_lfe_cutoff_hz as f64,
+                            lfe_gain: upmixer_lfe_gain as f64,
+                            bandpass_hz: upmixer_bandpass_hz as f64,
+                            enable_subharmonic_synth,
+                            subharmonic_gain: subharmonic_gain as f64,
+                            subharmonic_freq_hz: 60.0,
+                            subharmonic_attack_ms: 10.0,
+                            subharmonic_release_ms: 100.0,
+                            decorrelation_mode: 0,
+                            decorrelation_lfo_rate_hz: 0.5,
+                            velvet_noise_duration_ms: 50.0,
+                            velvet_noise_density: 0.5,
+                            enable_hr_direct,
+                            hr_sharpen: hr_sharpen as f64,
+                            height_hf_cap_hz: 8000.0,
+                            height_transient_reduction: 0.5,
+                            height_direct_leak: 0.1,
+                            ambient_boost: 0.0,
+                            safety_cap_db: safety_cap_db as f64,
+                            rear_ambient_boost: 0.0,
+                            dialogue_weight: 1.0,
+                            voice_freq_min_hz: 85.0,
+                            voice_freq_max_hz: 3000.0,
+                            bypass_decorrelation: false,
+                            bypass_transient_detection: false,
+                            bypass_all_processing: false,
+                        };
+                    }
+                    log::info!("Rack: Added Upmixer plugin ({})", upmixer_config);
+                }
+                "binaural" => {
+                    let sofa_path = sofa_file.clone().ok_or("Binaural decoder requires --sofa-file to be specified")?;
+                    let input_channels = chain.output_channels();
+
+                    let idx = chain.add_plugin(&PluginType::BinauralDecoder);
+                    if let Some(plugin) = chain.get_plugin_mut(idx) {
+                        plugin.settings = PluginSettings::BinauralDecoder {
+                            sofa_file: sofa_path.to_string_lossy().to_string(),
+                            input_channels,
+                            enable_optimization,
+                            externalization: externalization as f64,
+                            near_field_strength: near_field_strength as f64,
+                        };
+                    }
+                    log::info!("Rack: Added BinauralDecoder plugin");
+                }
+                "loudness" | "loudness-compensation" => {
+                    chain.add_plugin(&PluginType::LoudnessCompensation);
+                    log::info!("Rack: Added LoudnessCompensation plugin");
+                }
+                "eq" => {
+                    let channels = chain.output_channels();
+                    let idx = chain.add_plugin(&PluginType::EQ);
+                    if let Some(plugin) = chain.get_plugin_mut(idx) {
+                        let eq_filters: Vec<EQFilter> = filters
+                            .iter()
+                            .map(|f| EQFilter::new(f.filter_type, f.freq, f.q, f.db_gain))
+                            .collect();
+                        plugin.settings = PluginSettings::EQ {
+                            channels,
+                            filters: eq_filters,
+                        };
+                    }
+                    log::info!("Rack: Added EQ plugin with {} filters", filters.len());
+                }
+                "expander" => {
+                    chain.add_plugin(&PluginType::Expander);
+                    log::info!("Rack: Added Expander plugin");
+                }
+                "compressor" | "mb-compressor" => {
+                    chain.add_plugin(&PluginType::MultibandCompressor);
+                    log::info!("Rack: Added MultibandCompressor plugin");
+                }
+                "mb-expander" => {
+                    chain.add_plugin(&PluginType::MultibandExpander);
+                    log::info!("Rack: Added MultibandExpander plugin");
+                }
+                "xtc" => {
+                    chain.add_plugin(&PluginType::XTC);
+                    log::info!("Rack: Added XTC plugin");
+                }
+                "denoiser" => {
+                    let idx = chain.add_plugin(&PluginType::Denoiser);
+                    if let Some(plugin) = chain.get_plugin_mut(idx) {
+                        plugin.settings = PluginSettings::Denoiser {
+                            reduction_db: denoiser_reduction_db as f64,
+                            floor_db: denoiser_floor_db as f64,
+                            smoothing: denoiser_smoothing as f64,
+                            attack_ms: denoiser_attack_ms as f64,
+                            release_ms: denoiser_release_ms as f64,
+                            low_latency: denoiser_low_latency,
+                            polyphonic_detection: false,
+                        };
+                    }
+                    log::info!("Rack: Added Denoiser plugin");
+                }
+                "pnd" => {
+                    let idx = chain.add_plugin(&PluginType::Pnd);
+                    if let Some(plugin) = chain.get_plugin_mut(idx) {
+                        plugin.settings = PluginSettings::Pnd {
+                            correction_strength: pnd_correction_strength as f64,
+                            analysis_window_ms: pnd_analysis_window_ms as f64,
+                            drift_smoothing: pnd_drift_smoothing as f64,
+                        };
+                    }
+                    log::info!("Rack: Added PND plugin");
+                }
+                "lufs" | "loudness-monitor" => {
+                    chain.add_plugin(&PluginType::LoudnessMonitor);
+                    has_lufs = true;
+                    log::info!("Rack: Added LoudnessMonitor plugin");
+                }
+                unknown => {
+                    return Err(format!(
+                        "Unknown plugin '{}'. Available: eq, upmixer, binaural, loudness, \
+                        expander, compressor, mb-expander, xtc, denoiser, pnd, lufs",
+                        unknown
+                    ));
+                }
+            }
+        }
+
+        // Convert to PluginConfig
+        let plugins = chain.to_plugin_configs(sample_rate);
+        let output_channels = chain.output_channels();
+
+        // Find the actual index of loudness monitor in the plugins vec
+        let actual_loudness_idx = if has_lufs {
+            plugins.iter().position(|p| p.plugin_type == "loudness_monitor")
+        } else {
+            None
+        };
+
+        (plugins, output_channels, actual_loudness_idx)
+    } else {
+        // Original plugin creation logic (manual PluginConfig building)
+        let mut plugins = Vec::new();
+
+        // Upmixer (if enabled)
+        let output_channels = if upmixer {
         // Check that input is stereo
         if audio_info.spec.channels != 2 {
             return Err(format!(
@@ -1334,6 +1514,9 @@ fn play_stream(
         Some(plugin_index)
     } else {
         None
+    };
+
+        (plugins, output_channels, loudness_plugin_index)
     };
 
     // Start playback (signal handling is done by the manager)

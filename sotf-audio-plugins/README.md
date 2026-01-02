@@ -167,7 +167,7 @@ Parametric EQ supporting both single-chain and per-channel modes:
 
 ```rust
 use sotf_plugins::{EqPlugin, EqPluginParams, BiquadFilterConfig};
-use autoeq_iir::Biquad;
+use math_audio_iir_fir::Biquad;
 
 // Mode 1: Single chain for all channels
 let filters = vec![

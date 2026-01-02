@@ -420,7 +420,7 @@ impl CAUEQBand {
 }
 
 /// Create AU plugin view (FFI)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn au_plugin_view_create(width: u32, height: u32) -> *mut AUPluginView {
     let _ = env_logger::try_init();
 
@@ -437,7 +437,7 @@ pub extern "C" fn au_plugin_view_create(width: u32, height: u32) -> *mut AUPlugi
 }
 
 /// Destroy AU plugin view (FFI)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn au_plugin_view_destroy(view: *mut AUPluginView) {
     if !view.is_null() {
         unsafe {
@@ -448,7 +448,7 @@ pub extern "C" fn au_plugin_view_destroy(view: *mut AUPluginView) {
 }
 
 /// Get native NSView (FFI)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn au_plugin_view_get_native(view: *const AUPluginView) -> *mut c_void {
     if view.is_null() {
         return ptr::null_mut();
@@ -457,7 +457,7 @@ pub extern "C" fn au_plugin_view_get_native(view: *const AUPluginView) -> *mut c
 }
 
 /// Set EQ bands (FFI)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn au_plugin_view_set_bands(
     view: *mut AUPluginView,
     bands: *const CAUEQBand,
@@ -475,7 +475,7 @@ pub extern "C" fn au_plugin_view_set_bands(
 }
 
 /// Get EQ bands (FFI)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn au_plugin_view_get_bands(
     view: *const AUPluginView,
     bands: *mut CAUEQBand,
@@ -498,7 +498,7 @@ pub extern "C" fn au_plugin_view_get_bands(
 }
 
 /// Request redraw (FFI)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn au_plugin_view_set_needs_display(view: *const AUPluginView) {
     if !view.is_null() {
         unsafe {

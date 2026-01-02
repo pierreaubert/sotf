@@ -58,7 +58,7 @@ use parking_lot::Mutex;
 use rust_embed::RustEmbed;
 
 // Re-export types for FFI
-use autoeq_iir::BiquadFilterType;
+use math_audio_iir_fir::BiquadFilterType;
 use gpui_ui_kit::Theme;
 pub use sotf_audio_player::EQFilter;
 
@@ -391,7 +391,7 @@ impl Drop for GPUIEmbeddedView {
 // =============================================================================
 
 /// Create a new GPUI embedded view (FFI)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn gpui_view_create(width: u32, height: u32) -> *mut GPUIEmbeddedView {
     // Initialize logging if not already done
     let _ = env_logger::try_init();
@@ -409,7 +409,7 @@ pub extern "C" fn gpui_view_create(width: u32, height: u32) -> *mut GPUIEmbedded
 }
 
 /// Destroy a GPUI embedded view (FFI)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn gpui_view_destroy(view: *mut GPUIEmbeddedView) {
     if !view.is_null() {
         unsafe {
@@ -423,7 +423,7 @@ pub extern "C" fn gpui_view_destroy(view: *mut GPUIEmbeddedView) {
 ///
 /// Returns the NSView pointer that can be embedded in the AU view controller.
 /// Returns NULL if GPUI initialization failed (fallback to placeholder UI).
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn gpui_view_get_native_view(view: *mut GPUIEmbeddedView) -> *mut c_void {
     if view.is_null() {
         log::error!("gpui_view_get_native_view: null view pointer");
@@ -436,7 +436,7 @@ pub extern "C" fn gpui_view_get_native_view(view: *mut GPUIEmbeddedView) -> *mut
 ///
 /// Returns true if the GPUI view was successfully created and has a native view.
 /// If false, the AU should use its fallback placeholder UI.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn gpui_view_is_available(view: *mut GPUIEmbeddedView) -> bool {
     if view.is_null() {
         return false;
@@ -445,7 +445,7 @@ pub extern "C" fn gpui_view_is_available(view: *mut GPUIEmbeddedView) -> bool {
 }
 
 /// Update view size (FFI)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn gpui_view_set_size(view: *mut GPUIEmbeddedView, width: u32, height: u32) {
     if !view.is_null() {
         unsafe {
@@ -458,7 +458,7 @@ pub extern "C" fn gpui_view_set_size(view: *mut GPUIEmbeddedView, width: u32, he
 ///
 /// # Safety
 /// `filters` must point to a valid array of `count` elements
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn gpui_view_set_filters(
     view: *mut GPUIEmbeddedView,
     filters: *const CEQFilter,
@@ -484,7 +484,7 @@ pub extern "C" fn gpui_view_set_filters(
 ///
 /// # Safety
 /// `filters` must point to a buffer with at least `max_count` elements
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn gpui_view_get_filters(
     view: *mut GPUIEmbeddedView,
     filters: *mut CEQFilter,
@@ -507,7 +507,7 @@ pub extern "C" fn gpui_view_get_filters(
 }
 
 /// Handle mouse events (FFI)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn gpui_view_mouse_event(
     view: *mut GPUIEmbeddedView,
     x: f32,

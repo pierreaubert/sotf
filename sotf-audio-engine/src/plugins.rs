@@ -1,7 +1,7 @@
-use autoeq_iir::{Biquad, BiquadFilterType};
+use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sotf_audio::engine::PluginConfig;
+use crate::engine::PluginConfig;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum PluginType {
@@ -2013,15 +2013,20 @@ impl PluginChain {
         2
     }
 
-    /// Save the plugin chain to a JSON file in the plugin_presets directory
+    /// Save the plugin chain to a JSON file
     ///
     /// # Arguments
+    /// * `presets_dir` - Directory to save the preset file
     /// * `filename` - The preset filename (with or without .json extension)
     ///
     /// # Returns
     /// * Ok(()) on success
     /// * Err if the extension is not .json or if saving fails
-    pub fn save_to_file(&self, filename: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn save_to_file(
+        &self,
+        presets_dir: &std::path::Path,
+        filename: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         // Validate extension - must be .json or none
         let path = std::path::Path::new(filename);
         let extension = path.extension().and_then(|ext| ext.to_str());
@@ -2044,14 +2049,7 @@ impl PluginChain {
             filename.to_string()
         };
 
-        // Get plugin_presets directory
-        let presets_dir = crate::config::get_plugin_presets_dir()
-            .ok_or("Could not access plugin presets directory")?;
-
         let full_path = presets_dir.join(&filename);
-
-        // Security validation: ensure we're writing within config directory
-        crate::security::validate_write_path(&full_path)?;
 
         // Wrap plugins in versioned preset
         let preset = PluginPreset {
@@ -2067,15 +2065,20 @@ impl PluginChain {
         Ok(())
     }
 
-    /// Load the plugin chain from a JSON file in the plugin_presets directory
+    /// Load the plugin chain from a JSON file
     ///
     /// # Arguments
+    /// * `presets_dir` - Directory containing the preset files
     /// * `filename` - The preset filename (with or without .json extension)
     ///
     /// # Returns
     /// * Ok(()) on success
     /// * Err if the file doesn't exist or loading fails
-    pub fn load_from_file(&mut self, filename: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn load_from_file(
+        &mut self,
+        presets_dir: &std::path::Path,
+        filename: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         // Auto-append .json if not already present
         let path = std::path::Path::new(filename);
         let final_filename = if path.extension().and_then(|e| e.to_str()) == Some("json") {
@@ -2090,15 +2093,8 @@ impl PluginChain {
             filename
         );
 
-        // Get plugin_presets directory
-        let presets_dir = crate::config::get_plugin_presets_dir()
-            .ok_or("Could not access plugin presets directory")?;
-
         let full_path = presets_dir.join(&final_filename);
         log::debug!("Full path: {}", full_path.display());
-
-        // Security validation: ensure we're reading from within config directory
-        crate::security::validate_config_read_path(&full_path)?;
 
         // Load from file
         let json = std::fs::read_to_string(&full_path)?;
@@ -2134,7 +2130,7 @@ impl PluginChain {
 
             // Save upgraded preset back to disk
             self.plugins = preset.plugins.clone();
-            self.save_to_file(&final_filename)?;
+            self.save_to_file(presets_dir, &final_filename)?;
 
             log::info!(
                 "Successfully migrated plugin preset from version {} to {}",
@@ -2203,7 +2199,7 @@ impl PluginChain {
             // Update plugins that depend on input channels
             // We use a temporary clone to check if update is needed to avoid borrow checker issues if we modify in place
             // actually we can modify in place if we match &mut settings
-            
+
             let mut updated_settings = None;
 
             match &self.plugins[i].settings {
@@ -2223,12 +2219,12 @@ impl PluginChain {
                         });
                     }
                 }
-                PluginSettings::BinauralDecoder { 
-                    sofa_file, 
-                    input_channels, 
-                    enable_optimization, 
-                    externalization, 
-                    near_field_strength 
+                PluginSettings::BinauralDecoder {
+                    sofa_file,
+                    input_channels,
+                    enable_optimization,
+                    externalization,
+                    near_field_strength
                 } => {
                     if *input_channels != current_channels {
                         updated_settings = Some(PluginSettings::BinauralDecoder {
@@ -2240,10 +2236,10 @@ impl PluginChain {
                         });
                     }
                 }
-                PluginSettings::Matrix { 
-                    input_channels, 
-                    output_channels, 
-                    matrix: _ 
+                PluginSettings::Matrix {
+                    input_channels,
+                    output_channels,
+                    matrix: _
                 } => {
                     if *input_channels != current_channels {
                         // Resize matrix to identity
@@ -2252,7 +2248,7 @@ impl PluginChain {
                         for c in 0..min_ch {
                             new_matrix[c * current_channels + c] = 1.0;
                         }
-                        
+
                         updated_settings = Some(PluginSettings::Matrix {
                             input_channels: current_channels,
                             output_channels: *output_channels,

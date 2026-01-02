@@ -481,7 +481,7 @@ impl<T: Clone> QuadTree<T> {
                     let mut removed = false;
                     let mut current = &mut point.next;
 
-                    while let Some(ref mut next) = current {
+                    while let Some(next) = current {
                         if (next.x - x).abs() < 1e-12 && (next.y - y).abs() < 1e-12 {
                             *current = next.next.take();
                             removed = true;

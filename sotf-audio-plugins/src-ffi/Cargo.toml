@@ -1,10 +1,10 @@
 [package]
 name = "sotf-audio-plugins-ffi"
-version = "0.5.1"
-edition = { workspace = true }
-authors = { workspace = true }
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
 description = "C FFI bindings for SOTF audio plugins (for Audio Unit integration)"
-license = { workspace = true }
+license.workspace = true
 
 [lib]
 crate-type = ["staticlib", "cdylib"]

@@ -167,7 +167,7 @@ use std::os::raw::{c_float, c_int};
 /// - `output` points to a valid buffer of at least `length` floats
 /// - `output` is properly aligned for f32
 /// - `output` buffer remains valid for the duration of this call
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn hal_read_input(output: *mut c_float, length: c_int) -> c_int {
     if output.is_null() || length <= 0 {
         return -1;
@@ -178,7 +178,7 @@ pub unsafe extern "C" fn hal_read_input(output: *mut c_float, length: c_int) -> 
         None => return -1,
     };
 
-    let slice = std::slice::from_raw_parts_mut(output, length as usize);
+    let slice = unsafe { std::slice::from_raw_parts_mut(output, length as usize) };
     reader.read(slice) as c_int
 }
 
@@ -191,7 +191,7 @@ pub unsafe extern "C" fn hal_read_input(output: *mut c_float, length: c_int) -> 
 /// - `input` points to a valid buffer of at least `length` floats
 /// - `input` is properly aligned for f32
 /// - `input` buffer remains valid for the duration of this call
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn hal_write_output(input: *const c_float, length: c_int) -> c_int {
     if input.is_null() || length <= 0 {
         return -1;
@@ -202,14 +202,14 @@ pub unsafe extern "C" fn hal_write_output(input: *const c_float, length: c_int) 
         None => return -1,
     };
 
-    let slice = std::slice::from_raw_parts(input, length as usize);
+    let slice = unsafe { std::slice::from_raw_parts(input, length as usize) };
     writer.write(slice) as c_int
 }
 
 /// C API: Get available input samples
 ///
 /// Returns number of available samples, or -1 on error.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn hal_input_available() -> c_int {
     let reader = match HalInputReader::new() {
         Some(r) => r,
@@ -222,7 +222,7 @@ pub extern "C" fn hal_input_available() -> c_int {
 /// C API: Get available output space
 ///
 /// Returns number of available sample slots, or -1 on error.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn hal_output_available() -> c_int {
     let writer = match HalOutputWriter::new() {
         Some(w) => w,

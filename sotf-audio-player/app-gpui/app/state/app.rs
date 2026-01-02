@@ -672,7 +672,11 @@ impl App {
         if let Some(preset_name) = config.last_loaded_plugin_preset {
             self.last_loaded_preset = Some(preset_name.clone());
             // Load the preset file
-            match self.plugin_chain.load_from_file(&preset_name) {
+            let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() else {
+                log::warn!("Could not find presets directory, skipping preset restore");
+                return Ok(());
+            };
+            match self.plugin_chain.load_from_file(&presets_dir, &preset_name) {
                 Ok(_) => {
                     self.pending_plugin_update =
                         Some(crate::app::types::PluginUpdateType::Structural);

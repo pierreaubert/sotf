@@ -1,6 +1,6 @@
 [package]
 name = "gpui-px"
-version = "0.1.17"
+version.workspace = true
 authors.workspace = true
 edition.workspace = true
 license = "ISC"
@@ -12,10 +12,10 @@ default = ["gpui"]
 gpui = ["dep:gpui", "dep:gpui-ui-kit"]
 
 [dependencies]
-d3rs = { version="0.1", path = "../gpui-d3rs", package = "gpui-d3rs", features = ["gpu-3d"] }
-gpui = { workspace=true, optional = true }
-gpui-ui-kit = { version = "0.1", path = "../gpui-ui-kit", optional = true }
-thiserror.workspace = true
+d3rs = { workspace = true }
+gpui = { workspace = true, optional = true }
+gpui-ui-kit = { workspace = true, optional = true }
+thiserror = { workspace = true }
 
 [[example]]
 name = "px-showcase"
@@ -33,6 +33,6 @@ required-features = ["gpui"]
 
 [dev-dependencies]
 autoeq = { workspace = true }
-tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+tokio = { workspace = true }
 reqwest = { workspace = true }
 urlencoding = { workspace = true }

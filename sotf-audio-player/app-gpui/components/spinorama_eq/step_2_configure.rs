@@ -39,7 +39,9 @@ impl PlayerView {
         let autoeq_config = AutoEqConfig {
             opt_mode,
             num_filters: config.num_filters,
-            sample_rate: 48000,
+            sample_rate: config.sample_rate,
+            fir_taps: config.fir_taps,
+            fir_phase: config.fir_phase.clone(),
             min_db: config.min_db,
             max_db: config.max_db,
             min_q: config.min_q,
@@ -55,18 +57,24 @@ impl PlayerView {
             .to_string(),
             population: config.population,
             maxeval: config.max_iter,
+            tolerance: config.tolerance,
+            atolerance: config.atolerance,
             de_f: config.de_f,
             de_cr: config.de_cr,
             strategy: config.strategy.clone(),
             refine: config.refine,
             local_algo: config.local_algo.clone(),
             smooth: config.smooth,
+            smooth_n: config.smooth_n,
+            spacing_weight: config.spacing_weight,
+            min_spacing_oct: config.min_spacing_oct,
             ..Default::default()
         };
 
         // Build AutoEqFormUiState from our dropdowns
         let autoeq_ui_state = AutoEqFormUiState {
             opt_mode_open: spinorama.dropdowns.opt_mode_open,
+            fir_phase_open: spinorama.dropdowns.fir_phase_open,
             peq_model_open: spinorama.dropdowns.peq_model_open,
             algo_open: spinorama.dropdowns.algorithm_open,
             strategy_open: spinorama.dropdowns.strategy_open,
@@ -279,6 +287,80 @@ impl PlayerView {
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
                         state.app.spinorama_eq_state.optimizer_config.smooth = value;
+                    });
+                }
+            })
+            .on_spacing_weight_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.spinorama_eq_state.optimizer_config.spacing_weight = value;
+                    });
+                }
+            })
+            .on_min_spacing_oct_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.spinorama_eq_state.optimizer_config.min_spacing_oct = value;
+                    });
+                }
+            })
+            .on_sample_rate_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.spinorama_eq_state.optimizer_config.sample_rate = value as u32;
+                    });
+                }
+            })
+            .on_fir_taps_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.spinorama_eq_state.optimizer_config.fir_taps = value;
+                    });
+                }
+            })
+            .on_fir_phase_change({
+                let state = self.state.clone();
+                move |phase, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.spinorama_eq_state.optimizer_config.fir_phase = phase.to_string();
+                        state.app.spinorama_eq_state.dropdowns.fir_phase_open = false;
+                    });
+                }
+            })
+            .on_fir_phase_toggle({
+                let state = self.state.clone();
+                move |open, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state.app.spinorama_eq_state.dropdowns.fir_phase_open = open;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_tolerance_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.spinorama_eq_state.optimizer_config.tolerance = value;
+                    });
+                }
+            })
+            .on_atolerance_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.spinorama_eq_state.optimizer_config.atolerance = value;
+                    });
+                }
+            })
+            .on_smooth_n_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.spinorama_eq_state.optimizer_config.smooth_n = value;
                     });
                 }
             });

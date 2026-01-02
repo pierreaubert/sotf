@@ -182,7 +182,8 @@ impl SofaFile {
                     |row| row.get(0),
                 )
                 .map_err(|e| e.to_string())?;
-            bincode::deserialize(&blob)
+            bincode::serde::decode_from_slice(&blob, bincode::config::standard())
+                .map(|(val, _)| val)
                 .map_err(|e| format!("Failed to deserialize positions: {}", e))?
         };
 

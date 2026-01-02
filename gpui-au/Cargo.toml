@@ -1,7 +1,7 @@
 [package]
 name = "gpui-au"
-version = "0.5.3"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 
 [lib]
 crate-type = ["staticlib", "cdylib"]
@@ -20,21 +20,21 @@ env_logger = { workspace = true }
 gpui = { workspace = true }
 
 # Audio player types and UI
-sotf-audio-player = { path = "../sotf-audio-player" }
+sotf-audio-player = { workspace = true }
 math-iir-fir = { workspace = true }
-gpui-ui-kit = { path = "../gpui-ui-kit" }
+gpui-ui-kit = { workspace = true }
 
 # Embed assets
-rust-embed = "8"
+rust-embed = { workspace = true }
 
 # Low-level macOS bindings for NSView extraction
 objc = { workspace = true }
 cocoa = { workspace = true }
 
 # Metal for GPU rendering
-metal = "0.32"
-core-graphics = "0.24"
-core-foundation = "0.10"
+metal = { workspace = true }
+core-graphics = { workspace = true }
+core-foundation = { workspace = true }
 
 # For lazy_static class registration
-lazy_static = "1.4"
+lazy_static = { workspace = true }

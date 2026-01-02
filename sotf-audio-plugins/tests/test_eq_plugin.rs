@@ -4,7 +4,7 @@
 //
 // This file demonstrates how to use the EQ plugin with IIR biquad filters.
 
-use autoeq_iir::{Biquad, BiquadFilterType};
+use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use sotf_plugins::{EqPlugin, Plugin, ProcessContext};
 
 #[test]

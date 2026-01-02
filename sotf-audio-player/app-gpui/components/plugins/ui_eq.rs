@@ -8,7 +8,7 @@
 use super::common::render_knob_sized;
 use crate::app::AppState;
 use crate::theme::Theme;
-use autoeq_iir::{Biquad, BiquadFilterType};
+use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use gpui::prelude::*;
 use gpui::*;
 use gpui_px::{ChartTheme, ScaleType, line};

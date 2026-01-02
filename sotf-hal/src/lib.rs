@@ -80,7 +80,7 @@ use coreaudio_sys::*;
 use libc::c_void;
 
 /// Main entry point called by Core Audio when loading the driver
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn AudioDriverPlugInOpen(
     driver_ref: *mut c_void,
@@ -89,40 +89,41 @@ pub unsafe extern "C" fn AudioDriverPlugInOpen(
     // Initialize logging first
     init_logging();
     log::info!("🚀 AudioDriverPlugInOpen entry point called from Core Audio");
-    let result = bridge::audio_driver_plugin_open(driver_ref, driver);
+    let result = unsafe { bridge::audio_driver_plugin_open(driver_ref, driver) };
     log::info!("🏁 AudioDriverPlugInOpen returning: {}", result);
     result
 }
 
 /// Called when Core Audio unloads the driver
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn AudioDriverPlugInClose(
     driver: *mut AudioServerPlugInDriverInterface,
 ) -> OSStatus {
     log::info!("🚪 AudioDriverPlugInClose entry point called from Core Audio");
-    let result = bridge::audio_driver_plugin_close(driver);
+    let result = unsafe { bridge::audio_driver_plugin_close(driver) };
     log::info!("🏁 AudioDriverPlugInClose returning: {}", result);
     result
 }
 
 /// Entry point for factory function
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn AudioDriverPlugInFactory(uuid: CFUUIDRef) -> *mut c_void {
     // Initialize logging first
     init_logging();
     log::info!("🏭 AudioDriverPlugInFactory entry point called from Core Audio");
-    let result =
-        bridge::audio_driver_plugin_factory(uuid as *const _ as core_foundation::uuid::CFUUIDRef);
+    let result = unsafe {
+        bridge::audio_driver_plugin_factory(uuid as *const _ as core_foundation::uuid::CFUUIDRef)
+    };
     log::info!("🏁 AudioDriverPlugInFactory returning: {:p}", result);
     result
 }
 
 /// Alias for factory function (for backward compatibility)
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn AutoEQHalFactory(uuid: CFUUIDRef) -> *mut c_void {
     log::info!("🏭 AutoEQHalFactory alias called, forwarding to AudioDriverPlugInFactory");
-    AudioDriverPlugInFactory(uuid)
+    unsafe { AudioDriverPlugInFactory(uuid) }
 }

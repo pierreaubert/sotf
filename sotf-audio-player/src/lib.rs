@@ -19,7 +19,7 @@ pub mod library;
 pub mod library_scanner;
 pub mod player;
 pub mod plugin_graph;
-pub mod plugins;
+// plugins module is now in sotf-audio-engine
 pub mod recommendation;
 pub mod replay_gain_scanner;
 // Backward compatibility alias
@@ -40,7 +40,8 @@ pub use plugin_graph::{
     ConnectionDrag, GraphConnection, GraphNodeId, GraphSelection, NodeDrag, NodePosition,
     PluginGraph, PluginGraphNode, SpecialNode, SpecialNodeType,
 };
-pub use plugins::{
+// Re-export plugins from sotf-audio-engine
+pub use sotf_audio::plugins::{
     EQFilter,
     Plugin,
     PluginChain,
@@ -61,8 +62,8 @@ pub use waveform_scanner::{WaveformScanManager, WaveformScanMessage, WaveformSca
 // Re-export measurement functionality
 pub use sotf_audio::signal_recorder;
 
-// Re-export autoeq_iir types needed by TUI
-pub use autoeq_iir::BiquadFilterType;
+// Re-export math_audio_iir_fir types needed by TUI
+pub use math_audio_iir_fir::BiquadFilterType;
 
 // Re-export analyzer types
 pub use sotf_plugins::{LoudnessData, LoudnessInfo, SpectrumData, SpectrumInfo};

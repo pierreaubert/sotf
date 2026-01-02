@@ -1,6 +1,6 @@
 [package]
 name = "gpui-themes"
-version = "0.1.2"
+version.workspace = true
 authors.workspace = true
 edition.workspace = true
 description = "Theme editor and management for GPUI applications"
@@ -13,7 +13,7 @@ gpui = { workspace = true }
 gpui_macros = { workspace = true }
 
 # UI kit for components
-gpui-ui-kit = { path = "../gpui-ui-kit" }
+gpui-ui-kit = { workspace = true }
 
 # Serialization for JSON export/import
 serde = { workspace = true }

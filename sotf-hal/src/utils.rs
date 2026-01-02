@@ -273,9 +273,9 @@ mod tests {
 
     #[test]
     fn test_id_generation() {
-        let mut gen = AudioObjectIDGenerator::new();
-        let id1 = gen.next_id();
-        let id2 = gen.next_id();
+        let mut generator = AudioObjectIDGenerator::new();
+        let id1 = generator.next_id();
+        let id2 = generator.next_id();
         assert_ne!(id1, id2);
         assert!(id1 >= 1000);
         assert!(id2 > id1);

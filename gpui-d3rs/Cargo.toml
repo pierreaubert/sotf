@@ -1,7 +1,7 @@
 [package]
 name = "gpui-d3rs"
-version = "0.1.17"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 authors.workspace = true
 description = "D3.js-inspired plotting library for GPUI"
 license = "ISC"
@@ -19,30 +19,30 @@ gpu-3d = ["dep:wgpu", "dep:bytemuck", "dep:glam", "dep:pollster", "dep:image", "
 gpu-2d = ["dep:wgpu", "dep:bytemuck", "dep:glam", "dep:pollster", "dep:image", "dep:fontdue", "gpui"]
 
 [dependencies]
-gpui = { workspace=true, optional = true }
-gpui-ui-kit = { version = "0.1", path = "../gpui-ui-kit", optional = true }
-regex = "1"
-delaunator = "1.0"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-autoeq = { version="0.2", optional = true }
-autoeq-cea2034 = { version="0.2", optional = true }
-tokio = { version = "1", features = ["rt-multi-thread", "macros"], optional = true }
-ndarray = { version = "0.16", optional = true }
-reqwest = { version = "0.12", features = ["json"], optional = true }
-urlencoding = { version = "2", optional = true }
+gpui = { workspace = true, optional = true }
+gpui-ui-kit = { workspace = true, optional = true }
+regex = { workspace = true }
+delaunator = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+autoeq = { workspace = true, optional = true }
+autoeq-cea2034 = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+ndarray = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true }
+urlencoding = { workspace = true, optional = true }
 # GPU-accelerated 3D surface rendering
-wgpu = { version = "23", optional = true }
-bytemuck = { version = "1.14", features = ["derive"], optional = true }
-glam = { version = "0.29", optional = true }
-pollster = { version = "0.4", optional = true }
-image = { version = "0.25", optional = true }
-fontdue = { version = "0.9", optional = true }
+wgpu = { workspace = true, optional = true }
+bytemuck = { workspace = true, optional = true }
+glam = { workspace = true, optional = true }
+pollster = { workspace = true, optional = true }
+image = { workspace = true, optional = true }
+fontdue = { workspace = true, optional = true }
 
 [dev-dependencies]
-approx = "0.5"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+approx = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 [[bin]]
 name = "d3rs-showcase"

@@ -198,8 +198,12 @@ impl PlayerView {
 
             if let Some(file) = file {
                 let file_path = file.path().to_path_buf();
+                let parent_dir = file_path.parent().unwrap_or(std::path::Path::new("."));
+                let filename = file_path.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("backup.json");
 
-                match plugin_chain.save_to_file(file_path.to_str().unwrap_or("backup.json")) {
+                match plugin_chain.save_to_file(parent_dir, filename) {
                     Ok(()) => {
                         log::info!("Saved rack backup to {:?}", file_path);
                         let _ = state_entity.update(cx, |state, _| {
@@ -223,7 +227,7 @@ impl PlayerView {
     }
 
     fn apply_room_eq_to_player(&mut self, cx: &mut Context<Self>) {
-        use autoeq_iir::BiquadFilterType;
+        use math_audio_iir_fir::BiquadFilterType;
         use sotf_audio_player::{EQFilter, PluginSettings, PluginType};
 
         // Get the DSP output from state

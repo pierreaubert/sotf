@@ -9,7 +9,7 @@
 
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
-use autoeq_iir::Biquad;
+use math_audio_iir_fir::Biquad;
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
@@ -131,7 +131,7 @@ impl EqPlugin {
 
         // Helper function to convert BiquadFilterConfig to Biquad
         let config_to_biquad = |f: &BiquadFilterConfig| -> Result<Biquad, String> {
-            use autoeq_iir::BiquadFilterType;
+            use math_audio_iir_fir::BiquadFilterType;
 
             let filter_type = match f.filter_type.as_str() {
                 "peak" => BiquadFilterType::Peak,
@@ -371,7 +371,7 @@ impl Plugin for EqPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use autoeq_iir::{Biquad, BiquadFilterType};
+    use math_audio_iir_fir::{Biquad, BiquadFilterType};
 
     #[test]
     fn test_eq_creation() {

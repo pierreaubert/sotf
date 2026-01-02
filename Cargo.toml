@@ -33,7 +33,7 @@ default-members = [
 resolver = "3"
 
 [workspace.package]
-version = "0.5.8"
+version = "0.5.9"
 authors = ["Pierre F. Aubert pierre@spinorama.org"]
 description = "Optimise the sound of your speakers or your headphones"
 edition = "2024"
@@ -53,13 +53,13 @@ serde_yaml = "0.9"
 anyhow = { version = "1.0" }
 tokio = { version = "1", features = ["full"] }
 tokio-tungstenite = "0.21"
-signal-hook = "0.3"
+signal-hook = "0.4"
 signal-hook-tokio = { version = "0.3", features = ["futures-v0_3"] }
-reqwest = { version = "0.12.24", features = ["json"] }
+reqwest = { version = "0.13", features = ["json"] }
 urlencoding = "2.1"
 futures = "0.3"
 futures-util = "0.3"
-parking_lot = { version = "0.12.5", features = ["deadlock_detection"] }
+parking_lot = { version = "0.12", features = ["deadlock_detection"] }
 
 # CLI and system
 base64 = "0.22"
@@ -69,24 +69,24 @@ clap = { version = "4.5", features = ["derive"] }
 console_error_panic_hook = { version = "0.1" }
 csv = "1.4"
 ctrlc = "3.5"
-directories = "5"
+directories = "6"
 env = "1"
 env_logger = "0.11"
 getrandom = "0.2"
 libc = "0.2"
 log = "0.4"
 mimalloc = { version = "0.1" }
-notify = { version = "6.1" }
+notify = { version = "8.2" }
 num_cpus = "1.17"
 regex = "1.12"
-rfd = "0.15"
-rusqlite = { version = "0.32", features = ["bundled"] }
+rfd = "0.16"
+rusqlite = { version = "0.38", features = ["bundled"] }
 rust-embed = "8"
 smol = "2.0"
 strsim = "0.11"
 tempfile = "3.23"
 thiserror = "2.0.17"
-criterion = "0.5"
+criterion = "0.8.1"
 which = "8"
 walkdir = "2"
 
@@ -94,7 +94,7 @@ walkdir = "2"
 ndarray = { version = "0.17", default-features = false, features = ["rayon", "blas", "serde"] }
 ndarray-linalg = { version = "0.18" }
 rand = "0.9.2"
-netcdf = "0.10"
+netcdf = "0.11"
 num-complex = "0.4"
 num-traits = "0.2"
 rayon = "1.11"
@@ -104,36 +104,37 @@ realfft = "3.5"
 special = "0.11"  # Bessel, Hankel, Legendre functions
 spec_math = "0.1.6"
 
-math-iir-fir = { version = "0.2" }
-math-differential-evolution = { version = "0.2" }
-autoeq-env = { version = "0.2" }
-autoeq-cea2034 = { version = "0.2" }
-autoeq = { version = "0.2.258" }
+math-iir-fir = { version = "0.3" }
+math-differential-evolution = { version = "0.3" }
+autoeq-env = { version = "0.3" }
+autoeq-cea2034 = { version = "0.3" }
+autoeq = { version = "0.3" }
 
-gpui-au = { path = "gpui-au", version = "0.5" }  # macOS only
-gpui-d3rs = { path = "gpui-d3rs", version = "0.1" }
-gpui-px = { path = "gpui-px", version = "0.1" }
-gpui-themes = { path = "gpui-themes", version = "0.1" }
-gpui-ui-kit = { path = "gpui-ui-kit", version = "0.1" }
+gpui-au = { path = "gpui-au" }  # macOS only
+gpui-d3rs = { path = "gpui-d3rs" }
+d3rs = { path = "gpui-d3rs", package = "gpui-d3rs", features = ["gpu-3d"] }  # alias for gpui-px
+gpui-px = { path = "gpui-px" }
+gpui-themes = { path = "gpui-themes" }
+gpui-ui-kit = { path = "gpui-ui-kit" }
 
-sotf-audio-engine = { path = "sotf-audio-engine", version = "0.5", default-features = false }
-sotf-audio-midi = { path = "sotf-audio-midi", version = "0.5" }
-sotf-audio-player = { path = "sotf-audio-player", version = "0.5" }
-sotf-audio-plugins = { path = "sotf-audio-plugins", version = "0.5", default-features = false }
-sotf-hal = { path = "sotf-hal", version = "0.2" }  # macOS only
-sotf-head-scanner = { path = "sotf-head-scanner", version = "0.1" }
+sotf-audio-engine = { path = "sotf-audio-engine", default-features = false }
+sotf-audio-midi = { path = "sotf-audio-midi" }
+sotf-audio-player = { path = "sotf-audio-player" }
+sotf-audio-plugins = { path = "sotf-audio-plugins", default-features = false }
+sotf-hal = { path = "sotf-hal" }  # macOS only
+sotf-head-tracker = { path = "sotf-head-tracker" }
 
 # audio
 # bliss-audio for music similarity analysis
 # We use aubio-static to avoid runtime aubio dependency, and our own Symphonia decoder
 # update-aubio-bindings uses bindgen to generate bindings (needed for macOS which has no prebuilt)
 bliss-audio = { version = "0.11", default-features = false, features = ["aubio-static", "update-aubio-bindings"] }
-cpal = "0.17.0"
-ebur128 = "0.1.10"
+cpal = "0.17"
+ebur128 = "0.1"
 hound = "3.5"
 id3 = "1.16"
 metaflac = "0.2"
-rubato = "0.16.2"
+rubato = "0.15"
 symphonia = { version = "0.5", default-features = false }
 symphonia-core = "0.5"
 symphonia-metadata = "0.5"
@@ -146,13 +147,14 @@ symphonia-codec-vorbis = "0.5"
 symphonia-format-riff = "0.5"
 symphonia-format-ogg = "0.5"
 symphonia-format-isomp4 = "0.5"
-rtrb = "0.3.2"
+rtrb = "0.3"
 rb = "0.4"
 midir = "0.10"
 
 # TUI framework
 ratatui = "0.30"
-crossterm = "0.28"
+ratatui-image = { version = "10", features = ["serde"] }
+crossterm = "0.29"
 
 # GPUI framework, using HEAD (macros with _)
 gpui = { version="*", git = "https://github.com/zed-industries/zed.git" }
@@ -161,7 +163,7 @@ gpui_macros = { version="*", git = "https://github.com/zed-industries/zed.git" }
 # System and low-level
 objc = "0.2"
 cocoa = "0.26"
-dirs = "5.0"
+dirs = "6"
 sysinfo = "0.37"
 memory-stats = "1.2"
 crossbeam = "0.8"
@@ -171,6 +173,50 @@ approx = "0.5"
 proptest = "1.9"
 unicode-normalization = "0.1"
 toml = "0.8"
+uuid = { version = "1", features = ["v4", "serde"] }
+lazy_static = "1.4"
+bincode = { version = "2.0.1", features = ["serde"] }
+
+# Proc macro dependencies
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full", "parsing", "extra-traits"] }
+
+# Graphics and visualization
+wgpu = "25"
+bytemuck = { version = "1.14", features = ["derive"] }
+glam = "0.30"
+pollster = "0.4"
+image = "0.25"
+fontdue = "0.9"
+delaunator = "1.0"
+
+# GPU and macOS graphics
+metal = "0.33"
+core-graphics = "0.25"
+core-foundation = "0.10"
+core-foundation-sys = "0"
+coreaudio-sys = "0.2"
+
+# objc2 framework bindings (macOS)
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-core-foundation = "0.3"
+objc2-vision = "0.3"
+objc2-core-image = "0.3"
+objc2-core-video = "0.3"
+objc2-av-foundation = "0.3"
+objc2-core-media = "0.3"
+block2 = "0.6"
+dispatch = "0.2"
+
+# Camera capture
+nokhwa = { version = "0.10", default-features = false }
+
+# ONNX Runtime
+ort = "2.0.0-rc.10"
+
+# TUI extensions
 
 # ffi
 cbindgen = "0.29"

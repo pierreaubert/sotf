@@ -991,7 +991,7 @@ fn draw_album_art(f: &mut Frame, area: Rect, app: &mut App) {
                 // Create protocol with the picker - new_resize_protocol returns StatefulProtocol
                 let mut protocol = picker.new_resize_protocol(img);
                 // Render using stateful widget
-                let image = StatefulImage::new(None);
+                let image = StatefulImage::new();
                 f.render_stateful_widget(image, image_area, &mut protocol);
             } else {
                 // Fallback if image loading fails

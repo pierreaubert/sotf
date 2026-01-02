@@ -364,7 +364,7 @@ impl PlayerView {
         let step_index = current_step.index();
 
         // Build step statuses
-        let step_statuses: Vec<StepStatus> = (0..3)
+        let step_statuses: Vec<StepStatus> = (0..4)
             .map(|i| {
                 if i < step_index {
                     StepStatus::Completed
@@ -400,7 +400,7 @@ impl PlayerView {
             _ => "Back",
         };
         let next_label = match current_step {
-            SpinoramaStep::Review => "Finish",
+            SpinoramaStep::Export => "Finish",
             _ => "Next",
         };
 
@@ -446,7 +446,7 @@ impl PlayerView {
                         cx.listener(|view, _, _, cx| {
                             view.state.update(cx, |state, _| {
                                 match state.app.spinorama_eq_state.step {
-                                    SpinoramaStep::Review => {
+                                    SpinoramaStep::Export => {
                                         state.app.current_screen = state.app.last_screen;
                                     }
                                     _ => {
@@ -1291,7 +1291,7 @@ impl PlayerView {
             .iter()
             .map(|b| {
                 sotf_audio_player::EQFilter::new(
-                    autoeq_iir::BiquadFilterType::Peak,
+                    math_audio_iir_fir::BiquadFilterType::Peak,
                     b.freq,
                     b.q,
                     b.db_gain,
@@ -1375,15 +1375,15 @@ impl PlayerView {
             return;
         };
 
-        // Convert biquads to autoeq_iir::Peq for export (Vec<(f64, Biquad)> with preamp gains)
-        let peq: autoeq_iir::Peq = result
+        // Convert biquads to math_audio_iir_fir::Peq for export (Vec<(f64, Biquad)> with preamp gains)
+        let peq: math_audio_iir_fir::Peq = result
             .biquads
             .iter()
             .map(|b| {
                 (
                     0.0, // preamp gain
-                    autoeq_iir::Biquad::new(
-                        autoeq_iir::BiquadFilterType::Peak,
+                    math_audio_iir_fir::Biquad::new(
+                        math_audio_iir_fir::BiquadFilterType::Peak,
                         b.freq,
                         48000.0,
                         b.q,
@@ -1420,10 +1420,10 @@ impl PlayerView {
                     chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
                 );
                 let content = match export_format.as_str() {
-                    "apo" => autoeq_iir::peq_format_apo(&comment, &peq),
-                    "rme-channel" => autoeq_iir::peq_format_rme_channel(&peq),
-                    "rme-room" => autoeq_iir::peq_format_rme_room(&peq, &peq),
-                    "aupreset" => autoeq_iir::peq_format_aupreset(
+                    "apo" => math_audio_iir_fir::peq_format_apo(&comment, &peq),
+                    "rme-channel" => math_audio_iir_fir::peq_format_rme_channel(&peq),
+                    "rme-room" => math_audio_iir_fir::peq_format_rme_room(&peq, &peq),
+                    "aupreset" => math_audio_iir_fir::peq_format_aupreset(
                         &peq,
                         &format!("Spinorama EQ {}", speaker_name),
                     ),

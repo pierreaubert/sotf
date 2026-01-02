@@ -1237,7 +1237,7 @@ fn get_contour_color(
     default_color: &D3Color,
     opacity: f32,
 ) -> Color4 {
-    let color = if let Some(ref scale) = color_scale {
+    let color = if let Some(scale) = color_scale {
         scale(t)
     } else {
         *default_color

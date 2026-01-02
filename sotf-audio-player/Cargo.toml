@@ -27,8 +27,8 @@ math-iir-fir = { workspace = true }
 autoeq-env = { workspace = true }
 autoeq-cea2034 = { workspace = true }
 autoeq = { workspace = true }
-sotf-audio-plugins = { path = "../sotf-audio-plugins", default-features = false }
-sotf-audio-engine = { path = "../sotf-audio-engine" }
+sotf-audio-plugins = { workspace = true }
+sotf-audio-engine = { workspace = true }
 
 # math
 ndarray = { workspace = true }
@@ -48,13 +48,13 @@ walkdir = { workspace = true }
 rusqlite = { workspace = true }
 tokio = { workspace = true }
 parking_lot = { workspace = true }
-uuid = { version = "1.11", features = ["v4", "serde"] }
+uuid = { workspace = true }
 
 # Image processing for album art thumbnails
-image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
+image = { workspace = true }
 
 # Unicode normalization for removing diacritics
-unicode-normalization = "0.1"
+unicode-normalization = { workspace = true }
 
 # audio
 symphonia = { workspace = true }
@@ -89,4 +89,3 @@ dependencies = ["nlopt", "hdf5", "netcdf-c", "openblas"]
 
 [dev-dependencies]
 tempfile = { workspace = true }
-

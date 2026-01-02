@@ -4,6 +4,11 @@
 //! and our Rust implementation. It handles the conversion between C callbacks
 //! and safe Rust abstractions.
 
+// Allow unsafe operations in unsafe functions without explicit unsafe blocks.
+// This is needed for FFI code where most operations are inherently unsafe.
+// TODO: Consider refactoring to use explicit unsafe blocks in the future.
+#![allow(unsafe_op_in_unsafe_fn)]
+
 use libc::{free, malloc};
 use std::os::raw::c_void;
 use std::ptr;
@@ -718,6 +723,6 @@ unsafe extern "C" fn driver_end_io_operation(
 }
 
 // Import mach_absolute_time function
-extern "C" {
+unsafe extern "C" {
     fn mach_absolute_time() -> u64;
 }
