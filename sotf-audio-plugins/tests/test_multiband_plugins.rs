@@ -32,7 +32,6 @@ fn test_multiband_compressor_processing() {
         input[i * 2 + 1] = (low + high) * 0.5;
     }
 
-    let mut output = vec![0.0; num_frames * 2];
     let context = ProcessContext {
         sample_rate: 48000,
         num_frames,

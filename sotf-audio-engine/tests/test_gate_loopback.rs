@@ -15,7 +15,8 @@ fn find_device(
         host.output_devices().ok()?
     };
     for device in devices {
-        if let Ok(name) = device.name() {
+        if let Ok(desc) = device.description() {
+            let name = desc.name().to_string();
             if name.contains(name_part) {
                 if input {
                     if let Ok(configs) = device.supported_input_configs() {
@@ -97,7 +98,7 @@ fn test_gate_loopback_verification() {
 
     // Audio Engine
     let mut config = EngineConfig::default();
-    config.output_device = Some(out_device.name().unwrap());
+    config.output_device = Some(out_device.description().unwrap().name().to_string());
     config.output_channels = 2;
     config.plugins = vec![PluginConfig::new(
         "gate",

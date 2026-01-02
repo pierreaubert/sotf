@@ -3,7 +3,7 @@
 //! Demonstrates comprehensive control of RME TotalMix FX via MIDI.
 
 use sotf_audio_player_midi::MidiManager;
-use sotf_audio_player_midi::profiles::{RMETotalMixProfile, TotalMixControl, TotalMixRow};
+use sotf_audio_player_midi::profiles::{TotalMixControl, TotalMixRow};
 use std::io::{self, Write};
 
 fn print_menu() {

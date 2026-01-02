@@ -1,6 +1,5 @@
 // Integration tests for the plugin system
 
-use sotf_plugins::Host;
 use sotf_plugins::{GainPlugin, InPlacePluginAdapter, PluginHost};
 
 #[test]

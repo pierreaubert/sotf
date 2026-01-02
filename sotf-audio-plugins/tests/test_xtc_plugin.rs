@@ -5,7 +5,7 @@ use sotf_plugins::{Plugin, ProcessContext, XtcPlugin, XtcPluginParams};
 #[test]
 fn test_xtc_instantiation() {
     let params = XtcPluginParams::default();
-    let mut plugin = XtcPlugin::from_params(params, 44100).unwrap();
+    let plugin = XtcPlugin::from_params(params, 44100).unwrap();
 
     assert_eq!(plugin.input_channels(), 2);
     assert_eq!(plugin.info().name, "Crosstalk Cancellation (XTC)");

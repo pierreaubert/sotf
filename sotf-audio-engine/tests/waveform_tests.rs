@@ -136,14 +136,18 @@ fn test_waveform_values_in_range() {
 
     let waveform = analyze_waveform(wav_file.path()).unwrap();
 
+    // Verify waveform has expected length and values are valid u8 (0-255)
+    // Note: u8 type guarantees values are 0-255, so we just verify length
+    assert!(!waveform.is_empty(), "Waveform should not be empty");
     for (i, &value) in waveform.iter().enumerate() {
-        // u8 is always 0-255, but verify we're getting reasonable values
+        // Verify we have valid sample indices
         assert!(
-            value <= 255,
-            "Waveform value at {} out of range: {}",
-            i,
-            value
+            i < waveform.len(),
+            "Index {} should be within waveform bounds",
+            i
         );
+        // u8 is always valid, just log for debugging if needed
+        let _ = value;
     }
 }
 

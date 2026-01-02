@@ -108,9 +108,8 @@ mod tests {
         }
 
         // 2. Normal signal (Sine wave approximation - smooth changes)
-        let mut val = 0.0;
         for i in 0..100 {
-            val = (i as f32 * 0.1).sin() * 0.5;
+            let val = (i as f32 * 0.1).sin() * 0.5;
             buffer.push(val);
         }
 

@@ -17,7 +17,8 @@ fn find_device(
     };
 
     for device in devices {
-        if let Ok(name) = device.name() {
+        if let Ok(desc) = device.description() {
+            let name = desc.name().to_string();
             if name.contains(name_part) {
                 if input {
                     if let Ok(configs) = device.supported_input_configs() {
@@ -73,13 +74,13 @@ fn test_upmixer_real_audio_loopback() {
     let (out_device, _out_config) = output_setup.unwrap();
     let (in_device, in_config) = input_setup.unwrap();
 
-    println!("Using Output: {}", out_device.name().unwrap());
-    println!("Using Input:  {}", in_device.name().unwrap());
+    println!("Using Output: {}", out_device.description().unwrap().name());
+    println!("Using Input:  {}", in_device.description().unwrap().name());
 
     // 2. Configure Engine with Upmixer
     // We use the 'test_engine_config_with' pattern manually since we can't access test modules easily
     let mut config = EngineConfig::default();
-    config.output_device = Some(out_device.name().unwrap());
+    config.output_device = Some(out_device.description().unwrap().name().to_string());
     config.output_channels = 6; // Force 6 channels for 5.1
 
     config.plugins = vec![PluginConfig::new(

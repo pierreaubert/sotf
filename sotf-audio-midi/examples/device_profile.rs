@@ -1,7 +1,6 @@
 //! Example: Create and use device profiles
 
-use sotf_audio_player_midi::{DeviceConfig, DeviceProfile, MidiConfig, MidiManager, MidiMessage};
-use std::collections::HashMap;
+use sotf_audio_player_midi::{DeviceConfig, DeviceProfile, MidiConfig, MidiManager};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();

@@ -9,7 +9,7 @@
 
 use hound::{SampleFormat, WavSpec, WavWriter};
 use sotf_audio::AudioSpec;
-use sotf_audio::decoder::{AudioDecoder, AudioFormat, DecodedAudio, create_decoder, probe_file};
+use sotf_audio::decoder::{AudioFormat, DecodedAudio, create_decoder, probe_file};
 use std::path::Path;
 use tempfile::NamedTempFile;
 

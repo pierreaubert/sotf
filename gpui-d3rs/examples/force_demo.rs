@@ -5,8 +5,8 @@
 use d3rs::force::{ForceCenter, ForceManyBody, Simulation, SimulationNode};
 use gpui::prelude::*;
 use gpui::*;
-use std::time::Duration;
 
+#[allow(dead_code)]
 struct ForceDemo {
     simulation: Simulation,
     width: f64,
@@ -40,6 +40,7 @@ impl ForceDemo {
         }
     }
 
+    #[allow(dead_code)]
     fn tick(&mut self, cx: &mut Context<Self>) {
         self.simulation.tick();
         cx.notify();
@@ -49,7 +50,7 @@ impl ForceDemo {
 impl Render for ForceDemo {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // Run a simulation tick
-        let view = cx.entity().clone();
+        let _view = cx.entity().clone();
         /*
         cx.spawn(|_, mut cx: &mut AsyncAppContext| async move {
             // Run at ~60fps

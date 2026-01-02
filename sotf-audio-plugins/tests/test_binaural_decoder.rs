@@ -147,7 +147,7 @@ fn test_binaural_denormal_flushing() {
     };
 
     // Step 1: Verify passthrough works for normal values
-    let mut input_normal = vec![0.5; num_samples * input_channels];
+    let input_normal = vec![0.5; num_samples * input_channels];
     let mut output_normal = vec![0.0; num_samples * 2];
     plugin
         .process(&input_normal, &mut output_normal, &context)
@@ -161,7 +161,7 @@ fn test_binaural_denormal_flushing() {
 
     // Step 2: Verify flushing for denormal values
     // Create very low amplitude input (below denormal threshold)
-    let mut input_denormal = vec![1e-35; num_samples * input_channels];
+    let input_denormal = vec![1e-35; num_samples * input_channels];
     let mut output_denormal = vec![0.0; num_samples * 2];
 
     plugin

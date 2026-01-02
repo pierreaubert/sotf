@@ -102,8 +102,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("    - Dim:    CC {}", GenelecGLMProfile::DIM_CC);
     println!("    - Solo:   CC {}", GenelecGLMProfile::SOLO_CC);
 
+    #[allow(unused_assignments)]
     let mut muted = false;
+    #[allow(unused_assignments)]
     let mut dimmed = false;
+    #[allow(unused_assignments)]
     let mut solo = false;
 
     loop {

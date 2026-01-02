@@ -3,6 +3,8 @@
 //! All tests should use BlackHole virtual audio device to avoid playing sound
 //! on real audio devices during testing.
 
+#![allow(dead_code)] // Test utilities may not be used in all test files
+
 use hound::{WavSpec, WavWriter};
 use sotf_audio::engine::EngineConfig;
 use std::sync::OnceLock;
@@ -26,7 +28,8 @@ fn find_blackhole_device() -> Option<String> {
 
     for blackhole_name in BLACKHOLE_DEVICES {
         for device in &devices {
-            if let Ok(name) = device.name() {
+            if let Ok(desc) = device.description() {
+                let name = desc.name().to_string();
                 if name.contains(blackhole_name) {
                     return Some(name);
                 }

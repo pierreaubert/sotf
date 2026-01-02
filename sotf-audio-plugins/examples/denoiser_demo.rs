@@ -9,8 +9,8 @@
 // cargo run --example denoiser_demo --release
 
 use sotf_plugins::{
-    DenoiserData, DenoiserPlugin, DenoiserPluginParams, InPlacePlugin, InPlacePluginAdapter,
-    ParameterId, ParameterValue, Plugin, ProcessContext,
+    DenoiserData, DenoiserPlugin, DenoiserPluginParams, InPlacePluginAdapter, ParameterId,
+    ParameterValue, Plugin, ProcessContext,
 };
 
 fn main() {

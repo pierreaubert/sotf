@@ -76,12 +76,12 @@ fn test_matrix_plugin() {
     // By default it might be identity or zero?
     // Let's set it to swap
     // Set (row 0, col 1) = 1.0 -> Out L from In R
-    matrix.set_gain(0, 1, 1.0);
+    matrix.set_gain(0, 1, 1.0).unwrap();
     // Set (row 1, col 0) = 1.0 -> Out R from In L
-    matrix.set_gain(1, 0, 1.0);
+    matrix.set_gain(1, 0, 1.0).unwrap();
     // Clear diagonal
-    matrix.set_gain(0, 0, 0.0);
-    matrix.set_gain(1, 1, 0.0);
+    matrix.set_gain(0, 0, 0.0).unwrap();
+    matrix.set_gain(1, 1, 0.0).unwrap();
 
     let input = vec![0.1, 0.8]; // L=0.1, R=0.8
     let mut output = vec![0.0; 2];

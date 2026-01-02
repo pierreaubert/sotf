@@ -86,8 +86,9 @@ struct DecoderState {
     silent_source: bool, // For HAL input plugins (no file source)
     decode_buffer: Option<DecodedAudio>,
     resample_output_buffer: Vec<f32>,
-    hal_input_buffer: Vec<f32>,
 
+    #[cfg(all(target_os = "macos", feature = "hal"))]
+    hal_input_buffer: Vec<f32>,
     #[cfg(all(target_os = "macos", feature = "hal"))]
     hal_reader: Option<HalInputReader>,
 }
@@ -104,6 +105,7 @@ impl DecoderState {
             silent_source: false,
             decode_buffer: None,
             resample_output_buffer: Vec::new(),
+            #[cfg(all(target_os = "macos", feature = "hal"))]
             hal_input_buffer: Vec::new(),
             #[cfg(all(target_os = "macos", feature = "hal"))]
             hal_reader: None,

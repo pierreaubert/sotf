@@ -86,7 +86,7 @@ fn main() {
     ];
 
     for (name, ease_fn) in &easing_functions {
-        let mut trans = Transition::new()
+        let _trans = Transition::new()
             .duration(1000.0)
             .ease(*ease_fn)
             .from_to(0.0, 100.0);

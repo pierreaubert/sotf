@@ -8203,6 +8203,7 @@ dependencies = [
  "sotf-audio-player",
  "sotf-audio-plugins",
  "sotf-hal",
+ "strsim",
  "symphonia",
  "symphonia-bundle-flac",
  "symphonia-bundle-mp3",

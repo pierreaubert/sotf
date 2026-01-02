@@ -1,6 +1,5 @@
 // Integration tests for dynamics processing plugins
 
-use sotf_plugins::Host;
 use sotf_plugins::{
     CompressorPlugin, GatePlugin, InPlacePlugin, InPlacePluginAdapter, LimiterPlugin, PluginHost,
 };

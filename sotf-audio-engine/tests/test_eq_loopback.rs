@@ -18,7 +18,8 @@ fn find_device(
     };
 
     for device in devices {
-        if let Ok(name) = device.name() {
+        if let Ok(desc) = device.description() {
+            let name = desc.name().to_string();
             if name.contains(name_part) {
                 if input {
                     if let Ok(configs) = device.supported_input_configs() {
@@ -110,7 +111,7 @@ fn test_eq_sweep_loopback_verification() {
 
     // 5. Configure Audio Engine
     let mut config = EngineConfig::default();
-    config.output_device = Some(out_device.name().unwrap());
+    config.output_device = Some(out_device.description().unwrap().name().to_string());
     config.output_channels = 2;
 
     // EQ Plugin Configuration
