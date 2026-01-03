@@ -420,6 +420,13 @@ impl RenderOnce for VolumeKnob {
             let scroll_handler = change_handler.clone();
             container = container.on_scroll_wheel(move |event, window, cx| {
                 let delta = event.delta.pixel_delta(px(20.0)).y;
+                
+                if delta.abs() < px(0.01) {
+                    return;
+                }
+
+                cx.stop_propagation();
+
                 let scroll_up = delta < px(0.0);
                 let step = 0.05;
                 let change = if scroll_up { step } else { -step };

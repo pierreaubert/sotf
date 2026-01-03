@@ -758,6 +758,9 @@ impl RenderOnce for VerticalSlider {
                         return; // No meaningful scroll movement
                     };
 
+                    // Prevent parent from scrolling when we handle the event
+                    cx.stop_propagation();
+
                     // Scroll up/left (negative delta) = increase value
                     // Scroll down/right (positive delta) = decrease value
                     let direction = if delta < 0.0 { 1.0 } else { -1.0 };

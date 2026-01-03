@@ -476,6 +476,13 @@ impl RenderOnce for Slider {
                 track = track.on_scroll_wheel(move |event, window, cx| {
                     // Get scroll delta - positive y means scrolling up
                     let delta = event.delta.pixel_delta(px(20.0)).y;
+                    
+                    if delta.abs() < px(0.01) {
+                        return;
+                    }
+
+                    cx.stop_propagation();
+
                     let scroll_up = delta < px(0.0);
 
                     // Calculate step amount: 5% normally, 0.5% with shift
