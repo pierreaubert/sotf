@@ -100,6 +100,8 @@ pub struct AudioEngineManager {
     loudness_plugin_index: Arc<Mutex<Option<usize>>>,
     /// Index of spectrum analyzer plugin (if enabled)
     spectrum_plugin_index: Arc<Mutex<Option<usize>>>,
+    /// Current volume level (preserved across song changes)
+    current_volume: Arc<Mutex<f32>>,
 }
 
 /// Commands for controlling the streaming (kept for API compatibility)
@@ -160,6 +162,7 @@ impl AudioEngineManager {
             watch_signals,
             loudness_plugin_index: Arc::new(Mutex::new(None)),
             spectrum_plugin_index: Arc::new(Mutex::new(None)),
+            current_volume: Arc::new(Mutex::new(1.0)),
         }
     }
 
@@ -229,7 +232,8 @@ impl AudioEngineManager {
         let output_sample_rate =
             select_output_sample_rate(file_sample_rate, output_device.as_deref());
 
-        // Create engine config
+        // Create engine config with preserved volume
+        let volume = *self.current_volume.lock();
         let config = EngineConfig {
             version: 1,
             frame_size: 1024,
@@ -239,7 +243,7 @@ impl AudioEngineManager {
             output_channels,                                   // Output after plugins
             output_device, // User-specified device or None for default
             plugins,
-            volume: 1.0,
+            volume,
             muted: false,
             config_path: None,
             watch_config: self.watch_signals, // Enable signal watching if requested
@@ -304,7 +308,8 @@ impl AudioEngineManager {
             ));
         }
 
-        // Create engine config for HAL (no file source)
+        // Create engine config for HAL (no file source) with preserved volume
+        let volume = *self.current_volume.lock();
         let config = EngineConfig {
             version: 1,
             frame_size: 1024,
@@ -314,7 +319,7 @@ impl AudioEngineManager {
             output_channels,
             output_device,
             plugins,
-            volume: 1.0,
+            volume,
             muted: false,
             config_path: None,
             watch_config: self.watch_signals,
@@ -422,6 +427,9 @@ impl AudioEngineManager {
 
     /// Set volume (0.0 = silence, 1.0 = unity gain)
     pub fn set_volume(&self, volume: f32) -> AudioDecoderResult<()> {
+        // Store volume so it's preserved across song changes
+        *self.current_volume.lock() = volume;
+
         if let Some(ref mut engine) = *self.engine.lock() {
             engine
                 .set_volume(volume)

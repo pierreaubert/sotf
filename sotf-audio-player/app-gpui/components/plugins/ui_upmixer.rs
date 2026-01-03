@@ -151,6 +151,7 @@ pub fn render_upmixer_plugin(
                                 .selected(speaker_config_owned.clone())
                                 .is_open(config_open)
                                 .size(SelectSize::Sm)
+                                .theme(theme.to_select_theme())
                                 .on_toggle({
                                     let entity = entity.clone();
                                     move |is_open, _window, cx| {

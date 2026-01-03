@@ -147,6 +147,7 @@ impl PlayerView {
                             Button::new("browse_save_dir", "Browse...")
                                 .variant(ButtonVariant::Secondary)
                                 .size(ButtonSize::Sm)
+                                .theme(theme.to_button_theme())
                                 .on_click({
                                     let view = view.clone();
                                     move |_, cx| {
@@ -158,10 +159,12 @@ impl PlayerView {
                         )
                         .when(base_dir.is_some(), |stack| {
                             let view = view.clone();
+                            let theme = theme.clone();
                             stack.child(
                                 Button::new("clear_save_dir", "Clear")
                                     .variant(ButtonVariant::Secondary)
                                     .size(ButtonSize::Sm)
+                                    .theme(theme.to_button_theme())
                                     .on_click({
                                         move |_, cx| {
                                             view.update(cx, |this, cx| {
@@ -361,6 +364,7 @@ impl PlayerView {
                                 .variant(ButtonVariant::Primary)
                                 .size(ButtonSize::Lg)
                                 .disabled(!can_save)
+                                .theme(theme.to_button_theme())
                                 .on_click({
                                     let view = view.clone();
                                     move |_, cx| {
@@ -374,6 +378,7 @@ impl PlayerView {
                             Button::new("load_recordings", "Load Previous")
                                 .variant(ButtonVariant::Secondary)
                                 .size(ButtonSize::Md)
+                                .theme(theme.to_button_theme())
                                 .on_click({
                                     let view = view.clone();
                                     move |_, cx| {

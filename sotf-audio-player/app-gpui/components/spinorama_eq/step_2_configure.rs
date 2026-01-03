@@ -426,6 +426,7 @@ impl PlayerView {
                                         ButtonVariant::Secondary
                                     })
                                     .size(ButtonSize::Md)
+                                    .theme(theme.to_button_theme())
                                     .build()
                                     .on_mouse_up(
                                         MouseButton::Left,
@@ -493,6 +494,7 @@ impl PlayerView {
                                                     ButtonVariant::Secondary
                                                 })
                                                 .size(ButtonSize::Md)
+                                                .theme(theme.to_button_theme())
                                                 .build()
                                                 .on_mouse_up(
                                                     MouseButton::Left,
@@ -558,6 +560,7 @@ impl PlayerView {
                                 .size(ButtonSize::Lg)
                                 .full_width(true)
                                 .disabled(is_optimizing)
+                                .theme(theme.to_button_theme())
                                 .build()
                                 .when(!is_optimizing, |btn| {
                                     btn.on_mouse_up(

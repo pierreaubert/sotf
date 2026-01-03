@@ -100,7 +100,7 @@ impl PlayerView {
     /// Render signal type dropdown
     fn render_signal_type_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let _theme = state.app.theme.clone();
+        let theme = state.app.theme.clone();
         let recording_state = &state.app.recording_state;
         let view = cx.entity().clone();
 
@@ -113,6 +113,7 @@ impl PlayerView {
             .options(options)
             .selected(recording_state.signal_type.as_str())
             .is_open(recording_state.signal_type_dropdown_open)
+            .theme(theme.to_select_theme())
             .on_toggle({
                 let view = view.clone();
                 move |is_open, _window, cx| {
@@ -146,7 +147,7 @@ impl PlayerView {
     /// Render duration dropdown
     fn render_duration_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let _theme = state.app.theme.clone();
+        let theme = state.app.theme.clone();
         let recording_state = &state.app.recording_state;
         let view = cx.entity().clone();
 
@@ -163,6 +164,7 @@ impl PlayerView {
             .options(options)
             .selected(current_duration.to_string())
             .is_open(recording_state.duration_dropdown_open)
+            .theme(theme.to_select_theme())
             .on_toggle({
                 let view = view.clone();
                 move |is_open, _window, cx| {
@@ -220,10 +222,12 @@ impl PlayerView {
                                 .spacing(StackSpacing::Sm)
                                 .when(!is_recording, |stack| {
                                     let view = view.clone();
+                                    let theme = theme.clone();
                                     stack.child(
                                         Button::new("record_all", "Record All Channels")
                                             .variant(ButtonVariant::Primary)
                                             .size(ButtonSize::Md)
+                                            .theme(theme.to_button_theme())
                                             .on_click({
                                                 let view = view.clone();
                                                 move |_, cx| {
@@ -236,10 +240,12 @@ impl PlayerView {
                                 })
                                 .when(is_recording, |stack| {
                                     let view = view.clone();
+                                    let theme = theme.clone();
                                     stack.child(
                                         Button::new("stop_recording", "Stop Recording")
                                             .variant(ButtonVariant::Destructive)
                                             .size(ButtonSize::Md)
+                                            .theme(theme.to_button_theme())
                                             .on_click({
                                                 let view = view.clone();
                                                 move |_, cx| {
@@ -344,6 +350,7 @@ impl PlayerView {
                             .disabled(
                                 is_recording || channel_state == ChannelRecordingState::Recording,
                             )
+                            .theme(theme.to_button_theme())
                             .on_click({
                                 let view = view.clone();
                                 move |_, cx| {
@@ -362,6 +369,7 @@ impl PlayerView {
     /// Render capture action buttons (redo and load from file)
     fn render_capture_redo_actions(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
+        let theme = state.app.theme.clone();
         let recording_state = &state.app.recording_state;
         let is_recording = recording_state.is_recording();
         let view = cx.entity().clone();
@@ -378,6 +386,7 @@ impl PlayerView {
                     .variant(ButtonVariant::Secondary)
                     .size(ButtonSize::Md)
                     .disabled(!has_recordings || is_recording)
+                    .theme(theme.to_button_theme())
                     .on_click({
                         let view = view.clone();
                         move |_, cx| {
@@ -392,6 +401,7 @@ impl PlayerView {
                     .variant(ButtonVariant::Secondary)
                     .size(ButtonSize::Md)
                     .disabled(is_recording)
+                    .theme(theme.to_button_theme())
                     .on_click({
                         let view = view.clone();
                         move |_, cx| {

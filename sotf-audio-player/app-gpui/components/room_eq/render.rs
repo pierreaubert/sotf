@@ -112,7 +112,7 @@ pub(crate) fn render_channel_config_row(
                             .size(TextSize::Sm)
                             .color(theme.text_secondary),
                     )
-                    .child(render_crossover_dropdown(idx, crossover_type, view)),
+                    .child(render_crossover_dropdown(idx, crossover_type, view, theme)),
             )
         })
 }
@@ -122,6 +122,7 @@ fn render_crossover_dropdown(
     channel_idx: usize,
     current: crate::app::types::CrossoverType,
     view: &Entity<PlayerView>,
+    theme: &crate::theme::Theme,
 ) -> impl IntoElement {
     use crate::app::types::CrossoverType;
 
@@ -134,6 +135,7 @@ fn render_crossover_dropdown(
     )
     .variant(ButtonVariant::Secondary)
     .size(ButtonSize::Sm)
+    .theme(theme.to_button_theme())
     .on_click({
         let view = view.clone();
         let crossover_types = crossover_types.to_vec();

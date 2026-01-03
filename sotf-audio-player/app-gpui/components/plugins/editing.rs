@@ -2090,6 +2090,43 @@ impl App {
         }
     }
 
+    /// Set a string parameter value for a plugin (e.g., path configs, file paths)
+    pub fn set_plugin_param_string(&mut self, plugin_idx: usize, param_idx: usize, value: String) {
+        let mut update_needed = false;
+
+        if let Some(plugin) = self.plugin_chain.get_plugin_mut(plugin_idx) {
+            match &mut plugin.settings {
+                PluginSettings::ABCompare {
+                    path_a_config,
+                    path_b_config,
+                    ..
+                } => match param_idx {
+                    9 => {
+                        *path_a_config = value;
+                        update_needed = true;
+                    }
+                    10 => {
+                        *path_b_config = value;
+                        update_needed = true;
+                    }
+                    _ => {}
+                },
+                PluginSettings::Convolution { ir_file, .. } => {
+                    if param_idx == 0 {
+                        *ir_file = value;
+                        update_needed = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if update_needed {
+            // String parameters always require structural update
+            self.pending_plugin_update = Some(PluginUpdateType::Structural);
+        }
+    }
+
     /// Reset a specific parameter to its default value
     pub fn reset_plugin_param(&mut self, plugin_idx: usize, param_idx: usize) {
         let plugin_type = if let Some(plugin) = self.plugin_chain.get_plugin(plugin_idx) {

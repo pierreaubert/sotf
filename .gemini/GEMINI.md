@@ -9,3 +9,13 @@ Refactor `find_device_by_name` logic in `sotf-audio-engine`
 - This resolves the reported issues:
     - **Recording:** Ensures the correct microphone is selected even if names are similar.
     - **Upmixer/Playback:** Ensures the correct multi-channel output device is selected, preventing fallback to default stereo devices which caused 5-channel upmixing to be downmixed or fail.
+
+Refactor `ABCompare` UI in `sotf-audio-player`
+
+- Updated `ui_ab_compare.rs` to match the strict ASCII art grid layout.
+- Implemented a 2-column layout with explicit horizontal and vertical borders (`border_b_1`, `border_r_1`).
+- Used `items_stretch` to ensure the vertical separator extends fully.
+- Replaced internal padding/gaps with `p_4` wrappers for each cell to create distinct grid areas.
+- Aligned controls:
+    - Left Col: Mode | Mix & Path | Path Configs
+    - Right Col: Gain Auto | Gain & Time | Smoothing Horizontal Sliders

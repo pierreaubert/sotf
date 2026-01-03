@@ -868,6 +868,7 @@ impl PlayerView {
             PluginType::LoudnessMonitor,
             PluginType::SpectrumAnalyzer,
             PluginType::Pnd,
+            PluginType::ABCompare,
         ];
 
         // Build row 1 buttons

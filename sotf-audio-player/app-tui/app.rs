@@ -2137,8 +2137,8 @@ impl App {
                     max_auto_gain_db,
                     gain_smoothing_ms,
                     mix_transition_ms,
-                    path_a_config: _,
-                    path_b_config: _,
+                    path_a_config,
+                    path_b_config,
                 } => {
                     match param_idx {
                         0 => *mix = (*mix + delta * 0.1).clamp(-1.0, 1.0),
@@ -2150,8 +2150,14 @@ impl App {
                         6 => *max_auto_gain_db = (*max_auto_gain_db + delta).clamp(0.0, 24.0),
                         7 => *gain_smoothing_ms = (*gain_smoothing_ms + delta * 10.0).clamp(10.0, 500.0),
                         8 => *mix_transition_ms = (*mix_transition_ms + delta * 5.0).clamp(5.0, 500.0),
-                        // path configs are JSON strings - skip editing for now
-                        9 | 10 => return false,
+                        9 => {
+                            // Cycle through path config presets for Path A
+                            *path_a_config = cycle_path_config(path_a_config, delta > 0.0);
+                        }
+                        10 => {
+                            // Cycle through path config presets for Path B
+                            *path_b_config = cycle_path_config(path_b_config, delta > 0.0);
+                        }
                         _ => return false,
                     }
                     true
@@ -3281,6 +3287,38 @@ impl App {
         self.current_track_start_time = None;
         self.current_track_already_recorded = false;
     }
+}
+
+/// Helper function to cycle through path config presets for A/B Compare plugin
+/// Returns JSON string for the selected path config
+fn cycle_path_config(current: &str, forward: bool) -> String {
+    // List of available path configs (None + common plugins)
+    let presets = [
+        (r#"{"type":"None"}"#, "None"),
+        (r#"{"type":"Plugin","plugin_type":"EQ","parameters":{"filters":[]}}"#, "EQ"),
+        (r#"{"type":"Plugin","plugin_type":"gain","parameters":{"gain_db":0.0}}"#, "Gain"),
+        (r#"{"type":"Plugin","plugin_type":"compressor","parameters":{"threshold_db":-20.0,"ratio":4.0,"attack_ms":10.0,"release_ms":100.0,"knee_db":3.0,"makeup_gain_db":0.0,"mix":1.0}}"#, "Compressor"),
+        (r#"{"type":"Plugin","plugin_type":"limiter","parameters":{"threshold_db":-1.0,"release_ms":100.0,"lookahead_ms":5.0,"soft":false,"mix":1.0}}"#, "Limiter"),
+        (r#"{"type":"Plugin","plugin_type":"gate","parameters":{"threshold_db":-40.0,"ratio":10.0,"attack_ms":1.0,"hold_ms":50.0,"release_ms":100.0,"mix":1.0}}"#, "Gate"),
+        (r#"{"type":"Plugin","plugin_type":"expander","parameters":{"threshold_db":-40.0,"ratio":2.0,"attack_ms":5.0,"release_ms":50.0,"range_db":20.0,"knee_db":3.0,"hysteresis_db":2.0,"hold_ms":10.0,"mix":1.0}}"#, "Expander"),
+        (r#"{"type":"Plugin","plugin_type":"denoiser","parameters":{"reduction_db":12.0,"floor_db":-60.0,"smoothing":0.5,"attack_ms":5.0,"release_ms":50.0}}"#, "Denoiser"),
+        (r#"{"type":"Plugin","plugin_type":"loudness_compensation","parameters":{"low_freq":100.0,"low_gain":3.0,"high_freq":8000.0,"high_gain":2.0}}"#, "Loudness Comp"),
+    ];
+
+    // Find current index
+    let current_idx = presets
+        .iter()
+        .position(|(json, _)| *json == current)
+        .unwrap_or(0);
+
+    // Calculate new index
+    let new_idx = if forward {
+        (current_idx + 1) % presets.len()
+    } else {
+        (current_idx + presets.len() - 1) % presets.len()
+    };
+
+    presets[new_idx].0.to_string()
 }
 
 // Helper function to get parameter count for a plugin

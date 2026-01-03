@@ -64,6 +64,35 @@ fn truncate_with_ellipsis(s: &str, max_len: usize) -> String {
     }
 }
 
+/// Get a human-readable name for a path config JSON (for A/B Compare plugin)
+fn path_config_to_display_name(config: &str) -> String {
+    if config.is_empty() || config == r#"{"type":"None"}"# {
+        "None (passthrough)".to_string()
+    } else if config.contains(r#""plugin_type":"EQ""#) {
+        "EQ".to_string()
+    } else if config.contains(r#""plugin_type":"gain""#) {
+        "Gain".to_string()
+    } else if config.contains(r#""plugin_type":"compressor""#) {
+        "Compressor".to_string()
+    } else if config.contains(r#""plugin_type":"limiter""#) {
+        "Limiter".to_string()
+    } else if config.contains(r#""plugin_type":"gate""#) {
+        "Gate".to_string()
+    } else if config.contains(r#""plugin_type":"expander""#) {
+        "Expander".to_string()
+    } else if config.contains(r#""plugin_type":"denoiser""#) {
+        "Denoiser".to_string()
+    } else if config.contains(r#""plugin_type":"loudness_compensation""#) {
+        "Loudness Comp".to_string()
+    } else if config.contains(r#""type":"Rack""#) {
+        "Rack (chain)".to_string()
+    } else if config.contains(r#""type":"Graph""#) {
+        "Graph".to_string()
+    } else {
+        "Custom".to_string()
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::items_after_test_module)]
 mod tests {
@@ -3111,20 +3140,12 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
                 format!("{:.1} ms", mix_transition_ms),
             ),
             (
-                "Path A Config".to_string(),
-                if path_a_config.is_empty() || path_a_config == r#"{"type":"None"}"# {
-                    "[empty - passthrough]".to_string()
-                } else {
-                    path_a_config.chars().take(30).collect::<String>() + "..."
-                },
+                "Path A".to_string(),
+                path_config_to_display_name(path_a_config),
             ),
             (
-                "Path B Config".to_string(),
-                if path_b_config.is_empty() || path_b_config == r#"{"type":"None"}"# {
-                    "[empty - passthrough]".to_string()
-                } else {
-                    path_b_config.chars().take(30).collect::<String>() + "..."
-                },
+                "Path B".to_string(),
+                path_config_to_display_name(path_b_config),
             ),
         ],
     }

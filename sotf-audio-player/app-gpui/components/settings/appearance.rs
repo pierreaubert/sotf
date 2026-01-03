@@ -5,7 +5,7 @@ use crate::theme::ThemeId;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_ui_kit::{Button, ButtonSize, ButtonVariant};
+use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, Toggle, ToggleStyle};
 
 impl PlayerView {
     /// Render theme settings content
@@ -246,6 +246,82 @@ impl PlayerView {
                                 preview_theme.error,
                                 preview_theme.text_on_accent,
                             )),
+                    )
+                    .child(
+                        // Button variants preview
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_1()
+                            .pt_2()
+                            .border_t_1()
+                            .border_color(preview_theme.border)
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(preview_theme.text_muted)
+                                    .child("Buttons"),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_wrap()
+                                    .gap_1()
+                                    .child(
+                                        Button::new("preview-primary", "Pri")
+                                            .variant(ButtonVariant::Primary)
+                                            .size(ButtonSize::Xs)
+                                            .theme(preview_theme.to_button_theme())
+                                            .build(),
+                                    )
+                                    .child(
+                                        Button::new("preview-secondary", "Sec")
+                                            .variant(ButtonVariant::Secondary)
+                                            .size(ButtonSize::Xs)
+                                            .theme(preview_theme.to_button_theme())
+                                            .build(),
+                                    )
+                                    .child(
+                                        Button::new("preview-destructive", "Del")
+                                            .variant(ButtonVariant::Destructive)
+                                            .size(ButtonSize::Xs)
+                                            .theme(preview_theme.to_button_theme())
+                                            .build(),
+                                    )
+                                    .child(
+                                        Button::new("preview-ghost", "Gho")
+                                            .variant(ButtonVariant::Ghost)
+                                            .size(ButtonSize::Xs)
+                                            .theme(preview_theme.to_button_theme())
+                                            .build(),
+                                    )
+                                    .child(
+                                        Button::new("preview-outline", "Out")
+                                            .variant(ButtonVariant::Outline)
+                                            .size(ButtonSize::Xs)
+                                            .theme(preview_theme.to_button_theme())
+                                            .build(),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .gap_1()
+                                    .child(
+                                        Toggle::new("preview-toggle-off")
+                                            .checked(false)
+                                            .label("Off".to_string())
+                                            .style(ToggleStyle::Segmented)
+                                            .theme(preview_theme.to_toggle_theme()),
+                                    )
+                                    .child(
+                                        Toggle::new("preview-toggle-on")
+                                            .checked(true)
+                                            .label("On".to_string())
+                                            .style(ToggleStyle::Segmented)
+                                            .theme(preview_theme.to_toggle_theme()),
+                                    ),
+                            ),
                     ),
             )
             .when(is_selected, |this| {

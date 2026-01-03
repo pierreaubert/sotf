@@ -303,6 +303,7 @@ impl PlayerView {
                         Button::new("browse_calibration", "Browse...")
                             .variant(ButtonVariant::Secondary)
                             .size(ButtonSize::Md)
+                            .theme(theme.to_button_theme())
                             .on_click({
                                 let view = view.clone();
                                 move |_, cx| {
@@ -314,10 +315,12 @@ impl PlayerView {
                     )
                     .when(calibration_path.is_some(), |stack| {
                         let view = view.clone();
+                        let theme = theme.clone();
                         stack.child(
                             Button::new("clear_calibration", "Clear")
                                 .variant(ButtonVariant::Secondary)
                                 .size(ButtonSize::Md)
+                                .theme(theme.to_button_theme())
                                 .on_click({
                                     move |_, cx| {
                                         view.update(cx, |this, cx| {
@@ -389,6 +392,7 @@ impl PlayerView {
                         Button::new("browse_output_dir", "Browse...")
                             .variant(ButtonVariant::Secondary)
                             .size(ButtonSize::Md)
+                            .theme(theme.to_button_theme())
                             .on_click({
                                 let view = view.clone();
                                 move |_, cx| {
@@ -400,10 +404,12 @@ impl PlayerView {
                     )
                     .when(base_dir.is_some(), |stack| {
                         let view = view.clone();
+                        let theme = theme.clone();
                         stack.child(
                             Button::new("clear_output_dir", "Clear")
                                 .variant(ButtonVariant::Secondary)
                                 .size(ButtonSize::Sm)
+                                .theme(theme.to_button_theme())
                                 .on_click({
                                     move |_, cx| {
                                         view.update(cx, |this, cx| {
@@ -485,7 +491,7 @@ impl PlayerView {
     /// Render playback device dropdown
     fn render_playback_device_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let _theme = state.app.theme.clone();
+        let theme = state.app.theme.clone();
         let recording_state = &state.app.recording_state;
         let view = cx.entity().clone();
 
@@ -512,6 +518,7 @@ impl PlayerView {
             .selected(selected_value)
             .placeholder("Select playback device...")
             .is_open(recording_state.playback_device_dropdown_open)
+            .theme(theme.to_select_theme())
             .on_toggle({
                 let view = view.clone();
                 move |is_open, _window, cx| {
@@ -606,6 +613,7 @@ impl PlayerView {
                         .selected(selected_value)
                         .placeholder("Select rate...")
                         .is_open(recording_state.playback_sample_rate_dropdown_open)
+                        .theme(theme.to_select_theme())
                         .on_toggle({
                             let view = view.clone();
                             move |is_open, _window, cx| {
@@ -674,6 +682,7 @@ impl PlayerView {
                         .selected(selected_value)
                         .placeholder("Select config...")
                         .is_open(recording_state.speaker_config_dropdown_open)
+                        .theme(theme.to_select_theme())
                         .on_toggle({
                             let view = view.clone();
                             move |is_open, _window, cx| {
@@ -831,6 +840,7 @@ impl PlayerView {
         current_group: &str,
     ) -> impl IntoElement {
         let state = self.state.read(cx);
+        let theme = state.app.theme.clone();
         let recording_state = &state.app.recording_state;
         let view = cx.entity().clone();
         let current_group = current_group.to_string();
@@ -857,6 +867,7 @@ impl PlayerView {
                 .selected(current_group.clone())
                 .placeholder(selected_label)
                 .is_open(is_open)
+                .theme(theme.to_select_theme())
                 .on_toggle({
                     let view = view.clone();
                     move |is_open, _window, cx| {
@@ -895,7 +906,7 @@ impl PlayerView {
     /// Render recording device dropdown
     fn render_recording_device_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let _theme = state.app.theme.clone();
+        let theme = state.app.theme.clone();
         let recording_state = &state.app.recording_state;
         let view = cx.entity().clone();
 
@@ -922,6 +933,7 @@ impl PlayerView {
             .selected(selected_value)
             .placeholder("Select recording device...")
             .is_open(recording_state.recording_device_dropdown_open)
+            .theme(theme.to_select_theme())
             .on_toggle({
                 let view = view.clone();
                 move |is_open, _window, cx| {
@@ -1017,6 +1029,7 @@ impl PlayerView {
                         .selected(selected_value)
                         .placeholder("Select rate...")
                         .is_open(recording_state.recording_sample_rate_dropdown_open)
+                        .theme(theme.to_select_theme())
                         .on_toggle({
                             let view = view.clone();
                             move |is_open, _window, cx| {

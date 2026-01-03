@@ -128,6 +128,7 @@ impl PlayerView {
                                     .options(channel_options)
                                     .selected(selected_channel_value)
                                     .is_open(channel_dropdown_open)
+                                    .theme(theme.to_select_theme())
                                     .on_toggle({
                                         let view = view.clone();
                                         move |open, _, cx| {
@@ -183,6 +184,7 @@ impl PlayerView {
                                     .options(smoothing_options)
                                     .selected(selected_smoothing_value)
                                     .is_open(smoothing_dropdown_open)
+                                    .theme(theme.to_select_theme())
                                     .on_toggle({
                                         let view = view.clone();
                                         move |open, _, cx| {

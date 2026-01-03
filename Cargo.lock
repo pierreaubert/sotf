@@ -3446,7 +3446,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-au"
-version = "0.5.9"
+version = "0.5.10"
 dependencies = [
  "cocoa 0.26.0",
  "core-foundation 0.10.0",
@@ -3466,7 +3466,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-d3rs"
-version = "0.5.9"
+version = "0.5.10"
 dependencies = [
  "approx",
  "autoeq",
@@ -3491,7 +3491,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-px"
-version = "0.5.9"
+version = "0.5.10"
 dependencies = [
  "autoeq",
  "gpui",
@@ -3505,7 +3505,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-themes"
-version = "0.5.9"
+version = "0.5.10"
 dependencies = [
  "gpui",
  "gpui-ui-kit",
@@ -3516,7 +3516,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-ui-kit"
-version = "0.5.9"
+version = "0.5.10"
 dependencies = [
  "gpui",
  "gpui-ui-kit-macros",
@@ -3527,7 +3527,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-ui-kit-macros"
-version = "0.5.9"
+version = "0.5.10"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -7985,7 +7985,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-audio-engine"
-version = "0.5.9"
+version = "0.5.10"
 dependencies = [
  "autoeq-env",
  "chrono",
@@ -8040,7 +8040,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-audio-player"
-version = "0.5.9"
+version = "0.5.10"
 dependencies = [
  "anyhow",
  "autoeq",
@@ -8085,7 +8085,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-audio-player-midi"
-version = "0.5.9"
+version = "0.5.10"
 dependencies = [
  "anyhow",
  "chrono",
@@ -8103,7 +8103,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-audio-plugins"
-version = "0.5.9"
+version = "0.5.10"
 dependencies = [
  "anyhow",
  "autoeq-env",
@@ -8157,7 +8157,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-audio-plugins-ffi"
-version = "0.5.9"
+version = "0.5.10"
 dependencies = [
  "cbindgen 0.29.2",
  "log",
@@ -8170,7 +8170,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-gpui"
-version = "0.5.9"
+version = "0.5.10"
 dependencies = [
  "anyhow",
  "autoeq",
@@ -8221,7 +8221,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-hal"
-version = "0.5.9"
+version = "0.5.10"
 dependencies = [
  "anyhow",
  "core-foundation 0.10.0",
@@ -8238,7 +8238,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-head-tracker"
-version = "0.5.9"
+version = "0.5.10"
 dependencies = [
  "block2",
  "crossbeam",
@@ -8262,7 +8262,7 @@ dependencies = [
 
 [[package]]
 name = "sotf-tui"
-version = "0.5.9"
+version = "0.5.10"
 dependencies = [
  "chrono",
  "clap",

@@ -454,4 +454,38 @@ impl Theme {
             background: self.background,
         }
     }
+
+    /// Convert to ButtonSetTheme for use with ui_kit ButtonSet component
+    pub fn to_button_set_theme(&self) -> gpui_ui_kit::ButtonSetTheme {
+        gpui_ui_kit::ButtonSetTheme {
+            bg: self.surface,
+            bg_hover: self.surface_hover,
+            bg_selected: self.accent,
+            text_color: self.text_secondary,
+            text_color_selected: self.text_on_accent,
+            border: self.border,
+            border_selected: self.accent,
+        }
+    }
+
+    /// Convert to SelectTheme for use with ui_kit Select component
+    pub fn to_select_theme(&self) -> gpui_ui_kit::SelectTheme {
+        gpui_ui_kit::SelectTheme {
+            trigger_bg: self.surface,
+            trigger_border: self.border,
+            trigger_border_hover: self.accent,
+            trigger_border_focused: self.accent,
+            dropdown_bg: self.surface,
+            dropdown_border: self.border,
+            selected_bg: self.accent,
+            option_hover_bg: self.surface_hover,
+            label_color: self.text_secondary,
+            text_color: self.text_primary,
+            placeholder_color: self.text_muted,
+            option_text_color: self.text_secondary,
+            selected_text_color: self.text_on_accent,
+            disabled_color: self.text_muted,
+            arrow_color: self.text_muted,
+        }
+    }
 }
