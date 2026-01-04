@@ -6,7 +6,7 @@
 //! - Auto Gain: Match loudness between paths
 //! - Path configs: JSON configuration for each path
 
-use super::common::{render_edit_hints, render_knob, render_section_title, render_toggle};
+use super::common::{render_edit_hints, render_knob, render_section_title};
 use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
@@ -119,7 +119,6 @@ pub fn render_ab_compare_plugin(
 
     div()
         .flex()
-        .items_stretch() // Ensure columns have equal height for the vertical border
         // Left Column: Mode, Mix/Path, Configs
         .child(
             div()
@@ -426,7 +425,7 @@ pub fn render_ab_compare_plugin(
                         ),
                 ),
         )
-        .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
+        .when(state.is_editing, |d: Div| d.child(render_edit_hints(theme)))
 }
 
 /// Render a horizontal slider using gpui-ui-kit Slider
@@ -439,25 +438,21 @@ fn render_horizontal_slider(
     max: f64,
     unit: &str,
     idx: usize,
-    selected_param: usize,
-    is_editing: bool,
+    _selected_param: usize, // Unused since Slider doesn't support selected state yet
+    _is_editing: bool,
     theme: &Theme,
 ) -> impl IntoElement {
-    let is_selected = selected_param == idx && is_editing;
-
     Slider::new(("slider", plugin_idx * 1000 + idx))
-        .value(value)
-        .min(min)
-        .max(max)
-        .label(label.to_string())
-        .unit(unit.to_string())
-        .selected(is_selected)
+        .value(value as f32)
+        .min(min as f32)
+        .max(max as f32)
+        .label(format!("{} ({})", label, unit))
         .theme(theme.to_slider_theme())
         .on_change({
             let entity = entity.clone();
             move |new_value, _, cx| {
                 entity.update(cx, |state, _| {
-                    state.app.set_plugin_param(plugin_idx, idx, new_value);
+                    state.app.set_plugin_param(plugin_idx, idx, new_value as f64);
                 });
             }
         })
