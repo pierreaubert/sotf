@@ -856,6 +856,166 @@ async fn test_input_ctrl_u_kills_to_beginning(cx: &mut TestAppContext) {
 }
 
 // ============================================================================
+// Clipboard Tests (Copy, Cut, Paste)
+// ============================================================================
+
+/// View for testing clipboard operations
+struct InputClipboardTestView {
+    text_changes: Arc<RefCell<Vec<String>>>,
+}
+
+impl Render for InputClipboardTestView {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        let text_changes = self.text_changes.clone();
+
+        div().size_full().child(
+            Input::new("clipboard-test-input")
+                .value("")
+                .on_text_change(move |text, _window, _cx| {
+                    text_changes.borrow_mut().push(text);
+                }),
+        )
+    }
+}
+
+/// Test Copy/Paste functionality
+#[gpui::test]
+async fn test_input_copy_paste(cx: &mut TestAppContext) {
+    let text_changes: Arc<RefCell<Vec<String>>> = Arc::new(RefCell::new(Vec::new()));
+    let text_changes_clone = text_changes.clone();
+
+    let window = cx.add_window(move |_window, _cx| InputClipboardTestView {
+        text_changes: text_changes_clone,
+    });
+
+    let mut cx = VisualTestContext::from_window(window.into(), cx);
+    cx.run_until_parked();
+
+    if let Some(bounds) = cx.debug_bounds("clipboard-test-input") {
+        let center = bounds.center();
+
+        // Focus input
+        cx.simulate_mouse_down(center, MouseButton::Left, Modifiers::default());
+        cx.simulate_mouse_up(center, MouseButton::Left, Modifiers::default());
+        cx.run_until_parked();
+
+        // Type "Hello"
+        cx.simulate_input("Hello");
+        cx.run_until_parked();
+
+        // Select All (Cmd+A)
+        #[cfg(target_os = "macos")]
+        cx.simulate_keystrokes("cmd-a");
+        #[cfg(not(target_os = "macos"))]
+        cx.simulate_keystrokes("ctrl-a");
+        cx.run_until_parked();
+
+        // Copy (Cmd+C)
+        #[cfg(target_os = "macos")]
+        cx.simulate_keystrokes("cmd-c");
+        #[cfg(not(target_os = "macos"))]
+        cx.simulate_keystrokes("ctrl-c");
+        cx.run_until_parked();
+
+        // Move to end (clearing selection) and add space
+        cx.simulate_keystrokes("right");
+        cx.simulate_input(" ");
+        cx.run_until_parked();
+
+        // Paste (Cmd+V)
+        #[cfg(target_os = "macos")]
+        cx.simulate_keystrokes("cmd-v");
+        #[cfg(not(target_os = "macos"))]
+        cx.simulate_keystrokes("ctrl-v");
+        cx.run_until_parked();
+
+        // Should now be "Hello Hello"
+        let changes = text_changes.borrow();
+        if !changes.is_empty() {
+            let last = changes.last().unwrap();
+            assert_eq!(
+                last, "Hello Hello",
+                "Paste should append copied text, got: {}",
+                last
+            );
+        }
+    }
+}
+
+/// Test Cut functionality
+#[gpui::test]
+async fn test_input_cut(cx: &mut TestAppContext) {
+    let text_changes: Arc<RefCell<Vec<String>>> = Arc::new(RefCell::new(Vec::new()));
+    let text_changes_clone = text_changes.clone();
+
+    let window = cx.add_window(move |_window, _cx| InputClipboardTestView {
+        text_changes: text_changes_clone,
+    });
+
+    let mut cx = VisualTestContext::from_window(window.into(), cx);
+    cx.run_until_parked();
+
+    if let Some(bounds) = cx.debug_bounds("clipboard-test-input") {
+        let center = bounds.center();
+
+        // Focus input
+        cx.simulate_mouse_down(center, MouseButton::Left, Modifiers::default());
+        cx.simulate_mouse_up(center, MouseButton::Left, Modifiers::default());
+        cx.run_until_parked();
+
+        // Type "RemoveKeep"
+        cx.simulate_input("RemoveKeep");
+        cx.run_until_parked();
+
+        // Move to beginning
+        cx.simulate_keystrokes("home");
+        
+        // Select first 6 chars "Remove" (Shift+Right x6)
+        for _ in 0..6 {
+            cx.simulate_keystrokes("shift-right");
+        }
+        cx.run_until_parked();
+
+        // Cut (Cmd+X)
+        #[cfg(target_os = "macos")]
+        cx.simulate_keystrokes("cmd-x");
+        #[cfg(not(target_os = "macos"))]
+        cx.simulate_keystrokes("ctrl-x");
+        cx.run_until_parked();
+
+        // Should now be "Keep"
+        {
+            let changes = text_changes.borrow();
+            let last = changes.last().unwrap();
+            assert_eq!(
+                last, "Keep",
+                "Cut should remove selected text, got: {}",
+                last
+            );
+        }
+
+        // Move to end and Paste to verify it was copied
+        cx.simulate_keystrokes("end");
+        #[cfg(target_os = "macos")]
+        cx.simulate_keystrokes("cmd-v");
+        #[cfg(not(target_os = "macos"))]
+        cx.simulate_keystrokes("ctrl-v");
+        cx.run_until_parked();
+
+        // Should now be "KeepRemove"
+        {
+            let changes = text_changes.borrow();
+            let last = changes.last().unwrap();
+            assert_eq!(
+                last, "KeepRemove",
+                "Paste after cut should restore text, got: {}",
+                last
+            );
+        }
+    }
+}
+
+// ============================================================================
 // Disabled State Tests
 // ============================================================================
 

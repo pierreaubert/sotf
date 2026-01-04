@@ -408,6 +408,7 @@ pub struct VerticalSlider {
     on_drag_start: Option<Box<dyn Fn(f32, f64, &mut Window, &mut App) + 'static>>,
     on_select: Option<Box<dyn Fn(&mut Window, &mut App) + 'static>>,
     on_reset: Option<Box<dyn Fn(&mut Window, &mut App) + 'static>>,
+    focus_handle: Option<FocusHandle>,
 }
 
 impl VerticalSlider {
@@ -432,6 +433,7 @@ impl VerticalSlider {
             on_drag_start: None,
             on_select: None,
             on_reset: None,
+            focus_handle: None,
         }
     }
 
@@ -549,6 +551,12 @@ impl VerticalSlider {
     /// Set reset handler (called on double-click)
     pub fn on_reset(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
         self.on_reset = Some(Box::new(handler));
+        self
+    }
+
+    /// Set the focus handle for keyboard navigation
+    pub fn focus_handle(mut self, focus_handle: FocusHandle) -> Self {
+        self.focus_handle = Some(focus_handle);
         self
     }
 
@@ -681,6 +689,11 @@ impl RenderOnce for VerticalSlider {
             .border_color(border_color)
             .min_w(px(min_width));
 
+        // Track focus if handle provided
+        if let Some(ref focus_handle) = self.focus_handle {
+            container = container.track_focus(focus_handle);
+        }
+
         // Add shadow when selected
         if selected {
             container = container.shadow_md();
@@ -705,28 +718,25 @@ impl RenderOnce for VerticalSlider {
             let on_reset_rc = self.on_reset.map(|h| std::rc::Rc::new(h));
 
             // Mouse down - start drag and select
-            if let Some(on_select) = self.on_select {
-                let on_drag_start = self.on_drag_start;
-                container = container.on_mouse_down(MouseButton::Left, move |event, window, cx| {
-                    on_select(window, cx);
-                    if let Some(ref handler) = on_drag_start {
-                        handler(event.position.y.into(), value, window, cx);
-                    }
-                });
-            } else if let Some(on_drag_start) = self.on_drag_start {
-                container = container.on_mouse_down(MouseButton::Left, move |event, window, cx| {
-                    on_drag_start(event.position.y.into(), value, window, cx);
-                });
-            } else if let Some(ref handler_rc) = on_change_rc {
-                // If no drag handler, use click to step value (scale-aware)
-                let handler_click = handler_rc.clone();
-                container =
-                    container.on_mouse_down(MouseButton::Left, move |_event, window, cx| {
-                        // Use scale-aware stepping (10% in normalized space)
-                        let new_value = scale.step_value(value, min, max, 1.0, 0.1);
-                        handler_click(new_value, window, cx);
-                    });
-            }
+            let on_select = self.on_select;
+            let on_drag_start = self.on_drag_start;
+            let on_change_click = on_change_rc.clone();
+
+            container = container.on_mouse_down(MouseButton::Left, move |event, window, cx| {
+                // 1. Handle Selection
+                if let Some(ref handler) = on_select {
+                    handler(window, cx);
+                }
+
+                // 2. Handle Drag or Click-Step
+                if let Some(ref handler) = on_drag_start {
+                    handler(event.position.y.into(), value, window, cx);
+                } else if let Some(ref handler) = on_change_click {
+                    // If no drag handler, use click to step value (scale-aware)
+                    let new_value = scale.step_value(value, min, max, 1.0, 0.1);
+                    handler(new_value, window, cx);
+                }
+            });
 
             // Double-click - reset
             if let Some(ref reset_rc) = on_reset_rc {

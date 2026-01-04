@@ -465,6 +465,12 @@ impl MiniApp {
 #[cfg(test)]
 mod tests {
     use super::MiniAppConfig;
+    use crate::i18n::Language;
+    use crate::theme::ThemeVariant;
+
+    // ========================================================================
+    // Basic Configuration Tests
+    // ========================================================================
 
     #[test]
     fn test_config_new() {
@@ -517,5 +523,227 @@ mod tests {
     fn test_config_with_i18n() {
         let config = MiniAppConfig::new("Test").with_i18n(true);
         assert!(config.with_i18n);
+    }
+
+    // ========================================================================
+    // Scrollable Configuration Tests
+    // ========================================================================
+
+    #[test]
+    fn test_config_scrollable_default() {
+        let config = MiniAppConfig::new("Test");
+        assert!(config.scrollable, "scrollable should be true by default");
+    }
+
+    #[test]
+    fn test_config_scrollable_disabled() {
+        let config = MiniAppConfig::new("Test").scrollable(false);
+        assert!(!config.scrollable);
+    }
+
+    #[test]
+    fn test_config_scrollable_enabled() {
+        let config = MiniAppConfig::new("Test").scrollable(true);
+        assert!(config.scrollable);
+    }
+
+    // ========================================================================
+    // Theme Configuration Tests
+    // ========================================================================
+
+    #[test]
+    fn test_config_with_theme_default_false() {
+        let config = MiniAppConfig::new("Test");
+        assert!(!config.with_theme, "with_theme should be false by default");
+    }
+
+    #[test]
+    fn test_config_with_theme_disabled() {
+        let config = MiniAppConfig::new("Test").with_theme(false);
+        assert!(!config.with_theme);
+    }
+
+    #[test]
+    fn test_config_initial_theme_dark() {
+        let config = MiniAppConfig::new("Test").initial_theme(ThemeVariant::Dark);
+        assert_eq!(config.initial_theme, ThemeVariant::Dark);
+    }
+
+    #[test]
+    fn test_config_initial_theme_light() {
+        let config = MiniAppConfig::new("Test").initial_theme(ThemeVariant::Light);
+        assert_eq!(config.initial_theme, ThemeVariant::Light);
+    }
+
+    #[test]
+    fn test_config_initial_theme_midnight() {
+        let config = MiniAppConfig::new("Test").initial_theme(ThemeVariant::Midnight);
+        assert_eq!(config.initial_theme, ThemeVariant::Midnight);
+    }
+
+    #[test]
+    fn test_config_initial_theme_forest() {
+        let config = MiniAppConfig::new("Test").initial_theme(ThemeVariant::Forest);
+        assert_eq!(config.initial_theme, ThemeVariant::Forest);
+    }
+
+    #[test]
+    fn test_config_initial_theme_black_and_white() {
+        let config = MiniAppConfig::new("Test").initial_theme(ThemeVariant::BlackAndWhite);
+        assert_eq!(config.initial_theme, ThemeVariant::BlackAndWhite);
+    }
+
+    // ========================================================================
+    // Language Configuration Tests
+    // ========================================================================
+
+    #[test]
+    fn test_config_with_i18n_default_false() {
+        let config = MiniAppConfig::new("Test");
+        assert!(!config.with_i18n, "with_i18n should be false by default");
+    }
+
+    #[test]
+    fn test_config_with_i18n_disabled() {
+        let config = MiniAppConfig::new("Test").with_i18n(false);
+        assert!(!config.with_i18n);
+    }
+
+    #[test]
+    fn test_config_initial_language_english() {
+        let config = MiniAppConfig::new("Test").initial_language(Language::English);
+        assert_eq!(config.initial_language, Language::English);
+    }
+
+    #[test]
+    fn test_config_initial_language_french() {
+        let config = MiniAppConfig::new("Test").initial_language(Language::French);
+        assert_eq!(config.initial_language, Language::French);
+    }
+
+    #[test]
+    fn test_config_initial_language_german() {
+        let config = MiniAppConfig::new("Test").initial_language(Language::German);
+        assert_eq!(config.initial_language, Language::German);
+    }
+
+    #[test]
+    fn test_config_initial_language_spanish() {
+        let config = MiniAppConfig::new("Test").initial_language(Language::Spanish);
+        assert_eq!(config.initial_language, Language::Spanish);
+    }
+
+    #[test]
+    fn test_config_initial_language_japanese() {
+        let config = MiniAppConfig::new("Test").initial_language(Language::Japanese);
+        assert_eq!(config.initial_language, Language::Japanese);
+    }
+
+    // ========================================================================
+    // Full Builder Chain Tests
+    // ========================================================================
+
+    #[test]
+    fn test_config_full_builder_chain() {
+        let config = MiniAppConfig::new("Full Demo")
+            .size(1920.0, 1080.0)
+            .app_name("Full Demo App")
+            .scrollable(false)
+            .with_theme(true)
+            .with_i18n(true)
+            .initial_theme(ThemeVariant::Midnight)
+            .initial_language(Language::Japanese);
+
+        assert_eq!(config.title.as_ref(), "Full Demo");
+        assert_eq!(config.width, 1920.0);
+        assert_eq!(config.height, 1080.0);
+        assert_eq!(config.app_name.as_ref(), "Full Demo App");
+        assert!(!config.scrollable);
+        assert!(config.with_theme);
+        assert!(config.with_i18n);
+        assert_eq!(config.initial_theme, ThemeVariant::Midnight);
+        assert_eq!(config.initial_language, Language::Japanese);
+    }
+
+    #[test]
+    fn test_config_clone() {
+        let config1 = MiniAppConfig::new("Clone Test")
+            .size(800.0, 600.0)
+            .with_theme(true);
+
+        let config2 = config1.clone();
+
+        assert_eq!(config1.title.as_ref(), config2.title.as_ref());
+        assert_eq!(config1.width, config2.width);
+        assert_eq!(config1.height, config2.height);
+        assert_eq!(config1.with_theme, config2.with_theme);
+    }
+
+    // ========================================================================
+    // Edge Case Tests
+    // ========================================================================
+
+    #[test]
+    fn test_config_empty_title() {
+        let config = MiniAppConfig::new("");
+        assert_eq!(config.title.as_ref(), "");
+        assert_eq!(config.app_name.as_ref(), "");
+    }
+
+    #[test]
+    fn test_config_unicode_title() {
+        let config = MiniAppConfig::new("音楽プレーヤー");
+        assert_eq!(config.title.as_ref(), "音楽プレーヤー");
+    }
+
+    #[test]
+    fn test_config_emoji_title() {
+        let config = MiniAppConfig::new("🎵 Music Player");
+        assert_eq!(config.title.as_ref(), "🎵 Music Player");
+    }
+
+    #[test]
+    fn test_config_zero_size() {
+        let config = MiniAppConfig::new("Test").size(0.0, 0.0);
+        assert_eq!(config.width, 0.0);
+        assert_eq!(config.height, 0.0);
+    }
+
+    #[test]
+    fn test_config_large_size() {
+        let config = MiniAppConfig::new("Test").size(7680.0, 4320.0); // 8K resolution
+        assert_eq!(config.width, 7680.0);
+        assert_eq!(config.height, 4320.0);
+    }
+
+    // ========================================================================
+    // Default Value Verification Tests
+    // ========================================================================
+
+    #[test]
+    fn test_config_all_defaults() {
+        let config = MiniAppConfig::new("Test");
+
+        // Verify all default values
+        assert_eq!(config.width, 900.0);
+        assert_eq!(config.height, 700.0);
+        assert!(config.scrollable);
+        assert!(!config.with_theme);
+        assert!(!config.with_i18n);
+        assert_eq!(config.initial_theme, ThemeVariant::default());
+        assert_eq!(config.initial_language, Language::default());
+    }
+
+    #[test]
+    fn test_config_default_matches_new() {
+        let config_default = MiniAppConfig::default();
+        let config_new = MiniAppConfig::new("MiniApp");
+
+        assert_eq!(config_default.title.as_ref(), config_new.title.as_ref());
+        assert_eq!(config_default.width, config_new.width);
+        assert_eq!(config_default.height, config_new.height);
+        assert_eq!(config_default.scrollable, config_new.scrollable);
+        assert_eq!(config_default.with_theme, config_new.with_theme);
+        assert_eq!(config_default.with_i18n, config_new.with_i18n);
     }
 }

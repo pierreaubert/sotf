@@ -261,6 +261,7 @@ pub struct VolumeKnob {
     text_color: Option<Rgba>,
     on_change: Option<Box<dyn Fn(f32, &mut Window, &mut App) + 'static>>,
     on_mute_toggle: Option<Box<dyn Fn(bool, &mut Window, &mut App) + 'static>>,
+    focus_handle: Option<FocusHandle>,
 }
 
 static VOLUME_KNOB_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -281,6 +282,7 @@ impl VolumeKnob {
             text_color: None,
             on_change: None,
             on_mute_toggle: None,
+            focus_handle: None,
         }
     }
 
@@ -353,6 +355,12 @@ impl VolumeKnob {
         self.on_mute_toggle = Some(Box::new(handler));
         self
     }
+
+    /// Set the focus handle for keyboard navigation
+    pub fn focus_handle(mut self, focus_handle: FocusHandle) -> Self {
+        self.focus_handle = Some(focus_handle);
+        self
+    }
 }
 
 impl Default for VolumeKnob {
@@ -408,8 +416,14 @@ impl RenderOnce for VolumeKnob {
             .relative()
             .w(self.size)
             .h(self.size)
-            .cursor_pointer()
-            .focusable();
+            .cursor_pointer();
+            
+        // Use provided focus handle or fall back to default focusable behavior
+        if let Some(handle) = self.focus_handle {
+            container = container.track_focus(&handle);
+        } else {
+            container = container.focusable();
+        }
 
         // Convert handlers to Rc for sharing between closures
         let on_change_rc = self.on_change.map(std::rc::Rc::new);

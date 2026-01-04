@@ -868,7 +868,7 @@ async fn test_number_input_arrow_keys_adjust_value(cx: &mut TestAppContext) {
     let value_clone = value.clone();
     let change_count_clone = change_count.clone();
 
-    let window = cx.add_window(move |_window, _cx| NumberInputEditTestView {
+    let window = cx.add_window(move |_window, _cx| NumberInputChangeTestView {
         value: value_clone,
         change_count: change_count_clone,
     });
@@ -876,30 +876,125 @@ async fn test_number_input_arrow_keys_adjust_value(cx: &mut TestAppContext) {
     let mut cx = VisualTestContext::from_window(window.into(), cx);
     cx.run_until_parked();
 
-    if let Some(bounds) = cx.debug_bounds("edit-test-input") {
+    if let Some(bounds) = cx.debug_bounds("change-test-input") {
         let center = bounds.center();
 
-        // Click to focus (but press right to clear selection and not be in edit mode)
+        // Click to focus
         cx.simulate_mouse_down(center, MouseButton::Left, Modifiers::default());
         cx.simulate_mouse_up(center, MouseButton::Left, Modifiers::default());
         cx.run_until_parked();
 
-        // Press Escape to exit edit mode
-        cx.simulate_keystrokes("escape");
+        // Ensure we are NOT in edit mode (edit mode captures arrows for text nav)
+        // Usually clicking text focuses it and selects all, but doesn't necessarily enter "edit mode"
+        // in a way that captures arrows unless cursor is moving.
+        // However, NumberInput often treats focus as "ready to type".
+        // Let's check how NumberInput handles arrows.
+        // If it follows standard UI patterns, Up/Down should increment/decrement value
+        // when focused, unless strictly in text editing mode.
+
+        // Press Up Arrow
+        cx.simulate_keystrokes("up");
         cx.run_until_parked();
 
-        // Initial value check
-        assert_eq!(*value.borrow(), 50.0);
+        // Value should increase by step (5.0) -> 55.0
+        assert_eq!(*value.borrow(), 55.0, "Up arrow should increment value");
 
-        // Note: Arrow keys only work when not in edit mode
-        // This test documents expected behavior - arrow keys in non-edit mode
-        // adjust the value
+        // Press Down Arrow
+        cx.simulate_keystrokes("down");
+        cx.run_until_parked();
+
+        // Value should decrease by step (5.0) -> 50.0
+        assert_eq!(*value.borrow(), 50.0, "Down arrow should decrement value");
     }
 }
 
 // ============================================================================
-// Theme Tests
+// Scroll Wheel Tests
 // ============================================================================
+
+#[gpui::test]
+async fn test_number_input_scroll_wheel(cx: &mut TestAppContext) {
+    use gpui::{ScrollDelta, ScrollWheelEvent, TouchPhase, point};
+
+    let value: Rc<RefCell<f64>> = Rc::new(RefCell::new(50.0));
+    let change_count = Arc::new(AtomicUsize::new(0));
+
+    let value_clone = value.clone();
+    let change_count_clone = change_count.clone();
+
+    let window = cx.add_window(move |_window, _cx| NumberInputChangeTestView {
+        value: value_clone,
+        change_count: change_count_clone,
+    });
+
+    let mut cx = VisualTestContext::from_window(window.into(), cx);
+    cx.run_until_parked();
+
+    if let Some(bounds) = cx.debug_bounds("change-test-input") {
+        let center = bounds.center();
+
+        // Simulate scroll up (negative Y delta) -> Increase value
+        cx.simulate_event(ScrollWheelEvent {
+            position: center,
+            delta: ScrollDelta::Lines(point(0.0, -1.0)),
+            modifiers: Modifiers::default(),
+            touch_phase: TouchPhase::Moved,
+        });
+        cx.run_until_parked();
+
+        assert_eq!(*value.borrow(), 55.0, "Scroll up should increment value");
+
+        // Simulate scroll down (positive Y delta) -> Decrease value
+        cx.simulate_event(ScrollWheelEvent {
+            position: center,
+            delta: ScrollDelta::Lines(point(0.0, 1.0)),
+            modifiers: Modifiers::default(),
+            touch_phase: TouchPhase::Moved,
+        });
+        cx.run_until_parked();
+
+        assert_eq!(*value.borrow(), 50.0, "Scroll down should decrement value");
+    }
+}
+
+// ============================================================================
+// Invalid Input Tests
+// ============================================================================
+
+#[gpui::test]
+async fn test_number_input_invalid_text_reverts(cx: &mut TestAppContext) {
+    let value: Rc<RefCell<f64>> = Rc::new(RefCell::new(50.0));
+    let value_clone = value.clone();
+
+    let window = cx.add_window(move |_window, _cx| NumberInputChangeTestView {
+        value: value_clone,
+        change_count: Arc::new(AtomicUsize::new(0)),
+    });
+
+    let mut cx = VisualTestContext::from_window(window.into(), cx);
+    cx.run_until_parked();
+
+    if let Some(bounds) = cx.debug_bounds("change-test-input") {
+        let center = bounds.center();
+
+        // Click to focus and edit
+        cx.simulate_mouse_down(center, MouseButton::Left, Modifiers::default());
+        cx.simulate_mouse_up(center, MouseButton::Left, Modifiers::default());
+        cx.run_until_parked();
+
+        // Type invalid non-numeric text
+        cx.simulate_input("abc");
+        cx.run_until_parked();
+
+        // Press Enter to confirm
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+
+        // Value should remain 50.0 (original value), ignoring invalid input
+        assert_eq!(*value.borrow(), 50.0, "Should revert to original value on invalid input");
+    }
+}
+
 
 #[gpui::test]
 async fn test_number_input_with_custom_theme(cx: &mut TestAppContext) {
