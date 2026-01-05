@@ -44,5 +44,8 @@ jobs:
       - name: Run tests
         run: just test
 
+      - name: Build UI kit examples
+        run: just test-examples
+
       - name: QA for AutoEQ
         run: just qa

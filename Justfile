@@ -48,6 +48,12 @@ test:
 	# Exclude GPUI crates from check - they cause stack overflow in syn during test/example mode compilation
 	RUST_MIN_STACK=16777216 cargo check --workspace --all-targets
 
+# Build gpui-ui-kit examples to verify they compile (doesn't run them)
+test-examples:
+	@echo "Building gpui-ui-kit examples..."
+	RUST_MIN_STACK=16777216 cargo build --examples -p gpui-ui-kit
+	@echo "✓ All gpui-ui-kit examples compiled successfully"
+
 ntest:
 	# Exclude GPUI crates - they cause stack overflow in syn during test mode compilation
 	RUST_MIN_STACK=16777216 cargo nextest run --release --no-fail-fast --workspace --lib

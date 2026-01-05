@@ -208,7 +208,7 @@ impl PlayerView {
             // Top row: Centered tabs (including Filter and Search)
             .child(
                 div().flex().justify_center().mb_2().child(
-                    Tabs::new()
+                    Tabs::new("library-sort-tabs")
                         .tabs(sort_tabs)
                         .selected_index(sort_tab_index)
                         .variant(TabVariant::VerticalCard)

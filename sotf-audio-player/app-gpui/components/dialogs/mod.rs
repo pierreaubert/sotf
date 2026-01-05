@@ -81,8 +81,12 @@ impl PlayerView {
             .on_close({
                 let state = self.state.clone();
                 move |_window, cx| {
-                    state.update(cx, |state, _| {
-                        state.app.input_mode = crate::app::InputMode::Normal;
+                    // Defer state update to avoid re-entrant update issues
+                    let state = state.clone();
+                    cx.defer(move |cx| {
+                        state.update(cx, |state, _| {
+                            state.app.input_mode = crate::app::InputMode::Normal;
+                        });
                     });
                 }
             })
@@ -97,7 +101,7 @@ impl PlayerView {
                             .rounded_xl()
                             .overflow_hidden()
                             .child(
-                                img("sotf-20251123.png")
+                                img("sotf.jpg")
                                     .w_full()
                                     .h_full()
                                     .object_fit(ObjectFit::Cover),
@@ -182,10 +186,13 @@ impl PlayerView {
                             .theme(theme.to_button_theme())
                             .build()
                             .on_click(cx.listener(|view, _event: &ClickEvent, _window, cx| {
-                                view.state.update(cx, |state, _cx| {
-                                    state.app.input_mode = crate::app::InputMode::Normal;
+                                // Defer state update to avoid re-entrant update issues
+                                let state = view.state.clone();
+                                cx.defer(move |cx| {
+                                    state.update(cx, |state, _| {
+                                        state.app.input_mode = crate::app::InputMode::Normal;
+                                    });
                                 });
-                                cx.notify();
                             })),
                     ),
             )
@@ -201,7 +208,10 @@ impl PlayerView {
     ) -> impl IntoElement {
         let url = url.to_string();
         let theme = theme.clone();
-        let id = SharedString::from(format!("external-link-{}", title.replace(' ', "-").to_lowercase()));
+        let id = SharedString::from(format!(
+            "external-link-{}",
+            title.replace(' ', "-").to_lowercase()
+        ));
         div()
             .id(id)
             .flex()
@@ -229,7 +239,7 @@ impl PlayerView {
                             .color(theme.text_secondary),
                     ),
             )
-            .on_click(move |_, _window, cx: &mut App| {
+            .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
                 cx.open_url(&url);
             })
     }
@@ -278,7 +288,7 @@ impl PlayerView {
                                                     .color(theme.text_secondary),
                                             ),
                                     )
-                                    .on_click(|_, _window, cx| {
+                                    .on_mouse_up(MouseButton::Left, |_, _window, cx| {
                                         cx.open_url(
                                             "https://github.com/pierreaubert/sotf/discussions/117",
                                         );
@@ -312,7 +322,7 @@ impl PlayerView {
                                                     .color(theme.text_secondary),
                                             ),
                                     )
-                                    .on_click(|_, _window, cx| {
+                                    .on_mouse_up(MouseButton::Left, |_, _window, cx| {
                                         cx.open_url(
                                             "https://github.com/pierreaubert/sotf/discussions/116",
                                         );
@@ -346,7 +356,7 @@ impl PlayerView {
                                                     .color(theme.text_secondary),
                                             ),
                                     )
-                                    .on_click(|_, _window, cx| {
+                                    .on_mouse_up(MouseButton::Left, |_, _window, cx| {
                                         cx.open_url("https://github.com/pierreaubert/sotf");
                                     }),
                             ),

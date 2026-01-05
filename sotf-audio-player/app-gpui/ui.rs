@@ -35,14 +35,10 @@ impl PlayerView {
         // Register plugin interactions
         // Register plugin interactions - moved to render
 
-        // Observe state changes to trigger re-renders when state is updated
-        // from callbacks (like Select toggles in AutoEqForm)
-        // Note: notify() is called directly here since we're in the observer callback
-        // which runs after the update completes
-        cx.observe(&state, |_view, _, cx| {
-            cx.notify();
-        })
-        .detach();
+        // Note: We don't use cx.observe() + cx.notify() here because it can cause
+        // re-entrant update issues when state is updated during effect processing.
+        // The periodic timer below handles state updates and notify() calls.
+        // Event handlers that update state should call cx.notify() directly.
 
         // Set up periodic update timer for playback position and loudness
         cx.spawn(async move |this: WeakEntity<Self>, cx| {
@@ -1100,81 +1096,8 @@ impl PlayerView {
         cx.notify();
     }
 
-    fn update_playback_state(&mut self, cx: &mut Context<Self>) {
-        let frame_count = self.update_frame_count;
-
-        self.state.update(cx, |state, _cx| {
-            // Only fetch spectrum every 2nd frame (200ms) to reduce allocations
-            // Spectrum visualization doesn't need 100ms precision
-            let should_update_spectrum = frame_count % 2 == 0;
-            let include_spectrum = should_update_spectrum
-                && (state.app.spectrum_visible || state.app.current_screen == Screen::Spectrum);
-
-            let playback_state = state.player.lock().get_playback_state(include_spectrum);
-
-            state.app.position_secs = playback_state.position_secs;
-            state.app.duration_secs = state.app.get_current_track_duration();
-
-            // Update input loudness
-            if playback_state.input_loudness.is_some() {
-                let _ = state.app.input_loudness_info.take();
-                state.app.input_loudness_info = playback_state.input_loudness;
-            }
-
-            // Update output loudness
-            if playback_state.output_loudness.is_some() {
-                // Drop old data explicitly before assigning new
-                let _ = state.app.loudness_info.take();
-                state.app.loudness_info = playback_state.output_loudness;
-            }
-
-            // Update level meter groups based on channel count
-            state.app.update_level_meter_groups();
-
-            if include_spectrum {
-                // Drop old spectrum data explicitly before assigning new
-                let _ = state.app.spectrum_info.take();
-                state.app.spectrum_info = playback_state.spectrum;
-            }
-
-            // Update compressor data for gain reduction display
-            state.app.compressor_info = playback_state.compressor;
-
-            // Apply pending plugin updates to audio engine
-            if let Some(update_type) = state.app.pending_plugin_update.take() {
-                log::warn!("[GPUI] Applying pending plugin update: {:?}", update_type);
-                Self::apply_plugin_update(state, update_type);
-            }
-
-            // Check if playback ended and auto-advance
-            if state.app.is_playing
-                && !playback_state.is_playing
-                && state.app.current_queue_index.is_some()
-            {
-                if let Some(path) = state.app.next_track() {
-                    let sample_rate = 48000.0;
-                    let plugins = state.app.plugin_chain.to_plugin_configs(sample_rate);
-                    let output_channels = state.app.plugin_chain.output_channels();
-
-                    if let Err(e) = state.player.lock().load_and_play(
-                        path,
-                        plugins,
-                        output_channels,
-                        state.app.current_output_device_name.clone(),
-                    ) {
-                        log::error!("Failed to auto-advance: {}", e);
-                        state.app.is_playing = false;
-                    }
-                } else {
-                    state.app.is_playing = false;
-                }
-            }
-        });
-        cx.notify();
-    }
-
     /// Apply a pending plugin update to the audio engine.
-    /// Called from update_playback_state when there's a pending update.
+    /// Called from the timer callback when there's a pending update.
     fn apply_plugin_update(state: &mut AppState, update_type: PluginUpdateType) {
         let result = match update_type {
             PluginUpdateType::Parameter {
