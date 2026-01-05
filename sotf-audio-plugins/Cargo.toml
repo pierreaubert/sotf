@@ -40,6 +40,7 @@ autoeq-env = { workspace = true }
 math-iir-fir = { workspace = true }
 rand = { workspace = true }
 rayon = { workspace = true }
+thiserror = { workspace = true }
 
 # Audio decoding/encoding
 symphonia = { workspace = true }

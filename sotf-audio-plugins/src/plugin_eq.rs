@@ -89,8 +89,8 @@ impl EqPlugin {
         }
 
         let sample_rate = 48000;
-        let auto_gain = AutoGain::new_default(num_channels, sample_rate)
-            .expect("Failed to create auto-gain");
+        let auto_gain =
+            AutoGain::new_default(num_channels, sample_rate).expect("Failed to create auto-gain");
 
         Self {
             num_channels,
@@ -325,10 +325,14 @@ impl Plugin for EqPlugin {
 
     fn parameters(&self) -> Vec<Parameter> {
         vec![
-            Parameter::new_bool("auto_gain_enabled", "Auto Gain", self.auto_gain.is_enabled())
-                .with_description("Automatically compensate for loudness changes from EQ")
-                .with_group("Auto Gain")
-                .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool(
+                "auto_gain_enabled",
+                "Auto Gain",
+                self.auto_gain.is_enabled(),
+            )
+            .with_description("Automatically compensate for loudness changes from EQ")
+            .with_group("Auto Gain")
+            .with_importance(ParameterImportance::Useful),
             Parameter::new_float("auto_gain_max_db", "Max Gain", 12.0, 0.0, 24.0)
                 .with_description("Maximum auto-gain correction in dB")
                 .with_group("Auto Gain")
@@ -387,6 +391,16 @@ impl Plugin for EqPlugin {
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        const MIN_SAMPLE_RATE: u32 = 8_000;
+        const MAX_SAMPLE_RATE: u32 = 384_000;
+
+        if sample_rate < MIN_SAMPLE_RATE || sample_rate > MAX_SAMPLE_RATE {
+            return Err(format!(
+                "Invalid sample rate: {} Hz (valid range: {}-{} Hz)",
+                sample_rate, MIN_SAMPLE_RATE, MAX_SAMPLE_RATE
+            ));
+        }
+
         self.set_sample_rate(sample_rate);
         self.auto_gain
             .set_sample_rate(sample_rate)
@@ -463,7 +477,8 @@ impl Plugin for EqPlugin {
             .map_err(|e| format!("Auto-gain output measurement failed: {}", e))?;
 
         // Apply auto-gain compensation
-        self.auto_gain.apply_compensation(output, context.num_frames);
+        self.auto_gain
+            .apply_compensation(output, context.num_frames);
 
         Ok(())
     }
@@ -919,7 +934,6 @@ mod tests {
 
     #[test]
     fn test_eq_auto_gain_compensates_boost() {
-
         // Create EQ with +6dB boost and auto-gain enabled
         let filters = vec![Biquad::new(
             BiquadFilterType::Highshelf,
@@ -979,7 +993,6 @@ mod tests {
 
     #[test]
     fn test_eq_auto_gain_compensates_cut() {
-
         // Create EQ with -6dB cut and auto-gain enabled
         let filters = vec![Biquad::new(
             BiquadFilterType::Highshelf,
@@ -1221,7 +1234,6 @@ mod tests {
 
     #[test]
     fn test_eq_auto_gain_preserves_loudness() {
-
         // Create EQ with significant boost
         let filters = vec![Biquad::new(
             BiquadFilterType::Highshelf,
@@ -1312,6 +1324,9 @@ mod tests {
         assert!(parsed.auto_gain.enabled);
         assert_eq!(parsed.auto_gain.max_gain_db, 8.0);
         assert_eq!(parsed.auto_gain.smoothing_ms, 75.0);
-        assert_eq!(parsed.auto_gain.loudness_type, AutoGainLoudnessType::ShortTerm);
+        assert_eq!(
+            parsed.auto_gain.loudness_type,
+            AutoGainLoudnessType::ShortTerm
+        );
     }
 }

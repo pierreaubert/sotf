@@ -280,8 +280,12 @@ fn build_path_from_config(
 
             // Add all nodes
             for node in nodes {
-                let plugin =
-                    create_plugin(&node.plugin_type, &node.parameters, num_channels, sample_rate)?;
+                let plugin = create_plugin(
+                    &node.plugin_type,
+                    &node.parameters,
+                    num_channels,
+                    sample_rate,
+                )?;
                 let id = host.add_node(node.id.clone(), plugin)?;
                 node_ids.insert(node.id.clone(), id);
             }
@@ -593,16 +597,12 @@ impl Plugin for ABComparePlugin {
             "max_auto_gain_db" => Some(ParameterValue::Float(12.0)), // TODO: store and return actual value
             "gain_smoothing_ms" => Some(ParameterValue::Float(100.0)), // TODO: store and return actual value
             "mix_transition_ms" => Some(ParameterValue::Float(self.mix_transition_ms)),
-            "path_a_config" => {
-                serde_json::to_string(&self.path_a_config)
-                    .ok()
-                    .map(ParameterValue::String)
-            }
-            "path_b_config" => {
-                serde_json::to_string(&self.path_b_config)
-                    .ok()
-                    .map(ParameterValue::String)
-            }
+            "path_a_config" => serde_json::to_string(&self.path_a_config)
+                .ok()
+                .map(ParameterValue::String),
+            "path_b_config" => serde_json::to_string(&self.path_b_config)
+                .ok()
+                .map(ParameterValue::String),
             _ => None,
         }
     }
@@ -778,7 +778,10 @@ mod tests {
         let mut plugin = ABComparePlugin::new(2).unwrap();
         plugin.initialize(48000).unwrap();
         plugin
-            .set_parameter(ParameterId("bypass".to_string()), ParameterValue::Bool(true))
+            .set_parameter(
+                ParameterId("bypass".to_string()),
+                ParameterValue::Bool(true),
+            )
             .unwrap();
 
         let input = vec![1.0, 0.5, 0.8, 0.3]; // 2 frames, 2 channels
@@ -1049,7 +1052,8 @@ mod tests {
         plugin.initialize(48000).unwrap();
 
         // Change path A at runtime
-        let new_config = r#"{"type": "Plugin", "plugin_type": "gain", "parameters": {"gain_db": -12.0}}"#;
+        let new_config =
+            r#"{"type": "Plugin", "plugin_type": "gain", "parameters": {"gain_db": -12.0}}"#;
         plugin
             .set_parameter(
                 ParameterId("path_a_config".to_string()),
@@ -1075,7 +1079,10 @@ mod tests {
     #[test]
     fn test_auto_gain_enabled_by_default() {
         let params = ABComparePluginParams::default();
-        assert!(params.auto_gain_enabled, "Auto-gain should be enabled by default");
+        assert!(
+            params.auto_gain_enabled,
+            "Auto-gain should be enabled by default"
+        );
     }
 
     #[test]
@@ -1201,7 +1208,7 @@ mod tests {
                 plugin_type: "gain".to_string(),
                 parameters: serde_json::json!({"gain_db": 6.0}),
             },
-            mix: 1.0,             // Pure B
+            mix: 1.0, // Pure B
             auto_gain_enabled: true,
             gain_smoothing_ms: 10.0, // Fast smoothing for test
             ..Default::default()
@@ -1252,7 +1259,7 @@ mod tests {
                 plugin_type: "gain".to_string(),
                 parameters: serde_json::json!({"gain_db": -6.0}),
             },
-            mix: 1.0,             // Pure B
+            mix: 1.0, // Pure B
             auto_gain_enabled: true,
             gain_smoothing_ms: 10.0, // Fast smoothing for test
             ..Default::default()

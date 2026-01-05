@@ -470,6 +470,16 @@ impl Plugin for ConvolutionPlugin {
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        const MIN_SAMPLE_RATE: u32 = 8_000;
+        const MAX_SAMPLE_RATE: u32 = 384_000;
+
+        if sample_rate < MIN_SAMPLE_RATE || sample_rate > MAX_SAMPLE_RATE {
+            return Err(format!(
+                "Invalid sample rate: {} Hz (valid range: {}-{} Hz)",
+                sample_rate, MIN_SAMPLE_RATE, MAX_SAMPLE_RATE
+            ));
+        }
+
         self.sample_rate = sample_rate;
         self.mix.set_time(20.0, sample_rate);
         self.gain_linear.set_time(20.0, sample_rate);

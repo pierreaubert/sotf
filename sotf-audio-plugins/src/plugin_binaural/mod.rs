@@ -920,6 +920,16 @@ impl Plugin for BinauralDecoderPlugin {
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        const MIN_SAMPLE_RATE: u32 = 8_000;
+        const MAX_SAMPLE_RATE: u32 = 384_000;
+
+        if sample_rate < MIN_SAMPLE_RATE || sample_rate > MAX_SAMPLE_RATE {
+            return Err(format!(
+                "Invalid sample rate: {} Hz (valid range: {}-{} Hz)",
+                sample_rate, MIN_SAMPLE_RATE, MAX_SAMPLE_RATE
+            ));
+        }
+
         self.sample_rate = sample_rate;
         self.externalization.set_time(50.0, sample_rate);
 

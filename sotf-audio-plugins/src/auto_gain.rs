@@ -145,7 +145,11 @@ impl AutoGain {
     ///
     /// # Returns
     /// Result with AutoGain or error string
-    pub fn new(num_channels: usize, sample_rate: u32, params: AutoGainParams) -> Result<Self, String> {
+    pub fn new(
+        num_channels: usize,
+        sample_rate: u32,
+        params: AutoGainParams,
+    ) -> Result<Self, String> {
         let input_monitor = LoudnessMonitor::new(num_channels as u32, sample_rate)?;
         let output_monitor = LoudnessMonitor::new(num_channels as u32, sample_rate)?;
         let gain_smoother = Smoother::new(0.0, params.smoothing_ms, sample_rate);
@@ -456,7 +460,7 @@ mod tests {
     fn test_auto_gain_max_clamp() {
         let params = AutoGainParams {
             enabled: true,
-            max_gain_db: 6.0, // Limit to 6dB
+            max_gain_db: 6.0,  // Limit to 6dB
             smoothing_ms: 1.0, // Very fast
             ..Default::default()
         };
@@ -660,7 +664,10 @@ mod tests {
 
         // Output should be modified
         let first_sample = output[0];
-        assert!(first_sample.abs() < 0.8, "Gain compensation should have been applied");
+        assert!(
+            first_sample.abs() < 0.8,
+            "Gain compensation should have been applied"
+        );
     }
 
     #[test]
@@ -709,8 +716,12 @@ mod tests {
         assert!(auto_gain.is_enabled());
 
         let num_frames = 4800;
-        let input: Vec<f32> = (0..num_frames * 2).map(|i| ((i as f32) * 0.01).sin() * 0.5).collect();
-        let output: Vec<f32> = (0..num_frames * 2).map(|i| ((i as f32) * 0.01).sin() * 1.0).collect();
+        let input: Vec<f32> = (0..num_frames * 2)
+            .map(|i| ((i as f32) * 0.01).sin() * 0.5)
+            .collect();
+        let output: Vec<f32> = (0..num_frames * 2)
+            .map(|i| ((i as f32) * 0.01).sin() * 1.0)
+            .collect();
 
         for _ in 0..5 {
             auto_gain.measure_input(&input).unwrap();
@@ -724,7 +735,10 @@ mod tests {
 
         // Should have some non-zero gain now
         let gain_db = auto_gain.current_gain_db();
-        assert!(gain_db < 0.0, "Expected negative gain when output is louder");
+        assert!(
+            gain_db < 0.0,
+            "Expected negative gain when output is louder"
+        );
 
         // Disable again
         auto_gain.set_enabled(false);
@@ -842,7 +856,9 @@ mod tests {
         auto_gain.set_loudness_type(AutoGainLoudnessType::Momentary);
 
         let num_frames = 4800;
-        let input: Vec<f32> = (0..num_frames * 2).map(|i| ((i as f32) * 0.01).sin() * 0.5).collect();
+        let input: Vec<f32> = (0..num_frames * 2)
+            .map(|i| ((i as f32) * 0.01).sin() * 0.5)
+            .collect();
 
         auto_gain.measure_input(&input).unwrap();
         let momentary_lufs = auto_gain.last_input_lufs();
@@ -939,10 +955,19 @@ mod tests {
         let data = auto_gain.get_data();
 
         assert!(data.enabled);
-        assert!(data.input_lufs.is_finite(), "Input LUFS should be finite after processing");
-        assert!(data.output_lufs.is_finite(), "Output LUFS should be finite after processing");
+        assert!(
+            data.input_lufs.is_finite(),
+            "Input LUFS should be finite after processing"
+        );
+        assert!(
+            data.output_lufs.is_finite(),
+            "Output LUFS should be finite after processing"
+        );
         // Output is louder, so gain should be negative
-        assert!(data.gain_db < 0.0, "Gain should be negative when output is louder");
+        assert!(
+            data.gain_db < 0.0,
+            "Gain should be negative when output is louder"
+        );
     }
 
     #[test]

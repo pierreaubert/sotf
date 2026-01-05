@@ -130,7 +130,10 @@ mod tests {
         suppressor.process(&mut buffer);
         let processed_click = buffer[click_idx];
 
-        println!("Original: {}, Processed: {}", original_click, processed_click);
+        println!(
+            "Original: {}, Processed: {}",
+            original_click, processed_click
+        );
 
         // The click should be significantly reduced (slew limited)
         assert!(

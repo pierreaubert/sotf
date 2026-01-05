@@ -860,7 +860,12 @@ impl PluginFuzzer for MatrixFuzzer {
 
         // Describe the matrix briefly
         let desc = if channels <= 4 {
-            format!("{}x{} matrix {:?}", channels, channels, &matrix[..matrix.len().min(8)])
+            format!(
+                "{}x{} matrix {:?}",
+                channels,
+                channels,
+                &matrix[..matrix.len().min(8)]
+            )
         } else {
             format!("{}x{} matrix (truncated)", channels, channels)
         };
