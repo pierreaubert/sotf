@@ -154,7 +154,9 @@ impl Dialog {
             .flex()
             .items_center()
             .justify_center()
-            .bg(theme.backdrop);
+            .bg(theme.backdrop)
+            // Capture scroll events to prevent propagation to underlying view
+            .on_scroll_wheel(|_event, _window, _cx| {});
 
         // Handle backdrop click
         if close_on_backdrop && let Some(ref handler) = on_close {
