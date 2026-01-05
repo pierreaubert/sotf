@@ -291,6 +291,7 @@ impl PlayerView {
                         p.plugin_type().clone(),
                         p.enabled,
                         p.plugin_type().name().to_string(),
+                        p.is_permanent(),
                     )
                 })
                 .collect();
@@ -305,7 +306,7 @@ impl PlayerView {
         let modules_info: Vec<_> = plugins_data
             .iter()
             .enumerate()
-            .map(|(idx, (pt, enabled, name))| {
+            .map(|(idx, (pt, enabled, name, permanent))| {
                 (
                     idx,
                     plugin_color(pt, &theme),
@@ -314,6 +315,7 @@ impl PlayerView {
                     *enabled,
                     selected_idx == idx,
                     pt.clone(), // Include plugin type for short_name
+                    *permanent, // Include permanent flag
                 )
             })
             .collect();
@@ -394,7 +396,7 @@ impl PlayerView {
                     // Input Meter removed from rack strip (moved to detail panel)
                     // Plugin modules - inline creation with drag-and-drop
                     .children(modules_info.into_iter().map(
-                        |(idx, color, icon, name, enabled, is_selected, plugin_type)| {
+                        |(idx, color, icon, name, enabled, is_selected, plugin_type, is_permanent)| {
                             let theme_c = theme.clone();
                             let drag_info = PluginDragInfo {
                                 source_index: idx,
@@ -424,16 +426,25 @@ impl PlayerView {
                                         .flex()
                                         .flex_col()
                                         .rounded_lg()
-                                        .border_2()
+                                        // Permanent plugins have dashed border
+                                        .when(is_permanent, |d| d.border_1())
+                                        .when(!is_permanent, |d| d.border_2())
                                         .border_color(if is_selected {
                                             color
+                                        } else if is_permanent {
+                                            theme_c.text_muted
                                         } else {
                                             theme_c.border
                                         })
-                                        .bg(theme_c.surface)
+                                        .bg(if is_permanent {
+                                            theme_c.background_secondary
+                                        } else {
+                                            theme_c.surface
+                                        })
                                         .when(!enabled, |d| d.opacity(0.6))
                                         .shadow_md()
-                                        .cursor_grab()
+                                        // Permanent plugins can't be dragged
+                                        .when(!is_permanent, |d| d.cursor_grab())
                                         .hover(|s| s.border_color(color))
                                         // Drag-over visual feedback - highlight when dragging over
                                         .drag_over::<PluginDragInfo>({
@@ -488,9 +499,11 @@ impl PlayerView {
                                                 }
                                             },
                                         ))
-                                        // Start drag
-                                        .on_drag(drag_info, |info, _position, _window, cx| {
-                                            cx.new(|_| info.clone())
+                                        // Start drag - only for non-permanent plugins
+                                        .when(!is_permanent, |d| {
+                                            d.on_drag(drag_info, |info, _position, _window, cx| {
+                                                cx.new(|_| info.clone())
+                                            })
                                         })
                                         // Click to select
                                         .on_mouse_up(
@@ -504,44 +517,64 @@ impl PlayerView {
                                                 },
                                             ),
                                         )
-                                        // Top bar with color
-                                        .child(div().h(px(4.0)).w_full().bg(color).rounded_t_md())
-                                        // Remove button (X) - visible on group hover
+                                        // Top bar with color (thinner for permanent)
                                         .child(
                                             div()
-                                                .absolute()
-                                                .top(px(8.0))
-                                                .right(px(4.0))
-                                                .w(px(12.0))
-                                                .h(px(12.0))
-                                                .rounded_full()
-                                                .bg(theme_c.error)
-                                                .flex()
-                                                .items_center()
-                                                .justify_center()
-                                                .text_xs()
-                                                .text_color(theme_c.text_on_accent)
-                                                .cursor_pointer()
-                                                .opacity(0.0)
-                                                .group_hover("plugin-module", |s| s.opacity(1.0))
-                                                .hover(|s| s.bg(theme_c.error))
-                                                .on_mouse_up(
-                                                    MouseButton::Left,
-                                                    cx.listener(
-                                                        move |view, _e: &MouseUpEvent, _, cx| {
-                                                            cx.stop_propagation();
-                                                            view.state.update(cx, |state, _cx| {
-                                                                state.app.remove_plugin(idx);
-                                                                state
-                                                                    .app
-                                                                    .update_level_meter_groups(); // Reconfigure metering
-                                                            });
-                                                            cx.notify();
-                                                        },
-                                                    ),
-                                                )
-                                                .child("×"),
+                                                .h(if is_permanent { px(2.0) } else { px(4.0) })
+                                                .w_full()
+                                                .bg(color)
+                                                .rounded_t_md(),
                                         )
+                                        // Remove button (X) - only for non-permanent plugins, visible on group hover
+                                        .when(!is_permanent, |d| {
+                                            d.child(
+                                                div()
+                                                    .absolute()
+                                                    .top(px(8.0))
+                                                    .right(px(4.0))
+                                                    .w(px(12.0))
+                                                    .h(px(12.0))
+                                                    .rounded_full()
+                                                    .bg(theme_c.error)
+                                                    .flex()
+                                                    .items_center()
+                                                    .justify_center()
+                                                    .text_xs()
+                                                    .text_color(theme_c.text_on_accent)
+                                                    .cursor_pointer()
+                                                    .opacity(0.0)
+                                                    .group_hover("plugin-module", |s| s.opacity(1.0))
+                                                    .hover(|s| s.bg(theme_c.error))
+                                                    .on_mouse_up(
+                                                        MouseButton::Left,
+                                                        cx.listener(
+                                                            move |view, _e: &MouseUpEvent, _, cx| {
+                                                                cx.stop_propagation();
+                                                                view.state.update(cx, |state, _cx| {
+                                                                    state.app.remove_plugin(idx);
+                                                                    state
+                                                                        .app
+                                                                        .update_level_meter_groups();
+                                                                });
+                                                                cx.notify();
+                                                            },
+                                                        ),
+                                                    )
+                                                    .child("×"),
+                                            )
+                                        })
+                                        // Lock icon for permanent plugins (top right)
+                                        .when(is_permanent, |d| {
+                                            d.child(
+                                                div()
+                                                    .absolute()
+                                                    .top(px(8.0))
+                                                    .right(px(4.0))
+                                                    .text_xs()
+                                                    .text_color(theme_c.text_muted)
+                                                    .child("🔒"),
+                                            )
+                                        })
                                         // Power indicator (top left)
                                         .child(
                                             div()
