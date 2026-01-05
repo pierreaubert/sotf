@@ -951,6 +951,9 @@ pub fn {}() -> EditorTheme {{
 
     /// Create a GPUI-compatible button theme
     pub fn to_button_theme(&self) -> gpui_ui_kit::ButtonTheme {
+        let mut error_hover = self.error.to_rgba();
+        error_hover.a = 0.8;
+
         gpui_ui_kit::ButtonTheme {
             accent: self.accent.to_rgba(),
             accent_hover: self.accent_hover.to_rgba(),
@@ -960,12 +963,22 @@ pub fn {}() -> EditorTheme {{
             text_secondary: self.text_secondary.to_rgba(),
             text_on_accent: self.text_on_accent.to_rgba(),
             error: self.error.to_rgba(),
+            error_hover,
             border: self.border.to_rgba(),
+            transparent: gpui::Rgba {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 0.0,
+            },
         }
     }
 
     /// Create a GPUI-compatible slider theme
     pub fn to_slider_theme(&self) -> gpui_ui_kit::SliderTheme {
+        let mut disabled_label = self.text_disabled.to_rgba();
+        disabled_label.a = 0.5;
+
         gpui_ui_kit::SliderTheme {
             track: self.surface_hover.to_rgba(),
             fill: self.accent.to_rgba(),
@@ -974,6 +987,8 @@ pub fn {}() -> EditorTheme {{
             thumb_active: self.accent.to_rgba(),
             label: self.text_primary.to_rgba(),
             value: self.text_secondary.to_rgba(),
+            disabled_label,
+            disabled_fill: self.text_disabled.to_rgba(),
         }
     }
 
