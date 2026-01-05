@@ -356,6 +356,15 @@ fn default_binaural_enable_optimization() -> bool {
     binaural_default_enable_optimization()
 }
 
+// Auto-gain defaults for loudness compensation
+fn default_auto_gain_max_db() -> f64 {
+    12.0
+}
+
+fn default_auto_gain_smoothing_ms() -> f64 {
+    100.0
+}
+
 // Gate/Limiter defaults (defined locally as they use f64 and match engine defaults)
 fn default_limiter_lookahead_ms() -> f64 {
     limiter_specs::LOOKAHEAD_DEFAULT as f64
@@ -866,6 +875,12 @@ pub enum PluginSettings {
         low_gain: f64,
         high_freq: f64,
         high_gain: f64,
+        #[serde(default)]
+        auto_gain_enabled: bool,
+        #[serde(default = "default_auto_gain_max_db")]
+        auto_gain_max_db: f64,
+        #[serde(default = "default_auto_gain_smoothing_ms")]
+        auto_gain_smoothing_ms: f64,
     },
     BinauralDecoder {
         sofa_file: String,
@@ -1296,6 +1311,9 @@ impl PluginSettings {
                 low_gain,
                 high_freq,
                 high_gain,
+                auto_gain_enabled,
+                auto_gain_max_db,
+                auto_gain_smoothing_ms,
             } => PluginConfig::new(
                 "loudness_compensation",
                 json!({
@@ -1303,6 +1321,9 @@ impl PluginSettings {
                     "low_gain": low_gain,
                     "high_freq": high_freq,
                     "high_gain": high_gain,
+                    "auto_gain_enabled": auto_gain_enabled,
+                    "auto_gain_max_db": auto_gain_max_db,
+                    "auto_gain_smoothing_ms": auto_gain_smoothing_ms,
                 }),
             ),
             Self::BinauralDecoder {
@@ -1599,6 +1620,9 @@ impl PluginSettings {
                 low_gain: 6.0,      // param_specs::loudness_compensation::LOW_GAIN_DEFAULT
                 high_freq: 10000.0, // param_specs::loudness_compensation::HIGH_FREQ_DEFAULT
                 high_gain: 6.0,     // param_specs::loudness_compensation::HIGH_GAIN_DEFAULT
+                auto_gain_enabled: false,
+                auto_gain_max_db: default_auto_gain_max_db(),
+                auto_gain_smoothing_ms: default_auto_gain_smoothing_ms(),
             },
             PluginType::BinauralDecoder => Self::BinauralDecoder {
                 sofa_file: String::new(),
@@ -1867,6 +1891,9 @@ pub struct Plugin {
     pub id: usize,
     pub enabled: bool,
     pub settings: PluginSettings,
+    /// If true, this plugin cannot be removed from the chain (part of default rack)
+    #[serde(default)]
+    pub permanent: bool,
 }
 
 impl Plugin {
@@ -1875,11 +1902,27 @@ impl Plugin {
             id,
             enabled: true,
             settings: PluginSettings::default_for(plugin_type),
+            permanent: false,
+        }
+    }
+
+    /// Create a permanent plugin that cannot be removed
+    pub fn new_permanent(id: usize, plugin_type: &PluginType) -> Self {
+        Self {
+            id,
+            enabled: true,
+            settings: PluginSettings::default_for(plugin_type),
+            permanent: true,
         }
     }
 
     pub fn plugin_type(&self) -> PluginType {
         self.settings.plugin_type()
+    }
+
+    /// Returns true if this plugin is permanent and cannot be removed
+    pub fn is_permanent(&self) -> bool {
+        self.permanent
     }
 
     pub fn to_plugin_config(&self, sample_rate: f64) -> Option<PluginConfig> {
@@ -1909,11 +1952,57 @@ impl PluginChain {
         id
     }
 
+    /// Add a permanent plugin that cannot be removed
+    pub fn add_permanent_plugin(&mut self, plugin_type: &PluginType) -> usize {
+        let id = self.next_id;
+        self.next_id += 1;
+        self.plugins.push(Plugin::new_permanent(id, plugin_type));
+        id
+    }
+
+    /// Create a default rack with permanent Input Monitor, Matrix, and Output Monitor
+    pub fn with_default_rack() -> Self {
+        let mut chain = Self::new();
+        // Input monitor (permanent) - monitors input signal
+        chain.add_permanent_plugin(&PluginType::LoudnessMonitor);
+        // Matrix (permanent) - channel routing
+        chain.add_permanent_plugin(&PluginType::Matrix);
+        // Output monitor (permanent) - monitors output signal
+        chain.add_permanent_plugin(&PluginType::LoudnessMonitor);
+        chain
+    }
+
+    /// Find the index where user plugins should be inserted (before Matrix)
+    /// Returns the index of the Matrix plugin, or the first permanent plugin after user plugins
+    pub fn user_plugin_insert_index(&self) -> usize {
+        // Find the Matrix plugin - user plugins go before it
+        for (idx, plugin) in self.plugins.iter().enumerate() {
+            if plugin.plugin_type() == PluginType::Matrix && plugin.is_permanent() {
+                return idx;
+            }
+        }
+        // Fallback: find processing insert index
+        self.find_processing_insert_index()
+    }
+
     pub fn remove_plugin(&mut self, index: usize) -> Option<Plugin> {
         if index < self.plugins.len() {
+            // Don't remove permanent plugins
+            if self.plugins[index].is_permanent() {
+                return None;
+            }
             Some(self.plugins.remove(index))
         } else {
             None
+        }
+    }
+
+    /// Check if a plugin at the given index can be removed
+    pub fn can_remove_plugin(&self, index: usize) -> bool {
+        if let Some(plugin) = self.plugins.get(index) {
+            !plugin.is_permanent()
+        } else {
+            false
         }
     }
 

@@ -6,6 +6,7 @@
 // - Low-shelf filter with 12dB/octave slope (2 cascaded biquads)
 // - High-shelf filter with 12dB/octave slope (2 cascaded biquads)
 // - Automatic gain compensation to prevent clipping
+// - Optional auto-gain for loudness matching (measures input/output LUFS)
 //
 // Supports two modes:
 // 1. Single set of parameters applied to all channels (default)
@@ -14,6 +15,7 @@
 // Typical use: Boost bass and treble at low listening volumes to compensate
 // for the Fletcher-Munson equal-loudness contours.
 
+use super::auto_gain::{AutoGain, AutoGainData, AutoGainLoudnessType, AutoGainParams};
 use super::param_specs::loudness_compensation::*;
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
@@ -89,6 +91,18 @@ fn default_high_gain() -> f32 {
     HIGH_GAIN_DEFAULT
 }
 
+fn default_auto_gain_enabled() -> bool {
+    false
+}
+
+fn default_auto_gain_max_db() -> f32 {
+    12.0
+}
+
+fn default_auto_gain_smoothing_ms() -> f32 {
+    100.0
+}
+
 /// Per-channel loudness compensation parameters
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChannelLoudnessParams {
@@ -139,6 +153,18 @@ pub struct LoudnessCompensationPluginParams {
     /// If provided, must have exactly one entry per channel
     #[serde(default)]
     pub channel_params: Vec<ChannelLoudnessParams>,
+
+    /// Enable automatic gain compensation to maintain perceived loudness
+    #[serde(default = "default_auto_gain_enabled")]
+    pub auto_gain_enabled: bool,
+
+    /// Maximum gain correction in dB (clamped to +/- this value)
+    #[serde(default = "default_auto_gain_max_db")]
+    pub auto_gain_max_db: f32,
+
+    /// Gain smoothing time in milliseconds
+    #[serde(default = "default_auto_gain_smoothing_ms")]
+    pub auto_gain_smoothing_ms: f32,
 }
 
 // ============================================================================
@@ -180,6 +206,18 @@ pub struct LoudnessCompensationPlugin {
 
     /// Compensation gains per channel to prevent clipping
     compensation_gains: Vec<f32>,
+
+    /// Auto-gain compensation for loudness matching
+    auto_gain: Option<AutoGain>,
+
+    /// Auto-gain enabled state
+    auto_gain_enabled: bool,
+
+    /// Auto-gain max gain in dB
+    auto_gain_max_db: f32,
+
+    /// Auto-gain smoothing time in ms
+    auto_gain_smoothing_ms: f32,
 }
 
 impl LoudnessCompensationPlugin {
@@ -212,6 +250,10 @@ impl LoudnessCompensationPlugin {
             sample_rate: 48000,
             filters: Vec::new(),
             compensation_gains: Vec::new(),
+            auto_gain: None,
+            auto_gain_enabled: default_auto_gain_enabled(),
+            auto_gain_max_db: default_auto_gain_max_db(),
+            auto_gain_smoothing_ms: default_auto_gain_smoothing_ms(),
         };
 
         plugin.rebuild_filters();
@@ -245,6 +287,10 @@ impl LoudnessCompensationPlugin {
             sample_rate: 48000,
             filters: Vec::new(),
             compensation_gains: Vec::new(),
+            auto_gain: None,
+            auto_gain_enabled: default_auto_gain_enabled(),
+            auto_gain_max_db: default_auto_gain_max_db(),
+            auto_gain_smoothing_ms: default_auto_gain_smoothing_ms(),
         };
 
         plugin.rebuild_filters();
@@ -256,15 +302,15 @@ impl LoudnessCompensationPlugin {
         num_channels: usize,
         params: LoudnessCompensationPluginParams,
     ) -> Result<Self, String> {
-        if params.channel_params.is_empty() {
+        let mut plugin = if params.channel_params.is_empty() {
             // Global mode
-            Ok(Self::new(
+            Self::new(
                 num_channels,
                 params.low_freq,
                 params.low_gain,
                 params.high_freq,
                 params.high_gain,
-            ))
+            )
         } else {
             // Per-channel mode
             if params.channel_params.len() != num_channels {
@@ -274,8 +320,15 @@ impl LoudnessCompensationPlugin {
                     params.channel_params.len()
                 ));
             }
-            Self::new_per_channel(params.channel_params)
-        }
+            Self::new_per_channel(params.channel_params)?
+        };
+
+        // Apply auto_gain settings
+        plugin.auto_gain_enabled = params.auto_gain_enabled;
+        plugin.auto_gain_max_db = params.auto_gain_max_db;
+        plugin.auto_gain_smoothing_ms = params.auto_gain_smoothing_ms;
+
+        Ok(plugin)
     }
 
     /// Check if plugin is in per-channel mode
@@ -456,6 +509,35 @@ impl LoudnessCompensationPlugin {
 
         changed
     }
+
+    /// Get auto-gain monitoring data
+    pub fn get_auto_gain_data(&self) -> Option<AutoGainData> {
+        self.auto_gain.as_ref().map(|ag| ag.get_data())
+    }
+
+    /// Check if auto-gain is enabled
+    pub fn is_auto_gain_enabled(&self) -> bool {
+        self.auto_gain_enabled
+    }
+
+    /// Rebuild the auto-gain instance with current settings
+    fn rebuild_auto_gain(&mut self) -> Result<(), String> {
+        if self.auto_gain_enabled {
+            let params = AutoGainParams {
+                enabled: true,
+                loudness_type: AutoGainLoudnessType::Momentary,
+                max_gain_db: self.auto_gain_max_db,
+                smoothing_ms: self.auto_gain_smoothing_ms,
+            };
+            self.auto_gain = Some(AutoGain::new(self.num_channels, self.sample_rate, params)?);
+        } else {
+            // Keep existing auto_gain but disable it
+            if let Some(ag) = &mut self.auto_gain {
+                ag.set_enabled(false);
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Plugin for LoudnessCompensationPlugin {
@@ -569,6 +651,38 @@ impl Plugin for LoudnessCompensationPlugin {
             );
         }
 
+        // Add auto-gain parameters
+        params.push(
+            Parameter::new_bool("auto_gain_enabled", "Auto-Gain", default_auto_gain_enabled())
+                .with_description("Enable automatic loudness compensation")
+                .with_group("Auto Gain")
+                .with_importance(ParameterImportance::Useful),
+        );
+        params.push(
+            Parameter::new_float(
+                "auto_gain_max_db",
+                "Max Gain",
+                default_auto_gain_max_db(),
+                0.0,
+                24.0,
+            )
+            .with_description("Maximum gain correction in dB")
+            .with_group("Auto Gain")
+            .with_importance(ParameterImportance::FineTuning),
+        );
+        params.push(
+            Parameter::new_float(
+                "auto_gain_smoothing_ms",
+                "Smoothing",
+                default_auto_gain_smoothing_ms(),
+                1.0,
+                1000.0,
+            )
+            .with_description("Gain smoothing time in milliseconds")
+            .with_group("Auto Gain")
+            .with_importance(ParameterImportance::FineTuning),
+        );
+
         params
     }
 
@@ -580,6 +694,42 @@ impl Plugin for LoudnessCompensationPlugin {
             if self.update_global_parameter(&id, val) {
                 return Ok(());
             }
+        }
+
+        // Try auto-gain parameters
+        match id_str {
+            "auto_gain_enabled" => {
+                if let Some(val) = value.as_bool() {
+                    self.auto_gain_enabled = val;
+                    self.rebuild_auto_gain()?;
+                    return Ok(());
+                } else {
+                    return Err("auto_gain_enabled must be a bool".to_string());
+                }
+            }
+            "auto_gain_max_db" => {
+                if let Some(val) = value.as_float() {
+                    self.auto_gain_max_db = val;
+                    if let Some(ag) = &mut self.auto_gain {
+                        ag.set_max_gain_db(val);
+                    }
+                    return Ok(());
+                } else {
+                    return Err("auto_gain_max_db must be a float".to_string());
+                }
+            }
+            "auto_gain_smoothing_ms" => {
+                if let Some(val) = value.as_float() {
+                    self.auto_gain_smoothing_ms = val;
+                    if let Some(ag) = &mut self.auto_gain {
+                        ag.set_smoothing_ms(val);
+                    }
+                    return Ok(());
+                } else {
+                    return Err("auto_gain_smoothing_ms must be a float".to_string());
+                }
+            }
+            _ => {}
         }
 
         // Try per-channel parameters: {param}_{channel}
@@ -613,6 +763,16 @@ impl Plugin for LoudnessCompensationPlugin {
             return Some(ParameterValue::Float(self.high_gain));
         }
 
+        // Check auto-gain parameters
+        match id_str {
+            "auto_gain_enabled" => return Some(ParameterValue::Bool(self.auto_gain_enabled)),
+            "auto_gain_max_db" => return Some(ParameterValue::Float(self.auto_gain_max_db)),
+            "auto_gain_smoothing_ms" => {
+                return Some(ParameterValue::Float(self.auto_gain_smoothing_ms))
+            }
+            _ => {}
+        }
+
         // Check per-channel parameters
         for param_name in &["low_freq", "low_gain", "high_freq", "high_gain"] {
             let prefix = format!("{}_", param_name);
@@ -639,6 +799,7 @@ impl Plugin for LoudnessCompensationPlugin {
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
         self.rebuild_filters();
+        self.rebuild_auto_gain()?;
         Ok(())
     }
 
@@ -647,6 +808,10 @@ impl Plugin for LoudnessCompensationPlugin {
         // Force full rebuild to reset state
         self.filters.clear();
         self.rebuild_filters();
+        // Reset auto-gain state
+        if let Some(ag) = &mut self.auto_gain {
+            ag.reset();
+        }
     }
 
     fn process(
@@ -674,6 +839,11 @@ impl Plugin for LoudnessCompensationPlugin {
             ));
         }
 
+        // Measure input loudness for auto-gain (before processing)
+        if let Some(ag) = &mut self.auto_gain {
+            let _ = ag.measure_input(input);
+        }
+
         // Process each frame
         for frame_idx in 0..context.num_frames {
             for ch in 0..self.num_channels {
@@ -689,6 +859,12 @@ impl Plugin for LoudnessCompensationPlugin {
                 let comp_gain_linear = 10.0_f32.powf(self.compensation_gains[ch] / 20.0);
                 output[sample_idx] = (sample as f32) * comp_gain_linear;
             }
+        }
+
+        // Measure output loudness and apply auto-gain compensation
+        if let Some(ag) = &mut self.auto_gain {
+            let _ = ag.measure_output(output);
+            ag.apply_compensation(output, context.num_frames);
         }
 
         Ok(())
@@ -972,6 +1148,9 @@ mod tests {
             high_freq: 12000.0,
             high_gain: 3.0,
             channel_params: vec![],
+            auto_gain_enabled: false,
+            auto_gain_max_db: 12.0,
+            auto_gain_smoothing_ms: 100.0,
         };
 
         let plugin = LoudnessCompensationPlugin::from_params(2, params).unwrap();
@@ -1002,6 +1181,9 @@ mod tests {
                     high_gain: 6.0,
                 },
             ],
+            auto_gain_enabled: false,
+            auto_gain_max_db: 12.0,
+            auto_gain_smoothing_ms: 100.0,
         };
 
         let plugin = LoudnessCompensationPlugin::from_params(2, params).unwrap();

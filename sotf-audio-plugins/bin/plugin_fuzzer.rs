@@ -627,6 +627,9 @@ impl PluginFuzzer for LoudnessCompensationFuzzer {
             high_freq,
             high_gain,
             channel_params: vec![],
+            auto_gain_enabled: false,
+            auto_gain_max_db: 12.0,
+            auto_gain_smoothing_ms: 100.0,
         };
         let plugin = LoudnessCompensationPlugin::from_params(channels, params)
             .expect("Failed to create LoudnessCompensationPlugin");
