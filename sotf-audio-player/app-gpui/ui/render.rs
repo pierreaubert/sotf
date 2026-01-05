@@ -1,0 +1,394 @@
+
+impl Render for PlayerView {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Focus view on first render to activate macOS menu bar
+        if self.needs_initial_focus {
+            self.needs_initial_focus = false;
+            self.focus_handle.focus(window, cx);
+            window.activate_window();
+            cx.activate(true);
+        }
+
+        // Update layout mode based on window height
+        // Use defer to avoid re-entrant state updates during render
+        let window_bounds = window.bounds();
+        let window_height: f32 = window_bounds.size.height.into();
+        let window_width: f32 = window_bounds.size.width.into();
+
+        // Check if dimensions actually changed to avoid unnecessary updates
+        let needs_dimension_update = {
+            let state = self.state.read(cx);
+            (state.app.window_height - window_height).abs() > 0.5
+                || (state.app.window_width - window_width).abs() > 0.5
+        };
+
+        if needs_dimension_update {
+            let state = self.state.clone();
+            cx.defer(move |cx| {
+                state.update(cx, |state, _cx| {
+                    state.app.window_height = window_height;
+                    state.app.window_width = window_width;
+                    state.app.layout_mode = if window_height >= 800.0 {
+                        crate::app::LayoutMode::Expanded
+                    } else {
+                        crate::app::LayoutMode::Compact
+                    };
+
+                    // Recalculate pagination based on new window size
+                    state.app.recalculate_pagination(false);
+                });
+            });
+        }
+
+        // Save window geometry if it has changed (debounced by checking if different)
+        let should_save = match self.last_saved_window_bounds {
+            None => true,
+            Some(last_bounds) => {
+                let pos_changed = (last_bounds.origin.x - window_bounds.origin.x).abs() > px(1.0)
+                    || (last_bounds.origin.y - window_bounds.origin.y).abs() > px(1.0);
+                let size_changed = (last_bounds.size.width - window_bounds.size.width).abs()
+                    > px(1.0)
+                    || (last_bounds.size.height - window_bounds.size.height).abs() > px(1.0);
+                pos_changed || size_changed
+            }
+        };
+
+        if should_save {
+            let geometry = crate::config::WindowGeometry {
+                x: window_bounds.origin.x.into(),
+                y: window_bounds.origin.y.into(),
+                width: window_bounds.size.width.into(),
+                height: window_bounds.size.height.into(),
+            };
+
+            let state = self.state.clone();
+            cx.defer(move |cx| {
+                state.update(cx, |state, _cx| {
+                    if let Err(e) = state.app.save_config_with_geometry(Some(geometry)) {
+                        log::warn!("Failed to save window geometry: {}", e);
+                    }
+                });
+            });
+
+            self.last_saved_window_bounds = Some(window_bounds);
+        }
+
+        let (current_screen, input_mode, theme, layout_mode, active_menu) = {
+            let state = self.state.read(cx);
+            (
+                state.app.current_screen,
+                state.app.input_mode,
+                state.app.theme.clone(),
+                state.app.layout_mode,
+                state.app.active_menu,
+            )
+        };
+
+        // Keep gpui-ui-kit global theme in sync with app theme so components get consistent defaults.
+        // This allows builder overrides but ensures out-of-the-box colors match the app theme.
+        let ui_kit_theme = theme.to_ui_kit_theme(self.state.read(cx).app.theme_id);
+        cx.set_global(UiKitThemeState {
+            theme: ui_kit_theme,
+        });
+
+        // Determine key context based on input mode
+        // Use "TextInput" context when typing to disable single-letter keybindings
+        let key_context = {
+            let state = self.state.read(cx);
+            if Self::is_text_input_mode(state.app.input_mode) {
+                "TextInput"
+            } else {
+                "PlayerView"
+            }
+        };
+
+        div()
+            .key_context(key_context)
+            .track_focus(&self.focus_handle)
+            .on_action(cx.listener(Self::toggle_playback))
+            .on_action(cx.listener(Self::stop_playback))
+            .on_action(cx.listener(Self::next_track))
+            .on_action(cx.listener(Self::prev_track))
+            .on_action(cx.listener(Self::volume_up))
+            .on_action(cx.listener(Self::volume_down))
+            .on_action(cx.listener(Self::volume_up_small))
+            .on_action(cx.listener(Self::volume_down_small))
+            .on_action(cx.listener(Self::switch_to_library))
+            .on_action(cx.listener(Self::switch_to_queue))
+            .on_action(cx.listener(Self::switch_to_plugins))
+            .on_action(cx.listener(Self::switch_to_studio))
+            .on_action(cx.listener(Self::switch_to_plugin_graph))
+            .on_action(cx.listener(Self::switch_to_devices))
+            .on_action(cx.listener(Self::switch_to_settings))
+            .on_action(cx.listener(Self::switch_to_recording))
+            .on_action(cx.listener(Self::switch_to_room_eq))
+            .on_action(cx.listener(Self::switch_to_headphone_eq))
+            .on_action(cx.listener(Self::switch_to_spinorma))
+            .on_action(cx.listener(Self::open_config))
+            .on_action(cx.listener(Self::quit_app))
+            .on_action(cx.listener(Self::cycle_theme))
+            .on_action(cx.listener(Self::cycle_language))
+            .on_action(cx.listener(Self::toggle_search))
+            .on_action(cx.listener(Self::toggle_library_view))
+            .on_action(cx.listener(Self::toggle_help))
+            .on_action(cx.listener(Self::toggle_help_support))
+            .on_action(cx.listener(Self::about))
+            .on_action(cx.listener(Self::cycle_sort_order))
+            .on_action(cx.listener(Self::set_sort_artist))
+            .on_action(cx.listener(Self::set_sort_album))
+            .on_action(cx.listener(Self::set_sort_title))
+            .on_action(cx.listener(Self::set_sort_year))
+            .on_action(cx.listener(Self::cycle_channel_filter))
+            .on_action(cx.listener(Self::set_filter_all))
+            .on_action(cx.listener(Self::set_filter_mono))
+            .on_action(cx.listener(Self::set_filter_stereo))
+            .on_action(cx.listener(Self::set_filter_surround))
+            .on_action(cx.listener(Self::set_filter_surround71))
+            .on_action(cx.listener(Self::set_filter_surround_plus))
+            .on_action(cx.listener(Self::set_filter_mixed))
+            .on_action(cx.listener(Self::select_next))
+            .on_action(cx.listener(Self::select_prev))
+            .on_action(cx.listener(Self::select_next_page))
+            .on_action(cx.listener(Self::select_prev_page))
+            .on_action(cx.listener(Self::select_left))
+            .on_action(cx.listener(Self::select_right))
+            .on_action(cx.listener(Self::select_up))
+            .on_action(cx.listener(Self::select_down))
+            .on_action(cx.listener(Self::toggle_expand))
+            .on_action(cx.listener(Self::handle_enter))
+            .on_action(cx.listener(Self::cancel))
+            .on_action(cx.listener(Self::remove_item))
+            .on_action(cx.listener(Self::clear_queue))
+            .on_action(cx.listener(Self::fill_queue_magic))
+            .on_action(cx.listener(Self::move_plugin_up))
+            .on_action(cx.listener(Self::move_plugin_down))
+            .on_action(cx.listener(Self::toggle_plugin))
+            .on_action(cx.listener(Self::add_directory))
+            .on_action(cx.listener(Self::scan_library))
+            .on_action(cx.listener(Self::quick_add_eq))
+            .on_action(cx.listener(Self::quick_add_upmixer))
+            .on_action(cx.listener(Self::quick_add_compressor))
+            .on_action(cx.listener(Self::quick_add_gate))
+            .on_action(cx.listener(Self::quick_add_limiter))
+            .on_action(cx.listener(Self::quick_add_loudness))
+            .on_action(cx.listener(Self::quick_add_binaural))
+            .on_action(cx.listener(Self::quick_add_binaural))
+            // Plugin parameter actions
+            .on_action(cx.listener(Self::on_update_plugin_param))
+            .on_action(cx.listener(Self::on_select_plugin_param))
+            .on_action(cx.listener(Self::on_reset_plugin_param))
+            .on_action(cx.listener(Self::on_start_knob_drag))
+            // Level meter actions
+            .on_action(cx.listener(Self::select_next_meter_group))
+            .on_action(cx.listener(Self::select_prev_meter_group))
+            .on_action(cx.listener(Self::toggle_meter_mute))
+            .on_action(cx.listener(Self::toggle_meter_solo))
+            .on_action(cx.listener(Self::toggle_meter_dim))
+            .on_action(cx.listener(Self::clear_meter_mutes_solos))
+            .on_key_down(cx.listener(|view, event: &KeyDownEvent, _window, cx| {
+                // Handle text input for search mode and add directory mode
+                let input_mode = view.state.read(cx).app.input_mode;
+                let current_screen = view.state.read(cx).app.current_screen;
+
+                match input_mode {
+                    crate::app::InputMode::Search => {
+                        cx.stop_propagation(); // Prevent actions from processing this keystroke
+                        view.handle_search_input(event, cx);
+                    }
+                    crate::app::InputMode::AddDirectory => {
+                        cx.stop_propagation(); // Prevent actions from processing this keystroke
+                        view.handle_directory_input(event, cx);
+                    }
+                    crate::app::InputMode::LoadApoFile => {
+                        cx.stop_propagation(); // Prevent actions from processing this keystroke
+                        view.handle_apo_file_input(event, cx);
+                    }
+                    crate::app::InputMode::LoadSofaFile => {
+                        cx.stop_propagation(); // Prevent actions from processing this keystroke
+                        view.handle_sofa_file_input(event, cx);
+                    }
+                    crate::app::InputMode::SavePlugins => {
+                        cx.stop_propagation(); // Prevent actions from processing this keystroke
+                        view.handle_save_plugins_input(event, cx);
+                    }
+                    crate::app::InputMode::LoadPlugins => {
+                        cx.stop_propagation(); // Prevent actions from processing this keystroke
+                        view.handle_load_plugins_input(event, cx);
+                    }
+                    crate::app::InputMode::EditingParam => {
+                        // Stepper-based editing doesn't need keyboard input
+                    }
+                    crate::app::InputMode::SpinoramaSpeakerSearch => {
+                        cx.stop_propagation();
+                        view.handle_spinorama_speaker_search_input(event, cx);
+                    }
+                    crate::app::InputMode::Normal => {
+                        // Handle screen-specific shortcuts in Normal mode
+                        if current_screen == crate::app::Screen::Settings
+                            && view
+                                .state
+                                .read(cx)
+                                .app
+                                .expanded_settings_sections
+                                .contains(&"plugins".to_string())
+                        {
+                            match event.keystroke.key.as_str() {
+                                "S" => {
+                                    // Enter save plugins mode (Shift-S)
+                                    view.state.update(cx, |state, _cx| {
+                                        state.app.refresh_plugin_presets();
+                                        state.app.plugin_file_input.clear();
+                                        state.app.input_mode = crate::app::InputMode::SavePlugins;
+                                    });
+                                    cx.notify();
+                                }
+                                "l" => {
+                                    // Enter load plugins mode
+                                    view.state.update(cx, |state, _cx| {
+                                        state.app.refresh_plugin_presets();
+                                        state.app.plugin_file_input.clear();
+                                        state.app.input_mode = crate::app::InputMode::LoadPlugins;
+                                    });
+                                    cx.notify();
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }))
+            .flex()
+            .flex_col()
+            .size_full()
+            .bg(theme.background)
+            .text_color(theme.text_primary)
+            .when(!cfg!(target_os = "macos"), |div| {
+                div.child(self.render_menu_bar(cx))
+            })
+            .child(self.render_header(cx))
+            .child(
+                div()
+                    .flex()
+                    .flex_1()
+                    .overflow_hidden()
+                    .child(match layout_mode {
+                        crate::app::LayoutMode::Expanded => {
+                            // Split view: Library on bottom, Queue on top
+                            match current_screen {
+                                Screen::Spectrum => {
+                                    self.render_spectrum_screen(cx).into_any_element()
+                                }
+                                Screen::Settings => {
+                                    self.render_settings_screen(cx).into_any_element()
+                                }
+                                Screen::Studio => self.render_plugins_screen(cx).into_any_element(),
+                                Screen::Recording => {
+                                    self.render_recording_screen(cx).into_any_element()
+                                }
+                                Screen::RoomEq => self.render_room_eq_screen(cx).into_any_element(),
+                                Screen::HeadphoneEq => {
+                                    self.render_headphone_eq_screen(cx).into_any_element()
+                                }
+                                Screen::Spinorama => {
+                                    self.render_spinorama_eq_screen(cx).into_any_element()
+                                }
+                                Screen::PluginGraph => {
+                                    self.render_plugin_graph_screen(cx).into_any_element()
+                                }
+                                // Default: split Library/Queue view
+                                Screen::Library | Screen::Queue => {
+                                    self.render_split_view(cx).into_any_element()
+                                }
+                            }
+                        }
+                        crate::app::LayoutMode::Compact => {
+                            // Single view based on current screen
+                            match current_screen {
+                                Screen::Library => {
+                                    self.render_library_screen(cx).into_any_element()
+                                }
+                                Screen::Queue => self.render_queue_screen(cx).into_any_element(),
+                                Screen::Spectrum => {
+                                    self.render_spectrum_screen(cx).into_any_element()
+                                }
+                                Screen::Settings => {
+                                    self.render_settings_screen(cx).into_any_element()
+                                }
+                                Screen::Studio => self.render_plugins_screen(cx).into_any_element(),
+                                Screen::Recording => {
+                                    self.render_recording_screen(cx).into_any_element()
+                                }
+                                Screen::RoomEq => self.render_room_eq_screen(cx).into_any_element(),
+                                Screen::HeadphoneEq => {
+                                    self.render_headphone_eq_screen(cx).into_any_element()
+                                }
+                                Screen::Spinorama => {
+                                    self.render_spinorama_eq_screen(cx).into_any_element()
+                                }
+                                Screen::PluginGraph => {
+                                    self.render_plugin_graph_screen(cx).into_any_element()
+                                }
+                            }
+                        }
+                    }),
+            )
+            .child(self.render_footer(cx))
+            .when(input_mode == crate::app::InputMode::Help, |div| {
+                div.child(self.render_help_modal(cx))
+            })
+            .when(input_mode == crate::app::InputMode::LoadApoFile, |div| {
+                div.child(self.render_apo_file_dialog(cx))
+            })
+            .when(input_mode == crate::app::InputMode::LoadSofaFile, |div| {
+                div.child(self.render_sofa_file_dialog(cx))
+            })
+            .when(input_mode == crate::app::InputMode::SavePlugins, |div| {
+                div.child(self.render_save_plugins_dialog(cx))
+            })
+            .when(input_mode == crate::app::InputMode::LoadPlugins, |div| {
+                div.child(self.render_load_plugins_dialog(cx))
+            })
+            .when(
+                input_mode == crate::app::InputMode::KeyboardShortcuts,
+                |div| div.child(self.render_keyboard_shortcuts_dialog(cx)),
+            )
+            .when(input_mode == crate::app::InputMode::About, |div| {
+                div.child(self.render_about_dialog(cx))
+            })
+            .when(input_mode == crate::app::InputMode::HelpSupport, |div| {
+                div.child(self.render_help_support_dialog(cx))
+            })
+            .when(
+                input_mode == crate::app::InputMode::EmptyLibraryPrompt,
+                |div| div.child(self.render_empty_library_prompt(cx)),
+            )
+            .when(
+                input_mode == crate::app::InputMode::EditingPluginNode,
+                |div| div.child(self.render_plugin_node_modal(cx)),
+            )
+            // Scan progress modal
+            .child(self.render_scan_progress_modal(cx))
+            .child(self.render_toast(cx))
+            .when(self.state.read(cx).app.context_menu.is_some(), |div| {
+                div.child(self.render_context_menu(cx))
+            })
+            // Studio menu overlay (click outside to close)
+            .when(self.state.read(cx).app.show_studio_menu, |div| {
+                div.child(self.render_studio_menu_overlay(cx))
+            })
+            // Device popup overlay (click outside to close)
+            .when(self.state.read(cx).app.show_device_popup, |div| {
+                div.child(self.render_device_popup_overlay(cx))
+            })
+            // Device popup (rendered here to be above overlay)
+            .when(self.state.read(cx).app.show_device_popup, |div| {
+                let translations = &self.state.read(cx).app.translations;
+                div.child(self.render_device_popup(translations.playback_output_devices, cx))
+            })
+            // Menu dropdowns rendered last for z-ordering
+            .when(active_menu != crate::app::ActiveMenu::None, |div| {
+                div.child(self.render_menu_dropdowns(cx))
+            })
+    }
+}
