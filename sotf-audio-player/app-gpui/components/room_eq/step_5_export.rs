@@ -199,7 +199,8 @@ impl PlayerView {
             if let Some(file) = file {
                 let file_path = file.path().to_path_buf();
                 let parent_dir = file_path.parent().unwrap_or(std::path::Path::new("."));
-                let filename = file_path.file_name()
+                let filename = file_path
+                    .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("backup.json");
 
@@ -304,7 +305,8 @@ impl PlayerView {
             if let Some(eq_idx) = plugin_chain.find_plugin_index(&PluginType::EQ) {
                 // Update existing EQ plugin
                 if let Some(eq_plugin) = plugin_chain.get_plugin_mut(eq_idx) {
-                    let channels = if let PluginSettings::EQ { channels, .. } = &eq_plugin.settings {
+                    let channels = if let PluginSettings::EQ { channels, .. } = &eq_plugin.settings
+                    {
                         *channels
                     } else {
                         2

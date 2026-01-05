@@ -348,7 +348,11 @@ fn test_theme_names_unique() {
     let mut unique_names = names.clone();
     unique_names.sort();
     unique_names.dedup();
-    assert_eq!(names.len(), unique_names.len(), "Theme names must be unique");
+    assert_eq!(
+        names.len(),
+        unique_names.len(),
+        "Theme names must be unique"
+    );
 }
 
 // ============================================================================
@@ -382,7 +386,11 @@ fn test_language_codes_unique() {
     let mut unique_codes = codes.clone();
     unique_codes.sort();
     unique_codes.dedup();
-    assert_eq!(codes.len(), unique_codes.len(), "Language codes must be unique");
+    assert_eq!(
+        codes.len(),
+        unique_codes.len(),
+        "Language codes must be unique"
+    );
 }
 
 // ============================================================================
@@ -736,7 +744,11 @@ fn test_log_normalization_for_frequency() {
     let freq_1k = normalize_parameter_log(1000.0, min, max);
 
     // For log scale: log(1000)/log(20000/20) ≈ 0.57
-    assert!(freq_1k > 0.4 && freq_1k < 0.7, "1kHz should be mid-range on log scale: {}", freq_1k);
+    assert!(
+        freq_1k > 0.4 && freq_1k < 0.7,
+        "1kHz should be mid-range on log scale: {}",
+        freq_1k
+    );
 }
 
 #[test]
@@ -761,7 +773,11 @@ fn test_compressor_curve_full_range() {
         );
 
         // Output should always be finite
-        assert!(output.is_finite(), "Output must be finite for input {}", input);
+        assert!(
+            output.is_finite(),
+            "Output must be finite for input {}",
+            input
+        );
     }
 }
 

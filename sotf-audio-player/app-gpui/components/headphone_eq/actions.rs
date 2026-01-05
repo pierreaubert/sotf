@@ -191,7 +191,10 @@ impl PlayerView {
                     .collect();
 
                 // Create new EQ plugin settings
-                let settings = PluginSettings::EQ { channels: 2, filters };
+                let settings = PluginSettings::EQ {
+                    channels: 2,
+                    filters,
+                };
 
                 // Add to chain
                 let plugin_id = state.app.plugin_chain.add_plugin(&PluginType::EQ);

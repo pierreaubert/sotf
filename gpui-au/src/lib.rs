@@ -58,8 +58,8 @@ use parking_lot::Mutex;
 use rust_embed::RustEmbed;
 
 // Re-export types for FFI
-use math_audio_iir_fir::BiquadFilterType;
 use gpui_ui_kit::Theme;
+use math_audio_iir_fir::BiquadFilterType;
 pub use sotf_audio_player::EQFilter;
 
 /// Embedded assets for the AU plugin UI

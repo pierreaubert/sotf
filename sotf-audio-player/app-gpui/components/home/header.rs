@@ -143,13 +143,16 @@ impl PlayerView {
         let state = self.state.clone();
         let translations = self.state.read(cx).app.translations.clone();
 
-        Menu::new("file-menu", vec![
-            MenuItem::new("settings", translations.screen_settings).with_shortcut("⌘,"),
-            MenuItem::separator(),
-            MenuItem::new("quit", translations.menu_quit)
-                .with_shortcut("⌘Q")
-                .danger(),
-        ])
+        Menu::new(
+            "file-menu",
+            vec![
+                MenuItem::new("settings", translations.screen_settings).with_shortcut("⌘,"),
+                MenuItem::separator(),
+                MenuItem::new("quit", translations.menu_quit)
+                    .with_shortcut("⌘Q")
+                    .danger(),
+            ],
+        )
         .theme(theme.to_menu_theme())
         .on_select(move |id, window, cx| {
             state.update(cx, |state, _cx| {
@@ -182,18 +185,21 @@ impl PlayerView {
 
         let state = self.state.clone();
 
-        Menu::new("view-menu", vec![
-            MenuItem::new("studio", translations.screen_studio).with_shortcut("⌘1"),
-            MenuItem::new("recording", translations.screen_recording).with_shortcut("⌘2"),
-            MenuItem::new("roomeq", translations.screen_room_eq).with_shortcut("⌘3"),
-            MenuItem::new("headphoneeq", translations.screen_headphone_eq).with_shortcut("⌘4"),
-            MenuItem::new("spinorama", translations.screen_spinorama).with_shortcut("⌘5"),
-            MenuItem::separator(),
-            MenuItem::new("library", translations.screen_library).with_shortcut("⌘0"),
-            MenuItem::separator(),
-            MenuItem::new("queue", translations.screen_queue),
-            MenuItem::new("settings", translations.screen_settings),
-        ])
+        Menu::new(
+            "view-menu",
+            vec![
+                MenuItem::new("studio", translations.screen_studio).with_shortcut("⌘1"),
+                MenuItem::new("recording", translations.screen_recording).with_shortcut("⌘2"),
+                MenuItem::new("roomeq", translations.screen_room_eq).with_shortcut("⌘3"),
+                MenuItem::new("headphoneeq", translations.screen_headphone_eq).with_shortcut("⌘4"),
+                MenuItem::new("spinorama", translations.screen_spinorama).with_shortcut("⌘5"),
+                MenuItem::separator(),
+                MenuItem::new("library", translations.screen_library).with_shortcut("⌘0"),
+                MenuItem::separator(),
+                MenuItem::new("queue", translations.screen_queue),
+                MenuItem::new("settings", translations.screen_settings),
+            ],
+        )
         .theme(theme.to_menu_theme())
         .on_select(move |id, _window, cx| {
             state.update(cx, |state, _cx| {
@@ -222,11 +228,14 @@ impl PlayerView {
         let state = self.state.clone();
         let translations = self.state.read(cx).app.translations.clone();
 
-        Menu::new("help-menu", vec![
-            MenuItem::new("shortcuts", translations.menu_keyboard_shortcuts).with_shortcut("?"),
-            MenuItem::separator(),
-            MenuItem::new("about", translations.menu_about),
-        ])
+        Menu::new(
+            "help-menu",
+            vec![
+                MenuItem::new("shortcuts", translations.menu_keyboard_shortcuts).with_shortcut("?"),
+                MenuItem::separator(),
+                MenuItem::new("about", translations.menu_about),
+            ],
+        )
         .theme(theme.to_menu_theme())
         .on_select(move |id, _window, cx| {
             state.update(cx, |state, _cx| {

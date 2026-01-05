@@ -41,6 +41,7 @@ pub use plugin_graph::{
     PluginGraph, PluginGraphNode, SpecialNode, SpecialNodeType,
 };
 // Re-export plugins from sotf-audio-engine
+pub use replay_gain_scanner::{ReplayGainScanManager, ReplayGainScanner, ScanMessage};
 pub use sotf_audio::plugins::{
     EQFilter,
     Plugin,
@@ -55,7 +56,6 @@ pub use sotf_audio::plugins::{
     linear_to_db_string,
     resize_matrix,
 };
-pub use replay_gain_scanner::{ReplayGainScanManager, ReplayGainScanner, ScanMessage};
 pub use sotf_audio::replaygain::ReplayGainInfo;
 pub use waveform_scanner::{WaveformScanManager, WaveformScanMessage, WaveformScanner};
 

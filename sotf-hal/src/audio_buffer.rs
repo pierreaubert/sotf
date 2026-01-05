@@ -4,7 +4,7 @@
 //! - Input buffer: Audio data coming FROM macOS apps TO the audio player
 //! - Output buffer: Audio data going FROM the audio player BACK TO the HAL (loopback)
 
-use crossbeam::channel::{bounded, Receiver, Sender, TryRecvError, TrySendError};
+use crossbeam::channel::{Receiver, Sender, TryRecvError, TrySendError, bounded};
 use std::sync::{Arc, Mutex, OnceLock};
 
 /// Bidirectional audio buffer for HAL driver
@@ -44,7 +44,11 @@ impl AudioBuffer {
 
         log::info!(
             "Created audio buffers: {}ms capacity, {} Hz, {} channels ({} frame buffer, {} chunk capacity)",
-            capacity_ms, sample_rate, channels, capacity_frames, channel_capacity
+            capacity_ms,
+            sample_rate,
+            channels,
+            capacity_frames,
+            channel_capacity
         );
 
         Self {

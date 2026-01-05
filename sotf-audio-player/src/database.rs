@@ -1615,10 +1615,8 @@ impl MusicDatabase {
 
         if count > 0 {
             // Delete tracks in the directory
-            self.conn.execute(
-                "DELETE FROM tracks WHERE path LIKE ?1",
-                params![pattern],
-            )?;
+            self.conn
+                .execute("DELETE FROM tracks WHERE path LIKE ?1", params![pattern])?;
 
             // Clean up albums with no tracks
             self.conn.execute(

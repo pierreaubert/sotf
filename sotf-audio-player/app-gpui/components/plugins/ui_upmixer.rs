@@ -659,7 +659,11 @@ fn render_height_box(
                 .child(
                     Toggle::new(("hr-direct-toggle", plugin_idx))
                         .checked(state.enable_hr_direct)
-                        .label(if state.enable_hr_direct { "HR On" } else { "HR Off" })
+                        .label(if state.enable_hr_direct {
+                            "HR On"
+                        } else {
+                            "HR Off"
+                        })
                         .style(ToggleStyle::Segmented)
                         .theme(theme.to_toggle_theme())
                         .on_change({

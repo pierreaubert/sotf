@@ -51,26 +51,28 @@ impl PlayerView {
                     view.update_frame_count = view.update_frame_count.wrapping_add(1);
 
                     // Collect data needed for infinite scroll check before state update
-                    let scroll_check_data = if view.state.read(cx).app.current_screen == Screen::Library {
-                        let scroll_y: f32 = view.grid_scroll_handle.offset().y.into();
-                        let state = view.state.read(cx);
-                        let item_count = state.app.library_items_per_page;
-                        let total_albums = state.app.filtered_albums().len();
-                        let columns = state.app.library_columns.max(1);
-                        let rows = (item_count + columns - 1) / columns;
-                        let card_height = 220.0;
-                        let estimated_height = rows as f32 * card_height;
-                        let window_height = state.app.window_height;
-                        let scroll_position = scroll_y.abs();
-                        let scrollable_distance = (estimated_height - window_height).max(0.0);
-                        let remaining_scroll = scrollable_distance - scroll_position;
-                        let needs_more_content = estimated_height < window_height * 2.0;
-                        let near_bottom = remaining_scroll < 1000.0;
-                        let should_load = item_count < total_albums && (needs_more_content || near_bottom);
-                        Some(should_load)
-                    } else {
-                        None
-                    };
+                    let scroll_check_data =
+                        if view.state.read(cx).app.current_screen == Screen::Library {
+                            let scroll_y: f32 = view.grid_scroll_handle.offset().y.into();
+                            let state = view.state.read(cx);
+                            let item_count = state.app.library_items_per_page;
+                            let total_albums = state.app.filtered_albums().len();
+                            let columns = state.app.library_columns.max(1);
+                            let rows = (item_count + columns - 1) / columns;
+                            let card_height = 220.0;
+                            let estimated_height = rows as f32 * card_height;
+                            let window_height = state.app.window_height;
+                            let scroll_position = scroll_y.abs();
+                            let scrollable_distance = (estimated_height - window_height).max(0.0);
+                            let remaining_scroll = scrollable_distance - scroll_position;
+                            let needs_more_content = estimated_height < window_height * 2.0;
+                            let near_bottom = remaining_scroll < 1000.0;
+                            let should_load =
+                                item_count < total_albums && (needs_more_content || near_bottom);
+                            Some(should_load)
+                        } else {
+                            None
+                        };
 
                     // Consolidate all state updates into a single update call
                     // to avoid multiple observer triggers
@@ -79,9 +81,11 @@ impl PlayerView {
                         let frame_count = view.update_frame_count;
                         let should_update_spectrum = frame_count % 2 == 0;
                         let include_spectrum = should_update_spectrum
-                            && (state.app.spectrum_visible || state.app.current_screen == Screen::Spectrum);
+                            && (state.app.spectrum_visible
+                                || state.app.current_screen == Screen::Spectrum);
 
-                        let playback_state = state.player.lock().get_playback_state(include_spectrum);
+                        let playback_state =
+                            state.player.lock().get_playback_state(include_spectrum);
 
                         state.app.position_secs = playback_state.position_secs;
                         state.app.duration_secs = state.app.get_current_track_duration();

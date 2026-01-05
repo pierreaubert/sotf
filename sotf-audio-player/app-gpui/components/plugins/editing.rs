@@ -1077,47 +1077,45 @@ impl App {
                     gain_smoothing_ms,
                     mix_transition_ms,
                     ..
-                } => {
-                    match param_idx {
-                        0 => {
-                            *mix = (*mix + delta * 0.1).clamp(-1.0, 1.0);
-                            true
-                        }
-                        1 => {
-                            *mix_mode = if *mix_mode == 0 { 1 } else { 0 };
-                            true
-                        }
-                        2 => {
-                            *selected_path = if *selected_path == 0 { 1 } else { 0 };
-                            true
-                        }
-                        3 => {
-                            *bypass = !*bypass;
-                            true
-                        }
-                        4 => {
-                            *auto_gain_enabled = !*auto_gain_enabled;
-                            true
-                        }
-                        5 => {
-                            *loudness_type = if *loudness_type == 0 { 1 } else { 0 };
-                            true
-                        }
-                        6 => {
-                            *max_auto_gain_db = (*max_auto_gain_db + delta).clamp(0.0, 24.0);
-                            true
-                        }
-                        7 => {
-                            *gain_smoothing_ms = (*gain_smoothing_ms + delta * 10.0).clamp(10.0, 500.0);
-                            true
-                        }
-                        8 => {
-                            *mix_transition_ms = (*mix_transition_ms + delta * 5.0).clamp(5.0, 500.0);
-                            true
-                        }
-                        _ => false,
+                } => match param_idx {
+                    0 => {
+                        *mix = (*mix + delta * 0.1).clamp(-1.0, 1.0);
+                        true
                     }
-                }
+                    1 => {
+                        *mix_mode = if *mix_mode == 0 { 1 } else { 0 };
+                        true
+                    }
+                    2 => {
+                        *selected_path = if *selected_path == 0 { 1 } else { 0 };
+                        true
+                    }
+                    3 => {
+                        *bypass = !*bypass;
+                        true
+                    }
+                    4 => {
+                        *auto_gain_enabled = !*auto_gain_enabled;
+                        true
+                    }
+                    5 => {
+                        *loudness_type = if *loudness_type == 0 { 1 } else { 0 };
+                        true
+                    }
+                    6 => {
+                        *max_auto_gain_db = (*max_auto_gain_db + delta).clamp(0.0, 24.0);
+                        true
+                    }
+                    7 => {
+                        *gain_smoothing_ms = (*gain_smoothing_ms + delta * 10.0).clamp(10.0, 500.0);
+                        true
+                    }
+                    8 => {
+                        *mix_transition_ms = (*mix_transition_ms + delta * 5.0).clamp(5.0, 500.0);
+                        true
+                    }
+                    _ => false,
+                },
             }
         } else {
             false
@@ -2289,8 +2287,20 @@ impl App {
                 0 => *mix * 100.0, // Convert to percentage for UI
                 1 => *mix_mode as f64,
                 2 => *selected_path as f64,
-                3 => if *bypass { 1.0 } else { 0.0 },
-                4 => if *auto_gain_enabled { 1.0 } else { 0.0 },
+                3 => {
+                    if *bypass {
+                        1.0
+                    } else {
+                        0.0
+                    }
+                }
+                4 => {
+                    if *auto_gain_enabled {
+                        1.0
+                    } else {
+                        0.0
+                    }
+                }
                 5 => *loudness_type as f64,
                 6 => *max_auto_gain_db,
                 7 => *gain_smoothing_ms,
@@ -2553,7 +2563,9 @@ impl App {
         };
 
         let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() else {
-            self.toast_message = Some(ToastMessage::error("Could not find presets directory".to_string()));
+            self.toast_message = Some(ToastMessage::error(
+                "Could not find presets directory".to_string(),
+            ));
             return;
         };
         let full_path = presets_dir.join(&filename_with_ext);
@@ -2562,7 +2574,10 @@ impl App {
         }
 
         // Save using the plugin chain's own save method (handles path, validation, etc.)
-        match self.plugin_chain.save_to_file(&presets_dir, &self.plugin_file_input) {
+        match self
+            .plugin_chain
+            .save_to_file(&presets_dir, &self.plugin_file_input)
+        {
             Ok(_) => {
                 self.toast_message = Some(ToastMessage::success(format!(
                     "Saved preset: {}",
@@ -2593,10 +2608,15 @@ impl App {
         {
             // Save using the plugin chain's own save method
             let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() else {
-                self.toast_message = Some(ToastMessage::error("Could not find presets directory".to_string()));
+                self.toast_message = Some(ToastMessage::error(
+                    "Could not find presets directory".to_string(),
+                ));
                 return;
             };
-            match self.plugin_chain.save_to_file(&presets_dir, &preset_filename) {
+            match self
+                .plugin_chain
+                .save_to_file(&presets_dir, &preset_filename)
+            {
                 Ok(_) => {
                     self.toast_message = Some(ToastMessage::success(format!(
                         "Overwritten preset: {}",
@@ -2623,10 +2643,15 @@ impl App {
 
         // Load using the plugin chain's own load method (handles path, extension, etc.)
         let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() else {
-            self.toast_message = Some(ToastMessage::error("Could not find presets directory".to_string()));
+            self.toast_message = Some(ToastMessage::error(
+                "Could not find presets directory".to_string(),
+            ));
             return;
         };
-        match self.plugin_chain.load_from_file(&presets_dir, &self.plugin_file_input) {
+        match self
+            .plugin_chain
+            .load_from_file(&presets_dir, &self.plugin_file_input)
+        {
             Ok(_) => {
                 // Update BinauralDecoder input channels after loading
                 self.plugin_chain.update_channel_dependent_plugins();
@@ -2666,10 +2691,15 @@ impl App {
             .cloned()
         {
             let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() else {
-                self.toast_message = Some(ToastMessage::error("Could not find presets directory".to_string()));
+                self.toast_message = Some(ToastMessage::error(
+                    "Could not find presets directory".to_string(),
+                ));
                 return;
             };
-            match self.plugin_chain.load_from_file(&presets_dir, &preset_filename) {
+            match self
+                .plugin_chain
+                .load_from_file(&presets_dir, &preset_filename)
+            {
                 Ok(_) => {
                     // Update BinauralDecoder input channels after loading
                     self.plugin_chain.update_channel_dependent_plugins();

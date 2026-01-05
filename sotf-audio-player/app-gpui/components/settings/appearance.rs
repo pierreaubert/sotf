@@ -9,51 +9,44 @@ use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, Toggle, ToggleStyle};
 
 impl PlayerView {
     /// Render theme settings content
-    pub(crate) fn render_theme_settings_content(
-        &self,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    pub(crate) fn render_theme_settings_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme_id = state.app.theme_id;
         let theme = state.app.theme.clone();
         let translations = state.app.translations.clone();
 
-        div()
-            .flex()
-            .flex_col()
-            .gap_6()
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_3()
-                    .child(
-                        div()
-                            .text_sm()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(theme.text_primary)
-                            .child(translations.settings_theme),
-                    )
-                    .child({
-                        let mut container = div().flex().flex_wrap().gap_4();
+        div().flex().flex_col().gap_6().child(
+            div()
+                .flex()
+                .flex_col()
+                .gap_3()
+                .child(
+                    div()
+                        .text_sm()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(theme.text_primary)
+                        .child(translations.settings_theme),
+                )
+                .child({
+                    let mut container = div().flex().flex_wrap().gap_4();
 
-                        for id in ThemeId::all().iter() {
-                            let is_selected = theme_id == *id;
-                            let preview_theme = crate::theme::Theme::from_id(*id);
+                    for id in ThemeId::all().iter() {
+                        let is_selected = theme_id == *id;
+                        let preview_theme = crate::theme::Theme::from_id(*id);
 
-                            container = container.child(self.render_theme_preview_card(
-                                *id,
-                                preview_theme,
-                                is_selected,
-                                theme.clone(),
-                                translations.settings_active,
-                                cx,
-                            ));
-                        }
+                        container = container.child(self.render_theme_preview_card(
+                            *id,
+                            preview_theme,
+                            is_selected,
+                            theme.clone(),
+                            translations.settings_active,
+                            cx,
+                        ));
+                    }
 
-                        container
-                    }),
-            )
+                    container
+                }),
+        )
     }
 
     /// Render language settings content
@@ -66,56 +59,52 @@ impl PlayerView {
         let theme = state.app.theme.clone();
         let translations = state.app.translations.clone();
 
-        div()
-            .flex()
-            .flex_col()
-            .gap_6()
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .child(
-                        div()
-                            .text_sm()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child(translations.settings_language),
-                    )
-                    .child({
-                        let button_theme = theme.to_button_theme();
-                        div()
-                            .flex()
-                            .flex_wrap()
-                            .gap_2()
-                            .children(Language::all().iter().map(|lang| {
-                                let is_selected = language == *lang;
-                                let lang = *lang;
-                                let btn_theme = button_theme.clone();
-                                Button::new(
-                                    SharedString::from(format!("language-{}", lang.name())),
-                                    lang.name(),
-                                )
-                                .variant(if is_selected {
-                                    ButtonVariant::Primary
-                                } else {
-                                    ButtonVariant::Secondary
-                                })
-                                .size(ButtonSize::Sm)
-                                .selected(is_selected)
-                                .theme(btn_theme)
-                                .build()
-                                .on_mouse_up(
-                                    MouseButton::Left,
-                                    cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
-                                        view.state.update(cx, |state, _cx| {
-                                            state.app.set_language(lang);
-                                        });
-                                        cx.notify();
-                                    }),
-                                )
-                            }))
-                    }),
-            )
+        div().flex().flex_col().gap_6().child(
+            div()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .child(
+                    div()
+                        .text_sm()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .child(translations.settings_language),
+                )
+                .child({
+                    let button_theme = theme.to_button_theme();
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .gap_2()
+                        .children(Language::all().iter().map(|lang| {
+                            let is_selected = language == *lang;
+                            let lang = *lang;
+                            let btn_theme = button_theme.clone();
+                            Button::new(
+                                SharedString::from(format!("language-{}", lang.name())),
+                                lang.name(),
+                            )
+                            .variant(if is_selected {
+                                ButtonVariant::Primary
+                            } else {
+                                ButtonVariant::Secondary
+                            })
+                            .size(ButtonSize::Sm)
+                            .selected(is_selected)
+                            .theme(btn_theme)
+                            .build()
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                                    view.state.update(cx, |state, _cx| {
+                                        state.app.set_language(lang);
+                                    });
+                                    cx.notify();
+                                }),
+                            )
+                        }))
+                }),
+        )
     }
 
     /// Render a visual preview card for a theme showing its color scheme

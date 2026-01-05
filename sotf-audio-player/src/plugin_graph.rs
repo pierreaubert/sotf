@@ -6,8 +6,8 @@
 //! This is an alternative to the linear PluginChain, offering more flexibility
 //! for complex routing scenarios like splits, merges, and parallel processing.
 
-use sotf_audio::plugins::{Plugin, PluginType};
 use serde::{Deserialize, Serialize};
+use sotf_audio::plugins::{Plugin, PluginType};
 use std::collections::{HashMap, HashSet, VecDeque};
 use uuid::Uuid;
 

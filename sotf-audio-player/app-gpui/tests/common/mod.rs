@@ -5,7 +5,11 @@
 use std::path::{Path, PathBuf};
 
 /// Test helper: Create a minimal Track for testing album card logic
-pub fn create_test_track(path: &str, bit_depth: Option<u32>, sample_rate: Option<u32>) -> TestTrack {
+pub fn create_test_track(
+    path: &str,
+    bit_depth: Option<u32>,
+    sample_rate: Option<u32>,
+) -> TestTrack {
     TestTrack {
         path: PathBuf::from(path),
         bit_depth,
@@ -22,7 +26,11 @@ pub struct TestTrack {
 }
 
 /// Test helper: Create a minimal Album for testing album card logic
-pub fn create_test_album(title: &str, tracks: Vec<TestTrack>, dynamic_range: Option<f64>) -> TestAlbum {
+pub fn create_test_album(
+    title: &str,
+    tracks: Vec<TestTrack>,
+    dynamic_range: Option<f64>,
+) -> TestAlbum {
     TestAlbum {
         title: title.to_string(),
         tracks,

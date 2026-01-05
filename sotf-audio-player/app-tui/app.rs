@@ -2148,8 +2148,14 @@ impl App {
                         4 => *auto_gain_enabled = !*auto_gain_enabled,
                         5 => *loudness_type = if *loudness_type == 0 { 1 } else { 0 },
                         6 => *max_auto_gain_db = (*max_auto_gain_db + delta).clamp(0.0, 24.0),
-                        7 => *gain_smoothing_ms = (*gain_smoothing_ms + delta * 10.0).clamp(10.0, 500.0),
-                        8 => *mix_transition_ms = (*mix_transition_ms + delta * 5.0).clamp(5.0, 500.0),
+                        7 => {
+                            *gain_smoothing_ms =
+                                (*gain_smoothing_ms + delta * 10.0).clamp(10.0, 500.0)
+                        }
+                        8 => {
+                            *mix_transition_ms =
+                                (*mix_transition_ms + delta * 5.0).clamp(5.0, 500.0)
+                        }
                         9 => {
                             // Cycle through path config presets for Path A
                             *path_a_config = cycle_path_config(path_a_config, delta > 0.0);
@@ -2389,7 +2395,10 @@ impl App {
             self.status_message = Some("Error: Could not find presets directory".to_string());
             return;
         };
-        match self.plugin_chain.save_to_file(&presets_dir, &self.plugin_file_input) {
+        match self
+            .plugin_chain
+            .save_to_file(&presets_dir, &self.plugin_file_input)
+        {
             Ok(_) => {
                 self.status_message = Some(format!("Saved preset: {}", filename_with_ext));
                 self.last_loaded_preset = Some(filename_with_ext);
@@ -2421,7 +2430,10 @@ impl App {
                 self.status_message = Some("Error: Could not find presets directory".to_string());
                 return;
             };
-            match self.plugin_chain.save_to_file(&presets_dir, &preset_filename) {
+            match self
+                .plugin_chain
+                .save_to_file(&presets_dir, &preset_filename)
+            {
                 Ok(_) => {
                     self.status_message = Some(format!("Overwritten preset: {}", preset_filename));
                     self.last_loaded_preset = Some(preset_filename);
@@ -2448,7 +2460,10 @@ impl App {
             self.status_message = Some("Error: Could not find presets directory".to_string());
             return;
         };
-        match self.plugin_chain.load_from_file(&presets_dir, &self.plugin_file_input) {
+        match self
+            .plugin_chain
+            .load_from_file(&presets_dir, &self.plugin_file_input)
+        {
             Ok(_) => {
                 // Update BinauralDecoder input channels after loading
                 self.plugin_chain.update_channel_dependent_plugins();
@@ -2542,7 +2557,10 @@ impl App {
                 self.status_message = Some("Error: Could not find presets directory".to_string());
                 return;
             };
-            match self.plugin_chain.load_from_file(&presets_dir, &preset_filename) {
+            match self
+                .plugin_chain
+                .load_from_file(&presets_dir, &preset_filename)
+            {
                 Ok(_) => {
                     // Update BinauralDecoder input channels after loading
                     self.plugin_chain.update_channel_dependent_plugins();
@@ -3295,14 +3313,38 @@ fn cycle_path_config(current: &str, forward: bool) -> String {
     // List of available path configs (None + common plugins)
     let presets = [
         (r#"{"type":"None"}"#, "None"),
-        (r#"{"type":"Plugin","plugin_type":"EQ","parameters":{"filters":[]}}"#, "EQ"),
-        (r#"{"type":"Plugin","plugin_type":"gain","parameters":{"gain_db":0.0}}"#, "Gain"),
-        (r#"{"type":"Plugin","plugin_type":"compressor","parameters":{"threshold_db":-20.0,"ratio":4.0,"attack_ms":10.0,"release_ms":100.0,"knee_db":3.0,"makeup_gain_db":0.0,"mix":1.0}}"#, "Compressor"),
-        (r#"{"type":"Plugin","plugin_type":"limiter","parameters":{"threshold_db":-1.0,"release_ms":100.0,"lookahead_ms":5.0,"soft":false,"mix":1.0}}"#, "Limiter"),
-        (r#"{"type":"Plugin","plugin_type":"gate","parameters":{"threshold_db":-40.0,"ratio":10.0,"attack_ms":1.0,"hold_ms":50.0,"release_ms":100.0,"mix":1.0}}"#, "Gate"),
-        (r#"{"type":"Plugin","plugin_type":"expander","parameters":{"threshold_db":-40.0,"ratio":2.0,"attack_ms":5.0,"release_ms":50.0,"range_db":20.0,"knee_db":3.0,"hysteresis_db":2.0,"hold_ms":10.0,"mix":1.0}}"#, "Expander"),
-        (r#"{"type":"Plugin","plugin_type":"denoiser","parameters":{"reduction_db":12.0,"floor_db":-60.0,"smoothing":0.5,"attack_ms":5.0,"release_ms":50.0}}"#, "Denoiser"),
-        (r#"{"type":"Plugin","plugin_type":"loudness_compensation","parameters":{"low_freq":100.0,"low_gain":3.0,"high_freq":8000.0,"high_gain":2.0}}"#, "Loudness Comp"),
+        (
+            r#"{"type":"Plugin","plugin_type":"EQ","parameters":{"filters":[]}}"#,
+            "EQ",
+        ),
+        (
+            r#"{"type":"Plugin","plugin_type":"gain","parameters":{"gain_db":0.0}}"#,
+            "Gain",
+        ),
+        (
+            r#"{"type":"Plugin","plugin_type":"compressor","parameters":{"threshold_db":-20.0,"ratio":4.0,"attack_ms":10.0,"release_ms":100.0,"knee_db":3.0,"makeup_gain_db":0.0,"mix":1.0}}"#,
+            "Compressor",
+        ),
+        (
+            r#"{"type":"Plugin","plugin_type":"limiter","parameters":{"threshold_db":-1.0,"release_ms":100.0,"lookahead_ms":5.0,"soft":false,"mix":1.0}}"#,
+            "Limiter",
+        ),
+        (
+            r#"{"type":"Plugin","plugin_type":"gate","parameters":{"threshold_db":-40.0,"ratio":10.0,"attack_ms":1.0,"hold_ms":50.0,"release_ms":100.0,"mix":1.0}}"#,
+            "Gate",
+        ),
+        (
+            r#"{"type":"Plugin","plugin_type":"expander","parameters":{"threshold_db":-40.0,"ratio":2.0,"attack_ms":5.0,"release_ms":50.0,"range_db":20.0,"knee_db":3.0,"hysteresis_db":2.0,"hold_ms":10.0,"mix":1.0}}"#,
+            "Expander",
+        ),
+        (
+            r#"{"type":"Plugin","plugin_type":"denoiser","parameters":{"reduction_db":12.0,"floor_db":-60.0,"smoothing":0.5,"attack_ms":5.0,"release_ms":50.0}}"#,
+            "Denoiser",
+        ),
+        (
+            r#"{"type":"Plugin","plugin_type":"loudness_compensation","parameters":{"low_freq":100.0,"low_gain":3.0,"high_freq":8000.0,"high_gain":2.0}}"#,
+            "Loudness Comp",
+        ),
     ];
 
     // Find current index
@@ -3326,7 +3368,7 @@ fn get_param_count(settings: &sotf_audio_player::PluginSettings) -> usize {
     use sotf_audio_player::PluginSettings;
     match settings {
         PluginSettings::EQ { filters, .. } => filters.len() * 4, // freq, q, gain, type for each filter
-        PluginSettings::Gain { .. } => 1,                    // gain_db
+        PluginSettings::Gain { .. } => 1,                        // gain_db
         PluginSettings::Upmixer { .. } => 18, // speaker_config, gains (5), lfe_cutoff_hz, stereo_width, bandpass_hz, subharmonic (2), hr (2), safety_cap_db, decorrelation_mode, bypass_decorrelation, bypass_transient_detection, bypass_all_processing
         PluginSettings::Compressor { .. } => 10, // threshold, ratio, attack, release, knee, makeup_gain, mix, auto_makeup, link_channels, sidechain_hpf_hz
         PluginSettings::Limiter { .. } => 5,     // threshold, release, lookahead, soft, mix

@@ -5,7 +5,10 @@ use mimalloc::MiMalloc;
 use rust_embed::RustEmbed;
 use sotf_audio_player::Player;
 use sotf_audio_player_gpui::app::actions::*;
-use sotf_audio_player_gpui::app::{i18n::{Translations, Language}, App, AppState};
+use sotf_audio_player_gpui::app::{
+    App, AppState,
+    i18n::{Language, Translations},
+};
 use sotf_audio_player_gpui::config::Config;
 use sotf_audio_player_gpui::keybindings::{KeymapPreset, get_keybindings};
 use sotf_audio_player_gpui::ui;
@@ -122,7 +125,10 @@ fn main() {
             },
             Menu {
                 name: translations.menu_help.into(),
-                items: vec![MenuItem::action(translations.menu_keyboard_shortcuts, ToggleHelp)],
+                items: vec![MenuItem::action(
+                    translations.menu_keyboard_shortcuts,
+                    ToggleHelp,
+                )],
             },
         ]);
 

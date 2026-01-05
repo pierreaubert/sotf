@@ -35,14 +35,46 @@ pub struct ABCompareRenderState<'a> {
 /// Path config presets
 const PATH_PRESETS: &[(&str, &str, &str)] = &[
     ("none", "None", r#"{"type":"None"}"#),
-    ("eq", "EQ", r#"{"type":"Plugin","plugin_type":"EQ","parameters":{"filters":[]}}"#),
-    ("gain", "Gain", r#"{"type":"Plugin","plugin_type":"gain","parameters":{"gain_db":0.0}}"#),
-    ("comp", "Compressor", r#"{"type":"Plugin","plugin_type":"compressor","parameters":{"threshold_db":-20.0,"ratio":4.0,"attack_ms":10.0,"release_ms":100.0,"knee_db":3.0,"makeup_gain_db":0.0,"mix":1.0}}"#),
-    ("limiter", "Limiter", r#"{"type":"Plugin","plugin_type":"limiter","parameters":{"threshold_db":-1.0,"release_ms":100.0,"lookahead_ms":5.0,"soft":false,"mix":1.0}}"#),
-    ("gate", "Gate", r#"{"type":"Plugin","plugin_type":"gate","parameters":{"threshold_db":-40.0,"ratio":10.0,"attack_ms":1.0,"hold_ms":50.0,"release_ms":100.0,"mix":1.0}}"#),
-    ("expander", "Expander", r#"{"type":"Plugin","plugin_type":"expander","parameters":{"threshold_db":-40.0,"ratio":2.0,"attack_ms":5.0,"release_ms":50.0,"range_db":20.0,"knee_db":3.0,"hysteresis_db":2.0,"hold_ms":10.0,"mix":1.0}}"#),
-    ("denoiser", "Denoiser", r#"{"type":"Plugin","plugin_type":"denoiser","parameters":{"reduction_db":12.0,"floor_db":-60.0,"smoothing":0.5,"attack_ms":5.0,"release_ms":50.0}}"#),
-    ("loudness", "Loudness Comp", r#"{"type":"Plugin","plugin_type":"loudness_compensation","parameters":{"low_freq":100.0,"low_gain":3.0,"high_freq":8000.0,"high_gain":2.0}}"#),
+    (
+        "eq",
+        "EQ",
+        r#"{"type":"Plugin","plugin_type":"EQ","parameters":{"filters":[]}}"#,
+    ),
+    (
+        "gain",
+        "Gain",
+        r#"{"type":"Plugin","plugin_type":"gain","parameters":{"gain_db":0.0}}"#,
+    ),
+    (
+        "comp",
+        "Compressor",
+        r#"{"type":"Plugin","plugin_type":"compressor","parameters":{"threshold_db":-20.0,"ratio":4.0,"attack_ms":10.0,"release_ms":100.0,"knee_db":3.0,"makeup_gain_db":0.0,"mix":1.0}}"#,
+    ),
+    (
+        "limiter",
+        "Limiter",
+        r#"{"type":"Plugin","plugin_type":"limiter","parameters":{"threshold_db":-1.0,"release_ms":100.0,"lookahead_ms":5.0,"soft":false,"mix":1.0}}"#,
+    ),
+    (
+        "gate",
+        "Gate",
+        r#"{"type":"Plugin","plugin_type":"gate","parameters":{"threshold_db":-40.0,"ratio":10.0,"attack_ms":1.0,"hold_ms":50.0,"release_ms":100.0,"mix":1.0}}"#,
+    ),
+    (
+        "expander",
+        "Expander",
+        r#"{"type":"Plugin","plugin_type":"expander","parameters":{"threshold_db":-40.0,"ratio":2.0,"attack_ms":5.0,"release_ms":50.0,"range_db":20.0,"knee_db":3.0,"hysteresis_db":2.0,"hold_ms":10.0,"mix":1.0}}"#,
+    ),
+    (
+        "denoiser",
+        "Denoiser",
+        r#"{"type":"Plugin","plugin_type":"denoiser","parameters":{"reduction_db":12.0,"floor_db":-60.0,"smoothing":0.5,"attack_ms":5.0,"release_ms":50.0}}"#,
+    ),
+    (
+        "loudness",
+        "Loudness Comp",
+        r#"{"type":"Plugin","plugin_type":"loudness_compensation","parameters":{"low_freq":100.0,"low_gain":3.0,"high_freq":8000.0,"high_gain":2.0}}"#,
+    ),
 ];
 
 /// Get preset value from config JSON
@@ -129,98 +161,86 @@ pub fn render_ab_compare_plugin(
                 .border_color(theme.border)
                 // Row 1: Mode
                 .child(
-                    div()
-                        .p_4()
-                        .border_b_1()
-                        .border_color(theme.border)
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap_1()
-                                .child(render_section_title("MODE", theme))
-                                .child(
-                                    ButtonSet::new(("mode", plugin_idx))
-                                        .options(vec![
-                                            ButtonSetOption::new("MIX A+B", "MIX A+B"),
-                                            ButtonSetOption::new("Choice", "Choice"),
-                                        ])
-                                        .selected(mode_selected)
-                                        .size(ButtonSetSize::Sm)
-                                        .theme(theme.to_button_set_theme())
-                                        .on_change({
-                                            let entity = entity.clone();
-                                            move |value, _, cx| {
-                                                let is_mix = value.as_ref() == "MIX A+B";
-                                                entity.update(cx, |state, _| {
-                                                    state.app.set_plugin_param(
-                                                        plugin_idx,
-                                                        1,
-                                                        if is_mix { 0.0 } else { 1.0 },
-                                                    );
-                                                });
-                                            }
-                                        }),
-                                ),
-                        ),
+                    div().p_4().border_b_1().border_color(theme.border).child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_1()
+                            .child(render_section_title("MODE", theme))
+                            .child(
+                                ButtonSet::new(("mode", plugin_idx))
+                                    .options(vec![
+                                        ButtonSetOption::new("MIX A+B", "MIX A+B"),
+                                        ButtonSetOption::new("Choice", "Choice"),
+                                    ])
+                                    .selected(mode_selected)
+                                    .size(ButtonSetSize::Sm)
+                                    .theme(theme.to_button_set_theme())
+                                    .on_change({
+                                        let entity = entity.clone();
+                                        move |value, _, cx| {
+                                            let is_mix = value.as_ref() == "MIX A+B";
+                                            entity.update(cx, |state, _| {
+                                                state.app.set_plugin_param(
+                                                    plugin_idx,
+                                                    1,
+                                                    if is_mix { 0.0 } else { 1.0 },
+                                                );
+                                            });
+                                        }
+                                    }),
+                            ),
+                    ),
                 )
                 // Row 2: Mix & Path
                 .child(
-                    div()
-                        .p_4()
-                        .border_b_1()
-                        .border_color(theme.border)
-                        .child(
-                            div()
-                                .flex()
-                                .gap_4()
-                                .items_end()
-                                // Mix A+B (Knob)
-                                .child(
-                                    div()
-                                        .flex()
-                                        .flex_col()
-                                        .gap_1()
-                                        .child(render_section_title("MIX A+B", theme))
-                                        .child(
-                                            div()
-                                                .when(!is_pot_mode, |d| d.opacity(0.4))
-                                                .child(render_knob(
-                                                    entity.clone(),
-                                                    plugin_idx,
-                                                    "Mix",
-                                                    state.mix * 100.0,
-                                                    -100.0,
-                                                    100.0,
-                                                    "%",
-                                                    0,
-                                                    state.selected_param,
-                                                    state.is_editing && is_pot_mode,
-                                                    Some('m'),
-                                                    theme,
-                                                )),
+                    div().p_4().border_b_1().border_color(theme.border).child(
+                        div()
+                            .flex()
+                            .gap_4()
+                            .items_end()
+                            // Mix A+B (Knob)
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap_1()
+                                    .child(render_section_title("MIX A+B", theme))
+                                    .child(div().when(!is_pot_mode, |d| d.opacity(0.4)).child(
+                                        render_knob(
+                                            entity.clone(),
+                                            plugin_idx,
+                                            "Mix",
+                                            state.mix * 100.0,
+                                            -100.0,
+                                            100.0,
+                                            "%",
+                                            0,
+                                            state.selected_param,
+                                            state.is_editing && is_pot_mode,
+                                            Some('m'),
+                                            theme,
                                         ),
-                                )
-                                // Path (A/N/B)
-                                .child(
-                                    div()
-                                        .flex()
-                                        .flex_col()
-                                        .gap_1()
-                                        .child(render_section_title("PATH", theme))
-                                        .child(
-                                            div()
-                                                .when(is_pot_mode, |d| d.opacity(0.4))
-                                                .child(render_anb_buttons(
-                                                    entity.clone(),
-                                                    plugin_idx,
-                                                    anb_selected,
-                                                    is_pot_mode,
-                                                    theme,
-                                                )),
+                                    )),
+                            )
+                            // Path (A/N/B)
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap_1()
+                                    .child(render_section_title("PATH", theme))
+                                    .child(div().when(is_pot_mode, |d| d.opacity(0.4)).child(
+                                        render_anb_buttons(
+                                            entity.clone(),
+                                            plugin_idx,
+                                            anb_selected,
+                                            is_pot_mode,
+                                            theme,
                                         ),
-                                ),
-                        ),
+                                    )),
+                            ),
+                    ),
                 )
                 // Row 3: Path Configs
                 .child(
@@ -285,106 +305,98 @@ pub fn render_ab_compare_plugin(
                 .flex_col()
                 // Row 1: Gain Auto
                 .child(
-                    div()
-                        .p_4()
-                        .border_b_1()
-                        .border_color(theme.border)
-                        .child(
-                            div()
-                                .flex()
-                                .flex_col()
-                                .gap_1()
-                                .child(render_section_title("GAIN AUTO", theme))
-                                .child(
-                                    ButtonSet::new(("autogain", plugin_idx))
-                                        .options(vec![
-                                            ButtonSetOption::new("ON", "ON"),
-                                            ButtonSetOption::new("OFF", "OFF"),
-                                        ])
-                                        .selected(auto_gain_selected)
-                                        .size(ButtonSetSize::Sm)
-                                        .theme(theme.to_button_set_theme())
-                                        .on_change({
-                                            let entity = entity.clone();
-                                            move |value, _, cx| {
-                                                let is_on = value.as_ref() == "ON";
-                                                entity.update(cx, |state, _| {
-                                                    state.app.set_plugin_param(
-                                                        plugin_idx,
-                                                        4,
-                                                        if is_on { 1.0 } else { 0.0 },
-                                                    );
-                                                });
-                                            }
-                                        }),
-                                ),
-                        ),
+                    div().p_4().border_b_1().border_color(theme.border).child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_1()
+                            .child(render_section_title("GAIN AUTO", theme))
+                            .child(
+                                ButtonSet::new(("autogain", plugin_idx))
+                                    .options(vec![
+                                        ButtonSetOption::new("ON", "ON"),
+                                        ButtonSetOption::new("OFF", "OFF"),
+                                    ])
+                                    .selected(auto_gain_selected)
+                                    .size(ButtonSetSize::Sm)
+                                    .theme(theme.to_button_set_theme())
+                                    .on_change({
+                                        let entity = entity.clone();
+                                        move |value, _, cx| {
+                                            let is_on = value.as_ref() == "ON";
+                                            entity.update(cx, |state, _| {
+                                                state.app.set_plugin_param(
+                                                    plugin_idx,
+                                                    4,
+                                                    if is_on { 1.0 } else { 0.0 },
+                                                );
+                                            });
+                                        }
+                                    }),
+                            ),
+                    ),
                 )
                 // Row 2: Gain & Time
                 .child(
-                    div()
-                        .p_4()
-                        .border_b_1()
-                        .border_color(theme.border)
-                        .child(
-                            div()
-                                .flex()
-                                .gap_4()
-                                .items_end()
-                                // Gain (Knob)
-                                .child(
-                                    div()
-                                        .flex()
-                                        .flex_col()
-                                        .gap_1()
-                                        .child(render_section_title("GAIN", theme))
-                                        .child(render_knob(
-                                            entity.clone(),
-                                            plugin_idx,
-                                            "Gain",
-                                            state.max_auto_gain_db,
-                                            0.0,
-                                            24.0,
-                                            "dB",
-                                            6,
-                                            state.selected_param,
-                                            state.is_editing,
-                                            Some('g'),
-                                            theme,
-                                        )),
-                                )
-                                // Time (Fast/Slow)
-                                .child(
-                                    div()
-                                        .flex()
-                                        .flex_col()
-                                        .gap_1()
-                                        .child(render_section_title("Time", theme))
-                                        .child(
-                                            ButtonSet::new(("time", plugin_idx))
-                                                .options(vec![
-                                                    ButtonSetOption::new("Fast", "Fast"),
-                                                    ButtonSetOption::new("Slow", "Slow"),
-                                                ])
-                                                .selected(time_selected)
-                                                .size(ButtonSetSize::Sm)
-                                                .theme(theme.to_button_set_theme())
-                                                .on_change({
-                                                    let entity = entity.clone();
-                                                    move |value, _, cx| {
-                                                        let is_slow = value.as_ref() == "Slow";
-                                                        entity.update(cx, |state, _| {
-                                                            state.app.set_plugin_param(
-                                                                plugin_idx,
-                                                                5,
-                                                                if is_slow { 1.0 } else { 0.0 },
-                                                            );
-                                                        });
-                                                    }
-                                                }),
-                                        ),
-                                ),
-                        ),
+                    div().p_4().border_b_1().border_color(theme.border).child(
+                        div()
+                            .flex()
+                            .gap_4()
+                            .items_end()
+                            // Gain (Knob)
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap_1()
+                                    .child(render_section_title("GAIN", theme))
+                                    .child(render_knob(
+                                        entity.clone(),
+                                        plugin_idx,
+                                        "Gain",
+                                        state.max_auto_gain_db,
+                                        0.0,
+                                        24.0,
+                                        "dB",
+                                        6,
+                                        state.selected_param,
+                                        state.is_editing,
+                                        Some('g'),
+                                        theme,
+                                    )),
+                            )
+                            // Time (Fast/Slow)
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .gap_1()
+                                    .child(render_section_title("Time", theme))
+                                    .child(
+                                        ButtonSet::new(("time", plugin_idx))
+                                            .options(vec![
+                                                ButtonSetOption::new("Fast", "Fast"),
+                                                ButtonSetOption::new("Slow", "Slow"),
+                                            ])
+                                            .selected(time_selected)
+                                            .size(ButtonSetSize::Sm)
+                                            .theme(theme.to_button_set_theme())
+                                            .on_change({
+                                                let entity = entity.clone();
+                                                move |value, _, cx| {
+                                                    let is_slow = value.as_ref() == "Slow";
+                                                    entity.update(cx, |state, _| {
+                                                        state.app.set_plugin_param(
+                                                            plugin_idx,
+                                                            5,
+                                                            if is_slow { 1.0 } else { 0.0 },
+                                                        );
+                                                    });
+                                                }
+                                            }),
+                                    ),
+                            ),
+                    ),
                 )
                 // Row 3: Smoothing Sliders
                 .child(
@@ -452,12 +464,13 @@ fn render_horizontal_slider(
             let entity = entity.clone();
             move |new_value, _, cx| {
                 entity.update(cx, |state, _| {
-                    state.app.set_plugin_param(plugin_idx, idx, new_value as f64);
+                    state
+                        .app
+                        .set_plugin_param(plugin_idx, idx, new_value as f64);
                 });
             }
         })
 }
-
 
 /// Render a path config selector dropdown
 fn render_path_selector(
@@ -492,11 +505,15 @@ fn render_path_selector(
             let entity = entity.clone();
             move |value, _, cx| {
                 // Find the JSON config for this preset
-                if let Some((_, _, json)) = PATH_PRESETS.iter().find(|(v, _, _)| *v == value.as_ref()) {
+                if let Some((_, _, json)) =
+                    PATH_PRESETS.iter().find(|(v, _, _)| *v == value.as_ref())
+                {
                     entity.update(cx, |state, _| {
                         // Set the path config as a string parameter
                         // The param system will need to handle this specially
-                        state.app.set_plugin_param_string(plugin_idx, param_idx, json.to_string());
+                        state
+                            .app
+                            .set_plugin_param_string(plugin_idx, param_idx, json.to_string());
                     });
                 }
             }

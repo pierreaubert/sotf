@@ -129,8 +129,10 @@ impl PlayerView {
                                             .on_change(move |val, _window, cx| {
                                                 view.update(cx, |this, cx| {
                                                     this.state.update(cx, |state, _| {
-                                                        state.app.recording_state.sweep_start_freq =
-                                                            val as f32;
+                                                        state
+                                                            .app
+                                                            .recording_state
+                                                            .sweep_start_freq = val as f32;
                                                     });
                                                     cx.notify();
                                                 });

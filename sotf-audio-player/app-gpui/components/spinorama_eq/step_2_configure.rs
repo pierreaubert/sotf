@@ -302,7 +302,11 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.min_spacing_oct = value;
+                        state
+                            .app
+                            .spinorama_eq_state
+                            .optimizer_config
+                            .min_spacing_oct = value;
                     });
                 }
             })

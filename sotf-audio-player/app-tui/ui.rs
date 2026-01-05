@@ -3098,10 +3098,7 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             path_a_config,
             path_b_config,
         } => vec![
-            (
-                "Mix (A/B)".to_string(),
-                format!("{:.2} (-1=A, +1=B)", mix),
-            ),
+            ("Mix (A/B)".to_string(), format!("{:.2} (-1=A, +1=B)", mix)),
             (
                 "Mix Mode".to_string(),
                 if *mix_mode == 0 {
@@ -3112,12 +3109,27 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             ),
             (
                 "Selected Path".to_string(),
-                if *selected_path == 0 { "A".to_string() } else { "B".to_string() },
+                if *selected_path == 0 {
+                    "A".to_string()
+                } else {
+                    "B".to_string()
+                },
             ),
-            ("Bypass".to_string(), if *bypass { "Yes".to_string() } else { "No".to_string() }),
+            (
+                "Bypass".to_string(),
+                if *bypass {
+                    "Yes".to_string()
+                } else {
+                    "No".to_string()
+                },
+            ),
             (
                 "Auto Gain".to_string(),
-                if *auto_gain_enabled { "Enabled".to_string() } else { "Disabled".to_string() },
+                if *auto_gain_enabled {
+                    "Enabled".to_string()
+                } else {
+                    "Disabled".to_string()
+                },
             ),
             (
                 "Loudness Type".to_string(),

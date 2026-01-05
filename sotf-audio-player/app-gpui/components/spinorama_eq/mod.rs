@@ -1310,13 +1310,14 @@ impl PlayerView {
             {
                 // Update existing EQ plugin
                 if let Some(eq_plugin) = plugin_chain.get_plugin_mut(eq_idx) {
-                    let channels = if let sotf_audio_player::PluginSettings::EQ { channels, .. } =
-                        &eq_plugin.settings
-                    {
-                        *channels
-                    } else {
-                        2
-                    };
+                    let channels =
+                        if let sotf_audio_player::PluginSettings::EQ { channels, .. } =
+                            &eq_plugin.settings
+                        {
+                            *channels
+                        } else {
+                            2
+                        };
                     eq_plugin.settings = sotf_audio_player::PluginSettings::EQ {
                         channels,
                         filters: eq_filters.clone(),

@@ -40,9 +40,9 @@ impl PlayerView {
             crate::app::SettingsTab::Language => {
                 self.render_language_settings_content(cx).into_any_element()
             }
-            crate::app::SettingsTab::Keybindings => {
-                self.render_keybindings_settings_content(cx).into_any_element()
-            }
+            crate::app::SettingsTab::Keybindings => self
+                .render_keybindings_settings_content(cx)
+                .into_any_element(),
             crate::app::SettingsTab::AudioDevice => self
                 .render_audio_device_settings_content(cx)
                 .into_any_element(),

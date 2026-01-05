@@ -363,9 +363,7 @@ pub fn run_speaker_optimization_extended(
         SpeakerConfigTypeExt::MultiSub => {
             optimize_multisub(&config.driver_measurements, config, callback)
         }
-        SpeakerConfigTypeExt::Dba => {
-            optimize_dba(config, callback)
-        }
+        SpeakerConfigTypeExt::Dba => optimize_dba(config, callback),
     }
 }
 
@@ -600,7 +598,7 @@ fn to_autoeq_crossover_type(ct: Option<CrossoverType>) -> autoeq::CrossoverType 
         Some(CrossoverType::LR12) => autoeq::CrossoverType::LinkwitzRiley2,
         Some(CrossoverType::LR24) => autoeq::CrossoverType::LinkwitzRiley4,
         Some(CrossoverType::LR48) => autoeq::CrossoverType::LinkwitzRiley4, // LR48 not in autoeq, use LR4
-        None => autoeq::CrossoverType::LinkwitzRiley4, // Default
+        None => autoeq::CrossoverType::LinkwitzRiley4,                      // Default
     }
 }
 
@@ -621,9 +619,10 @@ fn load_measurement_as_driver(
         MeasurementInput::Curve(curve) => {
             let freq = ndarray::Array1::from_vec(curve.freq.iter().copied().collect());
             let spl = ndarray::Array1::from_vec(curve.spl.iter().copied().collect());
-            let phase = curve.phase.as_ref().map(|p| {
-                ndarray::Array1::from_vec(p.iter().copied().collect())
-            });
+            let phase = curve
+                .phase
+                .as_ref()
+                .map(|p| ndarray::Array1::from_vec(p.iter().copied().collect()));
             Ok(autoeq::loss::DriverMeasurement::new(freq, spl, phase))
         }
         MeasurementInput::Spinorama { .. } => {
@@ -651,8 +650,7 @@ fn optimize_multidriver(
 
     // Create DriversLossData
     let crossover_type = to_autoeq_crossover_type(config.crossover_type);
-    let drivers_data =
-        autoeq::loss::DriversLossData::new(driver_measurements, crossover_type);
+    let drivers_data = autoeq::loss::DriversLossData::new(driver_measurements, crossover_type);
 
     // Extract optimization parameters from config
     let min_freq = config.args.min_freq;
@@ -700,10 +698,7 @@ fn optimize_multidriver(
         pir_curve: vec![0.0; n],
         er_di_curve: vec![0.0; n],
         sp_di_curve: vec![0.0; n],
-        optimization_history: vec![
-            (0, result.pre_objective),
-            (max_iter, result.post_objective),
-        ],
+        optimization_history: vec![(0, result.pre_objective), (max_iter, result.post_objective)],
         initial_loss: result.pre_objective,
         final_loss: result.post_objective,
         crossover_freqs: Some(result.crossover_freqs),
@@ -779,10 +774,7 @@ fn optimize_multisub(
         pir_curve: vec![0.0; n],
         er_di_curve: vec![0.0; n],
         sp_di_curve: vec![0.0; n],
-        optimization_history: vec![
-            (0, result.pre_objective),
-            (max_iter, result.post_objective),
-        ],
+        optimization_history: vec![(0, result.pre_objective), (max_iter, result.post_objective)],
         initial_loss: result.pre_objective,
         final_loss: result.post_objective,
         crossover_freqs: None, // Multi-sub doesn't have crossovers
@@ -878,10 +870,7 @@ fn optimize_dba(
         pir_curve: vec![0.0; n],
         er_di_curve: vec![0.0; n],
         sp_di_curve: vec![0.0; n],
-        optimization_history: vec![
-            (0, result.pre_objective),
-            (max_iter, result.post_objective),
-        ],
+        optimization_history: vec![(0, result.pre_objective), (max_iter, result.post_objective)],
         initial_loss: result.pre_objective,
         final_loss: result.post_objective,
         crossover_freqs: None,
@@ -1095,9 +1084,8 @@ mod tests {
 
     #[test]
     fn test_load_measurement_csv_file_not_found() {
-        let input = MeasurementInput::CsvFile(std::path::PathBuf::from(
-            "/nonexistent/path/driver.csv",
-        ));
+        let input =
+            MeasurementInput::CsvFile(std::path::PathBuf::from("/nonexistent/path/driver.csv"));
         let result = load_measurement_as_driver(&input);
         assert!(result.is_err());
     }

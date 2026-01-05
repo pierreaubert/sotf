@@ -37,9 +37,7 @@ impl PlayerView {
 
                 // Get scores from progress_history (first and last entries with score)
                 let progress_history = &spinorama.progress_history;
-                let initial_score = progress_history
-                    .iter()
-                    .find_map(|(_, _, score)| *score);
+                let initial_score = progress_history.iter().find_map(|(_, _, score)| *score);
                 let final_score = progress_history
                     .iter()
                     .rev()
@@ -89,40 +87,49 @@ impl PlayerView {
                                                 }),
                                             ),
                                     )
-                                    .when(initial_score.is_some() || final_score.is_some(), |vstack| {
-                                        vstack.child(
-                                            HStack::new()
-                                                .spacing(StackSpacing::Lg)
-                                                .when_some(initial_score, |hstack, score| {
-                                                    hstack.child(
-                                                        Text::new(format!(
-                                                            "Score Before: {:.2}",
-                                                            score
-                                                        ))
-                                                        .color(theme_for_graphs.text_primary),
-                                                    )
-                                                })
-                                                .when_some(final_score, |hstack, score| {
-                                                    hstack.child(
-                                                        Text::new(format!("Score After: {:.2}", score))
+                                    .when(
+                                        initial_score.is_some() || final_score.is_some(),
+                                        |vstack| {
+                                            vstack.child(
+                                                HStack::new()
+                                                    .spacing(StackSpacing::Lg)
+                                                    .when_some(initial_score, |hstack, score| {
+                                                        hstack.child(
+                                                            Text::new(format!(
+                                                                "Score Before: {:.2}",
+                                                                score
+                                                            ))
                                                             .color(theme_for_graphs.text_primary),
-                                                    )
-                                                })
-                                                .when_some(score_improvement, |hstack, improvement| {
-                                                    hstack.child(
-                                                        Text::new(format!(
-                                                            "Improvement: {:+.2}",
-                                                            improvement
-                                                        ))
-                                                        .color(if improvement > 0.0 {
-                                                            theme_for_graphs.success
-                                                        } else {
-                                                            theme_for_graphs.error
-                                                        }),
-                                                    )
-                                                }),
-                                        )
-                                    })
+                                                        )
+                                                    })
+                                                    .when_some(final_score, |hstack, score| {
+                                                        hstack.child(
+                                                            Text::new(format!(
+                                                                "Score After: {:.2}",
+                                                                score
+                                                            ))
+                                                            .color(theme_for_graphs.text_primary),
+                                                        )
+                                                    })
+                                                    .when_some(
+                                                        score_improvement,
+                                                        |hstack, improvement| {
+                                                            hstack.child(
+                                                                Text::new(format!(
+                                                                    "Improvement: {:+.2}",
+                                                                    improvement
+                                                                ))
+                                                                .color(if improvement > 0.0 {
+                                                                    theme_for_graphs.success
+                                                                } else {
+                                                                    theme_for_graphs.error
+                                                                }),
+                                                            )
+                                                        },
+                                                    ),
+                                            )
+                                        },
+                                    )
                                     .child(
                                         Text::new(format!(
                                             "{} filters generated",

@@ -3,12 +3,12 @@
 //! This module provides a Rust-native NSView subclass with CAMetalLayer backing,
 //! suitable for embedding in Audio Unit view controllers.
 
-use cocoa::base::{id, nil, YES};
+use cocoa::base::{YES, id, nil};
 use cocoa::foundation::{NSPoint, NSRect, NSSize};
 use core_graphics::geometry::CGSize;
 use metal::foreign_types::ForeignType;
 use objc::declare::ClassDecl;
-use objc::runtime::{Class, Object, Sel, BOOL};
+use objc::runtime::{BOOL, Class, Object, Sel};
 use objc::{class, msg_send, sel, sel_impl};
 use std::ffi::c_void;
 use std::ptr;

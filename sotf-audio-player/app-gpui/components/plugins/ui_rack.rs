@@ -439,7 +439,9 @@ impl PlayerView {
                                         .drag_over::<PluginDragInfo>({
                                             let highlight = theme_c.drag_over_highlight;
                                             let border = theme_c.drag_over_border;
-                                            move |style, _, _, _| style.bg(highlight).border_color(border)
+                                            move |style, _, _, _| {
+                                                style.bg(highlight).border_color(border)
+                                            }
                                         })
                                         // Handle drop - reorder plugins
                                         .on_drop(cx.listener(

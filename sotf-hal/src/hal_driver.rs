@@ -573,11 +573,7 @@ impl HALDriver {
 
             kAudioDevicePropertyDeviceIsRunning => {
                 let is_running = if let Some(device) = self.devices.get(&_object_id) {
-                    if device.io_running {
-                        1u32
-                    } else {
-                        0u32
-                    }
+                    if device.io_running { 1u32 } else { 0u32 }
                 } else {
                     0u32
                 };

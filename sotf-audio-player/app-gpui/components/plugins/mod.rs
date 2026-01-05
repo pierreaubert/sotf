@@ -14,6 +14,7 @@ pub mod level_meters;
 pub mod theme;
 pub mod ticks;
 
+mod ui_ab_compare;
 mod ui_binaural;
 mod ui_compressor;
 mod ui_convolution;
@@ -29,7 +30,6 @@ mod ui_matrix;
 mod ui_mb_compressor;
 mod ui_mb_expander;
 mod ui_mute_solo;
-mod ui_ab_compare;
 mod ui_pnd;
 mod ui_rack;
 mod ui_spectrum;
@@ -45,6 +45,7 @@ pub use level_meters::{
 pub use theme::*;
 pub use ticks::{ScaleType, TickConfig, render_tick_row};
 
+pub use ui_ab_compare::render_ab_compare_plugin;
 pub use ui_binaural::render_binaural_plugin;
 pub use ui_compressor::render_compressor_plugin;
 pub use ui_convolution::render_convolution_plugin;
@@ -59,7 +60,6 @@ pub use ui_matrix::render_matrix_plugin;
 pub use ui_mb_compressor::render_mb_compressor_plugin;
 pub use ui_mb_expander::render_mb_expander_plugin;
 pub use ui_mute_solo::render_mute_solo_plugin;
-pub use ui_ab_compare::render_ab_compare_plugin;
 pub use ui_pnd::render_pnd_plugin;
 pub use ui_rack::PluginDragInfo;
 pub use ui_spectrum::{

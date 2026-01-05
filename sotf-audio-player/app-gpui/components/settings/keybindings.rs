@@ -1,6 +1,6 @@
 //! Keybindings settings content
 
-use crate::app::keybindings::{get_documented_keybindings, KeybindingCategory, KeymapPreset};
+use crate::app::keybindings::{KeybindingCategory, KeymapPreset, get_documented_keybindings};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -20,13 +20,12 @@ impl PlayerView {
         let comparison = build_keybinding_comparison();
 
         // Group by category
-        let mut by_category: HashMap<KeybindingCategory, Vec<(String, HashMap<KeymapPreset, String>)>> =
-            HashMap::new();
+        let mut by_category: HashMap<
+            KeybindingCategory,
+            Vec<(String, HashMap<KeymapPreset, String>)>,
+        > = HashMap::new();
         for (action, cat, keys) in comparison {
-            by_category
-                .entry(cat)
-                .or_default()
-                .push((action, keys));
+            by_category.entry(cat).or_default().push((action, keys));
         }
 
         div()

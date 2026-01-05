@@ -86,7 +86,7 @@ fn common_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("shift-q", actions::SwitchToQueue, Some("PlayerView")),
         KeyBinding::new("shift-p", actions::SwitchToPlugins, Some("PlayerView")),
         KeyBinding::new("shift-o", actions::SwitchToDevices, Some("PlayerView")),
-	KeyBinding::new("shift-r", actions::SwitchToRoomEQ, Some("PlayerView")),
+        KeyBinding::new("shift-r", actions::SwitchToRoomEQ, Some("PlayerView")),
         KeyBinding::new("shift-h", actions::SwitchToHeadphoneEQ, Some("PlayerView")),
         KeyBinding::new("R", actions::SwitchToRecording, Some("PlayerView")),
         // Screen navigation with Cmd + number (Show menu shortcuts) - keep global

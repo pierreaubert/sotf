@@ -986,15 +986,18 @@ impl PlayerView {
         let theme = self.state.read(cx).app.theme.clone();
         let state = self.state.clone();
 
-        Menu::new("studio-menu", vec![
-            MenuItem::new("library", translations.screen_library).with_shortcut("⌘0"),
-            MenuItem::new("studio", translations.screen_studio_rack).with_shortcut("⌘1"),
-            MenuItem::new("plugingraph", translations.screen_studio_full).with_shortcut("⌘2"),
-            MenuItem::new("recording", translations.screen_recording).with_shortcut("⌘3"),
-            MenuItem::new("roomeq", translations.screen_room_eq).with_shortcut("⌘4"),
-            MenuItem::new("headphoneeq", translations.screen_headphone_eq).with_shortcut("⌘5"),
-            MenuItem::new("spinorama", translations.screen_spinorama).with_shortcut("⌘6"),
-        ])
+        Menu::new(
+            "studio-menu",
+            vec![
+                MenuItem::new("library", translations.screen_library).with_shortcut("⌘0"),
+                MenuItem::new("studio", translations.screen_studio_rack).with_shortcut("⌘1"),
+                MenuItem::new("plugingraph", translations.screen_studio_full).with_shortcut("⌘2"),
+                MenuItem::new("recording", translations.screen_recording).with_shortcut("⌘3"),
+                MenuItem::new("roomeq", translations.screen_room_eq).with_shortcut("⌘4"),
+                MenuItem::new("headphoneeq", translations.screen_headphone_eq).with_shortcut("⌘5"),
+                MenuItem::new("spinorama", translations.screen_spinorama).with_shortcut("⌘6"),
+            ],
+        )
         .theme(theme.to_menu_theme())
         .on_select(move |id, _window, cx| {
             state.update(cx, |state, _cx| {

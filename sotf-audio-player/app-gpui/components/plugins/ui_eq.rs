@@ -10,15 +10,84 @@ use crate::app::AppState;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_px::{line, ChartTheme, ScaleType};
+use gpui_px::{ChartTheme, ScaleType, line};
 use gpui_ui_kit::PotentiometerSize;
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 // Tabs are now custom-rendered to avoid context issues
-use sotf_audio_player::param_specs::eq::*;
 use sotf_audio_player::EQFilter;
+use sotf_audio_player::param_specs::eq::*;
 
 /// Sample rate for filter calculations
 const SAMPLE_RATE: f64 = 48000.0;
+
+/// Q handle bar constants
+const Q_BAR_MIN_WIDTH: f32 = 40.0;
+const Q_BAR_MAX_WIDTH: f32 = 100.0;
+const Q_HANDLE_RADIUS: f32 = 5.0;
+const Q_BAR_HEIGHT: f32 = 3.0;
+
+/// Convert Q value to bar width (inverse: higher Q = narrower bar)
+fn q_to_bar_width(q: f64) -> f32 {
+    let t = ((q - Q_MIN) / (Q_MAX - Q_MIN)).clamp(0.0, 1.0) as f32;
+    // Inverse mapping: Q_MIN -> max width, Q_MAX -> min width
+    Q_BAR_MAX_WIDTH - t * (Q_BAR_MAX_WIDTH - Q_BAR_MIN_WIDTH)
+}
+
+/// Convert horizontal drag delta to Q change
+/// Positive delta (dragging right handle right) = increase Q
+/// Negative delta (dragging left handle left) = decrease Q
+fn drag_delta_to_q_change(delta_px: f32) -> f64 {
+    // Scale factor: moving 30px should roughly change Q by the full range
+    let scale = (Q_MAX - Q_MIN) / 60.0;
+    delta_px as f64 * scale
+}
+
+/// Drag data for EQ control point manipulation (frequency/gain)
+#[derive(Clone)]
+struct EqControlPointDrag {
+    band_idx: usize,
+    plugin_idx: usize,
+    color: u32,
+}
+
+impl Render for EqControlPointDrag {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        let rgba_color = gpui::rgba(self.color * 256 + 0xFF);
+        div()
+            .w(px(CONTROL_POINT_RADIUS * 3.0))
+            .h(px(CONTROL_POINT_RADIUS * 3.0))
+            .rounded_full()
+            .bg(rgba_color)
+            .border(px(2.0))
+            .border_color(gpui::white())
+            .shadow_lg()
+    }
+}
+
+/// Drag data for Q handle manipulation
+#[derive(Clone)]
+struct EqQHandleDrag {
+    band_idx: usize,
+    plugin_idx: usize,
+    is_right_handle: bool, // true = right handle (increase Q), false = left handle (decrease Q)
+    start_x: f32,
+    start_q: f64,
+    color: u32,
+}
+
+impl Render for EqQHandleDrag {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        let rgba_color = gpui::rgba(self.color * 256 + 0xFF);
+        div()
+            .w(px(Q_HANDLE_RADIUS * 2.0))
+            .h(px(Q_HANDLE_RADIUS * 2.0))
+            .rounded_full()
+            .bg(rgba_color)
+            .border(px(1.0))
+            .border_color(gpui::white())
+            .shadow_md()
+    }
+}
 
 /// State for rendering the EQ plugin
 pub struct EqRenderState<'a> {
@@ -81,10 +150,54 @@ fn calculate_band_response(filter: &EQFilter, freq: f64) -> f64 {
     biquad.log_result(freq)
 }
 
-/// Render EQ frequency response using gpui-px
+/// Chart layout constants for control point positioning
+const CHART_LEFT_MARGIN: f32 = 60.0;
+const CHART_RIGHT_MARGIN: f32 = 180.0; // Space for legend
+const CHART_TOP_MARGIN: f32 = 20.0;
+const CHART_BOTTOM_MARGIN: f32 = 40.0;
+const CHART_HEIGHT: f32 = 300.0;
+const MIN_FREQ: f64 = 20.0;
+const MAX_FREQ: f64 = 20000.0;
+const MIN_GAIN_DB: f64 = -24.0;
+const MAX_GAIN_DB: f64 = 24.0;
+const CONTROL_POINT_RADIUS: f32 = 8.0;
+
+/// Convert frequency (Hz) to x pixel position
+fn freq_to_x(freq: f64, plot_width: f32) -> f32 {
+    let log_min = MIN_FREQ.ln();
+    let log_max = MAX_FREQ.ln();
+    let t = (freq.ln() - log_min) / (log_max - log_min);
+    CHART_LEFT_MARGIN + (t as f32) * plot_width
+}
+
+/// Convert x pixel position to frequency (Hz)
+fn x_to_freq(x: f32, plot_width: f32) -> f64 {
+    let t = ((x - CHART_LEFT_MARGIN) / plot_width).clamp(0.0, 1.0) as f64;
+    let log_min = MIN_FREQ.ln();
+    let log_max = MAX_FREQ.ln();
+    (log_min + t * (log_max - log_min)).exp()
+}
+
+/// Convert gain (dB) to y pixel position
+fn gain_to_y(gain_db: f64) -> f32 {
+    let plot_height = CHART_HEIGHT - CHART_TOP_MARGIN - CHART_BOTTOM_MARGIN;
+    let t = (MAX_GAIN_DB - gain_db) / (MAX_GAIN_DB - MIN_GAIN_DB);
+    CHART_TOP_MARGIN + (t as f32) * plot_height
+}
+
+/// Convert y pixel position to gain (dB)
+fn y_to_gain(y: f32) -> f64 {
+    let plot_height = CHART_HEIGHT - CHART_TOP_MARGIN - CHART_BOTTOM_MARGIN;
+    let t = ((y - CHART_TOP_MARGIN) / plot_height).clamp(0.0, 1.0) as f64;
+    MAX_GAIN_DB - t * (MAX_GAIN_DB - MIN_GAIN_DB)
+}
+
+/// Render EQ frequency response using gpui-px with draggable control points
 ///
 /// Shows all filter bands overlaid on a single plot with log frequency axis
 fn render_eq_visualization(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
     filters: &[EQFilter],
     selected_band: Option<usize>,
     theme: &Theme,
@@ -129,7 +242,7 @@ fn render_eq_visualization(
         .x_scale(ScaleType::Log)
         .y_scale(ScaleType::Linear)
         .x_label("Frequency")
-        .y_label("SPL")
+        .y_label("dB")
         .size(width, 300.0)
         .color(text_muted_u32) // Combined response line
         .stroke_width(2.5)
@@ -177,12 +290,15 @@ fn render_eq_visualization(
             chart_builder.add_series(&band_response, Some(label), color, stroke, opacity);
     }
 
-    // Build and return the chart
-    match chart_builder.build() {
+    // Calculate plot width for control point positioning
+    let plot_width = width - CHART_LEFT_MARGIN - CHART_RIGHT_MARGIN;
+
+    // Build the chart element
+    let chart_element = match chart_builder.build() {
         Ok(chart) => chart.into_any_element(),
         Err(_) => div()
             .w(px(width))
-            .h(px(300.0))
+            .h(px(CHART_HEIGHT))
             .flex()
             .items_center()
             .justify_center()
@@ -190,7 +306,255 @@ fn render_eq_visualization(
             .text_color(theme.text_secondary)
             .child("Unable to render chart")
             .into_any_element(),
+    };
+
+    // Create control points for each filter
+    let mut control_points: Vec<AnyElement> = Vec::new();
+    for (i, filter) in filters.iter().enumerate() {
+        let is_selected = selected_band == Some(i);
+        let color = BAND_COLORS.get(i).copied().unwrap_or(0x9ca3af);
+        let rgba_color = gpui::rgba(color as u32 * 256 + 0xFF);
+
+        // Calculate position
+        let x = freq_to_x(filter.frequency, plot_width);
+        let y = gain_to_y(filter.gain_db);
+
+        let entity_clone = entity.clone();
+        let band_idx = i;
+
+        // Control point circle
+        let border_color = if is_selected {
+            gpui::white()
+        } else {
+            gpui::hsla(0.0, 0.0, 1.0, 0.5) // semi-transparent white
+        };
+
+        // Calculate Q bar width
+        let bar_width = q_to_bar_width(filter.q);
+        let bar_half_width = bar_width / 2.0;
+
+        // Q bar (horizontal line through control point)
+        let q_bar = div()
+            .absolute()
+            .left(px(x - bar_half_width))
+            .top(px(y - Q_BAR_HEIGHT / 2.0))
+            .w(px(bar_width))
+            .h(px(Q_BAR_HEIGHT))
+            .bg(rgba_color)
+            .rounded(px(Q_BAR_HEIGHT / 2.0))
+            .opacity(if is_selected { 0.8 } else { 0.5 })
+            .into_any_element();
+
+        control_points.push(q_bar);
+
+        // Left Q handle (decrease Q when dragged left)
+        let left_handle = {
+            let entity_left = entity.clone();
+            let current_q = filter.q;
+            div()
+                .id(("eq-q-left", i))
+                .absolute()
+                .left(px(x - bar_half_width - Q_HANDLE_RADIUS))
+                .top(px(y - Q_HANDLE_RADIUS))
+                .w(px(Q_HANDLE_RADIUS * 2.0))
+                .h(px(Q_HANDLE_RADIUS * 2.0))
+                .rounded_full()
+                .bg(rgba_color)
+                .border(px(1.0))
+                .border_color(if is_selected {
+                    gpui::white()
+                } else {
+                    gpui::hsla(0.0, 0.0, 1.0, 0.4)
+                })
+                .cursor(gpui::CursorStyle::ResizeLeftRight)
+                .hover(|s| s.size(px(Q_HANDLE_RADIUS * 2.5)))
+                .on_drag(
+                    EqQHandleDrag {
+                        band_idx,
+                        plugin_idx,
+                        is_right_handle: false,
+                        start_x: x - bar_half_width,
+                        start_q: current_q,
+                        color,
+                    },
+                    |drag, _, _, cx| {
+                        cx.stop_propagation();
+                        cx.new(|_| drag.clone())
+                    },
+                )
+                .on_drag_move::<EqQHandleDrag>({
+                    move |event, window, cx| {
+                        let drag_data = event.drag(cx);
+                        let position = event.event.position;
+                        let x_px: f32 = position.x.into();
+
+                        // For left handle: moving left decreases Q, moving right increases Q
+                        let delta = drag_data.start_x - x_px;
+                        let q_change = drag_delta_to_q_change(delta);
+                        let new_q = (drag_data.start_q + q_change).clamp(Q_MIN, Q_MAX);
+
+                        let plugin_idx = drag_data.plugin_idx;
+                        let band_idx = drag_data.band_idx;
+
+                        entity_left.update(cx, |state, cx| {
+                            state.app.editing_plugin_index = Some(plugin_idx);
+                            // Update Q (param index = band_idx * 4 + 1)
+                            state
+                                .app
+                                .set_plugin_param(plugin_idx, band_idx * 4 + 1, new_q);
+                            cx.notify();
+                        });
+                        window.refresh();
+                    }
+                })
+                .into_any_element()
+        };
+
+        control_points.push(left_handle);
+
+        // Right Q handle (increase Q when dragged right)
+        let right_handle = {
+            let entity_right = entity.clone();
+            let current_q = filter.q;
+            div()
+                .id(("eq-q-right", i))
+                .absolute()
+                .left(px(x + bar_half_width - Q_HANDLE_RADIUS))
+                .top(px(y - Q_HANDLE_RADIUS))
+                .w(px(Q_HANDLE_RADIUS * 2.0))
+                .h(px(Q_HANDLE_RADIUS * 2.0))
+                .rounded_full()
+                .bg(rgba_color)
+                .border(px(1.0))
+                .border_color(if is_selected {
+                    gpui::white()
+                } else {
+                    gpui::hsla(0.0, 0.0, 1.0, 0.4)
+                })
+                .cursor(gpui::CursorStyle::ResizeLeftRight)
+                .hover(|s| s.size(px(Q_HANDLE_RADIUS * 2.5)))
+                .on_drag(
+                    EqQHandleDrag {
+                        band_idx,
+                        plugin_idx,
+                        is_right_handle: true,
+                        start_x: x + bar_half_width,
+                        start_q: current_q,
+                        color,
+                    },
+                    |drag, _, _, cx| {
+                        cx.stop_propagation();
+                        cx.new(|_| drag.clone())
+                    },
+                )
+                .on_drag_move::<EqQHandleDrag>({
+                    move |event, window, cx| {
+                        let drag_data = event.drag(cx);
+                        let position = event.event.position;
+                        let x_px: f32 = position.x.into();
+
+                        // For right handle: moving right increases Q, moving left decreases Q
+                        let delta = x_px - drag_data.start_x;
+                        let q_change = drag_delta_to_q_change(delta);
+                        let new_q = (drag_data.start_q + q_change).clamp(Q_MIN, Q_MAX);
+
+                        let plugin_idx = drag_data.plugin_idx;
+                        let band_idx = drag_data.band_idx;
+
+                        entity_right.update(cx, |state, cx| {
+                            state.app.editing_plugin_index = Some(plugin_idx);
+                            // Update Q (param index = band_idx * 4 + 1)
+                            state
+                                .app
+                                .set_plugin_param(plugin_idx, band_idx * 4 + 1, new_q);
+                            cx.notify();
+                        });
+                        window.refresh();
+                    }
+                })
+                .into_any_element()
+        };
+
+        control_points.push(right_handle);
+
+        // Main control point circle (rendered on top)
+        let control_point = div()
+            .id(("eq-control-point", i))
+            .absolute()
+            .left(px(x - CONTROL_POINT_RADIUS))
+            .top(px(y - CONTROL_POINT_RADIUS))
+            .w(px(CONTROL_POINT_RADIUS * 2.0))
+            .h(px(CONTROL_POINT_RADIUS * 2.0))
+            .rounded_full()
+            .bg(rgba_color)
+            .border(px(2.0))
+            .border_color(border_color)
+            .shadow_md()
+            .cursor(gpui::CursorStyle::PointingHand)
+            .hover(|s| s.size(px(CONTROL_POINT_RADIUS * 2.5)))
+            .on_mouse_down(MouseButton::Left, {
+                let entity_click = entity.clone();
+                move |_event, _window, cx| {
+                    // Select this band when clicking on it
+                    entity_click.update(cx, |state, _| {
+                        state.app.selected_eq_band = band_idx;
+                    });
+                }
+            })
+            .on_drag(
+                EqControlPointDrag {
+                    band_idx,
+                    plugin_idx,
+                    color,
+                },
+                |drag, _, _, cx| {
+                    cx.stop_propagation();
+                    cx.new(|_| drag.clone())
+                },
+            )
+            .on_drag_move::<EqControlPointDrag>({
+                let plot_width = plot_width;
+                move |event, window, cx| {
+                    let drag_data = event.drag(cx);
+                    let position = event.event.position;
+
+                    // Convert position to freq/gain using Into<f32> for Pixels
+                    let x_px: f32 = position.x.into();
+                    let y_px: f32 = position.y.into();
+                    let new_freq = x_to_freq(x_px, plot_width).clamp(MIN_FREQ, MAX_FREQ);
+                    let new_gain = y_to_gain(y_px).clamp(MIN_GAIN_DB, MAX_GAIN_DB);
+
+                    let plugin_idx = drag_data.plugin_idx;
+                    let band_idx = drag_data.band_idx;
+
+                    entity_clone.update(cx, |state, cx| {
+                        state.app.editing_plugin_index = Some(plugin_idx);
+                        // Update frequency (param index = band_idx * 4 + 0)
+                        state
+                            .app
+                            .set_plugin_param(plugin_idx, band_idx * 4, new_freq);
+                        // Update gain (param index = band_idx * 4 + 2)
+                        state
+                            .app
+                            .set_plugin_param(plugin_idx, band_idx * 4 + 2, new_gain);
+                        cx.notify();
+                    });
+                    window.refresh();
+                }
+            })
+            .into_any_element();
+
+        control_points.push(control_point);
     }
+
+    // Wrap chart and control points in a relative container
+    div()
+        .relative()
+        .w(px(width))
+        .h(px(CHART_HEIGHT))
+        .child(chart_element)
+        .children(control_points)
+        .into_any_element()
 }
 
 /// Render the EQ plugin with graphical visualization
@@ -224,16 +588,29 @@ pub fn render_eq_plugin(
         Some(selected_band_idx)
     };
 
-    // Build the UI
+    // Calculate graph width dynamically based on estimated legend space
+    // Worst case legend label: "#10 - HS @ 20000Hz (muted+solo)" ≈ 35 chars
+    const CHAR_WIDTH_PX: f32 = 7.5;
+    const LEGEND_LABEL_CHARS: f32 = 35.0;
+    const LEGEND_PADDING_PX: f32 = 60.0; // margins, color swatch, etc.
+    let estimated_legend_width = LEGEND_LABEL_CHARS * CHAR_WIDTH_PX + LEGEND_PADDING_PX;
+
+    // Base available width (typical window sizes)
+    let base_available_width = if use_horizontal_layout { 900.0 } else { 1500.0 };
+    let graph_width = base_available_width - estimated_legend_width;
+
+    // Build the UI - graph uses most of the horizontal space
     let graph_section = div()
         .flex()
         .flex_col()
         .flex_1()
         .child(render_eq_visualization(
+            entity.clone(),
+            plugin_idx,
             state.filters,
             highlight_band_idx,
             theme,
-            if use_horizontal_layout { 500.0 } else { 800.0 },
+            graph_width,
         ));
 
     let controls_section = div()
@@ -255,17 +632,16 @@ pub fn render_eq_plugin(
             // Build each band tab manually
             for band_idx in 0..num_bands {
                 let is_selected = band_idx == selected_band_idx;
-                let is_muted = state
-                    .filters
-                    .get(band_idx)
-                    .map(|f| f.muted)
-                    .unwrap_or(false);
-                let is_soloed = state.filters.get(band_idx).map(|f| f.solo).unwrap_or(false);
+                let filter = state.filters.get(band_idx);
+                let is_muted = filter.map(|f| f.muted).unwrap_or(false);
+                let is_soloed = filter.map(|f| f.solo).unwrap_or(false);
+                let filter_short_name = filter.map(|f| f.filter_type.short_name()).unwrap_or("PK");
                 let entity_clone = entity.clone();
                 let accent = theme.accent;
-                let text_primary = theme.text_primary;
+                let text_on_accent = theme.text_on_accent;
                 let text_secondary = theme.text_secondary;
                 let text_muted_color = theme.text_muted;
+                let text_primary = theme.text_primary;
                 let bg_secondary = theme.background_secondary;
                 let surface_hover = theme.surface_hover;
                 let error = theme.error;
@@ -285,7 +661,7 @@ pub fn render_eq_plugin(
                     .cursor_pointer()
                     .when(is_selected, |d| {
                         d.bg(accent)
-                            .text_color(text_primary)
+                            .text_color(text_on_accent)
                             .font_weight(FontWeight::SEMIBOLD)
                     })
                     .when(!is_selected, |d| {
@@ -299,8 +675,8 @@ pub fn render_eq_plugin(
                             state.app.selected_eq_band = band_idx;
                         });
                     })
-                    // Band number
-                    .child(div().child(format!("{}", band_idx + 1)))
+                    // Band number with filter type short code (e.g., "#1 PK")
+                    .child(div().child(format!("#{} {}", band_idx + 1, filter_short_name)))
                     // Mute and Solo buttons row
                     .child(
                         div()
@@ -327,15 +703,23 @@ pub fn render_eq_plugin(
                                     .hover(move |s| {
                                         s.bg(if is_muted { error } else { surface_hover })
                                     })
-                                    .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
-                                        cx.stop_propagation();
-                                        entity_clone2.update(cx, |state, cx| {
-                                            if let Err(e) = state.app.toggle_eq_band_mute(band_idx)
-                                            {
-                                                log::warn!("Failed to toggle EQ band mute: {}", e);
-                                            }
-                                            cx.notify();
-                                        });
+                                    .on_mouse_down(MouseButton::Left, {
+                                        let plugin_idx = plugin_idx;
+                                        move |_event, _window, cx| {
+                                            cx.stop_propagation();
+                                            entity_clone2.update(cx, |state, cx| {
+                                                state.app.editing_plugin_index = Some(plugin_idx);
+                                                if let Err(e) =
+                                                    state.app.toggle_eq_band_mute(band_idx)
+                                                {
+                                                    log::warn!(
+                                                        "Failed to toggle EQ band mute: {}",
+                                                        e
+                                                    );
+                                                }
+                                                cx.notify();
+                                            });
+                                        }
                                     })
                                     .child("M")
                             })
@@ -360,15 +744,23 @@ pub fn render_eq_plugin(
                                     .hover(move |s| {
                                         s.bg(if is_soloed { success } else { surface_hover })
                                     })
-                                    .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
-                                        cx.stop_propagation();
-                                        entity_clone3.update(cx, |state, cx| {
-                                            if let Err(e) = state.app.toggle_eq_band_solo(band_idx)
-                                            {
-                                                log::warn!("Failed to toggle EQ band solo: {}", e);
-                                            }
-                                            cx.notify();
-                                        });
+                                    .on_mouse_down(MouseButton::Left, {
+                                        let plugin_idx = plugin_idx;
+                                        move |_event, _window, cx| {
+                                            cx.stop_propagation();
+                                            entity_clone3.update(cx, |state, cx| {
+                                                state.app.editing_plugin_index = Some(plugin_idx);
+                                                if let Err(e) =
+                                                    state.app.toggle_eq_band_solo(band_idx)
+                                                {
+                                                    log::warn!(
+                                                        "Failed to toggle EQ band solo: {}",
+                                                        e
+                                                    );
+                                                }
+                                                cx.notify();
+                                            });
+                                        }
                                     })
                                     .child("S")
                             }),
@@ -381,6 +773,7 @@ pub fn render_eq_plugin(
                 // Add band button
                 .child({
                     let entity_clone = entity.clone();
+                    let plugin_idx = plugin_idx;
                     div()
                         .px_3()
                         .py_1p5()
@@ -393,6 +786,7 @@ pub fn render_eq_plugin(
                         .hover(|s| s.opacity(0.8))
                         .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
                             entity_clone.update(cx, |state, cx| {
+                                state.app.editing_plugin_index = Some(plugin_idx);
                                 if let Err(e) = state.app.add_eq_band() {
                                     log::warn!("Failed to add EQ band: {}", e);
                                 }
@@ -562,7 +956,7 @@ fn render_filter_type_selector(
                 .rounded_sm()
                 .cursor_pointer()
                 .when(is_active, |d| {
-                    d.bg(theme.accent).text_color(theme.text_primary)
+                    d.bg(theme.accent).text_color(theme.text_on_accent)
                 })
                 .when(!is_active, |d| {
                     d.bg(theme.background_secondary)
