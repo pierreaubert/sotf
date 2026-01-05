@@ -1,5 +1,5 @@
 use super::{
-    EQCurveColors, GraphLineColors, MeterColors, PluginColorMap, SpectrumColors, Theme, rgba,
+    rgba, EQCurveColors, GraphLineColors, MeterColors, PluginColorMap, SpectrumColors, Theme,
 };
 use gpui::Rgba;
 
@@ -17,8 +17,8 @@ impl Theme {
 
             // Text colors
             text_primary: rgba(0xffffff),
-            text_secondary: rgba(0x888888),
-            text_muted: rgba(0xaaaaaa), // Lighter for better readability
+            text_secondary: rgba(0xffffff),
+            text_muted: rgba(0xb0b0b0), // Lighter for better readability, contrast ~4.3:1 on surface
             text_disabled: rgba(0x333333),
 
             // Border colors (white for high contrast)
