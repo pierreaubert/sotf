@@ -5,6 +5,7 @@
 
 use std::path::PathBuf;
 
+use crate::app::constants;
 use sotf_audio_player::{Album, MusicLibrary};
 
 /// Library sort order options
@@ -91,7 +92,7 @@ impl LibraryState {
             search_query: String::new(),
             selected_index: 0,
             current_page: 0,
-            items_per_page: 50,
+            items_per_page: constants::library::DEFAULT_ITEMS_PER_PAGE,
             scan_in_progress: false,
             scan_progress_tracks: 0,
             scan_progress_albums: 0,

@@ -1,0 +1,81 @@
+//! Plugin state management.
+//!
+//! Contains all state related to audio plugins including the plugin chain,
+//! graph view state, and editing state.
+
+use crate::app::constants;
+use crate::app::types::PluginUpdateType;
+use gpui::Entity;
+use gpui_ui_kit::workflow::{NodeId, WorkflowCanvas};
+use sotf_audio_player::{ConnectionDrag, GraphSelection, NodeDrag, PluginChain, PluginGraph};
+use std::collections::HashMap;
+
+#[derive(Debug, Clone)]
+pub struct PluginState {
+    pub plugin_chain: PluginChain,
+    pub plugin_chain_modified: bool,
+    pub pending_plugin_update: Option<PluginUpdateType>,
+    pub editing_plugin_index: Option<usize>,
+    pub plugin_param_selection: usize,
+    pub selected_eq_band: usize,
+    pub matrix_selected_cell: Option<(usize, usize)>,
+    pub plugin_view_mode: PluginViewMode,
+    pub plugin_graph: Option<PluginGraph>,
+    pub graph_selection: GraphSelection,
+    pub graph_connection_drag: Option<ConnectionDrag>,
+    pub graph_node_drag: Option<NodeDrag>,
+    pub workflow_canvas: Option<Entity<WorkflowCanvas>>,
+    pub workflow_node_mapping: Option<WorkflowNodeMapping>,
+    pub editing_plugin_node: Option<gpui_ui_kit::workflow::NodeId>,
+    pub available_plugin_presets: Vec<String>,
+    pub selected_preset_index: usize,
+    pub last_loaded_preset: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PluginViewMode {
+    #[default]
+    Rack,
+    Graph,
+}
+
+#[derive(Clone, Default, Debug)]
+pub struct WorkflowNodeMapping {
+    pub node_to_plugin: HashMap<NodeId, usize>,
+    pub plugin_to_node: HashMap<usize, NodeId>,
+    pub input_node_id: Option<NodeId>,
+    pub output_node_id: Option<NodeId>,
+}
+
+impl Default for PluginState {
+    fn default() -> Self {
+        let mut chain = PluginChain::new();
+        chain.add_plugin(&sotf_audio_player::PluginType::LoudnessMonitor);
+        Self {
+            plugin_chain: chain,
+            plugin_chain_modified: false,
+            pending_plugin_update: None,
+            editing_plugin_index: None,
+            plugin_param_selection: 0,
+            selected_eq_band: 0,
+            matrix_selected_cell: None,
+            plugin_view_mode: PluginViewMode::Rack,
+            plugin_graph: None,
+            graph_selection: GraphSelection::default(),
+            graph_connection_drag: None,
+            graph_node_drag: None,
+            workflow_canvas: None,
+            workflow_node_mapping: None,
+            editing_plugin_node: None,
+            available_plugin_presets: Vec::new(),
+            selected_preset_index: 0,
+            last_loaded_preset: None,
+        }
+    }
+}
+
+impl PluginState {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}

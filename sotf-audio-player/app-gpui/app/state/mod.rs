@@ -5,6 +5,12 @@
 
 pub mod app;
 pub mod library;
+pub mod playback;
+pub mod plugin;
+pub mod ui;
 
 pub use app::{App, AppState, DividerDragState, DividerType, WorkflowNodeMapping};
 pub use library::LibraryState;
+pub use playback::PlaybackState;
+pub use plugin::{PluginState, PluginViewMode};
+pub use ui::UIState;

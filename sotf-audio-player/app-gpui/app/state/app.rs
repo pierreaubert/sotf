@@ -26,6 +26,8 @@ use crate::app::types::{
     Screen, SpinoramaEqState, ToastMessage,
 };
 
+use super::{LibraryState, PlaybackState, PluginState, UIState};
+
 /// Mapping between workflow NodeIds and plugin indices / special nodes
 #[derive(Clone, Default, Debug)]
 pub struct WorkflowNodeMapping {
@@ -314,6 +316,16 @@ pub struct App {
     // Startup database check state
     /// Whether we've performed the initial database check on startup
     pub startup_db_check_done: bool,
+
+    // Composed state structs (for better separation of concerns)
+    /// Playback-related state
+    pub playback: PlaybackState,
+    /// Library-related state
+    pub library_state: LibraryState,
+    /// Plugin-related state
+    pub plugin_state: PluginState,
+    /// UI-related state
+    pub ui_state: UIState,
 }
 
 /// GPUI-compatible state wrapper
@@ -490,6 +502,11 @@ impl App {
             output_meter_width: 140.0, // Default width for output meter panel
             dragging_divider: None,
             startup_db_check_done: false,
+            // Initialize composed state structs
+            playback: PlaybackState::new(),
+            library_state: LibraryState::new(),
+            plugin_state: PluginState::new(),
+            ui_state: UIState::new(),
         };
 
         // Initialize default stereo meter layout so meters are visible before audio starts
