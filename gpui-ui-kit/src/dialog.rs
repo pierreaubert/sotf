@@ -1,12 +1,39 @@
 //! Dialog/Modal component
 //!
 //! A modal dialog with backdrop, title, content, and footer sections.
+//!
+//! # Composition Patterns
+//!
+//! Dialogs support two composition patterns:
+//!
+//! ## Static content (simple)
+//! ```ignore
+//! Dialog::new("my-dialog")
+//!     .title("Settings")
+//!     .content(div().child("Dialog body"))
+//!     .footer(div().child("Footer buttons"))
+//! ```
+//!
+//! ## Dynamic content with theme access
+//! ```ignore
+//! Dialog::new("my-dialog")
+//!     .title("Settings")
+//!     .content_with(|theme| {
+//!         div()
+//!             .text_color(theme.title)
+//!             .child("Themed content")
+//!             .into_any_element()
+//!     })
+//! ```
 
 use crate::ComponentTheme;
 use crate::theme::ThemeExt;
 use gpui::prelude::*;
 use gpui::*;
 use std::rc::Rc;
+
+/// Factory function type for creating elements with dialog theme access
+pub type DialogSlotFactory = Box<dyn FnOnce(&DialogTheme) -> AnyElement>;
 
 /// Theme colors for dialog styling
 #[derive(Debug, Clone, ComponentTheme)]
@@ -71,7 +98,9 @@ pub struct Dialog {
     title: Option<SharedString>,
     size: DialogSize,
     content: Option<AnyElement>,
+    content_factory: Option<DialogSlotFactory>,
     footer: Option<AnyElement>,
+    footer_factory: Option<DialogSlotFactory>,
     show_close_button: bool,
     close_on_backdrop: bool,
     on_close: Option<Box<dyn Fn(&mut Window, &mut App) + 'static>>,
@@ -85,7 +114,9 @@ impl Dialog {
             title: None,
             size: DialogSize::default(),
             content: None,
+            content_factory: None,
             footer: None,
+            footer_factory: None,
             show_close_button: true,
             close_on_backdrop: true,
             on_close: None,
@@ -118,6 +149,49 @@ impl Dialog {
     /// Set the dialog footer
     pub fn footer(mut self, element: impl IntoElement) -> Self {
         self.footer = Some(element.into_any_element());
+        self
+    }
+
+    /// Set the dialog content with a factory function that receives the dialog theme
+    ///
+    /// This allows dynamic content creation with access to theme colors.
+    ///
+    /// # Example
+    /// ```ignore
+    /// Dialog::new("dialog")
+    ///     .content_with(|theme| {
+    ///         div()
+    ///             .text_color(theme.title)
+    ///             .child("Themed content")
+    ///             .into_any_element()
+    ///     })
+    /// ```
+    pub fn content_with(
+        mut self,
+        factory: impl FnOnce(&DialogTheme) -> AnyElement + 'static,
+    ) -> Self {
+        self.content_factory = Some(Box::new(factory));
+        self
+    }
+
+    /// Set the dialog footer with a factory function that receives the dialog theme
+    ///
+    /// # Example
+    /// ```ignore
+    /// Dialog::new("dialog")
+    ///     .footer_with(|theme| {
+    ///         div()
+    ///             .border_t_1()
+    ///             .border_color(theme.header_border)
+    ///             .child("Footer with theme")
+    ///             .into_any_element()
+    ///     })
+    /// ```
+    pub fn footer_with(
+        mut self,
+        factory: impl FnOnce(&DialogTheme) -> AnyElement + 'static,
+    ) -> Self {
+        self.footer_factory = Some(Box::new(factory));
         self
     }
 
@@ -237,8 +311,9 @@ impl Dialog {
             dialog = dialog.child(header);
         }
 
-        // Content
-        if let Some(content) = self.content {
+        // Content - factory takes precedence over static element
+        let content_element = self.content_factory.map(|f| f(theme)).or(self.content);
+        if let Some(content) = content_element {
             dialog = dialog.child(
                 div()
                     .id((content_id, "content"))
@@ -250,8 +325,9 @@ impl Dialog {
             );
         }
 
-        // Footer
-        if let Some(footer) = self.footer {
+        // Footer - factory takes precedence over static element
+        let footer_element = self.footer_factory.map(|f| f(theme)).or(self.footer);
+        if let Some(footer) = footer_element {
             dialog = dialog.child(
                 div()
                     .px_4()

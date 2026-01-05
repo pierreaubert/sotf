@@ -154,12 +154,28 @@ impl MenuItem {
 }
 
 /// A dropdown menu containing menu items
+///
+/// # Keyboard Navigation
+///
+/// When a `focus_handle` is provided, the menu supports keyboard navigation:
+/// - **Arrow Up/Down**: Move through items (skips separators and disabled items)
+/// - **Home/End**: Jump to first/last selectable item
+/// - **Enter/Space**: Select the focused item
+/// - **Escape**: Close the menu (triggers on_close callback)
 pub struct Menu {
     id: ElementId,
     items: Vec<MenuItem>,
     min_width: Pixels,
     theme: Option<MenuTheme>,
+    /// Index of the currently keyboard-focused item (0-based, skips separators)
+    focused_index: Option<usize>,
+    /// Focus handle for keyboard events
+    focus_handle: Option<FocusHandle>,
     on_select: Option<Box<dyn Fn(&SharedString, &mut Window, &mut App) + 'static>>,
+    /// Called when the menu should close (e.g., Escape pressed)
+    on_close: Option<Box<dyn Fn(&mut Window, &mut App) + 'static>>,
+    /// Called when keyboard focus changes (arrow up/down, home/end)
+    on_focus_change: Option<Box<dyn Fn(Option<usize>, &mut Window, &mut App) + 'static>>,
 }
 
 impl Menu {
@@ -170,7 +186,11 @@ impl Menu {
             items,
             min_width: px(180.0),
             theme: None,
+            focused_index: None,
+            focus_handle: None,
             on_select: None,
+            on_close: None,
+            on_focus_change: None,
         }
     }
 
@@ -186,6 +206,20 @@ impl Menu {
         self
     }
 
+    /// Set the currently focused item index (for keyboard navigation)
+    pub fn focused_index(mut self, index: usize) -> Self {
+        self.focused_index = Some(index);
+        self
+    }
+
+    /// Set the focus handle for keyboard events
+    ///
+    /// When provided, enables keyboard navigation with arrow keys, Enter, and Escape.
+    pub fn focus_handle(mut self, handle: FocusHandle) -> Self {
+        self.focus_handle = Some(handle);
+        self
+    }
+
     /// Set the selection handler
     pub fn on_select(
         mut self,
@@ -195,13 +229,106 @@ impl Menu {
         self
     }
 
+    /// Set the close handler (triggered by Escape key)
+    pub fn on_close(mut self, handler: impl Fn(&mut Window, &mut App) + 'static) -> Self {
+        self.on_close = Some(Box::new(handler));
+        self
+    }
+
+    /// Set the focus change handler (triggered by arrow keys, home/end)
+    ///
+    /// The handler receives the new focused index (or None if no item is focused).
+    /// Use this to update your state and re-render the menu with the new focused_index.
+    pub fn on_focus_change(
+        mut self,
+        handler: impl Fn(Option<usize>, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_focus_change = Some(Box::new(handler));
+        self
+    }
+
+    /// Get indices of selectable items (not separators, not disabled)
+    fn selectable_indices(&self) -> Vec<usize> {
+        self.items
+            .iter()
+            .enumerate()
+            .filter(|(_, item)| !item.is_separator && !item.disabled)
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    /// Get the next selectable index after the current one
+    fn next_selectable_index(&self, current: Option<usize>) -> Option<usize> {
+        let selectable = self.selectable_indices();
+        if selectable.is_empty() {
+            return None;
+        }
+
+        match current {
+            None => selectable.first().copied(),
+            Some(curr) => {
+                // Find first selectable after current
+                selectable.iter().find(|&&i| i > curr).copied().or_else(|| {
+                    // Wrap around
+                    selectable.first().copied()
+                })
+            }
+        }
+    }
+
+    /// Get the previous selectable index before the current one
+    fn prev_selectable_index(&self, current: Option<usize>) -> Option<usize> {
+        let selectable = self.selectable_indices();
+        if selectable.is_empty() {
+            return None;
+        }
+
+        match current {
+            None => selectable.last().copied(),
+            Some(curr) => {
+                // Find last selectable before current
+                selectable.iter().rev().find(|&&i| i < curr).copied().or_else(|| {
+                    // Wrap around
+                    selectable.last().copied()
+                })
+            }
+        }
+    }
+
+    /// Get the first selectable index
+    fn first_selectable_index(&self) -> Option<usize> {
+        self.selectable_indices().first().copied()
+    }
+
+    /// Get the last selectable index
+    fn last_selectable_index(&self) -> Option<usize> {
+        self.selectable_indices().last().copied()
+    }
+
     /// Build into element with theme
     pub fn build_with_theme(self, menu_theme: &MenuTheme) -> Stateful<Div> {
         let min_width = self.min_width;
         let theme = self.theme.as_ref().unwrap_or(menu_theme);
+        let focused_index = self.focused_index;
 
-        // Use Rc pattern instead of unsafe pointer for on_select handler
+        // Pre-compute navigation indices BEFORE taking ownership
+        let selectable_indices = self.selectable_indices();
+        let next_index = self.next_selectable_index(focused_index);
+        let prev_index = self.prev_selectable_index(focused_index);
+        let first_index = self.first_selectable_index();
+        let last_index = self.last_selectable_index();
+
+        // Clone items for keyboard handler BEFORE taking ownership
+        let items_for_keyboard: Vec<_> = self
+            .items
+            .iter()
+            .map(|item| (item.id.clone(), item.is_separator, item.disabled))
+            .collect();
+
+        // Use Rc pattern for handlers (takes ownership)
         let on_select_rc = self.on_select.map(|f| std::rc::Rc::new(f));
+        let on_close_rc = self.on_close.map(|f| std::rc::Rc::new(f));
+        let on_focus_change_rc = self.on_focus_change.map(|f| std::rc::Rc::new(f));
 
         let mut menu = div()
             .id(self.id)
@@ -215,7 +342,63 @@ impl Menu {
             .py_1()
             .overflow_y_scroll();
 
-        for item in self.items {
+        // Add focus styling if focus handle is provided
+        if let Some(ref handle) = self.focus_handle {
+            menu = menu.track_focus(handle);
+        }
+
+        // Keyboard event handler
+        if self.focus_handle.is_some() {
+            let on_select_for_keyboard = on_select_rc.clone();
+            let on_close_for_keyboard = on_close_rc.clone();
+            let on_focus_change_for_keyboard = on_focus_change_rc.clone();
+            let _selectable = selectable_indices; // For potential future use
+
+            menu = menu.on_key_down(move |event: &KeyDownEvent, window, cx| {
+                let key = event.keystroke.key.as_str();
+                match key {
+                    "escape" => {
+                        if let Some(ref handler) = on_close_for_keyboard {
+                            handler(window, cx);
+                        }
+                    }
+                    "enter" | " " => {
+                        // Select the focused item
+                        if let Some(idx) = focused_index
+                            && let Some((id, is_sep, disabled)) = items_for_keyboard.get(idx)
+                            && !*is_sep
+                            && !*disabled
+                            && let Some(ref handler) = on_select_for_keyboard
+                        {
+                            handler(id, window, cx);
+                        }
+                    }
+                    "down" | "arrowdown" => {
+                        if let Some(ref handler) = on_focus_change_for_keyboard {
+                            handler(next_index, window, cx);
+                        }
+                    }
+                    "up" | "arrowup" => {
+                        if let Some(ref handler) = on_focus_change_for_keyboard {
+                            handler(prev_index, window, cx);
+                        }
+                    }
+                    "home" => {
+                        if let Some(ref handler) = on_focus_change_for_keyboard {
+                            handler(first_index, window, cx);
+                        }
+                    }
+                    "end" => {
+                        if let Some(ref handler) = on_focus_change_for_keyboard {
+                            handler(last_index, window, cx);
+                        }
+                    }
+                    _ => {}
+                }
+            });
+        }
+
+        for (index, item) in self.items.into_iter().enumerate() {
             if item.is_separator {
                 menu = menu.child(div().my_1().h(px(1.0)).bg(theme.separator).mx_2());
             } else {
@@ -227,6 +410,7 @@ impl Menu {
                 let is_checkbox = item.is_checkbox;
                 let checked = item.checked;
                 let is_danger = item.is_danger;
+                let is_focused = focused_index == Some(index);
 
                 let mut row = div()
                     .id(SharedString::from(format!("menu-item-{}", item_id)))
@@ -250,15 +434,24 @@ impl Menu {
                         theme.hover_bg
                     };
 
-                    row = row
-                        .text_color(text_color)
-                        .cursor_pointer()
-                        .hover(move |style| {
-                            style
-                                .bg(hover_bg)
-                                .text_color(text_hover)
-                                .shadow(glow_shadow(hover_bg))
-                        });
+                    // Apply focus styling if this item is keyboard-focused
+                    if is_focused {
+                        row = row
+                            .bg(hover_bg)
+                            .text_color(text_hover)
+                            .shadow(glow_shadow(hover_bg));
+                    } else {
+                        row = row
+                            .text_color(text_color)
+                            .hover(move |style| {
+                                style
+                                    .bg(hover_bg)
+                                    .text_color(text_hover)
+                                    .shadow(glow_shadow(hover_bg))
+                            });
+                    }
+
+                    row = row.cursor_pointer();
 
                     if let Some(ref handler) = on_select_rc {
                         let handler = handler.clone();

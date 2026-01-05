@@ -1,7 +1,25 @@
 //! Theme system for gpui-ui-kit
 //!
 //! Provides a unified theming system with light and dark themes.
+//!
+//! # Color Token Integration
+//!
+//! The theme system integrates with [`ColorToken`](crate::color_tokens::ColorToken)
+//! for automatic generation of hover, active, muted, and subtle color variants:
+//!
+//! ```ignore
+//! let theme = cx.theme();
+//!
+//! // Get a ColorToken for the accent color with auto-generated variants
+//! let accent = theme.accent_token();
+//!
+//! div()
+//!     .bg(accent.base)
+//!     .hover(|s| s.bg(accent.hover))
+//!     .active(|s| s.bg(accent.active))
+//! ```
 
+use crate::color_tokens::{BackgroundColors, BorderColors, ColorPalette, ColorToken, SemanticColors, TextColors};
 use gpui::*;
 
 /// Available theme variants
@@ -344,6 +362,88 @@ impl Theme {
             ThemeVariant::Midnight => Self::midnight(),
             ThemeVariant::Forest => Self::forest(),
             ThemeVariant::BlackAndWhite => Self::black_and_white(),
+        }
+    }
+
+    // =========================================================================
+    // Color Token Accessors
+    // =========================================================================
+
+    /// Get a ColorToken for the accent color with auto-generated variants
+    ///
+    /// Returns a token with base, hover, active, muted, and subtle variants.
+    pub fn accent_token(&self) -> ColorToken {
+        ColorToken::from_base(self.accent)
+    }
+
+    /// Get a ColorToken for the success color
+    pub fn success_token(&self) -> ColorToken {
+        ColorToken::from_base(self.success)
+    }
+
+    /// Get a ColorToken for the warning color
+    pub fn warning_token(&self) -> ColorToken {
+        ColorToken::from_base(self.warning)
+    }
+
+    /// Get a ColorToken for the error color
+    pub fn error_token(&self) -> ColorToken {
+        ColorToken::from_base(self.error)
+    }
+
+    /// Get a ColorToken for the info color
+    pub fn info_token(&self) -> ColorToken {
+        ColorToken::from_base(self.info)
+    }
+
+    /// Get a ColorToken for the surface color
+    pub fn surface_token(&self) -> ColorToken {
+        ColorToken::from_base(self.surface)
+    }
+
+    /// Get a ColorToken for the primary text color
+    pub fn text_primary_token(&self) -> ColorToken {
+        ColorToken::from_base(self.text_primary)
+    }
+
+    /// Get a ColorToken for the border color
+    pub fn border_token(&self) -> ColorToken {
+        ColorToken::from_base(self.border)
+    }
+
+    /// Convert the theme to a full ColorPalette
+    ///
+    /// This is useful when you need structured access to all color tokens.
+    pub fn to_palette(&self) -> ColorPalette {
+        ColorPalette {
+            semantic: SemanticColors {
+                primary: self.accent_token(),
+                secondary: ColorToken::from_base(self.text_secondary),
+                success: self.success_token(),
+                warning: self.warning_token(),
+                error: self.error_token(),
+                info: self.info_token(),
+            },
+            backgrounds: BackgroundColors {
+                page: ColorToken::from_base(self.background),
+                surface: self.surface_token(),
+                overlay: ColorToken::from_base(self.overlay_bg),
+            },
+            text: TextColors {
+                primary: self.text_primary_token(),
+                secondary: ColorToken::from_base(self.text_secondary),
+                muted: ColorToken::from_base(self.text_muted),
+                inverted: ColorToken::from_base(if self.variant == ThemeVariant::Light {
+                    rgb(0xffffff)
+                } else {
+                    rgb(0x1a1a1a)
+                }),
+            },
+            borders: BorderColors {
+                default: self.border_token(),
+                focus: self.accent_token(),
+                error: self.error_token(),
+            },
         }
     }
 }

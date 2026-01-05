@@ -1,6 +1,32 @@
 //! Proc macros for gpui-ui-kit
 //!
-//! Provides derive macros to reduce boilerplate in theme definitions.
+//! Provides derive macros to reduce boilerplate in component theme definitions.
+//! The primary macro is [`ComponentTheme`] which generates `Default` and `From<&Theme>`
+//! implementations for theme structs, reducing repetitive boilerplate code.
+//!
+//! # Quick Start
+//!
+//! ```ignore
+//! use gpui_ui_kit_macros::ComponentTheme;
+//!
+//! #[derive(Debug, Clone, ComponentTheme)]
+//! pub struct MyComponentTheme {
+//!     #[theme(default = 0x007acc, from = accent)]
+//!     pub primary_color: Rgba,
+//!
+//!     #[theme(default = 0xffffff, from = text_primary)]
+//!     pub text_color: Rgba,
+//! }
+//! ```
+//!
+//! This generates:
+//! - `impl Default for MyComponentTheme` using the hex `default` values
+//! - `impl From<&Theme> for MyComponentTheme` mapping from global theme fields
+//!
+//! # Crate Features
+//!
+//! This is a proc-macro crate. It must be used alongside the main `gpui-ui-kit`
+//! crate which re-exports the macro as `ComponentTheme`.
 
 use proc_macro::TokenStream;
 use quote::quote;
@@ -9,44 +35,158 @@ use syn::{parse_macro_input, Data, DeriveInput, Expr, Fields, Lit, Meta, Token};
 
 /// Derive macro for component themes.
 ///
-/// Generates `Default` and `From<&Theme>` implementations for theme structs.
+/// Generates `Default` and `From<&Theme>` implementations for theme structs,
+/// allowing components to have fallback colors while also automatically adapting
+/// to the global theme.
 ///
-/// # Attributes
+/// # Requirements
 ///
-/// Each field must have a `#[theme(...)]` attribute with:
-/// - `default = 0xRRGGBB` or `default = 0xRRGGBBAA` - hex color for Default impl
-/// - `from = field_name` - Theme field to map from (e.g., `accent`, `surface`)
+/// - Only works on structs with named fields
+/// - Every field must have a `#[theme(...)]` attribute
+/// - Each field needs both a default value and a mapping from Theme
 ///
-/// For complex mappings, use `from_expr` instead:
-/// - `from_expr = "expression"` - Custom expression using `theme` variable
+/// # Attribute Reference
 ///
-/// For non-color fields (f32, etc.), use:
-/// - `default_f32 = 0.5` - f32 literal for Default impl
-/// - `from_expr = "0.5"` - constant value for From impl
+/// ## For Color Fields (Rgba)
 ///
-/// For arbitrary default expressions (Option types, nested themes, etc.):
-/// - `default_expr = "None"` - arbitrary expression for Default impl
+/// | Attribute | Description | Example |
+/// |-----------|-------------|---------|
+/// | `default = 0xRRGGBB` | RGB hex color for Default impl | `default = 0x007acc` |
+/// | `default = 0xRRGGBBAA` | RGBA hex color (with alpha) | `default = 0x007acc80` |
+/// | `from = field_name` | Direct mapping from Theme field | `from = accent` |
+/// | `from_expr = "expr"` | Custom expression (uses `theme` variable) | `from_expr = "with_alpha(theme.accent, 0.2)"` |
 ///
-/// # Example
+/// ## For Numeric Fields (f32, etc.)
+///
+/// | Attribute | Description | Example |
+/// |-----------|-------------|---------|
+/// | `default_f32 = value` | f32 literal for Default impl | `default_f32 = 0.5` |
+/// | `from_expr = "value"` | Expression for From impl | `from_expr = "0.5"` |
+///
+/// ## For Other Types (Option, nested themes, etc.)
+///
+/// | Attribute | Description | Example |
+/// |-----------|-------------|---------|
+/// | `default_expr = "expr"` | Arbitrary expression for Default | `default_expr = "None"` |
+/// | `from_expr = "expr"` | Arbitrary expression for From | `from_expr = "Some(theme.accent)"` |
+///
+/// # Available Theme Fields
+///
+/// The global `Theme` struct provides these fields for mapping:
+///
+/// **Backgrounds:** `background`, `surface`, `surface_hover`, `muted`, `transparent`, `overlay_bg`
+///
+/// **Text:** `text_primary`, `text_secondary`, `text_muted`
+///
+/// **Accent:** `accent`, `accent_hover`, `accent_muted`
+///
+/// **Semantic:** `success`, `warning`, `error`, `info`
+///
+/// **Border:** `border`, `border_hover`
+///
+/// # Examples
+///
+/// ## Basic Color Theme
 ///
 /// ```ignore
-/// use gpui_ui_kit_macros::ComponentTheme;
-///
-/// #[derive(ComponentTheme)]
+/// #[derive(Debug, Clone, ComponentTheme)]
 /// pub struct ButtonTheme {
 ///     #[theme(default = 0x007acc, from = accent)]
-///     pub accent: Rgba,
+///     pub background: Rgba,
 ///
+///     #[theme(default = 0xffffff, from = text_primary)]
+///     pub text: Rgba,
+///
+///     #[theme(default = 0x3a3a3a, from = border)]
+///     pub border: Rgba,
+/// }
+/// ```
+///
+/// ## With Custom Expressions
+///
+/// ```ignore
+/// use crate::color_tokens::with_alpha;
+///
+/// #[derive(Debug, Clone, ComponentTheme)]
+/// pub struct TooltipTheme {
+///     #[theme(default = 0x2a2a2aff, from = surface)]
+///     pub background: Rgba,
+///
+///     // Use with_alpha helper for transparency
 ///     #[theme(default = 0x007acc33, from_expr = "with_alpha(theme.accent, 0.2)")]
-///     pub accent_muted: Rgba,
+///     pub highlight: Rgba,
+///
+///     // Derived from another theme field
+///     #[theme(default = 0x888888, from_expr = "darken(theme.text_secondary, 0.1)")]
+///     pub shadow: Rgba,
+/// }
+/// ```
+///
+/// ## With Non-Color Fields
+///
+/// ```ignore
+/// #[derive(Debug, Clone, ComponentTheme)]
+/// pub struct FadeTheme {
+///     #[theme(default = 0xffffff, from = text_primary)]
+///     pub color: Rgba,
 ///
 ///     #[theme(default_f32 = 0.5, from_expr = "0.5")]
 ///     pub disabled_opacity: f32,
 ///
 ///     #[theme(default_expr = "None", from_expr = "None")]
-///     pub optional_color: Option<Rgba>,
+///     pub optional_accent: Option<Rgba>,
 /// }
 /// ```
+///
+/// # Generated Code
+///
+/// For a theme struct `MyTheme`, this macro generates:
+///
+/// ```ignore
+/// impl Default for MyTheme {
+///     fn default() -> Self {
+///         Self {
+///             // Fields initialized with default values
+///         }
+///     }
+/// }
+///
+/// impl From<&crate::theme::Theme> for MyTheme {
+///     fn from(theme: &crate::theme::Theme) -> Self {
+///         Self {
+///             // Fields mapped from global theme
+///         }
+///     }
+/// }
+/// ```
+///
+/// # Common Patterns
+///
+/// ## Creating a theme from global state
+///
+/// ```ignore
+/// fn render(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+///     let global_theme = cx.theme();
+///     let button_theme = ButtonTheme::from(&global_theme);
+///     // or use the default
+///     let default_theme = ButtonTheme::default();
+/// }
+/// ```
+///
+/// ## Customizing specific fields
+///
+/// ```ignore
+/// let mut theme = ButtonTheme::from(&cx.theme());
+/// theme.background = rgb(0xff0000); // Override just the background
+/// ```
+///
+/// # Compile Errors
+///
+/// The macro will panic at compile time if:
+/// - A field is missing the `#[theme(...)]` attribute
+/// - A field is missing `default`, `default_f32`, or `default_expr`
+/// - A field is missing `from` or `from_expr`
+/// - An expression in `from_expr` or `default_expr` fails to parse
 #[proc_macro_derive(ComponentTheme, attributes(theme))]
 pub fn derive_component_theme(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);

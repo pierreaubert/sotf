@@ -1,17 +1,45 @@
 //! Card component for content containers
 //!
 //! A flexible card component with optional header, content, and footer sections.
+//!
+//! # Composition Patterns
+//!
+//! Cards support two composition patterns:
+//!
+//! ## Static content (simple)
+//! ```ignore
+//! Card::new()
+//!     .header(div().child("Title"))
+//!     .content(div().child("Body"))
+//! ```
+//!
+//! ## Dynamic content with theme access
+//! ```ignore
+//! Card::new()
+//!     .header_with(|theme| {
+//!         div().text_color(theme.accent).child("Themed Title")
+//!     })
+//!     .content_with(|theme| {
+//!         div().bg(theme.muted).child("Themed Body")
+//!     })
+//! ```
 
 use crate::theme::{Theme, ThemeExt};
 use gpui::prelude::*;
 use gpui::*;
 
+/// Factory function type for creating elements with theme access
+pub type SlotFactory = Box<dyn FnOnce(&Theme) -> AnyElement>;
+
 /// A card container with optional sections
 #[derive(IntoElement)]
 pub struct Card {
     header: Option<AnyElement>,
+    header_factory: Option<SlotFactory>,
     content: Option<AnyElement>,
+    content_factory: Option<SlotFactory>,
     footer: Option<AnyElement>,
+    footer_factory: Option<SlotFactory>,
     /// Custom background color (overrides theme)
     background: Option<Rgba>,
     /// Custom header background color (overrides theme)
@@ -27,8 +55,11 @@ impl Card {
     pub fn new() -> Self {
         Self {
             header: None,
+            header_factory: None,
             content: None,
+            content_factory: None,
             footer: None,
+            footer_factory: None,
             background: None,
             header_background: None,
             border_color: None,
@@ -36,21 +67,74 @@ impl Card {
         }
     }
 
-    /// Set the card header
+    /// Set the card header with a static element
     pub fn header(mut self, element: impl IntoElement) -> Self {
         self.header = Some(element.into_any_element());
         self
     }
 
-    /// Set the card content
+    /// Set the card header with a factory function that receives the theme
+    ///
+    /// This allows dynamic content creation with access to theme colors.
+    ///
+    /// # Example
+    /// ```ignore
+    /// Card::new().header_with(|theme| {
+    ///     div()
+    ///         .text_color(theme.accent)
+    ///         .font_weight(FontWeight::BOLD)
+    ///         .child("Themed Header")
+    ///         .into_any_element()
+    /// })
+    /// ```
+    pub fn header_with(mut self, factory: impl FnOnce(&Theme) -> AnyElement + 'static) -> Self {
+        self.header_factory = Some(Box::new(factory));
+        self
+    }
+
+    /// Set the card content with a static element
     pub fn content(mut self, element: impl IntoElement) -> Self {
         self.content = Some(element.into_any_element());
         self
     }
 
-    /// Set the card footer
+    /// Set the card content with a factory function that receives the theme
+    ///
+    /// # Example
+    /// ```ignore
+    /// Card::new().content_with(|theme| {
+    ///     div()
+    ///         .bg(theme.muted)
+    ///         .p_4()
+    ///         .child("Themed content with background")
+    ///         .into_any_element()
+    /// })
+    /// ```
+    pub fn content_with(mut self, factory: impl FnOnce(&Theme) -> AnyElement + 'static) -> Self {
+        self.content_factory = Some(Box::new(factory));
+        self
+    }
+
+    /// Set the card footer with a static element
     pub fn footer(mut self, element: impl IntoElement) -> Self {
         self.footer = Some(element.into_any_element());
+        self
+    }
+
+    /// Set the card footer with a factory function that receives the theme
+    ///
+    /// # Example
+    /// ```ignore
+    /// Card::new().footer_with(|theme| {
+    ///     div()
+    ///         .text_color(theme.text_muted)
+    ///         .text_sm()
+    ///         .child("Footer with theme colors")
+    ///         .into_any_element()
+    /// })
+    /// ```
+    pub fn footer_with(mut self, factory: impl FnOnce(&Theme) -> AnyElement + 'static) -> Self {
+        self.footer_factory = Some(Box::new(factory));
         self
     }
 
@@ -100,8 +184,12 @@ impl Card {
             card = class_fn(card);
         }
 
-        // Header section
-        if let Some(header) = self.header {
+        // Header section - factory takes precedence over static element
+        let header_element = self
+            .header_factory
+            .map(|f| f(theme))
+            .or(self.header);
+        if let Some(header) = header_element {
             card = card.child(
                 div()
                     .px_4()
@@ -114,8 +202,12 @@ impl Card {
             );
         }
 
-        // Content section
-        if let Some(content) = self.content {
+        // Content section - factory takes precedence over static element
+        let content_element = self
+            .content_factory
+            .map(|f| f(theme))
+            .or(self.content);
+        if let Some(content) = content_element {
             card = card.child(
                 div()
                     .px_4()
@@ -125,8 +217,12 @@ impl Card {
             );
         }
 
-        // Footer section
-        if let Some(footer) = self.footer {
+        // Footer section - factory takes precedence over static element
+        let footer_element = self
+            .footer_factory
+            .map(|f| f(theme))
+            .or(self.footer);
+        if let Some(footer) = footer_element {
             card = card.child(
                 div()
                     .px_4()

@@ -78,8 +78,8 @@ pub use button_set::{ButtonSet, ButtonSetOption, ButtonSetSize, ButtonSetTheme};
 pub use icon_button::{IconButton, IconButtonSize, IconButtonTheme, IconButtonVariant};
 
 // Containers
-pub use card::Card;
-pub use dialog::{Dialog, DialogSize};
+pub use card::{Card, SlotFactory};
+pub use dialog::{Dialog, DialogSize, DialogSlotFactory, DialogTheme};
 
 // Navigation
 pub use accordion::{Accordion, AccordionItem, AccordionMode, AccordionTheme};
