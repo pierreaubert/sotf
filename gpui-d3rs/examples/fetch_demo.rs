@@ -7,8 +7,8 @@
 //! - Automatic type inference
 
 use d3rs::fetch::{
-    auto_type, auto_type_row, format_csv, parse_csv, parse_dsv, parse_tsv, AutoTyped, DsvParser,
-    DsvRow,
+    AutoTyped, DsvParser, DsvRow, auto_type, auto_type_row, format_csv, parse_csv, parse_dsv,
+    parse_tsv,
 };
 
 fn main() {

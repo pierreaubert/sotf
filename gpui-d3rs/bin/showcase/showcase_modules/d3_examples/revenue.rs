@@ -1,7 +1,7 @@
 use crate::ShowcaseApp;
 use d3rs::scale::{LinearScale, Scale};
 use d3rs::shape::stack::Stack;
-use d3rs::text::{render_vector_text, VectorFontConfig};
+use d3rs::text::{VectorFontConfig, render_vector_text};
 use gpui::prelude::*;
 use gpui::*;
 

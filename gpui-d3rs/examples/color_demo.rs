@@ -6,7 +6,7 @@
 //! - Color schemes (categorical)
 //! - Color interpolation
 
-use d3rs::color::{interpolate_colors, sequential_color, ColorScheme, D3Color};
+use d3rs::color::{ColorScheme, D3Color, interpolate_colors, sequential_color};
 use d3rs::interpolate::{interpolate_hsl, interpolate_lab, interpolate_rgb};
 
 fn main() {

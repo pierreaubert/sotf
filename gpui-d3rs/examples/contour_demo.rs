@@ -6,6 +6,10 @@
 //! - Threshold calculation functions
 
 use d3rs::contour::{
+    // Marching squares
+    ContourGenerator,
+    // Density estimation
+    DensityEstimator,
     contours,
     density_2d,
     gaussian_kernel,
@@ -13,10 +17,6 @@ use d3rs::contour::{
     threshold_scott,
     // Thresholds
     threshold_sturges,
-    // Marching squares
-    ContourGenerator,
-    // Density estimation
-    DensityEstimator,
 };
 
 fn main() {

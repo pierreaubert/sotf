@@ -4,8 +4,8 @@ use d3rs::geo::{
 };
 use gpui::*;
 
-use super::world_data::get_world_data;
 use super::ShowcaseApp;
+use super::world_data::get_world_data;
 use crate::GeoProjectionType;
 
 /// Famous cities with their coordinates
@@ -625,20 +625,25 @@ fn render_cities(
 /// Get description for a projection
 fn projection_description(proj_type: GeoProjectionType) -> &'static str {
     match proj_type {
-        GeoProjectionType::Mercator =>
+        GeoProjectionType::Mercator => {
             "Mercator: A conformal cylindrical projection that preserves angles and shapes locally. \
-             Used for navigation and web maps. Distorts size near the poles.",
-        GeoProjectionType::Equirectangular =>
+             Used for navigation and web maps. Distorts size near the poles."
+        }
+        GeoProjectionType::Equirectangular => {
             "Equirectangular (Plate Carrée): The simplest projection that maps longitude and latitude \
-             directly to x and y. Preserves neither area nor shape, but is easy to compute.",
-        GeoProjectionType::Orthographic =>
+             directly to x and y. Preserves neither area nor shape, but is easy to compute."
+        }
+        GeoProjectionType::Orthographic => {
             "Orthographic: Shows the Earth as seen from space. An azimuthal projection that can only \
-             display one hemisphere at a time. Useful for visualizing the globe.",
-        GeoProjectionType::Stereographic =>
+             display one hemisphere at a time. Useful for visualizing the globe."
+        }
+        GeoProjectionType::Stereographic => {
             "Stereographic: A conformal azimuthal projection. Preserves angles and local shapes. \
-             Used in crystallography and complex analysis.",
-        GeoProjectionType::ConicEqualArea =>
+             Used in crystallography and complex analysis."
+        }
+        GeoProjectionType::ConicEqualArea => {
             "Conic Equal-Area (Albers): An equal-area projection using two standard parallels. \
-             Excellent for regions with large east-west extent like the United States.",
+             Excellent for regions with large east-west extent like the United States."
+        }
     }
 }

@@ -10,6 +10,8 @@
 
 use d3rs::color::D3Color;
 use d3rs::interpolate::{
+    // Transform
+    Transform2D,
     cubehelix_default,
     // Numeric
     interpolate,
@@ -28,9 +30,7 @@ use d3rs::interpolate::{
     piecewise,
     quantize,
     // Zoom
-    zoom::{interpolate_zoom, zoom_duration, ZoomView},
-    // Transform
-    Transform2D,
+    zoom::{ZoomView, interpolate_zoom, zoom_duration},
 };
 
 fn main() {

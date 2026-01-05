@@ -2,8 +2,8 @@
 //!
 //! Run with: cargo run --example gpu2d_demo --features gpu-2d
 
-use d3rs::gpu2d::primitives::Rect;
 use d3rs::gpu2d::Chart2DElement;
+use d3rs::gpu2d::primitives::Rect;
 use gpui::*;
 
 struct DemoView;

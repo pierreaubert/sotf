@@ -2,8 +2,8 @@
 //!
 //! Visualizes various color schemes from d3-scale-chromatic.
 
-use d3rs::color::chromatic::{DivergingScheme, SequentialScheme};
 use d3rs::color::D3Color;
+use d3rs::color::chromatic::{DivergingScheme, SequentialScheme};
 use gpui::prelude::*;
 use gpui::*;
 

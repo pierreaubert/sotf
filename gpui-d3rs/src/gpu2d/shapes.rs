@@ -14,11 +14,11 @@ use std::sync::Arc;
 pub use crate::axis::{AxisConfig, AxisOrientation};
 // Re-export contour types
 pub use crate::contour::{Contour, ContourBand};
+pub use crate::shape::contour::{ContourConfig, HeatmapData};
 pub use crate::shape::contour::{
     heat_color_scale, inferno_color_scale, magma_color_scale, plasma_color_scale,
     turbo_color_scale, viridis_color_scale,
 };
-pub use crate::shape::contour::{ContourConfig, HeatmapData};
 pub use crate::shape::{
     BarConfig, BarDatum, CurveType, LineConfig, LinePoint, ScatterConfig, ScatterPoint,
 };

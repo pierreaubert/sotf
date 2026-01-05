@@ -4,8 +4,8 @@
 
 use d3rs::contour::ContourGenerator;
 use d3rs::gpu2d::{
-    magma_color_scale, render_contour, render_contour_bands, render_heatmap, turbo_color_scale,
-    viridis_color_scale, ContourConfig, HeatmapData,
+    ContourConfig, HeatmapData, magma_color_scale, render_contour, render_contour_bands,
+    render_heatmap, turbo_color_scale, viridis_color_scale,
 };
 use d3rs::scale::LinearScale;
 use gpui::*;

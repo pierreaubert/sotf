@@ -303,8 +303,8 @@ fn test_array_statistics_golden() {
                 );
 
                 let ext = extent(&ord_data).unwrap();
-                assert!(approx_eq(exp_extent[0], ext.0 .0), "extent min mismatch");
-                assert!(approx_eq(exp_extent[1], ext.1 .0), "extent max mismatch");
+                assert!(approx_eq(exp_extent[0], ext.0.0), "extent min mismatch");
+                assert!(approx_eq(exp_extent[1], ext.1.0), "extent max mismatch");
             }
             "sum_mean_median" => {
                 let mut data: Vec<f64> = serde_json::from_value(case["data"].clone()).unwrap();
@@ -1175,7 +1175,7 @@ fn test_arc_shape_golden() {
 
 #[test]
 fn test_line_shape_golden() {
-    use d3rs::shape::{path::Point, Curve};
+    use d3rs::shape::{Curve, path::Point};
 
     let content = fs::read_to_string("golden/shape/line.json").expect("golden file not found");
     let golden: GoldenFile = serde_json::from_str(&content).unwrap();
@@ -2176,7 +2176,7 @@ fn test_delaunay_golden() {
 
 #[test]
 fn test_geo_golden() {
-    use d3rs::geo::{geo_distance, Graticule, Mercator, Projection};
+    use d3rs::geo::{Graticule, Mercator, Projection, geo_distance};
 
     let content = fs::read_to_string("golden/geo/geo.json").expect("golden file not found");
     let golden: GoldenFile = serde_json::from_str(&content).unwrap();
@@ -2282,7 +2282,7 @@ fn test_geo_golden() {
 
 #[test]
 fn test_time_golden() {
-    use d3rs::time::{time_day, time_hour, Interval};
+    use d3rs::time::{Interval, time_day, time_hour};
 
     let content = fs::read_to_string("golden/time/time.json").expect("golden file not found");
     let golden: GoldenFile = serde_json::from_str(&content).unwrap();

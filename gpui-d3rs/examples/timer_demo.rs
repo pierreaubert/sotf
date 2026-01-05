@@ -8,9 +8,9 @@
 //! - timeout() - one-shot delayed callback
 //! - interval() - repeating callback at fixed intervals
 
-use d3rs::timer::{interval, now, timeout, timer, timer_flush, Interval, Timeout, Timer};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use d3rs::timer::{Interval, Timeout, Timer, interval, now, timeout, timer, timer_flush};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 use std::time::Duration;
 

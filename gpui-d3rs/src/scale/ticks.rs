@@ -138,7 +138,7 @@ mod tests {
         // Should generate nice round numbers
         assert!(ticks.len() >= 3);
         assert!(ticks.len() <= 11); // Reasonable upper bound
-                                    // First tick should be >= min
+        // First tick should be >= min
         assert!(ticks[0] >= 0.0 - 1e-10);
         // Last tick should be <= max
         assert!(ticks[ticks.len() - 1] <= 100.0 + 1e-10);

@@ -7,6 +7,7 @@
 //! - Ticks generation
 
 use d3rs::array::{
+    Bisector,
     bin,
     // Search
     bisect_left_f64,
@@ -36,7 +37,6 @@ use d3rs::array::{
     ticks,
     union,
     variance,
-    Bisector,
 };
 use std::cmp::Ordering;
 

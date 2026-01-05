@@ -39,7 +39,7 @@ mod voronoi;
 
 pub use voronoi::Voronoi;
 
-use delaunator::{triangulate, Point, Triangulation, EMPTY};
+use delaunator::{EMPTY, Point, Triangulation, triangulate};
 
 /// Delaunay triangulation of a set of 2D points.
 ///

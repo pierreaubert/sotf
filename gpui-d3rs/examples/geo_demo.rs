@@ -3,9 +3,9 @@
 //! Run with: cargo run --example geo_demo --no-default-features
 
 use d3rs::geo::{
-    geo_bounds, geo_centroid, geo_contains, geo_distance, geo_interpolate, geo_length, Albers,
-    ConicEqualArea, Equirectangular, GeoJsonGeometry, GeoPath, Graticule, Mercator, Orthographic,
-    Projection, Rotation, Stereographic, TransverseMercator,
+    Albers, ConicEqualArea, Equirectangular, GeoJsonGeometry, GeoPath, Graticule, Mercator,
+    Orthographic, Projection, Rotation, Stereographic, TransverseMercator, geo_bounds,
+    geo_centroid, geo_contains, geo_distance, geo_interpolate, geo_length,
 };
 
 fn main() {
@@ -186,7 +186,7 @@ fn main() {
     let bbox = path.bounds(&line);
     println!(
         "LineString bounds: ({:.2}, {:.2}) to ({:.2}, {:.2})",
-        bbox.0 .0, bbox.0 .1, bbox.1 .0, bbox.1 .1
+        bbox.0.0, bbox.0.1, bbox.1.0, bbox.1.1
     );
 
     let (cx, cy) = path.centroid(&line);

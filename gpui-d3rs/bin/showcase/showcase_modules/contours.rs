@@ -1,8 +1,8 @@
 use d3rs::contour::{ContourGenerator, DensityEstimator};
 use d3rs::prelude::*;
 use d3rs::shape::contour::{
-    heat_color_scale, render_contour, render_heatmap, viridis_color_scale, ContourConfig,
-    HeatmapData,
+    ContourConfig, HeatmapData, heat_color_scale, render_contour, render_heatmap,
+    viridis_color_scale,
 };
 use gpui::prelude::FluentBuilder;
 use gpui::*;

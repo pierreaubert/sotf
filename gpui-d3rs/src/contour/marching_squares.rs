@@ -550,11 +550,7 @@ impl ContourGenerator {
         match exit_edge {
             0 => {
                 // Exit through bottom -> enter cell below through its top
-                if j > 0 {
-                    Some((i, j - 1, 2))
-                } else {
-                    None
-                }
+                if j > 0 { Some((i, j - 1, 2)) } else { None }
             }
             1 => {
                 // Exit through right -> enter cell to the right through its left
@@ -574,11 +570,7 @@ impl ContourGenerator {
             }
             3 => {
                 // Exit through left -> enter cell to the left through its right
-                if i > 0 {
-                    Some((i - 1, j, 1))
-                } else {
-                    None
-                }
+                if i > 0 { Some((i - 1, j, 1)) } else { None }
             }
             _ => None,
         }

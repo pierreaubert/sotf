@@ -4,18 +4,18 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use autoeq::read::{
-    extract_cea2034_curves_original, fetch_available_speakers, fetch_contour_data,
-    fetch_directivity_data, fetch_measurement_plot_data, ContourPlotData,
+    ContourPlotData, extract_cea2034_curves_original, fetch_available_speakers, fetch_contour_data,
+    fetch_directivity_data, fetch_measurement_plot_data,
 };
 use autoeq::{Curve, DirectivityData};
-use d3rs::axis::{render_axis, AxisConfig, DefaultAxisTheme};
+use d3rs::axis::{AxisConfig, DefaultAxisTheme, render_axis};
 use d3rs::brush::{BrushSelection, BrushState};
 use d3rs::color::D3Color;
 use d3rs::contour::ContourGenerator;
 use d3rs::gpu2d::{
-    render_contour, render_contour_bands, render_heatmap, ContourConfig, HeatmapData,
+    ContourConfig, HeatmapData, render_contour, render_contour_bands, render_heatmap,
 };
-use d3rs::grid::{render_grid, GridConfig};
+use d3rs::grid::{GridConfig, render_grid};
 use d3rs::prelude::{LinearScale, LogScale};
 // Radial shape functions could be used in future - currently using canvas-based custom rendering
 // use d3rs::shape::radial::{polar_grid_circles, polar_grid_rays, radial_line, RadialLineConfig, RadialPoint};
@@ -23,7 +23,7 @@ use d3rs::gpu3d::{
     Colormap as Surface3DColormap, Surface3DConfig, Surface3DElement, Surface3DState,
     SurfaceData as Surface3DData, SurfacePlotType,
 };
-use d3rs::text::{render_vector_text, VectorFontConfig};
+use d3rs::text::{VectorFontConfig, render_vector_text};
 use d3rs::zoom::ZoomState;
 use gpui::prelude::*;
 use gpui::{deferred, *};
@@ -38,7 +38,7 @@ use super::types::{
 
 mod render_sphere;
 use super::utils::{
-    cea2034_colors, format_frequency, get_angle_range, interpolate_spl_at_frequency, CEA2034_CURVES,
+    CEA2034_CURVES, cea2034_colors, format_frequency, get_angle_range, interpolate_spl_at_frequency,
 };
 
 /// Main application state

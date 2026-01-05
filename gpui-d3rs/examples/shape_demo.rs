@@ -17,7 +17,7 @@ use d3rs::shape::{
     // Path
     path::{PathBuilder, Point},
     // Pie/Arc
-    pie::{donut, half_pie, pie, Pie},
+    pie::{Pie, donut, half_pie, pie},
     // Stack
     stack::{Stack, StackOffset, StackOrder},
     // Symbols

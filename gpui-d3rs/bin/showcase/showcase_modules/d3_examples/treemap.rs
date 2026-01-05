@@ -8,7 +8,7 @@
 //! 2. Color coding by top-level category
 //! 3. Interactive controls for tiling method
 
-use super::flare_data::{flare_hierarchy, top_level_categories, HierarchyNode};
+use super::flare_data::{HierarchyNode, flare_hierarchy, top_level_categories};
 use crate::ShowcaseApp;
 use d3rs::color::D3Color;
 use gpui::prelude::FluentBuilder;

@@ -1,6 +1,6 @@
 use super::super::world_data::get_world_data;
 use crate::ShowcaseApp;
-use d3rs::geo::{projection::Mercator, GeoJsonGeometry, GeoPath};
+use d3rs::geo::{GeoJsonGeometry, GeoPath, projection::Mercator};
 use gpui::prelude::*;
 use gpui::*;
 

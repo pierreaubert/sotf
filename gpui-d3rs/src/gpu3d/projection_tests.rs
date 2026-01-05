@@ -16,14 +16,14 @@ mod tests {
         camera.position = Vec3::new(0.0, 10.0, 0.0);
         camera.target = Vec3::new(0.0, 0.0, 0.0);
         camera.up = Vec3::Z; // Need to define up vector. If looking down Y, Z up means Z axis aligns with screen Y?
-                             // Wait, standard UP is usually Y. If looking down, UP cannot be Y.
-                             // Let's say UP is -Z (standard map view? North is Up?)
-                             // If UP is -Z, then Z axis points DOWN on screen.
-                             // If UP is +Z, then Z axis points UP on screen.
-                             // If we want Z axis (Angle) to be horizontal?
-                             // Wait. X is usually horizontal.
-                             // If X is Right, Z is Up (on screen).
-                             // Then UP should be Z.
+        // Wait, standard UP is usually Y. If looking down, UP cannot be Y.
+        // Let's say UP is -Z (standard map view? North is Up?)
+        // If UP is -Z, then Z axis points DOWN on screen.
+        // If UP is +Z, then Z axis points UP on screen.
+        // If we want Z axis (Angle) to be horizontal?
+        // Wait. X is usually horizontal.
+        // If X is Right, Z is Up (on screen).
+        // Then UP should be Z.
         camera.up = Vec3::new(0.0, 0.0, -1.0); // Let's try standard 3D generic convention where Z is "depth".
 
         // Actually, let's just use what works for us.

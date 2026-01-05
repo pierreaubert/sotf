@@ -6,5 +6,5 @@
 mod vector_font;
 
 pub use vector_font::{
-    measure_text_width, paint_vector_text_at, render_vector_text, VectorFontConfig,
+    VectorFontConfig, measure_text_width, paint_vector_text_at, render_vector_text,
 };

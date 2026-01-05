@@ -1,8 +1,8 @@
 use super::super::world_data::get_world_data;
 use crate::{GeoProjectionType, ShowcaseApp};
 use d3rs::geo::{
-    projection::{ConicEqualArea, Equirectangular, Mercator, Orthographic, Stereographic},
     GeoPath,
+    projection::{ConicEqualArea, Equirectangular, Mercator, Orthographic, Stereographic},
 };
 use gpui::prelude::*;
 use gpui::*;

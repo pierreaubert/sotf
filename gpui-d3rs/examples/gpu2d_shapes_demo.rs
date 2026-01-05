@@ -4,9 +4,9 @@
 
 use d3rs::color::D3Color;
 use d3rs::gpu2d::{
-    render_axis, render_bars, render_grid, render_line, render_scatter, AxisConfig, BarConfig,
-    BarDatum, CurveType, GpuAxisTheme, GpuGridConfig, LineConfig, LinePoint, ScatterConfig,
-    ScatterPoint,
+    AxisConfig, BarConfig, BarDatum, CurveType, GpuAxisTheme, GpuGridConfig, LineConfig, LinePoint,
+    ScatterConfig, ScatterPoint, render_axis, render_bars, render_grid, render_line,
+    render_scatter,
 };
 use d3rs::scale::LinearScale;
 use gpui::*;

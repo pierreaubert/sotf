@@ -444,11 +444,7 @@ impl SpinoramaApp {
                     ScrollDelta::Lines(lines) => lines.y,
                     ScrollDelta::Pixels(pixels) => {
                         let py: f32 = pixels.y.into();
-                        if py.abs() > 0.0 {
-                            py.signum()
-                        } else {
-                            0.0
-                        }
+                        if py.abs() > 0.0 { py.signum() } else { 0.0 }
                     }
                 };
 
