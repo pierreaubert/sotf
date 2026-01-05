@@ -270,12 +270,8 @@ impl GatePlugin {
 
 impl InPlacePlugin for GatePlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo {
-            name: "Gate".to_string(),
-            version: "1.0.0".to_string(),
-            author: "AutoEQ".to_string(),
-            description: "Noise gate with hold time for removing background noise".to_string(),
-        }
+        PluginInfo::new("Gate", "1.0.0", "SotF")
+            .with_description("Noise gate with hold time for removing background noise")
     }
 
     fn channels(&self) -> usize {

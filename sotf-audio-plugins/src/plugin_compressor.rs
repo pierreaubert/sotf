@@ -326,12 +326,8 @@ impl CompressorPlugin {
 
 impl InPlacePlugin for CompressorPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo {
-            name: "Compressor".to_string(),
-            version: "1.1.0".to_string(),
-            author: "AutoEQ".to_string(),
-            description: "Dynamic range compressor with soft knee and smoothing".to_string(),
-        }
+        PluginInfo::new("Compressor", "1.1.0", "SotF")
+            .with_description("Dynamic range compressor with soft knee and smoothing")
     }
 
     fn channels(&self) -> usize {

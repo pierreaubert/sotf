@@ -111,12 +111,8 @@ impl HalOutputPlugin {
 
 impl InPlacePlugin for HalOutputPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo {
-            name: "HAL Output".to_string(),
-            version: "1.0.0".to_string(),
-            author: "AutoEQ".to_string(),
-            description: "Writes audio to macOS HAL driver for loopback".to_string(),
-        }
+        PluginInfo::new("HAL Output", "1.0.0", "SotF")
+            .with_description("Writes audio to macOS HAL driver for loopback")
     }
 
     fn channels(&self) -> usize {

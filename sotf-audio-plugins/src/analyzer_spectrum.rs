@@ -344,12 +344,8 @@ impl SpectrumAnalyzerPlugin {
 
 impl Plugin for SpectrumAnalyzerPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo {
-            name: "Spectrum Analyzer".to_string(),
-            version: "1.0.0".to_string(),
-            author: "AutoEQ".to_string(),
-            description: "Real-time FFT-based frequency spectrum analysis".to_string(),
-        }
+        PluginInfo::new("Spectrum Analyzer", "1.0.0", "SotF")
+            .with_description("Real-time FFT-based frequency spectrum analysis")
     }
 
     fn input_channels(&self) -> usize {

@@ -149,17 +149,12 @@ impl ResamplerPlugin {
 
 impl Plugin for ResamplerPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo {
-            name: "Resampler".to_string(),
-            version: "1.0.0".to_string(),
-            author: "AutoEQ".to_string(),
-            description: format!(
-                "High-quality sample rate converter: {}Hz -> {}Hz (ratio: {:.4})",
-                self.input_sample_rate,
-                self.output_sample_rate,
-                self.ratio()
-            ),
-        }
+        PluginInfo::new("Resampler", "1.0.0", "SotF").with_description(format!(
+            "High-quality sample rate converter: {}Hz -> {}Hz (ratio: {:.4})",
+            self.input_sample_rate,
+            self.output_sample_rate,
+            self.ratio()
+        ))
     }
 
     fn input_channels(&self) -> usize {

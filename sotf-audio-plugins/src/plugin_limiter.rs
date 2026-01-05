@@ -189,13 +189,8 @@ impl LimiterPlugin {
 
 impl InPlacePlugin for LimiterPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo {
-            name: "Limiter".to_string(),
-            version: "1.0.0".to_string(),
-            author: "AutoEQ".to_string(),
-            description: "Brickwall limiter with lookahead for transparent peak control"
-                .to_string(),
-        }
+        PluginInfo::new("Limiter", "1.0.0", "SotF")
+            .with_description("Brickwall limiter with lookahead for transparent peak control")
     }
 
     fn channels(&self) -> usize {

@@ -820,15 +820,10 @@ impl MultibandExpanderPlugin {
 
 impl InPlacePlugin for MultibandExpanderPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo {
-            name: "Multiband Expander".to_string(),
-            version: "1.0.0".to_string(),
-            author: "AutoEQ".to_string(),
-            description: format!(
-                "{}-band expander with LR24 crossovers and hysteresis",
-                self.num_bands
-            ),
-        }
+        PluginInfo::new("Multiband Expander", "1.0.0", "SotF").with_description(format!(
+            "{}-band expander with LR24 crossovers and hysteresis",
+            self.num_bands
+        ))
     }
 
     fn channels(&self) -> usize {

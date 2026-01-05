@@ -453,12 +453,8 @@ impl ConvolutionPlugin {
 
 impl Plugin for ConvolutionPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo {
-            name: "Convolution".to_string(),
-            version: "1.1.0".to_string(),
-            author: "SOTF".to_string(),
-            description: "FFT-based convolution (Async loading)".to_string(),
-        }
+        PluginInfo::new("Convolution", "1.1.0", "SotF")
+            .with_description("FFT-based convolution (Async loading)")
     }
 
     fn input_channels(&self) -> usize {

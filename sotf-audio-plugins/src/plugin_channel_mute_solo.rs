@@ -133,12 +133,8 @@ impl ChannelMuteSoloPlugin {
 
 impl InPlacePlugin for ChannelMuteSoloPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo {
-            name: "Channel Mute/Solo".to_string(),
-            version: "1.0.0".to_string(),
-            author: "SOTF".to_string(),
-            description: "Mute or solo individual channels in a multi-channel stream".to_string(),
-        }
+        PluginInfo::new("Channel Mute/Solo", "1.0.0", "SotF")
+            .with_description("Mute or solo individual channels in a multi-channel stream")
     }
 
     fn channels(&self) -> usize {

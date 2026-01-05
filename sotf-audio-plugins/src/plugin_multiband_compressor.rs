@@ -738,12 +738,8 @@ impl MultibandCompressorPlugin {
 
 impl InPlacePlugin for MultibandCompressorPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo {
-            name: "Multiband Compressor".to_string(),
-            version: "1.0.0".to_string(),
-            author: "AutoEQ".to_string(),
-            description: format!("{}-band compressor with LR24 crossovers", self.num_bands),
-        }
+        PluginInfo::new("Multiband Compressor", "1.0.0", "SotF")
+            .with_description(format!("{}-band compressor with LR24 crossovers", self.num_bands))
     }
 
     fn channels(&self) -> usize {

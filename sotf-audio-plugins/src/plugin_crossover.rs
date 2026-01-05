@@ -141,20 +141,12 @@ impl CrossoverPlugin {
 
 impl InPlacePlugin for CrossoverPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo {
-            name: "Crossover".to_string(),
-            version: "1.0.0".to_string(),
-            author: "AutoEQ".to_string(),
-            description: format!(
-                "Multi-way crossover filter at {} Hz ({})",
-                self.frequency,
-                if self.is_highpass {
-                    "highpass"
-                } else {
-                    "lowpass"
-                }
-            ),
-        }
+        let desc = format!(
+            "Multi-way crossover filter at {} Hz ({})",
+            self.frequency,
+            if self.is_highpass { "highpass" } else { "lowpass" }
+        );
+        PluginInfo::new("Crossover", "1.0.0", "SotF").with_description(desc)
     }
 
     fn channels(&self) -> usize {

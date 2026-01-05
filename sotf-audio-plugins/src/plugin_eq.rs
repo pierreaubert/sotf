@@ -307,12 +307,7 @@ impl Plugin for EqPlugin {
             )
         };
 
-        PluginInfo {
-            name: "Parametric EQ".to_string(),
-            version: "1.0.0".to_string(),
-            author: "AutoEQ".to_string(),
-            description,
-        }
+        PluginInfo::new("Parametric EQ", "1.0.0", "SotF").with_description(description)
     }
 
     fn input_channels(&self) -> usize {

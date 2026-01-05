@@ -401,12 +401,8 @@ impl LoudnessMonitorPlugin {
 
 impl Plugin for LoudnessMonitorPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo {
-            name: "Loudness Monitor".to_string(),
-            version: "1.0.0".to_string(),
-            author: "AutoEQ".to_string(),
-            description: "Real-time EBU R128 loudness monitoring (LUFS, peaks)".to_string(),
-        }
+        PluginInfo::new("Loudness Monitor", "1.0.0", "SotF")
+            .with_description("Real-time EBU R128 loudness monitoring (LUFS, peaks)")
     }
 
     fn input_channels(&self) -> usize {

@@ -832,15 +832,10 @@ impl BinauralDecoderPlugin {
 
 impl Plugin for BinauralDecoderPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo {
-            name: "Binaural Decoder".to_string(),
-            version: "1.2.0".to_string(),
-            author: "AutoEQ".to_string(),
-            description: format!(
-                "Converts {}-channel audio to binaural stereo using HRTFs from a file (Async)",
-                self.input_channels
-            ),
-        }
+        PluginInfo::new("Binaural Decoder", "1.2.0", "SotF").with_description(format!(
+            "Converts {}-channel audio to binaural stereo using HRTFs from a file (Async)",
+            self.input_channels
+        ))
     }
 
     fn input_channels(&self) -> usize {

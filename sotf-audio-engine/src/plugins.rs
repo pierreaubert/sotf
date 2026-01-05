@@ -1,7 +1,7 @@
+use crate::engine::PluginConfig;
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use crate::engine::PluginConfig;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum PluginType {
@@ -1010,8 +1010,23 @@ impl PluginSettings {
     pub fn to_plugin_config(&self, sample_rate: f64) -> PluginConfig {
         match self {
             Self::EQ { channels, filters } => {
+                // Check if any band is soloed
+                let any_soloed = filters.iter().any(|f| f.solo);
+
+                // Filter based on mute/solo state:
+                // - If any band is soloed, only include soloed (and not muted) bands
+                // - If no band is soloed, include all non-muted bands
                 let filter_configs: Vec<_> = filters
                     .iter()
+                    .filter(|f| {
+                        if f.muted {
+                            return false;
+                        }
+                        if any_soloed && !f.solo {
+                            return false;
+                        }
+                        true
+                    })
                     .map(|f| {
                         let bq = f.to_biquad(sample_rate);
                         json!({
@@ -1446,17 +1461,12 @@ impl PluginSettings {
             PluginType::EQ => Self::EQ {
                 channels: default_channels(),
                 filters: vec![
-                    // Default: 10-band flat EQ
-                    EQFilter::new(BiquadFilterType::Peak, 32.0, 1.4, 0.0),
-                    EQFilter::new(BiquadFilterType::Peak, 64.0, 1.4, 0.0),
-                    EQFilter::new(BiquadFilterType::Peak, 125.0, 1.4, 0.0),
-                    EQFilter::new(BiquadFilterType::Peak, 250.0, 1.4, 0.0),
-                    EQFilter::new(BiquadFilterType::Peak, 500.0, 1.4, 0.0),
+                    // Default: 5-band flat EQ
+                    EQFilter::new(BiquadFilterType::Peak, 100.0, 1.4, 0.0),
+                    EQFilter::new(BiquadFilterType::Peak, 300.0, 1.4, 0.0),
                     EQFilter::new(BiquadFilterType::Peak, 1000.0, 1.4, 0.0),
-                    EQFilter::new(BiquadFilterType::Peak, 2000.0, 1.4, 0.0),
-                    EQFilter::new(BiquadFilterType::Peak, 4000.0, 1.4, 0.0),
-                    EQFilter::new(BiquadFilterType::Peak, 8000.0, 1.4, 0.0),
-                    EQFilter::new(BiquadFilterType::Peak, 16000.0, 1.4, 0.0),
+                    EQFilter::new(BiquadFilterType::Peak, 3000.0, 1.4, 0.0),
+                    EQFilter::new(BiquadFilterType::Peak, 10000.0, 1.4, 0.0),
                 ],
             },
             PluginType::Gain => Self::Gain {
@@ -2332,7 +2342,7 @@ impl PluginChain {
                     input_channels,
                     enable_optimization,
                     externalization,
-                    near_field_strength
+                    near_field_strength,
                 } => {
                     if *input_channels != current_channels {
                         updated_settings = Some(PluginSettings::BinauralDecoder {
@@ -2347,7 +2357,7 @@ impl PluginChain {
                 PluginSettings::Matrix {
                     input_channels,
                     output_channels,
-                    matrix: _
+                    matrix: _,
                 } => {
                     if *input_channels != current_channels {
                         // Resize matrix to identity
@@ -2392,7 +2402,9 @@ impl PluginChain {
                     PluginSettings::BinauralDecoder { .. } => {
                         current_channels = 2;
                     }
-                    PluginSettings::Matrix { output_channels, .. } => {
+                    PluginSettings::Matrix {
+                        output_channels, ..
+                    } => {
                         current_channels = *output_channels;
                     }
                     _ => {}

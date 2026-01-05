@@ -421,15 +421,10 @@ impl XtcPlugin {
 
 impl Plugin for XtcPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo {
-            name: "Crosstalk Cancellation (XTC)".to_string(),
-            version: "1.1.0".to_string(),
-            author: "SOTF Audio".to_string(),
-            description: format!(
-                "BACCH-style crosstalk cancellation (Async) - FFT size: {}, speakers at {}° and {}m",
-                self.fft_size, self.params.speaker_angle_deg, self.params.distance_m
-            ),
-        }
+        PluginInfo::new("Crosstalk Cancellation (XTC)", "1.1.0", "SotF").with_description(format!(
+            "BACCH-style crosstalk cancellation (Async) - FFT size: {}, speakers at {}° and {}m",
+            self.fft_size, self.params.speaker_angle_deg, self.params.distance_m
+        ))
     }
 
     fn input_channels(&self) -> usize {

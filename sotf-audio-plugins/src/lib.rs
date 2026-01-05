@@ -23,6 +23,7 @@ mod analyzer;
 mod analyzer_loudness_monitor;
 mod analyzer_spectrum;
 mod auto_gain;
+mod automation;
 mod error;
 mod host;
 pub mod param_specs;
@@ -49,6 +50,7 @@ mod plugin_pnd;
 mod plugin_resampler;
 mod plugin_upmixer;
 mod plugin_xtc;
+mod serialization;
 mod simd;
 mod smoothing;
 mod sofa;
@@ -62,14 +64,14 @@ mod plugin_hal_output;
 
 pub use analyzer::{AnalyzerData, AnalyzerPlugin, LoudnessData, SpectrumData};
 pub use auto_gain::{AutoGain, AutoGainData, AutoGainLoudnessType, AutoGainParams};
+pub use automation::{
+    AutomationCurve, AutomationMode, AutomationSupport, BezierPoint, ParameterAutomation,
+    ParameterSmoother, SmoothingMode, automation_utils,
+};
 pub use error::{PluginError, PluginResult};
 pub use host::{DawHost, GraphEdge as DawGraphEdge, Host, NodeId as DawNodeId};
-pub use parameters::{Parameter, ParameterId, ParameterValue};
 pub use plugin::{InPlacePlugin, InPlacePluginAdapter, Plugin, PluginInfo, ProcessContext};
-pub use plugin_ab_compare::{
-    ABCompareData, ABComparePlugin, ABComparePluginParams, GraphEdgeConfig, GraphNodeConfig,
-    LoudnessType, MixMode, PathConfig, PluginInRack,
-};
+pub use serialization::{PluginPreset, PresetBank, PresetMetadata, SerializablePlugin};
 
 pub use plugin_binaural::{
     BinauralDecoderParams, BinauralDecoderPlugin, RoomModel, binaural_default_enable_optimization,

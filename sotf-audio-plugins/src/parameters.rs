@@ -2,10 +2,11 @@
 // Plugin Parameter System
 // ============================================================================
 
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// Unique identifier for a parameter
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+#[derive(Debug, Clone, Hash, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ParameterId(pub String);
 
 impl From<&str> for ParameterId {
@@ -28,12 +29,12 @@ impl ParameterId {
 }
 
 /// Parameter value types
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ParameterValue {
     Float(f32),
     Int(i32),
     Bool(bool),
-    String(String), // For JSON-serialized complex types
+    String(String),
 }
 
 impl ParameterValue {
@@ -82,7 +83,7 @@ impl fmt::Display for ParameterValue {
 }
 
 /// Importance level for UI generation and responsive design
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ParameterImportance {
     /// Always visible, core functionality
     Critical,
@@ -93,7 +94,7 @@ pub enum ParameterImportance {
 }
 
 /// Parameter definition with metadata
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Parameter {
     /// Unique identifier
     pub id: ParameterId,
@@ -111,6 +112,10 @@ pub struct Parameter {
     pub min_value: Option<ParameterValue>,
     /// Maximum value (for numeric parameters)
     pub max_value: Option<ParameterValue>,
+    /// Unit string (e.g., "dB", "Hz", "%")
+    pub unit: String,
+    /// Whether this parameter uses logarithmic scaling
+    pub logarithmic: bool,
 }
 
 impl Parameter {
@@ -125,6 +130,8 @@ impl Parameter {
             default_value: ParameterValue::Float(default),
             min_value: Some(ParameterValue::Float(min)),
             max_value: Some(ParameterValue::Float(max)),
+            unit: String::new(),
+            logarithmic: false,
         }
     }
 
@@ -139,6 +146,8 @@ impl Parameter {
             default_value: ParameterValue::Int(default),
             min_value: Some(ParameterValue::Int(min)),
             max_value: Some(ParameterValue::Int(max)),
+            unit: String::new(),
+            logarithmic: false,
         }
     }
 
@@ -153,6 +162,8 @@ impl Parameter {
             default_value: ParameterValue::Bool(default),
             min_value: None,
             max_value: None,
+            unit: String::new(),
+            logarithmic: false,
         }
     }
 
@@ -167,7 +178,21 @@ impl Parameter {
             default_value: ParameterValue::String(default),
             min_value: None,
             max_value: None,
+            unit: String::new(),
+            logarithmic: false,
         }
+    }
+
+    /// Set unit string
+    pub fn with_unit(mut self, unit: &str) -> Self {
+        self.unit = unit.to_string();
+        self
+    }
+
+    /// Set logarithmic scaling
+    pub fn with_logarithmic(mut self, logarithmic: bool) -> Self {
+        self.logarithmic = logarithmic;
+        self
     }
 
     /// Set description
@@ -185,6 +210,12 @@ impl Parameter {
     /// Set importance
     pub fn with_importance(mut self, importance: ParameterImportance) -> Self {
         self.importance = importance;
+        self
+    }
+
+    /// Build the parameter (return self for method chaining)
+    #[inline]
+    pub fn build(self) -> Self {
         self
     }
 

@@ -249,13 +249,8 @@ impl GainPlugin {
 
 impl InPlacePlugin for GainPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo {
-            name: "Gain".to_string(),
-            version: "1.1.0".to_string(),
-            author: "AutoEQ".to_string(),
-            description: "Gain/volume control plugin with per-channel support (Smoothed)"
-                .to_string(),
-        }
+        PluginInfo::new("Gain", "1.1.0", "SotF")
+            .with_description("Gain/volume control plugin with per-channel support (Smoothed)")
     }
 
     fn channels(&self) -> usize {

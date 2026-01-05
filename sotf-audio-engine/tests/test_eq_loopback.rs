@@ -1,5 +1,5 @@
-use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use serde_json::json;
 use sotf_audio::engine::{AudioEngine, EngineConfig, PluginConfig};
 use std::sync::{Arc, Mutex};

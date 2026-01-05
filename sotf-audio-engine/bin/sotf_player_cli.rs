@@ -1,5 +1,5 @@
-use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use clap::{Parser, Subcommand};
+use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use sotf_audio::LoudnessCompensation;
 use sotf_audio::plugins::{EQFilter, PluginChain, PluginSettings, PluginType};
 use sotf_audio::{AudioEngineManager, PluginConfig, StreamingState, run_preflight_checks};
@@ -1187,7 +1187,9 @@ fn play_stream(
                     log::info!("Rack: Added Upmixer plugin ({})", upmixer_config);
                 }
                 "binaural" => {
-                    let sofa_path = sofa_file.clone().ok_or("Binaural decoder requires --sofa-file to be specified")?;
+                    let sofa_path = sofa_file
+                        .clone()
+                        .ok_or("Binaural decoder requires --sofa-file to be specified")?;
                     let input_channels = chain.output_channels();
 
                     let idx = chain.add_plugin(&PluginType::BinauralDecoder);
@@ -1284,7 +1286,9 @@ fn play_stream(
 
         // Find the actual index of loudness monitor in the plugins vec
         let actual_loudness_idx = if has_lufs {
-            plugins.iter().position(|p| p.plugin_type == "loudness_monitor")
+            plugins
+                .iter()
+                .position(|p| p.plugin_type == "loudness_monitor")
         } else {
             None
         };
@@ -1296,225 +1300,227 @@ fn play_stream(
 
         // Upmixer (if enabled)
         let output_channels = if upmixer {
-        // Check that input is stereo
-        if audio_info.spec.channels != 2 {
-            return Err(format!(
-                "Upmixer requires stereo input, got {} channels",
-                audio_info.spec.channels
-            ));
+            // Check that input is stereo
+            if audio_info.spec.channels != 2 {
+                return Err(format!(
+                    "Upmixer requires stereo input, got {} channels",
+                    audio_info.spec.channels
+                ));
+            }
+
+            // Get channel count for the configuration
+            let output_channel_count = get_speaker_config_channels(&upmixer_config)?;
+
+            log::info!("Enabling stereo-to-{} upmixer plugin:", upmixer_config);
+            log::info!("  Speaker configuration: {}", upmixer_config);
+            log::info!("  Output channels: {}", output_channel_count);
+            log::info!("  FFT size: {}", upmixer_fft_size);
+            log::info!("  Front direct gain: {:.2}", upmixer_gain_front_direct);
+            log::info!("  Front ambient gain: {:.2}", upmixer_gain_front_ambient);
+            log::info!("  Rear ambient gain: {:.2}", upmixer_gain_rear_ambient);
+            log::info!("  LFE cutoff: {:.1} Hz", upmixer_lfe_cutoff_hz);
+            log::info!("  Stereo width: {:.2}", upmixer_stereo_width);
+            log::info!("  Bandpass: {:.1} Hz", upmixer_bandpass_hz);
+            log::info!("  Height gain: {:.2}", upmixer_height_gain);
+            log::info!("  LFE gain: {:.2}", upmixer_lfe_gain);
+            log::info!(
+                "  HR direct: {} (sharpen {:.2}, safety cap {:.1} dB)",
+                enable_hr_direct,
+                hr_sharpen,
+                safety_cap_db
+            );
+            log::info!("");
+
+            let upmixer_plugin = create_upmixer_plugin_config(
+                upmixer_config.clone(),
+                upmixer_fft_size,
+                upmixer_gain_front_direct,
+                upmixer_gain_front_ambient,
+                upmixer_gain_rear_ambient,
+                upmixer_lfe_cutoff_hz,
+                upmixer_stereo_width,
+                upmixer_bandpass_hz,
+                upmixer_height_gain,
+                upmixer_lfe_gain,
+                enable_subharmonic_synth,
+                subharmonic_gain,
+                enable_hr_direct,
+                hr_sharpen,
+                safety_cap_db,
+            )?;
+            plugins.push(upmixer_plugin);
+            log::debug!(
+                "Added upmixer plugin: 2ch -> {}ch ({})",
+                output_channel_count,
+                upmixer_config
+            );
+            output_channel_count
+        } else {
+            audio_info.spec.channels as usize
+        };
+
+        // Binaural decoder (if enabled, must come after upmixer)
+        let output_channels = if binaural {
+            // Validate that SOFA file is provided
+            let sofa_path =
+                sofa_file.ok_or("Binaural decoder requires --sofa-file to be specified")?;
+
+            // Input channels come from previous plugin (upmixer or original audio)
+            let input_channels = output_channels;
+
+            log::info!("Enabling binaural decoder plugin:");
+            log::info!("  Input channels: {}", input_channels);
+            log::info!("  Output channels: 2 (binaural stereo)");
+            log::info!("  SOFA file: {:?}", sofa_path);
+            log::info!("  FFT size: {}", binaural_fft_size);
+            log::info!("");
+
+            let binaural_plugin = create_binaural_decoder_plugin_config(
+                sofa_path,
+                input_channels,
+                binaural_fft_size,
+                enable_optimization,
+                externalization,
+                near_field_strength,
+            )?;
+            plugins.push(binaural_plugin);
+            log::debug!(
+                "Added binaural decoder plugin: {}ch -> 2ch (binaural)",
+                input_channels
+            );
+
+            2 // Binaural always outputs stereo
+        } else {
+            output_channels
+        };
+
+        // Loudness compensation (before channel mapping)
+        if let Some(ref lc) = loudness {
+            let lc_plugin = create_loudness_compensation_plugin_config(lc)?;
+            plugins.push(lc_plugin);
+            log::debug!("Added loudness compensation plugin");
         }
 
-        // Get channel count for the configuration
-        let output_channel_count = get_speaker_config_channels(&upmixer_config)?;
-
-        log::info!("Enabling stereo-to-{} upmixer plugin:", upmixer_config);
-        log::info!("  Speaker configuration: {}", upmixer_config);
-        log::info!("  Output channels: {}", output_channel_count);
-        log::info!("  FFT size: {}", upmixer_fft_size);
-        log::info!("  Front direct gain: {:.2}", upmixer_gain_front_direct);
-        log::info!("  Front ambient gain: {:.2}", upmixer_gain_front_ambient);
-        log::info!("  Rear ambient gain: {:.2}", upmixer_gain_rear_ambient);
-        log::info!("  LFE cutoff: {:.1} Hz", upmixer_lfe_cutoff_hz);
-        log::info!("  Stereo width: {:.2}", upmixer_stereo_width);
-        log::info!("  Bandpass: {:.1} Hz", upmixer_bandpass_hz);
-        log::info!("  Height gain: {:.2}", upmixer_height_gain);
-        log::info!("  LFE gain: {:.2}", upmixer_lfe_gain);
-        log::info!(
-            "  HR direct: {} (sharpen {:.2}, safety cap {:.1} dB)",
-            enable_hr_direct,
-            hr_sharpen,
-            safety_cap_db
-        );
-        log::info!("");
-
-        let upmixer_plugin = create_upmixer_plugin_config(
-            upmixer_config.clone(),
-            upmixer_fft_size,
-            upmixer_gain_front_direct,
-            upmixer_gain_front_ambient,
-            upmixer_gain_rear_ambient,
-            upmixer_lfe_cutoff_hz,
-            upmixer_stereo_width,
-            upmixer_bandpass_hz,
-            upmixer_height_gain,
-            upmixer_lfe_gain,
-            enable_subharmonic_synth,
-            subharmonic_gain,
-            enable_hr_direct,
-            hr_sharpen,
-            safety_cap_db,
-        )?;
-        plugins.push(upmixer_plugin);
-        log::debug!(
-            "Added upmixer plugin: 2ch -> {}ch ({})",
-            output_channel_count,
-            upmixer_config
-        );
-        output_channel_count
-    } else {
-        audio_info.spec.channels as usize
-    };
-
-    // Binaural decoder (if enabled, must come after upmixer)
-    let output_channels = if binaural {
-        // Validate that SOFA file is provided
-        let sofa_path = sofa_file.ok_or("Binaural decoder requires --sofa-file to be specified")?;
-
-        // Input channels come from previous plugin (upmixer or original audio)
-        let input_channels = output_channels;
-
-        log::info!("Enabling binaural decoder plugin:");
-        log::info!("  Input channels: {}", input_channels);
-        log::info!("  Output channels: 2 (binaural stereo)");
-        log::info!("  SOFA file: {:?}", sofa_path);
-        log::info!("  FFT size: {}", binaural_fft_size);
-        log::info!("");
-
-        let binaural_plugin = create_binaural_decoder_plugin_config(
-            sofa_path,
-            input_channels,
-            binaural_fft_size,
-            enable_optimization,
-            externalization,
-            near_field_strength,
-        )?;
-        plugins.push(binaural_plugin);
-        log::debug!(
-            "Added binaural decoder plugin: {}ch -> 2ch (binaural)",
-            input_channels
-        );
-
-        2 // Binaural always outputs stereo
-    } else {
-        output_channels
-    };
-
-    // Loudness compensation (before channel mapping)
-    if let Some(ref lc) = loudness {
-        let lc_plugin = create_loudness_compensation_plugin_config(lc)?;
-        plugins.push(lc_plugin);
-        log::debug!("Added loudness compensation plugin");
-    }
-
-    // EQ filters (assuming it is room eq)
-    if !filters.is_empty() {
-        let eq_plugin = create_eq_plugin_config(&filters)?;
-        plugins.push(eq_plugin);
-        log::debug!("Added EQ plugin with {} filters", filters.len());
-    }
-
-    // Dynamics plugins (expander, compressor, etc.)
-    if expander {
-        let expander_plugin = create_expander_plugin_config()?;
-        plugins.push(expander_plugin);
-        log::info!("Enabled expander plugin (default parameters)");
-    }
-
-    if multiband_compressor {
-        let mb_comp_plugin = create_multiband_compressor_plugin_config()?;
-        plugins.push(mb_comp_plugin);
-        log::info!("Enabled multiband compressor plugin (3-band, default parameters)");
-    }
-
-    if multiband_expander {
-        let mb_exp_plugin = create_multiband_expander_plugin_config()?;
-        plugins.push(mb_exp_plugin);
-        log::info!("Enabled multiband expander plugin (3-band, default parameters)");
-    }
-
-    // XTC (Crosstalk Cancellation)
-    if xtc {
-        let xtc_plugin = create_xtc_plugin_config()?;
-        plugins.push(xtc_plugin);
-        log::info!("Enabled XTC (crosstalk cancellation) plugin");
-    }
-
-    // Denoiser
-    if denoiser {
-        let denoiser_plugin = create_denoiser_plugin_config(
-            denoiser_reduction_db,
-            denoiser_floor_db,
-            denoiser_smoothing,
-            denoiser_attack_ms,
-            denoiser_release_ms,
-            denoiser_low_latency,
-        )?;
-        plugins.push(denoiser_plugin);
-        log::info!(
-            "Enabled denoiser plugin (reduction={:.1}dB, floor={:.1}dB, low_latency={})",
-            denoiser_reduction_db,
-            denoiser_floor_db,
-            denoiser_low_latency
-        );
-    }
-
-    // PND (Polyphonic Note Detection) varispeed
-    if pnd {
-        let pnd_plugin = create_pnd_plugin_config(
-            pnd_correction_strength,
-            pnd_analysis_window_ms,
-            pnd_drift_smoothing,
-        )?;
-        plugins.push(pnd_plugin);
-        log::info!(
-            "Enabled PND varispeed plugin (strength={:.2}, window={:.1}ms, smoothing={:.3})",
-            pnd_correction_strength,
-            pnd_analysis_window_ms,
-            pnd_drift_smoothing
-        );
-    }
-
-    // 4. Channel mapping to hardware (last plugin before output)
-    let output_channels = if let Some(ref mapping_str) = hwaudio_play {
-        let (input_channel_map, output_channel_map, matrix) = parse_channel_mapping(mapping_str)?;
-
-        // Verify that mapping input matches current output channels
-        if input_channel_map.len() != output_channels {
-            return Err(format!(
-                "Channel mapping input mismatch: mapping expects {} channels but plugin chain outputs {}",
-                input_channel_map.len(),
-                output_channels
-            ));
+        // EQ filters (assuming it is room eq)
+        if !filters.is_empty() {
+            let eq_plugin = create_eq_plugin_config(&filters)?;
+            plugins.push(eq_plugin);
+            log::debug!("Added EQ plugin with {} filters", filters.len());
         }
 
-        // Calculate the actual output channel count
-        let max_hw_ch = output_channel_map.iter().max().map(|&v| v + 1).unwrap_or(0);
-        let logical_output_channels = output_channel_map.len();
+        // Dynamics plugins (expander, compressor, etc.)
+        if expander {
+            let expander_plugin = create_expander_plugin_config()?;
+            plugins.push(expander_plugin);
+            log::info!("Enabled expander plugin (default parameters)");
+        }
 
-        log::info!("\nChannel mapping enabled:");
-        log::info!("  Mapping: {}", mapping_str);
-        log::info!("  Logical input channels: {}", input_channel_map.len());
-        log::info!("  Logical output channels: {}", logical_output_channels);
-        log::info!("  Physical output channels: {:?}", output_channel_map);
-        log::info!("  Max HW channel: {}", max_hw_ch);
+        if multiband_compressor {
+            let mb_comp_plugin = create_multiband_compressor_plugin_config()?;
+            plugins.push(mb_comp_plugin);
+            log::info!("Enabled multiband compressor plugin (3-band, default parameters)");
+        }
 
-        let matrix_plugin =
-            create_matrix_plugin_config(input_channel_map, output_channel_map, matrix)?;
-        plugins.push(matrix_plugin);
-        log::debug!(
-            "Added matrix plugin: {}ch (logical) -> {} HW channels",
-            logical_output_channels,
-            max_hw_ch
-        );
+        if multiband_expander {
+            let mb_exp_plugin = create_multiband_expander_plugin_config()?;
+            plugins.push(mb_exp_plugin);
+            log::info!("Enabled multiband expander plugin (3-band, default parameters)");
+        }
 
-        max_hw_ch // Hardware will need this many channels
-    } else {
-        output_channels // No mapping, use current channel count
-    };
+        // XTC (Crosstalk Cancellation)
+        if xtc {
+            let xtc_plugin = create_xtc_plugin_config()?;
+            plugins.push(xtc_plugin);
+            log::info!("Enabled XTC (crosstalk cancellation) plugin");
+        }
 
-    // Add loudness analyzer plugin if LUFS monitoring is requested
-    let loudness_plugin_index = if lufs {
-        let analyzer_plugin = create_loudness_analyzer_plugin_config()?;
-        let plugin_index = plugins.len();
-        plugins.push(analyzer_plugin);
-        log::info!(
-            "Real-time LUFS monitoring enabled (plugin index: {})",
-            plugin_index
-        );
-        Some(plugin_index)
-    } else {
-        None
-    };
+        // Denoiser
+        if denoiser {
+            let denoiser_plugin = create_denoiser_plugin_config(
+                denoiser_reduction_db,
+                denoiser_floor_db,
+                denoiser_smoothing,
+                denoiser_attack_ms,
+                denoiser_release_ms,
+                denoiser_low_latency,
+            )?;
+            plugins.push(denoiser_plugin);
+            log::info!(
+                "Enabled denoiser plugin (reduction={:.1}dB, floor={:.1}dB, low_latency={})",
+                denoiser_reduction_db,
+                denoiser_floor_db,
+                denoiser_low_latency
+            );
+        }
+
+        // PND (Polyphonic Note Detection) varispeed
+        if pnd {
+            let pnd_plugin = create_pnd_plugin_config(
+                pnd_correction_strength,
+                pnd_analysis_window_ms,
+                pnd_drift_smoothing,
+            )?;
+            plugins.push(pnd_plugin);
+            log::info!(
+                "Enabled PND varispeed plugin (strength={:.2}, window={:.1}ms, smoothing={:.3})",
+                pnd_correction_strength,
+                pnd_analysis_window_ms,
+                pnd_drift_smoothing
+            );
+        }
+
+        // 4. Channel mapping to hardware (last plugin before output)
+        let output_channels = if let Some(ref mapping_str) = hwaudio_play {
+            let (input_channel_map, output_channel_map, matrix) =
+                parse_channel_mapping(mapping_str)?;
+
+            // Verify that mapping input matches current output channels
+            if input_channel_map.len() != output_channels {
+                return Err(format!(
+                    "Channel mapping input mismatch: mapping expects {} channels but plugin chain outputs {}",
+                    input_channel_map.len(),
+                    output_channels
+                ));
+            }
+
+            // Calculate the actual output channel count
+            let max_hw_ch = output_channel_map.iter().max().map(|&v| v + 1).unwrap_or(0);
+            let logical_output_channels = output_channel_map.len();
+
+            log::info!("\nChannel mapping enabled:");
+            log::info!("  Mapping: {}", mapping_str);
+            log::info!("  Logical input channels: {}", input_channel_map.len());
+            log::info!("  Logical output channels: {}", logical_output_channels);
+            log::info!("  Physical output channels: {:?}", output_channel_map);
+            log::info!("  Max HW channel: {}", max_hw_ch);
+
+            let matrix_plugin =
+                create_matrix_plugin_config(input_channel_map, output_channel_map, matrix)?;
+            plugins.push(matrix_plugin);
+            log::debug!(
+                "Added matrix plugin: {}ch (logical) -> {} HW channels",
+                logical_output_channels,
+                max_hw_ch
+            );
+
+            max_hw_ch // Hardware will need this many channels
+        } else {
+            output_channels // No mapping, use current channel count
+        };
+
+        // Add loudness analyzer plugin if LUFS monitoring is requested
+        let loudness_plugin_index = if lufs {
+            let analyzer_plugin = create_loudness_analyzer_plugin_config()?;
+            let plugin_index = plugins.len();
+            plugins.push(analyzer_plugin);
+            log::info!(
+                "Real-time LUFS monitoring enabled (plugin index: {})",
+                plugin_index
+            );
+            Some(plugin_index)
+        } else {
+            None
+        };
 
         (plugins, output_channels, loudness_plugin_index)
     };

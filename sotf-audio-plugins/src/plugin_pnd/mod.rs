@@ -87,12 +87,8 @@ impl PndPlugin {
 
 impl Plugin for PndPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo {
-            name: "PND Varispeed".to_string(),
-            version: "0.1.0".to_string(),
-            author: "SOTF".to_string(),
-            description: "Polyphonic note detection and varispeed correction".to_string(),
-        }
+        PluginInfo::new("PND Varispeed", "0.1.0", "SotF")
+            .with_description("Polyphonic note detection and varispeed correction")
     }
 
     fn input_channels(&self) -> usize {

@@ -660,15 +660,15 @@ impl UpmixerPlugin {
 
 impl Plugin for UpmixerPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo {
-            name: format!("Stereo to {} Upmixer", self.speaker_config.name),
-            version: "2.1.0".to_string(),
-            author: "AutoEQ".to_string(),
-            description: format!(
-                "Converts stereo to {} using FFT-based Direct/Ambient decomposition and VBAP panning (Smoothed)",
-                self.speaker_config.name
-            ),
-        }
+        PluginInfo::new(
+            format!("Stereo to {} Upmixer", self.speaker_config.name),
+            "2.1.0",
+            "SotF",
+        )
+        .with_description(format!(
+            "Converts stereo to {} using FFT-based Direct/Ambient decomposition and VBAP panning (Smoothed)",
+            self.speaker_config.name
+        ))
     }
 
     fn input_channels(&self) -> usize {

@@ -105,12 +105,8 @@ impl HalInputPlugin {
 
 impl Plugin for HalInputPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo {
-            name: "HAL Input".to_string(),
-            version: "1.0.0".to_string(),
-            author: "AutoEQ".to_string(),
-            description: "Reads audio from macOS apps via HAL driver".to_string(),
-        }
+        PluginInfo::new("HAL Input", "1.0.0", "SotF")
+            .with_description("Reads audio from macOS apps via HAL driver")
     }
 
     fn input_channels(&self) -> usize {

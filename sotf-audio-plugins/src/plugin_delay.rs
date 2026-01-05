@@ -168,12 +168,8 @@ impl DelayPlugin {
 
 impl InPlacePlugin for DelayPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo {
-            name: "Delay".to_string(),
-            version: "1.0.0".to_string(),
-            author: "AutoEQ".to_string(),
-            description: "Simple delay effect with feedback and mix control".to_string(),
-        }
+        PluginInfo::new("Delay", "1.0.0", "SotF")
+            .with_description("Simple delay effect with feedback and mix control")
     }
 
     fn channels(&self) -> usize {

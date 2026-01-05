@@ -425,12 +425,8 @@ impl ABComparePlugin {
 
 impl Plugin for ABComparePlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo {
-            name: "A/B Compare".to_string(),
-            version: "1.0.0".to_string(),
-            author: "SOTF".to_string(),
-            description: "A/B comparison with automatic loudness matching".to_string(),
-        }
+        PluginInfo::new("A/B Compare", "1.0.0", "SotF")
+            .with_description("A/B comparison with automatic loudness matching")
     }
 
     fn input_channels(&self) -> usize {

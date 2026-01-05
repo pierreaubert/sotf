@@ -426,12 +426,8 @@ impl ExpanderPlugin {
 
 impl InPlacePlugin for ExpanderPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo {
-            name: "Expander".to_string(),
-            version: "1.0.0".to_string(),
-            author: "AutoEQ".to_string(),
-            description: "Dynamic range expander with hysteresis and soft knee".to_string(),
-        }
+        PluginInfo::new("Expander", "1.0.0", "SotF")
+            .with_description("Dynamic range expander with hysteresis and soft knee")
     }
 
     fn channels(&self) -> usize {

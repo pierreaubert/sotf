@@ -388,12 +388,8 @@ impl DenoiserPlugin {
 
 impl InPlacePlugin for DenoiserPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo {
-            name: "Denoiser".to_string(),
-            version: "1.0.0".to_string(),
-            author: "SOTF".to_string(),
-            description: "Wiener filter denoiser with MCRA noise estimation".to_string(),
-        }
+        PluginInfo::new("Denoiser", "1.0.0", "SotF")
+            .with_description("Wiener filter denoiser with MCRA noise estimation")
     }
 
     fn channels(&self) -> usize {
