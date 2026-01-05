@@ -2474,6 +2474,39 @@ impl App {
         }
     }
 
+    /// Toggle solo state for an EQ band
+    /// When any band is soloed, only soloed bands are active
+    pub fn toggle_eq_band_solo(&mut self, band_idx: usize) -> Result<(), String> {
+        if let Some(plugin) = self.get_editing_plugin() {
+            if !matches!(plugin.settings, PluginSettings::EQ { .. }) {
+                return Err("Selected plugin is not an EQ".to_string());
+            }
+        } else {
+            return Err("No plugin being edited".to_string());
+        }
+
+        if let Some(plugin) = self.get_editing_plugin_mut() {
+            if let PluginSettings::EQ { channels, filters } = &mut plugin.settings {
+                if band_idx >= filters.len() {
+                    return Err("Invalid band index".to_string());
+                }
+
+                filters[band_idx].solo = !filters[band_idx].solo;
+
+                let channels = *channels;
+                let filters = filters.clone();
+                plugin.settings = PluginSettings::EQ { channels, filters };
+
+                self.pending_plugin_update = Some(PluginUpdateType::Structural);
+                Ok(())
+            } else {
+                Err("Selected plugin is not an EQ".to_string())
+            }
+        } else {
+            Err("No plugin being edited".to_string())
+        }
+    }
+
     // Plugin preset save/load methods
 
     /// Refresh the list of available plugin presets from the config directory

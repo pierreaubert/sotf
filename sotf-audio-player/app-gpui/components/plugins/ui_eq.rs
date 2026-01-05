@@ -33,9 +33,18 @@ fn calculate_response_at_freq(filters: &[EQFilter], freq: f64) -> f64 {
     if filters.is_empty() {
         return 0.0;
     }
+    let any_soloed = filters.iter().any(|f| f.solo);
     filters
         .iter()
-        .filter(|f| !f.muted)
+        .filter(|f| {
+            if f.muted {
+                return false;
+            }
+            if any_soloed && !f.solo {
+                return false;
+            }
+            true
+        })
         .map(|f| {
             let biquad = Biquad::new(f.filter_type, f.frequency, SAMPLE_RATE, f.q, f.gain_db);
             biquad.log_result(freq)
@@ -137,17 +146,31 @@ fn render_eq_visualization(
         let color = BAND_COLORS.get(i).copied().unwrap_or(0x9ca3af);
         let is_selected = selected_band == Some(i);
         let is_muted = filter.muted;
+        let is_soloed = filter.solo;
+        let any_soloed = filters.iter().any(|f| f.solo);
+        let effective_muted = is_muted || (any_soloed && !is_soloed);
         let opacity = if is_selected { 1.0 } else { 0.5 };
         let stroke = if is_selected { 2.0 } else { 1.5 };
-        // Muted bands get lower opacity regardless of selection
-        let opacity = if is_muted { 0.2 } else { opacity };
+        let opacity = if effective_muted { 0.2 } else { opacity };
+
+        let status = if is_muted && is_soloed {
+            " (muted+solo)"
+        } else if is_muted {
+            " (muted)"
+        } else if is_soloed {
+            " (solo)"
+        } else if any_soloed {
+            " (silent)"
+        } else {
+            ""
+        };
 
         let label = format!(
             "#{} - {} @ {}Hz{}",
             i + 1,
             filter.filter_type.short_name(),
             filter.frequency as i32,
-            if is_muted { " (muted)" } else { "" }
+            status
         );
 
         chart_builder =
@@ -237,6 +260,7 @@ pub fn render_eq_plugin(
                     .get(band_idx)
                     .map(|f| f.muted)
                     .unwrap_or(false);
+                let is_soloed = state.filters.get(band_idx).map(|f| f.solo).unwrap_or(false);
                 let entity_clone = entity.clone();
                 let accent = theme.accent;
                 let text_primary = theme.text_primary;
@@ -245,6 +269,7 @@ pub fn render_eq_plugin(
                 let bg_secondary = theme.background_secondary;
                 let surface_hover = theme.surface_hover;
                 let error = theme.error;
+                let success = theme.success;
                 let border = theme.border;
 
                 let tab = div()
@@ -276,36 +301,78 @@ pub fn render_eq_plugin(
                     })
                     // Band number
                     .child(div().child(format!("{}", band_idx + 1)))
-                    // Mute button (small circle)
-                    .child({
-                        let entity_clone2 = entity.clone();
+                    // Mute and Solo buttons row
+                    .child(
                         div()
-                            .w(px(18.0))
-                            .h(px(18.0))
-                            .rounded_full()
                             .flex()
-                            .items_center()
-                            .justify_center()
-                            .bg(if is_muted { error } else { bg_secondary })
-                            .border(px(1.0))
-                            .border_color(if is_muted { error } else { border })
-                            .text_xs()
-                            .font_weight(FontWeight::BOLD)
-                            .cursor_pointer()
-                            .when(is_muted, |d| d.text_color(text_primary))
-                            .when(!is_muted, |d| d.text_color(text_muted_color))
-                            .hover(move |s| s.bg(if is_muted { error } else { surface_hover }))
-                            .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
-                                cx.stop_propagation();
-                                entity_clone2.update(cx, |state, cx| {
-                                    if let Err(e) = state.app.toggle_eq_band_mute(band_idx) {
-                                        log::warn!("Failed to toggle EQ band mute: {}", e);
-                                    }
-                                    cx.notify();
-                                });
+                            .gap_1()
+                            // Mute button (small circle)
+                            .child({
+                                let entity_clone2 = entity.clone();
+                                div()
+                                    .w(px(18.0))
+                                    .h(px(18.0))
+                                    .rounded_full()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .bg(if is_muted { error } else { bg_secondary })
+                                    .border(px(1.0))
+                                    .border_color(if is_muted { error } else { border })
+                                    .text_xs()
+                                    .font_weight(FontWeight::BOLD)
+                                    .cursor_pointer()
+                                    .when(is_muted, |d| d.text_color(text_primary))
+                                    .when(!is_muted, |d| d.text_color(text_muted_color))
+                                    .hover(move |s| {
+                                        s.bg(if is_muted { error } else { surface_hover })
+                                    })
+                                    .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
+                                        cx.stop_propagation();
+                                        entity_clone2.update(cx, |state, cx| {
+                                            if let Err(e) = state.app.toggle_eq_band_mute(band_idx)
+                                            {
+                                                log::warn!("Failed to toggle EQ band mute: {}", e);
+                                            }
+                                            cx.notify();
+                                        });
+                                    })
+                                    .child("M")
                             })
-                            .child("M")
-                    });
+                            // Solo button (small circle)
+                            .child({
+                                let entity_clone3 = entity.clone();
+                                div()
+                                    .w(px(18.0))
+                                    .h(px(18.0))
+                                    .rounded_full()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .bg(if is_soloed { success } else { bg_secondary })
+                                    .border(px(1.0))
+                                    .border_color(if is_soloed { success } else { border })
+                                    .text_xs()
+                                    .font_weight(FontWeight::BOLD)
+                                    .cursor_pointer()
+                                    .when(is_soloed, |d| d.text_color(text_primary))
+                                    .when(!is_soloed, |d| d.text_color(text_muted_color))
+                                    .hover(move |s| {
+                                        s.bg(if is_soloed { success } else { surface_hover })
+                                    })
+                                    .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
+                                        cx.stop_propagation();
+                                        entity_clone3.update(cx, |state, cx| {
+                                            if let Err(e) = state.app.toggle_eq_band_solo(band_idx)
+                                            {
+                                                log::warn!("Failed to toggle EQ band solo: {}", e);
+                                            }
+                                            cx.notify();
+                                        });
+                                    })
+                                    .child("S")
+                            }),
+                    );
 
                 tabs_container = tabs_container.child(tab);
             }

@@ -120,6 +120,8 @@ pub struct EQFilter {
     pub gain_db: f64,
     #[serde(default)]
     pub muted: bool,
+    #[serde(default)]
+    pub solo: bool,
 }
 
 impl EQFilter {
@@ -130,6 +132,7 @@ impl EQFilter {
             q,
             gain_db,
             muted: false,
+            solo: false,
         }
     }
 

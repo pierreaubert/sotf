@@ -414,11 +414,11 @@ impl EditState {
             // Clicked just after a word, select that word
             start -= 1;
         }
-        
+
         // If we are on a non-word char (like whitespace), select the run of whitespace/symbols?
         // Standard behavior: double click on whitespace selects whitespace run.
         let target_is_word = start < len && is_word_char(chars[start]);
-        
+
         while start > 0 {
             let prev = chars[start - 1];
             if is_word_char(prev) != target_is_word {
@@ -431,7 +431,7 @@ impl EditState {
         let mut end = pos;
         // Ensure we start searching from at least 'start'
         if end < start { end = start; }
-        
+
         while end < len {
             let curr = chars[end];
             if is_word_char(curr) != target_is_word {
@@ -647,7 +647,7 @@ impl RenderOnce for Input {
         let global_theme = cx.theme();
         let theme = InputTheme::from(&global_theme);
 
-        let (py, text_size_class) = match self.size {
+        let (py, _text_size_class) = match self.size {
             InputSize::Sm => (px(4.0), "text_xs"),
             InputSize::Md => (px(8.0), "text_sm"),
             InputSize::Lg => (px(12.0), "text_base"),
@@ -1076,7 +1076,7 @@ impl RenderOnce for Input {
         if editing {
             let chars: Vec<char> = display_text.chars().collect();
             let len = chars.len();
-            
+
             // Normalize selection range (if any)
             let (sel_start, sel_end) = if let Some(anchor) = selection_anchor {
                 (cursor_pos.min(anchor), cursor_pos.max(anchor))
@@ -1086,10 +1086,10 @@ impl RenderOnce for Input {
 
             // Split text into 3 parts: 0..min, min..max, max..len
             // Insert cursor at `cursor_pos`
-            
+
             let part1_end = sel_start;
             let part2_end = sel_end;
-            
+
             let part1: String = chars[0..part1_end].iter().collect();
             let part2: String = chars[part1_end..part2_end].iter().collect();
             let part3: String = chars[part2_end..len].iter().collect();
@@ -1129,7 +1129,7 @@ impl RenderOnce for Input {
             if !part3.is_empty() {
                 text_el = text_el.child(div().text_color(text_color).child(part3));
             }
-            
+
         } else if !editing && current_value.is_empty() {
             // Placeholder text
             text_el = text_el.text_color(placeholder_color).child(display_text);

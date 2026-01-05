@@ -37,7 +37,9 @@ impl PlayerView {
 
         // Observe state changes to trigger re-renders when state is updated
         // from callbacks (like Select toggles in AutoEqForm)
-        cx.observe(&state, |_, _, cx| {
+        // Note: notify() is called directly here since we're in the observer callback
+        // which runs after the update completes
+        cx.observe(&state, |_view, _, cx| {
             cx.notify();
         })
         .detach();
@@ -52,54 +54,107 @@ impl PlayerView {
                     // Increment frame counter for throttling
                     view.update_frame_count = view.update_frame_count.wrapping_add(1);
 
-                    view.update_playback_state(cx);
-
-                    // Update waveform scanner and check startup database state
-                    view.state.update(cx, |state, _| {
-                        // Perform deferred database check on first update
-                        state.app.check_library_on_startup();
-
-                        state.app.waveform_manager.update();
-                        state.app.replay_gain_manager.update();
-                        state.app.bliss_manager.update();
-                        state.app.update_library_scan();
-                        state.app.update_toast();
-                    });
-
-                    // Infinite scroll check
-                    if view.state.read(cx).app.current_screen == Screen::Library {
+                    // Collect data needed for infinite scroll check before state update
+                    let scroll_check_data = if view.state.read(cx).app.current_screen == Screen::Library {
                         let scroll_y: f32 = view.grid_scroll_handle.offset().y.into();
                         let state = view.state.read(cx);
                         let item_count = state.app.library_items_per_page;
                         let total_albums = state.app.filtered_albums().len();
                         let columns = state.app.library_columns.max(1);
                         let rows = (item_count + columns - 1) / columns;
-                        let card_height = 220.0; // Card (180px) + gap (16px) + margin
+                        let card_height = 220.0;
                         let estimated_height = rows as f32 * card_height;
                         let window_height = state.app.window_height;
-
-                        // scroll_y is negative when scrolling down
                         let scroll_position = scroll_y.abs();
-
-                        // Calculate how far the user can scroll (content beyond viewport)
                         let scrollable_distance = (estimated_height - window_height).max(0.0);
-                        // How much scroll room remains below current position
                         let remaining_scroll = scrollable_distance - scroll_position;
-
-                        // Load more if:
-                        // 1. Content doesn't fill viewport + 1 screen buffer (preload ahead)
-                        // 2. User has scrolled and is within 1000px of the bottom
                         let needs_more_content = estimated_height < window_height * 2.0;
                         let near_bottom = remaining_scroll < 1000.0;
-                        let should_load =
-                            item_count < total_albums && (needs_more_content || near_bottom);
+                        let should_load = item_count < total_albums && (needs_more_content || near_bottom);
+                        Some(should_load)
+                    } else {
+                        None
+                    };
 
-                        // If we should load more, do it
-                        if should_load {
-                            view.state
-                                .update(cx, |state, _| state.app.load_more_albums());
+                    // Consolidate all state updates into a single update call
+                    // to avoid multiple observer triggers
+                    view.state.update(cx, |state, _cx| {
+                        // Playback state update (inlined from update_playback_state)
+                        let frame_count = view.update_frame_count;
+                        let should_update_spectrum = frame_count % 2 == 0;
+                        let include_spectrum = should_update_spectrum
+                            && (state.app.spectrum_visible || state.app.current_screen == Screen::Spectrum);
+
+                        let playback_state = state.player.lock().get_playback_state(include_spectrum);
+
+                        state.app.position_secs = playback_state.position_secs;
+                        state.app.duration_secs = state.app.get_current_track_duration();
+
+                        if playback_state.input_loudness.is_some() {
+                            let _ = state.app.input_loudness_info.take();
+                            state.app.input_loudness_info = playback_state.input_loudness;
                         }
-                    }
+
+                        if playback_state.output_loudness.is_some() {
+                            let _ = state.app.loudness_info.take();
+                            state.app.loudness_info = playback_state.output_loudness;
+                        }
+
+                        state.app.update_level_meter_groups();
+
+                        if include_spectrum {
+                            let _ = state.app.spectrum_info.take();
+                            state.app.spectrum_info = playback_state.spectrum;
+                        }
+
+                        state.app.compressor_info = playback_state.compressor;
+
+                        if let Some(update_type) = state.app.pending_plugin_update.take() {
+                            log::warn!("[GPUI] Applying pending plugin update: {:?}", update_type);
+                            Self::apply_plugin_update(state, update_type);
+                        }
+
+                        // Check if playback ended and auto-advance
+                        if state.app.is_playing
+                            && !playback_state.is_playing
+                            && state.app.current_queue_index.is_some()
+                        {
+                            if let Some(path) = state.app.next_track() {
+                                let sample_rate = 48000.0;
+                                let plugins = state.app.plugin_chain.to_plugin_configs(sample_rate);
+                                let output_channels = state.app.plugin_chain.output_channels();
+
+                                if let Err(e) = state.player.lock().load_and_play(
+                                    path,
+                                    plugins,
+                                    output_channels,
+                                    state.app.current_output_device_name.clone(),
+                                ) {
+                                    log::error!("Failed to auto-advance: {}", e);
+                                    state.app.is_playing = false;
+                                }
+                            } else {
+                                state.app.is_playing = false;
+                            }
+                        }
+
+                        // Startup database check
+                        state.app.check_library_on_startup();
+
+                        // Managers update
+                        state.app.waveform_manager.update();
+                        state.app.replay_gain_manager.update();
+                        state.app.bliss_manager.update();
+                        state.app.update_library_scan();
+                        state.app.update_toast();
+
+                        // Infinite scroll - load more albums if needed
+                        if scroll_check_data == Some(true) {
+                            state.app.load_more_albums();
+                        }
+                    });
+
+                    cx.notify();
                 });
                 // Exit the loop if the view is no longer valid
                 if result.is_err() {
@@ -1898,21 +1953,35 @@ impl Render for PlayerView {
         }
 
         // Update layout mode based on window height
+        // Use defer to avoid re-entrant state updates during render
         let window_bounds = window.bounds();
         let window_height: f32 = window_bounds.size.height.into();
         let window_width: f32 = window_bounds.size.width.into();
-        self.state.update(cx, |state, _cx| {
-            state.app.window_height = window_height;
-            state.app.window_width = window_width;
-            state.app.layout_mode = if window_height >= 800.0 {
-                crate::app::LayoutMode::Expanded
-            } else {
-                crate::app::LayoutMode::Compact
-            };
 
-            // Recalculate pagination based on new window size
-            state.app.recalculate_pagination(false);
-        });
+        // Check if dimensions actually changed to avoid unnecessary updates
+        let needs_dimension_update = {
+            let state = self.state.read(cx);
+            (state.app.window_height - window_height).abs() > 0.5
+                || (state.app.window_width - window_width).abs() > 0.5
+        };
+
+        if needs_dimension_update {
+            let state = self.state.clone();
+            cx.defer(move |cx| {
+                state.update(cx, |state, _cx| {
+                    state.app.window_height = window_height;
+                    state.app.window_width = window_width;
+                    state.app.layout_mode = if window_height >= 800.0 {
+                        crate::app::LayoutMode::Expanded
+                    } else {
+                        crate::app::LayoutMode::Compact
+                    };
+
+                    // Recalculate pagination based on new window size
+                    state.app.recalculate_pagination(false);
+                });
+            });
+        }
 
         // Save window geometry if it has changed (debounced by checking if different)
         let should_save = match self.last_saved_window_bounds {
@@ -1935,10 +2004,13 @@ impl Render for PlayerView {
                 height: window_bounds.size.height.into(),
             };
 
-            self.state.update(cx, |state, _cx| {
-                if let Err(e) = state.app.save_config_with_geometry(Some(geometry)) {
-                    log::warn!("Failed to save window geometry: {}", e);
-                }
+            let state = self.state.clone();
+            cx.defer(move |cx| {
+                state.update(cx, |state, _cx| {
+                    if let Err(e) = state.app.save_config_with_geometry(Some(geometry)) {
+                        log::warn!("Failed to save window geometry: {}", e);
+                    }
+                });
             });
 
             self.last_saved_window_bounds = Some(window_bounds);
