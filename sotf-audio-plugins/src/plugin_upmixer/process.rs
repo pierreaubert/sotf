@@ -105,10 +105,22 @@ impl UpmixerPlugin {
 
         // Phase 3: Apply VBAP panning and inverse FFT
         // Calculate combined scaling factor for output
-        let fft_scale = 1.0 / self.fft_size as f32;
+        // Guard against division by zero (defensive, fft_size should be validated in initialize)
+        let fft_scale = if self.fft_size > 0 {
+            1.0 / self.fft_size as f32
+        } else {
+            1.0 // Fallback, shouldn't happen
+        };
         let cola_scale = 2.0; // COLA compensation for Hann window at 50% overlap
         let channel_normalization = 0.9 / 2.0_f32.sqrt(); // Prevent clipping
         let combined_scale = fft_scale * cola_scale * channel_normalization;
+
+        // Guard against NaN/Inf from any prior processing
+        let combined_scale = if combined_scale.is_finite() && combined_scale > 0.0 {
+            combined_scale
+        } else {
+            1.0
+        };
 
         self.apply_vbap_panning_and_inverse_fft();
 

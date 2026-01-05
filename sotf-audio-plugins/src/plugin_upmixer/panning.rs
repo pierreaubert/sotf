@@ -156,6 +156,13 @@ impl UpmixerPlugin {
             self.fft_inverse
                 .process(&mut self.temp_freq_out, &mut self.time_out_channels[ch_idx])
                 .unwrap();
+
+            // Guard against NaN/Inf in output (defensive)
+            for sample in &mut self.time_out_channels[ch_idx] {
+                if !sample.is_finite() {
+                    *sample = 0.0;
+                }
+            }
         }
     }
 }
