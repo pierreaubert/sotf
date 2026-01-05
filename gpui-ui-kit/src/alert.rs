@@ -112,6 +112,8 @@ impl Alert {
     pub fn build_with_theme(self, theme: &Theme) -> Stateful<Div> {
         let (bg, border, icon_color) = self.variant.colors(theme);
         let default_icon = self.variant.icon();
+        // Clone ID for use in close button (self.id is moved to alert container)
+        let close_btn_id = self.id.clone();
 
         let mut alert = div()
             .id(self.id)
@@ -155,7 +157,7 @@ impl Alert {
             let text_muted = theme.text_muted;
             let text_primary = theme.text_primary;
             let mut close_btn = div()
-                .id("alert-close")
+                .id((close_btn_id, "close"))
                 .text_sm()
                 .text_color(text_muted)
                 .cursor_pointer()

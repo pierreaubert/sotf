@@ -742,7 +742,36 @@ impl MusicLibrary {
 
     pub fn remove_directory(&mut self, index: usize) -> Option<PathBuf> {
         if index < self.directories.len() {
-            Some(self.directories.remove(index).path)
+            let removed = self.directories.remove(index);
+            let path = removed.path.clone();
+
+            // Clean up database: remove all tracks from this directory
+            if let Some(db) = &mut self.db {
+                match db.remove_tracks_from_directory(&path) {
+                    Ok(count) => {
+                        if count > 0 {
+                            log::info!(
+                                "Cleaned up {} tracks from removed directory: {}",
+                                count,
+                                path.display()
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "Failed to clean up tracks from removed directory {}: {}",
+                            path.display(),
+                            e
+                        );
+                    }
+                }
+            }
+
+            // Also remove albums that came from this directory from memory
+            self.albums
+                .retain(|album| !album.tracks.iter().all(|t| t.path.starts_with(&path)));
+
+            Some(path)
         } else {
             None
         }

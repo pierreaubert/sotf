@@ -23,7 +23,7 @@ struct MenuTestView;
 
 impl Render for MenuTestView {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div().child(Menu::new(vec![
+        div().child(Menu::new("test-menu", vec![
             MenuItem::new("item1", "Menu Item 1"),
             MenuItem::new("item2", "Menu Item 2"),
         ]))
@@ -45,7 +45,7 @@ async fn test_menu_item_with_shortcut(cx: &mut TestAppContext) {
 
     impl Render for ShortcutView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div().child(Menu::new(vec![
+            div().child(Menu::new("shortcut-menu", vec![
                 MenuItem::new("copy", "Copy").with_shortcut("⌘C"),
                 MenuItem::new("paste", "Paste").with_shortcut("⌘V"),
             ]))
@@ -61,7 +61,7 @@ async fn test_menu_item_with_icon(cx: &mut TestAppContext) {
 
     impl Render for IconView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div().child(Menu::new(vec![
+            div().child(Menu::new("icon-menu", vec![
                 MenuItem::new("edit", "Edit").with_icon("✏️"),
                 MenuItem::new("delete", "Delete").with_icon("🗑️"),
             ]))
@@ -77,7 +77,7 @@ async fn test_menu_item_disabled(cx: &mut TestAppContext) {
 
     impl Render for DisabledView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div().child(Menu::new(vec![
+            div().child(Menu::new("disabled-menu", vec![
                 MenuItem::new("enabled", "Enabled"),
                 MenuItem::new("disabled", "Disabled").disabled(true),
             ]))
@@ -93,7 +93,7 @@ async fn test_menu_separator(cx: &mut TestAppContext) {
 
     impl Render for SeparatorView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div().child(Menu::new(vec![
+            div().child(Menu::new("separator-menu", vec![
                 MenuItem::new("item1", "Item 1"),
                 MenuItem::separator(),
                 MenuItem::new("item2", "Item 2"),
@@ -110,7 +110,7 @@ async fn test_menu_checkbox(cx: &mut TestAppContext) {
 
     impl Render for CheckboxView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div().child(Menu::new(vec![
+            div().child(Menu::new("checkbox-menu", vec![
                 MenuItem::checkbox("show-toolbar", "Show Toolbar", true),
                 MenuItem::checkbox("show-sidebar", "Show Sidebar", false),
             ]))
@@ -126,7 +126,7 @@ async fn test_menu_danger_item(cx: &mut TestAppContext) {
 
     impl Render for DangerView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div().child(Menu::new(vec![
+            div().child(Menu::new("danger-menu", vec![
                 MenuItem::new("normal", "Normal Action"),
                 MenuItem::separator(),
                 MenuItem::new("quit", "Quit").danger(),
@@ -152,7 +152,7 @@ impl Render for SelectableMenuView {
         let last_selected = self.last_selected.clone();
 
         div().size_full().child(
-            Menu::new(vec![
+            Menu::new("selectable-menu", vec![
                 MenuItem::new("action1", "Action 1"),
                 MenuItem::new("action2", "Action 2"),
             ])
@@ -258,7 +258,7 @@ async fn test_menu_complex(cx: &mut TestAppContext) {
 
     impl Render for ComplexMenuView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div().child(Menu::new(vec![
+            div().child(Menu::new("complex-menu", vec![
                 MenuItem::new("new", "New File").with_shortcut("⌘N").with_icon("📄"),
                 MenuItem::new("open", "Open File").with_shortcut("⌘O").with_icon("📂"),
                 MenuItem::separator(),
@@ -287,7 +287,7 @@ async fn test_menu_min_width(cx: &mut TestAppContext) {
     impl Render for MinWidthView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
             div().child(
-                Menu::new(vec![MenuItem::new("short", "S")])
+                Menu::new("min-width-menu", vec![MenuItem::new("short", "S")])
                     .min_width(gpui::px(250.0)),
             )
         }
@@ -306,7 +306,7 @@ async fn test_menu_item_with_children(cx: &mut TestAppContext) {
 
     impl Render for SubmenuView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div().child(Menu::new(vec![
+            div().child(Menu::new("submenu-menu", vec![
                 MenuItem::new("view", "View").with_children(vec![
                     MenuItem::new("zoom-in", "Zoom In"),
                     MenuItem::new("zoom-out", "Zoom Out"),

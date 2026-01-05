@@ -1598,6 +1598,44 @@ impl MusicDatabase {
         Ok(count)
     }
 
+    /// Remove all tracks from a specific directory path (and its subdirectories)
+    /// This is used when removing a directory from the library
+    /// Returns the number of tracks removed
+    pub fn remove_tracks_from_directory(&mut self, directory: &Path) -> SqlResult<usize> {
+        let dir_str = directory.to_string_lossy();
+        // SQLite LIKE pattern: path starts with directory path
+        let pattern = format!("{}%", dir_str);
+
+        // First, count how many tracks will be deleted
+        let count: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM tracks WHERE path LIKE ?1",
+            params![pattern],
+            |row| row.get(0),
+        )?;
+
+        if count > 0 {
+            // Delete tracks in the directory
+            self.conn.execute(
+                "DELETE FROM tracks WHERE path LIKE ?1",
+                params![pattern],
+            )?;
+
+            // Clean up albums with no tracks
+            self.conn.execute(
+                "DELETE FROM albums WHERE id NOT IN (SELECT DISTINCT album_id FROM tracks)",
+                [],
+            )?;
+
+            log::info!(
+                "Removed {} tracks from directory: {}",
+                count,
+                directory.display()
+            );
+        }
+
+        Ok(count as usize)
+    }
+
     /// Update ReplayGain values for a track
     pub fn update_replay_gain(&self, path: &Path, gain: f64, peak: f64) -> SqlResult<()> {
         self.conn.execute(

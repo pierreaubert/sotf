@@ -318,6 +318,7 @@ impl App {
     }
 
     /// Remove the selected directory from the library
+    /// This also cleans up the database and removes albums/tracks from that directory
     pub fn remove_selected_directory(&mut self) {
         // We need to map from tree index to actual directory index
         let tree_items = self.get_directory_tree_items();
@@ -339,8 +340,10 @@ impl App {
                         {
                             self.selected_directory_index = tree_items.len() - 1;
                         }
-                        self.needs_rescan = true;
-                        self.toast_message = Some(ToastMessage::success("Directory removed."));
+                        // Database cleanup is now done in library.remove_directory()
+                        // No rescan needed since data is already cleaned
+                        self.toast_message =
+                            Some(ToastMessage::success("Directory removed and cleaned up."));
                     }
                 }
             } else {

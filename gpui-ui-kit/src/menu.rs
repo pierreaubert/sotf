@@ -155,6 +155,7 @@ impl MenuItem {
 
 /// A dropdown menu containing menu items
 pub struct Menu {
+    id: ElementId,
     items: Vec<MenuItem>,
     min_width: Pixels,
     theme: Option<MenuTheme>,
@@ -163,8 +164,9 @@ pub struct Menu {
 
 impl Menu {
     /// Create a new menu with items
-    pub fn new(items: Vec<MenuItem>) -> Self {
+    pub fn new(id: impl Into<ElementId>, items: Vec<MenuItem>) -> Self {
         Self {
+            id: id.into(),
             items,
             min_width: px(180.0),
             theme: None,
@@ -202,7 +204,7 @@ impl Menu {
         let on_select_rc = self.on_select.map(|f| std::rc::Rc::new(f));
 
         let mut menu = div()
-            .id("menu-container")
+            .id(self.id)
             .min_w(min_width)
             .max_h(px(600.0))
             .bg(theme.background)

@@ -150,6 +150,8 @@ impl Toast {
     pub fn build_with_theme(self, theme: &Theme) -> Stateful<Div> {
         let (bg, border, icon_color) = self.variant.colors(theme);
         let icon = self.variant.icon();
+        // Clone ID for use in close button (self.id is moved to toast container)
+        let close_btn_id = self.id.clone();
 
         let mut toast = div()
             .id(self.id)
@@ -204,7 +206,7 @@ impl Toast {
                 let handler_ptr: *const dyn Fn(&mut Window, &mut App) = handler.as_ref();
                 toast = toast.child(
                     div()
-                        .id("toast-close")
+                        .id((close_btn_id, "close"))
                         .text_sm()
                         .text_color(text_muted)
                         .cursor_pointer()

@@ -269,6 +269,9 @@ impl Select {
             theme.trigger_border
         };
 
+        // Clone ID for use in dropdown (self.id is moved to trigger)
+        let dropdown_id = self.id.clone();
+
         let mut trigger = div()
             .id(self.id)
             .flex()
@@ -398,7 +401,7 @@ impl Select {
         // Use deferred() to ensure the dropdown renders on top of other content
         if self.is_open {
             let mut dropdown = div()
-                .id("select-dropdown")
+                .id((dropdown_id, "dropdown"))
                 .absolute()
                 .top_full()
                 .left_0()

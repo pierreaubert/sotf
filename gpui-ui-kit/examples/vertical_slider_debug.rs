@@ -15,6 +15,9 @@ use gpui_ui_kit::scale::Scale;
 use gpui_ui_kit::theme::ThemeExt;
 use gpui_ui_kit::*;
 
+/// Number of sliders in the demo
+const NUM_SLIDERS: usize = 11;
+
 /// Demo state
 pub struct VerticalSliderDebug {
     /// Threshold value (dB) - linear
@@ -33,10 +36,15 @@ pub struct VerticalSliderDebug {
     selected_slider: Option<usize>,
     /// Entity reference
     entity: Entity<Self>,
+    /// Focus handles for each slider (needed for keyboard navigation)
+    focus_handles: Vec<gpui::FocusHandle>,
 }
 
 impl VerticalSliderDebug {
     fn new(cx: &mut Context<Self>) -> Self {
+        // Create focus handles for all sliders
+        let focus_handles: Vec<_> = (0..NUM_SLIDERS).map(|_| cx.focus_handle()).collect();
+
         Self {
             threshold_db: -20.0,
             frequency_hz: 1000.0,
@@ -46,31 +54,44 @@ impl VerticalSliderDebug {
             mix_pct: 100.0,
             selected_slider: None,
             entity: cx.entity().clone(),
+            focus_handles,
         }
     }
 
-    fn reset_threshold(&mut self) {
+    /// Select a slider (focus is managed via the focus_handle passed to each slider)
+    fn select_slider(&mut self, index: usize, cx: &mut Context<Self>) {
+        self.selected_slider = Some(index);
+        cx.notify(); // Trigger re-render
+    }
+
+    fn reset_threshold(&mut self, cx: &mut Context<Self>) {
         self.threshold_db = -20.0;
+        cx.notify();
     }
 
-    fn reset_frequency(&mut self) {
+    fn reset_frequency(&mut self, cx: &mut Context<Self>) {
         self.frequency_hz = 1000.0;
+        cx.notify();
     }
 
-    fn reset_attack(&mut self) {
+    fn reset_attack(&mut self, cx: &mut Context<Self>) {
         self.attack_ms = 10.0;
+        cx.notify();
     }
 
-    fn reset_ratio(&mut self) {
+    fn reset_ratio(&mut self, cx: &mut Context<Self>) {
         self.ratio = 4.0;
+        cx.notify();
     }
 
-    fn reset_gain(&mut self) {
+    fn reset_gain(&mut self, cx: &mut Context<Self>) {
         self.gain_db = -12.0;
+        cx.notify();
     }
 
-    fn reset_mix(&mut self) {
+    fn reset_mix(&mut self, cx: &mut Context<Self>) {
         self.mix_pct = 100.0;
+        cx.notify();
     }
 }
 
@@ -160,27 +181,29 @@ impl Render for VerticalSliderDebug {
                                     .shortcut_key('t')
                                     .size(VerticalSliderSize::Sm)
                                     .selected(self.selected_slider == Some(0))
+                                    .focus_handle(self.focus_handles[0].clone())
                                     .on_change({
                                         let entity = entity.clone();
                                         move |val, _w, cx| {
-                                            entity.update(cx, |this, _| {
+                                            entity.update(cx, |this, cx| {
                                                 this.threshold_db = val;
+                                                cx.notify();
                                             });
                                         }
                                     })
                                     .on_select({
                                         let entity = entity.clone();
                                         move |_w, cx| {
-                                            entity.update(cx, |this, _| {
-                                                this.selected_slider = Some(0);
+                                            entity.update(cx, |this, cx| {
+                                                this.select_slider(0, cx);
                                             });
                                         }
                                     })
                                     .on_reset({
                                         let entity = entity.clone();
                                         move |_w, cx| {
-                                            entity.update(cx, |this, _| {
-                                                this.reset_threshold();
+                                            entity.update(cx, |this, cx| {
+                                                this.reset_threshold(cx);
                                             });
                                         }
                                     }),
@@ -195,27 +218,29 @@ impl Render for VerticalSliderDebug {
                                     .shortcut_key('t')
                                     .size(VerticalSliderSize::Md)
                                     .selected(self.selected_slider == Some(1))
+                                    .focus_handle(self.focus_handles[1].clone())
                                     .on_change({
                                         let entity = entity.clone();
                                         move |val, _w, cx| {
-                                            entity.update(cx, |this, _| {
+                                            entity.update(cx, |this, cx| {
                                                 this.threshold_db = val;
+                                                cx.notify();
                                             });
                                         }
                                     })
                                     .on_select({
                                         let entity = entity.clone();
                                         move |_w, cx| {
-                                            entity.update(cx, |this, _| {
-                                                this.selected_slider = Some(1);
+                                            entity.update(cx, |this, cx| {
+                                                this.select_slider(1, cx);
                                             });
                                         }
                                     })
                                     .on_reset({
                                         let entity = entity.clone();
                                         move |_w, cx| {
-                                            entity.update(cx, |this, _| {
-                                                this.reset_threshold();
+                                            entity.update(cx, |this, cx| {
+                                                this.reset_threshold(cx);
                                             });
                                         }
                                     }),
@@ -230,27 +255,29 @@ impl Render for VerticalSliderDebug {
                                     .shortcut_key('t')
                                     .size(VerticalSliderSize::Lg)
                                     .selected(self.selected_slider == Some(2))
+                                    .focus_handle(self.focus_handles[2].clone())
                                     .on_change({
                                         let entity = entity.clone();
                                         move |val, _w, cx| {
-                                            entity.update(cx, |this, _| {
+                                            entity.update(cx, |this, cx| {
                                                 this.threshold_db = val;
+                                                cx.notify();
                                             });
                                         }
                                     })
                                     .on_select({
                                         let entity = entity.clone();
                                         move |_w, cx| {
-                                            entity.update(cx, |this, _| {
-                                                this.selected_slider = Some(2);
+                                            entity.update(cx, |this, cx| {
+                                                this.select_slider(2, cx);
                                             });
                                         }
                                     })
                                     .on_reset({
                                         let entity = entity.clone();
                                         move |_w, cx| {
-                                            entity.update(cx, |this, _| {
-                                                this.reset_threshold();
+                                            entity.update(cx, |this, cx| {
+                                                this.reset_threshold(cx);
                                             });
                                         }
                                     }),
@@ -290,27 +317,29 @@ impl Render for VerticalSliderDebug {
                                     .scale(Scale::Logarithmic)
                                     .with_ticks()
                                     .selected(self.selected_slider == Some(3))
+                                    .focus_handle(self.focus_handles[3].clone())
                                     .on_change({
                                         let entity = entity.clone();
                                         move |val, _w, cx| {
-                                            entity.update(cx, |this, _| {
+                                            entity.update(cx, |this, cx| {
                                                 this.frequency_hz = val;
+                                                cx.notify();
                                             });
                                         }
                                     })
                                     .on_select({
                                         let entity = entity.clone();
                                         move |_w, cx| {
-                                            entity.update(cx, |this, _| {
-                                                this.selected_slider = Some(3);
+                                            entity.update(cx, |this, cx| {
+                                                this.select_slider(3, cx);
                                             });
                                         }
                                     })
                                     .on_reset({
                                         let entity = entity.clone();
                                         move |_w, cx| {
-                                            entity.update(cx, |this, _| {
-                                                this.reset_frequency();
+                                            entity.update(cx, |this, cx| {
+                                                this.reset_frequency(cx);
                                             });
                                         }
                                     }),
@@ -327,27 +356,29 @@ impl Render for VerticalSliderDebug {
                                     .scale(Scale::Logarithmic)
                                     .with_ticks()
                                     .selected(self.selected_slider == Some(4))
+                                    .focus_handle(self.focus_handles[4].clone())
                                     .on_change({
                                         let entity = entity.clone();
                                         move |val, _w, cx| {
-                                            entity.update(cx, |this, _| {
+                                            entity.update(cx, |this, cx| {
                                                 this.attack_ms = val;
+                                                cx.notify();
                                             });
                                         }
                                     })
                                     .on_select({
                                         let entity = entity.clone();
                                         move |_w, cx| {
-                                            entity.update(cx, |this, _| {
-                                                this.selected_slider = Some(4);
+                                            entity.update(cx, |this, cx| {
+                                                this.select_slider(4, cx);
                                             });
                                         }
                                     })
                                     .on_reset({
                                         let entity = entity.clone();
                                         move |_w, cx| {
-                                            entity.update(cx, |this, _| {
-                                                this.reset_attack();
+                                            entity.update(cx, |this, cx| {
+                                                this.reset_attack(cx);
                                             });
                                         }
                                     }),
@@ -364,27 +395,29 @@ impl Render for VerticalSliderDebug {
                                     .scale(Scale::Linear)
                                     .with_ticks()
                                     .selected(self.selected_slider == Some(5))
+                                    .focus_handle(self.focus_handles[5].clone())
                                     .on_change({
                                         let entity = entity.clone();
                                         move |val, _w, cx| {
-                                            entity.update(cx, |this, _| {
+                                            entity.update(cx, |this, cx| {
                                                 this.ratio = val;
+                                                cx.notify();
                                             });
                                         }
                                     })
                                     .on_select({
                                         let entity = entity.clone();
                                         move |_w, cx| {
-                                            entity.update(cx, |this, _| {
-                                                this.selected_slider = Some(5);
+                                            entity.update(cx, |this, cx| {
+                                                this.select_slider(5, cx);
                                             });
                                         }
                                     })
                                     .on_reset({
                                         let entity = entity.clone();
                                         move |_w, cx| {
-                                            entity.update(cx, |this, _| {
-                                                this.reset_ratio();
+                                            entity.update(cx, |this, cx| {
+                                                this.reset_ratio(cx);
                                             });
                                         }
                                     }),
@@ -401,27 +434,29 @@ impl Render for VerticalSliderDebug {
                                     .scale(Scale::Linear)
                                     .with_ticks()
                                     .selected(self.selected_slider == Some(6))
+                                    .focus_handle(self.focus_handles[6].clone())
                                     .on_change({
                                         let entity = entity.clone();
                                         move |val, _w, cx| {
-                                            entity.update(cx, |this, _| {
+                                            entity.update(cx, |this, cx| {
                                                 this.gain_db = val;
+                                                cx.notify();
                                             });
                                         }
                                     })
                                     .on_select({
                                         let entity = entity.clone();
                                         move |_w, cx| {
-                                            entity.update(cx, |this, _| {
-                                                this.selected_slider = Some(6);
+                                            entity.update(cx, |this, cx| {
+                                                this.select_slider(6, cx);
                                             });
                                         }
                                     })
                                     .on_reset({
                                         let entity = entity.clone();
                                         move |_w, cx| {
-                                            entity.update(cx, |this, _| {
-                                                this.reset_gain();
+                                            entity.update(cx, |this, cx| {
+                                                this.reset_gain(cx);
                                             });
                                         }
                                     }),
@@ -459,27 +494,29 @@ impl Render for VerticalSliderDebug {
                                     .shortcut_key('m')
                                     .size(VerticalSliderSize::Md)
                                     .selected(self.selected_slider == Some(7))
+                                    .focus_handle(self.focus_handles[7].clone())
                                     .on_change({
                                         let entity = entity.clone();
                                         move |val, _w, cx| {
-                                            entity.update(cx, |this, _| {
+                                            entity.update(cx, |this, cx| {
                                                 this.mix_pct = val;
+                                                cx.notify();
                                             });
                                         }
                                     })
                                     .on_select({
                                         let entity = entity.clone();
                                         move |_w, cx| {
-                                            entity.update(cx, |this, _| {
-                                                this.selected_slider = Some(7);
+                                            entity.update(cx, |this, cx| {
+                                                this.select_slider(7, cx);
                                             });
                                         }
                                     })
                                     .on_reset({
                                         let entity = entity.clone();
                                         move |_w, cx| {
-                                            entity.update(cx, |this, _| {
-                                                this.reset_mix();
+                                            entity.update(cx, |this, cx| {
+                                                this.reset_mix(cx);
                                             });
                                         }
                                     }),
@@ -494,27 +531,29 @@ impl Render for VerticalSliderDebug {
                                     .shortcut_key('r')
                                     .size(VerticalSliderSize::Md)
                                     .selected(self.selected_slider == Some(8))
+                                    .focus_handle(self.focus_handles[8].clone())
                                     .on_change({
                                         let entity = entity.clone();
                                         move |val, _w, cx| {
-                                            entity.update(cx, |this, _| {
+                                            entity.update(cx, |this, cx| {
                                                 this.ratio = val;
+                                                cx.notify();
                                             });
                                         }
                                     })
                                     .on_select({
                                         let entity = entity.clone();
                                         move |_w, cx| {
-                                            entity.update(cx, |this, _| {
-                                                this.selected_slider = Some(8);
+                                            entity.update(cx, |this, cx| {
+                                                this.select_slider(8, cx);
                                             });
                                         }
                                     })
                                     .on_reset({
                                         let entity = entity.clone();
                                         move |_w, cx| {
-                                            entity.update(cx, |this, _| {
-                                                this.reset_ratio();
+                                            entity.update(cx, |this, cx| {
+                                                this.reset_ratio(cx);
                                             });
                                         }
                                     }),
@@ -529,27 +568,29 @@ impl Render for VerticalSliderDebug {
                                     .shortcut_key('t')
                                     .size(VerticalSliderSize::Md)
                                     .selected(self.selected_slider == Some(9))
+                                    .focus_handle(self.focus_handles[9].clone())
                                     .on_change({
                                         let entity = entity.clone();
                                         move |val, _w, cx| {
-                                            entity.update(cx, |this, _| {
+                                            entity.update(cx, |this, cx| {
                                                 this.threshold_db = val;
+                                                cx.notify();
                                             });
                                         }
                                     })
                                     .on_select({
                                         let entity = entity.clone();
                                         move |_w, cx| {
-                                            entity.update(cx, |this, _| {
-                                                this.selected_slider = Some(9);
+                                            entity.update(cx, |this, cx| {
+                                                this.select_slider(9, cx);
                                             });
                                         }
                                     })
                                     .on_reset({
                                         let entity = entity.clone();
                                         move |_w, cx| {
-                                            entity.update(cx, |this, _| {
-                                                this.reset_threshold();
+                                            entity.update(cx, |this, cx| {
+                                                this.reset_threshold(cx);
                                             });
                                         }
                                     }),
@@ -565,27 +606,29 @@ impl Render for VerticalSliderDebug {
                                     .size(VerticalSliderSize::Md)
                                     .scale(Scale::Logarithmic)
                                     .selected(self.selected_slider == Some(10))
+                                    .focus_handle(self.focus_handles[10].clone())
                                     .on_change({
                                         let entity = entity.clone();
                                         move |val, _w, cx| {
-                                            entity.update(cx, |this, _| {
+                                            entity.update(cx, |this, cx| {
                                                 this.attack_ms = val;
+                                                cx.notify();
                                             });
                                         }
                                     })
                                     .on_select({
                                         let entity = entity.clone();
                                         move |_w, cx| {
-                                            entity.update(cx, |this, _| {
-                                                this.selected_slider = Some(10);
+                                            entity.update(cx, |this, cx| {
+                                                this.select_slider(10, cx);
                                             });
                                         }
                                     })
                                     .on_reset({
                                         let entity = entity.clone();
                                         move |_w, cx| {
-                                            entity.update(cx, |this, _| {
-                                                this.reset_attack();
+                                            entity.update(cx, |this, cx| {
+                                                this.reset_attack(cx);
                                             });
                                         }
                                     }),
@@ -636,13 +679,15 @@ impl Render for VerticalSliderDebug {
                         VStack::new()
                             .spacing(StackSpacing::Sm)
                             .child(Text::new("Interactions:").weight(TextWeight::Bold))
+                            .child(Text::new("- Click + Drag: Drag vertically to adjust value").size(TextSize::Sm))
                             .child(Text::new("- Scroll wheel: Adjust value (5% steps)").size(TextSize::Sm))
                             .child(Text::new("- Shift + Scroll: Fine adjustment (0.5% steps)").size(TextSize::Sm))
-                            .child(Text::new("- Click: Select and increment by 10%").size(TextSize::Sm))
                             .child(Text::new("- Double-click: Reset to default").size(TextSize::Sm))
-                            .child(Text::new("- Arrow keys (when selected): Adjust by 5%").size(TextSize::Sm))
+                            .child(Text::new("- Arrow Up/Right: Increase by 5%").size(TextSize::Sm))
+                            .child(Text::new("- Arrow Down/Left: Decrease by 5%").size(TextSize::Sm))
+                            .child(Text::new("- Page Up/Down: Adjust by 10%").size(TextSize::Sm))
                             .child(Text::new("- Home/End: Jump to min/max").size(TextSize::Sm))
-                            .child(Text::new("- Escape (when selected): Reset to default").size(TextSize::Sm)),
+                            .child(Text::new("- Escape: Reset to default").size(TextSize::Sm)),
                     ),
             )
     }

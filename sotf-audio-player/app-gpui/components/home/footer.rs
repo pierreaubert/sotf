@@ -986,7 +986,7 @@ impl PlayerView {
         let theme = self.state.read(cx).app.theme.clone();
         let state = self.state.clone();
 
-        Menu::new(vec![
+        Menu::new("studio-menu", vec![
             MenuItem::new("library", translations.screen_library).with_shortcut("⌘0"),
             MenuItem::new("studio", translations.screen_studio_rack).with_shortcut("⌘1"),
             MenuItem::new("plugingraph", translations.screen_studio_full).with_shortcut("⌘2"),

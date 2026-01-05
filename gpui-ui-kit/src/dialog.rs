@@ -143,6 +143,9 @@ impl Dialog {
         let width = self.size.width();
         let on_close = self.on_close;
         let close_on_backdrop = self.close_on_backdrop;
+        // Clone ID for use in child elements (self.id is moved to dialog container)
+        let close_btn_id = self.id.clone();
+        let content_id = self.id.clone();
 
         // Backdrop
         let mut backdrop = div()
@@ -214,7 +217,7 @@ impl Dialog {
                 let close_hover_bg = theme.close_hover_bg;
                 header = header.child(
                     div()
-                        .id("dialog-close-btn")
+                        .id((close_btn_id, "close"))
                         .px_2()
                         .py_1()
                         .rounded(px(3.0))
@@ -235,7 +238,7 @@ impl Dialog {
         if let Some(content) = self.content {
             dialog = dialog.child(
                 div()
-                    .id("dialog-content")
+                    .id((content_id, "content"))
                     .flex_1()
                     .overflow_y_scroll()
                     .px_4()

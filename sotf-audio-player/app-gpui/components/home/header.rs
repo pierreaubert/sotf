@@ -143,7 +143,7 @@ impl PlayerView {
         let state = self.state.clone();
         let translations = self.state.read(cx).app.translations.clone();
 
-        Menu::new(vec![
+        Menu::new("file-menu", vec![
             MenuItem::new("settings", translations.screen_settings).with_shortcut("⌘,"),
             MenuItem::separator(),
             MenuItem::new("quit", translations.menu_quit)
@@ -182,7 +182,7 @@ impl PlayerView {
 
         let state = self.state.clone();
 
-        Menu::new(vec![
+        Menu::new("view-menu", vec![
             MenuItem::new("studio", translations.screen_studio).with_shortcut("⌘1"),
             MenuItem::new("recording", translations.screen_recording).with_shortcut("⌘2"),
             MenuItem::new("roomeq", translations.screen_room_eq).with_shortcut("⌘3"),
@@ -222,7 +222,7 @@ impl PlayerView {
         let state = self.state.clone();
         let translations = self.state.read(cx).app.translations.clone();
 
-        Menu::new(vec![
+        Menu::new("help-menu", vec![
             MenuItem::new("shortcuts", translations.menu_keyboard_shortcuts).with_shortcut("?"),
             MenuItem::separator(),
             MenuItem::new("about", translations.menu_about),

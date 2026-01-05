@@ -2,18 +2,22 @@
 //!
 //! A circular knob with:
 //! - Selection highlighting for plugin parameter editing
-//! - Drag support with vertical mouse movement
-//! - Scroll wheel adjustment
+//! - Drag support with vertical mouse movement (via on_drag_start handler)
+//! - Scroll wheel adjustment (Shift for fine control: 0.5% vs 5%)
 //! - Double-click to reset to default
-//! - Keyboard navigation when selected:
-//!   - Arrow Up/Right: increase value by 5%
-//!   - Arrow Down/Left: decrease value by 5%
+//! - Keyboard navigation (when focused via click):
+//!   - Arrow Up/Right: increase value (5%)
+//!   - Arrow Down/Left: decrease value (5%)
+//!   - Page Up: increase value (10%)
+//!   - Page Down: decrease value (10%)
 //!   - Escape: reset to default
 //! - Value display with units
 //! - Keyboard shortcut hints
 //! - Rotating indicator dot
 //! - Tick marks with major (labeled) and minor (unlabeled) ticks
 
+use super::interactions::{handle_keyboard, handle_scroll, value_tracker, InteractionConfig};
+use crate::scale::Scale;
 use crate::ComponentTheme;
 use crate::theme::ThemeExt;
 use gpui::prelude::*;
@@ -83,70 +87,8 @@ impl From<crate::ComponentSize> for PotentiometerSize {
 }
 
 /// Scale type for potentiometer value mapping
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum PotentiometerScale {
-    /// Linear scale (default) - equal increments
-    #[default]
-    Linear,
-    /// Logarithmic scale - for frequency, etc.
-    /// Values must be positive (min > 0)
-    Logarithmic,
-}
-
-impl PotentiometerScale {
-    /// Convert a value to normalized position [0, 1] based on scale type
-    fn value_to_normalized(self, value: f64, min: f64, max: f64) -> f64 {
-        match self {
-            PotentiometerScale::Linear => {
-                if max > min {
-                    ((value - min) / (max - min)).clamp(0.0, 1.0)
-                } else {
-                    0.0
-                }
-            }
-            PotentiometerScale::Logarithmic => {
-                // For log scale, min must be > 0
-                let min = min.max(1e-10);
-                let max = max.max(min + 1e-10);
-                let value = value.clamp(min, max);
-                let log_min = min.ln();
-                let log_max = max.ln();
-                ((value.ln() - log_min) / (log_max - log_min)).clamp(0.0, 1.0)
-            }
-        }
-    }
-
-    /// Convert a normalized position [0, 1] to a value based on scale type
-    fn normalized_to_value(self, normalized: f64, min: f64, max: f64) -> f64 {
-        match self {
-            PotentiometerScale::Linear => min + normalized * (max - min),
-            PotentiometerScale::Logarithmic => {
-                // For log scale, min must be > 0
-                let min = min.max(1e-10);
-                let max = max.max(min + 1e-10);
-                let log_min = min.ln();
-                let log_max = max.ln();
-                (log_min + normalized * (log_max - log_min)).exp()
-            }
-        }
-    }
-
-    /// Compute new value after stepping in normalized space
-    /// `direction`: 1.0 for increase, -1.0 for decrease
-    /// `step_percent`: step size as fraction (e.g., 0.05 for 5%)
-    fn step_value(
-        self,
-        current: f64,
-        min: f64,
-        max: f64,
-        direction: f64,
-        step_percent: f64,
-    ) -> f64 {
-        let current_norm = self.value_to_normalized(current, min, max);
-        let new_norm = (current_norm + step_percent * direction).clamp(0.0, 1.0);
-        self.normalized_to_value(new_norm, min, max)
-    }
-}
+/// Re-exported from scale module for API consistency
+pub type PotentiometerScale = Scale;
 
 impl PotentiometerSize {
     fn knob_size(&self) -> f32 {
@@ -496,6 +438,11 @@ impl RenderOnce for Potentiometer {
         let max = self.max;
         let scale = self.scale;
 
+        // Shared current value tracker and interaction config
+        let current_value = value_tracker(value);
+        // Potentiometer uses rotational config (drag distance = knob_size for full range)
+        let interaction_config = InteractionConfig::rotational(min, max, scale, knob_size);
+
         let mut container = div()
             .id(self.id)
             .flex()
@@ -510,8 +457,9 @@ impl RenderOnce for Potentiometer {
             .min_w(px(min_width));
 
         // Track focus if handle provided
+        // Both track_focus (for focus observation) and focusable (for key events) are needed
         if let Some(ref focus_handle) = self.focus_handle {
-            container = container.track_focus(focus_handle);
+            container = container.track_focus(focus_handle).focusable();
         }
 
         // Add shadow when selected
@@ -537,18 +485,24 @@ impl RenderOnce for Potentiometer {
             let on_change_rc = self.on_change.map(|handler| std::rc::Rc::new(handler));
             let on_reset_rc = self.on_reset.map(|handler| std::rc::Rc::new(handler));
 
-            // Mouse down - start drag and select
+            // Mouse down - focus, select, and optionally start drag
             let on_select = self.on_select;
             let on_drag_start = self.on_drag_start;
             let on_change_click = on_change_rc.clone();
+            let focus_handle_click = self.focus_handle.clone();
 
             container = container.on_mouse_down(MouseButton::Left, move |event, window, cx| {
-                // 1. Handle Selection
+                // Always focus for keyboard navigation
+                if let Some(ref fh) = focus_handle_click {
+                    fh.focus(window, cx);
+                }
+
+                // Handle Selection
                 if let Some(ref handler) = on_select {
                     handler(window, cx);
                 }
 
-                // 2. Handle Drag or Click-Step
+                // Handle Drag or Click-Step
                 if let Some(ref handler) = on_drag_start {
                     handler(event.position.y.into(), value, window, cx);
                 } else if let Some(ref handler) = on_change_click {
@@ -568,71 +522,51 @@ impl RenderOnce for Potentiometer {
                 });
             }
 
-            // Keyboard navigation when selected
-            if selected {
-                // Clone the handlers for keyboard events
-                if let Some(ref handler_rc) = on_change_rc {
-                    let handler_key = handler_rc.clone();
-                    let reset_key = on_reset_rc.clone();
-                    container = container.on_key_down(move |event, window, cx| {
-                        match &event.keystroke.key {
-                            // Arrow Up or Right - increase value
-                            key if key == "up" || key == "right" => {
-                                // Use scale-aware stepping (5% in normalized space)
-                                let new_value = scale.step_value(value, min, max, 1.0, 0.05);
-                                handler_key(new_value, window, cx);
-                            }
-                            // Arrow Down or Left - decrease value
-                            key if key == "down" || key == "left" => {
-                                // Use scale-aware stepping (5% in normalized space)
-                                let new_value = scale.step_value(value, min, max, -1.0, 0.05);
-                                handler_key(new_value, window, cx);
-                            }
-                            // Escape - reset to default
-                            key if key == "escape" => {
-                                if let Some(ref reset_handler) = reset_key {
-                                    reset_handler(window, cx);
-                                }
-                            }
-                            _ => {}
+            // Keyboard navigation - register when focused (works on focus, not selection)
+            // Register if either on_change or on_reset is provided
+            if on_change_rc.is_some() || on_reset_rc.is_some() {
+                let handler_key = on_change_rc.clone();
+                let reset_key = on_reset_rc.clone();
+                let current_value_key = current_value.clone();
+                let config_key = interaction_config.clone();
+                container = container.on_key_down(move |event, window, cx| {
+                    let key = event.keystroke.key.as_str();
+                    if key == "escape" {
+                        if let Some(ref reset_handler) = reset_key {
+                            reset_handler(window, cx);
                         }
-                    });
-                }
+                    } else if let Some(ref handler) = handler_key {
+                        if let Some(new_value) = handle_keyboard(key, current_value_key.get(), &config_key) {
+                            current_value_key.set(new_value);
+                            handler(new_value, window, cx);
+                        }
+                    }
+                });
             }
 
             // Scroll wheel - adjust value
             if let Some(handler_rc) = on_change_rc {
+                let current_value_scroll = current_value.clone();
+                let config_scroll = interaction_config.clone();
                 container = container.on_scroll_wheel(move |event, window, cx| {
-                    // Get scroll delta (works for both pixel and line deltas)
-                    // On macOS, shift+scroll converts vertical to horizontal, so check both axes
-                    let (delta_x, delta_y): (f32, f32) = match event.delta {
-                        gpui::ScrollDelta::Pixels(point) => (point.x.into(), point.y.into()),
-                        gpui::ScrollDelta::Lines(point) => (point.x, point.y),
-                    };
-
-                    // Use Y delta primarily, but fall back to X delta (for shift+scroll on macOS)
-                    let delta = if delta_y.abs() > 0.0001 {
-                        delta_y
-                    } else if delta_x.abs() > 0.0001 {
-                        delta_x
-                    } else {
-                        return; // No meaningful scroll movement
-                    };
-
                     cx.stop_propagation();
-
-                    // Scroll up/left (negative delta) = increase value
-                    // Scroll down/right (positive delta) = decrease value
-                    let direction = if delta < 0.0 { 1.0 } else { -1.0 };
-
-                    // Check for shift key for fine-grained control
-                    let step_size = if event.modifiers.shift { 0.005 } else { 0.05 };
-
-                    // Use scale-aware stepping
-                    let new_value = scale.step_value(value, min, max, direction, step_size);
-                    handler_rc(new_value, window, cx);
+                    let val = current_value_scroll.get();
+                    if let Some(new_value) = handle_scroll(&event.delta, &event.modifiers, val, &config_scroll) {
+                        current_value_scroll.set(new_value);
+                        handler_rc(new_value, window, cx);
+                    }
                 });
             }
+
+            // Focus on mouse enter - keyboard follows hover like scroll wheel
+            let focus_handle_hover = self.focus_handle.clone();
+            container = container.on_mouse_move(move |event, window, cx| {
+                if let Some(ref fh) = focus_handle_hover {
+                    if !fh.is_focused(window) && !event.pressed_button.is_some() {
+                        fh.focus(window, cx);
+                    }
+                }
+            });
         }
 
         // Label with keyboard shortcut

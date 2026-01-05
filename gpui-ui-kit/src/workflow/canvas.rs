@@ -956,7 +956,7 @@ impl Render for WorkflowCanvas {
                 ]
             };
 
-            let menu = Menu::new(menu_items).on_select(move |id, _window, cx| {
+            let menu = Menu::new("workflow-context-menu", menu_items).on_select(move |id, _window, cx| {
                 entity.update(cx, |this, cx| {
                     this.handle_add_node_menu(id, cx);
                 });

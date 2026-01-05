@@ -40,60 +40,131 @@ impl PlayerView {
     fn render_signal_config_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let signal_level_db = state.app.recording_state.signal_level_db;
+        let signal_type = state.app.recording_state.signal_type;
+        let sweep_start_freq = state.app.recording_state.sweep_start_freq;
+        let sweep_end_freq = state.app.recording_state.sweep_end_freq;
         let _ = state;
 
+        let is_sweep = signal_type == RecordingSignalType::Sweep;
+
         Card::new().content(
-            HStack::new()
-                .spacing(StackSpacing::Lg)
-                .align(StackAlign::Center)
+            VStack::new()
+                .spacing(StackSpacing::Md)
                 .child(
                     HStack::new()
-                        .spacing(StackSpacing::Md)
+                        .spacing(StackSpacing::Lg)
                         .align(StackAlign::Center)
                         .child(
-                            Text::new("Signal Type:")
-                                .size(TextSize::Sm)
-                                .weight(TextWeight::Semibold),
+                            HStack::new()
+                                .spacing(StackSpacing::Md)
+                                .align(StackAlign::Center)
+                                .child(
+                                    Text::new("Signal Type:")
+                                        .size(TextSize::Sm)
+                                        .weight(TextWeight::Semibold),
+                                )
+                                .child(self.render_signal_type_dropdown(cx)),
                         )
-                        .child(self.render_signal_type_dropdown(cx)),
-                )
-                .child(
-                    HStack::new()
-                        .spacing(StackSpacing::Md)
-                        .align(StackAlign::Center)
                         .child(
-                            Text::new("Duration:")
-                                .size(TextSize::Sm)
-                                .weight(TextWeight::Semibold),
+                            HStack::new()
+                                .spacing(StackSpacing::Md)
+                                .align(StackAlign::Center)
+                                .child(
+                                    Text::new("Duration:")
+                                        .size(TextSize::Sm)
+                                        .weight(TextWeight::Semibold),
+                                )
+                                .child(self.render_duration_dropdown(cx)),
                         )
-                        .child(self.render_duration_dropdown(cx)),
+                        .child(
+                            HStack::new()
+                                .spacing(StackSpacing::Md)
+                                .align(StackAlign::Center)
+                                .child(Text::new("Level:").size(TextSize::Sm))
+                                .child({
+                                    let view = cx.entity().clone();
+                                    NumberInput::new("signal_level")
+                                        .value(signal_level_db as f64)
+                                        .min(-60.0)
+                                        .max(6.0)
+                                        .step(1.0)
+                                        .decimals(0)
+                                        .unit("dB")
+                                        .size(NumberInputSize::Sm)
+                                        .width(100.0)
+                                        .on_change(move |val, _window, cx| {
+                                            view.update(cx, |this, cx| {
+                                                this.state.update(cx, |state, _| {
+                                                    state.app.recording_state.signal_level_db =
+                                                        val as f32;
+                                                });
+                                                cx.notify();
+                                            });
+                                        })
+                                }),
+                        ),
                 )
-                .child(
-                    HStack::new()
-                        .spacing(StackSpacing::Md)
-                        .align(StackAlign::Center)
-                        .child(Text::new("Level:").size(TextSize::Sm))
-                        .child({
-                            let view = cx.entity().clone();
-                            NumberInput::new("signal_level")
-                                .value(signal_level_db as f64)
-                                .min(-60.0)
-                                .max(6.0)
-                                .step(1.0)
-                                .decimals(0)
-                                .unit("dB")
-                                .size(NumberInputSize::Sm)
-                                .width(100.0)
-                                .on_change(move |val, _window, cx| {
-                                    view.update(cx, |this, cx| {
-                                        this.state.update(cx, |state, _| {
-                                            state.app.recording_state.signal_level_db = val as f32;
-                                        });
-                                        cx.notify();
-                                    });
-                                })
-                        }),
-                ),
+                .when(is_sweep, |stack| {
+                    let view = cx.entity().clone();
+                    let view2 = cx.entity().clone();
+                    stack.child(
+                        HStack::new()
+                            .spacing(StackSpacing::Lg)
+                            .align(StackAlign::Center)
+                            .child(
+                                HStack::new()
+                                    .spacing(StackSpacing::Md)
+                                    .align(StackAlign::Center)
+                                    .child(Text::new("Start Freq:").size(TextSize::Sm))
+                                    .child(
+                                        NumberInput::new("sweep_start_freq")
+                                            .value(sweep_start_freq as f64)
+                                            .min(1.0)
+                                            .max(20000.0)
+                                            .step(1.0)
+                                            .decimals(0)
+                                            .unit("Hz")
+                                            .size(NumberInputSize::Sm)
+                                            .width(100.0)
+                                            .on_change(move |val, _window, cx| {
+                                                view.update(cx, |this, cx| {
+                                                    this.state.update(cx, |state, _| {
+                                                        state.app.recording_state.sweep_start_freq =
+                                                            val as f32;
+                                                    });
+                                                    cx.notify();
+                                                });
+                                            }),
+                                    ),
+                            )
+                            .child(
+                                HStack::new()
+                                    .spacing(StackSpacing::Md)
+                                    .align(StackAlign::Center)
+                                    .child(Text::new("End Freq:").size(TextSize::Sm))
+                                    .child(
+                                        NumberInput::new("sweep_end_freq")
+                                            .value(sweep_end_freq as f64)
+                                            .min(100.0)
+                                            .max(48000.0)
+                                            .step(100.0)
+                                            .decimals(0)
+                                            .unit("Hz")
+                                            .size(NumberInputSize::Sm)
+                                            .width(100.0)
+                                            .on_change(move |val, _window, cx| {
+                                                view2.update(cx, |this, cx| {
+                                                    this.state.update(cx, |state, _| {
+                                                        state.app.recording_state.sweep_end_freq =
+                                                            val as f32;
+                                                    });
+                                                    cx.notify();
+                                                });
+                                            }),
+                                    ),
+                            ),
+                    )
+                }),
         )
     }
 
@@ -441,6 +512,8 @@ impl PlayerView {
             signal_type,
             duration_secs,
             level_db,
+            sweep_start_freq,
+            sweep_end_freq,
             output_device,
             input_device,
             output_channel,
@@ -489,6 +562,8 @@ impl PlayerView {
                 signal_type,
                 rec_state.signal_duration_secs,
                 rec_state.signal_level_db,
+                rec_state.sweep_start_freq,
+                rec_state.sweep_end_freq,
                 rec_state.playback_config.device_name.clone(),
                 rec_state.recording_config.device_name.clone(),
                 output_ch as u16,
@@ -537,16 +612,16 @@ impl PlayerView {
         // Generate signal parameters
         let params = match signal_type {
             SignalType::Sweep => SignalParams::Sweep {
-                start_freq: 20.0,
-                end_freq: 20000.0,
+                start_freq: sweep_start_freq,
+                end_freq: sweep_end_freq,
                 amp: amplitude,
             },
             SignalType::WhiteNoise | SignalType::PinkNoise => {
                 SignalParams::Noise { amp: amplitude }
             }
             _ => SignalParams::Sweep {
-                start_freq: 20.0,
-                end_freq: 20000.0,
+                start_freq: sweep_start_freq,
+                end_freq: sweep_end_freq,
                 amp: amplitude,
             },
         };

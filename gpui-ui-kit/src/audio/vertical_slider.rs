@@ -2,12 +2,14 @@
 //!
 //! A vertical slider with:
 //! - Selection highlighting for plugin parameter editing
-//! - Drag support with vertical mouse movement
-//! - Scroll wheel adjustment (Shift for fine control)
+//! - Drag support: click and drag vertically to adjust value (delta-based)
+//! - Scroll wheel adjustment (Shift for fine control: 0.5% vs 5%)
 //! - Double-click to reset to default
-//! - Keyboard navigation when selected:
-//!   - Arrow Up/Right: increase value by 5%
-//!   - Arrow Down/Left: decrease value by 5%
+//! - Keyboard navigation (when focused via click):
+//!   - Arrow Up/Right: increase value (5%)
+//!   - Arrow Down/Left: decrease value (5%)
+//!   - Page Up: increase value (10%)
+//!   - Page Down: decrease value (10%)
 //!   - Home: set to minimum
 //!   - End: set to maximum
 //!   - Escape: reset to default
@@ -15,6 +17,10 @@
 //! - Keyboard shortcut hints
 //! - Linear or logarithmic scale
 
+use super::interactions::{
+    clear_drag_state, get_drag_state, handle_drag, handle_keyboard, handle_scroll,
+    store_drag_state, value_tracker, InteractionConfig,
+};
 use crate::ComponentTheme;
 use crate::scale::Scale;
 use crate::theme::ThemeExt;
@@ -675,6 +681,7 @@ impl RenderOnce for VerticalSlider {
         let min = self.min;
         let max = self.max;
         let scale = self.scale;
+        let element_id = self.id.clone(); // Clone for use in track ID
 
         let mut container = div()
             .id(self.id)
@@ -689,9 +696,10 @@ impl RenderOnce for VerticalSlider {
             .border_color(border_color)
             .min_w(px(min_width));
 
-        // Track focus if handle provided
+        // Track focus on container for visual styling and keyboard events
+        // Both track_focus (for focus observation) and focusable (for key events) are needed
         if let Some(ref focus_handle) = self.focus_handle {
-            container = container.track_focus(focus_handle);
+            container = container.track_focus(focus_handle).focusable();
         }
 
         // Add shadow when selected
@@ -711,30 +719,51 @@ impl RenderOnce for VerticalSlider {
             container = container.cursor_ns_resize();
         }
 
-        // Event handlers
-        if !disabled {
-            // Wrap on_change in Rc for sharing between handlers
-            let on_change_rc = self.on_change.map(|h| std::rc::Rc::new(h));
-            let on_reset_rc = self.on_reset.map(|h| std::rc::Rc::new(h));
+        // Wrap handlers in Rc for sharing between container and track handlers
+        // These need to be created before the if block so they can be used for track handlers later
+        let on_change_rc: Option<std::rc::Rc<Box<dyn Fn(f64, &mut Window, &mut App) + 'static>>> =
+            if !disabled {
+                self.on_change.map(|h| std::rc::Rc::new(h))
+            } else {
+                None
+            };
+        let on_reset_rc: Option<std::rc::Rc<Box<dyn Fn(&mut Window, &mut App) + 'static>>> =
+            if !disabled {
+                self.on_reset.map(|h| std::rc::Rc::new(h))
+            } else {
+                None
+            };
+        let on_select_rc: Option<std::rc::Rc<Box<dyn Fn(&mut Window, &mut App) + 'static>>> =
+            if !disabled {
+                self.on_select.map(|h| std::rc::Rc::new(h))
+            } else {
+                None
+            };
 
-            // Mouse down - start drag and select
-            let on_select = self.on_select;
+        // Shared current value tracker and interaction config
+        let current_value = value_tracker(value);
+        let interaction_config = InteractionConfig::vertical(min, max, scale, track_height);
+
+        // Event handlers for container
+        if !disabled {
+            // Mouse down on container - focus, select, and external drag start
+            let on_select_container = on_select_rc.clone();
             let on_drag_start = self.on_drag_start;
-            let on_change_click = on_change_rc.clone();
+            let current_value_container = current_value.clone();
+            let focus_handle_container = self.focus_handle.clone();
 
             container = container.on_mouse_down(MouseButton::Left, move |event, window, cx| {
-                // 1. Handle Selection
-                if let Some(ref handler) = on_select {
-                    handler(window, cx);
+                // Focus for keyboard navigation (focus follows click)
+                if let Some(ref fh) = focus_handle_container {
+                    fh.focus(window, cx);
                 }
 
-                // 2. Handle Drag or Click-Step
+                if let Some(ref handler) = on_select_container {
+                    handler(window, cx);
+                }
                 if let Some(ref handler) = on_drag_start {
-                    handler(event.position.y.into(), value, window, cx);
-                } else if let Some(ref handler) = on_change_click {
-                    // If no drag handler, use click to step value (scale-aware)
-                    let new_value = scale.step_value(value, min, max, 1.0, 0.1);
-                    handler(new_value, window, cx);
+                    let val = current_value_container.get();
+                    handler(event.position.y.into(), val, window, cx);
                 }
             });
 
@@ -751,70 +780,54 @@ impl RenderOnce for VerticalSlider {
             // Scroll wheel - adjust value (Shift for fine control)
             if let Some(ref handler_rc) = on_change_rc {
                 let handler_scroll = handler_rc.clone();
+                let current_value_scroll = current_value.clone();
+                let config_scroll = interaction_config.clone();
                 container = container.on_scroll_wheel(move |event, window, cx| {
-                    // Get scroll delta (works for both pixel and line deltas)
-                    // On macOS, shift+scroll converts vertical to horizontal, so check both axes
-                    let (delta_x, delta_y): (f32, f32) = match event.delta {
-                        gpui::ScrollDelta::Pixels(point) => (point.x.into(), point.y.into()),
-                        gpui::ScrollDelta::Lines(point) => (point.x, point.y),
-                    };
-
-                    // Use Y delta primarily, but fall back to X delta (for shift+scroll on macOS)
-                    let delta = if delta_y.abs() > 0.0001 {
-                        delta_y
-                    } else if delta_x.abs() > 0.0001 {
-                        delta_x
-                    } else {
-                        return; // No meaningful scroll movement
-                    };
-
-                    // Prevent parent from scrolling when we handle the event
                     cx.stop_propagation();
-
-                    // Scroll up/left (negative delta) = increase value
-                    // Scroll down/right (positive delta) = decrease value
-                    let direction = if delta < 0.0 { 1.0 } else { -1.0 };
-
-                    // Check for shift key for fine-grained control
-                    let step_size = if event.modifiers.shift { 0.005 } else { 0.05 };
-
-                    // Use scale-aware stepping
-                    let new_value = scale.step_value(value, min, max, direction, step_size);
-                    handler_scroll(new_value, window, cx);
+                    let val = current_value_scroll.get();
+                    if let Some(new_value) = handle_scroll(&event.delta, &event.modifiers, val, &config_scroll) {
+                        current_value_scroll.set(new_value);
+                        handler_scroll(new_value, window, cx);
+                    }
                 });
             }
 
-            // Keyboard navigation when selected
-            if selected && let Some(ref handler_rc) = on_change_rc {
-                let handler_key = handler_rc.clone();
+            // Focus on mouse enter - keyboard follows hover like scroll wheel
+            let focus_handle_hover = self.focus_handle.clone();
+            container = container.on_mouse_move(move |event, window, cx| {
+                // Only focus when mouse enters (not on every move)
+                // We use mouse_move because mouse_enter doesn't exist in GPUI
+                if let Some(ref fh) = focus_handle_hover {
+                    if !fh.is_focused(window) && !event.pressed_button.is_some() {
+                        fh.focus(window, cx);
+                    }
+                }
+            });
+
+            // Keyboard navigation - register on container (which has track_focus)
+            if on_change_rc.is_some() || on_reset_rc.is_some() {
+                let handler_key = on_change_rc.clone();
                 let reset_key = on_reset_rc.clone();
+                let current_value_key = current_value.clone();
+                let config_key = interaction_config.clone();
                 container = container.on_key_down(move |event, window, cx| {
-                    match event.keystroke.key.as_str() {
-                        // Arrow Up or Right - increase value (scale-aware)
-                        "up" | "right" => {
-                            let new_value = scale.step_value(value, min, max, 1.0, 0.05);
-                            handler_key(new_value, window, cx);
+                    let key = event.keystroke.key.as_str();
+
+                    // Escape resets to default
+                    if key == "escape" {
+                        if let Some(ref reset_handler) = reset_key {
+                            reset_handler(window, cx);
                         }
-                        // Arrow Down or Left - decrease value (scale-aware)
-                        "down" | "left" => {
-                            let new_value = scale.step_value(value, min, max, -1.0, 0.05);
-                            handler_key(new_value, window, cx);
+                        return;
+                    }
+
+                    // Arrow keys and other navigation
+                    if let Some(ref handler) = handler_key {
+                        let val = current_value_key.get();
+                        if let Some(new_value) = handle_keyboard(key, val, &config_key) {
+                            current_value_key.set(new_value);
+                            handler(new_value, window, cx);
                         }
-                        // Home - set to minimum
-                        "home" => {
-                            handler_key(min, window, cx);
-                        }
-                        // End - set to maximum
-                        "end" => {
-                            handler_key(max, window, cx);
-                        }
-                        // Escape - reset to default
-                        "escape" => {
-                            if let Some(ref reset_handler) = reset_key {
-                                reset_handler(window, cx);
-                            }
-                        }
-                        _ => {}
                     }
                 });
             }
@@ -847,8 +860,12 @@ impl RenderOnce for VerticalSlider {
                 .child(value_str),
         );
 
+        // Track ID for click-to-position handling
+        let track_id: ElementId = format!("{}-track", element_id).into();
+
         // Track with fill and thumb
         let mut track = div()
+            .id(track_id)
             .w(px(track_width))
             .h(px(track_height))
             .bg(track_bg)
@@ -856,7 +873,8 @@ impl RenderOnce for VerticalSlider {
             .border_2()
             .border_color(track_border)
             .relative()
-            .overflow_hidden();
+            .overflow_hidden()
+            .cursor_ns_resize();
 
         if selected {
             track = track.shadow_sm();
@@ -886,6 +904,87 @@ impl RenderOnce for VerticalSlider {
                 .rounded_sm()
                 .when(selected, |d| d.shadow_sm()),
         );
+
+        // Track event handlers (if not disabled)
+        if !disabled {
+            // Create a unique key for this slider's drag state (survives re-renders)
+            let drag_key = format!("{:?}", element_id);
+            let drag_key_down = drag_key.clone();
+            let drag_key_move = drag_key.clone();
+            let drag_key_up = drag_key.clone();
+
+            // Mouse down - focus, select, and start drag
+            let on_select_track = on_select_rc.clone();
+            let current_value_at_click = current_value.clone();
+            let has_change_handler = on_change_rc.is_some();
+            let focus_handle_track = self.focus_handle.clone();
+            track = track.on_mouse_down(MouseButton::Left, move |event, window, cx| {
+                cx.stop_propagation();
+
+                // Focus for keyboard navigation (focus follows click)
+                if let Some(ref fh) = focus_handle_track {
+                    fh.focus(window, cx);
+                }
+
+                // Select the slider (if handler provided)
+                if let Some(ref handler) = on_select_track {
+                    handler(window, cx);
+                }
+
+                // Store drag state only if we have a change handler
+                if has_change_handler {
+                    let click_pos: f32 = event.position.y.into();
+                    store_drag_state(&drag_key_down, click_pos, current_value_at_click.get());
+                }
+            });
+
+            // Double-click on track - reset (since stop_propagation prevents container from getting it)
+            if let Some(ref reset_rc) = on_reset_rc {
+                let reset_handler = reset_rc.clone();
+                track = track.on_click(move |event, window, cx| {
+                    if event.click_count() == 2 {
+                        reset_handler(window, cx);
+                    }
+                });
+            }
+
+            // Drag and scroll handlers (only if on_change is set)
+            if let Some(ref handler_rc) = on_change_rc {
+                // Mouse move while pressed - drag to change value
+                let handler_drag = handler_rc.clone();
+                let current_value_drag = current_value.clone();
+                let config_drag = interaction_config.clone();
+                track = track.on_mouse_move(move |event, window, cx| {
+                    if event.pressed_button == Some(MouseButton::Left) {
+                        if let Some(state) = get_drag_state(&drag_key_move) {
+                            let current_pos: f32 = event.position.y.into();
+                            if let Some(new_value) = handle_drag(current_pos, &state, &config_drag) {
+                                current_value_drag.set(new_value);
+                                handler_drag(new_value, window, cx);
+                            }
+                        }
+                    }
+                });
+
+                // Mouse up - clear drag state
+                track = track.on_mouse_up(MouseButton::Left, move |_event, _window, _cx| {
+                    clear_drag_state(&drag_key_up);
+                });
+
+                // Scroll wheel handler on track
+                let handler_scroll_track = handler_rc.clone();
+                let current_value_track_scroll = current_value.clone();
+                let config_track_scroll = interaction_config.clone();
+                track = track.on_scroll_wheel(move |event, window, cx| {
+                    cx.stop_propagation();
+                    let val = current_value_track_scroll.get();
+                    if let Some(new_value) = handle_scroll(&event.delta, &event.modifiers, val, &config_track_scroll) {
+                        current_value_track_scroll.set(new_value);
+                        handler_scroll_track(new_value, window, cx);
+                    }
+                });
+            }
+        }
 
         // Track with optional tick marks
         if show_ticks {

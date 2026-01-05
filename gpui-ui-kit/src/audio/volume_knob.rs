@@ -2,15 +2,21 @@
 //!
 //! A visual volume control with:
 //! - Path-painted circular fill that rises from bottom
-//! - Scroll wheel adjustment
+//! - Drag support with vertical mouse movement
+//! - Scroll wheel adjustment (Shift for fine control: 0.5% vs 5%)
 //! - Double-click to toggle mute
 //! - Keyboard support (requires focus - click to focus):
-//!   - Arrow Up/Right: increase volume
-//!   - Arrow Down/Left: decrease volume
+//!   - Arrow Up/Right: increase volume (5%)
+//!   - Arrow Down/Left: decrease volume (5%)
+//!   - Page Up: increase volume (10%)
+//!   - Page Down: decrease volume (10%)
 //!   - M key: toggle mute
+//!   - Media keys: AudioVolumeUp/Down/Mute (F12/F11/F10)
 //! - Mute state support
 //! - Customizable colors and theme support
 
+use super::interactions::{handle_keyboard, handle_scroll, value_tracker, InteractionConfig};
+use crate::scale::Scale;
 use crate::ComponentTheme;
 use crate::theme::ThemeExt;
 use gpui::*;
@@ -408,8 +414,16 @@ impl RenderOnce for VolumeKnob {
         };
 
         // Capture values for closures
-        let current_value = self.value;
         let current_muted = self.muted;
+        let knob_size_f32 = self.size.to_f64() as f32;
+
+        // Shared current value tracker and interaction config (with media keys enabled)
+        let current_value = value_tracker(self.value as f64);
+        let interaction_config = InteractionConfig::rotational(0.0, 1.0, Scale::Linear, knob_size_f32)
+            .with_media_keys();
+
+        // Clone focus handle before moving it
+        let focus_handle_click = self.focus_handle.clone();
 
         let mut container = div()
             .id(self.id)
@@ -417,10 +431,11 @@ impl RenderOnce for VolumeKnob {
             .w(self.size)
             .h(self.size)
             .cursor_pointer();
-            
+
         // Use provided focus handle or fall back to default focusable behavior
-        if let Some(handle) = self.focus_handle {
-            container = container.track_focus(&handle);
+        // Both track_focus (for focus observation) and focusable (for key events) are needed
+        if let Some(ref handle) = self.focus_handle {
+            container = container.track_focus(handle).focusable();
         } else {
             container = container.focusable();
         }
@@ -429,23 +444,50 @@ impl RenderOnce for VolumeKnob {
         let on_change_rc = self.on_change.map(std::rc::Rc::new);
         let on_mute_rc = self.on_mute_toggle.map(std::rc::Rc::new);
 
-        // Scroll wheel - adjust value
+        // Mouse down - focus for keyboard navigation
+        container = container.on_mouse_down(MouseButton::Left, move |_event, window, cx| {
+            if let Some(ref fh) = focus_handle_click {
+                fh.focus(window, cx);
+            }
+        });
+
+        // Scroll wheel - adjust value (shift for fine-grained control)
         if let Some(ref change_handler) = on_change_rc {
             let scroll_handler = change_handler.clone();
+            let current_value_scroll = current_value.clone();
+            let config_scroll = interaction_config.clone();
             container = container.on_scroll_wheel(move |event, window, cx| {
-                let delta = event.delta.pixel_delta(px(20.0)).y;
-                
-                if delta.abs() < px(0.01) {
-                    return;
-                }
-
                 cx.stop_propagation();
+                let val = current_value_scroll.get();
+                if let Some(new_value) = handle_scroll(&event.delta, &event.modifiers, val, &config_scroll) {
+                    current_value_scroll.set(new_value);
+                    scroll_handler(new_value as f32, window, cx);
+                }
+            });
+        }
 
-                let scroll_up = delta < px(0.0);
-                let step = 0.05;
-                let change = if scroll_up { step } else { -step };
-                let new_value = (current_value + change).clamp(0.0, 1.0);
-                scroll_handler(new_value, window, cx);
+        // Drag support and hover focus - vertical mouse movement to adjust value
+        // Also focus on hover for keyboard support
+        {
+            let drag_handler = on_change_rc.clone();
+            let knob_size_f32 = self.size.to_f64() as f32;
+            let focus_handle_hover = self.focus_handle.clone();
+            container = container.on_mouse_move(move |event, window, cx| {
+                if event.pressed_button == Some(MouseButton::Left) {
+                    // Drag: Convert vertical drag to value change
+                    if let Some(ref handler) = drag_handler {
+                        let drag_y: f32 = event.position.y.into();
+                        let progress = 1.0 - (drag_y / knob_size_f32).clamp(0.0, 1.0);
+                        handler(progress, window, cx);
+                    }
+                } else {
+                    // Hover: Focus for keyboard navigation
+                    if let Some(ref fh) = focus_handle_hover {
+                        if !fh.is_focused(window) {
+                            fh.focus(window, cx);
+                        }
+                    }
+                }
             });
         }
 
@@ -459,33 +501,27 @@ impl RenderOnce for VolumeKnob {
             });
         }
 
-        // Keyboard support
+        // Keyboard support (including media keys for volume control)
         if on_change_rc.is_some() || on_mute_rc.is_some() {
             let key_change = on_change_rc.clone();
             let key_mute = on_mute_rc.clone();
+            let current_value_key = current_value.clone();
+            let config_key = interaction_config.clone();
 
             container = container.on_key_down(move |event, window, cx| {
-                match event.keystroke.key.as_str() {
-                    "up" | "right" => {
-                        if let Some(ref handler) = key_change {
-                            let step = 0.05;
-                            let new_value = (current_value + step).clamp(0.0, 1.0);
-                            handler(new_value, window, cx);
-                        }
+                let key = event.keystroke.key.as_str();
+
+                // Handle mute keys specially
+                if key == "m" || key == "audiovolumemute" || key == "f10" {
+                    if let Some(ref handler) = key_mute {
+                        handler(!current_muted, window, cx);
                     }
-                    "down" | "left" => {
-                        if let Some(ref handler) = key_change {
-                            let step = 0.05;
-                            let new_value = (current_value - step).clamp(0.0, 1.0);
-                            handler(new_value, window, cx);
-                        }
+                } else if let Some(ref handler) = key_change {
+                    // Use shared keyboard handler for value changes
+                    if let Some(new_value) = handle_keyboard(key, current_value_key.get(), &config_key) {
+                        current_value_key.set(new_value);
+                        handler(new_value as f32, window, cx);
                     }
-                    "m" => {
-                        if let Some(ref handler) = key_mute {
-                            handler(!current_muted, window, cx);
-                        }
-                    }
-                    _ => {}
                 }
             });
         }

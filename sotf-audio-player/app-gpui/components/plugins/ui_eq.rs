@@ -8,14 +8,14 @@
 use super::common::render_knob_sized;
 use crate::app::AppState;
 use crate::theme::Theme;
-use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use gpui::prelude::*;
 use gpui::*;
-use gpui_px::{ChartTheme, ScaleType, line};
+use gpui_px::{line, ChartTheme, ScaleType};
 use gpui_ui_kit::PotentiometerSize;
+use math_audio_iir_fir::{Biquad, BiquadFilterType};
 // Tabs are now custom-rendered to avoid context issues
-use sotf_audio_player::EQFilter;
 use sotf_audio_player::param_specs::eq::*;
+use sotf_audio_player::EQFilter;
 
 /// Sample rate for filter calculations
 const SAMPLE_RATE: f64 = 48000.0;
@@ -35,6 +35,7 @@ fn calculate_response_at_freq(filters: &[EQFilter], freq: f64) -> f64 {
     }
     filters
         .iter()
+        .filter(|f| !f.muted)
         .map(|f| {
             let biquad = Biquad::new(f.filter_type, f.frequency, SAMPLE_RATE, f.q, f.gain_db);
             biquad.log_result(freq)
@@ -58,6 +59,9 @@ const BAND_COLORS: [u32; 10] = [
 
 /// Calculate single band response at a frequency
 fn calculate_band_response(filter: &EQFilter, freq: f64) -> f64 {
+    if filter.muted {
+        return 0.0;
+    }
     let biquad = Biquad::new(
         filter.filter_type,
         filter.frequency,
@@ -132,14 +136,18 @@ fn render_eq_visualization(
 
         let color = BAND_COLORS.get(i).copied().unwrap_or(0x9ca3af);
         let is_selected = selected_band == Some(i);
+        let is_muted = filter.muted;
         let opacity = if is_selected { 1.0 } else { 0.5 };
         let stroke = if is_selected { 2.0 } else { 1.5 };
+        // Muted bands get lower opacity regardless of selection
+        let opacity = if is_muted { 0.2 } else { opacity };
 
         let label = format!(
-            "#{} - {} @ {}Hz",
+            "#{} - {} @ {}Hz{}",
             i + 1,
             filter.filter_type.short_name(),
-            filter.frequency as i32
+            filter.frequency as i32,
+            if is_muted { " (muted)" } else { "" }
         );
 
         chart_builder =
@@ -224,16 +232,28 @@ pub fn render_eq_plugin(
             // Build each band tab manually
             for band_idx in 0..num_bands {
                 let is_selected = band_idx == selected_band_idx;
+                let is_muted = state
+                    .filters
+                    .get(band_idx)
+                    .map(|f| f.muted)
+                    .unwrap_or(false);
                 let entity_clone = entity.clone();
                 let accent = theme.accent;
                 let text_primary = theme.text_primary;
                 let text_secondary = theme.text_secondary;
+                let text_muted_color = theme.text_muted;
                 let bg_secondary = theme.background_secondary;
                 let surface_hover = theme.surface_hover;
+                let error = theme.error;
+                let border = theme.border;
 
                 let tab = div()
                     .id(("eq-band", band_idx))
-                    .px_4()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .gap_1()
+                    .px_3()
                     .py_2()
                     .text_sm()
                     .rounded_md()
@@ -248,12 +268,44 @@ pub fn render_eq_plugin(
                             .text_color(text_secondary)
                             .hover(move |s| s.bg(surface_hover))
                     })
+                    .when(is_muted, |d| d.opacity(0.5))
                     .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
                         entity_clone.update(cx, |state, _| {
                             state.app.selected_eq_band = band_idx;
                         });
                     })
-                    .child(format!("{}", band_idx + 1));
+                    // Band number
+                    .child(div().child(format!("{}", band_idx + 1)))
+                    // Mute button (small circle)
+                    .child({
+                        let entity_clone2 = entity.clone();
+                        div()
+                            .w(px(18.0))
+                            .h(px(18.0))
+                            .rounded_full()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .bg(if is_muted { error } else { bg_secondary })
+                            .border(px(1.0))
+                            .border_color(if is_muted { error } else { border })
+                            .text_xs()
+                            .font_weight(FontWeight::BOLD)
+                            .cursor_pointer()
+                            .when(is_muted, |d| d.text_color(text_primary))
+                            .when(!is_muted, |d| d.text_color(text_muted_color))
+                            .hover(move |s| s.bg(if is_muted { error } else { surface_hover }))
+                            .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
+                                cx.stop_propagation();
+                                entity_clone2.update(cx, |state, cx| {
+                                    if let Err(e) = state.app.toggle_eq_band_mute(band_idx) {
+                                        log::warn!("Failed to toggle EQ band mute: {}", e);
+                                    }
+                                    cx.notify();
+                                });
+                            })
+                            .child("M")
+                    });
 
                 tabs_container = tabs_container.child(tab);
             }
@@ -273,9 +325,11 @@ pub fn render_eq_plugin(
                         .text_color(theme.text_on_accent)
                         .hover(|s| s.opacity(0.8))
                         .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
-                            entity_clone.update(cx, |_state, _| {
-                                // TODO: Implement add band functionality
-                                // This would need to call a method on the player to add a new EQ filter
+                            entity_clone.update(cx, |state, cx| {
+                                if let Err(e) = state.app.add_eq_band() {
+                                    log::warn!("Failed to add EQ band: {}", e);
+                                }
+                                cx.notify();
                             });
                         })
                         .child("+")

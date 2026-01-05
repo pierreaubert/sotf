@@ -118,6 +118,8 @@ pub struct EQFilter {
     pub frequency: f64,
     pub q: f64,
     pub gain_db: f64,
+    #[serde(default)]
+    pub muted: bool,
 }
 
 impl EQFilter {
@@ -127,6 +129,7 @@ impl EQFilter {
             frequency,
             q,
             gain_db,
+            muted: false,
         }
     }
 

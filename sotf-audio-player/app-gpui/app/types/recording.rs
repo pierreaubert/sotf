@@ -333,6 +333,10 @@ pub struct RecordingState {
     pub signal_type: RecordingSignalType,
     pub signal_duration_secs: f32,
     pub signal_level_db: f32,
+    /// Sweep start frequency in Hz
+    pub sweep_start_freq: f32,
+    /// Sweep end frequency in Hz
+    pub sweep_end_freq: f32,
     pub channel_recordings: Vec<ChannelRecording>,
     pub current_recording_channel: Option<usize>,
     pub recording_progress: f32,
@@ -384,6 +388,8 @@ impl Default for RecordingState {
             signal_type: RecordingSignalType::Sweep,
             signal_duration_secs: 5.0,
             signal_level_db: -20.0,
+            sweep_start_freq: 20.0,
+            sweep_end_freq: 20000.0,
             channel_recordings: Vec::new(),
             current_recording_channel: None,
             recording_progress: 0.0,

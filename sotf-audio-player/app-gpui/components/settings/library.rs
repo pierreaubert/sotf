@@ -187,11 +187,10 @@ impl PlayerView {
                                     .size(ButtonSize::Sm)
                                     .theme(theme.to_button_theme())
                                     .build()
-                                    // TODO: Implement actual remove specific directory command
                                     .on_click(cx.listener(
                                         move |view, _: &ClickEvent, _window, cx| {
                                             view.state.update(cx, |state, _cx| {
-                                                // Temporarily use selection index for remove, hacky but matches current API
+                                                // Set selection to this index and remove
                                                 state.app.selected_directory_index = idx;
                                                 state.app.remove_selected_directory();
                                             });

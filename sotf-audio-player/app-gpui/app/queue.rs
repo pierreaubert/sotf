@@ -192,6 +192,26 @@ impl App {
         }
     }
 
+    /// Play the selected queue item (album) from the beginning
+    /// Returns the path of the first track to play
+    pub fn play_selected_queue_item(&mut self) -> Option<PathBuf> {
+        if self.selected_queue_index >= self.queue.len() {
+            return None;
+        }
+
+        // Set current queue index to the selected item
+        self.current_queue_index = Some(self.selected_queue_index);
+        self.is_playing = true;
+
+        // Reset to first track of the album
+        if let Some(item) = self.queue.get_mut(self.selected_queue_index) {
+            item.current_track_index = 0;
+            return item.current_track().map(|track| track.path.clone());
+        }
+
+        None
+    }
+
     /// Fill queue with "magic" recommendations (1h of music)
     /// Uses bliss audio features to find songs similar to queue or listening history
     pub fn fill_queue_magic(&mut self) -> Result<usize, String> {

@@ -1408,19 +1408,35 @@ impl PlayerView {
             "backspace" => {
                 self.state.update(cx, |state, _cx| {
                     state.app.apo_file_input.pop();
+                    state.app.clear_autocomplete();
                 });
                 cx.notify();
             }
             "tab" => {
-                // TODO: Add file autocomplete support
+                // File autocomplete support
+                self.state.update(cx, |state, _cx| {
+                    if state.app.autocomplete_suggestions.is_empty() {
+                        state.app.generate_autocomplete_suggestions_for_apo_file();
+                        if !state.app.autocomplete_suggestions.is_empty() {
+                            state.app.apply_autocomplete_to_apo_file();
+                        }
+                    } else {
+                        state.app.next_autocomplete_for_apo_file();
+                    }
+                });
+                cx.notify();
             }
             "escape" => {
                 // Already handled by Cancel action
+                self.state.update(cx, |state, _cx| {
+                    state.app.clear_autocomplete();
+                });
             }
             "enter" => {
                 // Load the APO file
-                self.state
-                    .update(cx, |state, _cx| match state.app.load_apo_file() {
+                self.state.update(cx, |state, _cx| {
+                    state.app.clear_autocomplete();
+                    match state.app.load_apo_file() {
                         Ok(()) => {
                             state.app.toast_message = Some(crate::app::ToastMessage::success(
                                 "APO file loaded successfully",
@@ -1433,7 +1449,8 @@ impl PlayerView {
                                 format!("Failed to load APO file: {}", e),
                             ));
                         }
-                    });
+                    }
+                });
                 cx.notify();
             }
             _ => {
@@ -1441,6 +1458,7 @@ impl PlayerView {
                 if let Some(text) = event.keystroke.key_char.as_ref() {
                     self.state.update(cx, |state, _cx| {
                         state.app.apo_file_input.push_str(text);
+                        state.app.clear_autocomplete();
                     });
                     cx.notify();
                 }
@@ -1454,19 +1472,35 @@ impl PlayerView {
             "backspace" => {
                 self.state.update(cx, |state, _cx| {
                     state.app.sofa_file_input.pop();
+                    state.app.clear_autocomplete();
                 });
                 cx.notify();
             }
             "tab" => {
-                // TODO: Add file autocomplete support
+                // File autocomplete support
+                self.state.update(cx, |state, _cx| {
+                    if state.app.autocomplete_suggestions.is_empty() {
+                        state.app.generate_autocomplete_suggestions_for_sofa_file();
+                        if !state.app.autocomplete_suggestions.is_empty() {
+                            state.app.apply_autocomplete_to_sofa_file();
+                        }
+                    } else {
+                        state.app.next_autocomplete_for_sofa_file();
+                    }
+                });
+                cx.notify();
             }
             "escape" => {
                 // Already handled by Cancel action
+                self.state.update(cx, |state, _cx| {
+                    state.app.clear_autocomplete();
+                });
             }
             "enter" => {
                 // Load the SOFA file
-                self.state
-                    .update(cx, |state, _cx| match state.app.load_sofa_file() {
+                self.state.update(cx, |state, _cx| {
+                    state.app.clear_autocomplete();
+                    match state.app.load_sofa_file() {
                         Ok(()) => {
                             state.app.toast_message = Some(crate::app::ToastMessage::success(
                                 "SOFA file loaded successfully",
@@ -1479,7 +1513,8 @@ impl PlayerView {
                                 format!("Failed to load SOFA file: {}", e),
                             ));
                         }
-                    });
+                    }
+                });
                 cx.notify();
             }
             _ => {
@@ -1487,6 +1522,7 @@ impl PlayerView {
                 if let Some(text) = event.keystroke.key_char.as_ref() {
                     self.state.update(cx, |state, _cx| {
                         state.app.sofa_file_input.push_str(text);
+                        state.app.clear_autocomplete();
                     });
                     cx.notify();
                 }
@@ -1755,8 +1791,10 @@ impl PlayerView {
                     }
                 }
                 Screen::Queue => {
-                    // Play selected track in queue
-                    // TODO: Implement playing specific track from queue
+                    // Play selected album in queue
+                    if let Some(path) = state.app.play_selected_queue_item() {
+                        Self::play_track(state, path);
+                    }
                 }
                 Screen::Settings => {
                     // Enter key in Settings screen - no action needed

@@ -16,7 +16,7 @@
 
 use gpui::{
     Context, Modifiers, ScrollDelta, ScrollWheelEvent, TestAppContext, TouchPhase,
-    VisualTestContext, Window, div, point, prelude::*,
+    VisualTestContext, Window, div, point, prelude::*, px,
 };
 use gpui_ui_kit::audio::vertical_slider::{
     VerticalSlider, VerticalSliderSize, VerticalSliderTheme,
@@ -2294,6 +2294,182 @@ async fn test_vertical_slider_scroll_wheel_horizontal_fallback(cx: &mut TestAppC
             new_val > 50.0,
             "Value should increase with X delta when Y is 0, got {}",
             new_val
+        );
+    }
+}
+
+// ============================================================================
+// INTERACTION TESTS - Click-to-Position on Track
+// ============================================================================
+
+/// View for testing click-to-position on the track
+struct SliderTrackClickView {
+    value: Rc<RefCell<f64>>,
+    change_count: Arc<AtomicUsize>,
+}
+
+impl Render for SliderTrackClickView {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        let current_value = *self.value.borrow();
+        let value_rc = self.value.clone();
+        let change_count = self.change_count.clone();
+
+        div().size_full().child(
+            VerticalSlider::new("track-click-slider")
+                .value(current_value)
+                .min(0.0)
+                .max(100.0)
+                .label("Track Click")
+                .on_change(move |new_val, _window, _cx| {
+                    *value_rc.borrow_mut() = new_val;
+                    change_count.fetch_add(1, Ordering::SeqCst);
+                }),
+        )
+    }
+}
+
+/// Test clicking on the track sets value based on click position
+#[gpui::test]
+async fn test_vertical_slider_track_click_sets_position(cx: &mut TestAppContext) {
+    let value = Rc::new(RefCell::new(50.0));
+    let change_count = Arc::new(AtomicUsize::new(0));
+
+    let value_clone = value.clone();
+    let change_count_clone = change_count.clone();
+
+    let window = cx.add_window(move |_window, _cx| SliderTrackClickView {
+        value: value_clone,
+        change_count: change_count_clone,
+    });
+
+    let mut cx = VisualTestContext::from_window(window.into(), cx);
+    cx.run_until_parked();
+
+    // Click on the track element specifically
+    if let Some(track_bounds) = cx.debug_bounds("track-click-slider-track") {
+        // Click near the top of the track (should give high value)
+        let top_point = point(track_bounds.center().x, track_bounds.origin.y + px(5.0));
+        cx.simulate_mouse_down(top_point, gpui::MouseButton::Left, gpui::Modifiers::default());
+        cx.run_until_parked();
+
+        let high_val = *value.borrow();
+        assert!(
+            high_val > 70.0,
+            "Clicking near top of track should give high value (>70), got {}",
+            high_val
+        );
+
+        // Click near the bottom of the track (should give low value)
+        let bottom_point = point(
+            track_bounds.center().x,
+            track_bounds.origin.y + track_bounds.size.height - px(5.0),
+        );
+        cx.simulate_mouse_down(
+            bottom_point,
+            gpui::MouseButton::Left,
+            gpui::Modifiers::default(),
+        );
+        cx.run_until_parked();
+
+        let low_val = *value.borrow();
+        assert!(
+            low_val < 30.0,
+            "Clicking near bottom of track should give low value (<30), got {}",
+            low_val
+        );
+
+        assert!(
+            change_count.load(Ordering::SeqCst) >= 2,
+            "on_change should have been called at least twice"
+        );
+    }
+}
+
+/// Test dragging on the track continuously updates the value
+#[gpui::test]
+async fn test_vertical_slider_track_drag(cx: &mut TestAppContext) {
+    let value = Rc::new(RefCell::new(50.0));
+    let change_count = Arc::new(AtomicUsize::new(0));
+
+    let value_clone = value.clone();
+    let change_count_clone = change_count.clone();
+
+    let window = cx.add_window(move |_window, _cx| SliderTrackClickView {
+        value: value_clone,
+        change_count: change_count_clone,
+    });
+
+    let mut cx = VisualTestContext::from_window(window.into(), cx);
+    cx.run_until_parked();
+
+    if let Some(track_bounds) = cx.debug_bounds("track-click-slider-track") {
+        // Start drag at center
+        let start_point = track_bounds.center();
+        cx.simulate_mouse_down(
+            start_point,
+            gpui::MouseButton::Left,
+            gpui::Modifiers::default(),
+        );
+        cx.run_until_parked();
+
+        let start_val = *value.borrow();
+
+        // Move mouse up (should increase value)
+        let drag_up_point = point(
+            track_bounds.center().x,
+            track_bounds.origin.y + px(10.0),
+        );
+        cx.simulate_mouse_move(drag_up_point, gpui::MouseButton::Left, gpui::Modifiers::default());
+        cx.run_until_parked();
+
+        let after_drag_val = *value.borrow();
+        assert!(
+            after_drag_val > start_val,
+            "Dragging up should increase value. Start: {}, After: {}",
+            start_val,
+            after_drag_val
+        );
+    }
+}
+
+/// Test scroll wheel on track element stops propagation
+#[gpui::test]
+async fn test_vertical_slider_track_scroll_wheel(cx: &mut TestAppContext) {
+    let value = Rc::new(RefCell::new(50.0));
+    let change_count = Arc::new(AtomicUsize::new(0));
+
+    let value_clone = value.clone();
+    let change_count_clone = change_count.clone();
+
+    let window = cx.add_window(move |_window, _cx| SliderTrackClickView {
+        value: value_clone,
+        change_count: change_count_clone,
+    });
+
+    let mut cx = VisualTestContext::from_window(window.into(), cx);
+    cx.run_until_parked();
+
+    if let Some(track_bounds) = cx.debug_bounds("track-click-slider-track") {
+        let center = track_bounds.center();
+
+        // Scroll wheel up on track (negative Y = increase value)
+        cx.simulate_event(ScrollWheelEvent {
+            position: center,
+            delta: ScrollDelta::Lines(point(0.0, -1.0)),
+            modifiers: Modifiers::default(),
+            touch_phase: TouchPhase::Moved,
+        });
+        cx.run_until_parked();
+
+        let new_val = *value.borrow();
+        assert!(
+            new_val > 50.0,
+            "Scroll wheel on track should increase value, got {}",
+            new_val
+        );
+        assert!(
+            change_count.load(Ordering::SeqCst) >= 1,
+            "on_change should have been called"
         );
     }
 }

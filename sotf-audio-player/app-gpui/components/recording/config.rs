@@ -239,7 +239,7 @@ impl PlayerView {
             .child({
                 let view = view.clone();
                 NumberInput::new("recording_channel_count")
-                    .value(1.0)
+                    .value(num_channels as f64)
                     .min(1.0)
                     .max(16.0)
                     .step(1.0)

@@ -2369,6 +2369,111 @@ impl App {
         }
     }
 
+    /// Add a new EQ band to the currently editing EQ plugin
+    /// Returns Ok(()) if successful, Err if no EQ plugin is being edited
+    pub fn add_eq_band(&mut self) -> Result<(), String> {
+        use math_audio_iir_fir::BiquadFilterType;
+        use sotf_audio_player::EQFilter;
+
+        // Check plugin state before adding band
+        if let Some(plugin) = self.get_editing_plugin() {
+            if !matches!(plugin.settings, PluginSettings::EQ { .. }) {
+                return Err("Selected plugin is not an EQ".to_string());
+            }
+        } else {
+            return Err("No plugin being edited".to_string());
+        }
+
+        // Add a new filter to the currently editing plugin
+        if let Some(plugin) = self.get_editing_plugin_mut() {
+            if let PluginSettings::EQ { channels, filters } = &mut plugin.settings {
+                // Create a new default peak filter at 1kHz
+                let new_filter = EQFilter::new(BiquadFilterType::Peak, 1000.0, 1.0, 0.0);
+                filters.push(new_filter);
+
+                // Clone values for reassignment (borrow checker)
+                let channels = *channels;
+                let filters = filters.clone();
+                plugin.settings = PluginSettings::EQ { channels, filters };
+
+                self.pending_plugin_update = Some(PluginUpdateType::Structural);
+                Ok(())
+            } else {
+                Err("Selected plugin is not an EQ".to_string())
+            }
+        } else {
+            Err("No plugin being edited".to_string())
+        }
+    }
+
+    /// Remove an EQ band from the currently editing EQ plugin
+    /// Returns Ok(()) if successful, Err if no EQ plugin is being edited or invalid index
+    pub fn remove_eq_band(&mut self, band_idx: usize) -> Result<(), String> {
+        // Check plugin state before removing band
+        if let Some(plugin) = self.get_editing_plugin() {
+            if !matches!(plugin.settings, PluginSettings::EQ { .. }) {
+                return Err("Selected plugin is not an EQ".to_string());
+            }
+        } else {
+            return Err("No plugin being edited".to_string());
+        }
+
+        // Remove the filter from the currently editing plugin
+        if let Some(plugin) = self.get_editing_plugin_mut() {
+            if let PluginSettings::EQ { channels, filters } = &mut plugin.settings {
+                if band_idx >= filters.len() {
+                    return Err("Invalid band index".to_string());
+                }
+
+                filters.remove(band_idx);
+
+                // Clone values for reassignment (borrow checker)
+                let channels = *channels;
+                let filters = filters.clone();
+                plugin.settings = PluginSettings::EQ { channels, filters };
+
+                self.pending_plugin_update = Some(PluginUpdateType::Structural);
+                Ok(())
+            } else {
+                Err("Selected plugin is not an EQ".to_string())
+            }
+        } else {
+            Err("No plugin being edited".to_string())
+        }
+    }
+
+    /// Toggle mute state for an EQ band
+    pub fn toggle_eq_band_mute(&mut self, band_idx: usize) -> Result<(), String> {
+        if let Some(plugin) = self.get_editing_plugin() {
+            if !matches!(plugin.settings, PluginSettings::EQ { .. }) {
+                return Err("Selected plugin is not an EQ".to_string());
+            }
+        } else {
+            return Err("No plugin being edited".to_string());
+        }
+
+        if let Some(plugin) = self.get_editing_plugin_mut() {
+            if let PluginSettings::EQ { channels, filters } = &mut plugin.settings {
+                if band_idx >= filters.len() {
+                    return Err("Invalid band index".to_string());
+                }
+
+                filters[band_idx].muted = !filters[band_idx].muted;
+
+                let channels = *channels;
+                let filters = filters.clone();
+                plugin.settings = PluginSettings::EQ { channels, filters };
+
+                self.pending_plugin_update = Some(PluginUpdateType::Structural);
+                Ok(())
+            } else {
+                Err("Selected plugin is not an EQ".to_string())
+            }
+        } else {
+            Err("No plugin being edited".to_string())
+        }
+    }
+
     // Plugin preset save/load methods
 
     /// Refresh the list of available plugin presets from the config directory

@@ -2,10 +2,15 @@
 //!
 //! Features:
 //! - Drag support: click and drag the thumb or anywhere on the track
-//! - Scroll wheel: scroll up/down to adjust value
+//! - Scroll wheel: scroll up/down to adjust value (shift for fine control)
+//! - Double-click to reset to default
 //! - Keyboard navigation (when focused):
-//!   - Arrow Up/Right: increase value
-//!   - Arrow Down/Left: decrease value
+//!   - Arrow Up/Right: increase value (5%)
+//!   - Arrow Down/Left: decrease value (5%)
+//!   - Page Up: increase value (10%)
+//!   - Page Down: decrease value (10%)
+//!   - Home: set to minimum
+//!   - End: set to maximum
 //! - Value snapping with step parameter
 
 use crate::ComponentTheme;
@@ -474,14 +479,16 @@ impl RenderOnce for Slider {
             if let Some(ref handler_rc) = on_change_rc {
                 let handler_scroll = handler_rc.clone();
                 track = track.on_scroll_wheel(move |event, window, cx| {
+                    // CRITICAL: Stop propagation immediately to prevent parent scroll container
+                    // from capturing the event before we can handle it
+                    cx.stop_propagation();
+
                     // Get scroll delta - positive y means scrolling up
                     let delta = event.delta.pixel_delta(px(20.0)).y;
-                    
+
                     if delta.abs() < px(0.01) {
                         return;
                     }
-
-                    cx.stop_propagation();
 
                     let scroll_up = delta < px(0.0);
 
@@ -518,10 +525,13 @@ impl RenderOnce for Slider {
                 let handler_key = handler_rc.clone();
                 track = track.on_key_down(move |event, window, cx| {
                     let step_amount = step.unwrap_or((max - min) * 0.05);
+                    let large_step = (max - min) * 0.10; // 10% for page up/down
 
                     let new_value = match event.keystroke.key.as_str() {
                         "up" | "right" => Some(current_value + step_amount),
                         "down" | "left" => Some(current_value - step_amount),
+                        "pageup" => Some(current_value + large_step),
+                        "pagedown" => Some(current_value - large_step),
                         "home" => Some(min),
                         "end" => Some(max),
                         _ => None,

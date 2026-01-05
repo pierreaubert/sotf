@@ -180,4 +180,133 @@ impl App {
             self.apply_autocomplete_to_plugin_file();
         }
     }
+
+    // APO file autocomplete methods
+
+    /// Generate autocomplete suggestions for APO file input (file paths with .txt extension filter)
+    pub fn generate_autocomplete_suggestions_for_apo_file(&mut self) {
+        self.generate_file_autocomplete_suggestions(&self.apo_file_input.clone(), Some(&["txt"]));
+    }
+
+    /// Apply the current autocomplete suggestion to the APO file input
+    pub fn apply_autocomplete_to_apo_file(&mut self) {
+        if !self.autocomplete_suggestions.is_empty() {
+            let suggestion = &self.autocomplete_suggestions[self.autocomplete_index];
+            self.apo_file_input = suggestion.clone();
+        }
+    }
+
+    /// Cycle to the next autocomplete suggestion for APO file
+    pub fn next_autocomplete_for_apo_file(&mut self) {
+        if !self.autocomplete_suggestions.is_empty() {
+            self.autocomplete_index =
+                (self.autocomplete_index + 1) % self.autocomplete_suggestions.len();
+            self.apply_autocomplete_to_apo_file();
+        }
+    }
+
+    // SOFA file autocomplete methods
+
+    /// Generate autocomplete suggestions for SOFA file input (file paths with .sofa extension filter)
+    pub fn generate_autocomplete_suggestions_for_sofa_file(&mut self) {
+        self.generate_file_autocomplete_suggestions(&self.sofa_file_input.clone(), Some(&["sofa"]));
+    }
+
+    /// Apply the current autocomplete suggestion to the SOFA file input
+    pub fn apply_autocomplete_to_sofa_file(&mut self) {
+        if !self.autocomplete_suggestions.is_empty() {
+            let suggestion = &self.autocomplete_suggestions[self.autocomplete_index];
+            self.sofa_file_input = suggestion.clone();
+        }
+    }
+
+    /// Cycle to the next autocomplete suggestion for SOFA file
+    pub fn next_autocomplete_for_sofa_file(&mut self) {
+        if !self.autocomplete_suggestions.is_empty() {
+            self.autocomplete_index =
+                (self.autocomplete_index + 1) % self.autocomplete_suggestions.len();
+            self.apply_autocomplete_to_sofa_file();
+        }
+    }
+
+    // Generic file autocomplete helper
+
+    /// Generate file path autocomplete suggestions with optional extension filter
+    /// If extensions is Some, only files with those extensions (and directories) are shown.
+    fn generate_file_autocomplete_suggestions(&mut self, input: &str, extensions: Option<&[&str]>) {
+        self.autocomplete_suggestions.clear();
+        self.autocomplete_index = 0;
+
+        let input = if input.is_empty() { "./" } else { input };
+
+        // Expand tilde to home directory
+        let expanded_input = if input.starts_with('~') {
+            if let Ok(home) = std::env::var("HOME") {
+                input.replacen('~', &home, 1)
+            } else {
+                input.to_string()
+            }
+        } else {
+            input.to_string()
+        };
+
+        let path = std::path::Path::new(&expanded_input);
+
+        // Determine the directory to search and the prefix to match
+        let (search_dir, prefix) = if path.is_dir() && expanded_input.ends_with('/') {
+            (path.to_path_buf(), String::new())
+        } else if let Some(parent) = path.parent() {
+            let prefix = path
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
+            (parent.to_path_buf(), prefix)
+        } else {
+            (std::path::PathBuf::from("."), expanded_input.clone())
+        };
+
+        // Read directory and find matching entries
+        if let Ok(entries) = std::fs::read_dir(&search_dir) {
+            for entry in entries.flatten() {
+                if let Ok(file_name) = entry.file_name().into_string() {
+                    // Skip hidden files unless prefix starts with '.'
+                    if file_name.starts_with('.') && !prefix.starts_with('.') {
+                        continue;
+                    }
+
+                    // Check if filename starts with prefix
+                    if file_name.to_lowercase().starts_with(&prefix.to_lowercase()) {
+                        let entry_path = entry.path();
+                        let is_dir = entry_path.is_dir();
+
+                        // Apply extension filter for files (not directories)
+                        if !is_dir {
+                            if let Some(exts) = extensions {
+                                let has_valid_ext = entry_path
+                                    .extension()
+                                    .and_then(|e| e.to_str())
+                                    .map(|e| exts.iter().any(|ext| e.eq_ignore_ascii_case(ext)))
+                                    .unwrap_or(false);
+                                if !has_valid_ext {
+                                    continue;
+                                }
+                            }
+                        }
+
+                        let mut full_path = search_dir.join(&file_name);
+
+                        // Add trailing slash for directories
+                        if is_dir {
+                            full_path = full_path.join("");
+                        }
+
+                        let suggestion = full_path.to_string_lossy().to_string();
+                        self.autocomplete_suggestions.push(suggestion);
+                    }
+                }
+            }
+        }
+
+        self.autocomplete_suggestions.sort();
+    }
 }

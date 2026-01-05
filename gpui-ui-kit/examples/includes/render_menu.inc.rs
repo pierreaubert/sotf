@@ -15,7 +15,7 @@ impl Showcase {
                     .spacing(StackSpacing::Sm)
                     .child(Text::new("Dropdown Menu").weight(TextWeight::Medium))
                     .child(
-                        Menu::new(vec![
+                        Menu::new("example-menu", vec![
                             MenuItem::new("new-file", "New File")
                                 .with_shortcut("Cmd+N")
                                 .with_icon("N"),
