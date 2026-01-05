@@ -61,6 +61,7 @@ pub struct Translations {
     // Menu bar
     pub menu_file: &'static str,
     pub menu_show: &'static str,
+    pub menu_view: &'static str,
     pub menu_help: &'static str,
     pub menu_open_config: &'static str,
     pub menu_quit: &'static str,
@@ -304,6 +305,7 @@ impl Translations {
             // Menu bar
             menu_file: "File",
             menu_show: "Show",
+            menu_view: "View",
             menu_help: "Help",
             menu_open_config: "Open Config",
             menu_quit: "Quit",
@@ -512,6 +514,7 @@ impl Translations {
             // Menu bar
             menu_file: "Fichier",
             menu_show: "Afficher",
+            menu_view: "Vue",
             menu_help: "Aide",
             menu_open_config: "Ouvrir la configuration",
             menu_quit: "Quitter",
@@ -720,6 +723,7 @@ impl Translations {
             // Menu bar
             menu_file: "Datei",
             menu_show: "Anzeigen",
+            menu_view: "Ansicht",
             menu_help: "Hilfe",
             menu_open_config: "Konfiguration öffnen",
             menu_quit: "Beenden",
@@ -928,6 +932,7 @@ impl Translations {
             // Menu bar
             menu_file: "Archivo",
             menu_show: "Mostrar",
+            menu_view: "Ver",
             menu_help: "Ayuda",
             menu_open_config: "Abrir configuración",
             menu_quit: "Salir",

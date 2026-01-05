@@ -5,7 +5,7 @@ use mimalloc::MiMalloc;
 use rust_embed::RustEmbed;
 use sotf_audio_player::Player;
 use sotf_audio_player_gpui::app::actions::*;
-use sotf_audio_player_gpui::app::{App, AppState};
+use sotf_audio_player_gpui::app::{i18n::{Translations, Language}, App, AppState};
 use sotf_audio_player_gpui::config::Config;
 use sotf_audio_player_gpui::keybindings::{KeymapPreset, get_keybindings};
 use sotf_audio_player_gpui::ui;
@@ -83,39 +83,48 @@ fn main() {
             cx.text_system().add_fonts(font_data).unwrap();
         }
 
+        // Load configuration to get language and keymap preset
+        let (language, keymap_preset) = if let Ok(config) = Config::load() {
+            (config.language, config.keymap_preset)
+        } else {
+            (Language::default(), KeymapPreset::default())
+        };
+
+        let translations = Translations::for_language(language);
+
+        // Register keyboard shortcuts
+        cx.bind_keys(get_keybindings(keymap_preset));
+
         cx.set_menus(vec![
             Menu {
                 name: format!("SotF-v{}", env!("CARGO_PKG_VERSION")).into(),
                 items: vec![
-                    MenuItem::action("About SotF Player", About),
+                    MenuItem::action(translations.menu_about, About),
                     MenuItem::separator(),
-                    MenuItem::action("Settings...", OpenConfig),
+                    MenuItem::action(translations.menu_open_config, OpenConfig),
                     MenuItem::separator(),
                     MenuItem::os_submenu("Services", SystemMenuType::Services),
                     MenuItem::separator(),
-                    MenuItem::action("Quit SotF Player", QuitApp),
+                    MenuItem::action(translations.menu_quit, QuitApp),
                 ],
             },
             Menu {
-                name: "View".into(),
+                name: translations.menu_view.into(),
                 items: vec![
-                    MenuItem::action("Home", SwitchToLibrary),
-                    MenuItem::action("Plugins", SwitchToPlugins),
-                    MenuItem::action("Recording", SwitchToRecording),
-                    MenuItem::action("Room EQ", SwitchToRoomEQ),
-                    MenuItem::action("Headphone EQ", SwitchToHeadphoneEQ),
+                    MenuItem::action(translations.screen_library, SwitchToLibrary),
+                    MenuItem::action(translations.screen_studio, SwitchToStudio),
+                    MenuItem::action(translations.screen_studio_full, SwitchToPluginGraph),
+                    MenuItem::action(translations.screen_recording, SwitchToRecording),
+                    MenuItem::action(translations.screen_room_eq, SwitchToRoomEQ),
+                    MenuItem::action(translations.screen_headphone_eq, SwitchToHeadphoneEQ),
+                    MenuItem::action(translations.screen_spinorama, SwitchToSpinorma),
                 ],
             },
             Menu {
-                name: "Help".into(),
-                items: vec![MenuItem::action("Keyboard Shortcuts", ToggleHelp)],
+                name: translations.menu_help.into(),
+                items: vec![MenuItem::action(translations.menu_keyboard_shortcuts, ToggleHelp)],
             },
         ]);
-
-        // Register keyboard shortcuts from the keybindings module
-        // Default preset is used at startup; can be changed via settings
-        let keymap_preset = KeymapPreset::Default;
-        cx.bind_keys(get_keybindings(keymap_preset));
 
         // Load window geometry from config
         let window_geometry = Config::load()
