@@ -872,18 +872,48 @@ impl PlayerView {
             // Stop click propagation so overlay doesn't close popup
             .on_mouse_down(MouseButton::Left, |_, _, _| {})
             .on_mouse_up(MouseButton::Left, |_, _, _| {})
-            // Header
-            .child(
+            // Header with refresh button
+            .child({
+                let theme_header = theme.clone();
                 div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
                     .px_3()
                     .py_2()
-                    .text_xs()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(theme.text_muted)
                     .border_b_1()
-                    .border_color(theme.border)
-                    .child(header_label),
-            )
+                    .border_color(theme_header.border)
+                    .child(
+                        div()
+                            .text_xs()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(theme_header.text_muted)
+                            .child(header_label),
+                    )
+                    .child(
+                        div()
+                            .id("refresh-devices")
+                            .cursor_pointer()
+                            .p_1()
+                            .rounded(px(3.0))
+                            .hover(|s| s.bg(theme_header.surface_hover))
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(|view, _: &MouseUpEvent, _window, cx| {
+                                    view.state.update(cx, |state, _cx| {
+                                        state.app.load_audio_devices();
+                                    });
+                                    cx.notify();
+                                }),
+                            )
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(theme_header.text_muted)
+                                    .child("⟳"),
+                            ),
+                    )
+            })
             // Device list
             .children(devices.iter().enumerate().map(|(idx, device)| {
                 let is_selected = idx == selected_index;
@@ -1021,7 +1051,7 @@ impl PlayerView {
     }
 
     /// Render a round volume button with circular progress indicator
-    /// Supports mouse scroll to change volume
+    /// Supports mouse scroll and keyboard input to change volume
     fn render_volume_button(
         &self,
         volume: f32,
@@ -1035,10 +1065,18 @@ impl PlayerView {
         let muted_color: gpui::Hsla = theme.text_muted.into();
         let bg_color: gpui::Hsla = theme.surface_hover.into();
         let text_color: gpui::Hsla = theme.text_primary.into();
+        let focus_ring_color: gpui::Hsla = theme.accent.into();
 
         div()
             .id("volume-button")
             .cursor_pointer()
+            .focusable()
+            .focus(|style| {
+                style
+                    .border_2()
+                    .border_color(focus_ring_color)
+                    .rounded_full()
+            })
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |view, event: &MouseDownEvent, _window, cx| {
@@ -1075,6 +1113,43 @@ impl PlayerView {
                     let _ = state.player.lock().set_volume(new_volume);
                 });
                 cx.notify();
+            }))
+            .on_key_down(cx.listener(|view, event: &KeyDownEvent, _window, cx| {
+                // Keyboard volume control: arrows, +/-, m for mute
+                const VOLUME_STEP: f32 = 0.05; // 5% per keypress
+                const VOLUME_STEP_LARGE: f32 = 0.10; // 10% for page up/down
+
+                let delta = match &event.keystroke.key {
+                    key if key == "up" || key == "right" => Some(VOLUME_STEP),
+                    key if key == "down" || key == "left" => Some(-VOLUME_STEP),
+                    key if key == "pageup" => Some(VOLUME_STEP_LARGE),
+                    key if key == "pagedown" => Some(-VOLUME_STEP_LARGE),
+                    key if key == "=" || key == "+" => Some(VOLUME_STEP),
+                    key if key == "-" => Some(-VOLUME_STEP),
+                    key if key == "home" => Some(1.0), // Max volume (will be clamped)
+                    key if key == "end" => Some(-1.0), // Min volume (will be clamped)
+                    key if key == "m" => {
+                        // Toggle mute (visual only - affects VolumeKnob display)
+                        view.state.update(cx, |state, _cx| {
+                            state.app.muted = !state.app.muted;
+                            // When muted, set volume to 0; restore when unmuted
+                            let effective_volume = if state.app.muted { 0.0 } else { state.app.volume };
+                            let _ = state.player.lock().set_volume(effective_volume);
+                        });
+                        cx.notify();
+                        return;
+                    }
+                    _ => None,
+                };
+
+                if let Some(delta) = delta {
+                    view.state.update(cx, |state, _cx| {
+                        let new_volume = (state.app.volume + delta).clamp(0.0, 1.0);
+                        state.app.volume = new_volume;
+                        let _ = state.player.lock().set_volume(new_volume);
+                    });
+                    cx.notify();
+                }
             }))
             .child(
                 VolumeKnob::new()
