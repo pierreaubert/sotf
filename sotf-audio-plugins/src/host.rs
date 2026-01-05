@@ -270,7 +270,7 @@ pub struct DawHost {
     sample_rate: u32,
     /// Next node ID
     next_node_id: NodeId,
-    /// Enable parallel processing
+    /// Enable parallel processing (DEPRECATED: scratch buffer reuse always uses sequential processing)
     parallel_enabled: bool,
     /// Linear chain mode: ordered list of node IDs (for PluginHost compatibility)
     chain_nodes: Vec<NodeId>,
@@ -641,16 +641,28 @@ impl DawHost {
             })
             .collect();
 
-        // Process each stage
+        // Pre-allocate scratch buffers (reused to avoid heap allocations per node)
+        let mut scratch_input = Vec::with_capacity(input.len().max(4096));
+        let mut scratch_output = Vec::with_capacity(
+            4096 * self
+                .nodes
+                .values()
+                .map(|n| n.output_channels())
+                .max()
+                .unwrap_or(2),
+        );
+
+        // Process each stage (sequential for scratch buffer reuse)
         for stage in &self.stages {
-            if stage.nodes.len() == 1 || !self.parallel_enabled {
-                // Single node or parallel disabled - process sequentially
-                for &node_id in &stage.nodes {
-                    self.process_node(node_id, input, &node_buffers, &context)?;
-                }
-            } else {
-                // Multiple nodes - process in parallel
-                self.process_stage_parallel(stage, input, &node_buffers, &context)?;
+            for &node_id in &stage.nodes {
+                self.process_node(
+                    node_id,
+                    input,
+                    &node_buffers,
+                    &context,
+                    &mut scratch_input,
+                    &mut scratch_output,
+                )?;
             }
         }
 
@@ -660,13 +672,15 @@ impl DawHost {
         Ok(num_frames)
     }
 
-    /// Process a single node
+    /// Process a single node using pre-allocated scratch buffers
     fn process_node(
         &self,
         node_id: NodeId,
         graph_input: &[f32],
         node_buffers: &HashMap<NodeId, AudioBuffer>,
         context: &ProcessContext,
+        scratch_input: &mut Vec<f32>,
+        scratch_output: &mut Vec<f32>,
     ) -> Result<(), String> {
         let node = self
             .nodes
@@ -674,59 +688,71 @@ impl DawHost {
             .ok_or_else(|| format!("Node {} not found", node_id))?;
 
         // Determine input buffer
-        let input_data = if self.input_nodes.contains(&node_id) {
-            // Input node - use graph input
-            graph_input.to_vec()
+        let input_data: &[f32] = if self.input_nodes.contains(&node_id) {
+            // Input node - use graph input directly (no allocation needed)
+            graph_input
         } else {
             // Internal node - merge inputs from predecessors
-            self.merge_inputs(node_id, node_buffers, context.num_frames)?
+            let merged = self.merge_inputs(node_id, node_buffers, context.num_frames)?;
+            // Reuse scratch buffer for merged input
+            if scratch_input.len() < merged.len() {
+                scratch_input.resize(merged.len(), 0.0);
+            }
+            scratch_input[..merged.len()].copy_from_slice(&merged);
+            &scratch_input
         };
 
-        // Allocate output buffer
+        // Allocate output buffer (reuse scratch buffer)
         let output_channels = node.output_channels();
         let output_size = context.num_frames * output_channels;
-        let mut output_data = vec![0.0; output_size];
+        if scratch_output.len() < output_size {
+            scratch_output.resize(output_size, 0.0);
+        } else {
+            // Zero out the buffer for this frame
+            scratch_output[..output_size].fill(0.0);
+        }
 
         // Process (lock the plugin for processing)
         {
-            let mut plugin = node.plugin.lock().unwrap();
-            plugin.process(&input_data, &mut output_data, context)?;
+            let mut plugin = node
+                .plugin
+                .lock()
+                .map_err(|e| format!("Plugin '{}' lock poisoned: {}", node.name, e))?;
+            plugin.process(input_data, &mut scratch_output[..output_size], context)?;
         }
 
         // Write to node buffer
-        node_buffers[&node_id].write(&output_data);
+        node_buffers[&node_id].write(&scratch_output[..output_size]);
 
         Ok(())
     }
 
     /// Process a stage in parallel using scoped threads
+    ///
+    /// DEPRECATED: This function is no longer used as scratch buffer reuse
+    /// requires sequential processing. Kept for API compatibility.
+    #[deprecated(
+        since = "0.5.10",
+        note = "Parallel processing disabled for scratch buffer reuse"
+    )]
     fn process_stage_parallel(
         &self,
         stage: &ProcessingStage,
         graph_input: &[f32],
         node_buffers: &HashMap<NodeId, AudioBuffer>,
         context: &ProcessContext,
+        _scratch_input: &mut Vec<f32>,
+        _scratch_output: &mut Vec<f32>,
     ) -> Result<(), String> {
-        let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-
-        std::thread::scope(|scope| {
-            for &node_id in &stage.nodes {
-                let errors = Arc::clone(&errors);
-
-                scope.spawn(move || {
-                    if let Err(e) = self.process_node(node_id, graph_input, node_buffers, context) {
-                        errors.lock().unwrap().push(e);
-                    }
-                });
-            }
-        });
-
-        // Check for errors
-        let errors = errors.lock().unwrap();
-        if let Some(first_error) = errors.first() {
-            return Err(first_error.clone());
-        }
-
+        let _ = (
+            stage,
+            graph_input,
+            node_buffers,
+            context,
+            _scratch_input,
+            _scratch_output,
+        );
+        // Parallel processing disabled - scratch buffer reuse requires sequential processing
         Ok(())
     }
 
