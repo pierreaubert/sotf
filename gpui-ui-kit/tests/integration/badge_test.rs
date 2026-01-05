@@ -265,9 +265,17 @@ async fn test_badge_icon_with_variant(cx: &mut TestAppContext) {
             div()
                 .flex()
                 .gap_2()
-                .child(Badge::new("Success").variant(BadgeVariant::Success).icon("✓"))
+                .child(
+                    Badge::new("Success")
+                        .variant(BadgeVariant::Success)
+                        .icon("✓"),
+                )
                 .child(Badge::new("Error").variant(BadgeVariant::Error).icon("✗"))
-                .child(Badge::new("Warning").variant(BadgeVariant::Warning).icon("⚠"))
+                .child(
+                    Badge::new("Warning")
+                        .variant(BadgeVariant::Warning)
+                        .icon("⚠"),
+                )
         }
     }
 

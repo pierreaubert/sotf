@@ -66,6 +66,11 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+// Maximum number of input states to retain in thread-local storage.
+// Excess states will be automatically evicted (oldest first).
+// This prevents memory leaks when cleanup functions are not called.
+const MAX_THREAD_LOCAL_INPUT_STATES: usize = 1000;
+
 // Thread-local registry for focus handles, keyed by element ID.
 // This ensures the same focus handle is reused across renders for Input components
 // that don't provide their own focus handle. Without this, focus would be lost
@@ -77,8 +82,42 @@ thread_local! {
 // Thread-local registry for edit state, keyed by element ID.
 // This ensures edit state (cursor position, current text, selection) persists
 // across renders. Without this, every re-render would reset the editing state.
+//
+// Note: State is automatically evicted when exceeding MAX_THREAD_LOCAL_INPUT_STATES.
+// For applications with many dynamic inputs, call cleanup_input_state() or
+// cleanup_stale_input_states() periodically to manage memory explicitly.
 thread_local! {
     static EDIT_STATES: RefCell<HashMap<ElementId, Rc<RefCell<EditState>>>> = RefCell::new(HashMap::new());
+}
+
+/// Evict oldest entries if thread-local storage exceeds maximum size.
+/// This prevents unbounded memory growth when cleanup functions are not called.
+/// Returns the number of entries evicted from each map.
+fn trim_thread_local_storage() -> (usize, usize) {
+    let mut focus_evicted = 0;
+    let mut edit_evicted = 0;
+
+    FOCUS_HANDLES.with(|handles| {
+        let mut handles = handles.borrow_mut();
+        while handles.len() > MAX_THREAD_LOCAL_INPUT_STATES {
+            if let Some(key) = handles.keys().next().cloned() {
+                handles.remove(&key);
+                focus_evicted += 1;
+            }
+        }
+    });
+
+    EDIT_STATES.with(|states| {
+        let mut states = states.borrow_mut();
+        while states.len() > MAX_THREAD_LOCAL_INPUT_STATES {
+            if let Some(key) = states.keys().next().cloned() {
+                states.remove(&key);
+                edit_evicted += 1;
+            }
+        }
+    });
+
+    (focus_evicted, edit_evicted)
 }
 
 /// Clean up thread-local state for an Input element.
@@ -116,21 +155,26 @@ pub fn cleanup_input_state(id: &ElementId) {
 /// ```
 pub fn cleanup_stale_input_states(retained_ids: &std::collections::HashSet<ElementId>) {
     FOCUS_HANDLES.with(|handles| {
-        handles.borrow_mut().retain(|id, _| retained_ids.contains(id));
+        handles
+            .borrow_mut()
+            .retain(|id, _| retained_ids.contains(id));
     });
     EDIT_STATES.with(|states| {
-        states.borrow_mut().retain(|id, _| retained_ids.contains(id));
+        states
+            .borrow_mut()
+            .retain(|id, _| retained_ids.contains(id));
     });
 }
 
 /// Get the current count of stored input states.
 ///
-/// Useful for debugging memory leaks. If this number grows unboundedly,
-/// you may need to call `cleanup_input_state` or `cleanup_stale_input_states`.
+/// Useful for debugging memory leaks. If this number grows beyond
+/// MAX_THREAD_LOCAL_INPUT_STATES, older entries will be automatically evicted.
 ///
 /// # Returns
 /// A tuple of (focus_handle_count, edit_state_count)
 pub fn input_state_count() -> (usize, usize) {
+    let _ = trim_thread_local_storage();
     let focus_count = FOCUS_HANDLES.with(|handles| handles.borrow().len());
     let edit_count = EDIT_STATES.with(|states| states.borrow().len());
     (focus_count, edit_count)
@@ -459,7 +503,8 @@ impl EditState {
 
         // Find start of word
         let mut start = pos;
-        if start < len && !is_word_char(chars[start]) && start > 0 && is_word_char(chars[start - 1]) {
+        if start < len && !is_word_char(chars[start]) && start > 0 && is_word_char(chars[start - 1])
+        {
             // Clicked just after a word, select that word
             start -= 1;
         }
@@ -479,7 +524,9 @@ impl EditState {
         // Find end of word
         let mut end = pos;
         // Ensure we start searching from at least 'start'
-        if end < start { end = start; }
+        if end < start {
+            end = start;
+        }
 
         while end < len {
             let curr = chars[end];
@@ -738,7 +785,11 @@ impl RenderOnce for Input {
 
         // Get display state from edit_state
         let state = edit_state.borrow();
-        let selection_anchor = if editing { state.selection_anchor } else { None };
+        let selection_anchor = if editing {
+            state.selection_anchor
+        } else {
+            None
+        };
         let cursor_pos = state.cursor;
         let _is_dragging = state.is_dragging;
         // When editing, display the internal state.text; otherwise display props value
@@ -1155,30 +1206,24 @@ impl RenderOnce for Input {
 
             // Part 2 (Selection)
             if !part2.is_empty() {
-                text_el = text_el.child(
-                    div()
-                        .bg(selection_bg)
-                        .text_color(text_color)
-                        .child(part2),
-                );
+                text_el = text_el.child(div().bg(selection_bg).text_color(text_color).child(part2));
             }
 
             // If cursor is at end of selection (dragged forwards or no selection)
             // Note: if selection is empty, sel_start == sel_end == cursor_pos, so this handles "no selection" case too
             if cursor_pos == sel_end && cursor_pos != sel_start {
-                 text_el = text_el.child(cursor_el());
+                text_el = text_el.child(cursor_el());
             } else if cursor_pos == sel_end && sel_start == sel_end {
-                 // No selection case (sel_start == sel_end)
-                 // We already added cursor at sel_start above?
-                 // Wait: if cursor_pos == sel_start == sel_end, we added it above.
-                 // So we don't need to add it here.
+                // No selection case (sel_start == sel_end)
+                // We already added cursor at sel_start above?
+                // Wait: if cursor_pos == sel_start == sel_end, we added it above.
+                // So we don't need to add it here.
             }
 
             // Part 3 (Post-selection/Post-cursor)
             if !part3.is_empty() {
                 text_el = text_el.child(div().text_color(text_color).child(part3));
             }
-
         } else if !editing && current_value.is_empty() {
             // Placeholder text
             text_el = text_el.text_color(placeholder_color).child(display_text);

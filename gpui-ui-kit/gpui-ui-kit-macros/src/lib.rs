@@ -31,7 +31,7 @@
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::punctuated::Punctuated;
-use syn::{parse_macro_input, Data, DeriveInput, Expr, Fields, Lit, Meta, Token};
+use syn::{Data, DeriveInput, Expr, Fields, Lit, Meta, Token, parse_macro_input};
 
 /// Derive macro for component themes.
 ///
@@ -315,9 +315,8 @@ pub fn derive_component_theme(input: TokenStream) -> TokenStream {
 
         // Generate From<&Theme> field
         if let Some(expr_str) = from_expr {
-            let expr: syn::Expr = syn::parse_str(&expr_str).unwrap_or_else(|_| {
-                panic!("Failed to parse from_expr for field `{}`", field_name)
-            });
+            let expr: syn::Expr = syn::parse_str(&expr_str)
+                .unwrap_or_else(|_| panic!("Failed to parse from_expr for field `{}`", field_name));
             from_fields.push(quote! {
                 #field_name: #expr
             });

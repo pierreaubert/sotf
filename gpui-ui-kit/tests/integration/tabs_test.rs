@@ -7,7 +7,9 @@
 //! - Closeable tabs with callback
 //! - Badges and icons
 
-use gpui::{Context, MouseButton, Modifiers, TestAppContext, VisualTestContext, Window, div, prelude::*};
+use gpui::{
+    Context, Modifiers, MouseButton, TestAppContext, VisualTestContext, Window, div, prelude::*,
+};
 use gpui_ui_kit::tabs::{TabItem, TabVariant, Tabs};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -22,13 +24,11 @@ struct TabsTestView;
 
 impl Render for TabsTestView {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        div().child(
-            Tabs::new("tabs").tabs(vec![
-                TabItem::new("tab1", "Tab 1"),
-                TabItem::new("tab2", "Tab 2"),
-                TabItem::new("tab3", "Tab 3"),
-            ]),
-        )
+        div().child(Tabs::new("tabs").tabs(vec![
+            TabItem::new("tab1", "Tab 1"),
+            TabItem::new("tab2", "Tab 2"),
+            TabItem::new("tab3", "Tab 3"),
+        ]))
     }
 }
 
@@ -47,14 +47,10 @@ async fn test_tabs_underline_variant(cx: &mut TestAppContext) {
 
     impl Render for UnderlineView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div().child(
-                Tabs::new("tabs")
-                    .variant(TabVariant::Underline)
-                    .tabs(vec![
-                        TabItem::new("tab1", "Tab 1"),
-                        TabItem::new("tab2", "Tab 2"),
-                    ]),
-            )
+            div().child(Tabs::new("tabs").variant(TabVariant::Underline).tabs(vec![
+                TabItem::new("tab1", "Tab 1"),
+                TabItem::new("tab2", "Tab 2"),
+            ]))
         }
     }
 
@@ -67,14 +63,10 @@ async fn test_tabs_enclosed_variant(cx: &mut TestAppContext) {
 
     impl Render for EnclosedView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div().child(
-                Tabs::new("tabs")
-                    .variant(TabVariant::Enclosed)
-                    .tabs(vec![
-                        TabItem::new("tab1", "Tab 1"),
-                        TabItem::new("tab2", "Tab 2"),
-                    ]),
-            )
+            div().child(Tabs::new("tabs").variant(TabVariant::Enclosed).tabs(vec![
+                TabItem::new("tab1", "Tab 1"),
+                TabItem::new("tab2", "Tab 2"),
+            ]))
         }
     }
 
@@ -87,14 +79,10 @@ async fn test_tabs_pills_variant(cx: &mut TestAppContext) {
 
     impl Render for PillsView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div().child(
-                Tabs::new("tabs")
-                    .variant(TabVariant::Pills)
-                    .tabs(vec![
-                        TabItem::new("tab1", "Tab 1"),
-                        TabItem::new("tab2", "Tab 2"),
-                    ]),
-            )
+            div().child(Tabs::new("tabs").variant(TabVariant::Pills).tabs(vec![
+                TabItem::new("tab1", "Tab 1"),
+                TabItem::new("tab2", "Tab 2"),
+            ]))
         }
     }
 
@@ -217,13 +205,11 @@ async fn test_tabs_disabled(cx: &mut TestAppContext) {
 
     impl Render for DisabledTabView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div().child(
-                Tabs::new("tabs").tabs(vec![
-                    TabItem::new("tab1", "Tab 1"),
-                    TabItem::new("tab2", "Tab 2").disabled(true),
-                    TabItem::new("tab3", "Tab 3"),
-                ]),
-            )
+            div().child(Tabs::new("tabs").tabs(vec![
+                TabItem::new("tab1", "Tab 1"),
+                TabItem::new("tab2", "Tab 2").disabled(true),
+                TabItem::new("tab3", "Tab 3"),
+            ]))
         }
     }
 
@@ -303,13 +289,11 @@ async fn test_tabs_with_icons(cx: &mut TestAppContext) {
 
     impl Render for IconTabsView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div().child(
-                Tabs::new("tabs").tabs(vec![
-                    TabItem::new("home", "Home").icon("🏠"),
-                    TabItem::new("settings", "Settings").icon("⚙️"),
-                    TabItem::new("profile", "Profile").icon("👤"),
-                ]),
-            )
+            div().child(Tabs::new("tabs").tabs(vec![
+                TabItem::new("home", "Home").icon("🏠"),
+                TabItem::new("settings", "Settings").icon("⚙️"),
+                TabItem::new("profile", "Profile").icon("👤"),
+            ]))
         }
     }
 
@@ -322,13 +306,11 @@ async fn test_tabs_with_badges(cx: &mut TestAppContext) {
 
     impl Render for BadgeTabsView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div().child(
-                Tabs::new("tabs").tabs(vec![
-                    TabItem::new("inbox", "Inbox").badge("5"),
-                    TabItem::new("sent", "Sent").badge("12"),
-                    TabItem::new("drafts", "Drafts"),
-                ]),
-            )
+            div().child(Tabs::new("tabs").tabs(vec![
+                TabItem::new("inbox", "Inbox").badge("5"),
+                TabItem::new("sent", "Sent").badge("12"),
+                TabItem::new("drafts", "Drafts"),
+            ]))
         }
     }
 
@@ -341,14 +323,12 @@ async fn test_tabs_with_icons_and_badges(cx: &mut TestAppContext) {
 
     impl Render for IconBadgeTabsView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div().child(
-                Tabs::new("tabs").tabs(vec![
+            div().child(Tabs::new("tabs").tabs(vec![
                     TabItem::new("notifications", "Notifications")
                         .icon("🔔")
                         .badge("3"),
                     TabItem::new("messages", "Messages").icon("💬").badge("99+"),
-                ]),
-            )
+                ]))
         }
     }
 
@@ -388,7 +368,9 @@ async fn test_tabs_complex(cx: &mut TestAppContext) {
                     .tabs(vec![
                         TabItem::new("active", "Active").icon("✓").badge("12"),
                         TabItem::new("pending", "Pending").icon("⏳").badge("3"),
-                        TabItem::new("archived", "Archived").icon("📦").disabled(true),
+                        TabItem::new("archived", "Archived")
+                            .icon("📦")
+                            .disabled(true),
                     ])
                     .selected_index(0),
             )

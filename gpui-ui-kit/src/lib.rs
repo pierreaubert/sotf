@@ -146,14 +146,14 @@ pub use app::{MiniApp, MiniAppConfig};
 
 // Animation
 pub use animation::{
-    Animation, Easing, Keyframe, KeyframeAnimation, Spring, ease, evaluate_keyframes,
-    interpolate, interpolate_color,
+    Animation, Easing, Keyframe, KeyframeAnimation, Spring, ease, evaluate_keyframes, interpolate,
+    interpolate_color,
 };
 
 // Theme and i18n
 pub use color_tokens::{
-    BackgroundColors, BorderColors, ColorPalette, ColorToken, SemanticColors, TextColors,
-    darken, desaturate, lighten, saturate, with_alpha,
+    BackgroundColors, BorderColors, ColorPalette, ColorToken, SemanticColors, TextColors, darken,
+    desaturate, lighten, saturate, with_alpha,
 };
 pub use i18n::{I18nExt, I18nState, Language, TranslationKey, Translations};
 pub use theme::{Theme, ThemeExt, ThemeState, ThemeVariant};

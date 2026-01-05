@@ -16,9 +16,9 @@
 //! - Rotating indicator dot
 //! - Tick marks with major (labeled) and minor (unlabeled) ticks
 
-use super::interactions::{handle_keyboard, handle_scroll, value_tracker, InteractionConfig};
-use crate::scale::Scale;
+use super::interactions::{InteractionConfig, handle_keyboard, handle_scroll, value_tracker};
 use crate::ComponentTheme;
+use crate::scale::Scale;
 use crate::theme::ThemeExt;
 use gpui::prelude::*;
 use gpui::*;
@@ -536,7 +536,9 @@ impl RenderOnce for Potentiometer {
                             reset_handler(window, cx);
                         }
                     } else if let Some(ref handler) = handler_key {
-                        if let Some(new_value) = handle_keyboard(key, current_value_key.get(), &config_key) {
+                        if let Some(new_value) =
+                            handle_keyboard(key, current_value_key.get(), &config_key)
+                        {
                             current_value_key.set(new_value);
                             handler(new_value, window, cx);
                         }
@@ -551,7 +553,9 @@ impl RenderOnce for Potentiometer {
                 container = container.on_scroll_wheel(move |event, window, cx| {
                     cx.stop_propagation();
                     let val = current_value_scroll.get();
-                    if let Some(new_value) = handle_scroll(&event.delta, &event.modifiers, val, &config_scroll) {
+                    if let Some(new_value) =
+                        handle_scroll(&event.delta, &event.modifiers, val, &config_scroll)
+                    {
                         current_value_scroll.set(new_value);
                         handler_rc(new_value, window, cx);
                     }

@@ -62,7 +62,7 @@ impl ColorToken {
         // Hover: increase lightness slightly
         let hover_hsla = Hsla {
             h: hsla.h,
-            s: (hsla.s * 1.1).min(1.0), // Slightly more saturated
+            s: (hsla.s * 1.1).min(1.0),  // Slightly more saturated
             l: (hsla.l * 1.1).min(0.95), // Slightly lighter
             a: hsla.a,
         };
@@ -414,7 +414,8 @@ pub fn lighten(color: Rgba, amount: f32) -> Rgba {
         s: hsla.s,
         l: (hsla.l + amount).min(1.0),
         a: hsla.a,
-    }.into()
+    }
+    .into()
 }
 
 /// Helper function to darken a color
@@ -425,7 +426,8 @@ pub fn darken(color: Rgba, amount: f32) -> Rgba {
         s: hsla.s,
         l: (hsla.l - amount).max(0.0),
         a: hsla.a,
-    }.into()
+    }
+    .into()
 }
 
 /// Helper function to adjust saturation
@@ -436,7 +438,8 @@ pub fn saturate(color: Rgba, amount: f32) -> Rgba {
         s: (hsla.s + amount).clamp(0.0, 1.0),
         l: hsla.l,
         a: hsla.a,
-    }.into()
+    }
+    .into()
 }
 
 /// Helper function to desaturate a color

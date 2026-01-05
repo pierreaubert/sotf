@@ -185,10 +185,7 @@ impl Card {
         }
 
         // Header section - factory takes precedence over static element
-        let header_element = self
-            .header_factory
-            .map(|f| f(theme))
-            .or(self.header);
+        let header_element = self.header_factory.map(|f| f(theme)).or(self.header);
         if let Some(header) = header_element {
             card = card.child(
                 div()
@@ -203,10 +200,7 @@ impl Card {
         }
 
         // Content section - factory takes precedence over static element
-        let content_element = self
-            .content_factory
-            .map(|f| f(theme))
-            .or(self.content);
+        let content_element = self.content_factory.map(|f| f(theme)).or(self.content);
         if let Some(content) = content_element {
             card = card.child(
                 div()
@@ -218,10 +212,7 @@ impl Card {
         }
 
         // Footer section - factory takes precedence over static element
-        let footer_element = self
-            .footer_factory
-            .map(|f| f(theme))
-            .or(self.footer);
+        let footer_element = self.footer_factory.map(|f| f(theme)).or(self.footer);
         if let Some(footer) = footer_element {
             card = card.child(
                 div()

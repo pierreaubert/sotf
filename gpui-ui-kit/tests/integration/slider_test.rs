@@ -702,12 +702,7 @@ async fn test_slider_zero_to_one_range(cx: &mut TestAppContext) {
 
     impl Render for ZeroOneRangeView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div().child(
-                Slider::new("zero-one-slider")
-                    .value(0.5)
-                    .min(0.0)
-                    .max(1.0),
-            )
+            div().child(Slider::new("zero-one-slider").value(0.5).min(0.0).max(1.0))
         }
     }
 

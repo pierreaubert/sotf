@@ -7,7 +7,10 @@
 //! - Inline and block code
 //! - Link with click callback
 
-use gpui::{Context, MouseButton, Modifiers, TestAppContext, VisualTestContext, Window, div, prelude::*, rgb};
+use gpui::{
+    Context, Modifiers, MouseButton, TestAppContext, VisualTestContext, Window, div, prelude::*,
+    rgb,
+};
 use gpui_ui_kit::text::{Code, Heading, Link, Text, TextSize, TextWeight};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -259,9 +262,9 @@ async fn test_text_truncate(cx: &mut TestAppContext) {
 
     impl Render for TruncateView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div()
-                .w_32()
-                .child(Text::new("This is a very long text that should be truncated").truncate(true))
+            div().w_32().child(
+                Text::new("This is a very long text that should be truncated").truncate(true),
+            )
         }
     }
 
@@ -462,11 +465,13 @@ impl Render for ClickableLinkView {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         let click_count = self.click_count.clone();
 
-        div().size_full().child(
-            Link::new("clickable-link", "Click me").on_click(move |_window, _cx| {
-                click_count.fetch_add(1, Ordering::SeqCst);
-            }),
-        )
+        div()
+            .size_full()
+            .child(
+                Link::new("clickable-link", "Click me").on_click(move |_window, _cx| {
+                    click_count.fetch_add(1, Ordering::SeqCst);
+                }),
+            )
     }
 }
 

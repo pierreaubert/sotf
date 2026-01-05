@@ -18,8 +18,8 @@ use std::rc::Rc;
 /// Drag state that persists across re-renders
 #[derive(Clone, Copy, Debug)]
 pub struct DragState {
-    pub start_pos: f32,    // Starting position (y for vertical, x for horizontal)
-    pub start_value: f64,  // Value when drag started
+    pub start_pos: f32,   // Starting position (y for vertical, x for horizontal)
+    pub start_value: f64, // Value when drag started
 }
 
 thread_local! {
@@ -31,16 +31,17 @@ pub fn store_drag_state(element_key: &str, start_pos: f32, start_value: f64) {
     DRAG_STATES.with(|states| {
         states.borrow_mut().insert(
             element_key.to_string(),
-            DragState { start_pos, start_value },
+            DragState {
+                start_pos,
+                start_value,
+            },
         );
     });
 }
 
 /// Get drag state for an element (call on mouse_move)
 pub fn get_drag_state(element_key: &str) -> Option<DragState> {
-    DRAG_STATES.with(|states| {
-        states.borrow().get(element_key).copied()
-    })
+    DRAG_STATES.with(|states| states.borrow().get(element_key).copied())
 }
 
 /// Clear drag state for an element (call on mouse_up)
@@ -68,7 +69,7 @@ pub struct InteractionConfig {
     pub max: f64,
     pub scale: Scale,
     pub orientation: DragOrientation,
-    pub track_size: f32,  // Height for vertical, width for horizontal
+    pub track_size: f32, // Height for vertical, width for horizontal
     /// Enable media key support (for volume controls)
     pub media_keys: bool,
 }
@@ -127,11 +128,7 @@ pub fn value_tracker(initial: f64) -> ValueTracker {
 /// Handle keyboard events for value adjustment
 ///
 /// Returns the new value if the key was handled, None otherwise.
-pub fn handle_keyboard(
-    key: &str,
-    current_value: f64,
-    config: &InteractionConfig,
-) -> Option<f64> {
+pub fn handle_keyboard(key: &str, current_value: f64, config: &InteractionConfig) -> Option<f64> {
     let scale = config.scale;
     let min = config.min;
     let max = config.max;
@@ -149,8 +146,12 @@ pub fn handle_keyboard(
             if config.media_keys {
                 match key {
                     "audiomute" => None, // Handled separately by mute toggle
-                    "audiolowervolume" => Some(scale.step_value(current_value, min, max, -1.0, 0.05)),
-                    "audioraisevolume" => Some(scale.step_value(current_value, min, max, 1.0, 0.05)),
+                    "audiolowervolume" => {
+                        Some(scale.step_value(current_value, min, max, -1.0, 0.05))
+                    }
+                    "audioraisevolume" => {
+                        Some(scale.step_value(current_value, min, max, 1.0, 0.05))
+                    }
                     _ => None,
                 }
             } else {
@@ -188,7 +189,7 @@ pub fn handle_scroll(
         }
         DragOrientation::Horizontal => {
             if delta_x.abs() > 0.0001 {
-                -delta_x  // Positive x = right = increase
+                -delta_x // Positive x = right = increase
             } else if delta_y.abs() > 0.0001 {
                 delta_y
             } else {
@@ -201,7 +202,11 @@ pub fn handle_scroll(
     let direction = if scroll_delta < 0.0 { 1.0 } else { -1.0 };
     let step_size = if modifiers.shift { 0.005 } else { 0.05 };
 
-    Some(config.scale.step_value(current_value, config.min, config.max, direction, step_size))
+    Some(
+        config
+            .scale
+            .step_value(current_value, config.min, config.max, direction, step_size),
+    )
 }
 
 /// Handle drag movement for value adjustment
@@ -235,6 +240,11 @@ pub fn handle_drag(
     // Map pixel delta to normalized change
     let delta_norm = (delta / config.track_size) as f64;
 
-    Some(config.scale.step_value(drag_state.start_value, config.min, config.max, delta_norm, 1.0))
+    Some(config.scale.step_value(
+        drag_state.start_value,
+        config.min,
+        config.max,
+        delta_norm,
+        1.0,
+    ))
 }
-

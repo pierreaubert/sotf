@@ -19,7 +19,9 @@
 //!     .active(|s| s.bg(accent.active))
 //! ```
 
-use crate::color_tokens::{BackgroundColors, BorderColors, ColorPalette, ColorToken, SemanticColors, TextColors};
+use crate::color_tokens::{
+    BackgroundColors, BorderColors, ColorPalette, ColorToken, SemanticColors, TextColors,
+};
 use gpui::*;
 
 /// Available theme variants

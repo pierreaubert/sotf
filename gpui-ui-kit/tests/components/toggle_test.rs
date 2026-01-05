@@ -4,9 +4,7 @@ use gpui_ui_kit::toggle::Toggle;
 
 #[test]
 fn test_toggle_creation() {
-    let toggle = Toggle::new("test")
-        .label("Enable feature")
-        .checked(true);
+    let toggle = Toggle::new("test").label("Enable feature").checked(true);
     drop(toggle);
 }
 

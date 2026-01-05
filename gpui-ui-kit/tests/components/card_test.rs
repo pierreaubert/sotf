@@ -1,7 +1,7 @@
 //! Card component tests
 
-use gpui::prelude::*;
 use gpui::div;
+use gpui::prelude::*;
 use gpui_ui_kit::card::Card;
 
 #[test]

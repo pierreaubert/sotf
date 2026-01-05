@@ -991,10 +991,13 @@ async fn test_number_input_invalid_text_reverts(cx: &mut TestAppContext) {
         cx.run_until_parked();
 
         // Value should remain 50.0 (original value), ignoring invalid input
-        assert_eq!(*value.borrow(), 50.0, "Should revert to original value on invalid input");
+        assert_eq!(
+            *value.borrow(),
+            50.0,
+            "Should revert to original value on invalid input"
+        );
     }
 }
-
 
 #[gpui::test]
 async fn test_number_input_with_custom_theme(cx: &mut TestAppContext) {

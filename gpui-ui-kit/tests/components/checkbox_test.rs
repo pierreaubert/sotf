@@ -4,9 +4,7 @@ use gpui_ui_kit::checkbox::Checkbox;
 
 #[test]
 fn test_checkbox_creation() {
-    let checkbox = Checkbox::new("test")
-        .label("Accept terms")
-        .checked(true);
+    let checkbox = Checkbox::new("test").label("Accept terms").checked(true);
     drop(checkbox);
 }
 

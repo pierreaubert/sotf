@@ -601,7 +601,8 @@ impl<T: Clone> KeyframeAnimation<T> {
     pub fn keyframe(mut self, keyframe: Keyframe<T>) -> Self {
         self.keyframes.push(keyframe);
         // Keep sorted by position
-        self.keyframes.sort_by(|a, b| a.at.partial_cmp(&b.at).unwrap());
+        self.keyframes
+            .sort_by(|a, b| a.at.partial_cmp(&b.at).unwrap());
         self
     }
 

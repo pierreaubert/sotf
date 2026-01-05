@@ -232,7 +232,13 @@ async fn test_card_with_complex_content(cx: &mut TestAppContext) {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
             div().child(
                 Card::new()
-                    .header(div().flex().justify_between().child("Title").child("Action"))
+                    .header(
+                        div()
+                            .flex()
+                            .justify_between()
+                            .child("Title")
+                            .child("Action"),
+                    )
                     .content(
                         div()
                             .flex()

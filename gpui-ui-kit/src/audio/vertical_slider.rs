@@ -18,8 +18,8 @@
 //! - Linear or logarithmic scale
 
 use super::interactions::{
-    clear_drag_state, get_drag_state, handle_drag, handle_keyboard, handle_scroll,
-    store_drag_state, value_tracker, InteractionConfig,
+    InteractionConfig, clear_drag_state, get_drag_state, handle_drag, handle_keyboard,
+    handle_scroll, store_drag_state, value_tracker,
 };
 use crate::ComponentTheme;
 use crate::scale::Scale;
@@ -785,7 +785,9 @@ impl RenderOnce for VerticalSlider {
                 container = container.on_scroll_wheel(move |event, window, cx| {
                     cx.stop_propagation();
                     let val = current_value_scroll.get();
-                    if let Some(new_value) = handle_scroll(&event.delta, &event.modifiers, val, &config_scroll) {
+                    if let Some(new_value) =
+                        handle_scroll(&event.delta, &event.modifiers, val, &config_scroll)
+                    {
                         current_value_scroll.set(new_value);
                         handler_scroll(new_value, window, cx);
                     }
@@ -958,7 +960,8 @@ impl RenderOnce for VerticalSlider {
                     if event.pressed_button == Some(MouseButton::Left) {
                         if let Some(state) = get_drag_state(&drag_key_move) {
                             let current_pos: f32 = event.position.y.into();
-                            if let Some(new_value) = handle_drag(current_pos, &state, &config_drag) {
+                            if let Some(new_value) = handle_drag(current_pos, &state, &config_drag)
+                            {
                                 current_value_drag.set(new_value);
                                 handler_drag(new_value, window, cx);
                             }
@@ -978,7 +981,9 @@ impl RenderOnce for VerticalSlider {
                 track = track.on_scroll_wheel(move |event, window, cx| {
                     cx.stop_propagation();
                     let val = current_value_track_scroll.get();
-                    if let Some(new_value) = handle_scroll(&event.delta, &event.modifiers, val, &config_track_scroll) {
+                    if let Some(new_value) =
+                        handle_scroll(&event.delta, &event.modifiers, val, &config_track_scroll)
+                    {
                         current_value_track_scroll.set(new_value);
                         handler_scroll_track(new_value, window, cx);
                     }

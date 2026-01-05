@@ -7,7 +7,9 @@
 //! - Custom icons
 //! - InlineAlert variants
 
-use gpui::{Context, MouseButton, Modifiers, TestAppContext, VisualTestContext, Window, div, prelude::*};
+use gpui::{
+    Context, Modifiers, MouseButton, TestAppContext, VisualTestContext, Window, div, prelude::*,
+};
 use gpui_ui_kit::alert::{Alert, AlertVariant, InlineAlert};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -40,8 +42,7 @@ async fn test_alert_info_variant(cx: &mut TestAppContext) {
     impl Render for InfoAlertView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
             div().child(
-                Alert::new("info-alert", "Informational message")
-                    .variant(AlertVariant::Info),
+                Alert::new("info-alert", "Informational message").variant(AlertVariant::Info),
             )
         }
     }
@@ -87,10 +88,7 @@ async fn test_alert_error_variant(cx: &mut TestAppContext) {
 
     impl Render for ErrorAlertView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div().child(
-                Alert::new("error-alert", "An error occurred")
-                    .variant(AlertVariant::Error),
-            )
+            div().child(Alert::new("error-alert", "An error occurred").variant(AlertVariant::Error))
         }
     }
 
@@ -303,11 +301,14 @@ async fn test_alert_full_featured(cx: &mut TestAppContext) {
     impl Render for FullFeaturedView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
             div().child(
-                Alert::new("full-alert", "This is a full-featured alert with all options")
-                    .title("Complete Alert")
-                    .variant(AlertVariant::Warning)
-                    .icon("⚠️")
-                    .closeable(true),
+                Alert::new(
+                    "full-alert",
+                    "This is a full-featured alert with all options",
+                )
+                .title("Complete Alert")
+                .variant(AlertVariant::Warning)
+                .icon("⚠️")
+                .closeable(true),
             )
         }
     }

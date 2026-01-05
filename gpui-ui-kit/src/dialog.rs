@@ -237,9 +237,7 @@ impl Dialog {
             .on_scroll_wheel(|_event, _window, _cx| {});
 
         // Handle backdrop click
-        if close_on_backdrop
-            && let Some(handler) = on_close.clone()
-        {
+        if close_on_backdrop && let Some(handler) = on_close.clone() {
             backdrop = backdrop.on_mouse_down(MouseButton::Left, move |_event, window, cx| {
                 handler(window, cx);
             });

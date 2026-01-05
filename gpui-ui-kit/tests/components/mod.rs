@@ -44,5 +44,5 @@ mod toast_test;
 mod tooltip_test;
 
 // Theme
-mod theme_test;
 mod number_input_test;
+mod theme_test;

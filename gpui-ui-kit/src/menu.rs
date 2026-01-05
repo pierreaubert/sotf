@@ -287,10 +287,15 @@ impl Menu {
             None => selectable.last().copied(),
             Some(curr) => {
                 // Find last selectable before current
-                selectable.iter().rev().find(|&&i| i < curr).copied().or_else(|| {
-                    // Wrap around
-                    selectable.last().copied()
-                })
+                selectable
+                    .iter()
+                    .rev()
+                    .find(|&&i| i < curr)
+                    .copied()
+                    .or_else(|| {
+                        // Wrap around
+                        selectable.last().copied()
+                    })
             }
         }
     }
@@ -441,14 +446,12 @@ impl Menu {
                             .text_color(text_hover)
                             .shadow(glow_shadow(hover_bg));
                     } else {
-                        row = row
-                            .text_color(text_color)
-                            .hover(move |style| {
-                                style
-                                    .bg(hover_bg)
-                                    .text_color(text_hover)
-                                    .shadow(glow_shadow(hover_bg))
-                            });
+                        row = row.text_color(text_color).hover(move |style| {
+                            style
+                                .bg(hover_bg)
+                                .text_color(text_hover)
+                                .shadow(glow_shadow(hover_bg))
+                        });
                     }
 
                     row = row.cursor_pointer();

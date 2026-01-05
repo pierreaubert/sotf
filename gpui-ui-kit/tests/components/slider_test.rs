@@ -4,10 +4,7 @@ use gpui_ui_kit::slider::Slider;
 
 #[test]
 fn test_slider_creation() {
-    let slider = Slider::new("test")
-        .value(0.5)
-        .min(0.0)
-        .max(1.0);
+    let slider = Slider::new("test").value(0.5).min(0.0).max(1.0);
     drop(slider);
 }
 

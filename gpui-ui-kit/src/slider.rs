@@ -386,11 +386,7 @@ impl RenderOnce for Slider {
                     .w(px(fill_width))
                     .h(px(track_height))
                     .rounded(px(track_height / 2.0))
-                    .bg(if disabled {
-                        disabled_fill
-                    } else {
-                        fill_color
-                    }),
+                    .bg(if disabled { disabled_fill } else { fill_color }),
             )
             // Thumb with hover effect
             .child({
@@ -402,11 +398,7 @@ impl RenderOnce for Slider {
                     .rounded_full()
                     .bg(thumb_color)
                     .border_2()
-                    .border_color(if disabled {
-                        disabled_fill
-                    } else {
-                        fill_color
-                    })
+                    .border_color(if disabled { disabled_fill } else { fill_color })
                     .shadow_sm();
                 if !disabled {
                     thumb = thumb.hover(move |s| s.bg(thumb_hover));

@@ -198,7 +198,11 @@ async fn test_avatar_status_online(cx: &mut TestAppContext) {
 
     impl Render for OnlineAvatarView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div().child(Avatar::new().name("Online User").status(AvatarStatus::Online))
+            div().child(
+                Avatar::new()
+                    .name("Online User")
+                    .status(AvatarStatus::Online),
+            )
         }
     }
 
@@ -211,7 +215,11 @@ async fn test_avatar_status_offline(cx: &mut TestAppContext) {
 
     impl Render for OfflineAvatarView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div().child(Avatar::new().name("Offline User").status(AvatarStatus::Offline))
+            div().child(
+                Avatar::new()
+                    .name("Offline User")
+                    .status(AvatarStatus::Offline),
+            )
         }
     }
 
@@ -374,13 +382,11 @@ async fn test_avatar_group_basic(cx: &mut TestAppContext) {
 
     impl Render for GroupBasicView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            div().child(
-                AvatarGroup::new().avatars(vec![
-                    Avatar::new().name("Alice"),
-                    Avatar::new().name("Bob"),
-                    Avatar::new().name("Charlie"),
-                ]),
-            )
+            div().child(AvatarGroup::new().avatars(vec![
+                Avatar::new().name("Alice"),
+                Avatar::new().name("Bob"),
+                Avatar::new().name("Charlie"),
+            ]))
         }
     }
 

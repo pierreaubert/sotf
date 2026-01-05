@@ -8,7 +8,9 @@
 //! - Selected state (for plugin parameter editing)
 //! - Click and keyboard toggle callbacks
 
-use gpui::{Context, MouseButton, Modifiers, TestAppContext, VisualTestContext, Window, div, prelude::*};
+use gpui::{
+    Context, Modifiers, MouseButton, TestAppContext, VisualTestContext, Window, div, prelude::*,
+};
 use gpui_ui_kit::toggle::{Toggle, ToggleSize, ToggleStyle};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -72,7 +74,11 @@ async fn test_toggle_both_styles(cx: &mut TestAppContext) {
                 .flex()
                 .flex_col()
                 .gap_4()
-                .child(Toggle::new("sliding").style(ToggleStyle::Sliding).label("Sliding"))
+                .child(
+                    Toggle::new("sliding")
+                        .style(ToggleStyle::Sliding)
+                        .label("Sliding"),
+                )
                 .child(
                     Toggle::new("segmented")
                         .style(ToggleStyle::Segmented)

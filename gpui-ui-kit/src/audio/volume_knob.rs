@@ -15,9 +15,9 @@
 //! - Mute state support
 //! - Customizable colors and theme support
 
-use super::interactions::{handle_keyboard, handle_scroll, value_tracker, InteractionConfig};
-use crate::scale::Scale;
+use super::interactions::{InteractionConfig, handle_keyboard, handle_scroll, value_tracker};
 use crate::ComponentTheme;
+use crate::scale::Scale;
 use crate::theme::ThemeExt;
 use gpui::*;
 use std::f32::consts::PI;
@@ -419,8 +419,8 @@ impl RenderOnce for VolumeKnob {
 
         // Shared current value tracker and interaction config (with media keys enabled)
         let current_value = value_tracker(self.value as f64);
-        let interaction_config = InteractionConfig::rotational(0.0, 1.0, Scale::Linear, knob_size_f32)
-            .with_media_keys();
+        let interaction_config =
+            InteractionConfig::rotational(0.0, 1.0, Scale::Linear, knob_size_f32).with_media_keys();
 
         // Clone focus handle before moving it
         let focus_handle_click = self.focus_handle.clone();
@@ -459,7 +459,9 @@ impl RenderOnce for VolumeKnob {
             container = container.on_scroll_wheel(move |event, window, cx| {
                 cx.stop_propagation();
                 let val = current_value_scroll.get();
-                if let Some(new_value) = handle_scroll(&event.delta, &event.modifiers, val, &config_scroll) {
+                if let Some(new_value) =
+                    handle_scroll(&event.delta, &event.modifiers, val, &config_scroll)
+                {
                     current_value_scroll.set(new_value);
                     scroll_handler(new_value as f32, window, cx);
                 }
@@ -518,7 +520,9 @@ impl RenderOnce for VolumeKnob {
                     }
                 } else if let Some(ref handler) = key_change {
                     // Use shared keyboard handler for value changes
-                    if let Some(new_value) = handle_keyboard(key, current_value_key.get(), &config_key) {
+                    if let Some(new_value) =
+                        handle_keyboard(key, current_value_key.get(), &config_key)
+                    {
                         current_value_key.set(new_value);
                         handler(new_value as f32, window, cx);
                     }

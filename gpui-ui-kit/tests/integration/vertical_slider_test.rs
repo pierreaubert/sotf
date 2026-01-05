@@ -2349,7 +2349,11 @@ async fn test_vertical_slider_track_click_sets_position(cx: &mut TestAppContext)
     if let Some(track_bounds) = cx.debug_bounds("track-click-slider-track") {
         // Click near the top of the track (should give high value)
         let top_point = point(track_bounds.center().x, track_bounds.origin.y + px(5.0));
-        cx.simulate_mouse_down(top_point, gpui::MouseButton::Left, gpui::Modifiers::default());
+        cx.simulate_mouse_down(
+            top_point,
+            gpui::MouseButton::Left,
+            gpui::Modifiers::default(),
+        );
         cx.run_until_parked();
 
         let high_val = *value.borrow();
@@ -2415,11 +2419,12 @@ async fn test_vertical_slider_track_drag(cx: &mut TestAppContext) {
         let start_val = *value.borrow();
 
         // Move mouse up (should increase value)
-        let drag_up_point = point(
-            track_bounds.center().x,
-            track_bounds.origin.y + px(10.0),
+        let drag_up_point = point(track_bounds.center().x, track_bounds.origin.y + px(10.0));
+        cx.simulate_mouse_move(
+            drag_up_point,
+            gpui::MouseButton::Left,
+            gpui::Modifiers::default(),
         );
-        cx.simulate_mouse_move(drag_up_point, gpui::MouseButton::Left, gpui::Modifiers::default());
         cx.run_until_parked();
 
         let after_drag_val = *value.borrow();
