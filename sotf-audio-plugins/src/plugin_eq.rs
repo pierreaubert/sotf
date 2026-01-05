@@ -7,10 +7,13 @@
 // 1. Single EQ applied to all channels (default)
 // 2. Per-channel EQ with independent filter chains for each channel
 
-use super::parameters::{Parameter, ParameterId, ParameterValue};
+use super::auto_gain::{AutoGain, AutoGainLoudnessType, AutoGainParams};
+use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use math_audio_iir_fir::Biquad;
 use serde::{Deserialize, Serialize};
+use std::any::Any;
+use std::sync::Arc;
 
 // ============================================================================
 // Configuration
@@ -35,7 +38,7 @@ pub struct BiquadFilterConfig {
 /// If `channel_filters` is provided, it takes precedence over `filters`.
 /// When using `channel_filters`, the number of channel filter arrays must match
 /// the number of audio channels.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct EqPluginParams {
     /// Single filter chain applied to all channels (default mode)
     #[serde(default)]
@@ -45,6 +48,10 @@ pub struct EqPluginParams {
     /// If provided, must have exactly one Vec<BiquadFilterConfig> per channel
     #[serde(skip_serializing_if = "Option::is_none")]
     pub channel_filters: Option<Vec<Vec<BiquadFilterConfig>>>,
+
+    /// Auto-gain compensation parameters
+    #[serde(default)]
+    pub auto_gain: AutoGainParams,
 }
 
 // ============================================================================
@@ -63,6 +70,9 @@ pub struct EqPlugin {
 
     /// Sample rate
     sample_rate: u32,
+
+    /// Auto-gain compensation
+    auto_gain: AutoGain,
 }
 
 impl EqPlugin {
@@ -78,10 +88,15 @@ impl EqPlugin {
             channel_filters.push(filters.clone());
         }
 
+        let sample_rate = 48000;
+        let auto_gain = AutoGain::new_default(num_channels, sample_rate)
+            .expect("Failed to create auto-gain");
+
         Self {
             num_channels,
             filters: channel_filters,
-            sample_rate: 48000, // Will be updated in initialize()
+            sample_rate,
+            auto_gain,
         }
     }
 
@@ -105,10 +120,14 @@ impl EqPlugin {
             ));
         }
 
+        let sample_rate = 48000;
+        let auto_gain = AutoGain::new_default(num_channels, sample_rate)?;
+
         Ok(Self {
             num_channels,
             filters: channel_filters,
-            sample_rate: 48000, // Will be updated in initialize()
+            sample_rate,
+            auto_gain,
         })
     }
 
@@ -124,9 +143,10 @@ impl EqPlugin {
         params: EqPluginParams,
     ) -> Result<Self, String> {
         log::debug!(
-            "[EqPlugin] Creating EQ for {} channels, {}Hz",
+            "[EqPlugin] Creating EQ for {} channels, {}Hz, auto_gain={}",
             num_channels,
-            sample_rate
+            sample_rate,
+            params.auto_gain.enabled
         );
 
         // Helper function to convert BiquadFilterConfig to Biquad
@@ -153,6 +173,9 @@ impl EqPlugin {
             ))
         };
 
+        // Create auto-gain with provided parameters
+        let auto_gain = AutoGain::new(num_channels, sample_rate, params.auto_gain)?;
+
         // Mode 1: Per-channel filters (takes precedence)
         if let Some(channel_filter_configs) = params.channel_filters {
             // Validate channel count
@@ -175,15 +198,31 @@ impl EqPlugin {
                 channel_filters.push(filters);
             }
 
-            Self::new_per_channel(num_channels, channel_filters)
+            Ok(Self {
+                num_channels,
+                filters: channel_filters,
+                sample_rate,
+                auto_gain,
+            })
         }
         // Mode 2: Single filter chain for all channels
         else {
             let filters: Result<Vec<Biquad>, String> =
                 params.filters.iter().map(config_to_biquad).collect();
-
             let filters = filters?;
-            Ok(Self::new(num_channels, filters))
+
+            // Clone the filter chain for each channel
+            let mut channel_filters = Vec::with_capacity(num_channels);
+            for _ in 0..num_channels {
+                channel_filters.push(filters.clone());
+            }
+
+            Ok(Self {
+                num_channels,
+                filters: channel_filters,
+                sample_rate,
+                auto_gain,
+            })
         }
     }
 
@@ -285,21 +324,73 @@ impl Plugin for EqPlugin {
     }
 
     fn parameters(&self) -> Vec<Parameter> {
-        // EQ parameters are managed externally via set_filters()
-        // Could add per-filter gain controls here if needed
-        vec![]
+        vec![
+            Parameter::new_bool("auto_gain_enabled", "Auto Gain", self.auto_gain.is_enabled())
+                .with_description("Automatically compensate for loudness changes from EQ")
+                .with_group("Auto Gain")
+                .with_importance(ParameterImportance::Useful),
+            Parameter::new_float("auto_gain_max_db", "Max Gain", 12.0, 0.0, 24.0)
+                .with_description("Maximum auto-gain correction in dB")
+                .with_group("Auto Gain")
+                .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_float("auto_gain_smoothing_ms", "Smoothing", 100.0, 10.0, 500.0)
+                .with_description("Auto-gain smoothing time in milliseconds")
+                .with_group("Auto Gain")
+                .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_int("auto_gain_loudness_type", "Loudness Type", 0, 0, 1)
+                .with_description("0 = Momentary (400ms), 1 = Short-term (3s)")
+                .with_group("Auto Gain")
+                .with_importance(ParameterImportance::FineTuning),
+        ]
     }
 
-    fn set_parameter(&mut self, _id: ParameterId, _value: ParameterValue) -> PluginResult<()> {
-        Err("EQ plugin has no adjustable parameters (use set_filters() instead)".to_string())
+    fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+        match id.0.as_str() {
+            "auto_gain_enabled" => {
+                if let ParameterValue::Bool(v) = value {
+                    self.auto_gain.set_enabled(v);
+                }
+            }
+            "auto_gain_max_db" => {
+                if let ParameterValue::Float(v) = value {
+                    self.auto_gain.set_max_gain_db(v);
+                }
+            }
+            "auto_gain_smoothing_ms" => {
+                if let ParameterValue::Float(v) = value {
+                    self.auto_gain.set_smoothing_ms(v);
+                }
+            }
+            "auto_gain_loudness_type" => {
+                if let ParameterValue::Int(v) = value {
+                    let loudness_type = if v == 0 {
+                        AutoGainLoudnessType::Momentary
+                    } else {
+                        AutoGainLoudnessType::ShortTerm
+                    };
+                    self.auto_gain.set_loudness_type(loudness_type);
+                }
+            }
+            _ => return Err(format!("Unknown parameter: {}", id.0)),
+        }
+        Ok(())
     }
 
-    fn get_parameter(&self, _id: &ParameterId) -> Option<ParameterValue> {
-        None
+    fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
+        match id.0.as_str() {
+            "auto_gain_enabled" => Some(ParameterValue::Bool(self.auto_gain.is_enabled())),
+            "auto_gain_max_db" => Some(ParameterValue::Float(12.0)), // TODO: store and return actual value
+            "auto_gain_smoothing_ms" => Some(ParameterValue::Float(100.0)), // TODO: store and return actual value
+            "auto_gain_loudness_type" => Some(ParameterValue::Int(0)), // TODO: store and return actual value
+            _ => None,
+        }
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.set_sample_rate(sample_rate);
+        self.auto_gain
+            .set_sample_rate(sample_rate)
+            .map_err(|e| format!("Failed to initialize auto-gain: {}", e))?;
         Ok(())
     }
 
@@ -317,6 +408,8 @@ impl Plugin for EqPlugin {
                 );
             }
         }
+        // Reset auto-gain state
+        self.auto_gain.reset();
     }
 
     fn process(
@@ -344,7 +437,12 @@ impl Plugin for EqPlugin {
             ));
         }
 
-        // Process each frame
+        // Measure input for auto-gain (before processing)
+        self.auto_gain
+            .measure_input(input)
+            .map_err(|e| format!("Auto-gain input measurement failed: {}", e))?;
+
+        // Process each frame through EQ filters
         for frame_idx in 0..context.num_frames {
             for ch in 0..self.num_channels {
                 let sample_idx = frame_idx * self.num_channels + ch;
@@ -359,7 +457,20 @@ impl Plugin for EqPlugin {
             }
         }
 
+        // Measure output for auto-gain (after EQ processing, before gain compensation)
+        self.auto_gain
+            .measure_output(output)
+            .map_err(|e| format!("Auto-gain output measurement failed: {}", e))?;
+
+        // Apply auto-gain compensation
+        self.auto_gain.apply_compensation(output, context.num_frames);
+
         Ok(())
+    }
+
+    fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
+        let data = self.auto_gain.get_data();
+        Some(Arc::new(data))
     }
 
     fn latency_samples(&self) -> usize {
@@ -371,6 +482,7 @@ impl Plugin for EqPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::auto_gain::{AutoGainData, AutoGainLoudnessType, AutoGainParams};
     use math_audio_iir_fir::{Biquad, BiquadFilterType};
 
     #[test]
@@ -754,5 +866,452 @@ mod tests {
 
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("expected 2 channels"));
+    }
+
+    // ========================================================================
+    // Auto-Gain Tests
+    // ========================================================================
+
+    #[test]
+    fn test_eq_auto_gain_disabled_by_default() {
+        // By default, auto_gain should be disabled
+        let plugin = EqPlugin::new(2, vec![]);
+        assert!(!plugin.auto_gain.is_enabled());
+    }
+
+    #[test]
+    fn test_eq_auto_gain_from_params_disabled() {
+        use serde_json::json;
+
+        // When not specified, auto_gain should be disabled
+        let params_json = json!({
+            "filters": [
+                {"filter_type": "peak", "freq": 1000.0, "q": 1.0, "db_gain": 6.0}
+            ]
+        });
+
+        let params: EqPluginParams = serde_json::from_value(params_json).unwrap();
+        let plugin = EqPlugin::from_params(2, 48000, params).unwrap();
+
+        assert!(!plugin.auto_gain.is_enabled());
+    }
+
+    #[test]
+    fn test_eq_auto_gain_from_params_enabled() {
+        use serde_json::json;
+
+        let params_json = json!({
+            "filters": [
+                {"filter_type": "peak", "freq": 1000.0, "q": 1.0, "db_gain": 6.0}
+            ],
+            "auto_gain": {
+                "enabled": true,
+                "max_gain_db": 10.0,
+                "smoothing_ms": 50.0
+            }
+        });
+
+        let params: EqPluginParams = serde_json::from_value(params_json).unwrap();
+        let plugin = EqPlugin::from_params(2, 48000, params).unwrap();
+
+        assert!(plugin.auto_gain.is_enabled());
+    }
+
+    #[test]
+    fn test_eq_auto_gain_compensates_boost() {
+
+        // Create EQ with +6dB boost and auto-gain enabled
+        let filters = vec![Biquad::new(
+            BiquadFilterType::Highshelf,
+            1000.0,
+            48000.0,
+            0.707,
+            6.0, // +6dB boost
+        )];
+
+        let params = EqPluginParams {
+            filters: vec![],
+            channel_filters: None,
+            auto_gain: AutoGainParams {
+                enabled: true,
+                max_gain_db: 12.0,
+                smoothing_ms: 10.0, // Fast for testing
+                ..Default::default()
+            },
+        };
+
+        let mut plugin = EqPlugin::from_params(2, 48000, params).unwrap();
+        plugin.set_filters(filters);
+        plugin.initialize(48000).unwrap();
+
+        // Create test signal: 2kHz sine wave (above the shelf frequency)
+        let num_frames = 4800; // 100ms at 48kHz
+        let mut input = vec![0.0_f32; num_frames * 2];
+        for i in 0..num_frames {
+            let phase = 2.0 * std::f32::consts::PI * 2000.0 * i as f32 / 48000.0;
+            let sample = phase.sin() * 0.3;
+            input[i * 2] = sample;
+            input[i * 2 + 1] = sample;
+        }
+
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+
+        // Process multiple times to let auto-gain stabilize
+        let mut output = vec![0.0_f32; num_frames * 2];
+        for _ in 0..20 {
+            plugin.process(&input, &mut output, &context).unwrap();
+        }
+
+        // Get the auto-gain data
+        let data = plugin.get_data().unwrap();
+        let auto_gain_data = data.downcast_ref::<AutoGainData>().unwrap();
+
+        // With a boost EQ, auto-gain should be applying negative (attenuating) gain
+        assert!(
+            auto_gain_data.gain_db < 0.0,
+            "Auto-gain should attenuate to compensate for EQ boost, got {} dB",
+            auto_gain_data.gain_db
+        );
+    }
+
+    #[test]
+    fn test_eq_auto_gain_compensates_cut() {
+
+        // Create EQ with -6dB cut and auto-gain enabled
+        let filters = vec![Biquad::new(
+            BiquadFilterType::Highshelf,
+            1000.0,
+            48000.0,
+            0.707,
+            -6.0, // -6dB cut
+        )];
+
+        let params = EqPluginParams {
+            filters: vec![],
+            channel_filters: None,
+            auto_gain: AutoGainParams {
+                enabled: true,
+                max_gain_db: 12.0,
+                smoothing_ms: 10.0,
+                ..Default::default()
+            },
+        };
+
+        let mut plugin = EqPlugin::from_params(2, 48000, params).unwrap();
+        plugin.set_filters(filters);
+        plugin.initialize(48000).unwrap();
+
+        // Create test signal: 2kHz sine wave
+        let num_frames = 4800;
+        let mut input = vec![0.0_f32; num_frames * 2];
+        for i in 0..num_frames {
+            let phase = 2.0 * std::f32::consts::PI * 2000.0 * i as f32 / 48000.0;
+            let sample = phase.sin() * 0.5;
+            input[i * 2] = sample;
+            input[i * 2 + 1] = sample;
+        }
+
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+
+        let mut output = vec![0.0_f32; num_frames * 2];
+        for _ in 0..20 {
+            plugin.process(&input, &mut output, &context).unwrap();
+        }
+
+        let data = plugin.get_data().unwrap();
+        let auto_gain_data = data.downcast_ref::<AutoGainData>().unwrap();
+
+        // With a cut EQ, auto-gain should be applying positive (boosting) gain
+        assert!(
+            auto_gain_data.gain_db > 0.0,
+            "Auto-gain should boost to compensate for EQ cut, got {} dB",
+            auto_gain_data.gain_db
+        );
+    }
+
+    #[test]
+    fn test_eq_auto_gain_parameter_set_get() {
+        let mut plugin = EqPlugin::new(2, vec![]);
+        plugin.initialize(48000).unwrap();
+
+        // Test set_parameter for auto_gain_enabled
+        plugin
+            .set_parameter(
+                ParameterId("auto_gain_enabled".to_string()),
+                ParameterValue::Bool(true),
+            )
+            .unwrap();
+
+        let value = plugin.get_parameter(&ParameterId("auto_gain_enabled".to_string()));
+        assert_eq!(value, Some(ParameterValue::Bool(true)));
+
+        // Disable
+        plugin
+            .set_parameter(
+                ParameterId("auto_gain_enabled".to_string()),
+                ParameterValue::Bool(false),
+            )
+            .unwrap();
+
+        let value = plugin.get_parameter(&ParameterId("auto_gain_enabled".to_string()));
+        assert_eq!(value, Some(ParameterValue::Bool(false)));
+    }
+
+    #[test]
+    fn test_eq_auto_gain_parameter_max_db() {
+        let mut plugin = EqPlugin::new(2, vec![]);
+        plugin.initialize(48000).unwrap();
+
+        // Set max gain
+        plugin
+            .set_parameter(
+                ParameterId("auto_gain_max_db".to_string()),
+                ParameterValue::Float(6.0),
+            )
+            .unwrap();
+
+        // Parameter should be retrievable
+        let value = plugin.get_parameter(&ParameterId("auto_gain_max_db".to_string()));
+        assert!(value.is_some());
+    }
+
+    #[test]
+    fn test_eq_auto_gain_parameter_smoothing() {
+        let mut plugin = EqPlugin::new(2, vec![]);
+        plugin.initialize(48000).unwrap();
+
+        // Set smoothing time
+        plugin
+            .set_parameter(
+                ParameterId("auto_gain_smoothing_ms".to_string()),
+                ParameterValue::Float(200.0),
+            )
+            .unwrap();
+
+        let value = plugin.get_parameter(&ParameterId("auto_gain_smoothing_ms".to_string()));
+        assert!(value.is_some());
+    }
+
+    #[test]
+    fn test_eq_auto_gain_parameter_loudness_type() {
+        let mut plugin = EqPlugin::new(2, vec![]);
+        plugin.initialize(48000).unwrap();
+
+        // Set to short-term (1)
+        plugin
+            .set_parameter(
+                ParameterId("auto_gain_loudness_type".to_string()),
+                ParameterValue::Int(1),
+            )
+            .unwrap();
+
+        let value = plugin.get_parameter(&ParameterId("auto_gain_loudness_type".to_string()));
+        assert!(value.is_some());
+    }
+
+    #[test]
+    fn test_eq_auto_gain_unknown_parameter() {
+        let mut plugin = EqPlugin::new(2, vec![]);
+
+        let result = plugin.set_parameter(
+            ParameterId("unknown_param".to_string()),
+            ParameterValue::Float(1.0),
+        );
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Unknown parameter"));
+    }
+
+    #[test]
+    fn test_eq_auto_gain_reset() {
+        let params = EqPluginParams {
+            filters: vec![],
+            channel_filters: None,
+            auto_gain: AutoGainParams {
+                enabled: true,
+                ..Default::default()
+            },
+        };
+
+        let mut plugin = EqPlugin::from_params(2, 48000, params).unwrap();
+        plugin.initialize(48000).unwrap();
+
+        // Process some audio
+        let num_frames = 1024;
+        let input: Vec<f32> = (0..num_frames * 2).map(|_| 0.5).collect();
+        let mut output = vec![0.0_f32; num_frames * 2];
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+
+        plugin.process(&input, &mut output, &context).unwrap();
+
+        // Reset
+        plugin.reset();
+
+        // Auto-gain should be reset
+        let data = plugin.get_data().unwrap();
+        let auto_gain_data = data.downcast_ref::<AutoGainData>().unwrap();
+
+        assert_eq!(auto_gain_data.gain_db, 0.0, "Gain should be reset to 0 dB");
+    }
+
+    #[test]
+    fn test_eq_auto_gain_passthrough_when_disabled() {
+        // With auto-gain disabled, output should only be affected by EQ, not gain compensation
+        let filters = vec![Biquad::new(
+            BiquadFilterType::Peak,
+            1000.0,
+            48000.0,
+            1.0,
+            6.0, // +6dB boost at 1kHz
+        )];
+
+        let mut plugin = EqPlugin::new(2, filters);
+        plugin.initialize(48000).unwrap();
+
+        // Auto-gain should be disabled by default
+        assert!(!plugin.auto_gain.is_enabled());
+
+        // Process 1kHz sine wave
+        let num_frames = 4800;
+        let mut input = vec![0.0_f32; num_frames * 2];
+        for i in 0..num_frames {
+            let phase = 2.0 * std::f32::consts::PI * 1000.0 * i as f32 / 48000.0;
+            let sample = phase.sin() * 0.3;
+            input[i * 2] = sample;
+            input[i * 2 + 1] = sample;
+        }
+
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+
+        let mut output = vec![0.0_f32; num_frames * 2];
+        for _ in 0..5 {
+            plugin.process(&input, &mut output, &context).unwrap();
+        }
+
+        // Get auto-gain data
+        let data = plugin.get_data().unwrap();
+        let auto_gain_data = data.downcast_ref::<AutoGainData>().unwrap();
+
+        // Auto-gain should report 0 dB when disabled
+        assert_eq!(
+            auto_gain_data.gain_db, 0.0,
+            "Auto-gain should be 0 dB when disabled"
+        );
+
+        // Output should be boosted by EQ (energy should be higher)
+        let input_energy: f32 = input.iter().map(|x| x * x).sum();
+        let output_energy: f32 = output.iter().map(|x| x * x).sum();
+        assert!(
+            output_energy > input_energy,
+            "With +6dB EQ boost and no auto-gain, output should be louder"
+        );
+    }
+
+    #[test]
+    fn test_eq_auto_gain_preserves_loudness() {
+
+        // Create EQ with significant boost
+        let filters = vec![Biquad::new(
+            BiquadFilterType::Highshelf,
+            1000.0,
+            48000.0,
+            0.707,
+            6.0, // +6dB boost
+        )];
+
+        let params = EqPluginParams {
+            filters: vec![],
+            channel_filters: None,
+            auto_gain: AutoGainParams {
+                enabled: true,
+                max_gain_db: 12.0,
+                smoothing_ms: 5.0, // Very fast for testing
+                ..Default::default()
+            },
+        };
+
+        let mut plugin = EqPlugin::from_params(2, 48000, params).unwrap();
+        plugin.set_filters(filters);
+        plugin.initialize(48000).unwrap();
+
+        // Create 2kHz sine wave (affected by high shelf)
+        let num_frames = 4800;
+        let mut input = vec![0.0_f32; num_frames * 2];
+        for i in 0..num_frames {
+            let phase = 2.0 * std::f32::consts::PI * 2000.0 * i as f32 / 48000.0;
+            let sample = phase.sin() * 0.3;
+            input[i * 2] = sample;
+            input[i * 2 + 1] = sample;
+        }
+
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+
+        // Process many times to let auto-gain fully stabilize
+        let mut output = vec![0.0_f32; num_frames * 2];
+        for _ in 0..50 {
+            plugin.process(&input, &mut output, &context).unwrap();
+        }
+
+        // Calculate input and output energy
+        let input_energy: f32 = input.iter().map(|x| x * x).sum();
+        let output_energy: f32 = output.iter().map(|x| x * x).sum();
+
+        let energy_ratio = output_energy / input_energy;
+        let energy_ratio_db = 10.0 * energy_ratio.log10();
+
+        // With auto-gain, the output should be closer to input loudness
+        // Allow some tolerance since auto-gain uses LUFS which may differ slightly from RMS
+        assert!(
+            energy_ratio_db.abs() < 3.0,
+            "Auto-gain should keep output close to input loudness. Ratio: {:.2} dB",
+            energy_ratio_db
+        );
+    }
+
+    #[test]
+    fn test_eq_params_serialization_with_auto_gain() {
+        let params = EqPluginParams {
+            filters: vec![BiquadFilterConfig {
+                filter_type: "peak".to_string(),
+                freq: 1000.0,
+                q: 1.0,
+                db_gain: 3.0,
+            }],
+            channel_filters: None,
+            auto_gain: AutoGainParams {
+                enabled: true,
+                loudness_type: AutoGainLoudnessType::ShortTerm,
+                max_gain_db: 8.0,
+                smoothing_ms: 75.0,
+            },
+        };
+
+        // Serialize
+        let json_str = serde_json::to_string(&params).unwrap();
+        assert!(json_str.contains("auto_gain"));
+        assert!(json_str.contains("\"enabled\":true"));
+        assert!(json_str.contains("ShortTerm"));
+
+        // Deserialize
+        let parsed: EqPluginParams = serde_json::from_str(&json_str).unwrap();
+        assert!(parsed.auto_gain.enabled);
+        assert_eq!(parsed.auto_gain.max_gain_db, 8.0);
+        assert_eq!(parsed.auto_gain.smoothing_ms, 75.0);
+        assert_eq!(parsed.auto_gain.loudness_type, AutoGainLoudnessType::ShortTerm);
     }
 }

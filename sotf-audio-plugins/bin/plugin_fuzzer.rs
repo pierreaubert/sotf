@@ -461,6 +461,7 @@ impl PluginFuzzer for EqFuzzer {
         let params = EqPluginParams {
             filters,
             channel_filters: None,
+            ..Default::default()
         };
         let plugin = Box::new(EqPlugin::from_params(channels, self.sample_rate, params).unwrap());
         (plugin, desc)

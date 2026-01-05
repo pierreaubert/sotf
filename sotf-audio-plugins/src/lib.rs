@@ -22,6 +22,7 @@
 mod analyzer;
 mod analyzer_loudness_monitor;
 mod analyzer_spectrum;
+mod auto_gain;
 mod host;
 pub mod param_specs;
 mod parameters;
@@ -59,6 +60,7 @@ mod plugin_hal_input;
 mod plugin_hal_output;
 
 pub use analyzer::{AnalyzerData, AnalyzerPlugin, LoudnessData, SpectrumData};
+pub use auto_gain::{AutoGain, AutoGainData, AutoGainLoudnessType, AutoGainParams};
 pub use host::{DawHost, GraphEdge as DawGraphEdge, Host, NodeId as DawNodeId};
 pub use parameters::{Parameter, ParameterId, ParameterValue};
 pub use plugin::{InPlacePlugin, InPlacePluginAdapter, Plugin, PluginInfo, ProcessContext};
