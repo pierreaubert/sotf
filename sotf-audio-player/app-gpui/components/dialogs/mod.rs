@@ -5,8 +5,8 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Badge, BadgeVariant, Dialog, DialogSize, HStack, StackAlign, StackJustify, StackSpacing, Text,
-    TextSize, TextWeight, VStack,
+    Badge, BadgeVariant, Dialog, DialogSize, HStack, StackAlign, StackJustify, StackSize,
+    StackSpacing, Text, TextSize, TextWeight, VStack,
 };
 
 impl PlayerView {
@@ -78,6 +78,14 @@ impl PlayerView {
         Dialog::new("about-dialog")
             .title("About SotF Player")
             .size(DialogSize::Md)
+            .on_close({
+                let state = self.state.clone();
+                move |_window, cx| {
+                    state.update(cx, |state, _| {
+                        state.app.input_mode = crate::app::InputMode::Normal;
+                    });
+                }
+            })
             .content(
                 VStack::new()
                     .spacing(StackSpacing::Lg)
@@ -89,7 +97,7 @@ impl PlayerView {
                             .rounded_xl()
                             .overflow_hidden()
                             .child(
-                                img("sotf.jpg")
+                                img("sotf-20251123.png")
                                     .w_full()
                                     .h_full()
                                     .object_fit(ObjectFit::Cover),
@@ -111,17 +119,119 @@ impl PlayerView {
                                     .color(theme.text_secondary),
                             )
                             .child(
-                                Text::new("© 2025 Spinorama")
+                                Text::new("© 2026 Spinorama")
                                     .size(TextSize::Sm)
                                     .color(theme.text_muted),
                             ),
+                    )
+                    .child(div().w_full().h(px(1.0)).bg(theme.border))
+                    .child(
+                        VStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .width(StackSize::Full)
+                            .child(self.render_external_link(
+                                "📦",
+                                "GitHub Repository",
+                                "Source code and documentation",
+                                "https://github.com/pierreaubert/sotf",
+                                &theme,
+                            ))
+                            .child(self.render_external_link(
+                                "🐛",
+                                "Report Issues",
+                                "Bug tracker",
+                                "https://github.com/pierreaubert/sotf/discussions/116",
+                                &theme,
+                            ))
+                            .child(self.render_external_link(
+                                "💬",
+                                "Feature Requests",
+                                "GitHub Discussions",
+                                "https://github.com/pierreaubert/sotf/discussions/117",
+                                &theme,
+                            ))
+                            .child(self.render_external_link(
+                                "🔊",
+                                "Community Forum",
+                                "Audio Science Review",
+                                "https://www.audiosciencereview.com/forum/index.php?threads/autoeq-for-speaker-and-headphone.66460/",
+                                &theme,
+                            ))
+                            .child(self.render_external_link(
+                                "⚖️",
+                                "License (GPL v3)",
+                                "Open Source License",
+                                "https://github.com/pierreaubert/sotf/blob/main/LICENCE.md",
+                                &theme,
+                            )),
                     ),
             )
             .footer(
-                Text::new("Press ESC to close")
-                    .size(TextSize::Xs)
-                    .muted(true),
+                HStack::new()
+                    .width(StackSize::Full)
+                    .justify(StackJustify::SpaceBetween)
+                    .child(
+                        Text::new("Press ESC to close")
+                            .size(TextSize::Xs)
+                            .muted(true),
+                    )
+                    .child(
+                        gpui_ui_kit::Button::new("about-close", "Close")
+                            .variant(gpui_ui_kit::ButtonVariant::Primary)
+                            .size(gpui_ui_kit::ButtonSize::Sm)
+                            .theme(theme.to_button_theme())
+                            .build()
+                            .on_click(cx.listener(|view, _event: &ClickEvent, _window, cx| {
+                                view.state.update(cx, |state, _cx| {
+                                    state.app.input_mode = crate::app::InputMode::Normal;
+                                });
+                                cx.notify();
+                            })),
+                    ),
             )
+    }
+
+    fn render_external_link(
+        &self,
+        icon: &str,
+        title: &str,
+        subtitle: &str,
+        url: &str,
+        theme: &crate::theme::Theme,
+    ) -> impl IntoElement {
+        let url = url.to_string();
+        let theme = theme.clone();
+        let id = SharedString::from(format!("external-link-{}", title.replace(' ', "-").to_lowercase()));
+        div()
+            .id(id)
+            .flex()
+            .items_center()
+            .gap_3()
+            .p_2()
+            .w_full()
+            .rounded_md()
+            .bg(theme.surface_hover)
+            .cursor_pointer()
+            .hover(move |s| s.bg(theme.accent_muted))
+            .child(Text::new(icon.to_string()).size(TextSize::Lg))
+            .child(
+                VStack::new()
+                    .spacing(StackSpacing::Xs)
+                    .child(
+                        Text::new(title.to_string())
+                            .size(TextSize::Sm)
+                            .weight(TextWeight::Semibold)
+                            .color(theme.text_primary),
+                    )
+                    .child(
+                        Text::new(subtitle.to_string())
+                            .size(TextSize::Xs)
+                            .color(theme.text_secondary),
+                    ),
+            )
+            .on_click(move |_, _window, cx: &mut App| {
+                cx.open_url(&url);
+            })
     }
 
     pub(crate) fn render_help_support_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -931,48 +1041,50 @@ impl PlayerView {
             ("Shift-S/l", "Save/Load preset"),
         ];
 
-        div()
-            .child(
-                Dialog::new("shortcuts-dialog")
-                    .title("Keyboard Shortcuts")
-                    .size(DialogSize::Full)
-                    .show_close_button(false)
-                    .content(
-                        div()
-                            .flex()
-                            .flex_wrap()
-                            .gap_6()
-                            .child(self.render_shortcut_section(
-                                "Global",
-                                &global_shortcuts,
-                                &theme,
-                            ))
-                            .child(self.render_shortcut_section(
-                                "Library",
-                                &library_shortcuts,
-                                &theme,
-                            ))
-                            .child(self.render_shortcut_section("Queue", &queue_shortcuts, &theme))
-                            .child(self.render_shortcut_section(
-                                "Plugins",
-                                &plugin_shortcuts,
-                                &theme,
-                            )),
-                    )
-                    .footer(
+        Dialog::new("shortcuts-dialog")
+            .title("Keyboard Shortcuts")
+            .size(DialogSize::Full)
+            .show_close_button(true)
+            .on_close({
+                let state = self.state.clone();
+                move |_window, cx| {
+                    state.update(cx, |state, _| {
+                        state.app.input_mode = crate::app::InputMode::Normal;
+                    });
+                }
+            })
+            .content(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap_6()
+                    .child(self.render_shortcut_section("Global", &global_shortcuts, &theme))
+                    .child(self.render_shortcut_section("Library", &library_shortcuts, &theme))
+                    .child(self.render_shortcut_section("Queue", &queue_shortcuts, &theme))
+                    .child(self.render_shortcut_section("Plugins", &plugin_shortcuts, &theme)),
+            )
+            .footer(
+                HStack::new()
+                    .width(StackSize::Full)
+                    .justify(StackJustify::SpaceBetween)
+                    .child(
                         Text::new("Press ESC or ? to close")
                             .size(TextSize::Xs)
                             .muted(true),
+                    )
+                    .child(
+                        gpui_ui_kit::Button::new("shortcuts-close", "Close")
+                            .variant(gpui_ui_kit::ButtonVariant::Primary)
+                            .size(gpui_ui_kit::ButtonSize::Sm)
+                            .theme(theme.to_button_theme())
+                            .build()
+                            .on_click(cx.listener(|view, _event: &ClickEvent, _window, cx| {
+                                view.state.update(cx, |state, _cx| {
+                                    state.app.input_mode = crate::app::InputMode::Normal;
+                                });
+                                cx.notify();
+                            })),
                     ),
-            )
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|view, _: &MouseDownEvent, _window, cx| {
-                    view.state.update(cx, |state, _cx| {
-                        state.app.input_mode = crate::app::InputMode::Normal;
-                    });
-                    cx.notify();
-                }),
             )
     }
 
