@@ -100,6 +100,55 @@ pub fn cleanup_input_state(id: &ElementId) {
     });
 }
 
+/// Clean up thread-local state for Input elements whose IDs are not in the retained set.
+///
+/// This is useful for virtualized lists where you want to keep state only for
+/// currently visible items. Call this periodically or when the visible set changes.
+///
+/// # Example
+/// ```rust,ignore
+/// // Keep only the inputs currently in view
+/// let visible_ids: HashSet<ElementId> = visible_items
+///     .iter()
+///     .map(|item| ElementId::Name(format!("input-{}", item.id).into()))
+///     .collect();
+/// cleanup_stale_input_states(&visible_ids);
+/// ```
+pub fn cleanup_stale_input_states(retained_ids: &std::collections::HashSet<ElementId>) {
+    FOCUS_HANDLES.with(|handles| {
+        handles.borrow_mut().retain(|id, _| retained_ids.contains(id));
+    });
+    EDIT_STATES.with(|states| {
+        states.borrow_mut().retain(|id, _| retained_ids.contains(id));
+    });
+}
+
+/// Get the current count of stored input states.
+///
+/// Useful for debugging memory leaks. If this number grows unboundedly,
+/// you may need to call `cleanup_input_state` or `cleanup_stale_input_states`.
+///
+/// # Returns
+/// A tuple of (focus_handle_count, edit_state_count)
+pub fn input_state_count() -> (usize, usize) {
+    let focus_count = FOCUS_HANDLES.with(|handles| handles.borrow().len());
+    let edit_count = EDIT_STATES.with(|states| states.borrow().len());
+    (focus_count, edit_count)
+}
+
+/// Clear all input states.
+///
+/// This removes all thread-local state for all Input components.
+/// Use with caution - this will reset all input editing state.
+pub fn clear_all_input_states() {
+    FOCUS_HANDLES.with(|handles| {
+        handles.borrow_mut().clear();
+    });
+    EDIT_STATES.with(|states| {
+        states.borrow_mut().clear();
+    });
+}
+
 /// Theme colors for input styling
 #[derive(Debug, Clone, ComponentTheme)]
 pub struct InputTheme {

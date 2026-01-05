@@ -23,7 +23,7 @@ struct TabsTestView;
 impl Render for TabsTestView {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         div().child(
-            Tabs::new().tabs(vec![
+            Tabs::new("tabs").tabs(vec![
                 TabItem::new("tab1", "Tab 1"),
                 TabItem::new("tab2", "Tab 2"),
                 TabItem::new("tab3", "Tab 3"),
@@ -48,7 +48,7 @@ async fn test_tabs_underline_variant(cx: &mut TestAppContext) {
     impl Render for UnderlineView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
             div().child(
-                Tabs::new()
+                Tabs::new("tabs")
                     .variant(TabVariant::Underline)
                     .tabs(vec![
                         TabItem::new("tab1", "Tab 1"),
@@ -68,7 +68,7 @@ async fn test_tabs_enclosed_variant(cx: &mut TestAppContext) {
     impl Render for EnclosedView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
             div().child(
-                Tabs::new()
+                Tabs::new("tabs")
                     .variant(TabVariant::Enclosed)
                     .tabs(vec![
                         TabItem::new("tab1", "Tab 1"),
@@ -88,7 +88,7 @@ async fn test_tabs_pills_variant(cx: &mut TestAppContext) {
     impl Render for PillsView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
             div().child(
-                Tabs::new()
+                Tabs::new("tabs")
                     .variant(TabVariant::Pills)
                     .tabs(vec![
                         TabItem::new("tab1", "Tab 1"),
@@ -108,7 +108,7 @@ async fn test_tabs_vertical_card_variant(cx: &mut TestAppContext) {
     impl Render for VerticalCardView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
             div().child(
-                Tabs::new()
+                Tabs::new("tabs")
                     .variant(TabVariant::VerticalCard)
                     .tabs(vec![
                         TabItem::new("tab1", "Tab 1").icon("📄"),
@@ -132,7 +132,7 @@ async fn test_tabs_selected_index(cx: &mut TestAppContext) {
     impl Render for SelectedIndexView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
             div().child(
-                Tabs::new()
+                Tabs::new("tabs")
                     .tabs(vec![
                         TabItem::new("tab1", "Tab 1"),
                         TabItem::new("tab2", "Tab 2"),
@@ -158,7 +158,7 @@ impl Render for SelectableTabsView {
         let change_count = self.change_count.clone();
 
         div().size_full().child(
-            Tabs::new()
+            Tabs::new("tabs")
                 .tabs(vec![
                     TabItem::new("tab1", "Tab 1"),
                     TabItem::new("tab2", "Tab 2"),
@@ -218,7 +218,7 @@ async fn test_tabs_disabled(cx: &mut TestAppContext) {
     impl Render for DisabledTabView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
             div().child(
-                Tabs::new().tabs(vec![
+                Tabs::new("tabs").tabs(vec![
                     TabItem::new("tab1", "Tab 1"),
                     TabItem::new("tab2", "Tab 2").disabled(true),
                     TabItem::new("tab3", "Tab 3"),
@@ -245,7 +245,7 @@ impl Render for CloseableTabsView {
         let last_closed = self.last_closed.clone();
 
         div().size_full().child(
-            Tabs::new()
+            Tabs::new("tabs")
                 .tabs(vec![
                     TabItem::new("tab1", "Tab 1").closeable(true),
                     TabItem::new("tab2", "Tab 2").closeable(true),
@@ -304,7 +304,7 @@ async fn test_tabs_with_icons(cx: &mut TestAppContext) {
     impl Render for IconTabsView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
             div().child(
-                Tabs::new().tabs(vec![
+                Tabs::new("tabs").tabs(vec![
                     TabItem::new("home", "Home").icon("🏠"),
                     TabItem::new("settings", "Settings").icon("⚙️"),
                     TabItem::new("profile", "Profile").icon("👤"),
@@ -323,7 +323,7 @@ async fn test_tabs_with_badges(cx: &mut TestAppContext) {
     impl Render for BadgeTabsView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
             div().child(
-                Tabs::new().tabs(vec![
+                Tabs::new("tabs").tabs(vec![
                     TabItem::new("inbox", "Inbox").badge("5"),
                     TabItem::new("sent", "Sent").badge("12"),
                     TabItem::new("drafts", "Drafts"),
@@ -342,7 +342,7 @@ async fn test_tabs_with_icons_and_badges(cx: &mut TestAppContext) {
     impl Render for IconBadgeTabsView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
             div().child(
-                Tabs::new().tabs(vec![
+                Tabs::new("tabs").tabs(vec![
                     TabItem::new("notifications", "Notifications")
                         .icon("🔔")
                         .badge("3"),
@@ -383,7 +383,7 @@ async fn test_tabs_complex(cx: &mut TestAppContext) {
     impl Render for ComplexTabsView {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
             div().child(
-                Tabs::new()
+                Tabs::new("tabs")
                     .variant(TabVariant::Pills)
                     .tabs(vec![
                         TabItem::new("active", "Active").icon("✓").badge("12"),

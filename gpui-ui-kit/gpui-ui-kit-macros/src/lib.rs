@@ -93,10 +93,10 @@ pub fn derive_component_theme(input: TokenStream) -> TokenStream {
                     let ident = nv.path.get_ident().expect("Expected identifier");
                     match ident.to_string().as_str() {
                         "default" => {
-                            if let Expr::Lit(lit) = &nv.value {
-                                if let Lit::Int(int_lit) = &lit.lit {
-                                    default_value = Some(int_lit.base10_parse().unwrap());
-                                }
+                            if let Expr::Lit(lit) = &nv.value
+                                && let Lit::Int(int_lit) = &lit.lit
+                            {
+                                default_value = Some(int_lit.base10_parse().unwrap());
                             }
                         }
                         "default_f32" => {
@@ -114,10 +114,10 @@ pub fn derive_component_theme(input: TokenStream) -> TokenStream {
                             }
                         }
                         "default_expr" => {
-                            if let Expr::Lit(lit) = &nv.value {
-                                if let Lit::Str(s) = &lit.lit {
-                                    default_expr_str = Some(s.value());
-                                }
+                            if let Expr::Lit(lit) = &nv.value
+                                && let Lit::Str(s) = &lit.lit
+                            {
+                                default_expr_str = Some(s.value());
                             }
                         }
                         "from" => {
@@ -126,10 +126,10 @@ pub fn derive_component_theme(input: TokenStream) -> TokenStream {
                             }
                         }
                         "from_expr" => {
-                            if let Expr::Lit(lit) = &nv.value {
-                                if let Lit::Str(s) = &lit.lit {
-                                    from_expr = Some(s.value());
-                                }
+                            if let Expr::Lit(lit) = &nv.value
+                                && let Lit::Str(s) = &lit.lit
+                            {
+                                from_expr = Some(s.value());
                             }
                         }
                         _ => panic!("Unknown theme attribute: {}", ident),
@@ -142,10 +142,9 @@ pub fn derive_component_theme(input: TokenStream) -> TokenStream {
         // Generate Default field based on type
         if let Some(expr_str) = default_expr_str {
             // Arbitrary expression (for Option types, nested themes, etc.)
-            let expr: syn::Expr = syn::parse_str(&expr_str).expect(&format!(
-                "Failed to parse default_expr for field `{}`",
-                field_name
-            ));
+            let expr: syn::Expr = syn::parse_str(&expr_str).unwrap_or_else(|_| {
+                panic!("Failed to parse default_expr for field `{}`", field_name)
+            });
             default_fields.push(quote! {
                 #field_name: #expr
             });
@@ -176,10 +175,9 @@ pub fn derive_component_theme(input: TokenStream) -> TokenStream {
 
         // Generate From<&Theme> field
         if let Some(expr_str) = from_expr {
-            let expr: syn::Expr = syn::parse_str(&expr_str).expect(&format!(
-                "Failed to parse from_expr for field `{}`",
-                field_name
-            ));
+            let expr: syn::Expr = syn::parse_str(&expr_str).unwrap_or_else(|_| {
+                panic!("Failed to parse from_expr for field `{}`", field_name)
+            });
             from_fields.push(quote! {
                 #field_name: #expr
             });

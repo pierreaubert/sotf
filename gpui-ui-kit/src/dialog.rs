@@ -6,6 +6,7 @@ use crate::ComponentTheme;
 use crate::theme::ThemeExt;
 use gpui::prelude::*;
 use gpui::*;
+use std::rc::Rc;
 
 /// Theme colors for dialog styling
 #[derive(Debug, Clone, ComponentTheme)]
@@ -141,11 +142,14 @@ impl Dialog {
     /// Build the dialog into elements with theme
     pub fn build_with_theme(self, theme: &DialogTheme) -> Div {
         let width = self.size.width();
-        let on_close = self.on_close;
         let close_on_backdrop = self.close_on_backdrop;
         // Clone ID for use in child elements (self.id is moved to dialog container)
         let close_btn_id = self.id.clone();
         let content_id = self.id.clone();
+
+        // Convert Box to Rc for shared ownership between backdrop and close button
+        let on_close: Option<Rc<dyn Fn(&mut Window, &mut App)>> =
+            self.on_close.map(|f| Rc::from(f));
 
         // Backdrop
         let mut backdrop = div()
@@ -159,13 +163,11 @@ impl Dialog {
             .on_scroll_wheel(|_event, _window, _cx| {});
 
         // Handle backdrop click
-        if close_on_backdrop && let Some(ref handler) = on_close {
-            let handler: *const dyn Fn(&mut Window, &mut App) = handler.as_ref();
+        if close_on_backdrop
+            && let Some(handler) = on_close.clone()
+        {
             backdrop = backdrop.on_mouse_down(MouseButton::Left, move |_event, window, cx| {
-                // Safety: handler is valid for the lifetime of the dialog
-                unsafe {
-                    (*handler)(window, cx);
-                }
+                handler(window, cx);
             });
         }
 
@@ -211,9 +213,8 @@ impl Dialog {
             }
 
             if self.show_close_button
-                && let Some(ref handler) = on_close
+                && let Some(handler) = on_close.clone()
             {
-                let handler: *const dyn Fn(&mut Window, &mut App) = handler.as_ref();
                 let close_color = theme.close;
                 let close_hover = theme.close_hover;
                 let close_hover_bg = theme.close_hover_bg;
@@ -226,8 +227,8 @@ impl Dialog {
                         .cursor_pointer()
                         .text_color(close_color)
                         .hover(move |s| s.bg(close_hover_bg).text_color(close_hover))
-                        .on_mouse_up(MouseButton::Left, move |_event, window, cx| unsafe {
-                            (*handler)(window, cx);
+                        .on_mouse_up(MouseButton::Left, move |_event, window, cx| {
+                            handler(window, cx);
                         })
                         .child("×"),
                 );

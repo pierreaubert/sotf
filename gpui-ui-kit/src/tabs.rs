@@ -150,25 +150,35 @@ impl TabItem {
 
 /// A tabs component with theming support
 pub struct Tabs {
+    id: ElementId,
     tabs: Vec<TabItem>,
     selected_index: usize,
     variant: TabVariant,
     theme: Option<TabsTheme>,
     on_change: Option<Box<dyn Fn(usize, &mut Window, &mut App) + 'static>>,
     on_close: Option<Box<dyn Fn(&SharedString, &mut Window, &mut App) + 'static>>,
+    focus_handle: Option<FocusHandle>,
 }
 
 impl Tabs {
-    /// Create a new tabs component
-    pub fn new() -> Self {
+    /// Create a new tabs component with an ID
+    pub fn new(id: impl Into<ElementId>) -> Self {
         Self {
+            id: id.into(),
             tabs: Vec::new(),
             selected_index: 0,
             variant: TabVariant::default(),
             theme: None,
             on_change: None,
             on_close: None,
+            focus_handle: None,
         }
+    }
+
+    /// Set the focus handle for keyboard navigation
+    pub fn focus_handle(mut self, handle: FocusHandle) -> Self {
+        self.focus_handle = Some(handle);
+        self
     }
 
     /// Set the tab items
@@ -211,10 +221,23 @@ impl Tabs {
     }
 
     /// Build into element with theme
-    pub fn build_with_theme(self, global_theme: &TabsTheme) -> Div {
+    ///
+    /// # Keyboard Navigation
+    /// - Left/Right arrows: Navigate between tabs
+    /// - Home: Select first tab
+    /// - End: Select last tab
+    pub fn build_with_theme(self, global_theme: &TabsTheme, cx: &mut App) -> Stateful<Div> {
         let theme = self.theme.as_ref().unwrap_or(global_theme);
 
-        let mut container = div().flex().items_center();
+        // Get or create focus handle
+        let focus_handle = self.focus_handle.unwrap_or_else(|| cx.focus_handle());
+
+        let mut container = div()
+            .id(self.id.clone())
+            .track_focus(&focus_handle)
+            .flex()
+            .items_center()
+            .focusable();
 
         // Apply variant-specific container styling
         match self.variant {
@@ -235,6 +258,9 @@ impl Tabs {
         // Wrap callbacks in Rc for safe sharing across closures
         let on_change_rc = self.on_change.map(|f| std::rc::Rc::new(f));
         let on_close_rc = self.on_close.map(|f| std::rc::Rc::new(f));
+
+        // Capture tab count before consuming tabs
+        let tab_count = self.tabs.len();
 
         for (index, tab) in self.tabs.into_iter().enumerate() {
             let is_selected = index == self.selected_index;
@@ -574,13 +600,58 @@ impl Tabs {
             container = container.child(tab_element);
         }
 
+        // Add keyboard navigation
+        let selected = self.selected_index;
+        let on_change_key = on_change_rc.clone();
+        let focus_handle_key = focus_handle.clone();
+
+        container = container.on_key_down(move |event, window, cx| {
+            if !focus_handle_key.is_focused(window) {
+                return;
+            }
+
+            let key = event.keystroke.key.as_str();
+            let new_index = match key {
+                "left" => {
+                    if selected > 0 {
+                        Some(selected - 1)
+                    } else {
+                        None
+                    }
+                }
+                "right" => {
+                    if selected + 1 < tab_count {
+                        Some(selected + 1)
+                    } else {
+                        None
+                    }
+                }
+                "home" => Some(0),
+                "end" => {
+                    if tab_count > 0 {
+                        Some(tab_count - 1)
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            };
+
+            if let Some(new_idx) = new_index {
+                cx.stop_propagation();
+                if let Some(ref handler) = on_change_key {
+                    handler(new_idx, window, cx);
+                }
+            }
+        });
+
         container
     }
 }
 
 impl Default for Tabs {
     fn default() -> Self {
-        Self::new()
+        Self::new("tabs")
     }
 }
 
@@ -588,7 +659,7 @@ impl RenderOnce for Tabs {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let global_theme = cx.theme();
         let tabs_theme = TabsTheme::from(&global_theme);
-        self.build_with_theme(&tabs_theme)
+        self.build_with_theme(&tabs_theme, cx)
     }
 }
 

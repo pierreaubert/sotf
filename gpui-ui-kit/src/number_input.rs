@@ -341,7 +341,21 @@ impl NumberInput {
     }
 
     /// Set the current value
+    ///
+    /// NaN values are clamped to the minimum bound.
     pub fn value(mut self, value: f64) -> Self {
+        // Handle NaN by falling back to min (or 0 if min is infinite)
+        let value = if value.is_nan() {
+            if self.min.is_finite() {
+                self.min
+            } else if self.max.is_finite() {
+                self.max
+            } else {
+                0.0
+            }
+        } else {
+            value
+        };
         self.value = value.clamp(self.min, self.max);
         self
     }
@@ -349,8 +363,9 @@ impl NumberInput {
     /// Set the minimum value
     ///
     /// # Panics
-    /// Panics if min > max after this call
+    /// Panics if min is NaN
     pub fn min(mut self, min: f64) -> Self {
+        assert!(!min.is_nan(), "NumberInput min cannot be NaN");
         self.min = min;
         self
     }
@@ -358,8 +373,9 @@ impl NumberInput {
     /// Set the maximum value
     ///
     /// # Panics
-    /// Panics if min > max after this call
+    /// Panics if max is NaN
     pub fn max(mut self, max: f64) -> Self {
+        assert!(!max.is_nan(), "NumberInput max cannot be NaN");
         self.max = max;
         self
     }
@@ -367,8 +383,10 @@ impl NumberInput {
     /// Set both min and max values at once
     ///
     /// # Panics
-    /// Panics if min > max
+    /// Panics if min > max or if either value is NaN
     pub fn range(mut self, min: f64, max: f64) -> Self {
+        assert!(!min.is_nan(), "NumberInput min cannot be NaN");
+        assert!(!max.is_nan(), "NumberInput max cannot be NaN");
         assert!(
             min <= max,
             "NumberInput range invalid: min ({}) > max ({})",
@@ -381,7 +399,15 @@ impl NumberInput {
     }
 
     /// Set the step size for increment/decrement
+    ///
+    /// # Panics
+    /// Panics if step is not positive or is NaN
     pub fn step(mut self, step: f64) -> Self {
+        assert!(
+            step > 0.0 && !step.is_nan(),
+            "NumberInput step must be positive, got: {}",
+            step
+        );
         self.step = step;
         self
     }
@@ -501,10 +527,9 @@ impl RenderOnce for NumberInput {
                 // Parse and confirm the value on focus loss
                 if let Some(value) =
                     Self::parse_value_str(&state.text, self.unit.as_ref(), min, max)
+                    && let Some(ref handler) = self.on_change
                 {
-                    if let Some(ref handler) = self.on_change {
-                        handler(value, _window, cx);
-                    }
+                    handler(value, _window, cx);
                 }
                 // Clear editing state
                 state.editing = false;
@@ -764,12 +789,12 @@ impl RenderOnce for NumberInput {
                         }
                         _ => {
                             // Character input - use key_char for actual text characters
-                            if let Some(text) = event.keystroke.key_char.as_ref() {
-                                if let Some(ch) = text.chars().next() {
-                                    state.insert_char(ch);
-                                    drop(state);
-                                    window.refresh();
-                                }
+                            if let Some(text) = event.keystroke.key_char.as_ref()
+                                && let Some(ch) = text.chars().next()
+                            {
+                                state.insert_char(ch);
+                                drop(state);
+                                window.refresh();
                             }
                         }
                     }

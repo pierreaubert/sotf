@@ -12,7 +12,9 @@
 #[path = "../src-app/mod.rs"]
 pub mod app;
 
-// Theme and i18n
+// Theme, animation, and i18n
+pub mod animation;
+pub mod color_tokens;
 pub mod i18n;
 pub mod theme;
 
@@ -21,6 +23,7 @@ pub mod button;
 pub mod button_set;
 pub mod card;
 pub mod dialog;
+pub mod focus;
 pub mod icon_button;
 pub mod menu;
 pub mod tabs;
@@ -87,6 +90,9 @@ pub use wizard::{
     StepStatus, Wizard, WizardHeader, WizardNavigation, WizardStep, WizardTheme, WizardVariant,
 };
 
+// Focus management
+pub use focus::{FocusDirection, FocusGroup};
+
 // Notifications
 pub use alert::{Alert, AlertVariant, InlineAlert};
 pub use toast::{Toast, ToastContainer, ToastPosition, ToastVariant};
@@ -107,7 +113,10 @@ pub use autoeq::{
 pub use checkbox::{Checkbox, CheckboxSize};
 pub use color::Color;
 pub use color_picker::{ColorPickerMode, ColorPickerView};
-pub use input::{Input, InputSize, InputVariant, cleanup_input_state};
+pub use input::{
+    Input, InputSize, InputVariant, cleanup_input_state, cleanup_stale_input_states,
+    clear_all_input_states, input_state_count,
+};
 pub use number_input::{
     NumberInput, NumberInputSize, NumberInputTheme, cleanup_number_input_state,
 };
@@ -135,7 +144,17 @@ pub use stack::{
 // Application templates
 pub use app::{MiniApp, MiniAppConfig};
 
+// Animation
+pub use animation::{
+    Animation, Easing, Keyframe, KeyframeAnimation, Spring, ease, evaluate_keyframes,
+    interpolate, interpolate_color,
+};
+
 // Theme and i18n
+pub use color_tokens::{
+    BackgroundColors, BorderColors, ColorPalette, ColorToken, SemanticColors, TextColors,
+    darken, desaturate, lighten, saturate, with_alpha,
+};
 pub use i18n::{I18nExt, I18nState, Language, TranslationKey, Translations};
 pub use theme::{Theme, ThemeExt, ThemeState, ThemeVariant};
 
