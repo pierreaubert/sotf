@@ -28,7 +28,7 @@ actions!(
         SwitchToSpectrum,
         SwitchToSettings,
         SwitchToRecording,
-        SwitchToSpinorma,
+        SwitchToSpinorama,
         OpenConfig, // Menu bar: open config (cmd-,)
         QuitApp,    // Menu bar: quit app (cmd-q)
         CycleTheme,

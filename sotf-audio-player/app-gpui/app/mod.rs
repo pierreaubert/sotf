@@ -10,6 +10,7 @@
 pub mod actions;
 mod autocomplete;
 pub mod config;
+pub mod constants;
 pub mod i18n;
 pub mod keybindings;
 pub mod library;

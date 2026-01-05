@@ -1,4 +1,3 @@
-
 impl Render for PlayerView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // Focus view on first render to activate macOS menu bar
@@ -123,7 +122,7 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::switch_to_recording))
             .on_action(cx.listener(Self::switch_to_room_eq))
             .on_action(cx.listener(Self::switch_to_headphone_eq))
-            .on_action(cx.listener(Self::switch_to_spinorma))
+            .on_action(cx.listener(Self::switch_to_spinorama))
             .on_action(cx.listener(Self::open_config))
             .on_action(cx.listener(Self::quit_app))
             .on_action(cx.listener(Self::cycle_theme))

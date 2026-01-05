@@ -37,6 +37,7 @@ tokio = { workspace = true }
 # Serialization
 serde = { workspace = true }
 serde_json = { workspace = true }
+thiserror = { workspace = true }
 
 # File system and utilities
 walkdir = { workspace = true }

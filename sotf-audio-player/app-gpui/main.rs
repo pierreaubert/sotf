@@ -120,7 +120,7 @@ fn main() {
                     MenuItem::action(translations.screen_recording, SwitchToRecording),
                     MenuItem::action(translations.screen_room_eq, SwitchToRoomEQ),
                     MenuItem::action(translations.screen_headphone_eq, SwitchToHeadphoneEQ),
-                    MenuItem::action(translations.screen_spinorama, SwitchToSpinorma),
+                    MenuItem::action(translations.screen_spinorama, SwitchToSpinorama),
                 ],
             },
             Menu {

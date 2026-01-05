@@ -6,6 +6,29 @@ use crate::i18n::Language;
 use crate::keybindings::KeymapPreset;
 use crate::theme::ThemeId;
 
+#[derive(Debug, thiserror::Error)]
+pub enum ConfigError {
+    #[error("Failed to determine config directory")]
+    NoConfigDirectory,
+    #[error("Failed to read config file: {path}")]
+    ReadError {
+        path: std::path::PathBuf,
+        source: std::io::Error,
+    },
+    #[error("Failed to parse config file: {path}")]
+    ParseError {
+        path: std::path::PathBuf,
+        source: serde_json::Error,
+    },
+    #[error("Failed to write config file: {path}")]
+    WriteError {
+        path: std::path::PathBuf,
+        source: std::io::Error,
+    },
+    #[error("Failed to serialize config: {source}")]
+    SerializeError { source: serde_json::Error },
+}
+
 /// Persisted state for recording screen
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecordingConfigState {
@@ -141,41 +164,47 @@ fn default_volume() -> f32 {
 }
 
 impl Config {
-    pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
-        // Use GPUI-specific state path
-        if let Some(path) = sotf_audio_player::config::get_gpui_state_path() {
-            if path.exists() {
-                let json = std::fs::read_to_string(&path)?;
-                let config = serde_json::from_str(&json)?;
-                Ok(config)
-            } else {
-                Ok(Self {
-                    directories: Vec::new(),
-                    last_loaded_plugin_preset: None,
-                    theme: ThemeId::default(),
-                    language: Language::default(),
-                    keymap_preset: KeymapPreset::default(),
-                    panel_layout: PanelLayout::default(),
-                    window_geometry: WindowGeometry::default(),
-                    volume: default_volume(),
-                    muted: false,
-                    recording_config: RecordingConfigState::default(),
-                })
-            }
-        } else {
-            Err("Could not determine config directory".into())
+    pub fn load() -> Result<Self, ConfigError> {
+        let path = sotf_audio_player::config::get_gpui_state_path()
+            .ok_or(ConfigError::NoConfigDirectory)?;
+
+        if !path.exists() {
+            return Ok(Self {
+                directories: Vec::new(),
+                last_loaded_plugin_preset: None,
+                theme: ThemeId::default(),
+                language: Language::default(),
+                keymap_preset: KeymapPreset::default(),
+                panel_layout: PanelLayout::default(),
+                window_geometry: WindowGeometry::default(),
+                volume: default_volume(),
+                muted: false,
+                recording_config: RecordingConfigState::default(),
+            });
         }
+
+        let json = std::fs::read_to_string(&path).map_err(|source| ConfigError::ReadError {
+            path: path.clone(),
+            source,
+        })?;
+
+        serde_json::from_str(&json).map_err(|source| ConfigError::ParseError {
+            path: path.clone(),
+            source,
+        })
     }
 
-    pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
-        // Use GPUI-specific state path
-        if let Some(path) = sotf_audio_player::config::get_gpui_state_path() {
-            let json = serde_json::to_string_pretty(self)?;
-            std::fs::write(&path, json)?;
-            Ok(())
-        } else {
-            Err("Could not determine config directory".into())
-        }
+    pub fn save(&self) -> Result<(), ConfigError> {
+        let path = sotf_audio_player::config::get_gpui_state_path()
+            .ok_or(ConfigError::NoConfigDirectory)?;
+
+        let json = serde_json::to_string_pretty(self)
+            .map_err(|source| ConfigError::SerializeError { source })?;
+
+        std::fs::write(&path, json).map_err(|source| ConfigError::WriteError {
+            path: path.clone(),
+            source,
+        })
     }
 }
 

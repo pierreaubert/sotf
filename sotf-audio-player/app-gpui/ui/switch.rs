@@ -38,7 +38,12 @@ impl PlayerView {
         self.switch_screen(Screen::PluginGraph, cx);
     }
 
-    fn switch_to_spinorma(&mut self, _: &SwitchToSpinorma, _: &mut Window, cx: &mut Context<Self>) {
+    fn switch_to_spinorama(
+        &mut self,
+        _: &SwitchToSpinorama,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.switch_screen(Screen::Spinorama, cx);
     }
 
@@ -75,5 +80,4 @@ impl PlayerView {
     ) {
         self.switch_screen(Screen::HeadphoneEq, cx);
     }
-
 }
