@@ -460,8 +460,9 @@ impl LoudnessCompensationPlugin {
 
 impl Plugin for LoudnessCompensationPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Loudness Compensation", "1.1.0", "SotF")
-            .with_description("Bass and treble boost for low-volume listening with per-channel support")
+        PluginInfo::new("Loudness Compensation", "1.1.0", "SotF").with_description(
+            "Bass and treble boost for low-volume listening with per-channel support",
+        )
     }
 
     fn input_channels(&self) -> usize {

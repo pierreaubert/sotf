@@ -144,7 +144,11 @@ impl InPlacePlugin for CrossoverPlugin {
         let desc = format!(
             "Multi-way crossover filter at {} Hz ({})",
             self.frequency,
-            if self.is_highpass { "highpass" } else { "lowpass" }
+            if self.is_highpass {
+                "highpass"
+            } else {
+                "lowpass"
+            }
         );
         PluginInfo::new("Crossover", "1.0.0", "SotF").with_description(desc)
     }

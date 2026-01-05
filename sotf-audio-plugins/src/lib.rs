@@ -27,7 +27,7 @@ mod automation;
 mod error;
 mod host;
 pub mod param_specs;
-mod parameters;
+pub mod parameters;
 mod plugin;
 mod plugin_ab_compare;
 mod plugin_binaural;
@@ -70,9 +70,11 @@ pub use automation::{
 };
 pub use error::{PluginError, PluginResult};
 pub use host::{DawHost, GraphEdge as DawGraphEdge, Host, NodeId as DawNodeId};
+pub use parameters::{Parameter, ParameterId, ParameterValue};
 pub use plugin::{InPlacePlugin, InPlacePluginAdapter, Plugin, PluginInfo, ProcessContext};
 pub use serialization::{PluginPreset, PresetBank, PresetMetadata, SerializablePlugin};
 
+pub use plugin_ab_compare::{ABComparePlugin, ABComparePluginParams};
 pub use plugin_binaural::{
     BinauralDecoderParams, BinauralDecoderPlugin, RoomModel, binaural_default_enable_optimization,
 };
