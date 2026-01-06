@@ -19,6 +19,7 @@ use crate::components::plugins::actions::{
 pub struct PlayerView {
     pub(crate) state: Entity<AppState>,
     pub(crate) focus_handle: FocusHandle,
+    pub(crate) volume_focus_handle: FocusHandle,
     last_saved_window_bounds: Option<Bounds<Pixels>>,
     /// Scroll handle for library grid view
     pub(crate) grid_scroll_handle: ScrollHandle,
@@ -31,6 +32,7 @@ pub struct PlayerView {
 impl PlayerView {
     pub fn new(state: Entity<AppState>, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
+        let volume_focus_handle = cx.focus_handle();
 
         // Register plugin interactions
         // Register plugin interactions - moved to render
@@ -167,6 +169,7 @@ impl PlayerView {
         Self {
             state,
             focus_handle,
+            volume_focus_handle,
             last_saved_window_bounds: None,
             grid_scroll_handle: ScrollHandle::new(),
             needs_initial_focus: true,

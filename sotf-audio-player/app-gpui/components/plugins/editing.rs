@@ -17,8 +17,10 @@ impl App {
 
     // Plugin management methods
     pub fn add_plugin(&mut self, plugin_type: &sotf_audio_player::PluginType) {
-        let new_index = self.plugin_chain.add_plugin(plugin_type);
-        self.selected_plugin_index = new_index;
+        // Insert user plugins before the Matrix (between input monitor and matrix)
+        let insert_idx = self.plugin_chain.user_plugin_insert_index();
+        self.plugin_chain.insert_plugin(insert_idx, plugin_type);
+        self.selected_plugin_index = insert_idx;
         self.plugin_chain.update_channel_dependent_plugins();
         self.pending_plugin_update = Some(PluginUpdateType::Structural);
         self.sync_spectrum_visible();
@@ -503,6 +505,9 @@ impl App {
                     low_gain,
                     high_freq,
                     high_gain,
+                    auto_gain_enabled,
+                    auto_gain_max_db,
+                    auto_gain_smoothing_ms,
                 } => match param_idx {
                     0 => {
                         *low_freq = (*low_freq + delta as f64).max(20.0).min(500.0);
@@ -518,6 +523,21 @@ impl App {
                     }
                     3 => {
                         *high_gain = (*high_gain + delta as f64).max(-20.0).min(20.0);
+                        true
+                    }
+                    4 => {
+                        // Toggle auto_gain_enabled
+                        *auto_gain_enabled = !*auto_gain_enabled;
+                        true
+                    }
+                    5 => {
+                        *auto_gain_max_db = (*auto_gain_max_db + delta as f64).max(0.0).min(24.0);
+                        true
+                    }
+                    6 => {
+                        *auto_gain_smoothing_ms = (*auto_gain_smoothing_ms + delta as f64 * 10.0)
+                            .max(1.0)
+                            .min(1000.0);
                         true
                     }
                     _ => false,
@@ -1441,6 +1461,9 @@ impl App {
                     low_gain,
                     high_freq,
                     high_gain,
+                    auto_gain_enabled,
+                    auto_gain_max_db,
+                    auto_gain_smoothing_ms,
                 } => match param_idx {
                     0 => {
                         *low_freq = value.clamp(20.0, 500.0);
@@ -1456,6 +1479,18 @@ impl App {
                     }
                     3 => {
                         *high_gain = value.clamp(-20.0, 20.0);
+                        update_needed = true;
+                    }
+                    4 => {
+                        *auto_gain_enabled = value > 0.5;
+                        update_needed = true;
+                    }
+                    5 => {
+                        *auto_gain_max_db = value.clamp(0.0, 24.0);
+                        update_needed = true;
+                    }
+                    6 => {
+                        *auto_gain_smoothing_ms = value.clamp(1.0, 1000.0);
                         update_needed = true;
                     }
                     _ => {}
@@ -2750,7 +2785,7 @@ pub fn get_param_count(settings: &PluginSettings) -> usize {
         PluginSettings::Compressor { .. } => 10, // threshold, ratio, attack, release, knee, makeup_gain, mix, auto_makeup, link_channels, sidechain_hpf_hz
         PluginSettings::Gate { .. } => 8, // threshold, ratio, attack, hold, release, mix, link_channels, sidechain_hpf_hz
         PluginSettings::Limiter { .. } => 5, // threshold, release, lookahead, soft, mix
-        PluginSettings::LoudnessCompensation { .. } => 4, // low_freq, low_gain, high_freq, high_gain
+        PluginSettings::LoudnessCompensation { .. } => 7, // low_freq, low_gain, high_freq, high_gain, auto_gain_enabled, auto_gain_max_db, auto_gain_smoothing_ms
         PluginSettings::BinauralDecoder { .. } => 5, // sofa_file, input_channels, enable_optimization, externalization, near_field_strength
         PluginSettings::Convolution { .. } => 2,     // mix, gain_db
         PluginSettings::LoudnessMonitor => 0,        // No parameters

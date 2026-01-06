@@ -28,6 +28,14 @@ pub struct VolumeKnobDebug {
     volume3: f32,
     /// Third muted state
     muted3: bool,
+
+    // Focus handles
+    focus_sm: FocusHandle,
+    focus_md: FocusHandle,
+    focus_lg: FocusHandle,
+    focus_active: FocusHandle,
+    focus_muted: FocusHandle,
+
     /// Entity reference
     entity: Entity<Self>,
 }
@@ -41,6 +49,11 @@ impl VolumeKnobDebug {
             muted2: false,
             volume3: 1.0,
             muted3: true,
+            focus_sm: cx.focus_handle(),
+            focus_md: cx.focus_handle(),
+            focus_lg: cx.focus_handle(),
+            focus_active: cx.focus_handle(),
+            focus_muted: cx.focus_handle(),
             entity: cx.entity().clone(),
         }
     }
@@ -136,6 +149,7 @@ impl Render for VolumeKnobDebug {
                                             .bg_color(theme.muted)
                                             .text_color(theme.text_primary)
                                             .muted_color(theme.text_muted)
+                                            .focus_handle(self.focus_sm.clone())
                                             .on_change({
                                                 let entity = entity.clone();
                                                 move |val, _w, cx| {
@@ -171,6 +185,7 @@ impl Render for VolumeKnobDebug {
                                             .bg_color(theme.muted)
                                             .text_color(theme.text_primary)
                                             .muted_color(theme.text_muted)
+                                            .focus_handle(self.focus_md.clone())
                                             .on_change({
                                                 let entity = entity.clone();
                                                 move |val, _w, cx| {
@@ -206,6 +221,7 @@ impl Render for VolumeKnobDebug {
                                             .bg_color(theme.muted)
                                             .text_color(theme.text_primary)
                                             .muted_color(theme.text_muted)
+                                            .focus_handle(self.focus_lg.clone())
                                             .on_change({
                                                 let entity = entity.clone();
                                                 move |val, _w, cx| {
@@ -370,6 +386,7 @@ impl Render for VolumeKnobDebug {
                                             .bg_color(theme.muted)
                                             .text_color(theme.text_primary)
                                             .muted_color(theme.text_muted)
+                                            .focus_handle(self.focus_active.clone())
                                             .on_change({
                                                 let entity = entity.clone();
                                                 move |val, _w, cx| {
@@ -405,6 +422,7 @@ impl Render for VolumeKnobDebug {
                                             .bg_color(theme.muted)
                                             .text_color(theme.text_primary)
                                             .muted_color(theme.error)
+                                            .focus_handle(self.focus_muted.clone())
                                             .on_change({
                                                 let entity = entity.clone();
                                                 move |val, _w, cx| {

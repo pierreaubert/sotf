@@ -536,9 +536,12 @@ impl RenderOnce for Potentiometer {
                             reset_handler(window, cx);
                         }
                     } else if let Some(ref handler) = handler_key {
-                        if let Some(new_value) =
-                            handle_keyboard(key, current_value_key.get(), &config_key)
-                        {
+                        if let Some(new_value) = handle_keyboard(
+                            key,
+                            &event.keystroke.modifiers,
+                            current_value_key.get(),
+                            &config_key,
+                        ) {
                             current_value_key.set(new_value);
                             handler(new_value, window, cx);
                         }

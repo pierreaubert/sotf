@@ -292,6 +292,9 @@ pub fn render_plugin_content(
             low_gain,
             high_freq,
             high_gain,
+            auto_gain_enabled,
+            auto_gain_max_db,
+            auto_gain_smoothing_ms,
         } => render_loudness_compensation_plugin(
             entity.clone(),
             plugin_idx,
@@ -300,6 +303,10 @@ pub fn render_plugin_content(
                 low_gain: *low_gain,
                 high_freq: *high_freq,
                 high_gain: *high_gain,
+                auto_gain_enabled: *auto_gain_enabled,
+                auto_gain_max_db: *auto_gain_max_db,
+                auto_gain_smoothing_ms: *auto_gain_smoothing_ms,
+                auto_gain_current_db: 0.0, // TODO: Get from plugin state when available
                 is_editing,
                 selected_param,
             },

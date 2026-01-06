@@ -49,8 +49,9 @@ pub struct WorkflowNodeMapping {
 
 impl Default for PluginState {
     fn default() -> Self {
-        let mut chain = PluginChain::new();
-        chain.add_plugin(&sotf_audio_player::PluginType::LoudnessMonitor);
+        // Create default rack with permanent plugins:
+        // Input Monitor -> [user plugins] -> Matrix -> Output Monitor
+        let chain = PluginChain::with_default_rack();
         Self {
             plugin_chain: chain,
             plugin_chain_modified: false,

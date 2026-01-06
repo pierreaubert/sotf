@@ -128,15 +128,32 @@ pub fn value_tracker(initial: f64) -> ValueTracker {
 /// Handle keyboard events for value adjustment
 ///
 /// Returns the new value if the key was handled, None otherwise.
-pub fn handle_keyboard(key: &str, current_value: f64, config: &InteractionConfig) -> Option<f64> {
+pub fn handle_keyboard(
+    key: &str,
+    modifiers: &Modifiers,
+    current_value: f64,
+    config: &InteractionConfig,
+) -> Option<f64> {
     let scale = config.scale;
     let min = config.min;
     let max = config.max;
 
+    // Determine step size based on modifiers
+    // Shift = Fine (1%)
+    // Ctrl/Cmd = Large (10%)
+    // Default = Normal (5%)
+    let step_size = if modifiers.shift {
+        0.01
+    } else if modifiers.control || modifiers.platform {
+        0.10
+    } else {
+        0.05
+    };
+
     match key {
         // Standard navigation keys
-        "up" | "right" => Some(scale.step_value(current_value, min, max, 1.0, 0.05)),
-        "down" | "left" => Some(scale.step_value(current_value, min, max, -1.0, 0.05)),
+        "up" | "right" => Some(scale.step_value(current_value, min, max, 1.0, step_size)),
+        "down" | "left" => Some(scale.step_value(current_value, min, max, -1.0, step_size)),
         "pageup" => Some(scale.step_value(current_value, min, max, 1.0, 0.10)),
         "pagedown" => Some(scale.step_value(current_value, min, max, -1.0, 0.10)),
         "home" => Some(min),

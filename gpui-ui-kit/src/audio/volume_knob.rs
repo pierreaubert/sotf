@@ -422,9 +422,6 @@ impl RenderOnce for VolumeKnob {
         let interaction_config =
             InteractionConfig::rotational(0.0, 1.0, Scale::Linear, knob_size_f32).with_media_keys();
 
-        // Clone focus handle before moving it
-        let focus_handle_click = self.focus_handle.clone();
-
         let mut container = div()
             .id(self.id)
             .relative()
@@ -432,24 +429,22 @@ impl RenderOnce for VolumeKnob {
             .h(self.size)
             .cursor_pointer();
 
-        // Use provided focus handle or fall back to default focusable behavior
-        // Both track_focus (for focus observation) and focusable (for key events) are needed
-        if let Some(ref handle) = self.focus_handle {
-            container = container.track_focus(handle).focusable();
-        } else {
-            container = container.focusable();
+        if let Some(ref focus_handle) = self.focus_handle {
+            container = container.track_focus(focus_handle).focusable();
         }
 
         // Convert handlers to Rc for sharing between closures
         let on_change_rc = self.on_change.map(std::rc::Rc::new);
         let on_mute_rc = self.on_mute_toggle.map(std::rc::Rc::new);
 
-        // Mouse down - focus for keyboard navigation
-        container = container.on_mouse_down(MouseButton::Left, move |_event, window, cx| {
-            if let Some(ref fh) = focus_handle_click {
-                fh.focus(window, cx);
-            }
-        });
+        // Focus handling
+        if let Some(ref focus_handle) = self.focus_handle {
+            let focus_handle_click = focus_handle.clone();
+            // Mouse down - focus for keyboard navigation
+            container = container.on_mouse_down(MouseButton::Left, move |_event, window, cx| {
+                focus_handle_click.focus(window, cx);
+            });
+        }
 
         // Scroll wheel - adjust value (shift for fine-grained control)
         if let Some(ref change_handler) = on_change_rc {
@@ -468,12 +463,12 @@ impl RenderOnce for VolumeKnob {
             });
         }
 
-        // Drag support and hover focus - vertical mouse movement to adjust value
-        // Also focus on hover for keyboard support
+        // Drag support and hover focus
         {
             let drag_handler = on_change_rc.clone();
             let knob_size_f32 = self.size.to_f64() as f32;
             let focus_handle_hover = self.focus_handle.clone();
+
             container = container.on_mouse_move(move |event, window, cx| {
                 if event.pressed_button == Some(MouseButton::Left) {
                     // Drag: Convert vertical drag to value change
@@ -482,12 +477,10 @@ impl RenderOnce for VolumeKnob {
                         let progress = 1.0 - (drag_y / knob_size_f32).clamp(0.0, 1.0);
                         handler(progress, window, cx);
                     }
-                } else {
+                } else if let Some(ref fh) = focus_handle_hover {
                     // Hover: Focus for keyboard navigation
-                    if let Some(ref fh) = focus_handle_hover {
-                        if !fh.is_focused(window) {
-                            fh.focus(window, cx);
-                        }
+                    if !fh.is_focused(window) {
+                        fh.focus(window, cx);
                     }
                 }
             });
@@ -520,9 +513,12 @@ impl RenderOnce for VolumeKnob {
                     }
                 } else if let Some(ref handler) = key_change {
                     // Use shared keyboard handler for value changes
-                    if let Some(new_value) =
-                        handle_keyboard(key, current_value_key.get(), &config_key)
-                    {
+                    if let Some(new_value) = handle_keyboard(
+                        key,
+                        &event.keystroke.modifiers,
+                        current_value_key.get(),
+                        &config_key,
+                    ) {
                         current_value_key.set(new_value);
                         handler(new_value as f32, window, cx);
                     }

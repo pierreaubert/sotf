@@ -671,6 +671,7 @@ fn optimize_multidriver(
         max_iter,
         min_db,
         max_db,
+        None, // Optional: initial crossover frequencies
     )
     .map_err(|e| e.to_string())?;
 

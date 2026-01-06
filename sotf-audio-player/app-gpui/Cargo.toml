@@ -106,7 +106,13 @@ name = "SotF"
 path = "main.rs"
 
 [dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }
+gpui-ui-kit = { workspace = true }
 math-iir-fir = { workspace = true }
 cpal = { workspace = true }
 hound = { workspace = true }
 sotf-audio-engine = { workspace = true }
+
+[[test]]
+name = "e2e"
+path = "tests/e2e/mod.rs"

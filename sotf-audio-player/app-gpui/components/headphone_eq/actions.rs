@@ -196,9 +196,13 @@ impl PlayerView {
                     filters,
                 };
 
-                // Add to chain
-                let plugin_id = state.app.plugin_chain.add_plugin(&PluginType::EQ);
-                if let Some(plugin) = state.app.plugin_chain.get_plugin_mut(plugin_id) {
+                // Add to chain (insert before Matrix for proper ordering)
+                let insert_idx = state.app.plugin_chain.user_plugin_insert_index();
+                state
+                    .app
+                    .plugin_chain
+                    .insert_plugin(insert_idx, &PluginType::EQ);
+                if let Some(plugin) = state.app.plugin_chain.get_plugin_mut(insert_idx) {
                     plugin.settings = settings;
                     // Ensure it's enabled
                     plugin.enabled = true;

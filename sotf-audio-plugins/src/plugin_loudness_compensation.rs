@@ -653,10 +653,14 @@ impl Plugin for LoudnessCompensationPlugin {
 
         // Add auto-gain parameters
         params.push(
-            Parameter::new_bool("auto_gain_enabled", "Auto-Gain", default_auto_gain_enabled())
-                .with_description("Enable automatic loudness compensation")
-                .with_group("Auto Gain")
-                .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool(
+                "auto_gain_enabled",
+                "Auto-Gain",
+                default_auto_gain_enabled(),
+            )
+            .with_description("Enable automatic loudness compensation")
+            .with_group("Auto Gain")
+            .with_importance(ParameterImportance::Useful),
         );
         params.push(
             Parameter::new_float(
@@ -768,7 +772,7 @@ impl Plugin for LoudnessCompensationPlugin {
             "auto_gain_enabled" => return Some(ParameterValue::Bool(self.auto_gain_enabled)),
             "auto_gain_max_db" => return Some(ParameterValue::Float(self.auto_gain_max_db)),
             "auto_gain_smoothing_ms" => {
-                return Some(ParameterValue::Float(self.auto_gain_smoothing_ms))
+                return Some(ParameterValue::Float(self.auto_gain_smoothing_ms));
             }
             _ => {}
         }

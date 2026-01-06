@@ -488,7 +488,7 @@ post-install:
 	$HOME/.cargo/bin/cargo install cargo-vcpkg
 	$HOME/.cargo/bin/cargo install cargo-llvm-cov
 	$HOME/.cargo/bin/cargo install cross
-	$HOME/.cargo/bin/cargo install cargo-bininstall
+	$HOME/.cargo/bin/cargo install cargo-binstall
 	$HOME/.cargo/bin/cargo binstall cargo-nextest --secure
 	$HOME/.cargo/bin/cargo check
 

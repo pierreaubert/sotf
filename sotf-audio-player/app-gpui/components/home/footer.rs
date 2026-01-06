@@ -1133,7 +1133,11 @@ impl PlayerView {
                         view.state.update(cx, |state, _cx| {
                             state.app.muted = !state.app.muted;
                             // When muted, set volume to 0; restore when unmuted
-                            let effective_volume = if state.app.muted { 0.0 } else { state.app.volume };
+                            let effective_volume = if state.app.muted {
+                                0.0
+                            } else {
+                                state.app.volume
+                            };
                             let _ = state.player.lock().set_volume(effective_volume);
                         });
                         cx.notify();

@@ -826,7 +826,9 @@ impl RenderOnce for VerticalSlider {
                     // Arrow keys and other navigation
                     if let Some(ref handler) = handler_key {
                         let val = current_value_key.get();
-                        if let Some(new_value) = handle_keyboard(key, val, &config_key) {
+                        if let Some(new_value) =
+                            handle_keyboard(key, &event.keystroke.modifiers, val, &config_key)
+                        {
                             current_value_key.set(new_value);
                             handler(new_value, window, cx);
                         }

@@ -13,8 +13,8 @@
 //! - Value clamping at bounds (0.0 to 1.0)
 
 use gpui::{
-    Context, Modifiers, MouseButton, ScrollDelta, ScrollWheelEvent, TestAppContext, TouchPhase,
-    VisualTestContext, Window, div, point, prelude::*, px,
+    Context, FocusHandle, Modifiers, MouseButton, ScrollDelta, ScrollWheelEvent, TestAppContext,
+    TouchPhase, VisualTestContext, Window, div, point, prelude::*, px,
 };
 use gpui_ui_kit::audio::volume_knob::{VolumeKnob, VolumeKnobTheme};
 use std::cell::RefCell;
@@ -760,6 +760,7 @@ struct VolumeKnobKeyboardView {
     muted: Rc<RefCell<bool>>,
     change_count: Arc<AtomicUsize>,
     mute_count: Arc<AtomicUsize>,
+    focus_handle: FocusHandle,
 }
 
 impl Render for VolumeKnobKeyboardView {
@@ -776,6 +777,7 @@ impl Render for VolumeKnobKeyboardView {
                 .id("keyboard-knob")
                 .value(current_value)
                 .muted(current_muted)
+                .focus_handle(self.focus_handle.clone())
                 .label("VOL")
                 .on_change(move |new_val, _window, _cx| {
                     *value_rc.borrow_mut() = new_val;
@@ -802,11 +804,12 @@ async fn test_volume_knob_keyboard_up_increases_value(cx: &mut TestAppContext) {
     let change_count_clone = change_count.clone();
     let mute_count_clone = mute_count.clone();
 
-    let window = cx.add_window(move |_window, _cx| VolumeKnobKeyboardView {
+    let window = cx.add_window(move |_window, cx| VolumeKnobKeyboardView {
         value: value_clone,
         muted: muted_clone,
         change_count: change_count_clone,
         mute_count: mute_count_clone,
+        focus_handle: cx.focus_handle(),
     });
 
     let mut cx = VisualTestContext::from_window(window.into(), cx);
@@ -845,11 +848,12 @@ async fn test_volume_knob_keyboard_down_decreases_value(cx: &mut TestAppContext)
     let change_count_clone = change_count.clone();
     let mute_count_clone = mute_count.clone();
 
-    let window = cx.add_window(move |_window, _cx| VolumeKnobKeyboardView {
+    let window = cx.add_window(move |_window, cx| VolumeKnobKeyboardView {
         value: value_clone,
         muted: muted_clone,
         change_count: change_count_clone,
         mute_count: mute_count_clone,
+        focus_handle: cx.focus_handle(),
     });
 
     let mut cx = VisualTestContext::from_window(window.into(), cx);
@@ -886,11 +890,12 @@ async fn test_volume_knob_keyboard_right_increases_value(cx: &mut TestAppContext
     let change_count_clone = change_count.clone();
     let mute_count_clone = mute_count.clone();
 
-    let window = cx.add_window(move |_window, _cx| VolumeKnobKeyboardView {
+    let window = cx.add_window(move |_window, cx| VolumeKnobKeyboardView {
         value: value_clone,
         muted: muted_clone,
         change_count: change_count_clone,
         mute_count: mute_count_clone,
+        focus_handle: cx.focus_handle(),
     });
 
     let mut cx = VisualTestContext::from_window(window.into(), cx);
@@ -927,11 +932,12 @@ async fn test_volume_knob_keyboard_left_decreases_value(cx: &mut TestAppContext)
     let change_count_clone = change_count.clone();
     let mute_count_clone = mute_count.clone();
 
-    let window = cx.add_window(move |_window, _cx| VolumeKnobKeyboardView {
+    let window = cx.add_window(move |_window, cx| VolumeKnobKeyboardView {
         value: value_clone,
         muted: muted_clone,
         change_count: change_count_clone,
         mute_count: mute_count_clone,
+        focus_handle: cx.focus_handle(),
     });
 
     let mut cx = VisualTestContext::from_window(window.into(), cx);
@@ -968,11 +974,12 @@ async fn test_volume_knob_keyboard_m_toggles_mute(cx: &mut TestAppContext) {
     let change_count_clone = change_count.clone();
     let mute_count_clone = mute_count.clone();
 
-    let window = cx.add_window(move |_window, _cx| VolumeKnobKeyboardView {
+    let window = cx.add_window(move |_window, cx| VolumeKnobKeyboardView {
         value: value_clone,
         muted: muted_clone,
         change_count: change_count_clone,
         mute_count: mute_count_clone,
+        focus_handle: cx.focus_handle(),
     });
 
     let mut cx = VisualTestContext::from_window(window.into(), cx);
@@ -1011,11 +1018,12 @@ async fn test_volume_knob_keyboard_respects_max_bound(cx: &mut TestAppContext) {
     let change_count_clone = change_count.clone();
     let mute_count_clone = mute_count.clone();
 
-    let window = cx.add_window(move |_window, _cx| VolumeKnobKeyboardView {
+    let window = cx.add_window(move |_window, cx| VolumeKnobKeyboardView {
         value: value_clone,
         muted: muted_clone,
         change_count: change_count_clone,
         mute_count: mute_count_clone,
+        focus_handle: cx.focus_handle(),
     });
 
     let mut cx = VisualTestContext::from_window(window.into(), cx);
@@ -1055,11 +1063,12 @@ async fn test_volume_knob_keyboard_respects_min_bound(cx: &mut TestAppContext) {
     let change_count_clone = change_count.clone();
     let mute_count_clone = mute_count.clone();
 
-    let window = cx.add_window(move |_window, _cx| VolumeKnobKeyboardView {
+    let window = cx.add_window(move |_window, cx| VolumeKnobKeyboardView {
         value: value_clone,
         muted: muted_clone,
         change_count: change_count_clone,
         mute_count: mute_count_clone,
+        focus_handle: cx.focus_handle(),
     });
 
     let mut cx = VisualTestContext::from_window(window.into(), cx);
@@ -1112,11 +1121,12 @@ async fn test_volume_knob_step_size(cx: &mut TestAppContext) {
     let change_count_clone = change_count.clone();
     let mute_count_clone = mute_count.clone();
 
-    let window = cx.add_window(move |_window, _cx| VolumeKnobKeyboardView {
+    let window = cx.add_window(move |_window, cx| VolumeKnobKeyboardView {
         value: value_clone,
         muted: muted_clone,
         change_count: change_count_clone,
         mute_count: mute_count_clone,
+        focus_handle: cx.focus_handle(),
     });
 
     let mut cx = VisualTestContext::from_window(window.into(), cx);
