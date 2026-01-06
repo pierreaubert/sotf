@@ -7,4 +7,6 @@
 //! - `header`: Menu bar and navigation
 //! - `album_card`: Album card rendering modes
 
+pub mod album_card;
 pub mod footer;
+pub mod header;

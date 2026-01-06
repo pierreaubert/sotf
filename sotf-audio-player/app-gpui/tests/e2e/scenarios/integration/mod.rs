@@ -6,3 +6,5 @@
 //! - `library_workflow`: Scan library -> browse -> select -> play
 
 pub mod full_playback;
+pub mod library_workflow;
+pub mod plugin_workflow;
