@@ -38,6 +38,28 @@ impl Default for SpectrumInfo {
     }
 }
 
+/// Reference frequency for spectral tilt correction
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq)]
+pub enum TiltReferenceFreq {
+    #[default]
+    /// Standard 1kHz reference (0dB correction at 1kHz)
+    Standard,
+    /// Use analyzer's min_freq as reference (low frequencies unchanged)
+    MinFreq,
+}
+
+/// Spectral tilt correction mode
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq)]
+pub enum SpectralTiltCorrection {
+    #[default]
+    /// No correction - raw spectrum
+    None,
+    /// +3dB/octave correction (makes pink noise flat)
+    Pink,
+    /// Custom slope in dB/octave (positive = boost high frequencies)
+    Custom(f32),
+}
+
 /// Configuration for spectrum analyzer
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpectrumConfig {
@@ -50,6 +72,13 @@ pub struct SpectrumConfig {
     /// Smoothing factor for exponential moving average (0.0 to 1.0)
     /// Higher values = more smoothing, lower values = more responsive
     pub smoothing: f32,
+    /// Spectral tilt correction to apply (default: None)
+    /// - None: raw spectrum
+    /// - Pink: +3dB/octave, makes pink noise appear flat
+    /// - Custom(slope): custom dB/octave correction
+    pub tilt_correction: SpectralTiltCorrection,
+    /// Reference frequency for tilt correction (default: Standard = 1kHz)
+    pub tilt_reference: TiltReferenceFreq,
 }
 
 impl Default for SpectrumConfig {
@@ -59,6 +88,8 @@ impl Default for SpectrumConfig {
             min_freq: 20.0,
             max_freq: 20000.0,
             smoothing: 0.7,
+            tilt_correction: SpectralTiltCorrection::None,
+            tilt_reference: TiltReferenceFreq::Standard,
         }
     }
 }
@@ -83,6 +114,8 @@ pub(crate) struct SpectrumAnalyzer {
     current_spectrum: Arc<Mutex<SpectrumInfo>>,
     /// Previous spectrum values (for smoothing)
     prev_magnitudes: Vec<f32>,
+    /// Pre-computed tilt correction values for each bin (in dB)
+    tilt_corrections: Vec<f32>,
 }
 
 impl SpectrumAnalyzer {
@@ -115,6 +148,14 @@ impl SpectrumAnalyzer {
             peak_magnitude: f32::NEG_INFINITY,
         }));
 
+        // Pre-compute tilt corrections for each bin
+        let tilt_corrections = Self::compute_tilt_corrections(
+            &bin_centers,
+            config.tilt_correction,
+            config.tilt_reference,
+            config.min_freq,
+        );
+
         let num_bins = config.num_bins;
         Ok(Self {
             config,
@@ -126,6 +167,7 @@ impl SpectrumAnalyzer {
             bin_centers,
             current_spectrum,
             prev_magnitudes: vec![f32::NEG_INFINITY; num_bins],
+            tilt_corrections,
         })
     }
 
@@ -148,6 +190,37 @@ impl SpectrumAnalyzer {
         }
 
         (edges, centers)
+    }
+
+    /// Compute tilt correction values for each frequency bin
+    fn compute_tilt_corrections(
+        bin_centers: &[f32],
+        tilt_correction: SpectralTiltCorrection,
+        tilt_reference: TiltReferenceFreq,
+        min_freq: f32,
+    ) -> Vec<f32> {
+        let reference_freq = match tilt_reference {
+            TiltReferenceFreq::Standard => 1000.0,
+            TiltReferenceFreq::MinFreq => min_freq,
+        };
+        match tilt_correction {
+            SpectralTiltCorrection::None => vec![0.0; bin_centers.len()],
+            SpectralTiltCorrection::Pink => {
+                // +3dB/octave = +10dB/decade = 10 * log10(f / f_ref)
+                bin_centers
+                    .iter()
+                    .map(|&f| 10.0 * (f / reference_freq).log10())
+                    .collect()
+            }
+            SpectralTiltCorrection::Custom(slope_db_per_octave) => {
+                // slope_db_per_octave * log2(f / f_ref)
+                let log2_ref = reference_freq.log2();
+                bin_centers
+                    .iter()
+                    .map(|&f| slope_db_per_octave * (f.log2() - log2_ref))
+                    .collect()
+            }
+        }
     }
 
     /// Add audio frames to the analyzer
@@ -208,6 +281,11 @@ impl SpectrumAnalyzer {
         }
 
         self.prev_magnitudes = magnitudes.clone();
+
+        // Apply tilt correction (after smoothing, before display)
+        for (i, val) in magnitudes.iter_mut().enumerate() {
+            *val += self.tilt_corrections[i];
+        }
 
         // Find peak
         let peak_magnitude = magnitudes.iter().copied().fold(f32::NEG_INFINITY, f32::max);
@@ -449,6 +527,7 @@ mod tests {
             min_freq: 30.0,
             max_freq: 18000.0,
             smoothing: 0.8,
+            ..Default::default()
         };
 
         let plugin = SpectrumAnalyzerPlugin::with_config(2, config).unwrap();
@@ -507,6 +586,7 @@ mod tests {
             min_freq: 20.0,
             max_freq: 20000.0,
             smoothing: 0.0, // No smoothing for this test
+            ..Default::default()
         };
 
         let mut plugin = SpectrumAnalyzerPlugin::with_config(2, config).unwrap();
@@ -628,5 +708,129 @@ mod tests {
 
         // Should have computed spectrum
         assert!(spectrum_data.peak_magnitude > f32::NEG_INFINITY);
+    }
+
+    #[test]
+    fn test_tilt_correction_values() {
+        // Test compute_tilt_corrections directly
+        let bin_centers = vec![100.0, 1000.0, 10000.0];
+
+        // Pink correction with 1kHz reference
+        let pink_corrections = SpectrumAnalyzer::compute_tilt_corrections(
+            &bin_centers,
+            SpectralTiltCorrection::Pink,
+            TiltReferenceFreq::Standard,
+            20.0,
+        );
+
+        // At 1kHz (reference): 0dB
+        assert!((pink_corrections[1]).abs() < 0.01);
+        // At 100Hz: -10dB (one decade below)
+        assert!((pink_corrections[0] - (-10.0)).abs() < 0.01);
+        // At 10kHz: +10dB (one decade above)
+        assert!((pink_corrections[2] - 10.0).abs() < 0.01);
+
+        // No correction
+        let no_corrections = SpectrumAnalyzer::compute_tilt_corrections(
+            &bin_centers,
+            SpectralTiltCorrection::None,
+            TiltReferenceFreq::Standard,
+            20.0,
+        );
+        assert!(no_corrections.iter().all(|&c| c == 0.0));
+    }
+
+    #[test]
+    fn test_tilt_correction_min_freq_reference() {
+        let bin_centers = vec![20.0, 200.0, 2000.0, 20000.0];
+
+        // Pink correction with min_freq reference (20Hz)
+        let corrections = SpectrumAnalyzer::compute_tilt_corrections(
+            &bin_centers,
+            SpectralTiltCorrection::Pink,
+            TiltReferenceFreq::MinFreq,
+            20.0,
+        );
+
+        // At 20Hz (reference): 0dB
+        assert!((corrections[0]).abs() < 0.01);
+        // At 200Hz: +10dB (one decade above)
+        assert!((corrections[1] - 10.0).abs() < 0.01);
+        // At 2000Hz: +20dB (two decades above)
+        assert!((corrections[2] - 20.0).abs() < 0.01);
+        // At 20000Hz: +30dB (three decades above)
+        assert!((corrections[3] - 30.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_tilt_correction_custom_slope() {
+        let bin_centers = vec![500.0, 1000.0, 2000.0];
+
+        // Custom +6dB/octave slope
+        let corrections = SpectrumAnalyzer::compute_tilt_corrections(
+            &bin_centers,
+            SpectralTiltCorrection::Custom(6.0),
+            TiltReferenceFreq::Standard,
+            20.0,
+        );
+
+        // At 1kHz: 0dB
+        assert!((corrections[1]).abs() < 0.01);
+        // At 500Hz: -6dB (one octave below)
+        assert!((corrections[0] - (-6.0)).abs() < 0.01);
+        // At 2kHz: +6dB (one octave above)
+        assert!((corrections[2] - 6.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_spectrum_analyzer_with_pink_correction() {
+        let config = SpectrumConfig {
+            num_bins: 10,
+            min_freq: 100.0,
+            max_freq: 10000.0,
+            smoothing: 0.0, // No smoothing for this test
+            tilt_correction: SpectralTiltCorrection::Pink,
+            tilt_reference: TiltReferenceFreq::Standard,
+        };
+
+        let mut plugin = SpectrumAnalyzerPlugin::with_config(2, config).unwrap();
+        plugin.initialize(48000).unwrap();
+
+        // Generate white noise (same amplitude at all frequencies)
+        let num_frames = 2048;
+        let mut input = vec![0.0_f32; num_frames * 2];
+        for i in 0..num_frames {
+            // Simple pseudo-random noise
+            let noise = ((i * 1103515245 + 12345) % 65536) as f32 / 32768.0 - 1.0;
+            input[i * 2] = noise * 0.5;
+            input[i * 2 + 1] = noise * 0.5;
+        }
+
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+
+        let mut output = vec![0.0_f32; num_frames * 2];
+
+        // Process multiple times
+        for _ in 0..3 {
+            plugin.process(&input, &mut output, &context).unwrap();
+        }
+
+        let data = plugin.get_data().unwrap();
+        let spectrum_data = data.downcast_ref::<SpectrumData>().unwrap();
+
+        // With pink correction, white noise should show a rising spectrum
+        // (high frequencies boosted relative to low frequencies)
+        log::info!("Pink-corrected white noise spectrum:");
+        for (i, (&freq, &mag)) in spectrum_data
+            .frequencies
+            .iter()
+            .zip(spectrum_data.magnitudes.iter())
+            .enumerate()
+        {
+            log::info!("  Bin {}: {:.0}Hz = {:.1}dB", i, freq, mag);
+        }
     }
 }

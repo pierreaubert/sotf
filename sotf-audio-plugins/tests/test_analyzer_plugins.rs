@@ -61,6 +61,7 @@ fn test_spectrum_analyzer_stereo() {
         min_freq: 20.0,
         max_freq: 20000.0,
         smoothing: 0.0, // No smoothing for testing
+        ..Default::default()
     };
 
     let mut analyzer = SpectrumAnalyzerPlugin::with_config(2, config).unwrap();

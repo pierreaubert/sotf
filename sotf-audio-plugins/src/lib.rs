@@ -130,7 +130,10 @@ pub(crate) use analyzer_loudness_monitor::LoudnessMonitor;
 pub use analyzer_loudness_monitor::{LoudnessInfo, LoudnessMonitorPlugin};
 #[allow(unused_imports)]
 pub(crate) use analyzer_spectrum::SpectrumAnalyzer;
-pub use analyzer_spectrum::{SpectrumAnalyzerPlugin, SpectrumConfig, SpectrumInfo};
+pub use analyzer_spectrum::{
+    SpectralTiltCorrection, SpectrumAnalyzerPlugin, SpectrumConfig, SpectrumInfo,
+    TiltReferenceFreq,
+};
 pub use plugin_loudness_compensation::LoudnessCompensation;
 
 // Define PluginHost as alias for DawHost (the single supported host type)
