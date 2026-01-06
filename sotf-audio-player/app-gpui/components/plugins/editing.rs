@@ -666,6 +666,7 @@ impl App {
                     min_freq,
                     max_freq,
                     smoothing,
+                    ..
                 } => match param_idx {
                     0 => {
                         *num_bins = (*num_bins as i64 + delta as i64).max(10).min(100) as usize;
@@ -1661,6 +1662,7 @@ impl App {
                     min_freq,
                     max_freq,
                     smoothing,
+                    ..
                 } => match param_idx {
                     0 => {
                         *num_bins = (value as usize).clamp(10, 256);
@@ -2157,6 +2159,40 @@ impl App {
         if update_needed {
             // String parameters always require structural update
             self.pending_plugin_update = Some(PluginUpdateType::Structural);
+        }
+    }
+
+    /// Set spectrum analyzer tilt correction mode
+    pub fn set_spectrum_tilt_correction(
+        &mut self,
+        plugin_idx: usize,
+        tilt: sotf_plugins::SpectralTiltCorrection,
+    ) {
+        if let Some(plugin) = self.plugin_chain.get_plugin_mut(plugin_idx) {
+            if let PluginSettings::SpectrumAnalyzer {
+                tilt_correction, ..
+            } = &mut plugin.settings
+            {
+                *tilt_correction = tilt;
+                self.pending_plugin_update = Some(PluginUpdateType::Structural);
+            }
+        }
+    }
+
+    /// Set spectrum analyzer tilt reference frequency
+    pub fn set_spectrum_tilt_reference(
+        &mut self,
+        plugin_idx: usize,
+        reference: sotf_plugins::TiltReferenceFreq,
+    ) {
+        if let Some(plugin) = self.plugin_chain.get_plugin_mut(plugin_idx) {
+            if let PluginSettings::SpectrumAnalyzer {
+                tilt_reference, ..
+            } = &mut plugin.settings
+            {
+                *tilt_reference = reference;
+                self.pending_plugin_update = Some(PluginUpdateType::Structural);
+            }
         }
     }
 

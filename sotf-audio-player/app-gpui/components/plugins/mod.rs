@@ -86,6 +86,8 @@ pub fn render_plugin_content(
     selected_band_idx: usize,
     loudness: Option<sotf_audio_player::LoudnessData>,
     plugin_data: Option<std::sync::Arc<dyn std::any::Any + Send + Sync>>,
+    spectrum_tilt_select_open: bool,
+    spectrum_reference_select_open: bool,
 ) -> AnyElement {
     match settings {
         PluginSettings::EQ { filters, .. } => {
@@ -360,6 +362,8 @@ pub fn render_plugin_content(
             min_freq,
             max_freq,
             smoothing,
+            tilt_correction,
+            tilt_reference,
         } => render_spectrum_analyzer_plugin(
             entity.clone(),
             plugin_idx,
@@ -368,6 +372,10 @@ pub fn render_plugin_content(
                 min_freq: *min_freq,
                 max_freq: *max_freq,
                 smoothing: *smoothing,
+                tilt_correction: tilt_correction.clone(),
+                tilt_reference: *tilt_reference,
+                tilt_select_open: spectrum_tilt_select_open,
+                reference_select_open: spectrum_reference_select_open,
                 is_editing,
                 selected_param,
                 data: plugin_data.as_ref().and_then(|d| d.downcast_ref()),

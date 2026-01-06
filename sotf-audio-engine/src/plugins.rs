@@ -2,6 +2,7 @@ use crate::engine::PluginConfig;
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use sotf_plugins::{SpectralTiltCorrection, TiltReferenceFreq};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum PluginType {
@@ -574,6 +575,14 @@ fn default_spectrum_smoothing() -> f32 {
     0.8
 }
 
+fn default_spectrum_tilt_correction() -> SpectralTiltCorrection {
+    SpectralTiltCorrection::None
+}
+
+fn default_spectrum_tilt_reference() -> TiltReferenceFreq {
+    TiltReferenceFreq::Standard
+}
+
 // XTC defaults
 fn default_xtc_distance_m() -> f64 {
     2.0
@@ -907,6 +916,10 @@ pub enum PluginSettings {
         max_freq: f32,
         #[serde(default = "default_spectrum_smoothing")]
         smoothing: f32,
+        #[serde(default = "default_spectrum_tilt_correction")]
+        tilt_correction: SpectralTiltCorrection,
+        #[serde(default = "default_spectrum_tilt_reference")]
+        tilt_reference: TiltReferenceFreq,
     },
     ChannelMuteSolo {
         enabled: bool,
@@ -1360,6 +1373,8 @@ impl PluginSettings {
                 min_freq,
                 max_freq,
                 smoothing,
+                tilt_correction,
+                tilt_reference,
             } => PluginConfig::new(
                 "spectrum_analyzer",
                 json!({
@@ -1367,6 +1382,8 @@ impl PluginSettings {
                     "min_freq": min_freq,
                     "max_freq": max_freq,
                     "smoothing": smoothing,
+                    "tilt_correction": tilt_correction,
+                    "tilt_reference": tilt_reference,
                 }),
             ),
             Self::ChannelMuteSolo {
@@ -1642,6 +1659,8 @@ impl PluginSettings {
                 min_freq: 20.0,
                 max_freq: 20000.0,
                 smoothing: 0.7,
+                tilt_correction: SpectralTiltCorrection::None,
+                tilt_reference: TiltReferenceFreq::Standard,
             },
             PluginType::ChannelMuteSolo => Self::ChannelMuteSolo {
                 enabled: false,
@@ -1825,8 +1844,8 @@ pub fn apply_matrix_preset(in_ch: usize, out_ch: usize, matrix: &mut Vec<f32>, p
         "Swap L/R" => {
             if in_ch >= 2 && out_ch >= 2 {
                 // Swap first two channels
-                matrix[0 * in_ch + 1] = 1.0; // Out 0 <- In 1
-                matrix[1 * in_ch + 0] = 1.0; // Out 1 <- In 0
+                matrix[1] = 1.0; // Out 0 <- In 1
+                matrix[in_ch] = 1.0; // Out 1 <- In 0
                 // Pass through remaining channels
                 for i in 2..in_ch.min(out_ch) {
                     matrix[i * in_ch + i] = 1.0;

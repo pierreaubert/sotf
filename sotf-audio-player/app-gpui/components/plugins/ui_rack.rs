@@ -1257,6 +1257,8 @@ impl PlayerView {
                                         self.state.read(cx).app.selected_eq_band,
                                         loudness_for_plugin,
                                         plugin_data,
+                                        self.state.read(cx).app.spectrum_tilt_select_open,
+                                        self.state.read(cx).app.spectrum_reference_select_open,
                                     )
                                 }),
                         )

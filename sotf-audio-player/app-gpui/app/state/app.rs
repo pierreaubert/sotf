@@ -300,6 +300,8 @@ pub struct App {
 
     // Plugin UI states
     pub upmixer_config_open: bool,
+    pub spectrum_tilt_select_open: bool,
+    pub spectrum_reference_select_open: bool,
 
     // Rack panel collapse states
     pub rack_detail_collapsed: bool, // Horizontal divider between rack and detail
@@ -495,6 +497,8 @@ impl App {
             replay_gain_preamp: 0.0,
             pending_studio_close: false,
             upmixer_config_open: false,
+            spectrum_tilt_select_open: false,
+            spectrum_reference_select_open: false,
             rack_detail_collapsed: false,
             input_meter_collapsed: false,
             output_meter_collapsed: false,

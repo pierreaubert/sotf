@@ -5,6 +5,8 @@ use std::sync::Arc;
 
 use gpui::prelude::*;
 use gpui::*;
+use gpui_ui_kit::{Select, SelectOption, SelectSize};
+use sotf_plugins::{SpectralTiltCorrection, TiltReferenceFreq};
 
 use super::common::{ParamSectionStyle, render_edit_hints, render_knob, render_section_header};
 use crate::app::AppState;
@@ -438,6 +440,10 @@ pub struct SpectrumRenderState<'a> {
     pub min_freq: f32,
     pub max_freq: f32,
     pub smoothing: f32,
+    pub tilt_correction: SpectralTiltCorrection,
+    pub tilt_reference: TiltReferenceFreq,
+    pub tilt_select_open: bool,
+    pub reference_select_open: bool,
     pub is_editing: bool,
     pub selected_param: usize,
     pub data: Option<&'a SpectrumData>,
@@ -574,6 +580,117 @@ pub fn render_spectrum_analyzer_plugin(
                     None,
                     theme,
                 )),
+        )
+        // Tilt correction controls
+        .child(
+            div()
+                .flex()
+                .gap_4()
+                .justify_center()
+                .items_center()
+                // Tilt correction selector
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .items_center()
+                        .child(
+                            div()
+                                .text_xs()
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .text_color(theme.text_secondary)
+                                .child("Tilt"),
+                        )
+                        .child(
+                            div().w(px(80.0)).child(
+                                Select::new("tilt-correction-select")
+                                    .options(vec![
+                                        SelectOption::new("none".to_string(), "None"),
+                                        SelectOption::new("pink".to_string(), "Pink (+3dB/oct)"),
+                                    ])
+                                    .selected(match state.tilt_correction {
+                                        SpectralTiltCorrection::None => "none".to_string(),
+                                        SpectralTiltCorrection::Pink => "pink".to_string(),
+                                        SpectralTiltCorrection::Custom(_) => "none".to_string(),
+                                    })
+                                    .is_open(state.tilt_select_open)
+                                    .size(SelectSize::Sm)
+                                    .theme(theme.to_select_theme())
+                                    .on_toggle({
+                                        let entity = entity.clone();
+                                        move |is_open, _window, cx| {
+                                            entity.update(cx, |state, _| {
+                                                state.app.spectrum_tilt_select_open = is_open;
+                                            });
+                                        }
+                                    })
+                                    .on_change({
+                                        let entity = entity.clone();
+                                        move |value, _, cx| {
+                                            entity.update(cx, |state, _cx| {
+                                                let tilt = match value.as_ref() {
+                                                    "pink" => SpectralTiltCorrection::Pink,
+                                                    _ => SpectralTiltCorrection::None,
+                                                };
+                                                state.app.set_spectrum_tilt_correction(plugin_idx, tilt);
+                                            });
+                                        }
+                                    }),
+                            ),
+                        ),
+                )
+                // Reference frequency selector
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .items_center()
+                        .child(
+                            div()
+                                .text_xs()
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .text_color(theme.text_secondary)
+                                .child("Reference"),
+                        )
+                        .child(
+                            div().w(px(90.0)).child(
+                                Select::new("tilt-reference-select")
+                                    .options(vec![
+                                        SelectOption::new("standard".to_string(), "1kHz"),
+                                        SelectOption::new("minfreq".to_string(), "Min Freq"),
+                                    ])
+                                    .selected(match state.tilt_reference {
+                                        TiltReferenceFreq::Standard => "standard".to_string(),
+                                        TiltReferenceFreq::MinFreq => "minfreq".to_string(),
+                                    })
+                                    .is_open(state.reference_select_open)
+                                    .size(SelectSize::Sm)
+                                    .theme(theme.to_select_theme())
+                                    .on_toggle({
+                                        let entity = entity.clone();
+                                        move |is_open, _window, cx| {
+                                            entity.update(cx, |state, _| {
+                                                state.app.spectrum_reference_select_open = is_open;
+                                            });
+                                        }
+                                    })
+                                    .on_change({
+                                        let entity = entity.clone();
+                                        move |value, _, cx| {
+                                            entity.update(cx, |state, _cx| {
+                                                let reference = match value.as_ref() {
+                                                    "minfreq" => TiltReferenceFreq::MinFreq,
+                                                    _ => TiltReferenceFreq::Standard,
+                                                };
+                                                state.app.set_spectrum_tilt_reference(plugin_idx, reference);
+                                            });
+                                        }
+                                    }),
+                            ),
+                        ),
+                ),
         )
         .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
 }
