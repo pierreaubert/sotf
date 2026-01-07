@@ -1,0 +1,15 @@
+# Nextest configuration for sotf project
+# https://nexte.st/book/configuration.html
+
+[profile.default]
+# Default settings
+
+# Test groups allow limiting parallelism for specific tests
+# Loopback tests require exclusive access to BlackHole audio device
+[test-groups.loopback]
+max-threads = 1
+
+[[profile.default.overrides]]
+# Match all loopback test files - they need exclusive audio device access
+filter = 'test(loopback)'
+test-group = 'loopback'

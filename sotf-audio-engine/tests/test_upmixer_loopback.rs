@@ -71,8 +71,9 @@ fn test_upmixer_real_audio_loopback() {
         return;
     }
 
-    let (out_device, _out_config) = output_setup.unwrap();
+    let (out_device, out_config) = output_setup.unwrap();
     let (in_device, in_config) = input_setup.unwrap();
+    let sample_rate = out_config.sample_rate() as f64;
 
     println!("Using Output: {}", out_device.description().unwrap().name());
     println!("Using Input:  {}", in_device.description().unwrap().name());
@@ -81,6 +82,7 @@ fn test_upmixer_real_audio_loopback() {
     // We use the 'test_engine_config_with' pattern manually since we can't access test modules easily
     let mut config = EngineConfig::default();
     config.output_device = Some(out_device.description().unwrap().name().to_string());
+    config.output_sample_rate = sample_rate as u32;
     config.output_channels = 6; // Force 6 channels for 5.1
 
     config.plugins = vec![PluginConfig::new(
@@ -115,7 +117,7 @@ fn test_upmixer_real_audio_loopback() {
     // 3. Create Test File (Stereo Sine Wave)
     let spec = hound::WavSpec {
         channels: 2,
-        sample_rate: 48000,
+        sample_rate: sample_rate as u32,
         bits_per_sample: 16,
         sample_format: hound::SampleFormat::Int,
     };
@@ -124,8 +126,9 @@ fn test_upmixer_real_audio_loopback() {
     let mut writer = hound::WavWriter::create(temp_file.path(), spec).unwrap();
 
     // Generate 2 seconds of audio at 440Hz
-    for t in 0..(48000 * 2) {
-        let sample = (t as f32 * 440.0 * 2.0 * std::f32::consts::PI / 48000.0).sin();
+    let num_samples = (sample_rate * 2.0) as usize;
+    for t in 0..num_samples {
+        let sample = (t as f32 * 440.0 * 2.0 * std::f32::consts::PI / sample_rate as f32).sin();
         let amp = (sample * i16::MAX as f32 * 0.5) as i16;
         writer.write_sample(amp).unwrap(); // Left
         writer.write_sample(amp).unwrap(); // Right

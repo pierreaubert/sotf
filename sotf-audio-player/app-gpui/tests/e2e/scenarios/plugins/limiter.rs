@@ -310,7 +310,10 @@ async fn test_limiter_knee_behavior(_cx: &mut TestAppContext) {
 
     // Hard knee: below threshold, no limiting applied
     let hard_below = apply_limiting(-2.0, threshold, false);
-    assert!((hard_below - (-2.0)).abs() < 0.001, "Hard knee should not affect below threshold");
+    assert!(
+        (hard_below - (-2.0)).abs() < 0.001,
+        "Hard knee should not affect below threshold"
+    );
 
     // Soft knee: in knee region, produces different result than hard knee
     let soft_output = apply_limiting(-2.0, threshold, true);
@@ -323,13 +326,22 @@ async fn test_limiter_knee_behavior(_cx: &mut TestAppContext) {
     // At knee_start (-4.0), soft and hard should be equal
     let soft_at_start = apply_limiting(-4.0, threshold, true);
     let hard_at_start = apply_limiting(-4.0, threshold, false);
-    assert!((soft_at_start - hard_at_start).abs() < 0.001, "At knee start, both should pass through");
+    assert!(
+        (soft_at_start - hard_at_start).abs() < 0.001,
+        "At knee start, both should pass through"
+    );
 
     // Above knee_end (threshold + knee_width/2 = -1 + 3 = 2dB), both should limit to threshold
     let soft_above = apply_limiting(3.0, threshold, true);
     let hard_above = apply_limiting(3.0, threshold, false);
-    assert!((soft_above - threshold).abs() < 0.001, "Soft knee should limit above knee region");
-    assert!((hard_above - threshold).abs() < 0.001, "Hard knee should limit above threshold");
+    assert!(
+        (soft_above - threshold).abs() < 0.001,
+        "Soft knee should limit above knee region"
+    );
+    assert!(
+        (hard_above - threshold).abs() < 0.001,
+        "Hard knee should limit above threshold"
+    );
 }
 
 // =============================================================================
@@ -383,9 +395,7 @@ async fn test_limiter_gr_meter(_cx: &mut TestAppContext) {
     let gr_values: Vec<f64> = vec![0.0, -1.0, -3.0, -6.0, -12.0];
     for gr in gr_values {
         state.borrow_mut().current_gain_reduction_db = gr;
-        assert!(
-            (state.borrow().current_gain_reduction_db - gr).abs() < 0.001
-        );
+        assert!((state.borrow().current_gain_reduction_db - gr).abs() < 0.001);
     }
 }
 
@@ -546,14 +556,16 @@ async fn test_limiter_threshold_keys(_cx: &mut TestAppContext) {
     // Up arrow
     {
         let current = state.borrow().threshold_db;
-        state.borrow_mut().threshold_db = (current + STEP_DB).clamp(MIN_THRESHOLD_DB, MAX_THRESHOLD_DB);
+        state.borrow_mut().threshold_db =
+            (current + STEP_DB).clamp(MIN_THRESHOLD_DB, MAX_THRESHOLD_DB);
     }
     assert!((state.borrow().threshold_db - (initial + STEP_DB)).abs() < 0.001);
 
     // Down arrow
     {
         let current = state.borrow().threshold_db;
-        state.borrow_mut().threshold_db = (current - STEP_DB).clamp(MIN_THRESHOLD_DB, MAX_THRESHOLD_DB);
+        state.borrow_mut().threshold_db =
+            (current - STEP_DB).clamp(MIN_THRESHOLD_DB, MAX_THRESHOLD_DB);
     }
     assert!((state.borrow().threshold_db - initial).abs() < 0.001);
 }
@@ -631,11 +643,20 @@ async fn test_limiter_over_threshold_warning(_cx: &mut TestAppContext) {
     }
 
     state.borrow_mut().input_peak_db = -6.0;
-    assert_eq!(warning_color(state.borrow().input_peak_db, -1.0), (0, 255, 0));
+    assert_eq!(
+        warning_color(state.borrow().input_peak_db, -1.0),
+        (0, 255, 0)
+    );
 
     state.borrow_mut().input_peak_db = 0.0;
-    assert_eq!(warning_color(state.borrow().input_peak_db, -1.0), (255, 255, 0));
+    assert_eq!(
+        warning_color(state.borrow().input_peak_db, -1.0),
+        (255, 255, 0)
+    );
 
     state.borrow_mut().input_peak_db = 6.0;
-    assert_eq!(warning_color(state.borrow().input_peak_db, -1.0), (255, 0, 0));
+    assert_eq!(
+        warning_color(state.borrow().input_peak_db, -1.0),
+        (255, 0, 0)
+    );
 }

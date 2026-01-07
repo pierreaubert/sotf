@@ -77,6 +77,7 @@ fn test_matrix_swap_channels_loopback_verification() {
     // Matrix: [0, 1, 1, 0] means Out0 = In1, Out1 = In0
     let mut config = EngineConfig::default();
     config.output_device = Some(out_device.description().unwrap().name().to_string());
+    config.output_sample_rate = sample_rate as u32;
     config.output_channels = 2;
     config.plugins = vec![PluginConfig::new(
         "matrix",
@@ -225,6 +226,7 @@ fn test_matrix_mono_sum_loopback_verification() {
     // Matrix: [0.5, 0.5, 0.5, 0.5] means Out0 = 0.5*In0 + 0.5*In1, Out1 = 0.5*In0 + 0.5*In1
     let mut config = EngineConfig::default();
     config.output_device = Some(out_device.description().unwrap().name().to_string());
+    config.output_sample_rate = sample_rate as u32;
     config.output_channels = 2;
     config.plugins = vec![PluginConfig::new(
         "matrix",

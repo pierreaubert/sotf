@@ -379,10 +379,7 @@ async fn test_exclusive_mode_description(_cx: &mut TestAppContext) {
 #[gpui::test]
 async fn test_device_info_display(_cx: &mut TestAppContext) {
     fn format_device_info(device: &AudioDevice) -> String {
-        format!(
-            "{} ({} channels)",
-            device.name, device.num_channels
-        )
+        format!("{} ({} channels)", device.name, device.num_channels)
     }
 
     let device = AudioDevice {

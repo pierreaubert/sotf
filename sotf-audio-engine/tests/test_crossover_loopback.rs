@@ -88,6 +88,7 @@ fn test_crossover_lowpass_loopback_verification() {
     // Audio Engine with lowpass crossover
     let mut config = EngineConfig::default();
     config.output_device = Some(out_device.description().unwrap().name().to_string());
+    config.output_sample_rate = sample_rate as u32;
     config.output_channels = 2;
     config.plugins = vec![PluginConfig::new(
         "crossover",
@@ -234,6 +235,7 @@ fn test_crossover_highpass_loopback_verification() {
     // Audio Engine with highpass crossover
     let mut config = EngineConfig::default();
     config.output_device = Some(out_device.description().unwrap().name().to_string());
+    config.output_sample_rate = sample_rate as u32;
     config.output_channels = 2;
     config.plugins = vec![PluginConfig::new(
         "crossover",

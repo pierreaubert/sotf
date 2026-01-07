@@ -60,11 +60,7 @@ impl MatrixState {
         }
     }
 
-    fn with_sparse_mapping(
-        mut self,
-        input_map: Vec<usize>,
-        output_map: Vec<usize>,
-    ) -> Self {
+    fn with_sparse_mapping(mut self, input_map: Vec<usize>, output_map: Vec<usize>) -> Self {
         self.input_channel_map = input_map;
         self.output_channel_map = output_map;
         self
@@ -225,9 +221,7 @@ async fn test_matrix_center_extract(_cx: &mut TestAppContext) {
     state.borrow_mut().set_gain(1, 0, 0.5);
 
     // Verify both inputs contribute equally
-    assert!(
-        (state.borrow().get_gain(0, 0) - state.borrow().get_gain(1, 0)).abs() < 0.001
-    );
+    assert!((state.borrow().get_gain(0, 0) - state.borrow().get_gain(1, 0)).abs() < 0.001);
 }
 
 /// Test side channel extraction.
@@ -363,7 +357,10 @@ async fn test_matrix_grid_selection(_cx: &mut TestAppContext) {
         output: usize,
     }
 
-    let selection = GridSelection { input: 0, output: 1 };
+    let selection = GridSelection {
+        input: 0,
+        output: 1,
+    };
     assert_eq!(selection.input, 0);
     assert_eq!(selection.output, 1);
 }
@@ -457,9 +454,7 @@ async fn test_matrix_preset_stereo_width(_cx: &mut TestAppContext) {
     state.borrow_mut().set_gain(1, 1, width + cross); // R in -> R out
 
     // Cross gains should be equal
-    assert!(
-        (state.borrow().get_gain(1, 0) - state.borrow().get_gain(0, 1)).abs() < 0.001
-    );
+    assert!((state.borrow().get_gain(1, 0) - state.borrow().get_gain(0, 1)).abs() < 0.001);
 }
 
 // =============================================================================

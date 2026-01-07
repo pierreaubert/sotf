@@ -26,7 +26,7 @@ enum ViewMode {
 #[derive(Debug, Clone, PartialEq)]
 enum ArtworkState {
     Loading,
-    Loaded(String),  // Path to image
+    Loaded(String), // Path to image
     Missing,
 }
 
@@ -398,9 +398,9 @@ async fn test_expanded_state(_cx: &mut TestAppContext) {
 async fn test_grid_view_artwork_prominent(_cx: &mut TestAppContext) {
     fn get_artwork_prominence(mode: ViewMode) -> f32 {
         match mode {
-            ViewMode::Grid => 0.85,    // 85% of card is artwork
-            ViewMode::List => 0.2,     // Small thumbnail
-            ViewMode::Compact => 0.7,  // 70% artwork
+            ViewMode::Grid => 0.85,   // 85% of card is artwork
+            ViewMode::List => 0.2,    // Small thumbnail
+            ViewMode::Compact => 0.7, // 70% artwork
         }
     }
 
@@ -413,7 +413,14 @@ async fn test_list_view_metadata_display(_cx: &mut TestAppContext) {
     fn get_visible_fields(mode: ViewMode) -> Vec<&'static str> {
         match mode {
             ViewMode::Grid => vec!["title", "artist"],
-            ViewMode::List => vec!["title", "artist", "year", "genre", "track_count", "duration"],
+            ViewMode::List => vec![
+                "title",
+                "artist",
+                "year",
+                "genre",
+                "track_count",
+                "duration",
+            ],
             ViewMode::Compact => vec!["title", "artist"],
         }
     }
@@ -468,11 +475,7 @@ async fn test_selection_border_color(_cx: &mut TestAppContext) {
 #[gpui::test]
 async fn test_hover_effect(_cx: &mut TestAppContext) {
     fn get_background_opacity(is_hovered: bool) -> f32 {
-        if is_hovered {
-            0.1
-        } else {
-            0.0
-        }
+        if is_hovered { 0.1 } else { 0.0 }
     }
 
     assert!((get_background_opacity(false) - 0.0).abs() < 0.01);
@@ -487,10 +490,7 @@ async fn test_hover_effect(_cx: &mut TestAppContext) {
 #[gpui::test]
 async fn test_aria_label_generation(_cx: &mut TestAppContext) {
     fn get_aria_label(album: &AlbumMetadata) -> String {
-        let year_str = album
-            .year
-            .map(|y| format!(", {}", y))
-            .unwrap_or_default();
+        let year_str = album.year.map(|y| format!(", {}", y)).unwrap_or_default();
         format!(
             "{} by {}{}, {} tracks",
             album.title, album.artist, year_str, album.track_count

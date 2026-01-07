@@ -76,6 +76,7 @@ fn test_channel_mute_loopback_verification() {
     // Audio Engine with left channel muted
     let mut config = EngineConfig::default();
     config.output_device = Some(out_device.description().unwrap().name().to_string());
+    config.output_sample_rate = sample_rate as u32;
     config.output_channels = 2;
     config.plugins = vec![PluginConfig::new(
         "channel_mute_solo",
@@ -151,9 +152,26 @@ fn test_channel_mute_loopback_verification() {
     let captured_left: Vec<f32> = buffer.iter().step_by(channels).cloned().collect();
     let captured_right: Vec<f32> = buffer.iter().skip(1).step_by(channels).cloned().collect();
 
-    // Calculate RMS for each channel (skip first 0.5s)
-    let start_idx = (0.5 * sample_rate) as usize;
-    let end_idx = start_idx + (1.0 * sample_rate) as usize;
+    // Detect playback latency by finding when right channel signal starts (left is muted)
+    let window_size = (0.05 * sample_rate) as usize; // 50ms windows
+    let mut latency_samples = 0usize;
+    for i in (0..captured_right.len() - window_size).step_by(window_size / 4) {
+        let rms: f32 = captured_right[i..i + window_size]
+            .iter()
+            .map(|&x| x * x)
+            .sum::<f32>()
+            / window_size as f32;
+        let rms = rms.sqrt();
+        if rms > 0.1 {
+            latency_samples = i;
+            break;
+        }
+    }
+    let latency_offset = latency_samples as f64 / sample_rate;
+
+    // Calculate RMS for each channel (offset by latency, analyze stable region)
+    let start_idx = ((0.2 + latency_offset) * sample_rate) as usize;
+    let end_idx = ((1.0 + latency_offset) * sample_rate) as usize;
 
     if captured_left.len() < end_idx || captured_right.len() < end_idx {
         panic!("Recording too short");
@@ -227,6 +245,7 @@ fn test_channel_solo_loopback_verification() {
     // Audio Engine with left channel soloed (right should be muted)
     let mut config = EngineConfig::default();
     config.output_device = Some(out_device.description().unwrap().name().to_string());
+    config.output_sample_rate = sample_rate as u32;
     config.output_channels = 2;
     config.plugins = vec![PluginConfig::new(
         "channel_mute_solo",
@@ -301,8 +320,25 @@ fn test_channel_solo_loopback_verification() {
     let captured_left: Vec<f32> = buffer.iter().step_by(channels).cloned().collect();
     let captured_right: Vec<f32> = buffer.iter().skip(1).step_by(channels).cloned().collect();
 
-    let start_idx = (0.5 * sample_rate) as usize;
-    let end_idx = start_idx + (1.0 * sample_rate) as usize;
+    // Detect playback latency by finding when left channel signal starts (it's soloed)
+    let window_size = (0.05 * sample_rate) as usize; // 50ms windows
+    let mut latency_samples = 0usize;
+    for i in (0..captured_left.len() - window_size).step_by(window_size / 4) {
+        let rms: f32 = captured_left[i..i + window_size]
+            .iter()
+            .map(|&x| x * x)
+            .sum::<f32>()
+            / window_size as f32;
+        let rms = rms.sqrt();
+        if rms > 0.1 {
+            latency_samples = i;
+            break;
+        }
+    }
+    let latency_offset = latency_samples as f64 / sample_rate;
+
+    let start_idx = ((0.2 + latency_offset) * sample_rate) as usize;
+    let end_idx = ((1.0 + latency_offset) * sample_rate) as usize;
 
     if captured_left.len() < end_idx || captured_right.len() < end_idx {
         panic!("Recording too short");

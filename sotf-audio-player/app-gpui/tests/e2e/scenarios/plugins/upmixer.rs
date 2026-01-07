@@ -164,7 +164,10 @@ async fn test_speaker_config_selection(_cx: &mut TestAppContext) {
 
     for (config, expected_channels) in configs {
         state.borrow_mut().speaker_config = config.clone();
-        assert_eq!(state.borrow().speaker_config.output_channels(), expected_channels);
+        assert_eq!(
+            state.borrow().speaker_config.output_channels(),
+            expected_channels
+        );
     }
 }
 

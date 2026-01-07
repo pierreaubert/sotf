@@ -160,19 +160,31 @@ fn test_decoder_seek() {
 
     decoder.send_command(DecoderCommand::Play(path)).unwrap();
 
-    // Let it play a bit
+    // Let it play a bit and drain initial frames
     std::thread::sleep(Duration::from_millis(100));
+    let _ = message_rx.try_iter().count(); // Clear any frames
 
     // Seek to 1 second
     decoder.send_command(DecoderCommand::Seek(1.0)).unwrap();
 
-    // Should receive a Flush message
-    std::thread::sleep(Duration::from_millis(100));
+    // Wait for a Flush message with proper timeout
+    let timeout = Duration::from_secs(2);
+    let start = std::time::Instant::now();
+    let mut has_flush = false;
 
-    let messages: Vec<_> = message_rx.try_iter().collect();
-    let has_flush = messages
-        .iter()
-        .any(|msg| matches!(msg, DecoderMessage::Flush));
+    while start.elapsed() < timeout && !has_flush {
+        match message_rx.recv_timeout(Duration::from_millis(100)) {
+            Ok(DecoderMessage::Flush) => {
+                has_flush = true;
+            }
+            Ok(_) => {
+                // Ignore other messages (frames, etc.)
+            }
+            Err(_) => {
+                // Timeout on this iteration, keep trying
+            }
+        }
+    }
 
     assert!(has_flush, "Should receive flush message after seek");
 }

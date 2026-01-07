@@ -73,10 +73,7 @@ impl Default for HelpDialogState {
             selected_category: None,
             search_query: String::new(),
             filtered_shortcuts: Vec::new(),
-            expanded_categories: vec![
-                ShortcutCategory::Playback,
-                ShortcutCategory::Navigation,
-            ],
+            expanded_categories: vec![ShortcutCategory::Playback, ShortcutCategory::Navigation],
         }
     }
 }
@@ -294,10 +291,23 @@ async fn test_category_labels(_cx: &mut TestAppContext) {
 async fn test_category_expansion(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(HelpDialogState::default()));
 
-    assert!(state.borrow().expanded_categories.contains(&ShortcutCategory::Playback));
+    assert!(
+        state
+            .borrow()
+            .expanded_categories
+            .contains(&ShortcutCategory::Playback)
+    );
 
-    state.borrow_mut().expanded_categories.retain(|c| *c != ShortcutCategory::Playback);
-    assert!(!state.borrow().expanded_categories.contains(&ShortcutCategory::Playback));
+    state
+        .borrow_mut()
+        .expanded_categories
+        .retain(|c| *c != ShortcutCategory::Playback);
+    assert!(
+        !state
+            .borrow()
+            .expanded_categories
+            .contains(&ShortcutCategory::Playback)
+    );
 }
 
 /// Test toggle category expansion.
@@ -312,7 +322,10 @@ async fn test_toggle_category_expansion(_cx: &mut TestAppContext) {
     assert!(state.borrow().expanded_categories.contains(&category));
 
     // Collapse
-    state.borrow_mut().expanded_categories.retain(|c| *c != category);
+    state
+        .borrow_mut()
+        .expanded_categories
+        .retain(|c| *c != category);
     assert!(!state.borrow().expanded_categories.contains(&category));
 }
 
@@ -385,12 +398,10 @@ async fn test_no_search_results(_cx: &mut TestAppContext) {
             .collect()
     }
 
-    let shortcuts = vec![
-        KeyboardShortcut {
-            action: "Play".to_string(),
-            ..Default::default()
-        },
-    ];
+    let shortcuts = vec![KeyboardShortcut {
+        action: "Play".to_string(),
+        ..Default::default()
+    }];
 
     let filtered = filter_shortcuts(&shortcuts, "xyz");
     assert!(filtered.is_empty());
@@ -617,7 +628,12 @@ async fn test_screen_reader_labels(_cx: &mut TestAppContext) {
         if modifiers.is_empty() {
             format!("{}: {}", shortcut.key, shortcut.action)
         } else {
-            format!("{} + {}: {}", modifiers.join(" + "), shortcut.key, shortcut.action)
+            format!(
+                "{} + {}: {}",
+                modifiers.join(" + "),
+                shortcut.key,
+                shortcut.action
+            )
         }
     }
 

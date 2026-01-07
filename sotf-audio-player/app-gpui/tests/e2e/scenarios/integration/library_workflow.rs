@@ -589,10 +589,7 @@ async fn test_album_selection(_cx: &mut TestAppContext) {
     });
 
     state.borrow_mut().selected_album_id = Some("album1".to_string());
-    assert_eq!(
-        state.borrow().selected_album_id,
-        Some("album1".to_string())
-    );
+    assert_eq!(state.borrow().selected_album_id, Some("album1".to_string()));
 }
 
 /// Test loading album tracks.
@@ -655,10 +652,7 @@ async fn test_track_selection(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(LibraryWorkflowState::default()));
 
     state.borrow_mut().selected_track_id = Some("track1".to_string());
-    assert_eq!(
-        state.borrow().selected_track_id,
-        Some("track1".to_string())
-    );
+    assert_eq!(state.borrow().selected_track_id, Some("track1".to_string()));
 }
 
 // =============================================================================
@@ -711,10 +705,7 @@ async fn test_adding_album_to_queue(_cx: &mut TestAppContext) {
 async fn test_clearing_queue(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(LibraryWorkflowState::default()));
 
-    state.borrow_mut().queue = vec![
-        TrackInfo::default(),
-        TrackInfo::default(),
-    ];
+    state.borrow_mut().queue = vec![TrackInfo::default(), TrackInfo::default()];
 
     state.borrow_mut().queue.clear();
     assert!(state.borrow().queue.is_empty());
@@ -789,10 +780,7 @@ async fn test_play_album_from_start(_cx: &mut TestAppContext) {
     state.borrow_mut().playback_state = PlaybackState::Playing;
 
     assert_eq!(state.borrow().queue.len(), 2);
-    assert_eq!(
-        state.borrow().current_track.as_ref().unwrap().id,
-        "t1"
-    );
+    assert_eq!(state.borrow().current_track.as_ref().unwrap().id, "t1");
 }
 
 /// Test playback state transitions.
@@ -841,14 +829,12 @@ async fn test_complete_library_workflow(_cx: &mut TestAppContext) {
     state.borrow_mut().scan_status = ScanStatus::Complete;
     state.borrow_mut().total_tracks = 500;
     state.borrow_mut().total_albums = 40;
-    state.borrow_mut().albums = vec![
-        AlbumInfo {
-            id: "album1".to_string(),
-            title: "Test Album".to_string(),
-            track_count: 10,
-            ..Default::default()
-        },
-    ];
+    state.borrow_mut().albums = vec![AlbumInfo {
+        id: "album1".to_string(),
+        title: "Test Album".to_string(),
+        track_count: 10,
+        ..Default::default()
+    }];
 
     // Step 4: Browse albums
     state.borrow_mut().browse_mode = BrowseMode::Albums;
@@ -857,14 +843,12 @@ async fn test_complete_library_workflow(_cx: &mut TestAppContext) {
 
     // Step 5: Select album
     state.borrow_mut().selected_album_id = Some("album1".to_string());
-    state.borrow_mut().album_tracks = vec![
-        TrackInfo {
-            id: "t1".to_string(),
-            title: "Track 1".to_string(),
-            track_number: 1,
-            ..Default::default()
-        },
-    ];
+    state.borrow_mut().album_tracks = vec![TrackInfo {
+        id: "t1".to_string(),
+        title: "Track 1".to_string(),
+        track_number: 1,
+        ..Default::default()
+    }];
 
     // Step 6: Play track
     let first_track = state.borrow().album_tracks[0].clone();
@@ -910,8 +894,7 @@ async fn test_search_and_play_workflow(_cx: &mut TestAppContext) {
         .albums
         .iter()
         .filter(|a| {
-            a.title.to_lowercase().contains(&query)
-                || a.artist.to_lowercase().contains(&query)
+            a.title.to_lowercase().contains(&query) || a.artist.to_lowercase().contains(&query)
         })
         .cloned()
         .collect();
@@ -922,10 +905,7 @@ async fn test_search_and_play_workflow(_cx: &mut TestAppContext) {
     state.borrow_mut().selected_album_id = Some("a1".to_string());
 
     // Verify
-    assert_eq!(
-        state.borrow().selected_album_id,
-        Some("a1".to_string())
-    );
+    assert_eq!(state.borrow().selected_album_id, Some("a1".to_string()));
 }
 
 /// Test genre browse workflow.

@@ -412,7 +412,13 @@ async fn test_no_duplicate_connections(_cx: &mut TestAppContext) {
         ..Default::default()
     }];
 
-    assert!(has_duplicate_connection(&connections, "n1", "out", "n2", "in"));
+    assert!(has_duplicate_connection(
+        &connections,
+        "n1",
+        "out",
+        "n2",
+        "in"
+    ));
     assert!(!has_duplicate_connection(
         &connections,
         "n1",
@@ -438,14 +444,12 @@ async fn test_cascade_delete_connections(_cx: &mut TestAppContext) {
         },
     ];
 
-    state.borrow_mut().connections = vec![
-        Connection {
-            id: "c1".to_string(),
-            source_node: "n1".to_string(),
-            target_node: "n2".to_string(),
-            ..Default::default()
-        },
-    ];
+    state.borrow_mut().connections = vec![Connection {
+        id: "c1".to_string(),
+        source_node: "n1".to_string(),
+        target_node: "n2".to_string(),
+        ..Default::default()
+    }];
 
     // Delete node n1
     let deleted_node_id = "n1";
@@ -622,10 +626,10 @@ async fn test_grid_size_adjustment(_cx: &mut TestAppContext) {
 async fn test_node_color_by_type(_cx: &mut TestAppContext) {
     fn get_node_color(node_type: NodeType) -> &'static str {
         match node_type {
-            NodeType::Input => "#4CAF50",   // Green
-            NodeType::Output => "#F44336",  // Red
-            NodeType::Plugin => "#2196F3",  // Blue
-            NodeType::Mixer => "#9C27B0",   // Purple
+            NodeType::Input => "#4CAF50",    // Green
+            NodeType::Output => "#F44336",   // Red
+            NodeType::Plugin => "#2196F3",   // Blue
+            NodeType::Mixer => "#9C27B0",    // Purple
             NodeType::Splitter => "#FF9800", // Orange
         }
     }
@@ -655,11 +659,7 @@ async fn test_node_label_truncation(_cx: &mut TestAppContext) {
 #[gpui::test]
 async fn test_node_selection_highlight(_cx: &mut TestAppContext) {
     fn get_node_border_width(is_selected: bool) -> f32 {
-        if is_selected {
-            3.0
-        } else {
-            1.0
-        }
+        if is_selected { 3.0 } else { 1.0 }
     }
 
     assert!((get_node_border_width(false) - 1.0).abs() < 0.1);
@@ -670,11 +670,7 @@ async fn test_node_selection_highlight(_cx: &mut TestAppContext) {
 #[gpui::test]
 async fn test_bypassed_node_opacity(_cx: &mut TestAppContext) {
     fn get_node_opacity(is_bypassed: bool) -> f32 {
-        if is_bypassed {
-            0.5
-        } else {
-            1.0
-        }
+        if is_bypassed { 0.5 } else { 1.0 }
     }
 
     assert!((get_node_opacity(false) - 1.0).abs() < 0.01);
@@ -688,10 +684,7 @@ async fn test_bypassed_node_opacity(_cx: &mut TestAppContext) {
 /// Test connection path calculation.
 #[gpui::test]
 async fn test_connection_path_calculation(_cx: &mut TestAppContext) {
-    fn calculate_bezier_control_points(
-        start: Position,
-        end: Position,
-    ) -> (Position, Position) {
+    fn calculate_bezier_control_points(start: Position, end: Position) -> (Position, Position) {
         let dx = (end.x - start.x).abs() / 2.0;
         let cp1 = Position {
             x: start.x + dx,
@@ -831,13 +824,11 @@ async fn test_select_all_nodes(_cx: &mut TestAppContext) {
 async fn test_clear_selection(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(PluginGraphState::default()));
 
-    state.borrow_mut().nodes = vec![
-        GraphNode {
-            id: "n1".to_string(),
-            is_selected: true,
-            ..Default::default()
-        },
-    ];
+    state.borrow_mut().nodes = vec![GraphNode {
+        id: "n1".to_string(),
+        is_selected: true,
+        ..Default::default()
+    }];
     state.borrow_mut().selected_node_id = Some("n1".to_string());
     state.borrow_mut().selected_connection_id = Some("c1".to_string());
 
@@ -860,11 +851,7 @@ async fn test_clear_selection(_cx: &mut TestAppContext) {
 /// Test signal flow validation.
 #[gpui::test]
 async fn test_signal_flow_validation(_cx: &mut TestAppContext) {
-    fn has_path_to_output(
-        connections: &[(&str, &str)],
-        start: &str,
-        output: &str,
-    ) -> bool {
+    fn has_path_to_output(connections: &[(&str, &str)], start: &str, output: &str) -> bool {
         let mut visited = vec![start.to_string()];
         let mut queue = vec![start];
 
@@ -882,11 +869,7 @@ async fn test_signal_flow_validation(_cx: &mut TestAppContext) {
         false
     }
 
-    let connections = vec![
-        ("input", "eq"),
-        ("eq", "comp"),
-        ("comp", "output"),
-    ];
+    let connections = vec![("input", "eq"), ("eq", "comp"), ("comp", "output")];
 
     assert!(has_path_to_output(&connections, "input", "output"));
     assert!(!has_path_to_output(&connections, "eq", "input")); // No backwards path
@@ -895,17 +878,10 @@ async fn test_signal_flow_validation(_cx: &mut TestAppContext) {
 /// Test detecting disconnected nodes.
 #[gpui::test]
 async fn test_detect_disconnected_nodes(_cx: &mut TestAppContext) {
-    fn find_disconnected_nodes(
-        nodes: &[&str],
-        connections: &[(&str, &str)],
-    ) -> Vec<String> {
+    fn find_disconnected_nodes(nodes: &[&str], connections: &[(&str, &str)]) -> Vec<String> {
         nodes
             .iter()
-            .filter(|&&node| {
-                !connections
-                    .iter()
-                    .any(|(s, t)| *s == node || *t == node)
-            })
+            .filter(|&&node| !connections.iter().any(|(s, t)| *s == node || *t == node))
             .map(|s| s.to_string())
             .collect()
     }

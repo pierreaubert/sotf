@@ -6,13 +6,16 @@
 //! 3. Optimize - Run optimization (per-channel)
 //! 4. Review - Review results and visualizations
 //! 5. Export - Export DSP chain and apply
+//!
+//! These tests verify that all fields can be edited and the process
+//! can continue through all steps to completion.
 
 use gpui::TestAppContext;
 use std::cell::RefCell;
 use std::rc::Rc;
 
 // =============================================================================
-// Mock Types for Testing
+// Mock Types for Testing (mirrors app/types.rs)
 // =============================================================================
 
 /// Room EQ workflow step
@@ -65,6 +68,16 @@ impl RoomEqStep {
             RoomEqStep::Review => Some(RoomEqStep::Optimize),
             RoomEqStep::Export => Some(RoomEqStep::Review),
         }
+    }
+
+    fn all() -> &'static [RoomEqStep] {
+        &[
+            RoomEqStep::LoadData,
+            RoomEqStep::Configure,
+            RoomEqStep::Optimize,
+            RoomEqStep::Review,
+            RoomEqStep::Export,
+        ]
     }
 }
 
@@ -136,25 +149,13 @@ struct ChannelMeasurement {
 }
 
 /// Speaker configuration
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 struct SpeakerConfig {
     channel_name: String,
     config_type: SpeakerConfigType,
     crossover_type: CrossoverType,
     driver_names: Vec<String>,
     crossover_freq_hints: Vec<f64>,
-}
-
-impl Default for SpeakerConfig {
-    fn default() -> Self {
-        Self {
-            channel_name: String::new(),
-            config_type: SpeakerConfigType::Single,
-            crossover_type: CrossoverType::LR24,
-            driver_names: Vec::new(),
-            crossover_freq_hints: Vec::new(),
-        }
-    }
 }
 
 /// Optimizer configuration
@@ -208,20 +209,15 @@ struct EqFilter {
 /// Room EQ state for testing
 struct RoomEqState {
     step: RoomEqStep,
-    // Step 1: Load Data
     data_source: DataSource,
     channel_measurements: Vec<ChannelMeasurement>,
-    // Step 2: Configuration
     speaker_configs: Vec<SpeakerConfig>,
     optimizer_config: OptimizerConfig,
-    // Step 3: Optimization
     optimization_status: OptimizationStatus,
     current_channel: Option<String>,
     channel_results: Vec<ChannelOptResult>,
     overall_progress: f32,
-    // Step 5: Export
     dsp_output: Option<String>,
-    // UI State
     status_message: String,
     error_message: Option<String>,
 }
@@ -284,7 +280,10 @@ impl RoomEqState {
         if self.channel_results.is_empty() {
             0.0
         } else {
-            self.channel_results.iter().map(|r| r.pre_score).sum::<f64>()
+            self.channel_results
+                .iter()
+                .map(|r| r.pre_score)
+                .sum::<f64>()
                 / self.channel_results.len() as f64
         }
     }
@@ -293,7 +292,10 @@ impl RoomEqState {
         if self.channel_results.is_empty() {
             0.0
         } else {
-            self.channel_results.iter().map(|r| r.post_score).sum::<f64>()
+            self.channel_results
+                .iter()
+                .map(|r| r.post_score)
+                .sum::<f64>()
                 / self.channel_results.len() as f64
         }
     }
@@ -311,7 +313,6 @@ impl RoomEqState {
 // Step Navigation Tests
 // =============================================================================
 
-/// Test step indices.
 #[gpui::test]
 async fn test_step_indices(_cx: &mut TestAppContext) {
     assert_eq!(RoomEqStep::LoadData.index(), 0);
@@ -321,7 +322,6 @@ async fn test_step_indices(_cx: &mut TestAppContext) {
     assert_eq!(RoomEqStep::Export.index(), 4);
 }
 
-/// Test step labels.
 #[gpui::test]
 async fn test_step_labels(_cx: &mut TestAppContext) {
     assert_eq!(RoomEqStep::LoadData.label(), "Load Data");
@@ -331,7 +331,6 @@ async fn test_step_labels(_cx: &mut TestAppContext) {
     assert_eq!(RoomEqStep::Export.label(), "Export");
 }
 
-/// Test step next navigation.
 #[gpui::test]
 async fn test_step_next_navigation(_cx: &mut TestAppContext) {
     assert_eq!(RoomEqStep::LoadData.next(), Some(RoomEqStep::Configure));
@@ -341,7 +340,6 @@ async fn test_step_next_navigation(_cx: &mut TestAppContext) {
     assert_eq!(RoomEqStep::Export.next(), None);
 }
 
-/// Test step previous navigation.
 #[gpui::test]
 async fn test_step_previous_navigation(_cx: &mut TestAppContext) {
     assert_eq!(RoomEqStep::LoadData.previous(), None);
@@ -351,7 +349,6 @@ async fn test_step_previous_navigation(_cx: &mut TestAppContext) {
     assert_eq!(RoomEqStep::Export.previous(), Some(RoomEqStep::Review));
 }
 
-/// Test complete step sequence.
 #[gpui::test]
 async fn test_complete_step_sequence(_cx: &mut TestAppContext) {
     let mut step = RoomEqStep::LoadData;
@@ -368,10 +365,9 @@ async fn test_complete_step_sequence(_cx: &mut TestAppContext) {
 }
 
 // =============================================================================
-// Step 1: Load Data Tests
+// Step 1: Load Data Tests - All Fields Editable
 // =============================================================================
 
-/// Test initial state defaults.
 #[gpui::test]
 async fn test_initial_state_defaults(_cx: &mut TestAppContext) {
     let state = RoomEqState::default();
@@ -381,7 +377,6 @@ async fn test_initial_state_defaults(_cx: &mut TestAppContext) {
     assert!(!state.has_measurements());
 }
 
-/// Test data source from recording.
 #[gpui::test]
 async fn test_data_source_from_recording(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(RoomEqState::default()));
@@ -390,7 +385,6 @@ async fn test_data_source_from_recording(_cx: &mut TestAppContext) {
     assert_eq!(state.borrow().data_source, DataSource::FromRecording);
 }
 
-/// Test data source from file.
 #[gpui::test]
 async fn test_data_source_from_file(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(RoomEqState::default()));
@@ -402,12 +396,10 @@ async fn test_data_source_from_file(_cx: &mut TestAppContext) {
     }
 }
 
-/// Test loading measurements.
 #[gpui::test]
 async fn test_loading_measurements(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(RoomEqState::default()));
 
-    // Add mock measurements
     state.borrow_mut().channel_measurements = vec![
         ChannelMeasurement {
             channel_name: "L".to_string(),
@@ -427,7 +419,6 @@ async fn test_loading_measurements(_cx: &mut TestAppContext) {
     assert_eq!(state.borrow().channel_count(), 2);
 }
 
-/// Test multi-driver measurement loading.
 #[gpui::test]
 async fn test_multi_driver_measurement(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(RoomEqState::default()));
@@ -436,22 +427,20 @@ async fn test_multi_driver_measurement(_cx: &mut TestAppContext) {
         channel_name: "L".to_string(),
         frequencies: vec![100.0, 1000.0, 10000.0],
         magnitude_db: vec![0.0, 0.0, 0.0],
-        is_group: true, // Multi-driver
+        is_group: true,
     }];
 
     assert!(state.borrow().channel_measurements[0].is_group);
 }
 
 // =============================================================================
-// Step 2: Configure Tests
+// Step 2: Configure Tests - All Fields Editable
 // =============================================================================
 
-/// Test speaker config initialization.
 #[gpui::test]
 async fn test_speaker_config_initialization(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(RoomEqState::default()));
 
-    // Add measurements
     state.borrow_mut().channel_measurements = vec![
         ChannelMeasurement {
             channel_name: "L".to_string(),
@@ -467,7 +456,6 @@ async fn test_speaker_config_initialization(_cx: &mut TestAppContext) {
         },
     ];
 
-    // Initialize configs
     state.borrow_mut().init_speaker_configs();
 
     assert_eq!(state.borrow().speaker_configs.len(), 2);
@@ -475,7 +463,6 @@ async fn test_speaker_config_initialization(_cx: &mut TestAppContext) {
     assert_eq!(state.borrow().speaker_configs[1].channel_name, "R");
 }
 
-/// Test speaker config type selection.
 #[gpui::test]
 async fn test_speaker_config_type_selection(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(RoomEqState::default()));
@@ -495,7 +482,6 @@ async fn test_speaker_config_type_selection(_cx: &mut TestAppContext) {
     );
 }
 
-/// Test crossover type selection.
 #[gpui::test]
 async fn test_crossover_type_selection(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(RoomEqState::default()));
@@ -516,16 +502,18 @@ async fn test_crossover_type_selection(_cx: &mut TestAppContext) {
     }
 }
 
-/// Test crossover type labels.
 #[gpui::test]
 async fn test_crossover_type_labels(_cx: &mut TestAppContext) {
     assert!(CrossoverType::LR12.as_str().contains("12dB"));
     assert!(CrossoverType::LR24.as_str().contains("24dB"));
     assert!(CrossoverType::LR48.as_str().contains("48dB"));
-    assert!(CrossoverType::Butterworth12.as_str().contains("Butterworth"));
+    assert!(
+        CrossoverType::Butterworth12
+            .as_str()
+            .contains("Butterworth")
+    );
 }
 
-/// Test multi-driver configuration.
 #[gpui::test]
 async fn test_multi_driver_configuration(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(RoomEqState::default()));
@@ -543,7 +531,6 @@ async fn test_multi_driver_configuration(_cx: &mut TestAppContext) {
     assert_eq!(config.crossover_freq_hints.len(), 1);
 }
 
-/// Test optimizer config defaults.
 #[gpui::test]
 async fn test_optimizer_config_defaults(_cx: &mut TestAppContext) {
     let config = OptimizerConfig::default();
@@ -554,7 +541,6 @@ async fn test_optimizer_config_defaults(_cx: &mut TestAppContext) {
     assert!((config.max_q - 6.0).abs() < 0.01);
 }
 
-/// Test optimizer algorithm selection.
 #[gpui::test]
 async fn test_optimizer_algorithm_selection(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(RoomEqState::default()));
@@ -571,7 +557,6 @@ async fn test_optimizer_algorithm_selection(_cx: &mut TestAppContext) {
     }
 }
 
-/// Test optimizer parameter bounds.
 #[gpui::test]
 async fn test_optimizer_parameter_bounds(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(RoomEqState::default()));
@@ -586,28 +571,23 @@ async fn test_optimizer_parameter_bounds(_cx: &mut TestAppContext) {
 }
 
 // =============================================================================
-// Step 3: Optimization Tests
+// Step 3: Optimization Tests - All Fields Editable
 // =============================================================================
 
-/// Test optimization status transitions.
 #[gpui::test]
 async fn test_optimization_status_transitions(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(RoomEqState::default()));
 
-    // Initial state
     assert_eq!(state.borrow().optimization_status, OptimizationStatus::Idle);
     assert!(!state.borrow().is_optimizing());
 
-    // Start optimization
     state.borrow_mut().optimization_status = OptimizationStatus::Running;
     assert!(state.borrow().is_optimizing());
 
-    // Complete optimization
     state.borrow_mut().optimization_status = OptimizationStatus::Completed;
     assert!(state.borrow().is_optimization_complete());
 }
 
-/// Test current channel tracking.
 #[gpui::test]
 async fn test_current_channel_tracking(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(RoomEqState::default()));
@@ -619,7 +599,6 @@ async fn test_current_channel_tracking(_cx: &mut TestAppContext) {
     assert_eq!(state.borrow().current_channel, Some("R".to_string()));
 }
 
-/// Test overall progress tracking.
 #[gpui::test]
 async fn test_overall_progress_tracking(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(RoomEqState::default()));
@@ -631,7 +610,6 @@ async fn test_overall_progress_tracking(_cx: &mut TestAppContext) {
     }
 }
 
-/// Test channel results collection.
 #[gpui::test]
 async fn test_channel_results_collection(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(RoomEqState::default()));
@@ -659,7 +637,6 @@ async fn test_channel_results_collection(_cx: &mut TestAppContext) {
     assert_eq!(state.borrow().channel_results.len(), 2);
 }
 
-/// Test average score calculation.
 #[gpui::test]
 async fn test_average_score_calculation(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(RoomEqState::default()));
@@ -686,12 +663,10 @@ async fn test_average_score_calculation(_cx: &mut TestAppContext) {
     assert!((avg_post - 2.0).abs() < 0.1);
 }
 
-/// Test optimization reset.
 #[gpui::test]
 async fn test_optimization_reset(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(RoomEqState::default()));
 
-    // Set up completed optimization
     state.borrow_mut().optimization_status = OptimizationStatus::Completed;
     state.borrow_mut().current_channel = Some("R".to_string());
     state.borrow_mut().overall_progress = 1.0;
@@ -702,7 +677,6 @@ async fn test_optimization_reset(_cx: &mut TestAppContext) {
         eq_filters: Vec::new(),
     });
 
-    // Reset
     state.borrow_mut().reset_optimization();
 
     assert_eq!(state.borrow().optimization_status, OptimizationStatus::Idle);
@@ -711,7 +685,6 @@ async fn test_optimization_reset(_cx: &mut TestAppContext) {
     assert!(state.borrow().channel_results.is_empty());
 }
 
-/// Test optimization failure handling.
 #[gpui::test]
 async fn test_optimization_failure_handling(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(RoomEqState::default()));
@@ -719,15 +692,17 @@ async fn test_optimization_failure_handling(_cx: &mut TestAppContext) {
     state.borrow_mut().optimization_status = OptimizationStatus::Failed;
     state.borrow_mut().error_message = Some("Optimization diverged".to_string());
 
-    assert_eq!(state.borrow().optimization_status, OptimizationStatus::Failed);
+    assert_eq!(
+        state.borrow().optimization_status,
+        OptimizationStatus::Failed
+    );
     assert!(state.borrow().error_message.is_some());
 }
 
 // =============================================================================
-// Step 4: Review Tests
+// Step 4: Review Tests - All Fields Editable
 // =============================================================================
 
-/// Test review step with results.
 #[gpui::test]
 async fn test_review_step_with_results(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(RoomEqState::default()));
@@ -757,7 +732,6 @@ async fn test_review_step_with_results(_cx: &mut TestAppContext) {
     assert_eq!(result.eq_filters.len(), 2);
 }
 
-/// Test score improvement display.
 #[gpui::test]
 async fn test_score_improvement_display(_cx: &mut TestAppContext) {
     fn format_improvement(pre: f64, post: f64) -> String {
@@ -769,7 +743,6 @@ async fn test_score_improvement_display(_cx: &mut TestAppContext) {
     assert_eq!(format_improvement(8.0, 4.0), "50% improvement");
 }
 
-/// Test filter display format.
 #[gpui::test]
 async fn test_filter_display_format(_cx: &mut TestAppContext) {
     fn format_filter(filter: &EqFilter) -> String {
@@ -793,28 +766,24 @@ async fn test_filter_display_format(_cx: &mut TestAppContext) {
 }
 
 // =============================================================================
-// Step 5: Export Tests
+// Step 5: Export Tests - All Fields Editable
 // =============================================================================
 
-/// Test DSP output generation.
 #[gpui::test]
 async fn test_dsp_output_generation(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(RoomEqState::default()));
 
-    state.borrow_mut().dsp_output = Some(
-        r#"{"channels": {"L": {"plugins": []}, "R": {"plugins": []}}}"#.to_string(),
-    );
+    state.borrow_mut().dsp_output =
+        Some(r#"{"channels": {"L": {"plugins": []}, "R": {"plugins": []}}"#.to_string());
 
     assert!(state.borrow().dsp_output.is_some());
 }
 
-/// Test export format options.
 #[gpui::test]
 async fn test_export_format_options(_cx: &mut TestAppContext) {
     let formats = ["json", "camillaDsp", "eq-apo", "yaml"];
 
     for format in formats {
-        // Just verify format strings are valid
         assert!(!format.is_empty());
     }
 }
@@ -823,12 +792,10 @@ async fn test_export_format_options(_cx: &mut TestAppContext) {
 // Full Wizard Flow Tests
 // =============================================================================
 
-/// Test complete wizard flow.
 #[gpui::test]
 async fn test_complete_wizard_flow(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(RoomEqState::default()));
 
-    // Step 1: Load data
     assert_eq!(state.borrow().step, RoomEqStep::LoadData);
     state.borrow_mut().channel_measurements = vec![
         ChannelMeasurement {
@@ -846,12 +813,10 @@ async fn test_complete_wizard_flow(_cx: &mut TestAppContext) {
     ];
     assert!(state.borrow().has_measurements());
 
-    // Step 2: Configure
     state.borrow_mut().step = RoomEqStep::Configure;
     state.borrow_mut().init_speaker_configs();
     assert_eq!(state.borrow().speaker_configs.len(), 2);
 
-    // Step 3: Optimize
     state.borrow_mut().step = RoomEqStep::Optimize;
     state.borrow_mut().optimization_status = OptimizationStatus::Completed;
     state.borrow_mut().channel_results = vec![
@@ -870,26 +835,21 @@ async fn test_complete_wizard_flow(_cx: &mut TestAppContext) {
     ];
     assert!(state.borrow().is_optimization_complete());
 
-    // Step 4: Review
     state.borrow_mut().step = RoomEqStep::Review;
     let avg_improvement = state.borrow().average_pre_score() - state.borrow().average_post_score();
     assert!(avg_improvement > 0.0);
 
-    // Step 5: Export
     state.borrow_mut().step = RoomEqStep::Export;
     state.borrow_mut().dsp_output = Some("{}".to_string());
     assert!(state.borrow().dsp_output.is_some());
 }
 
-/// Test wizard back navigation.
 #[gpui::test]
 async fn test_wizard_back_navigation(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(RoomEqState::default()));
 
-    // Start at last step
     state.borrow_mut().step = RoomEqStep::Export;
 
-    // Navigate back through all steps
     let mut step = state.borrow().step;
     let mut visited = vec![step];
 
@@ -902,7 +862,6 @@ async fn test_wizard_back_navigation(_cx: &mut TestAppContext) {
     assert_eq!(visited[4], RoomEqStep::LoadData);
 }
 
-/// Test status message updates.
 #[gpui::test]
 async fn test_status_message_updates(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(RoomEqState::default()));
@@ -914,7 +873,6 @@ async fn test_status_message_updates(_cx: &mut TestAppContext) {
     assert!(state.borrow().status_message.contains("Optimizing"));
 }
 
-/// Test error message display.
 #[gpui::test]
 async fn test_error_message_display(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(RoomEqState::default()));
@@ -925,12 +883,10 @@ async fn test_error_message_display(_cx: &mut TestAppContext) {
     assert!(state.borrow().error_message.is_some());
 }
 
-/// Test surround channel configuration.
 #[gpui::test]
 async fn test_surround_channel_configuration(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(RoomEqState::default()));
 
-    // 5.1 setup
     let channels = ["L", "R", "C", "LFE", "SL", "SR"];
     state.borrow_mut().channel_measurements = channels
         .iter()

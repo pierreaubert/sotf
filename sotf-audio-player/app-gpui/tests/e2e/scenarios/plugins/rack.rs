@@ -76,7 +76,9 @@ async fn test_rack_add_plugin_to_empty(_cx: &mut TestAppContext) {
     let plugins: Rc<RefCell<Vec<TestPlugin>>> = Rc::new(RefCell::new(Vec::new()));
 
     // Add EQ plugin
-    plugins.borrow_mut().push(TestPlugin::new(TestPluginType::Eq));
+    plugins
+        .borrow_mut()
+        .push(TestPlugin::new(TestPluginType::Eq));
 
     assert_eq!(plugins.borrow().len(), 1, "Chain should have 1 plugin");
     assert_eq!(
@@ -92,9 +94,15 @@ async fn test_rack_add_multiple_plugins(_cx: &mut TestAppContext) {
     let plugins: Rc<RefCell<Vec<TestPlugin>>> = Rc::new(RefCell::new(Vec::new()));
 
     // Add plugins in order: EQ -> Compressor -> Limiter
-    plugins.borrow_mut().push(TestPlugin::new(TestPluginType::Eq));
-    plugins.borrow_mut().push(TestPlugin::new(TestPluginType::Compressor));
-    plugins.borrow_mut().push(TestPlugin::new(TestPluginType::Limiter));
+    plugins
+        .borrow_mut()
+        .push(TestPlugin::new(TestPluginType::Eq));
+    plugins
+        .borrow_mut()
+        .push(TestPlugin::new(TestPluginType::Compressor));
+    plugins
+        .borrow_mut()
+        .push(TestPlugin::new(TestPluginType::Limiter));
 
     assert_eq!(plugins.borrow().len(), 3, "Chain should have 3 plugins");
     assert_eq!(plugins.borrow()[0].plugin_type, TestPluginType::Eq);
@@ -313,7 +321,11 @@ async fn test_rack_drag_drop_reorder(_cx: &mut TestAppContext) {
     // Remove from source and insert at destination
     let plugin = plugins.borrow_mut().remove(from_idx);
     // Adjust index since we removed an element
-    let adjusted_idx = if to_idx > from_idx { to_idx - 1 } else { to_idx };
+    let adjusted_idx = if to_idx > from_idx {
+        to_idx - 1
+    } else {
+        to_idx
+    };
     plugins.borrow_mut().insert(adjusted_idx + 1, plugin);
 
     assert_eq!(plugins.borrow()[0].plugin_type, TestPluginType::Compressor);
@@ -505,7 +517,9 @@ async fn test_rack_modified_after_add(_cx: &mut TestAppContext) {
     let plugins: Rc<RefCell<Vec<TestPlugin>>> = Rc::new(RefCell::new(Vec::new()));
 
     // Add plugin
-    plugins.borrow_mut().push(TestPlugin::new(TestPluginType::Eq));
+    plugins
+        .borrow_mut()
+        .push(TestPlugin::new(TestPluginType::Eq));
     *modified.borrow_mut() = true;
 
     assert!(*modified.borrow(), "Chain should be marked modified");
@@ -515,9 +529,8 @@ async fn test_rack_modified_after_add(_cx: &mut TestAppContext) {
 #[gpui::test]
 async fn test_rack_modified_after_remove(_cx: &mut TestAppContext) {
     let modified = Rc::new(RefCell::new(false));
-    let plugins: Rc<RefCell<Vec<TestPlugin>>> = Rc::new(RefCell::new(vec![
-        TestPlugin::new(TestPluginType::Eq),
-    ]));
+    let plugins: Rc<RefCell<Vec<TestPlugin>>> =
+        Rc::new(RefCell::new(vec![TestPlugin::new(TestPluginType::Eq)]));
 
     // Remove plugin
     plugins.borrow_mut().pop();

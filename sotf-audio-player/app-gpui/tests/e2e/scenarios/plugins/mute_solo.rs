@@ -58,11 +58,7 @@ impl MuteSoloState {
 
         // If any channel is soloed, only soloed channels get audio
         if self.any_soloed() {
-            if ch.soloed {
-                1.0
-            } else {
-                0.0
-            }
+            if ch.soloed { 1.0 } else { 0.0 }
         } else {
             // No solo active, check mute
             if ch.muted {
@@ -487,11 +483,7 @@ async fn test_clear_all_mutes(_cx: &mut TestAppContext) {
 #[gpui::test]
 async fn test_mute_button_visual(_cx: &mut TestAppContext) {
     fn get_mute_button_color(muted: bool) -> &'static str {
-        if muted {
-            "red"
-        } else {
-            "gray"
-        }
+        if muted { "red" } else { "gray" }
     }
 
     assert_eq!(get_mute_button_color(false), "gray");
@@ -502,11 +494,7 @@ async fn test_mute_button_visual(_cx: &mut TestAppContext) {
 #[gpui::test]
 async fn test_solo_button_visual(_cx: &mut TestAppContext) {
     fn get_solo_button_color(soloed: bool) -> &'static str {
-        if soloed {
-            "yellow"
-        } else {
-            "gray"
-        }
+        if soloed { "yellow" } else { "gray" }
     }
 
     assert_eq!(get_solo_button_color(false), "gray");

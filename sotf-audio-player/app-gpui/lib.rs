@@ -5,7 +5,7 @@
 // This library module exposes internal types and functions for testing.
 // The main application binary is in main.rs.
 
-#![recursion_limit = "1024"]
+#![recursion_limit = "2048"]
 
 pub mod components;
 

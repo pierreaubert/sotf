@@ -224,12 +224,10 @@ async fn test_playback_prev_restart_current(_cx: &mut TestAppContext) {
 /// Test end of queue behavior.
 #[gpui::test]
 async fn test_playback_end_of_queue(_cx: &mut TestAppContext) {
-    let queue: Rc<RefCell<Vec<TestQueueItem>>> = Rc::new(RefCell::new(vec![
-        TestQueueItem {
-            track: TestTrack::new("track1.flac", "Track 1", "Artist", "Album", 180.0),
-            track_index: 0,
-        },
-    ]));
+    let queue: Rc<RefCell<Vec<TestQueueItem>>> = Rc::new(RefCell::new(vec![TestQueueItem {
+        track: TestTrack::new("track1.flac", "Track 1", "Artist", "Album", 180.0),
+        track_index: 0,
+    }]));
     let current_queue_index: Rc<RefCell<Option<usize>>> = Rc::new(RefCell::new(Some(0)));
     let playback_state = Rc::new(RefCell::new(PlaybackState::Playing));
 
@@ -243,7 +241,11 @@ async fn test_playback_end_of_queue(_cx: &mut TestAppContext) {
         }
     }
 
-    assert_eq!(*current_queue_index.borrow(), Some(0), "Should stay at last track");
+    assert_eq!(
+        *current_queue_index.borrow(),
+        Some(0),
+        "Should stay at last track"
+    );
     assert_eq!(*playback_state.borrow(), PlaybackState::Stopped);
 }
 
@@ -276,12 +278,10 @@ async fn test_playback_add_to_empty_queue(_cx: &mut TestAppContext) {
 /// Test clearing queue stops playback.
 #[gpui::test]
 async fn test_playback_clear_queue(_cx: &mut TestAppContext) {
-    let queue: Rc<RefCell<Vec<TestQueueItem>>> = Rc::new(RefCell::new(vec![
-        TestQueueItem {
-            track: TestTrack::new("track.flac", "Track", "Artist", "Album", 180.0),
-            track_index: 0,
-        },
-    ]));
+    let queue: Rc<RefCell<Vec<TestQueueItem>>> = Rc::new(RefCell::new(vec![TestQueueItem {
+        track: TestTrack::new("track.flac", "Track", "Artist", "Album", 180.0),
+        track_index: 0,
+    }]));
     let current_queue_index: Rc<RefCell<Option<usize>>> = Rc::new(RefCell::new(Some(0)));
     let playback_state = Rc::new(RefCell::new(PlaybackState::Playing));
 
@@ -353,9 +353,17 @@ async fn test_playback_volume_during_play(_cx: &mut TestAppContext) {
     // Mute during playback
     *muted.borrow_mut() = true;
 
-    let effective_volume = if *muted.borrow() { 0.0 } else { *volume.borrow() };
+    let effective_volume = if *muted.borrow() {
+        0.0
+    } else {
+        *volume.borrow()
+    };
     assert!(effective_volume < 0.001, "Should be muted");
-    assert_eq!(*playback_state.borrow(), PlaybackState::Playing, "Should still be playing");
+    assert_eq!(
+        *playback_state.borrow(),
+        PlaybackState::Playing,
+        "Should still be playing"
+    );
 }
 
 // =============================================================================

@@ -153,7 +153,13 @@ async fn test_spectrum_display_init(_cx: &mut TestAppContext) {
         1024,
         "Should have N/2 bins"
     );
-    assert!(state.borrow().spectrum_data.iter().all(|&v| v <= MIN_DB + 0.001));
+    assert!(
+        state
+            .borrow()
+            .spectrum_data
+            .iter()
+            .all(|&v| v <= MIN_DB + 0.001)
+    );
 }
 
 /// Test spectrum frequency axis (log scale).
@@ -331,8 +337,14 @@ async fn test_spectrum_frequency_resolution(_cx: &mut TestAppContext) {
     let res_512 = frequency_resolution(512, sample_rate);
     let res_4096 = frequency_resolution(4096, sample_rate);
 
-    assert!(res_512 > res_4096, "Larger FFT should have better resolution");
-    assert!((res_4096 - 11.72).abs() < 0.1, "4096 @ 48kHz = ~11.72 Hz resolution");
+    assert!(
+        res_512 > res_4096,
+        "Larger FFT should have better resolution"
+    );
+    assert!(
+        (res_4096 - 11.72).abs() < 0.1,
+        "4096 @ 48kHz = ~11.72 Hz resolution"
+    );
 }
 
 // =============================================================================
@@ -404,10 +416,16 @@ async fn test_spectrum_peak_hold_behavior(_cx: &mut TestAppContext) {
     }
 
     let peak = update_peak(-30.0, -20.0);
-    assert!((peak - (-20.0)).abs() < 0.001, "Peak should update to higher value");
+    assert!(
+        (peak - (-20.0)).abs() < 0.001,
+        "Peak should update to higher value"
+    );
 
     let peak = update_peak(-20.0, -40.0);
-    assert!((peak - (-20.0)).abs() < 0.001, "Peak should hold at higher value");
+    assert!(
+        (peak - (-20.0)).abs() < 0.001,
+        "Peak should hold at higher value"
+    );
 }
 
 // =============================================================================
@@ -434,7 +452,11 @@ async fn test_spectrum_channel_bounds(_cx: &mut TestAppContext) {
     let clamped = requested.min(state.borrow().num_channels - 1);
     state.borrow_mut().selected_channel = clamped;
 
-    assert_eq!(state.borrow().selected_channel, 1, "Should clamp to max channel");
+    assert_eq!(
+        state.borrow().selected_channel,
+        1,
+        "Should clamp to max channel"
+    );
 }
 
 /// Test show all channels toggle.
@@ -466,14 +488,19 @@ async fn test_spectrum_frequency_grid(_cx: &mut TestAppContext) {
     let lines = frequency_grid_lines();
     assert!(lines.len() >= 8, "Should have frequency grid lines");
     assert!((lines[0] - 20.0).abs() < 0.001, "Should start at 20 Hz");
-    assert!((lines[lines.len() - 1] - 20000.0).abs() < 0.001, "Should end at 20 kHz");
+    assert!(
+        (lines[lines.len() - 1] - 20000.0).abs() < 0.001,
+        "Should end at 20 kHz"
+    );
 }
 
 /// Test dB grid lines.
 #[gpui::test]
 async fn test_spectrum_db_grid(_cx: &mut TestAppContext) {
     fn db_grid_lines() -> Vec<f64> {
-        vec![0.0, -10.0, -20.0, -30.0, -40.0, -50.0, -60.0, -70.0, -80.0, -90.0]
+        vec![
+            0.0, -10.0, -20.0, -30.0, -40.0, -50.0, -60.0, -70.0, -80.0, -90.0,
+        ]
     }
 
     let lines = db_grid_lines();
@@ -516,12 +543,12 @@ async fn test_spectrum_color_mapping(_cx: &mut TestAppContext) {
 async fn test_spectrum_channel_colors(_cx: &mut TestAppContext) {
     fn channel_color(index: usize) -> (u8, u8, u8) {
         let colors = [
-            (66, 133, 244),  // Blue (L)
-            (234, 67, 53),   // Red (R)
-            (52, 168, 83),   // Green (C)
-            (251, 188, 5),   // Yellow (LFE)
-            (153, 0, 255),   // Purple (Ls)
-            (0, 188, 212),   // Cyan (Rs)
+            (66, 133, 244), // Blue (L)
+            (234, 67, 53),  // Red (R)
+            (52, 168, 83),  // Green (C)
+            (251, 188, 5),  // Yellow (LFE)
+            (153, 0, 255),  // Purple (Ls)
+            (0, 188, 212),  // Cyan (Rs)
         ];
         colors[index % colors.len()]
     }

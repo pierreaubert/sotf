@@ -18,8 +18,14 @@ use std::rc::Rc;
 #[derive(Debug, Clone, PartialEq)]
 enum MenuItem {
     Separator,
-    Action { label: String, shortcut: Option<String> },
-    Submenu { label: String, items: Vec<MenuItem> },
+    Action {
+        label: String,
+        shortcut: Option<String>,
+    },
+    Submenu {
+        label: String,
+        items: Vec<MenuItem>,
+    },
 }
 
 /// Current screen
@@ -324,8 +330,14 @@ async fn test_scan_progress_display(_cx: &mut TestAppContext) {
         format!("Scanning: {} / {} files", scanned, total)
     }
 
-    assert_eq!(format_scan_progress(250, 1000), "Scanning: 250 / 1000 files");
-    assert_eq!(format_scan_progress(1000, 1000), "Scanning: 1000 / 1000 files");
+    assert_eq!(
+        format_scan_progress(250, 1000),
+        "Scanning: 250 / 1000 files"
+    );
+    assert_eq!(
+        format_scan_progress(1000, 1000),
+        "Scanning: 1000 / 1000 files"
+    );
 }
 
 /// Test scanning indicator visibility.

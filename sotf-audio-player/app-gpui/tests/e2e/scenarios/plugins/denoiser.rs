@@ -240,11 +240,7 @@ async fn test_low_latency_toggle(_cx: &mut TestAppContext) {
 #[gpui::test]
 async fn test_low_latency_fft_size(_cx: &mut TestAppContext) {
     fn get_fft_size(low_latency: bool) -> usize {
-        if low_latency {
-            512
-        } else {
-            2048
-        }
+        if low_latency { 512 } else { 2048 }
     }
 
     assert_eq!(get_fft_size(false), 2048);

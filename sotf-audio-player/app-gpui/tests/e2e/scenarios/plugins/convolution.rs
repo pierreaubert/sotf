@@ -107,7 +107,10 @@ async fn test_ir_file_display_name(_cx: &mut TestAppContext) {
 
     assert_eq!(get_ir_display_name(""), "No IR loaded");
     assert_eq!(get_ir_display_name("/path/to/hall.wav"), "hall.wav");
-    assert_eq!(get_ir_display_name("/reverbs/plate_long.flac"), "plate_long.flac");
+    assert_eq!(
+        get_ir_display_name("/reverbs/plate_long.flac"),
+        "plate_long.flac"
+    );
 }
 
 /// Test clearing IR file.

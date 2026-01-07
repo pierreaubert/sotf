@@ -382,7 +382,11 @@ async fn test_expander_curve_calculation(_cx: &mut TestAppContext) {
 
     // 10dB below threshold, 2:1 ratio = 5dB expansion
     let out = calculate_output(-50.0, threshold, ratio, 0.0);
-    assert!((out - (-55.0)).abs() < 0.1, "Output should be -55dB, got {}", out);
+    assert!(
+        (out - (-55.0)).abs() < 0.1,
+        "Output should be -55dB, got {}",
+        out
+    );
 }
 
 /// Test curve display points.
@@ -414,9 +418,7 @@ async fn test_expander_gr_meter(_cx: &mut TestAppContext) {
     let gr_values: Vec<f64> = vec![0.0, -5.0, -10.0, -20.0, -40.0];
     for gr in gr_values {
         state.borrow_mut().gain_reduction_db = gr;
-        assert!(
-            (state.borrow().gain_reduction_db - gr).abs() < 0.001
-        );
+        assert!((state.borrow().gain_reduction_db - gr).abs() < 0.001);
     }
 }
 
@@ -519,14 +521,16 @@ async fn test_expander_threshold_keys(_cx: &mut TestAppContext) {
     // Up arrow
     {
         let current = state.borrow().threshold_db;
-        state.borrow_mut().threshold_db = (current + STEP_DB).clamp(MIN_THRESHOLD_DB, MAX_THRESHOLD_DB);
+        state.borrow_mut().threshold_db =
+            (current + STEP_DB).clamp(MIN_THRESHOLD_DB, MAX_THRESHOLD_DB);
     }
     assert!((state.borrow().threshold_db - (initial + STEP_DB)).abs() < 0.001);
 
     // Down arrow
     {
         let current = state.borrow().threshold_db;
-        state.borrow_mut().threshold_db = (current - STEP_DB).clamp(MIN_THRESHOLD_DB, MAX_THRESHOLD_DB);
+        state.borrow_mut().threshold_db =
+            (current - STEP_DB).clamp(MIN_THRESHOLD_DB, MAX_THRESHOLD_DB);
     }
     assert!((state.borrow().threshold_db - initial).abs() < 0.001);
 }

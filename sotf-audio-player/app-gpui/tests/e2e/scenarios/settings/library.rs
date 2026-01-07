@@ -139,7 +139,10 @@ async fn test_multiple_library_paths(_cx: &mut TestAppContext) {
 async fn test_enabling_disabling_library_path(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(LibrarySettingsState::default()));
 
-    state.borrow_mut().library_paths.push(LibraryPath::default());
+    state
+        .borrow_mut()
+        .library_paths
+        .push(LibraryPath::default());
 
     assert!(state.borrow().library_paths[0].enabled);
 
@@ -184,7 +187,11 @@ async fn test_last_scanned_timestamp(_cx: &mut TestAppContext) {
 async fn test_scan_on_startup_selection(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(LibrarySettingsState::default()));
 
-    let options = [ScanOnStartup::Never, ScanOnStartup::Always, ScanOnStartup::IfChanged];
+    let options = [
+        ScanOnStartup::Never,
+        ScanOnStartup::Always,
+        ScanOnStartup::IfChanged,
+    ];
     for option in options {
         state.borrow_mut().scan_on_startup = option;
         assert_eq!(state.borrow().scan_on_startup, option);
@@ -269,8 +276,16 @@ async fn test_file_type_matching(_cx: &mut TestAppContext) {
 async fn test_adding_exclude_pattern(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(LibrarySettingsState::default()));
 
-    state.borrow_mut().exclude_patterns.push("*.sample".to_string());
-    assert!(state.borrow().exclude_patterns.contains(&"*.sample".to_string()));
+    state
+        .borrow_mut()
+        .exclude_patterns
+        .push("*.sample".to_string());
+    assert!(
+        state
+            .borrow()
+            .exclude_patterns
+            .contains(&"*.sample".to_string())
+    );
 }
 
 /// Test removing exclude pattern.
@@ -279,8 +294,16 @@ async fn test_removing_exclude_pattern(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(LibrarySettingsState::default()));
 
     state.borrow_mut().exclude_patterns = vec!["*.sample".to_string(), "temp/*".to_string()];
-    state.borrow_mut().exclude_patterns.retain(|p| p != "*.sample");
-    assert!(!state.borrow().exclude_patterns.contains(&"*.sample".to_string()));
+    state
+        .borrow_mut()
+        .exclude_patterns
+        .retain(|p| p != "*.sample");
+    assert!(
+        !state
+            .borrow()
+            .exclude_patterns
+            .contains(&"*.sample".to_string())
+    );
 }
 
 /// Test exclude pattern matching.
@@ -404,6 +427,11 @@ async fn test_enabled_path_count(_cx: &mut TestAppContext) {
         },
     ];
 
-    let enabled_count = state.borrow().library_paths.iter().filter(|p| p.enabled).count();
+    let enabled_count = state
+        .borrow()
+        .library_paths
+        .iter()
+        .filter(|p| p.enabled)
+        .count();
     assert_eq!(enabled_count, 2);
 }

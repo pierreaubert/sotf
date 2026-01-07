@@ -1140,6 +1140,7 @@ impl PlayerView {
                             };
                             let _ = state.player.lock().set_volume(effective_volume);
                         });
+                        cx.stop_propagation(); // Prevent event from triggering global actions
                         cx.notify();
                         return;
                     }
@@ -1152,6 +1153,7 @@ impl PlayerView {
                         state.app.volume = new_volume;
                         let _ = state.player.lock().set_volume(new_volume);
                     });
+                    cx.stop_propagation(); // Prevent arrow keys from moving album selection
                     cx.notify();
                 }
             }))

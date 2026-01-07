@@ -1756,6 +1756,7 @@ impl App {
                     low_gain,
                     high_freq,
                     high_gain,
+                    ..
                 } => {
                     match param_idx {
                         0 => *low_freq = (*low_freq + delta * 10.0).clamp(20.0, 500.0), // Adjust low_freq
@@ -1891,6 +1892,7 @@ impl App {
                     min_freq,
                     max_freq,
                     smoothing,
+                    ..
                 } => match param_idx {
                     0 => {
                         *num_bins = (*num_bins as i64 + delta as i64).clamp(10, 100) as usize;
@@ -3996,6 +3998,7 @@ mod tests {
                 low_gain,
                 high_freq,
                 high_gain,
+                ..
             } => (*low_freq, *low_gain, *high_freq, *high_gain),
             _ => panic!("Expected LoudnessCompensation plugin"),
         };
@@ -4009,6 +4012,7 @@ mod tests {
             low_gain,
             high_freq,
             high_gain,
+            ..
         } = &plugin.settings
         {
             assert_ne!(*low_freq, orig_low_freq);

@@ -106,14 +106,16 @@ async fn test_gain_knob_scroll(_cx: &mut TestAppContext) {
     // Scroll up (increase)
     {
         let current = state.borrow().master_gain_db;
-        state.borrow_mut().master_gain_db = (current + SCROLL_STEP_DB).clamp(MIN_GAIN_DB, MAX_GAIN_DB);
+        state.borrow_mut().master_gain_db =
+            (current + SCROLL_STEP_DB).clamp(MIN_GAIN_DB, MAX_GAIN_DB);
     }
     assert!((state.borrow().master_gain_db - 0.5).abs() < 0.001);
 
     // Scroll down (decrease)
     {
         let current = state.borrow().master_gain_db;
-        state.borrow_mut().master_gain_db = (current - SCROLL_STEP_DB).clamp(MIN_GAIN_DB, MAX_GAIN_DB);
+        state.borrow_mut().master_gain_db =
+            (current - SCROLL_STEP_DB).clamp(MIN_GAIN_DB, MAX_GAIN_DB);
     }
     assert!(state.borrow().master_gain_db.abs() < 0.001);
 }
@@ -161,11 +163,7 @@ async fn test_gain_knob_double_click_reset(_cx: &mut TestAppContext) {
 async fn test_per_channel_gain_init(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(GainPluginState::new(6)));
 
-    assert_eq!(
-        state.borrow().channels.len(),
-        6,
-        "Should have 6 channels"
-    );
+    assert_eq!(state.borrow().channels.len(), 6, "Should have 6 channels");
     for ch in state.borrow().channels.iter() {
         assert!(ch.gain_db.abs() < 0.001);
         assert!(!ch.muted);
@@ -283,11 +281,7 @@ async fn test_channel_solo_exclusive(_cx: &mut TestAppContext) {
     // Solo channel 1 as well
     state.borrow_mut().channels[1].solo = true;
     let active = active_channels(&state.borrow());
-    assert_eq!(
-        active,
-        vec![0, 1],
-        "Channels 0 and 1 should be active"
-    );
+    assert_eq!(active, vec![0, 1], "Channels 0 and 1 should be active");
 }
 
 /// Test mute overrides solo.
@@ -303,11 +297,7 @@ async fn test_mute_overrides_solo(_cx: &mut TestAppContext) {
         if ch.muted {
             return false;
         }
-        if any_solo {
-            ch.solo
-        } else {
-            true
-        }
+        if any_solo { ch.solo } else { true }
     }
 
     let any_solo = state.borrow().channels.iter().any(|ch| ch.solo);
@@ -402,7 +392,8 @@ async fn test_gain_arrow_keys(_cx: &mut TestAppContext) {
     // Shift+Up = fine increase
     {
         let current = state.borrow().master_gain_db;
-        state.borrow_mut().master_gain_db = (current + FINE_STEP_DB).clamp(MIN_GAIN_DB, MAX_GAIN_DB);
+        state.borrow_mut().master_gain_db =
+            (current + FINE_STEP_DB).clamp(MIN_GAIN_DB, MAX_GAIN_DB);
     }
     assert!((state.borrow().master_gain_db - 0.1).abs() < 0.001);
 }

@@ -460,14 +460,16 @@ async fn test_loudness_low_shelf_keys(_cx: &mut TestAppContext) {
     // Up arrow
     {
         let current = state.borrow().low_shelf_db;
-        state.borrow_mut().low_shelf_db = (current + STEP_DB).clamp(MIN_LOW_SHELF_DB, MAX_LOW_SHELF_DB);
+        state.borrow_mut().low_shelf_db =
+            (current + STEP_DB).clamp(MIN_LOW_SHELF_DB, MAX_LOW_SHELF_DB);
     }
     assert!((state.borrow().low_shelf_db - 0.5).abs() < 0.001);
 
     // Down arrow
     {
         let current = state.borrow().low_shelf_db;
-        state.borrow_mut().low_shelf_db = (current - STEP_DB).clamp(MIN_LOW_SHELF_DB, MAX_LOW_SHELF_DB);
+        state.borrow_mut().low_shelf_db =
+            (current - STEP_DB).clamp(MIN_LOW_SHELF_DB, MAX_LOW_SHELF_DB);
     }
     assert!(state.borrow().low_shelf_db.abs() < 0.001);
 }

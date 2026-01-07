@@ -425,17 +425,26 @@ async fn test_compressor_transfer_curve(_cx: &mut TestAppContext) {
 
     // Below threshold - no compression
     let out = calculate_output(-30.0, s.threshold_db, s.ratio, s.knee_db);
-    assert!((out - (-30.0)).abs() < 0.001, "Below threshold should pass through");
+    assert!(
+        (out - (-30.0)).abs() < 0.001,
+        "Below threshold should pass through"
+    );
 
     // At threshold - no compression
     let out = calculate_output(-20.0, s.threshold_db, s.ratio, s.knee_db);
-    assert!((out - (-20.0)).abs() < 0.001, "At threshold should pass through");
+    assert!(
+        (out - (-20.0)).abs() < 0.001,
+        "At threshold should pass through"
+    );
 
     // Above threshold - compressed
     let out = calculate_output(-12.0, s.threshold_db, s.ratio, s.knee_db);
     // Input is 8dB above threshold, output should be 8/4 = 2dB above
     let expected = -20.0 + 8.0 / 4.0; // -18.0
-    assert!((out - expected).abs() < 0.001, "Above threshold should compress");
+    assert!(
+        (out - expected).abs() < 0.001,
+        "Above threshold should compress"
+    );
 }
 
 /// Test transfer curve display points.
@@ -469,9 +478,7 @@ async fn test_compressor_gr_meter(_cx: &mut TestAppContext) {
     let gr_values = vec![0.0, -3.0, -6.0, -12.0, -20.0];
     for gr in gr_values {
         state.borrow_mut().current_gain_reduction_db = gr;
-        assert!(
-            (state.borrow().current_gain_reduction_db - gr).abs() < 0.001
-        );
+        assert!((state.borrow().current_gain_reduction_db - gr).abs() < 0.001);
     }
 }
 
@@ -623,14 +630,16 @@ async fn test_compressor_threshold_keys(_cx: &mut TestAppContext) {
     // Up arrow
     {
         let current = state.borrow().threshold_db;
-        state.borrow_mut().threshold_db = (current + STEP_DB).clamp(MIN_THRESHOLD_DB, MAX_THRESHOLD_DB);
+        state.borrow_mut().threshold_db =
+            (current + STEP_DB).clamp(MIN_THRESHOLD_DB, MAX_THRESHOLD_DB);
     }
     assert!((state.borrow().threshold_db - (initial + STEP_DB)).abs() < 0.001);
 
     // Down arrow
     {
         let current = state.borrow().threshold_db;
-        state.borrow_mut().threshold_db = (current - STEP_DB).clamp(MIN_THRESHOLD_DB, MAX_THRESHOLD_DB);
+        state.borrow_mut().threshold_db =
+            (current - STEP_DB).clamp(MIN_THRESHOLD_DB, MAX_THRESHOLD_DB);
     }
     assert!((state.borrow().threshold_db - initial).abs() < 0.001);
 }

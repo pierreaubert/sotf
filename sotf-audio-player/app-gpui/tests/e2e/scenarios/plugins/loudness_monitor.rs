@@ -151,9 +151,7 @@ async fn test_loudness_short_term(_cx: &mut TestAppContext) {
     let test_values: Vec<f64> = vec![-30.0, -20.0, -10.0];
     for value in test_values {
         state.borrow_mut().short_term_lufs = value.clamp(MIN_LUFS, MAX_LUFS);
-        assert!(
-            (state.borrow().short_term_lufs - value).abs() < 0.001
-        );
+        assert!((state.borrow().short_term_lufs - value).abs() < 0.001);
     }
 }
 
@@ -325,7 +323,11 @@ async fn test_loudness_peak_channel_tracking(_cx: &mut TestAppContext) {
     state.borrow_mut().true_peak_db = max_peak;
     state.borrow_mut().true_peak_channel = max_channel;
 
-    assert_eq!(state.borrow().true_peak_channel, 1, "Channel R should have highest peak");
+    assert_eq!(
+        state.borrow().true_peak_channel,
+        1,
+        "Channel R should have highest peak"
+    );
     assert!((state.borrow().true_peak_db - (-8.0)).abs() < 0.001);
 }
 
@@ -431,11 +433,11 @@ async fn test_loudness_difference_from_target(_cx: &mut TestAppContext) {
         integrated - target
     }
 
-    let diff = loudness_difference(
-        state.borrow().integrated_lufs,
-        state.borrow().target_lufs,
+    let diff = loudness_difference(state.borrow().integrated_lufs, state.borrow().target_lufs);
+    assert!(
+        (diff - (-4.0)).abs() < 0.001,
+        "Content is 4 LU below target"
     );
-    assert!((diff - (-4.0)).abs() < 0.001, "Content is 4 LU below target");
 }
 
 /// Test loudness difference display.

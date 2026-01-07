@@ -119,7 +119,9 @@ async fn test_eq_add_multiple_bands(_cx: &mut TestAppContext) {
     // Add bands at different frequencies
     let frequencies = vec![100.0, 500.0, 1000.0, 5000.0, 10000.0];
     for freq in &frequencies {
-        bands.borrow_mut().push(EqBand::new(FilterType::Peak, *freq, 1.0, 0.0));
+        bands
+            .borrow_mut()
+            .push(EqBand::new(FilterType::Peak, *freq, 1.0, 0.0));
     }
 
     assert_eq!(bands.borrow().len(), 5, "Should have 5 bands");
@@ -509,13 +511,16 @@ async fn test_eq_auto_gain_calculation(_cx: &mut TestAppContext) {
     }
 
     let bands = vec![
-        EqBand::new(FilterType::Peak, 100.0, 1.0, 6.0),  // +6dB boost
+        EqBand::new(FilterType::Peak, 100.0, 1.0, 6.0), // +6dB boost
         EqBand::new(FilterType::Peak, 1000.0, 1.0, 0.0), // Flat
         EqBand::new(FilterType::Peak, 10000.0, 1.0, 3.0), // +3dB boost
     ];
 
     let compensation = calculate_auto_gain_compensation(&bands);
-    assert!(compensation < 0.0, "Auto-gain should reduce level when boosting");
+    assert!(
+        compensation < 0.0,
+        "Auto-gain should reduce level when boosting"
+    );
 }
 
 // =============================================================================
@@ -562,7 +567,10 @@ async fn test_eq_band_colors(_cx: &mut TestAppContext) {
     // Verify bands get different colors
     let color_0 = band_color(0);
     let color_1 = band_color(1);
-    assert_ne!(color_0, color_1, "Adjacent bands should have different colors");
+    assert_ne!(
+        color_0, color_1,
+        "Adjacent bands should have different colors"
+    );
 }
 
 // =============================================================================
@@ -658,10 +666,7 @@ async fn test_eq_band_validation(_cx: &mut TestAppContext) {
             ));
         }
         if band.q < MIN_Q || band.q > MAX_Q {
-            return Err(format!(
-                "Q {} out of range ({}-{})",
-                band.q, MIN_Q, MAX_Q
-            ));
+            return Err(format!("Q {} out of range ({}-{})", band.q, MIN_Q, MAX_Q));
         }
         if band.gain_db < MIN_GAIN_DB || band.gain_db > MAX_GAIN_DB {
             return Err(format!(

@@ -67,7 +67,11 @@ impl Default for ThemeSettingsState {
 async fn test_theme_variant_selection(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(ThemeSettingsState::default()));
 
-    let variants = [ThemeVariant::Dark, ThemeVariant::Light, ThemeVariant::System];
+    let variants = [
+        ThemeVariant::Dark,
+        ThemeVariant::Light,
+        ThemeVariant::System,
+    ];
     for variant in variants {
         state.borrow_mut().variant = variant;
         assert_eq!(state.borrow().variant, variant);
@@ -97,9 +101,18 @@ async fn test_system_theme_follows_os(_cx: &mut TestAppContext) {
         }
     }
 
-    assert_eq!(get_effective_variant(ThemeVariant::System, true), ThemeVariant::Dark);
-    assert_eq!(get_effective_variant(ThemeVariant::System, false), ThemeVariant::Light);
-    assert_eq!(get_effective_variant(ThemeVariant::Dark, false), ThemeVariant::Dark);
+    assert_eq!(
+        get_effective_variant(ThemeVariant::System, true),
+        ThemeVariant::Dark
+    );
+    assert_eq!(
+        get_effective_variant(ThemeVariant::System, false),
+        ThemeVariant::Light
+    );
+    assert_eq!(
+        get_effective_variant(ThemeVariant::Dark, false),
+        ThemeVariant::Dark
+    );
 }
 
 // =============================================================================
@@ -248,11 +261,7 @@ async fn test_reduce_motion_toggle(_cx: &mut TestAppContext) {
 #[gpui::test]
 async fn test_high_contrast_effect(_cx: &mut TestAppContext) {
     fn get_border_width(high_contrast: bool) -> f32 {
-        if high_contrast {
-            2.0
-        } else {
-            1.0
-        }
+        if high_contrast { 2.0 } else { 1.0 }
     }
 
     assert!((get_border_width(false) - 1.0).abs() < 0.01);
@@ -263,11 +272,7 @@ async fn test_high_contrast_effect(_cx: &mut TestAppContext) {
 #[gpui::test]
 async fn test_reduce_motion_effect(_cx: &mut TestAppContext) {
     fn get_transition_duration(reduce_motion: bool) -> f32 {
-        if reduce_motion {
-            0.0
-        } else {
-            0.2
-        }
+        if reduce_motion { 0.0 } else { 0.2 }
     }
 
     assert!((get_transition_duration(false) - 0.2).abs() < 0.01);

@@ -310,7 +310,13 @@ async fn test_plugin_workflow_add_duplicates(_cx: &mut TestAppContext) {
     state.borrow_mut().add_plugin(PluginType::Eq);
 
     assert_eq!(state.borrow().plugins.len(), 3);
-    assert!(state.borrow().plugins.iter().all(|p| p.plugin_type == PluginType::Eq));
+    assert!(
+        state
+            .borrow()
+            .plugins
+            .iter()
+            .all(|p| p.plugin_type == PluginType::Eq)
+    );
 
     // Each should have unique ID
     let ids: Vec<usize> = state.borrow().plugins.iter().map(|p| p.id).collect();
@@ -355,9 +361,7 @@ async fn test_plugin_workflow_modify_parameters(_cx: &mut TestAppContext) {
 #[gpui::test]
 async fn test_plugin_workflow_parameter_validation(_cx: &mut TestAppContext) {
     fn validate_compressor_params(params: &serde_json::Value) -> Result<(), String> {
-        let threshold = params["threshold_db"]
-            .as_f64()
-            .ok_or("Missing threshold")?;
+        let threshold = params["threshold_db"].as_f64().ok_or("Missing threshold")?;
         let ratio = params["ratio"].as_f64().ok_or("Missing ratio")?;
         let attack = params["attack_ms"].as_f64().ok_or("Missing attack")?;
         let release = params["release_ms"].as_f64().ok_or("Missing release")?;
@@ -438,8 +442,14 @@ async fn test_plugin_workflow_bypass_chain(_cx: &mut TestAppContext) {
 
     // Verify which are enabled
     assert!(state.borrow().plugins[0].enabled, "EQ should be enabled");
-    assert!(!state.borrow().plugins[1].enabled, "Compressor should be disabled");
-    assert!(state.borrow().plugins[2].enabled, "Limiter should be enabled");
+    assert!(
+        !state.borrow().plugins[1].enabled,
+        "Compressor should be disabled"
+    );
+    assert!(
+        state.borrow().plugins[2].enabled,
+        "Limiter should be enabled"
+    );
 }
 
 // =============================================================================
@@ -456,7 +466,10 @@ async fn test_plugin_workflow_reorder(_cx: &mut TestAppContext) {
     state.borrow_mut().add_plugin(PluginType::Limiter);
 
     // Initial order: Compressor, EQ, Limiter
-    assert_eq!(state.borrow().plugins[0].plugin_type, PluginType::Compressor);
+    assert_eq!(
+        state.borrow().plugins[0].plugin_type,
+        PluginType::Compressor
+    );
     assert_eq!(state.borrow().plugins[1].plugin_type, PluginType::Eq);
 
     // Move EQ to front (typical mastering order)
@@ -464,7 +477,10 @@ async fn test_plugin_workflow_reorder(_cx: &mut TestAppContext) {
 
     // New order: EQ, Compressor, Limiter
     assert_eq!(state.borrow().plugins[0].plugin_type, PluginType::Eq);
-    assert_eq!(state.borrow().plugins[1].plugin_type, PluginType::Compressor);
+    assert_eq!(
+        state.borrow().plugins[1].plugin_type,
+        PluginType::Compressor
+    );
     assert_eq!(state.borrow().plugins[2].plugin_type, PluginType::Limiter);
 }
 
@@ -482,7 +498,10 @@ async fn test_plugin_workflow_move_to_end(_cx: &mut TestAppContext) {
 
     // New order: EQ, Compressor, Limiter
     assert_eq!(state.borrow().plugins[0].plugin_type, PluginType::Eq);
-    assert_eq!(state.borrow().plugins[1].plugin_type, PluginType::Compressor);
+    assert_eq!(
+        state.borrow().plugins[1].plugin_type,
+        PluginType::Compressor
+    );
     assert_eq!(state.borrow().plugins[2].plugin_type, PluginType::Limiter);
 }
 
@@ -674,21 +693,29 @@ async fn test_plugin_workflow_mixing_chain(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(PluginRackState::default()));
 
     // Typical mixing chain order
-    state.borrow_mut().add_plugin(PluginType::Eq);        // Corrective EQ
+    state.borrow_mut().add_plugin(PluginType::Eq); // Corrective EQ
     state.borrow_mut().add_plugin(PluginType::Compressor); // Dynamics control
-    state.borrow_mut().add_plugin(PluginType::Eq);        // Tonal EQ
-    state.borrow_mut().add_plugin(PluginType::Limiter);   // Safety limiter
+    state.borrow_mut().add_plugin(PluginType::Eq); // Tonal EQ
+    state.borrow_mut().add_plugin(PluginType::Limiter); // Safety limiter
 
     assert_eq!(state.borrow().plugins.len(), 4);
 
     // Verify signal flow
-    let types: Vec<PluginType> = state.borrow().plugins.iter().map(|p| p.plugin_type).collect();
-    assert_eq!(types, vec![
-        PluginType::Eq,
-        PluginType::Compressor,
-        PluginType::Eq,
-        PluginType::Limiter
-    ]);
+    let types: Vec<PluginType> = state
+        .borrow()
+        .plugins
+        .iter()
+        .map(|p| p.plugin_type)
+        .collect();
+    assert_eq!(
+        types,
+        vec![
+            PluginType::Eq,
+            PluginType::Compressor,
+            PluginType::Eq,
+            PluginType::Limiter
+        ]
+    );
 }
 
 /// Test analysis chain setup.
@@ -703,7 +730,12 @@ async fn test_plugin_workflow_analysis_chain(_cx: &mut TestAppContext) {
     state.borrow_mut().add_plugin(PluginType::LoudnessMonitor);
 
     // Verify analyzers are after processing
-    let types: Vec<PluginType> = state.borrow().plugins.iter().map(|p| p.plugin_type).collect();
+    let types: Vec<PluginType> = state
+        .borrow()
+        .plugins
+        .iter()
+        .map(|p| p.plugin_type)
+        .collect();
     assert_eq!(types[2], PluginType::Spectrum);
     assert_eq!(types[3], PluginType::LoudnessMonitor);
 }

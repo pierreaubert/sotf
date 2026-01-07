@@ -2186,10 +2186,7 @@ impl App {
         reference: sotf_plugins::TiltReferenceFreq,
     ) {
         if let Some(plugin) = self.plugin_chain.get_plugin_mut(plugin_idx) {
-            if let PluginSettings::SpectrumAnalyzer {
-                tilt_reference, ..
-            } = &mut plugin.settings
-            {
+            if let PluginSettings::SpectrumAnalyzer { tilt_reference, .. } = &mut plugin.settings {
                 *tilt_reference = reference;
                 self.pending_plugin_update = Some(PluginUpdateType::Structural);
             }

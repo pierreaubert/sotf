@@ -253,10 +253,7 @@ async fn test_step_next_navigation(_cx: &mut TestAppContext) {
         HeadphoneEqStep::Optimization.next(),
         Some(HeadphoneEqStep::Listen)
     );
-    assert_eq!(
-        HeadphoneEqStep::Listen.next(),
-        Some(HeadphoneEqStep::Save)
-    );
+    assert_eq!(HeadphoneEqStep::Listen.next(), Some(HeadphoneEqStep::Save));
     assert_eq!(HeadphoneEqStep::Save.next(), None);
 }
 
@@ -474,12 +471,7 @@ async fn test_peq_model_selection(_cx: &mut TestAppContext) {
 async fn test_de_strategy_selection(_cx: &mut TestAppContext) {
     let state = Rc::new(RefCell::new(HeadphoneEqState::default()));
 
-    let strategies = [
-        "currenttobest1bin",
-        "best1bin",
-        "rand1bin",
-        "best2bin",
-    ];
+    let strategies = ["currenttobest1bin", "best1bin", "rand1bin", "best2bin"];
 
     for strategy in strategies {
         state.borrow_mut().optimizer_config.strategy = strategy.to_string();
@@ -631,7 +623,10 @@ async fn test_optimization_failure_handling(_cx: &mut TestAppContext) {
     state.borrow_mut().optimization_status = OptimizationStatus::Failed;
     state.borrow_mut().error_message = Some("Optimization diverged".to_string());
 
-    assert_eq!(state.borrow().optimization_status, OptimizationStatus::Failed);
+    assert_eq!(
+        state.borrow().optimization_status,
+        OptimizationStatus::Failed
+    );
     assert!(state.borrow().error_message.is_some());
 }
 
@@ -645,7 +640,10 @@ async fn test_optimization_cancellation(_cx: &mut TestAppContext) {
 
     state.borrow_mut().optimization_status = OptimizationStatus::Cancelled;
 
-    assert_eq!(state.borrow().optimization_status, OptimizationStatus::Cancelled);
+    assert_eq!(
+        state.borrow().optimization_status,
+        OptimizationStatus::Cancelled
+    );
     assert!(!state.borrow().can_advance());
 }
 
@@ -666,14 +664,12 @@ async fn test_result_availability_for_listen(_cx: &mut TestAppContext) {
     state.borrow_mut().result = Some(OptimizationResult {
         pre_score: 10.0,
         post_score: 2.0,
-        biquads: vec![
-            BiquadFilter {
-                filter_type: "peak".to_string(),
-                freq: 1000.0,
-                q: 2.0,
-                db_gain: -3.0,
-            },
-        ],
+        biquads: vec![BiquadFilter {
+            filter_type: "peak".to_string(),
+            freq: 1000.0,
+            q: 2.0,
+            db_gain: -3.0,
+        }],
     });
 
     assert!(state.borrow().can_advance());

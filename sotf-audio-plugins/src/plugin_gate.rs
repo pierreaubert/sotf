@@ -582,4 +582,181 @@ mod tests {
         assert_eq!(mix, Some(ParameterValue::Float(0.5)));
         assert_eq!(sidechain, Some(ParameterValue::Float(120.0)));
     }
+
+    #[test]
+    fn test_gate_process_loud_signal_passes() {
+        // Test that a loud signal above threshold passes through unattenuated
+        let mut gate = GatePlugin::new(2, -20.0, 100.0, 1.0, 10.0, 50.0);
+        gate.initialize(48000).unwrap();
+
+        let sample_rate = 48000.0;
+        let duration = 0.5; // 500ms
+        let num_frames = (duration * sample_rate) as usize;
+        let channels = 2;
+
+        // Generate loud sine wave at 0.5 amplitude (-6 dB, above -20 dB threshold)
+        let mut buffer: Vec<f32> = (0..num_frames)
+            .flat_map(|i| {
+                let t = i as f32 / sample_rate as f32;
+                let sample = (t * 440.0 * 2.0 * std::f32::consts::PI).sin() * 0.5;
+                vec![sample, sample] // stereo
+            })
+            .collect();
+
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+
+        gate.process_in_place(&mut buffer, &context).unwrap();
+
+        // Calculate RMS of output (skip first 100ms for gate to settle)
+        let skip_frames = (0.1 * sample_rate) as usize;
+        let rms: f32 = buffer
+            .chunks(channels)
+            .skip(skip_frames)
+            .map(|frame| frame[0] * frame[0])
+            .sum::<f32>()
+            / (num_frames - skip_frames) as f32;
+        let rms = rms.sqrt();
+
+        // Expected RMS for sine at 0.5 amplitude: 0.5 / sqrt(2) ≈ 0.354
+        let expected_rms = 0.354;
+        assert!(
+            (rms - expected_rms).abs() < 0.05,
+            "Loud signal should pass through gate. Expected RMS ~{:.3}, got {:.3}",
+            expected_rms,
+            rms
+        );
+    }
+
+    #[test]
+    fn test_gate_process_quiet_signal_attenuated() {
+        // Test that a quiet signal below threshold is attenuated
+        let mut gate = GatePlugin::new(2, -20.0, 100.0, 1.0, 10.0, 50.0);
+        gate.initialize(48000).unwrap();
+
+        let sample_rate = 48000.0;
+        let duration = 1.0; // 1 second to let gate fully close
+        let num_frames = (duration * sample_rate) as usize;
+        let channels = 2;
+
+        // Generate quiet sine wave at 0.05 amplitude (-26 dB, below -20 dB threshold)
+        let mut buffer: Vec<f32> = (0..num_frames)
+            .flat_map(|i| {
+                let t = i as f32 / sample_rate as f32;
+                let sample = (t * 440.0 * 2.0 * std::f32::consts::PI).sin() * 0.05;
+                vec![sample, sample] // stereo
+            })
+            .collect();
+
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+
+        gate.process_in_place(&mut buffer, &context).unwrap();
+
+        // Calculate RMS of output (analyze last 500ms when gate should be fully closed)
+        let analyze_start = (0.5 * sample_rate) as usize;
+        let rms: f32 = buffer
+            .chunks(channels)
+            .skip(analyze_start)
+            .map(|frame| frame[0] * frame[0])
+            .sum::<f32>()
+            / (num_frames - analyze_start) as f32;
+        let rms = rms.sqrt();
+
+        // Input RMS: 0.05 / sqrt(2) ≈ 0.035 (-29 dB)
+        // With threshold -20 dB and ratio 100:1, signal at -26 dB is 6 dB below threshold
+        // Attenuation = 6 * (1 - 1/100) ≈ 5.94 dB
+        // Expected output: -29 - 5.94 ≈ -35 dB → RMS ≈ 0.018
+        // Actually with 100:1 ratio, it should be almost silent
+        let input_rms = 0.035;
+        assert!(
+            rms < input_rms * 0.5, // Should be significantly attenuated
+            "Quiet signal should be attenuated by gate. Input RMS ~{:.4}, output RMS {:.4}",
+            input_rms,
+            rms
+        );
+    }
+
+    #[test]
+    fn test_gate_process_loud_then_quiet() {
+        // Test a signal that starts loud (gate open) then goes quiet (gate closes)
+        let mut gate = GatePlugin::new(2, -20.0, 100.0, 1.0, 10.0, 50.0);
+        gate.initialize(48000).unwrap();
+
+        let sample_rate = 48000.0;
+        let duration = 2.0; // 2 seconds total
+        let num_frames = (duration * sample_rate) as usize;
+        let channels = 2;
+
+        let loud_amp = 0.5; // -6 dB (above threshold)
+        let quiet_amp = 0.05; // -26 dB (below threshold)
+
+        // First half loud, second half quiet
+        let mut buffer: Vec<f32> = (0..num_frames)
+            .flat_map(|i| {
+                let t = i as f32 / sample_rate as f32;
+                let amp = if t < 1.0 { loud_amp } else { quiet_amp };
+                let sample = (t * 440.0 * 2.0 * std::f32::consts::PI).sin() * amp;
+                vec![sample, sample]
+            })
+            .collect();
+
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+
+        gate.process_in_place(&mut buffer, &context).unwrap();
+
+        // Analyze first half (0.2s - 0.8s) - should be loud
+        let first_start = (0.2 * sample_rate) as usize;
+        let first_end = (0.8 * sample_rate) as usize;
+        let first_rms: f32 = buffer
+            .chunks(channels)
+            .skip(first_start)
+            .take(first_end - first_start)
+            .map(|frame| frame[0] * frame[0])
+            .sum::<f32>()
+            / (first_end - first_start) as f32;
+        let first_rms = first_rms.sqrt();
+
+        // Analyze second half (1.2s - 1.8s) - should be quiet (gated)
+        let second_start = (1.2 * sample_rate) as usize;
+        let second_end = (1.8 * sample_rate) as usize;
+        let second_rms: f32 = buffer
+            .chunks(channels)
+            .skip(second_start)
+            .take(second_end - second_start)
+            .map(|frame| frame[0] * frame[0])
+            .sum::<f32>()
+            / (second_end - second_start) as f32;
+        let second_rms = second_rms.sqrt();
+
+        let first_db = 20.0 * first_rms.log10();
+        let second_db = 20.0 * second_rms.log10();
+        let reduction_db = first_db - second_db;
+
+        println!(
+            "First half RMS: {:.4} ({:.2} dB), Second half RMS: {:.4} ({:.2} dB), Reduction: {:.2} dB",
+            first_rms, first_db, second_rms, second_db, reduction_db
+        );
+
+        // First half should be around -9 dB (0.5 / sqrt(2))
+        assert!(
+            first_rms > 0.3,
+            "First half should be loud, got RMS {:.4}",
+            first_rms
+        );
+
+        // Second half should be significantly attenuated - at least 10 dB reduction
+        assert!(
+            reduction_db > 10.0,
+            "Gate should reduce quiet signal by at least 10 dB, got {:.2} dB reduction",
+            reduction_db
+        );
+    }
 }

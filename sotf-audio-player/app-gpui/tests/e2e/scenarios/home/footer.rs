@@ -69,11 +69,7 @@ async fn test_footer_prev_track(_cx: &mut TestAppContext) {
             }
         }
     }
-    assert_eq!(
-        *queue_index.borrow(),
-        Some(0),
-        "Should stay at first track"
-    );
+    assert_eq!(*queue_index.borrow(), Some(0), "Should stay at first track");
 }
 
 /// Test next track navigation.
@@ -157,10 +153,7 @@ async fn test_footer_seek_backward(_cx: &mut TestAppContext) {
     let new_position = (*position.borrow() - seek_amount).max(0.0);
     *position.borrow_mut() = new_position;
 
-    assert!(
-        *position.borrow() < 0.001,
-        "Should be clamped to 0"
-    );
+    assert!(*position.borrow() < 0.001, "Should be clamped to 0");
 }
 
 // =============================================================================
@@ -283,10 +276,7 @@ async fn test_footer_volume_keyboard_home_end(_cx: &mut TestAppContext) {
     *volume.borrow_mut() = 0.5;
     let new_volume = (*volume.borrow() - 1.0).clamp(0.0, 1.0);
     *volume.borrow_mut() = new_volume;
-    assert!(
-        *volume.borrow() < 0.001,
-        "End key should set min volume"
-    );
+    assert!(*volume.borrow() < 0.001, "End key should set min volume");
 }
 
 /// Test mute toggle.
@@ -302,7 +292,10 @@ async fn test_footer_volume_mute_toggle(_cx: &mut TestAppContext) {
     } else {
         *volume.borrow()
     };
-    assert!(effective_volume < 0.001, "Effective volume should be 0 when muted");
+    assert!(
+        effective_volume < 0.001,
+        "Effective volume should be 0 when muted"
+    );
     assert!(
         (*volume.borrow() - 0.5).abs() < 0.001,
         "Stored volume should remain unchanged"
@@ -417,10 +410,7 @@ async fn test_footer_waveform_progress(_cx: &mut TestAppContext) {
         0.0
     };
 
-    assert!(
-        (progress - 0.25).abs() < 0.001,
-        "Progress should be 25%"
-    );
+    assert!((progress - 0.25).abs() < 0.001, "Progress should be 25%");
 }
 
 /// Test waveform progress with zero duration.
@@ -486,11 +476,7 @@ async fn test_footer_device_selection(_cx: &mut TestAppContext) {
 
     // Select second device
     *selected_index.borrow_mut() = 1;
-    assert_eq!(
-        *selected_index.borrow(),
-        1,
-        "Should select second device"
-    );
+    assert_eq!(*selected_index.borrow(), 1, "Should select second device");
 
     // Verify device name
     let selected_name = device_names.get(*selected_index.borrow());

@@ -99,6 +99,7 @@ fn test_gate_loopback_verification() {
     // Audio Engine
     let mut config = EngineConfig::default();
     config.output_device = Some(out_device.description().unwrap().name().to_string());
+    config.output_sample_rate = sample_rate as u32;
     config.output_channels = 2;
     config.plugins = vec![PluginConfig::new(
         "gate",
@@ -166,13 +167,39 @@ fn test_gate_loopback_verification() {
     }
     let captured_ch0: Vec<f32> = buffer.iter().step_by(channels).cloned().collect();
 
+    println!(
+        "Captured {} frames at {} channels",
+        captured_ch0.len(),
+        channels
+    );
+
+    // Detect playback latency by finding when audio starts (RMS > threshold)
+    let window_size = (0.05 * sample_rate) as usize; // 50ms windows
+    let mut latency_samples = 0usize;
+    for i in (0..captured_ch0.len() - window_size).step_by(window_size / 4) {
+        let rms: f32 = captured_ch0[i..i + window_size]
+            .iter()
+            .map(|&x| x * x)
+            .sum::<f32>()
+            / window_size as f32;
+        let rms = rms.sqrt();
+        if rms > 0.1 {
+            // Found signal start
+            latency_samples = i;
+            break;
+        }
+    }
+    let latency_offset = latency_samples as f64 / sample_rate;
+    println!("Detected latency: {:.3}s ({} samples)", latency_offset, latency_samples);
+
     // Calculate RMS for first half (should be loud - gate open)
-    let first_half_start = (0.2 * sample_rate) as usize;
-    let first_half_end = (0.8 * sample_rate) as usize;
+    let first_half_start = ((0.2 + latency_offset) * sample_rate) as usize;
+    let first_half_end = ((0.8 + latency_offset) * sample_rate) as usize;
 
     // Calculate RMS for second half (should be quiet - gate closed)
-    let second_half_start = (1.2 * sample_rate) as usize;
-    let second_half_end = (1.8 * sample_rate) as usize;
+    // source 1.2-1.8s → captured 1.7-2.3s
+    let second_half_start = ((1.2 + latency_offset) * sample_rate) as usize;
+    let second_half_end = ((1.8 + latency_offset) * sample_rate) as usize;
 
     if captured_ch0.len() < second_half_end {
         panic!("Recording too short: {} samples", captured_ch0.len());

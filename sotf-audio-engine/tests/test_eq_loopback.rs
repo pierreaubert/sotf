@@ -112,6 +112,7 @@ fn test_eq_sweep_loopback_verification() {
     // 5. Configure Audio Engine
     let mut config = EngineConfig::default();
     config.output_device = Some(out_device.description().unwrap().name().to_string());
+    config.output_sample_rate = sample_rate as u32;
     config.output_channels = 2;
 
     // EQ Plugin Configuration

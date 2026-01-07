@@ -31,8 +31,8 @@ struct ABCompareState {
     enabled: bool,
     // Mix controls
     mix_mode: MixMode,
-    mix: f32,             // -1.0 = A, 0.0 = 50/50, +1.0 = B
-    selected_path: i32,   // 0 = A, 1 = B (for binary mode)
+    mix: f32,           // -1.0 = A, 0.0 = 50/50, +1.0 = B
+    selected_path: i32, // 0 = A, 1 = B (for binary mode)
     bypass: bool,
     // Auto-gain
     auto_gain_enabled: bool,
@@ -230,11 +230,7 @@ async fn test_binary_toggle(_cx: &mut TestAppContext) {
 #[gpui::test]
 async fn test_binary_mode_label(_cx: &mut TestAppContext) {
     fn get_path_label(selected: i32) -> &'static str {
-        if selected == 0 {
-            "Path A"
-        } else {
-            "Path B"
-        }
+        if selected == 0 { "Path A" } else { "Path B" }
     }
 
     assert_eq!(get_path_label(0), "Path A");
@@ -271,7 +267,10 @@ async fn test_bypass_passes_input(_cx: &mut TestAppContext) {
         }
     }
 
-    assert_eq!(get_output_description(true, 0.0), "Original input (unprocessed)");
+    assert_eq!(
+        get_output_description(true, 0.0),
+        "Original input (unprocessed)"
+    );
     assert_eq!(get_output_description(false, -1.0), "Path A processing");
 }
 

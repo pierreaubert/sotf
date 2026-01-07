@@ -391,7 +391,7 @@ async fn test_gate_status_display(_cx: &mut TestAppContext) {
 async fn test_gate_status_color(_cx: &mut TestAppContext) {
     fn status_color(status: GateStatus) -> (u8, u8, u8) {
         match status {
-            GateStatus::Closed => (255, 0, 0),     // Red
+            GateStatus::Closed => (255, 0, 0),    // Red
             GateStatus::Opening => (255, 165, 0), // Orange
             GateStatus::Open => (0, 255, 0),      // Green
             GateStatus::Closing => (255, 255, 0), // Yellow
@@ -569,14 +569,16 @@ async fn test_gate_threshold_keys(_cx: &mut TestAppContext) {
     // Up arrow
     {
         let current = state.borrow().threshold_db;
-        state.borrow_mut().threshold_db = (current + STEP_DB).clamp(MIN_THRESHOLD_DB, MAX_THRESHOLD_DB);
+        state.borrow_mut().threshold_db =
+            (current + STEP_DB).clamp(MIN_THRESHOLD_DB, MAX_THRESHOLD_DB);
     }
     assert!((state.borrow().threshold_db - (initial + STEP_DB)).abs() < 0.001);
 
     // Down arrow
     {
         let current = state.borrow().threshold_db;
-        state.borrow_mut().threshold_db = (current - STEP_DB).clamp(MIN_THRESHOLD_DB, MAX_THRESHOLD_DB);
+        state.borrow_mut().threshold_db =
+            (current - STEP_DB).clamp(MIN_THRESHOLD_DB, MAX_THRESHOLD_DB);
     }
     assert!((state.borrow().threshold_db - initial).abs() < 0.001);
 }

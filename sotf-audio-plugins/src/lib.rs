@@ -131,8 +131,7 @@ pub use analyzer_loudness_monitor::{LoudnessInfo, LoudnessMonitorPlugin};
 #[allow(unused_imports)]
 pub(crate) use analyzer_spectrum::SpectrumAnalyzer;
 pub use analyzer_spectrum::{
-    SpectralTiltCorrection, SpectrumAnalyzerPlugin, SpectrumConfig, SpectrumInfo,
-    TiltReferenceFreq,
+    SpectralTiltCorrection, SpectrumAnalyzerPlugin, SpectrumConfig, SpectrumInfo, TiltReferenceFreq,
 };
 pub use plugin_loudness_compensation::LoudnessCompensation;
 

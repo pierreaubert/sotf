@@ -362,9 +362,18 @@ async fn test_number_format_example(_cx: &mut TestAppContext) {
         format!("{}{}{:02}", result, decimal_sep, decimal)
     }
 
-    assert_eq!(format_number(NumberFormat::CommaSeparator, 1234.56), "1,234.56");
-    assert_eq!(format_number(NumberFormat::DotSeparator, 1234.56), "1.234,56");
-    assert_eq!(format_number(NumberFormat::SpaceSeparator, 1234.56), "1 234,56");
+    assert_eq!(
+        format_number(NumberFormat::CommaSeparator, 1234.56),
+        "1,234.56"
+    );
+    assert_eq!(
+        format_number(NumberFormat::DotSeparator, 1234.56),
+        "1.234,56"
+    );
+    assert_eq!(
+        format_number(NumberFormat::SpaceSeparator, 1234.56),
+        "1 234,56"
+    );
 }
 
 /// Test number format labels.
@@ -378,7 +387,10 @@ async fn test_number_format_labels(_cx: &mut TestAppContext) {
         }
     }
 
-    assert_eq!(get_number_format_label(NumberFormat::CommaSeparator), "1,000.00");
+    assert_eq!(
+        get_number_format_label(NumberFormat::CommaSeparator),
+        "1,000.00"
+    );
 }
 
 // =============================================================================
@@ -412,16 +424,26 @@ async fn test_system_language_detection(_cx: &mut TestAppContext) {
 async fn test_locale_to_formats_mapping(_cx: &mut TestAppContext) {
     fn get_default_formats(lang: Language) -> (DateFormat, TimeFormat, NumberFormat) {
         match lang {
-            Language::English => (DateFormat::MDY, TimeFormat::Hour12, NumberFormat::CommaSeparator),
-            Language::German | Language::French | Language::Spanish | Language::Portuguese => {
-                (DateFormat::DMY, TimeFormat::Hour24, NumberFormat::DotSeparator)
-            }
-            Language::Japanese | Language::Chinese => {
-                (DateFormat::YMD, TimeFormat::Hour24, NumberFormat::CommaSeparator)
-            }
-            Language::Russian => {
-                (DateFormat::DMY, TimeFormat::Hour24, NumberFormat::SpaceSeparator)
-            }
+            Language::English => (
+                DateFormat::MDY,
+                TimeFormat::Hour12,
+                NumberFormat::CommaSeparator,
+            ),
+            Language::German | Language::French | Language::Spanish | Language::Portuguese => (
+                DateFormat::DMY,
+                TimeFormat::Hour24,
+                NumberFormat::DotSeparator,
+            ),
+            Language::Japanese | Language::Chinese => (
+                DateFormat::YMD,
+                TimeFormat::Hour24,
+                NumberFormat::CommaSeparator,
+            ),
+            Language::Russian => (
+                DateFormat::DMY,
+                TimeFormat::Hour24,
+                NumberFormat::SpaceSeparator,
+            ),
         }
     }
 
@@ -491,8 +513,14 @@ async fn test_pluralization(_cx: &mut TestAppContext) {
         format!("{} {}", count, word)
     }
 
-    assert_eq!(pluralize(Language::English, 1, "track", "tracks"), "1 track");
-    assert_eq!(pluralize(Language::English, 5, "track", "tracks"), "5 tracks");
+    assert_eq!(
+        pluralize(Language::English, 1, "track", "tracks"),
+        "1 track"
+    );
+    assert_eq!(
+        pluralize(Language::English, 5, "track", "tracks"),
+        "5 tracks"
+    );
 }
 
 // =============================================================================
@@ -516,8 +544,12 @@ async fn test_restart_message_display(_cx: &mut TestAppContext) {
     fn get_restart_message(lang: Language) -> &'static str {
         match lang {
             Language::English => "Please restart the application for changes to take effect.",
-            Language::Spanish => "Por favor, reinicie la aplicación para que los cambios surtan efecto.",
-            Language::French => "Veuillez redémarrer l'application pour appliquer les modifications.",
+            Language::Spanish => {
+                "Por favor, reinicie la aplicación para que los cambios surtan efecto."
+            }
+            Language::French => {
+                "Veuillez redémarrer l'application pour appliquer les modifications."
+            }
             _ => "Please restart the application.",
         }
     }

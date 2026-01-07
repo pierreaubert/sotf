@@ -2748,6 +2748,7 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             low_gain,
             high_freq,
             high_gain,
+            ..
         } => vec![
             ("Low Freq".to_string(), format!("{:.0} Hz", low_freq)),
             ("Low Gain".to_string(), format!("{:.1} dB", low_gain)),
@@ -2834,6 +2835,7 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             min_freq,
             max_freq,
             smoothing,
+            ..
         } => vec![
             ("Frequency Bins".to_string(), format!("{}", num_bins)),
             ("Min Frequency".to_string(), format!("{:.0} Hz", min_freq)),

@@ -191,10 +191,7 @@ async fn test_category_selection(_cx: &mut TestAppContext) {
 /// Test category filtering.
 #[gpui::test]
 async fn test_category_filtering(_cx: &mut TestAppContext) {
-    fn filter_by_category(
-        bindings: &[KeyBinding],
-        category: ActionCategory,
-    ) -> Vec<KeyBinding> {
+    fn filter_by_category(bindings: &[KeyBinding], category: ActionCategory) -> Vec<KeyBinding> {
         bindings
             .iter()
             .filter(|b| b.category == category)
@@ -550,7 +547,11 @@ async fn test_show_customized_only(_cx: &mut TestAppContext) {
 #[gpui::test]
 async fn test_filter_customized_bindings(_cx: &mut TestAppContext) {
     fn filter_customized(bindings: &[KeyBinding]) -> Vec<KeyBinding> {
-        bindings.iter().filter(|b| b.is_customized).cloned().collect()
+        bindings
+            .iter()
+            .filter(|b| b.is_customized)
+            .cloned()
+            .collect()
     }
 
     let bindings = vec![
@@ -631,10 +632,7 @@ async fn test_reserved_key_rejection(_cx: &mut TestAppContext) {
 #[gpui::test]
 async fn test_modifier_only_rejection(_cx: &mut TestAppContext) {
     fn is_modifier_only(key: &str) -> bool {
-        matches!(
-            key,
-            "Meta" | "Shift" | "Alt" | "Control" | "CapsLock"
-        )
+        matches!(key, "Meta" | "Shift" | "Alt" | "Control" | "CapsLock")
     }
 
     assert!(is_modifier_only("Meta"));
@@ -717,14 +715,12 @@ async fn test_export_bindings(_cx: &mut TestAppContext) {
         format!("{{{}}}", entries.join(", "))
     }
 
-    let bindings = vec![
-        KeyBinding {
-            action_id: "play_pause".to_string(),
-            key: "K".to_string(),
-            is_customized: true,
-            ..Default::default()
-        },
-    ];
+    let bindings = vec![KeyBinding {
+        action_id: "play_pause".to_string(),
+        key: "K".to_string(),
+        is_customized: true,
+        ..Default::default()
+    }];
 
     let exported = export_bindings_json(&bindings);
     assert!(exported.contains("play_pause"));

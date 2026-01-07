@@ -55,8 +55,9 @@ test-examples:
 	@echo "✓ All gpui-ui-kit examples compiled successfully"
 
 ntest:
-	# Exclude GPUI crates - they cause stack overflow in syn during test mode compilation
-	RUST_MIN_STACK=16777216 cargo nextest run --release --no-fail-fast --workspace --lib
+	# Note: --lib is intentionally omitted to respect `test = false` in crates like sotf-gpui
+	# which have deeply nested GPUI macros that cause stack overflow in syn
+	RUST_MIN_STACK=16777216 cargo nextest run --release --no-fail-fast --workspace
 
 # ----------------------------------------------------------------------
 # RUN

@@ -424,8 +424,7 @@ async fn test_ipsilateral_path_length(_cx: &mut TestAppContext) {
     fn calculate_ipsilateral_path(distance_m: f32, angle_deg: f32) -> f32 {
         // Direct path from speaker to ipsilateral (same-side) ear
         // Simplified: assumes ear is at center of head
-        distance_m
-            * (1.0 - 0.1 * (angle_deg.to_radians().sin()))
+        distance_m * (1.0 - 0.1 * (angle_deg.to_radians().sin()))
     }
 
     let path = calculate_ipsilateral_path(2.0, 30.0);

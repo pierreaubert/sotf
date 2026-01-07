@@ -633,7 +633,9 @@ pub fn render_spectrum_analyzer_plugin(
                                                     "pink" => SpectralTiltCorrection::Pink,
                                                     _ => SpectralTiltCorrection::None,
                                                 };
-                                                state.app.set_spectrum_tilt_correction(plugin_idx, tilt);
+                                                state
+                                                    .app
+                                                    .set_spectrum_tilt_correction(plugin_idx, tilt);
                                             });
                                         }
                                     }),
@@ -684,7 +686,9 @@ pub fn render_spectrum_analyzer_plugin(
                                                     "minfreq" => TiltReferenceFreq::MinFreq,
                                                     _ => TiltReferenceFreq::Standard,
                                                 };
-                                                state.app.set_spectrum_tilt_reference(plugin_idx, reference);
+                                                state.app.set_spectrum_tilt_reference(
+                                                    plugin_idx, reference,
+                                                );
                                             });
                                         }
                                     }),

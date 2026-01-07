@@ -431,7 +431,10 @@ async fn test_audio_backend_display(_cx: &mut TestAppContext) {
 async fn test_system_info_formatting(_cx: &mut TestAppContext) {
     fn format_system_info(info: &SystemInfo) -> Vec<(String, String)> {
         vec![
-            ("Operating System".to_string(), format!("{} {}", info.os_name, info.os_version)),
+            (
+                "Operating System".to_string(),
+                format!("{} {}", info.os_name, info.os_version),
+            ),
             ("Processor".to_string(), info.cpu_info.clone()),
             ("Memory".to_string(), format!("{:.1} GB", info.memory_gb)),
             ("Audio Backend".to_string(), info.audio_backend.clone()),
@@ -646,11 +649,7 @@ async fn test_copy_system_info(_cx: &mut TestAppContext) {
 #[gpui::test]
 async fn test_active_tab_style(_cx: &mut TestAppContext) {
     fn get_tab_class(is_active: bool) -> &'static str {
-        if is_active {
-            "tab active"
-        } else {
-            "tab"
-        }
+        if is_active { "tab active" } else { "tab" }
     }
 
     assert!(get_tab_class(true).contains("active"));
@@ -661,11 +660,7 @@ async fn test_active_tab_style(_cx: &mut TestAppContext) {
 #[gpui::test]
 async fn test_link_hover_style(_cx: &mut TestAppContext) {
     fn get_link_color(is_hovered: bool) -> &'static str {
-        if is_hovered {
-            "accent_hover"
-        } else {
-            "accent"
-        }
+        if is_hovered { "accent_hover" } else { "accent" }
     }
 
     assert_eq!(get_link_color(false), "accent");

@@ -15,9 +15,9 @@ use std::rc::Rc;
 #[derive(Debug, Clone, Default, PartialEq)]
 struct RoomModel {
     enabled: bool,
-    room_size: f32,       // 0.0-1.0
+    room_size: f32,        // 0.0-1.0
     reflection_level: f32, // 0.0-1.0
-    reverb_time: f32,     // seconds
+    reverb_time: f32,      // seconds
 }
 
 /// Binaural decoder plugin state for testing
@@ -526,7 +526,7 @@ async fn test_speaker_elevation_atmos(_cx: &mut TestAppContext) {
             ("7.1.4", 9) => 45,  // Top Front Right
             ("7.1.4", 10) => 45, // Top Rear Left
             ("7.1.4", 11) => 45, // Top Rear Right
-            _ => 0,             // Bed layer at 0° elevation
+            _ => 0,              // Bed layer at 0° elevation
         }
     }
 
@@ -545,7 +545,13 @@ async fn test_hrtf_status_display(_cx: &mut TestAppContext) {
         if file.is_empty() {
             "Using built-in HRTF".to_string()
         } else if loaded {
-            format!("Loaded: {}", std::path::Path::new(file).file_name().unwrap().to_string_lossy())
+            format!(
+                "Loaded: {}",
+                std::path::Path::new(file)
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+            )
         } else {
             "Failed to load HRTF".to_string()
         }
