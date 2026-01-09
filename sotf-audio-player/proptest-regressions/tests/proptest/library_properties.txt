@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 67c29a774758a7c830a8398bff7eec3eaae1d0b27524c279a98f2e20694be104 # shrinks to album_count = 0, items_per_page = 1
+cc 9d93ef2e08f836c8f7b9f20438472203ed5ff643f3cd93eef1d922d937dcba76 # shrinks to albums = [TestAlbum { title: "a", artist: "a", year: None, genre: None, channels: 1, tracks: [TestTrack { path: "a_track1.flac", title: "a_track1.flac", duration_secs: 180.0 }] }]

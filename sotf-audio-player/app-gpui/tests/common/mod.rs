@@ -2,6 +2,8 @@
 //!
 //! Provides test fixtures and utilities for testing component logic.
 
+pub mod state_builder;
+
 use std::path::{Path, PathBuf};
 
 /// Test helper: Create a minimal Track for testing album card logic

@@ -729,13 +729,14 @@ impl PlayerView {
             );
 
             // Parse results and update state
-            let (should_auto_continue, next_channel_idx) = state_entity
-                .update(&mut cx.clone(), |state, _| {
+            let (should_auto_continue, next_channel_idx) = state_entity.update(
+                &mut cx.clone(),
+                |state, _| {
                     let should_continue = match result {
                         Ok(()) => {
                             // Analyze the recorded WAV file using the new library function
                             use sotf_audio::signal_analysis::{
-                                WavAnalysisConfig, analyze_wav_file, write_wav_analysis_csv,
+                                analyze_wav_file, write_wav_analysis_csv, WavAnalysisConfig,
                             };
 
                             // Use log sweep config since we're recording sweep measurements
@@ -827,9 +828,8 @@ impl PlayerView {
                     };
 
                     (should_continue, next_channel_idx)
-                })
-                .ok()
-                .unwrap_or((false, None));
+                },
+            );
 
             // If we should continue auto-recording, start the next channel
             if should_auto_continue {

@@ -38,6 +38,7 @@
     <!-- Entitlements and Permissions -->
     <key>NSMicrophoneUsageDescription</key>
     <string>SotF Player needs microphone access for audio recording and room EQ calibration.</string>
+
     <key>NSAppleEventsUsageDescription</key>
     <string>SotF Player uses AppleEvents for system automation.</string>
 

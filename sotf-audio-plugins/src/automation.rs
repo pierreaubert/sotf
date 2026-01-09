@@ -3,7 +3,6 @@
 // ============================================================================
 
 use super::parameters::ParameterId;
-use std::collections::HashMap;
 
 /// Automation mode for a parameter
 ///
@@ -283,7 +282,7 @@ impl ParameterSmoother {
 
 /// Utility functions for automation
 pub mod automation_utils {
-    use super::{AutomationCurve, BezierPoint};
+    use super::AutomationCurve;
 
     /// Evaluate an automation curve at a given position
     ///

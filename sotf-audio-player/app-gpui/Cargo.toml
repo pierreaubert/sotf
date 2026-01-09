@@ -112,7 +112,20 @@ math-iir-fir = { workspace = true }
 cpal = { workspace = true }
 hound = { workspace = true }
 sotf-audio-engine = { workspace = true }
+proptest = "1.6"
 
 [[test]]
 name = "e2e"
 path = "tests/e2e/mod.rs"
+
+[[test]]
+name = "negative"
+path = "tests/negative/mod.rs"
+
+[[test]]
+name = "proptest_tests"
+path = "tests/proptest/mod.rs"
+
+[[test]]
+name = "component_tests"
+path = "tests/component_tests.rs"

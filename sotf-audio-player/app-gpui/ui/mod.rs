@@ -245,8 +245,10 @@ impl PlayerView {
     fn toggle_search(&mut self, _: &ToggleSearch, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             if state.app.input_mode == crate::app::InputMode::Search {
+                log::info!("toggle_search: exiting search mode");
                 state.app.input_mode = crate::app::InputMode::Normal;
             } else {
+                log::info!("toggle_search: entering search mode");
                 state.app.input_mode = crate::app::InputMode::Search;
                 state.app.search_query.clear();
             }

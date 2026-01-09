@@ -17,6 +17,20 @@ impl App {
             self.channel_filter,
         );
 
+        log::debug!(
+            "filtered_albums: query='{}', library_count={}, result_count={}",
+            self.search_query,
+            self.library.albums.len(),
+            albums.len()
+        );
+
+        // When there's an active search query, skip all selection filters.
+        // This ensures search results are not filtered by letter/genre/decade/etc
+        // that the user may have selected before entering search mode.
+        if !self.search_query.is_empty() {
+            return albums;
+        }
+
         // Filter by selected genre if set
         if let Some(ref genre) = self.selected_genre {
             albums.retain(|album| {

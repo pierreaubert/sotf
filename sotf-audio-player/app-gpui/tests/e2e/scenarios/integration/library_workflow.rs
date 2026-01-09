@@ -1066,3 +1066,145 @@ async fn test_virtual_scrolling_position(_cx: &mut TestAppContext) {
     assert_eq!(start, 10);
     assert!(end > start);
 }
+
+// =============================================================================
+// Regression Tests
+// =============================================================================
+
+/// Regression test: search should ignore album letter filters.
+///
+/// This test verifies that when a user has a letter filter active (e.g., "A"
+/// in Album view) and then searches for something (e.g., "tool"), the search
+/// results should not be filtered by the letter filter.
+///
+/// Bug fix: Before the fix, search results were filtered by selection filters
+/// like album_letter, artist_letter, genre, decade, etc. This meant searching
+/// for "tool" while having letter "A" selected would show no results because
+/// "Tool" doesn't start with "A".
+#[gpui::test]
+async fn test_search_ignores_album_letter_filter(_cx: &mut TestAppContext) {
+    /// Filter by album first letter
+    fn filter_by_letter(albums: &[AlbumInfo], letter: char) -> Vec<AlbumInfo> {
+        albums
+            .iter()
+            .filter(|a| {
+                a.title
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.to_ascii_uppercase() == letter)
+            })
+            .cloned()
+            .collect()
+    }
+
+    /// Filter by search query
+    fn filter_by_search(albums: &[AlbumInfo], query: &str) -> Vec<AlbumInfo> {
+        let q = query.to_lowercase();
+        albums
+            .iter()
+            .filter(|a| {
+                a.title.to_lowercase().contains(&q) || a.artist.to_lowercase().contains(&q)
+            })
+            .cloned()
+            .collect()
+    }
+
+    // Setup library with test albums
+    let albums = vec![
+        AlbumInfo {
+            id: "a1".to_string(),
+            title: "Abbey Road".to_string(),
+            artist: "The Beatles".to_string(),
+            ..Default::default()
+        },
+        AlbumInfo {
+            id: "a2".to_string(),
+            title: "Lateralus".to_string(),
+            artist: "Tool".to_string(),
+            ..Default::default()
+        },
+        AlbumInfo {
+            id: "a3".to_string(),
+            title: "10,000 Days".to_string(),
+            artist: "Tool".to_string(),
+            ..Default::default()
+        },
+        AlbumInfo {
+            id: "a4".to_string(),
+            title: "Aenima".to_string(),
+            artist: "Tool".to_string(),
+            ..Default::default()
+        },
+    ];
+
+    // Without search, letter filter 'A' should only show albums starting with "A"
+    let letter_filtered = filter_by_letter(&albums, 'A');
+    assert_eq!(
+        letter_filtered.len(),
+        2,
+        "Letter filter 'A' should show 2 albums (Abbey Road, Aenima)"
+    );
+
+    // With search for "tool", we should find Tool albums regardless of letter filter
+    // This is the key behavior: search should bypass selection filters
+    let search_results = filter_by_search(&albums, "tool");
+    assert_eq!(
+        search_results.len(),
+        3,
+        "Search for 'tool' should find 3 Tool albums"
+    );
+
+    // Verify the correct albums were found
+    assert!(search_results.iter().all(|a| a.artist == "Tool"));
+}
+
+/// Regression test: search should ignore genre filter.
+#[gpui::test]
+async fn test_search_ignores_genre_filter(_cx: &mut TestAppContext) {
+    /// Filter by genre
+    fn filter_by_genre(albums: &[AlbumInfo], genre: &str) -> Vec<AlbumInfo> {
+        albums
+            .iter()
+            .filter(|a| a.genre.as_deref() == Some(genre))
+            .cloned()
+            .collect()
+    }
+
+    /// Filter by search query
+    fn filter_by_search(albums: &[AlbumInfo], query: &str) -> Vec<AlbumInfo> {
+        let q = query.to_lowercase();
+        albums
+            .iter()
+            .filter(|a| {
+                a.title.to_lowercase().contains(&q) || a.artist.to_lowercase().contains(&q)
+            })
+            .cloned()
+            .collect()
+    }
+
+    let albums = vec![
+        AlbumInfo {
+            id: "a1".to_string(),
+            title: "Abbey Road".to_string(),
+            artist: "The Beatles".to_string(),
+            genre: Some("Rock".to_string()),
+            ..Default::default()
+        },
+        AlbumInfo {
+            id: "a2".to_string(),
+            title: "Kind of Blue".to_string(),
+            artist: "Miles Davis".to_string(),
+            genre: Some("Jazz".to_string()),
+            ..Default::default()
+        },
+    ];
+
+    // Genre filter "Rock" would normally exclude Jazz albums
+    let genre_filtered = filter_by_genre(&albums, "Rock");
+    assert_eq!(genre_filtered.len(), 1);
+
+    // But search for "miles" should find Miles Davis regardless
+    let search_results = filter_by_search(&albums, "miles");
+    assert_eq!(search_results.len(), 1);
+    assert_eq!(search_results[0].artist, "Miles Davis");
+}

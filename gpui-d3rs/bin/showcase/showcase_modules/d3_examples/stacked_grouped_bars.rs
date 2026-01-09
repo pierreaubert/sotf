@@ -206,24 +206,22 @@ fn start_animation_loop(entity: Entity<ShowcaseApp>, cx: &mut Context<ShowcaseAp
     cx.spawn(async move |_this: WeakEntity<ShowcaseApp>, cx| {
         loop {
             Timer::after(Duration::from_millis(16)).await;
-            let should_continue = cx
-                .update(|cx| {
-                    animation_entity.update(cx, |this, cx| {
-                        if !this.stacked_bars_animating {
-                            return false;
-                        }
-                        this.stacked_bars_animation_progress += 0.04; // ~25 frames for full animation
-                        if this.stacked_bars_animation_progress >= 1.0 {
-                            this.stacked_bars_animation_progress = 1.0;
-                            this.stacked_bars_animating = false;
-                            cx.notify();
-                            return false;
-                        }
+            let should_continue = cx.update(|cx| {
+                animation_entity.update(cx, |this, cx| {
+                    if !this.stacked_bars_animating {
+                        return false;
+                    }
+                    this.stacked_bars_animation_progress += 0.04; // ~25 frames for full animation
+                    if this.stacked_bars_animation_progress >= 1.0 {
+                        this.stacked_bars_animation_progress = 1.0;
+                        this.stacked_bars_animating = false;
                         cx.notify();
-                        true
-                    })
+                        return false;
+                    }
+                    cx.notify();
+                    true
                 })
-                .unwrap_or(false);
+            });
 
             if !should_continue {
                 break;

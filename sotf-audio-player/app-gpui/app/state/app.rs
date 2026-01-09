@@ -561,6 +561,21 @@ impl App {
         self.library.update_directory_scan_times();
     }
 
+    /// Select the best default sample rate from available rates.
+    /// Prefers 48000, then 44100, then device default, then first available, then 48000 as fallback.
+    fn select_default_sample_rate(
+        available_rates: &[u32],
+        device_default_rate: Option<u32>,
+    ) -> u32 {
+        if available_rates.contains(&48000) {
+            48000
+        } else if available_rates.contains(&44100) {
+            44100
+        } else {
+            device_default_rate.unwrap_or_else(|| available_rates.first().copied().unwrap_or(48000))
+        }
+    }
+
     pub fn load_audio_devices(&mut self) {
         // Load available devices
         if let Ok(devices_map) = sotf_audio::devices::get_audio_devices() {
@@ -573,29 +588,18 @@ impl App {
                     if self.recording_state.playback_config.device_name.is_empty() {
                         let device = &output_devices[default_idx];
                         self.recording_state.playback_config.device_name = device.name.clone();
-                        self.recording_state.playback_config.device_id = device.name.clone(); // Use name as ID
-                        // Get num_channels from default_config
+                        self.recording_state.playback_config.device_id = device.name.clone();
                         if let Some(ref config) = device.default_config {
                             self.recording_state.playback_config.num_channels =
                                 config.channels as usize;
                         }
-                        // Set sample rates
                         self.recording_state.playback_config.available_sample_rates =
                             device.available_sample_rates.clone();
-
-                        let rates = &device.available_sample_rates;
-                        let default_rate = if rates.contains(&48000) {
-                            48000
-                        } else if rates.contains(&44100) {
-                            44100
-                        } else {
-                            device
-                                .default_config
-                                .as_ref()
-                                .map(|c| c.sample_rate)
-                                .unwrap_or(rates.first().copied().unwrap_or(48000))
-                        };
-                        self.recording_state.playback_config.sample_rate = default_rate;
+                        self.recording_state.playback_config.sample_rate =
+                            Self::select_default_sample_rate(
+                                &device.available_sample_rates,
+                                device.default_config.as_ref().map(|c| c.sample_rate),
+                            );
                     }
                 }
             }
@@ -608,29 +612,18 @@ impl App {
                     if self.recording_state.recording_config.device_name.is_empty() {
                         let device = &input_devices[default_idx];
                         self.recording_state.recording_config.device_name = device.name.clone();
-                        self.recording_state.recording_config.device_id = device.name.clone(); // Use name as ID
-                        // Get num_channels from default_config
+                        self.recording_state.recording_config.device_id = device.name.clone();
                         if let Some(ref config) = device.default_config {
                             self.recording_state.recording_config.num_channels =
                                 config.channels as usize;
                         }
-                        // Set sample rates
                         self.recording_state.recording_config.available_sample_rates =
                             device.available_sample_rates.clone();
-
-                        let rates = &device.available_sample_rates;
-                        let default_rate = if rates.contains(&48000) {
-                            48000
-                        } else if rates.contains(&44100) {
-                            44100
-                        } else {
-                            device
-                                .default_config
-                                .as_ref()
-                                .map(|c| c.sample_rate)
-                                .unwrap_or(rates.first().copied().unwrap_or(48000))
-                        };
-                        self.recording_state.recording_config.sample_rate = default_rate;
+                        self.recording_state.recording_config.sample_rate =
+                            Self::select_default_sample_rate(
+                                &device.available_sample_rates,
+                                device.default_config.as_ref().map(|c| c.sample_rate),
+                            );
                     }
                 }
             }
@@ -1053,65 +1046,53 @@ impl App {
 
     // ============== Dynamic Text Truncation ==============
 
-    /// Calculate the maximum characters for queue list album title based on panel width.
-    /// Returns a reasonable limit that adapts to window size.
+    /// Helper to calculate max characters based on panel width and text properties.
+    /// Formula: ((panel_width - fixed_offset).max(min_width) / char_width).clamp(min_chars, max_chars)
+    fn calculate_max_chars(
+        panel_width: f32,
+        fixed_offset: f32,
+        min_width: f32,
+        char_width: f32,
+        min_chars: usize,
+        max_chars: usize,
+    ) -> usize {
+        let available_width = (panel_width - fixed_offset).max(min_width);
+        ((available_width / char_width) as usize).clamp(min_chars, max_chars)
+    }
+
+    /// Calculate the width of the queue list panel.
+    fn queue_list_width(&self) -> f32 {
+        self.window_width * self.queue_list_ratio
+    }
+
+    /// Calculate the width of the center panel (remaining after queue list and meters).
+    fn center_panel_width(&self) -> f32 {
+        let center_ratio = 1.0 - self.queue_list_ratio - self.meters_panel_ratio;
+        self.window_width * center_ratio
+    }
+
+    /// Maximum characters for queue list album title (text_sm ~7px).
     pub fn max_chars_queue_list_title(&self) -> usize {
-        // Queue list panel width = window_width * queue_list_ratio
-        // Subtract padding (16px on each side = 32px)
-        // Account for ellipsis (~24px) and some margin
-        // Average char width for text_sm is ~7px
-        let panel_width = self.window_width * self.queue_list_ratio;
-        let available_width = (panel_width - 32.0 - 24.0).max(50.0);
-        let char_width = 7.0;
-        let max_chars = (available_width / char_width) as usize;
-        max_chars.clamp(15, 100) // Min 15, max 100 characters
+        Self::calculate_max_chars(self.queue_list_width(), 56.0, 50.0, 7.0, 15, 100)
     }
 
-    /// Calculate the maximum characters for queue list artist based on panel width.
+    /// Maximum characters for queue list artist (text_xs ~6px).
     pub fn max_chars_queue_list_artist(&self) -> usize {
-        // Same calculation as title, but artist uses text_xs (~6px)
-        let panel_width = self.window_width * self.queue_list_ratio;
-        let available_width = (panel_width - 32.0 - 24.0).max(50.0);
-        let char_width = 6.0;
-        let max_chars = (available_width / char_width) as usize;
-        max_chars.clamp(15, 120) // Min 15, max 120 characters
+        Self::calculate_max_chars(self.queue_list_width(), 56.0, 50.0, 6.0, 15, 120)
     }
 
-    /// Calculate the maximum characters for Now Playing album title.
-    /// The center panel uses remaining width after queue list and meters panels.
+    /// Maximum characters for Now Playing album title (text_lg ~9px).
     pub fn max_chars_now_playing_title(&self) -> usize {
-        // Center panel width = window_width * (1.0 - queue_list_ratio - meters_panel_ratio)
-        // Subtract album art (120px), gaps (16px), padding (16px), dividers (~40px)
-        // text_lg uses ~9px per character
-        let center_ratio = 1.0 - self.queue_list_ratio - self.meters_panel_ratio;
-        let center_width = self.window_width * center_ratio;
-        let available_width = (center_width - 120.0 - 40.0 - 32.0).max(100.0);
-        let char_width = 9.0;
-        let max_chars = (available_width / char_width) as usize;
-        max_chars.clamp(20, 150) // Min 20, max 150 characters
+        Self::calculate_max_chars(self.center_panel_width(), 192.0, 100.0, 9.0, 20, 150)
     }
 
-    /// Calculate the maximum characters for Now Playing artist.
+    /// Maximum characters for Now Playing artist (text_sm ~7px).
     pub fn max_chars_now_playing_artist(&self) -> usize {
-        // Same as title but text_sm uses ~7px
-        let center_ratio = 1.0 - self.queue_list_ratio - self.meters_panel_ratio;
-        let center_width = self.window_width * center_ratio;
-        let available_width = (center_width - 120.0 - 40.0 - 32.0).max(100.0);
-        let char_width = 7.0;
-        let max_chars = (available_width / char_width) as usize;
-        max_chars.clamp(20, 180) // Min 20, max 180 characters
+        Self::calculate_max_chars(self.center_panel_width(), 192.0, 100.0, 7.0, 20, 180)
     }
 
-    /// Calculate the maximum characters for track titles in the track list.
-    /// Accounts for track number column and duration column.
+    /// Maximum characters for track titles (text_sm ~7px).
     pub fn max_chars_track_title(&self) -> usize {
-        // Center panel minus album info section, track number (24px), duration (~48px), padding
-        let center_ratio = 1.0 - self.queue_list_ratio - self.meters_panel_ratio;
-        let center_width = self.window_width * center_ratio;
-        // Available for track title = center_width - track_num(24) - duration(48) - padding(32) - gaps(16)
-        let available_width = (center_width - 24.0 - 48.0 - 48.0).max(100.0);
-        let char_width = 7.0; // text_sm
-        let max_chars = (available_width / char_width) as usize;
-        max_chars.clamp(20, 200) // Min 20, max 200 characters
+        Self::calculate_max_chars(self.center_panel_width(), 120.0, 100.0, 7.0, 20, 200)
     }
 }

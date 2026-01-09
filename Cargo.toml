@@ -108,7 +108,7 @@ math-iir-fir = { version = "0.3" }
 math-differential-evolution = { version = "0.3" }
 autoeq-env = { version = "0.3" }
 autoeq-cea2034 = { version = "0.3" }
-autoeq = { version = "0.3" }
+autoeq = { version = "0.3.8" }
 
 gpui-au = { path = "gpui-au" }  # macOS only
 gpui-d3rs = { path = "gpui-d3rs" }

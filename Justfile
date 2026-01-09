@@ -54,7 +54,13 @@ test-examples:
 	RUST_MIN_STACK=16777216 cargo build --examples -p gpui-ui-kit
 	@echo "✓ All gpui-ui-kit examples compiled successfully"
 
-ntest:
+test-negative:
+	cargo test -p sotf-gpui --test negative
+
+test-proptest:
+	PROPTEST_CASES=10000 cargo test -p sotf-gpui --test proptest_tests
+
+ntest
 	# Note: --lib is intentionally omitted to respect `test = false` in crates like sotf-gpui
 	# which have deeply nested GPUI macros that cause stack overflow in syn
 	RUST_MIN_STACK=16777216 cargo nextest run --release --no-fail-fast --workspace
@@ -66,19 +72,19 @@ ntest:
 # Run the GPUI player (debug mode with ad-hoc signing for macOS file dialogs)
 run-gpui:
 	cargo build --bin SotF
-	codesign --force --deep --sign - --entitlements sotf-audio-player/app-gpui/macos/debug.entitlements target/debug/SotF
+	codesign --force --deep --sign - --entitlements sotf-audio-player/macos/debug.entitlements target/debug/SotF
 	./target/debug/SotF
 
 # Run the GPUI player (release mode)
 run-gpui-release:
 	cargo build --release --bin SotF
-	codesign --force --deep --sign - --entitlements sotf-audio-player/app-gpui/macos/entitlements.plist target/release/SotF
+	codesign --force --deep --sign - --entitlements sotf-audio-player/macos/entitlements.plist target/release/SotF
 	./target/release/SotF
 
 # Run the GPUI player (release mode)
 run-gpui-leaks:
 	RUSTFLAGS="-C debuginfo=2" cargo build --release --bin SotF
-	codesign --force --deep --sign - --entitlements sotf-audio-player/app-gpui/macos/entitlements.plist target/release/SotF
+	codesign --force --deep --sign - --entitlements sotf-audio-player/macos/entitlements.plist target/release/SotF
 	./target/release/SotF
 
 # Run the TUI player

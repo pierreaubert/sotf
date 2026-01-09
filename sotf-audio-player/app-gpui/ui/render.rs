@@ -189,6 +189,12 @@ impl Render for PlayerView {
                 let input_mode = view.state.read(cx).app.input_mode;
                 let current_screen = view.state.read(cx).app.current_screen;
 
+                log::debug!(
+                    "on_key_down: key='{}', input_mode={:?}",
+                    event.keystroke.key,
+                    input_mode
+                );
+
                 match input_mode {
                     crate::app::InputMode::Search => {
                         cx.stop_propagation(); // Prevent actions from processing this keystroke
@@ -271,66 +277,7 @@ impl Render for PlayerView {
                     .flex()
                     .flex_1()
                     .overflow_hidden()
-                    .child(match layout_mode {
-                        crate::app::LayoutMode::Expanded => {
-                            // Split view: Library on bottom, Queue on top
-                            match current_screen {
-                                Screen::Spectrum => {
-                                    self.render_spectrum_screen(cx).into_any_element()
-                                }
-                                Screen::Settings => {
-                                    self.render_settings_screen(cx).into_any_element()
-                                }
-                                Screen::Studio => self.render_plugins_screen(cx).into_any_element(),
-                                Screen::Recording => {
-                                    self.render_recording_screen(cx).into_any_element()
-                                }
-                                Screen::RoomEq => self.render_room_eq_screen(cx).into_any_element(),
-                                Screen::HeadphoneEq => {
-                                    self.render_headphone_eq_screen(cx).into_any_element()
-                                }
-                                Screen::Spinorama => {
-                                    self.render_spinorama_eq_screen(cx).into_any_element()
-                                }
-                                Screen::PluginGraph => {
-                                    self.render_plugin_graph_screen(cx).into_any_element()
-                                }
-                                // Default: split Library/Queue view
-                                Screen::Library | Screen::Queue => {
-                                    self.render_split_view(cx).into_any_element()
-                                }
-                            }
-                        }
-                        crate::app::LayoutMode::Compact => {
-                            // Single view based on current screen
-                            match current_screen {
-                                Screen::Library => {
-                                    self.render_library_screen(cx).into_any_element()
-                                }
-                                Screen::Queue => self.render_queue_screen(cx).into_any_element(),
-                                Screen::Spectrum => {
-                                    self.render_spectrum_screen(cx).into_any_element()
-                                }
-                                Screen::Settings => {
-                                    self.render_settings_screen(cx).into_any_element()
-                                }
-                                Screen::Studio => self.render_plugins_screen(cx).into_any_element(),
-                                Screen::Recording => {
-                                    self.render_recording_screen(cx).into_any_element()
-                                }
-                                Screen::RoomEq => self.render_room_eq_screen(cx).into_any_element(),
-                                Screen::HeadphoneEq => {
-                                    self.render_headphone_eq_screen(cx).into_any_element()
-                                }
-                                Screen::Spinorama => {
-                                    self.render_spinorama_eq_screen(cx).into_any_element()
-                                }
-                                Screen::PluginGraph => {
-                                    self.render_plugin_graph_screen(cx).into_any_element()
-                                }
-                            }
-                        }
-                    }),
+                    .child(self.render_current_screen(current_screen, layout_mode, cx)),
             )
             .child(self.render_footer(cx))
             .when(input_mode == crate::app::InputMode::Help, |div| {
@@ -389,5 +336,41 @@ impl Render for PlayerView {
             .when(active_menu != crate::app::ActiveMenu::None, |div| {
                 div.child(self.render_menu_dropdowns(cx))
             })
+    }
+}
+
+// Screen rendering helper
+impl PlayerView {
+    /// Render the current screen based on layout mode.
+    /// Most screens render identically regardless of layout mode.
+    /// Only Library/Queue differ: Expanded uses split view, Compact uses separate screens.
+    fn render_current_screen(
+        &mut self,
+        screen: Screen,
+        layout_mode: crate::app::LayoutMode,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        match screen {
+            // These screens render the same regardless of layout mode
+            Screen::Spectrum => self.render_spectrum_screen(cx).into_any_element(),
+            Screen::Settings => self.render_settings_screen(cx).into_any_element(),
+            Screen::Studio => self.render_plugins_screen(cx).into_any_element(),
+            Screen::Recording => self.render_recording_screen(cx).into_any_element(),
+            Screen::RoomEq => self.render_room_eq_screen(cx).into_any_element(),
+            Screen::HeadphoneEq => self.render_headphone_eq_screen(cx).into_any_element(),
+            Screen::Spinorama => self.render_spinorama_eq_screen(cx).into_any_element(),
+            Screen::PluginGraph => self.render_plugin_graph_screen(cx).into_any_element(),
+            // Library/Queue differ based on layout mode
+            Screen::Library | Screen::Queue => match layout_mode {
+                crate::app::LayoutMode::Expanded => self.render_split_view(cx).into_any_element(),
+                crate::app::LayoutMode::Compact => {
+                    if screen == Screen::Library {
+                        self.render_library_screen(cx).into_any_element()
+                    } else {
+                        self.render_queue_screen(cx).into_any_element()
+                    }
+                }
+            },
+        }
     }
 }

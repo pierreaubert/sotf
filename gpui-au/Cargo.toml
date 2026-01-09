@@ -3,6 +3,9 @@ name = "gpui-au"
 version.workspace = true
 edition.workspace = true
 
+[features]
+cargo-clippy = []
+
 [lib]
 crate-type = ["staticlib", "cdylib"]
 
