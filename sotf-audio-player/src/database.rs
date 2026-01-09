@@ -1,4 +1,4 @@
-use rusqlite::{Connection, Result as SqlResult, params};
+use rusqlite::{Connection, Result as SqlResult, params, TransactionBehavior};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -95,6 +95,18 @@ impl MusicDatabase {
     /// Internal database open that skips security validation.
     fn open_internal(path: &Path) -> SqlResult<Self> {
         let conn = Connection::open(path)?;
+        
+        // Enable WAL mode for better concurrency
+        // This allows multiple readers and one writer simultaneously
+        conn.pragma_update(None, "journal_mode", "WAL")?;
+        
+        let mode: String = conn.pragma_query_value(None, "journal_mode", |row| row.get(0))?;
+        log::debug!("SQLite journal mode: {}", mode);
+        
+        // Set a busy timeout to avoid "database is locked" errors during concurrent access
+        // 5 seconds is a reasonable default for desktop applications
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
+
         let db = Self { conn };
         db.initialize_schema()?;
         Ok(db)
@@ -1267,7 +1279,7 @@ impl MusicDatabase {
 
     /// Save albums and tracks to database
     pub fn save_albums(&mut self, albums: &[Album]) -> SqlResult<()> {
-        let tx = self.conn.transaction()?;
+        let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let now = current_timestamp();
 
         for album in albums {
@@ -1579,7 +1591,7 @@ impl MusicDatabase {
 
         let count = to_delete.len();
         if count > 0 {
-            let tx = self.conn.transaction()?;
+            let tx = self.conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
             for id in to_delete {
                 tx.execute("DELETE FROM tracks WHERE id = ?1", params![id])?;
             }

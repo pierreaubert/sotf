@@ -2,24 +2,54 @@
 
 ## Problem Statement
 
-The current `App` struct in `app/state/app.rs` has **300+ fields** and **1099 lines**, making it a "god object" that:
+The current `App` struct in `app/state/app.rs` has **~130 fields** and **1099 lines**, making it a "god object" that:
 
 1. **Cannot be unit tested** - Every test needs to construct/mock the entire state
 2. **Has hidden dependencies** - Fields interact in undocumented ways
 3. **Encourages bugs** - Easy to miss state updates across related fields
 4. **Prevents isolation** - Changes ripple across the entire codebase
 
+## Current State (as of 2026-01-09)
+
+### Existing Infrastructure
+
+The following state structs **already exist** but are **not yet used**:
+
+| State Struct | File | Fields | Status |
+|-------------|------|--------|--------|
+| `PlaybackState` | `app/state/playback.rs` | 11 | Created, duplicated in App |
+| `LibraryState` | `app/state/library.rs` | 10 | Created with methods, duplicated in App |
+| `PluginState` | `app/state/plugin.rs` | 19 | Created, duplicated in App |
+| `UIState` | `app/state/ui.rs` | 22 | Created, duplicated in App |
+
+The `App` struct has these composed structs instantiated at lines 324-330:
+
+```rust
+pub playback: PlaybackState,
+pub library_state: LibraryState,
+pub plugin_state: PluginState,
+pub ui_state: UIState,
+```
+
+**Problem**: All fields are duplicated - they exist both on `App` directly AND inside the composed structs. The composed structs are instantiated but never used.
+
+### Missing Managers
+
+- `InputManager` - not created yet
+- `RecordingManager` - not created yet
+- `AudioDeviceManager` - not mentioned but needed
+
 ## Current Architecture
 
 ```
-App (1099 lines, 300+ fields)
-├── Playback state (volume, position, queue, etc.)
-├── Library state (albums, filters, search, pagination)
-├── Plugin state (chain, graph, canvas, parameters)
-├── Input state (mode, focus, keybindings)
-├── UI state (theme, layout, window, settings tab)
-├── Audio state (engine, devices, stream info)
-└── Recording state (channels, analysis, progress)
+App (1099 lines, ~130 fields)
+├── Playback state (volume, position, queue, etc.) - DUPLICATED in PlaybackState
+├── Library state (albums, filters, search, pagination) - DUPLICATED in LibraryState  
+├── Plugin state (chain, graph, canvas, parameters) - DUPLICATED in PluginState
+├── Input state (mode, focus, keybindings) - NOT extracted
+├── UI state (theme, layout, window, settings tab) - DUPLICATED in UIState
+├── Audio state (engine, devices, stream info) - NOT extracted
+└── Recording state (channels, analysis, progress) - NOT extracted
 ```
 
 All fields are directly on `App`, accessed via `app.field_name`, with no encapsulation.
@@ -149,45 +179,78 @@ impl PlaybackManager {
 
 ## Migration Strategy
 
-### Phase 6.1: Extract PlaybackManager (Low Risk)
+### Phase 6.0: Audit and Cleanup (PREREQUISITE)
 
-Playback state has the clearest boundaries. Start here.
+Before migrating, we need to understand actual field usage:
 
-1. Create `app/managers/playback.rs`
-2. Move fields: `volume`, `muted`, `position`, `duration`, `queue`, `current_queue_index`, `is_playing`, `playback_state`
-3. Move methods: `play()`, `pause()`, `next_track()`, `prev_track()`, `seek()`, `set_volume()`
-4. Replace `app.volume` with `app.playback.volume()` throughout codebase
-5. Update tests to use `PlaybackManager` directly
+1. **Audit field access patterns** - grep for `app.field_name` across codebase
+2. **Remove duplicate fields** - delete fields from `App` that exist in composed structs
+3. **Verify composed structs are complete** - ensure all related fields are in the right struct
 
-### Phase 6.2: Extract LibraryManager (Medium Risk)
+### Phase 6.1: Migrate PlaybackState (Low Risk)
 
-Library state is well-defined but has more touchpoints.
+`PlaybackState` already exists at `app/state/playback.rs`. Migration steps:
 
-1. Create `app/managers/library.rs`
-2. Move fields: `albums`, `search_query`, `selected_*`, `library_*`
-3. Move methods: `filtered_albums()`, `search()`, `apply_filter()`, pagination methods
-4. Handle interaction with PlaybackManager (loading albums to queue)
+1. **Remove duplicate fields from App**:
+   - `is_playing`, `current_queue_index`, `volume`, `muted`
+   - `position_secs`, `duration_secs`
+   - `input_loudness_info`, `loudness_info`, `spectrum_info`, `compressor_info`
+2. **Update all callers**: `app.volume` → `app.playback.volume`
+3. **Add methods to PlaybackState** for common operations
+4. **Update tests** to use `PlaybackState` directly
 
-### Phase 6.3: Extract InputManager (Low Risk)
+### Phase 6.2: Migrate LibraryState (Medium Risk)
 
-Input state is small and isolated.
+`LibraryState` already exists with methods at `app/state/library.rs`. Migration steps:
 
-1. Create `app/managers/input.rs`
-2. Move fields: `input_mode`, text buffers, focus handles
-3. Move methods: `enter_input_mode()`, `exit_input_mode()`, `process_key()`
+1. **Remove duplicate fields from App**:
+   - `library`, `library_stats`, `library_scanner`
+   - `search_query`, `selected_album_index`, `album_list_offset`
+   - `library_sort_order`, `channel_filter`, `selected_genre`, etc.
+   - `library_items_per_page`, `library_columns`
+2. **Update all callers**: `app.library` → `app.library_state.library`
+3. **Handle queue interaction** - LibraryState needs to communicate with queue
 
-### Phase 6.4: Extract PluginManager (High Risk)
+### Phase 6.3: Create InputManager (Low Risk)
 
-Plugin state is complex with canvas/graph interactions.
+Input state needs to be extracted (doesn't exist yet):
 
-1. Create `app/managers/plugin.rs`
-2. Move fields: `plugin_chain`, `plugin_graph`, `canvas_*`, `selected_plugin`
-3. Move methods: plugin manipulation, graph operations, canvas interactions
-4. Carefully handle audio engine integration
+1. **Create `app/state/input.rs`** with:
+   - `input_mode`, `directory_input`, `plugin_file_input`
+   - `apo_file_input`, `sofa_file_input`
+   - `autocomplete_suggestions`, `autocomplete_index`
+   - `editing_param`, `editing_value`
+2. **Move text input methods**
+3. **Update callers**
 
-### Phase 6.5: Extract UIManager and RecordingManager
+### Phase 6.4: Migrate PluginState (High Risk)
 
-Final cleanup for remaining state.
+`PluginState` already exists at `app/state/plugin.rs`. Migration steps:
+
+1. **Remove duplicate fields from App**:
+   - `plugin_chain`, `plugin_chain_modified`, `pending_plugin_update`
+   - `editing_plugin_index`, `plugin_param_selection`, `selected_eq_band`
+   - `matrix_selected_cell`, `plugin_view_mode`, `plugin_graph`
+   - `graph_selection`, `graph_connection_drag`, `graph_node_drag`
+   - `workflow_canvas`, `workflow_node_mapping`, `editing_plugin_node`
+   - `available_plugin_presets`, `selected_preset_index`, `last_loaded_preset`
+2. **Handle audio engine sync** - plugin updates need to reach the Player
+3. **Update all callers**
+
+### Phase 6.5: Migrate UIState and Create RecordingManager
+
+`UIState` exists at `app/state/ui.rs`. Also create `RecordingManager`:
+
+1. **Remove duplicate UI fields from App**
+2. **Create `app/state/recording.rs`** for:
+   - `recording_state`, `measure_state`
+   - `room_eq_state`, `room_eq_applied_plugins`
+   - `headphone_eq_state`, `spinorama_eq_state`
+3. **Create `app/state/audio_device.rs`** for:
+   - `output_devices`, `input_devices`
+   - `selected_output_device_index`, `selected_input_device_index`
+   - `current_output_device_name`, `current_input_device_name`
+   - `playback_source`
 
 ## Interface Design
 
@@ -276,15 +339,18 @@ fn test_play_from_search() {
 
 ## Estimated Effort
 
-| Phase | Manager | Fields | Effort | Risk |
-|-------|---------|--------|--------|------|
-| 6.1 | PlaybackManager | ~30 | 2-3 days | Low |
-| 6.2 | LibraryManager | ~40 | 3-4 days | Medium |
-| 6.3 | InputManager | ~15 | 1-2 days | Low |
-| 6.4 | PluginManager | ~50 | 4-5 days | High |
-| 6.5 | UI/Recording | ~45 | 3-4 days | Medium |
+| Phase | Manager | Fields | Effort | Risk | Notes |
+|-------|---------|--------|--------|------|-------|
+| 6.0 | Audit/Cleanup | - | 1 day | Low | Prerequisite |
+| 6.1 | PlaybackState | 11 | 1-2 days | Low | Struct exists, need caller migration |
+| 6.2 | LibraryState | 10+ | 2-3 days | Medium | Struct exists with methods |
+| 6.3 | InputManager | ~10 | 1 day | Low | New struct needed |
+| 6.4 | PluginState | 19 | 3-4 days | High | Struct exists, audio engine coupling |
+| 6.5 | UI/Recording/Device | ~30 | 2-3 days | Medium | UIState exists, others new |
 
-**Total**: 2-3 weeks for full refactor
+**Total**: 1.5-2 weeks for full refactor
+
+*Note: Effort reduced from original estimate because structs already exist. Main work is caller migration.*
 
 ## Success Criteria
 
@@ -296,8 +362,51 @@ fn test_play_from_search() {
 
 ## Next Steps
 
-1. Review this plan with team
-2. Create `app/managers/` directory structure
-3. Start with Phase 6.1 (PlaybackManager)
-4. Write comprehensive tests for each extracted manager
-5. Gradually migrate callers from `app.field` to `app.manager.method()`
+1. ✅ Review this plan (completed 2026-01-09)
+2. **Phase 6.0**: Audit field usage with `grep` to identify all callers
+3. **Phase 6.1**: Start with PlaybackState migration
+   - Remove duplicate fields from `App`
+   - Update all `app.volume` → `app.playback.volume` etc.
+   - Add unit tests for `PlaybackState`
+4. Continue with remaining phases in order
+5. Add integration tests for cross-manager communication
+
+## Field Mapping Reference
+
+### PlaybackState (app/state/playback.rs)
+
+```rust
+is_playing, current_queue_index, volume, muted,
+position_secs, duration_secs,
+input_loudness_info, loudness_info, spectrum_info, compressor_info
+```
+
+### LibraryState (app/state/library.rs)
+
+```rust
+library, sort_order, filter, search_query,
+selected_index, current_page, items_per_page,
+scan_in_progress, scan_progress_tracks, scan_progress_albums
+```
+
+### PluginState (app/state/plugin.rs)
+
+```rust
+plugin_chain, plugin_chain_modified, pending_plugin_update,
+editing_plugin_index, plugin_param_selection, selected_eq_band,
+matrix_selected_cell, plugin_view_mode, plugin_graph,
+graph_selection, graph_connection_drag, graph_node_drag,
+workflow_canvas, workflow_node_mapping, editing_plugin_node,
+available_plugin_presets, selected_preset_index, last_loaded_preset
+```
+
+### UIState (app/state/ui.rs)
+
+```rust
+current_screen, last_screen, input_mode, active_menu,
+layout_mode, window_height, window_width,
+theme_id, theme, language, translations, keymap_preset,
+toast_message, context_menu, active_settings_tab,
+filter_menu_open, show_device_popup, show_studio_menu,
+pending_studio_close, should_quit, startup_db_check_done
+```
