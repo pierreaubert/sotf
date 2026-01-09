@@ -129,3 +129,15 @@ path = "tests/proptest/mod.rs"
 [[test]]
 name = "component_tests"
 path = "tests/component_tests.rs"
+
+[[test]]
+name = "lifecycle"
+path = "tests/lifecycle/mod.rs"
+
+[[test]]
+name = "event_integration"
+path = "tests/event_integration/mod.rs"
+
+[[test]]
+name = "state_machine"
+path = "tests/state_machine/mod.rs"
