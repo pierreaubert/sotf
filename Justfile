@@ -273,17 +273,15 @@ update-pre-commit:
 demo: demo-d3rs demo-px demo-ui-kit
 
 demo-ui-kit:
-	cargo run --release --example showcase -p gpui-ui-kit
-
-demo-plot-functions:
-	cargo run --release --bin plot-functions
+	cargo build --release --example showcase -p gpui-ui-kit
 
 demo-d3rs:
-	cargo run --release --bin d3rs-showcase --features="gpui"
-	cargo run --release --bin d3rs-spinorama --features="spinorama"
+	cargo build --release --bin d3rs-showcase --features="gpui"
+	cargo build --release --bin d3rs-spinorama --features="spinorama, gpu-3d"
 
 demo-px:
-	cargo run --release --bin px-showcase
+	cargo build --release --bin px-showcase -p gpui-px
+	cargo build --release --bin px-spinorama -p gpui-px --features="autoeq,tokio,reqwest,urlencoding"
 
 # ----------------------------------------------------------------------
 # CROSS

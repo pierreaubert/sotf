@@ -50,7 +50,7 @@ impl SpinoramaApp {
                     .freq
                     .iter()
                     .zip(curve.spl.iter())
-                    .filter(|(&f, _)| (20.0..=20000.0).contains(&f))
+                    .filter(|&(&f, _)| (20.0..=20000.0).contains(&f))
                     .map(|(&f, &spl)| LinePoint::new(f, spl))
                     .collect();
 

@@ -1,12 +1,12 @@
 impl SpinoramaApp {
     /// Render a toggle button for switching between isoline and surface modes
-    fn render_mode_toggle(
+    fn render_mode_toggle<T: Fn(&mut Self, &mut Context<Self>) + 'static>(
         &self,
         mode: ContourRenderMode,
         id: &'static str,
-        on_click: impl Fn(&mut Self, &mut Context<Self>) + 'static,
+        on_click: T,
         cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    ) -> impl IntoElement + use<T> {
         let entity = cx.entity().clone();
         let entity_for_colormap = cx.entity().clone();
         let colormap = self.contour_colormap;

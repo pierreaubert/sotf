@@ -217,7 +217,7 @@ pub fn render_line<XS, YS>(
     y_scale: &YS,
     data: &[LinePoint],
     config: &LineConfig,
-) -> impl IntoElement
+) -> impl IntoElement + use<XS, YS>
 where
     XS: Scale<f64, f64>,
     YS: Scale<f64, f64>,

@@ -49,6 +49,12 @@ name = "d3rs-showcase"
 path = "bin/showcase/main.rs"
 required-features = ["gpui", "gpu-2d"]
 
+
+[[bin]]
+name = "d3rs-spinorama"
+path = "bin/spinorama_demo/main.rs"
+required-features = ["spinorama", "gpu-2d", "gpu-3d"]
+
 # Non-GPUI examples (can run without gpui feature)
 [[example]]
 name = "scale_demo"
@@ -129,8 +135,3 @@ path = "examples/chord_demo.rs"
 [[example]]
 name = "chromatic_demo"
 path = "examples/chromatic_demo.rs"
-
-[[bin]]
-name = "d3rs-spinorama"
-path = "bin/spinorama_demo/main.rs"
-required-features = ["spinorama"]

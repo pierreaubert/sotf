@@ -16,23 +16,21 @@ d3rs = { workspace = true }
 gpui = { workspace = true, optional = true }
 gpui-ui-kit = { workspace = true, optional = true }
 thiserror = { workspace = true }
+autoeq = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true }
+urlencoding = { workspace = true, optional = true }
 
-[[example]]
+[[bin]]
 name = "px-showcase"
-path = "examples/showcase.rs"
+path = "bin/showcase.rs"
+
+[[bin]]
+name = "px-spinorama"
+path = "bin/spinorama_demo.rs"
+required-features = ["gpui", "autoeq", "tokio", "reqwest", "urlencoding"]
 
 [[example]]
 name = "logscale_demo"
 path = "examples/logscale_demo.rs"
 required-features = ["gpui"]
-
-[[example]]
-name = "spinorama_demo"
-path = "examples/spinorama_demo.rs"
-required-features = ["gpui"]
-
-[dev-dependencies]
-autoeq = { workspace = true }
-tokio = { workspace = true }
-reqwest = { workspace = true }
-urlencoding = { workspace = true }

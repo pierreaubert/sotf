@@ -27,7 +27,7 @@ fn render_cea2034_plot(&mut self, cx: &mut Context<Self>) -> Div {
                 .freq
                 .iter()
                 .zip(curve.spl.iter())
-                .filter(|(&f, _)| (20.0..=20000.0).contains(&f))
+                .filter(|&(&f, _)| (20.0..=20000.0).contains(&f))
                 .map(|(&f, &spl)| LinePoint::new(f, spl))
                 .collect();
             if points.is_empty() {
@@ -50,7 +50,7 @@ fn render_cea2034_plot(&mut self, cx: &mut Context<Self>) -> Div {
                 .freq
                 .iter()
                 .zip(curve.spl.iter())
-                .filter(|(&f, _)| (20.0..=20000.0).contains(&f))
+                .filter(|&(&f, _)| (20.0..=20000.0).contains(&f))
                 .map(|(&f, &spl)| LinePoint::new(f, spl))
                 .collect();
             if points.is_empty() {
