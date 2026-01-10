@@ -19,7 +19,8 @@ pub mod eq;
 pub mod expander;
 pub mod gain;
 pub mod gate;
-pub mod graph;
+
+
 pub mod limiter;
 pub mod loudness;
 pub mod loudness_monitor;
@@ -31,4 +32,5 @@ pub mod pnd;
 pub mod rack;
 pub mod spectrum;
 pub mod upmixer;
+pub mod workflow;
 pub mod xtc;

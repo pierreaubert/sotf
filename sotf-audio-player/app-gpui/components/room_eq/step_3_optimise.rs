@@ -9,7 +9,7 @@ use gpui_ui_kit::{
 impl PlayerView {
     pub(crate) fn render_room_eq_optimize(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let progress = state.app.room_eq_state.overall_progress;
         let status_msg = &state.app.room_eq_state.status_message;
         let is_running = state.app.room_eq_state.is_optimizing();

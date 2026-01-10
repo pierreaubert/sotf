@@ -12,6 +12,7 @@ mod autocomplete;
 pub mod config;
 pub mod constants;
 pub mod i18n;
+pub mod manager;
 pub mod keybindings;
 pub mod library;
 pub mod navigation;
@@ -32,6 +33,6 @@ pub use theme::{Theme, ThemeId};
 pub use crate::components::plugins::get_param_count;
 pub use types::{
     ActiveMenu, ChannelFilter, ChannelGroup, ChannelInfo, ContextMenuState, ContextMenuType,
-    InputMode, LayoutMode, LibrarySortOrder, QueueItem, Screen, SettingsTab, ToastMessage,
-    ToastType,
+    InputMode, LayoutMode, LibrarySortOrder, MeterDisplayMode, PluginViewMode, QueueItem,
+    ReplayGainMode, Screen, SettingsTab, ToastMessage, ToastType,
 };

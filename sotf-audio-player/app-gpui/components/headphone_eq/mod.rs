@@ -14,6 +14,7 @@ mod step_3_listen;
 
 use crate::app::types::{HeadphoneEqStep, PluginUpdateType, Screen};
 use crate::components::icons::{Icon, IconName};
+use crate::components::plugins::editing::PluginEditingManager;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -31,7 +32,7 @@ impl PlayerView {
     pub fn clear_headphone_eq_from_playback(&mut self, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             // Find and remove EQ plugins
-            let plugins = state.app.plugin_chain.plugins();
+            let plugins = state.app.plugin_state.plugin_chain.plugins();
             let eq_indices: Vec<_> = plugins
                 .iter()
                 .enumerate()
@@ -46,12 +47,12 @@ impl PlayerView {
 
             // Remove in reverse order to maintain correct indices
             for idx in eq_indices.into_iter().rev() {
-                state.app.plugin_chain.remove_plugin(idx);
+                state.app.plugin_state.plugin_chain.remove_plugin(idx);
             }
 
-            state.app.pending_plugin_update = Some(PluginUpdateType::Structural);
+            state.app.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
             state.app.sync_spectrum_visible();
-            state.app.toast_message = Some(crate::app::ToastMessage::success(
+            state.app.ui_state.toast_message = Some(crate::app::ToastMessage::success(
                 "Cleared EQ from playback",
             ));
         });
@@ -61,7 +62,7 @@ impl PlayerView {
     /// Main Headphone EQ screen entry point (wizard)
     pub(crate) fn render_headphone_eq_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let current_step = state.app.headphone_eq_state.step;
 
         // Content for current step
@@ -95,8 +96,8 @@ impl PlayerView {
     /// Render the headphone EQ screen header with step indicators
     fn render_headphone_eq_header(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
-        let theme_id = state.app.theme_id;
+        let theme = state.app.ui_state.theme.clone();
+        let theme_id = state.app.ui_state.theme_id;
         let current_step = state.app.headphone_eq_state.step;
         let can_go_next = state.app.headphone_eq_state.can_advance();
         let is_busy = state.app.headphone_eq_state.is_optimizing();
@@ -165,7 +166,7 @@ impl PlayerView {
                             view.state.update(cx, |state, _| {
                                 match state.app.headphone_eq_state.step {
                                     HeadphoneEqStep::MeasurementTarget => {
-                                        state.app.current_screen = state.app.last_screen;
+                                        state.app.ui_state.current_screen = state.app.ui_state.last_screen;
                                     }
                                     _ => {
                                         if let Some(prev) =
@@ -193,7 +194,7 @@ impl PlayerView {
                             view.state.update(cx, |state, _| {
                                 match state.app.headphone_eq_state.step {
                                     HeadphoneEqStep::Save => {
-                                        state.app.current_screen = state.app.last_screen;
+                                        state.app.ui_state.current_screen = state.app.ui_state.last_screen;
                                     }
                                     _ => {
                                         if let Some(next) = state.app.headphone_eq_state.step.next()
@@ -237,7 +238,7 @@ impl PlayerView {
                     .child(Icon::new(IconName::Home).color(text_muted))
                     .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
                         state_for_home.update(cx, |state, _cx| {
-                            state.app.current_screen = Screen::Library;
+                            state.app.ui_state.current_screen = Screen::Library;
                         });
                     }),
             )

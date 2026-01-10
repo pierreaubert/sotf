@@ -192,7 +192,7 @@ fn test_search_library_integration() {
     fixtures::ensure_demo_files_exist();
 
     let (_temp_dir, db_path) = fixtures::temp_database();
-    let mut library = MusicLibrary::with_custom_database_for_testing(&db_path).unwrap();
+
 
     // Create a controlled test dataset
     let db = MusicDatabase::open_for_testing(&db_path).unwrap();
@@ -305,7 +305,7 @@ fn test_scan_specific_file_formats() {
 
     for album in &library.albums {
         for track in &album.tracks {
-            match track.path.extension().and_then(|s| s.to_str()) {
+            match track.path.extension().and_then(|s: &std::ffi::OsStr| s.to_str()) {
                 Some("wav") => wav_count += 1,
                 Some("flac") => flac_count += 1,
                 _ => other_count += 1,

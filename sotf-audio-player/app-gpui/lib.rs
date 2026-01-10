@@ -22,6 +22,26 @@ pub use app::theme;
 // Re-export commonly used types for testing
 pub use app::{
     App, AppState, ChannelFilter, ChannelGroup, ChannelInfo, ContextMenuState, ContextMenuType,
-    InputMode, LibrarySortOrder, QueueItem, Screen, SettingsTab, ToastMessage, ToastType,
+    InputMode, LayoutMode, LibrarySortOrder, QueueItem, Screen, SettingsTab, ToastMessage, ToastType,
     get_param_count,
 };
+
+// Re-export additional types for testing
+pub use app::types::{
+    CalibrationData, ChannelMapping, ChannelRecording, ChannelRecordingState, CrossoverType,
+    HeadphoneEqStep, LibraryStats, MeasureState, MeterDisplayMode, PlaybackDeviceConfig,
+    PlotSmoothing, PluginViewMode, RecordingDeviceConfig, RecordingSignalType, RecordingState,
+    RecordingStep, ReplayGainMode, RoomEqAlgorithm, RoomEqOptimizerConfig, RoomEqState,
+    RoomEqStep, SpeakerConfiguration,
+};
+
+// Re-export config types for testing
+pub use app::config::{Config, PanelLayout, RecordingConfigState, WindowGeometry};
+
+// Re-export state types for testing
+pub use app::state::playback::PlaybackState;
+
+// Re-export component types for testing
+pub use components::home::image_cache::{ImageAccessTracker, TrackerStats};
+pub use components::plugins::ticks::{ScaleType, TickConfig, TickMark};
+pub use components::icons::{Icon, IconName, IconSize};

@@ -27,7 +27,7 @@ impl PlayerView {
     pub(crate) fn render_recording_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let (theme, current_step) = {
             let state = self.state.read(cx);
-            (state.app.theme.clone(), state.app.recording_state.step)
+            (state.app.ui_state.theme.clone(), state.app.recording_state.step)
         };
 
         let step_content = match current_step {
@@ -58,8 +58,8 @@ impl PlayerView {
     /// Render the recording screen header with step indicators
     fn render_recording_header(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
-        let theme_id = state.app.theme_id;
+        let theme = state.app.ui_state.theme.clone();
+        let theme_id = state.app.ui_state.theme_id;
         let current_step = state.app.recording_state.step;
         let all_recorded = state.app.recording_state.all_channels_recorded();
         let is_recording = state.app.recording_state.is_recording();
@@ -139,7 +139,7 @@ impl PlayerView {
                             view.state.update(cx, |state, _| {
                                 match state.app.recording_state.step {
                                     RecordingStep::Config => {
-                                        state.app.current_screen = state.app.last_screen;
+                                        state.app.ui_state.current_screen = state.app.ui_state.last_screen;
                                     }
                                     RecordingStep::Capture => {
                                         state.app.recording_state.step = RecordingStep::Config;
@@ -179,7 +179,7 @@ impl PlayerView {
                                         state.app.recording_state.step = RecordingStep::Saving;
                                     }
                                     RecordingStep::Saving => {
-                                        state.app.current_screen = state.app.last_screen;
+                                        state.app.ui_state.current_screen = state.app.ui_state.last_screen;
                                     }
                                 }
                             });
@@ -217,7 +217,7 @@ impl PlayerView {
                     .child(Icon::new(IconName::Home).color(text_muted))
                     .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
                         state_for_home.update(cx, |state, _cx| {
-                            state.app.current_screen = Screen::Library;
+                            state.app.ui_state.current_screen = Screen::Library;
                         });
                     }),
             )

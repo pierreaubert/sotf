@@ -28,17 +28,17 @@ impl PlayerView {
         let state = self.state.read(cx);
         let stats = &state.app.library_stats;
 
-        let albums_count = state.app.library.albums.len();
+        let albums_count = state.app.library_state.library.albums.len();
         let artists_count = stats.artists_count;
         let tracks_count = stats.total_tracks;
         let composers_count = stats.composers_count;
-        let search_query = state.app.search_query.clone();
-        let input_mode = state.app.input_mode;
-        let sort_order = state.app.library_sort_order;
-        let channel_filter = state.app.channel_filter;
-        let filter_menu_open = state.app.filter_menu_open;
-        let theme = state.app.theme.clone();
-        let translations = state.app.translations.clone();
+        let search_query = state.app.library_state.search_query.clone();
+        let input_mode = state.app.ui_state.input_mode;
+        let sort_order = state.app.library_state.sort_order;
+        let channel_filter = state.app.library_state.filter;
+        let filter_menu_open = state.app.ui_state.filter_menu_open;
+        let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let min_year = stats.min_year;
         let max_year = stats.max_year;
         let genres_count = stats.genres_count;
@@ -49,15 +49,15 @@ impl PlayerView {
         let surround_plus_count = stats.surround_plus_count;
 
         // Selection filters and counts for each category
-        let selected_genre = state.app.selected_genre.clone();
-        let selected_decade = state.app.selected_decade;
-        let selected_year = state.app.selected_year;
-        let selected_artist_letter = state.app.selected_artist_letter;
-        let selected_artist = state.app.selected_artist.clone();
-        let selected_composer_letter = state.app.selected_composer_letter;
-        let selected_composer = state.app.selected_composer.clone();
-        let selected_album_letter = state.app.selected_album_letter;
-        let selected_track_range = state.app.selected_track_range;
+        let selected_genre = state.app.library_state.selected_genre.clone();
+        let selected_decade = state.app.library_state.selected_decade;
+        let selected_year = state.app.library_state.selected_year;
+        let selected_artist_letter = state.app.library_state.selected_artist_letter;
+        let selected_artist = state.app.library_state.selected_artist.clone();
+        let selected_composer_letter = state.app.library_state.selected_composer_letter;
+        let selected_composer = state.app.library_state.selected_composer.clone();
+        let selected_album_letter = state.app.library_state.selected_album_letter;
+        let selected_track_range = state.app.library_state.selected_track_range;
 
         let genre_counts = stats.genre_counts.clone();
         let year_counts = stats.year_counts.clone();
@@ -85,7 +85,6 @@ impl PlayerView {
                 crate::app::LibrarySortOrder::Album => 3,
                 crate::app::LibrarySortOrder::Tracks => 4,
                 crate::app::LibrarySortOrder::Composer => 5,
-                crate::app::LibrarySortOrder::Popularity => 3, // Default to Album tab
             }
         };
 
@@ -228,20 +227,20 @@ impl PlayerView {
                                     };
                                     state.app.set_library_sort_order(sort_order);
                                     // Close filter/search modes when selecting sort tab
-                                    state.app.filter_menu_open = false;
-                                    state.app.input_mode = crate::app::InputMode::Normal;
+                                    state.app.ui_state.filter_menu_open = false;
+                                    state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                                 } else if index == 6 {
                                     // Filter tab
-                                    state.app.filter_menu_open = !state.app.filter_menu_open;
-                                    state.app.input_mode = crate::app::InputMode::Normal;
+                                    state.app.ui_state.filter_menu_open = !state.app.ui_state.filter_menu_open;
+                                    state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                                 } else if index == 7 {
                                     // Search tab
-                                    if state.app.input_mode == crate::app::InputMode::Search {
-                                        state.app.input_mode = crate::app::InputMode::Normal;
-                                        state.app.search_query.clear();
+                                    if state.app.ui_state.input_mode == crate::app::InputMode::Search {
+                                        state.app.ui_state.input_mode = crate::app::InputMode::Normal;
+                                        state.app.library_state.search_query.clear();
                                     } else {
-                                        state.app.input_mode = crate::app::InputMode::Search;
-                                        state.app.filter_menu_open = false;
+                                        state.app.ui_state.input_mode = crate::app::InputMode::Search;
+                                        state.app.ui_state.filter_menu_open = false;
                                     }
                                 }
                             });
@@ -263,42 +262,42 @@ impl PlayerView {
                         .rounded_lg()
                         .child(self.render_filter_button(
                             "All",
-                            crate::app::ChannelFilter::All,
+                            crate::app::state::library::ChannelFilter::All,
                             channel_filter,
                             theme.clone(),
                             cx,
                         ))
                         .child(self.render_filter_button(
                             &format!("1.0 Mono ({})", mono_count),
-                            crate::app::ChannelFilter::Mono,
+                            crate::app::state::library::ChannelFilter::Mono,
                             channel_filter,
                             theme.clone(),
                             cx,
                         ))
                         .child(self.render_filter_button(
                             &format!("2.0 Stereo ({})", stereo_count),
-                            crate::app::ChannelFilter::Stereo,
+                            crate::app::state::library::ChannelFilter::Stereo,
                             channel_filter,
                             theme.clone(),
                             cx,
                         ))
                         .child(self.render_filter_button(
                             &format!("5.x Surround ({})", surround_count),
-                            crate::app::ChannelFilter::Surround,
+                            crate::app::state::library::ChannelFilter::Surround,
                             channel_filter,
                             theme.clone(),
                             cx,
                         ))
                         .child(self.render_filter_button(
                             &format!("7.1 ({})", surround71_count),
-                            crate::app::ChannelFilter::Surround71,
+                            crate::app::state::library::ChannelFilter::Surround71,
                             channel_filter,
                             theme.clone(),
                             cx,
                         ))
                         .child(self.render_filter_button(
                             &format!("7.1+ ({})", surround_plus_count),
-                            crate::app::ChannelFilter::SurroundPlus,
+                            crate::app::state::library::ChannelFilter::SurroundPlus,
                             channel_filter,
                             theme.clone(),
                             cx,
@@ -527,15 +526,15 @@ impl PlayerView {
                             MouseButton::Left,
                             cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                                 view.state.update(cx, |state, _cx| {
-                                    if state.app.selected_decade == Some((start, end)) {
+                                    if state.app.library_state.selected_decade == Some((start, end)) {
                                         // Deselect if already selected
-                                        state.app.selected_decade = None;
-                                        state.app.selected_year = None;
+                                        state.app.library_state.selected_decade = None;
+                                        state.app.library_state.selected_year = None;
                                     } else {
-                                        state.app.selected_decade = Some((start, end));
-                                        state.app.selected_year = None;
+                                        state.app.library_state.selected_decade = Some((start, end));
+                                        state.app.library_state.selected_year = None;
                                     }
-                                    state.app.selected_album_index = 0;
+                                    state.app.library_state.selected_index = 0;
                                 });
                                 cx.notify();
                             }),
@@ -579,12 +578,12 @@ impl PlayerView {
                                 MouseButton::Left,
                                 cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                                     view.state.update(cx, |state, _cx| {
-                                        if state.app.selected_year == Some(year) {
-                                            state.app.selected_year = None;
+                                        if state.app.library_state.selected_year == Some(year) {
+                                            state.app.library_state.selected_year = None;
                                         } else {
-                                            state.app.selected_year = Some(year);
+                                            state.app.library_state.selected_year = Some(year);
                                         }
-                                        state.app.selected_album_index = 0;
+                                        state.app.library_state.selected_index = 0;
                                     });
                                     cx.notify();
                                 }),
@@ -673,12 +672,12 @@ impl PlayerView {
                     MouseButton::Left,
                     cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                         view.state.update(cx, |state, _cx| {
-                            if state.app.selected_album_letter == Some(letter) {
-                                state.app.selected_album_letter = None;
+                            if state.app.library_state.selected_album_letter == Some(letter) {
+                                state.app.library_state.selected_album_letter = None;
                             } else {
-                                state.app.selected_album_letter = Some(letter);
+                                state.app.library_state.selected_album_letter = Some(letter);
                             }
-                            state.app.selected_album_index = 0;
+                            state.app.library_state.selected_index = 0;
                         });
                         cx.notify();
                     }),
@@ -796,14 +795,14 @@ impl PlayerView {
                             MouseButton::Left,
                             cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                                 view.state.update(cx, |state, _cx| {
-                                    if state.app.selected_artist_letter == Some(letter) {
-                                        state.app.selected_artist_letter = None;
-                                        state.app.selected_artist = None;
+                                    if state.app.library_state.selected_artist_letter == Some(letter) {
+                                        state.app.library_state.selected_artist_letter = None;
+                                        state.app.library_state.selected_artist = None;
                                     } else {
-                                        state.app.selected_artist_letter = Some(letter);
-                                        state.app.selected_artist = None;
+                                        state.app.library_state.selected_artist_letter = Some(letter);
+                                        state.app.library_state.selected_artist = None;
                                     }
-                                    state.app.selected_album_index = 0;
+                                    state.app.library_state.selected_index = 0;
                                 });
                                 cx.notify();
                             }),
@@ -842,14 +841,14 @@ impl PlayerView {
                                 cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                                     let artist_to_set = artist_clone.clone();
                                     view.state.update(cx, |state, _cx| {
-                                        if state.app.selected_artist.as_ref()
+                                        if state.app.library_state.selected_artist.as_ref()
                                             == Some(&artist_to_set)
                                         {
-                                            state.app.selected_artist = None;
+                                            state.app.library_state.selected_artist = None;
                                         } else {
-                                            state.app.selected_artist = Some(artist_to_set);
+                                            state.app.library_state.selected_artist = Some(artist_to_set);
                                         }
-                                        state.app.selected_album_index = 0;
+                                        state.app.library_state.selected_index = 0;
                                     });
                                     cx.notify();
                                 }),
@@ -969,14 +968,14 @@ impl PlayerView {
                             MouseButton::Left,
                             cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                                 view.state.update(cx, |state, _cx| {
-                                    if state.app.selected_composer_letter == Some(letter) {
-                                        state.app.selected_composer_letter = None;
-                                        state.app.selected_composer = None;
+                                    if state.app.library_state.selected_composer_letter == Some(letter) {
+                                        state.app.library_state.selected_composer_letter = None;
+                                        state.app.library_state.selected_composer = None;
                                     } else {
-                                        state.app.selected_composer_letter = Some(letter);
-                                        state.app.selected_composer = None;
+                                        state.app.library_state.selected_composer_letter = Some(letter);
+                                        state.app.library_state.selected_composer = None;
                                     }
-                                    state.app.selected_album_index = 0;
+                                    state.app.library_state.selected_index = 0;
                                 });
                                 cx.notify();
                             }),
@@ -1015,14 +1014,14 @@ impl PlayerView {
                                 cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                                     let composer_to_set = composer_clone.clone();
                                     view.state.update(cx, |state, _cx| {
-                                        if state.app.selected_composer.as_ref()
+                                        if state.app.library_state.selected_composer.as_ref()
                                             == Some(&composer_to_set)
                                         {
-                                            state.app.selected_composer = None;
+                                            state.app.library_state.selected_composer = None;
                                         } else {
-                                            state.app.selected_composer = Some(composer_to_set);
+                                            state.app.library_state.selected_composer = Some(composer_to_set);
                                         }
-                                        state.app.selected_album_index = 0;
+                                        state.app.library_state.selected_index = 0;
                                     });
                                     cx.notify();
                                 }),
@@ -1107,12 +1106,12 @@ impl PlayerView {
                     MouseButton::Left,
                     cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                         view.state.update(cx, |state, _cx| {
-                            if state.app.selected_track_range == Some((min, max)) {
-                                state.app.selected_track_range = None;
+                            if state.app.library_state.selected_track_range == Some((min, max)) {
+                                state.app.library_state.selected_track_range = None;
                             } else {
-                                state.app.selected_track_range = Some((min, max));
+                                state.app.library_state.selected_track_range = Some((min, max));
                             }
-                            state.app.selected_album_index = 0;
+                            state.app.library_state.selected_index = 0;
                         });
                         cx.notify();
                     }),
@@ -1159,8 +1158,8 @@ impl PlayerView {
                                     MouseButton::Left,
                                     cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                                         view.state.update(cx, |state, _cx| {
-                                            state.app.selected_genre = None;
-                                            state.app.selected_album_index = 0;
+                                            state.app.library_state.selected_genre = None;
+                                            state.app.library_state.selected_index = 0;
                                         });
                                         cx.notify();
                                     }),
@@ -1288,10 +1287,10 @@ impl PlayerView {
                                     view.state.update(cx, |state, _cx| {
                                         match action {
                                             SelectionAction::Genre(g) => {
-                                                state.app.selected_genre = Some(g)
+                                                state.app.library_state.selected_genre = Some(g)
                                             }
                                         }
-                                        state.app.selected_album_index = 0;
+                                        state.app.library_state.selected_index = 0;
                                     });
                                     cx.notify();
                                 }),
@@ -1307,9 +1306,9 @@ impl PlayerView {
             let state = self.state.read(cx);
             (
                 state.app.get_paginated_albums(),
-                state.app.selected_album_index,
-                state.app.theme.clone(),
-                state.app.library_sort_order,
+                state.app.library_state.selected_index,
+                state.app.ui_state.theme.clone(),
+                state.app.library_state.sort_order,
             )
         };
 
@@ -1376,7 +1375,7 @@ impl PlayerView {
                 .id(("album-wrapper", idx))
                 .on_click(cx.listener(move |view, event: &ClickEvent, _window, cx| {
                     view.state.update(cx, |state, _cx| {
-                        state.app.selected_album_index = idx;
+                        state.app.library_state.selected_index = idx;
                     });
                     // Double-click adds to queue
                     if event.click_count() == 2 {
@@ -1392,8 +1391,8 @@ impl PlayerView {
                     MouseButton::Right,
                     cx.listener(move |view, event: &MouseUpEvent, _window, cx| {
                         view.state.update(cx, |state, _cx| {
-                            state.app.selected_album_index = idx;
-                            state.app.context_menu = Some(crate::app::ContextMenuState {
+                            state.app.library_state.selected_index = idx;
+                            state.app.ui_state.context_menu = Some(crate::app::ContextMenuState {
                                 menu_type: crate::app::ContextMenuType::Album,
                                 position_x: event.position.x.into(),
                                 position_y: event.position.y.into(),
@@ -1454,8 +1453,8 @@ impl PlayerView {
     fn render_filter_button(
         &self,
         label: &str,
-        filter: crate::app::ChannelFilter,
-        current_filter: crate::app::ChannelFilter,
+        filter: crate::app::state::library::ChannelFilter,
+        current_filter: crate::app::state::library::ChannelFilter,
         theme: crate::theme::Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {

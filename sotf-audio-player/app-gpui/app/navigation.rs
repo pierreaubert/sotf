@@ -8,17 +8,17 @@ impl App {
     pub fn select_next_album(&mut self) {
         let albums = self.filtered_albums();
         if !albums.is_empty() {
-            self.selected_album_index = (self.selected_album_index + 1) % albums.len();
+            self.library_state.selected_index = (self.library_state.selected_index + 1) % albums.len();
         }
     }
 
     pub fn select_previous_album(&mut self) {
         let albums = self.filtered_albums();
         if !albums.is_empty() {
-            if self.selected_album_index == 0 {
-                self.selected_album_index = albums.len() - 1;
+            if self.library_state.selected_index == 0 {
+                self.library_state.selected_index = albums.len() - 1;
             } else {
-                self.selected_album_index -= 1;
+                self.library_state.selected_index -= 1;
             }
         }
     }
@@ -30,12 +30,12 @@ impl App {
         }
 
         // Move selection down by page size
-        let next_index = self.selected_album_index + page_size;
+        let next_index = self.library_state.selected_index + page_size;
         if next_index < current_page_albums.len() {
-            self.selected_album_index = next_index;
+            self.library_state.selected_index = next_index;
         } else {
             // Move to last item
-            self.selected_album_index = current_page_albums.len() - 1;
+            self.library_state.selected_index = current_page_albums.len() - 1;
             // Trigger load more if at end
             self.load_more_albums();
         }
@@ -48,11 +48,11 @@ impl App {
         }
 
         // Move selection up by page size
-        if self.selected_album_index >= page_size {
-            self.selected_album_index -= page_size;
+        if self.library_state.selected_index >= page_size {
+            self.library_state.selected_index -= page_size;
         } else {
             // Move to first item
-            self.selected_album_index = 0;
+            self.library_state.selected_index = 0;
         }
     }
 
@@ -125,8 +125,8 @@ impl App {
             return;
         }
 
-        if self.selected_album_index > 0 {
-            self.selected_album_index -= 1;
+        if self.library_state.selected_index > 0 {
+            self.library_state.selected_index -= 1;
         }
     }
 
@@ -137,8 +137,8 @@ impl App {
             return;
         }
 
-        if self.selected_album_index < albums.len() - 1 {
-            self.selected_album_index += 1;
+        if self.library_state.selected_index < albums.len() - 1 {
+            self.library_state.selected_index += 1;
         } else {
             // Trigger load more
             self.load_more_albums();
@@ -147,10 +147,10 @@ impl App {
 
     /// Navigate grid up
     pub fn select_grid_up(&mut self) {
-        let grid_columns = self.library_columns.max(1);
+        let grid_columns = self.library_state.library_columns.max(1);
 
-        if self.selected_album_index >= grid_columns {
-            self.selected_album_index -= grid_columns;
+        if self.library_state.selected_index >= grid_columns {
+            self.library_state.selected_index -= grid_columns;
         }
     }
 
@@ -161,21 +161,21 @@ impl App {
             return;
         }
 
-        let grid_columns = self.library_columns.max(1);
-        let next_row_index = self.selected_album_index + grid_columns;
+        let grid_columns = self.library_state.library_columns.max(1);
+        let next_row_index = self.library_state.selected_index + grid_columns;
         let max_index = albums.len() - 1;
 
         if next_row_index <= max_index {
-            self.selected_album_index = next_row_index;
+            self.library_state.selected_index = next_row_index;
         } else {
             // Trigger load more
             self.load_more_albums();
             // If we loaded more, try to move down again
             let albums = self.get_paginated_albums();
-            if self.selected_album_index + grid_columns < albums.len() {
-                self.selected_album_index += grid_columns;
+            if self.library_state.selected_index + grid_columns < albums.len() {
+                self.library_state.selected_index += grid_columns;
             } else {
-                self.selected_album_index = albums.len() - 1;
+                self.library_state.selected_index = albums.len() - 1;
             }
         }
     }

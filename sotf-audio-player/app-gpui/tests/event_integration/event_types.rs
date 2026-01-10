@@ -136,19 +136,23 @@ impl EventTrace {
     }
 
     pub fn record_handler(&mut self, name: &str, consumed: bool) {
+        self.timestamp_counter += 1;
+        let timestamp_ms = self.timestamp_counter;
         self.handlers.push(HandlerRecord {
             name: name.to_string(),
             consumed,
-            timestamp_ms: self.next_timestamp(),
+            timestamp_ms,
         });
     }
 
     pub fn record_state_change(&mut self, field: &str, old: &str, new: &str) {
+        self.timestamp_counter += 1;
+        let timestamp_ms = self.timestamp_counter;
         self.state_changes.push(StateChangeRecord {
             field: field.to_string(),
             old_value: old.to_string(),
             new_value: new.to_string(),
-            timestamp_ms: self.next_timestamp(),
+            timestamp_ms,
         });
     }
 

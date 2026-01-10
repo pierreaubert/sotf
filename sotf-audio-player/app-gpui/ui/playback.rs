@@ -6,12 +6,12 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) {
         self.state.update(cx, |state, _cx| {
-            if state.app.is_playing {
+            if state.app.playback.is_playing {
                 let _ = state.player.lock().pause();
-                state.app.is_playing = false;
+                state.app.playback.is_playing = false;
             } else {
                 let _ = state.player.lock().resume();
-                state.app.is_playing = true;
+                state.app.playback.is_playing = true;
             }
         });
         cx.notify();
@@ -20,8 +20,8 @@ impl PlayerView {
     fn stop_playback(&mut self, _: &Stop, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             let _ = state.player.lock().stop();
-            state.app.is_playing = false;
-            state.app.current_queue_index = None;
+            state.app.playback.is_playing = false;
+            state.app.playback.current_queue_index = None;
         });
         cx.notify();
     }
@@ -29,13 +29,13 @@ impl PlayerView {
     pub(crate) fn next_track(&mut self, _: &NextTrack, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             // Block if in text input mode
-            if Self::is_text_input_mode(state.app.input_mode) {
+            if Self::is_text_input_mode(state.app.ui_state.input_mode) {
                 return;
             }
             if let Some(path) = state.app.next_track() {
                 let sample_rate = 48000.0;
-                let plugins = state.app.plugin_chain.to_plugin_configs(sample_rate);
-                let output_channels = state.app.plugin_chain.output_channels();
+                let plugins = state.app.plugin_state.plugin_chain.to_plugin_configs(sample_rate);
+                let output_channels = state.app.plugin_state.plugin_chain.output_channels();
 
                 if let Err(e) = state.player.lock().load_and_play(
                     path,
@@ -44,10 +44,10 @@ impl PlayerView {
                     state.app.current_output_device_name.clone(),
                 ) {
                     log::error!("Failed to play next track: {}", e);
-                    state.app.is_playing = false;
+                    state.app.playback.is_playing = false;
                 }
             } else {
-                state.app.is_playing = false;
+                state.app.playback.is_playing = false;
             }
         });
         cx.notify();
@@ -56,13 +56,13 @@ impl PlayerView {
     pub(crate) fn prev_track(&mut self, _: &PrevTrack, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             // Block if in text input mode
-            if Self::is_text_input_mode(state.app.input_mode) {
+            if Self::is_text_input_mode(state.app.ui_state.input_mode) {
                 return;
             }
             if let Some(path) = state.app.previous_track() {
                 let sample_rate = 48000.0;
-                let plugins = state.app.plugin_chain.to_plugin_configs(sample_rate);
-                let output_channels = state.app.plugin_chain.output_channels();
+                let plugins = state.app.plugin_state.plugin_chain.to_plugin_configs(sample_rate);
+                let output_channels = state.app.plugin_state.plugin_chain.output_channels();
 
                 if let Err(e) = state.player.lock().load_and_play(
                     path,
@@ -71,10 +71,10 @@ impl PlayerView {
                     state.app.current_output_device_name.clone(),
                 ) {
                     log::error!("Failed to play previous track: {}", e);
-                    state.app.is_playing = false;
+                    state.app.playback.is_playing = false;
                 }
             } else {
-                state.app.is_playing = false;
+                state.app.playback.is_playing = false;
             }
         });
         cx.notify();

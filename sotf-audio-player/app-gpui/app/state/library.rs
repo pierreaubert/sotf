@@ -6,7 +6,48 @@
 use std::path::PathBuf;
 
 use crate::app::constants;
+use crate::app::manager::{Manager, ManagerError};
 use sotf_audio_player::{Album, MusicLibrary};
+
+/// Library management events
+#[derive(Debug, Clone)]
+pub enum LibraryEvent {
+    SetSortOrder(LibrarySortOrder),
+    SetFilter(ChannelFilter),
+    SetSearchQuery(String),
+    ClearSearch,
+    CycleFilter,
+    NextPage,
+    PrevPage,
+    SelectNext,
+    SelectPrev,
+    SelectGridRight(usize),
+    SelectGridLeft(usize),
+    SelectGridDown(usize),
+    SelectGridUp(usize),
+    PageDown(usize),
+    PageUp(usize),
+    Scan,
+}
+
+/// Library queries
+#[derive(Debug, Clone)]
+pub enum LibraryQuery {
+    ItemCount,
+    SelectedAlbum,
+    FilteredAlbums,
+}
+
+/// Library query responses
+#[derive(Debug)]
+pub enum LibraryResponse {
+    Count(usize),
+    Album(Option<Album>), // Return owned clone for isolation? Or reference? 
+                          // The trait response is owned. Album is expensive to clone.
+                          // Ideally we return Arc<Album> or similar.
+                          // For now, let's use what we have.
+    None,
+}
 
 /// Library sort order options
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -18,6 +59,20 @@ pub enum LibrarySortOrder {
     Album,
     Tracks,
     Composer,
+}
+
+impl LibrarySortOrder {
+    /// Convert to sotf_audio_player LibrarySortOrder
+    pub fn to_library_sort_order(self) -> sotf_audio_player::LibrarySortOrder {
+        match self {
+            Self::Year => sotf_audio_player::LibrarySortOrder::Year,
+            Self::Genre => sotf_audio_player::LibrarySortOrder::Genre,
+            Self::Artist => sotf_audio_player::LibrarySortOrder::Artist,
+            Self::Album => sotf_audio_player::LibrarySortOrder::Album,
+            Self::Tracks => sotf_audio_player::LibrarySortOrder::Tracks,
+            Self::Composer => sotf_audio_player::LibrarySortOrder::Composer,
+        }
+    }
 }
 
 /// Channel filter options
@@ -32,6 +87,22 @@ pub enum ChannelFilter {
     SurroundPlus,  // More than 8 channels
     Mixed,         // Only albums with mixed channel counts
     Specific(u32), // Only albums with specific channel count
+}
+
+impl ChannelFilter {
+    /// Convert to sotf_audio_player ChannelFilter
+    pub fn to_library_channel_filter(self) -> sotf_audio_player::ChannelFilter {
+        match self {
+            Self::All => sotf_audio_player::ChannelFilter::All,
+            Self::Mono => sotf_audio_player::ChannelFilter::Mono,
+            Self::Stereo => sotf_audio_player::ChannelFilter::Stereo,
+            Self::Surround => sotf_audio_player::ChannelFilter::Surround,
+            Self::Surround71 => sotf_audio_player::ChannelFilter::Surround71,
+            Self::SurroundPlus => sotf_audio_player::ChannelFilter::SurroundPlus,
+            Self::Mixed => sotf_audio_player::ChannelFilter::Mixed,
+            Self::Specific(n) => sotf_audio_player::ChannelFilter::Specific(n),
+        }
+    }
 }
 
 /// Library state - can be used as a GPUI Entity
@@ -57,6 +128,20 @@ pub struct LibraryState {
 
     /// Items per page
     pub items_per_page: usize,
+
+    /// Number of columns in grid layout
+    pub library_columns: usize,
+
+    /// Filter selections for each sort mode
+    pub selected_genre: Option<String>,
+    pub selected_decade: Option<(i32, i32)>, // (start, end) e.g., (2020, 2029)
+    pub selected_year: Option<i32>,
+    pub selected_artist_letter: Option<char>, // First letter filter
+    pub selected_artist: Option<String>,
+    pub selected_composer_letter: Option<char>, // First letter filter
+    pub selected_composer: Option<String>,
+    pub selected_album_letter: Option<char>,
+    pub selected_track_range: Option<(usize, usize)>, // (min, max) track count
 
     /// Scan state
     pub scan_in_progress: bool,
@@ -93,6 +178,16 @@ impl LibraryState {
             selected_index: 0,
             current_page: 0,
             items_per_page: constants::library::DEFAULT_ITEMS_PER_PAGE,
+            library_columns: 4, // Default grid columns
+            selected_genre: None,
+            selected_decade: None,
+            selected_year: None,
+            selected_artist_letter: None,
+            selected_artist: None,
+            selected_composer_letter: None,
+            selected_composer: None,
+            selected_album_letter: None,
+            selected_track_range: None,
             scan_in_progress: false,
             scan_progress_tracks: 0,
             scan_progress_albums: 0,
@@ -450,5 +545,51 @@ impl LibraryState {
     pub fn load_from_database(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.library.load_from_database()?;
         Ok(())
+    }
+}
+
+impl Manager for LibraryState {
+    type State = Self;
+    type Event = LibraryEvent;
+    type Query = LibraryQuery;
+    type Response = LibraryResponse;
+
+    fn handle_event(&mut self, event: Self::Event) -> Result<(), ManagerError> {
+        match event {
+            LibraryEvent::SetSortOrder(order) => self.set_sort_order(order),
+            LibraryEvent::SetFilter(filter) => self.set_filter(filter),
+            LibraryEvent::SetSearchQuery(q) => self.set_search_query(q),
+            LibraryEvent::ClearSearch => self.clear_search(),
+            LibraryEvent::CycleFilter => self.cycle_filter(),
+            LibraryEvent::NextPage => self.next_page(),
+            LibraryEvent::PrevPage => self.prev_page(),
+            LibraryEvent::SelectNext => self.select_next(),
+            LibraryEvent::SelectPrev => self.select_prev(),
+            LibraryEvent::SelectGridRight(cols) => self.select_grid_right(cols),
+            LibraryEvent::SelectGridLeft(cols) => self.select_grid_left(cols),
+            LibraryEvent::SelectGridDown(cols) => self.select_grid_down(cols),
+            LibraryEvent::SelectGridUp(cols) => self.select_grid_up(cols),
+            LibraryEvent::PageDown(size) => self.page_down(size),
+            LibraryEvent::PageUp(size) => self.page_up(size),
+            LibraryEvent::Scan => {
+                self.scan().map_err(|e| ManagerError::from(e.to_string()))?
+            }
+        }
+        Ok(())
+    }
+
+    fn query(&self, query: Self::Query) -> Self::Response {
+        match query {
+            LibraryQuery::ItemCount => LibraryResponse::Count(self.item_count()),
+            LibraryQuery::SelectedAlbum => {
+                // Return a clone for now as Response must be owned
+                LibraryResponse::Album(self.selected_album().cloned())
+            },
+            LibraryQuery::FilteredAlbums => LibraryResponse::None, // Not implemented fully yet
+        }
+    }
+
+    fn state(&self) -> &Self::State {
+        self
     }
 }

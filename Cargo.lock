@@ -8114,6 +8114,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sotf-audio-engine",
+ "sotf-audio-player",
  "sotf-audio-plugins",
  "symphonia",
  "symphonia-bundle-flac",

@@ -32,7 +32,8 @@ pub use bliss::{BlissAnalysis, BlissScanManager, BlissScanMessage, BlissScanner}
 pub use config::AppConfig;
 pub use database::MusicDatabase;
 pub use library::{
-    Album, AlbumChannelType, DirectoryInfo, MusicLibrary, Playlist, PlaylistEntry, Track,
+    Album, AlbumChannelType, ChannelFilter, DirectoryInfo, LibrarySortOrder, MusicLibrary,
+    Playlist, PlaylistEntry, Track,
 };
 pub use library_scanner::{LibraryScanMessage, LibraryScanner};
 pub use player::{PlaybackState, Player};

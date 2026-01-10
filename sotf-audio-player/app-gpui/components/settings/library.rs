@@ -12,16 +12,16 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
-        let translations = state.app.translations.clone();
-        let scan_in_progress = state.app.scan_in_progress;
-        let scan_progress_tracks = state.app.scan_progress_tracks;
-        let scan_progress_albums = state.app.scan_progress_albums;
-        let directories = state.app.library.directories.clone();
-        let album_count = state.app.library.albums.len();
+        let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
+        let scan_in_progress = state.app.library_state.scan_in_progress;
+        let scan_progress_tracks = state.app.library_state.scan_progress_tracks;
+        let scan_progress_albums = state.app.library_state.scan_progress_albums;
+        let directories = state.app.library_state.library.directories.clone();
+        let album_count = state.app.library_state.library.albums.len();
         let track_count: usize = state
             .app
-            .library
+            .library_state.library
             .albums
             .iter()
             .map(|a| a.tracks.len())
@@ -248,7 +248,7 @@ impl PlayerView {
                                     .on_click(cx.listener(|view, _: &ClickEvent, _window, cx| {
                                         view.state.update(cx, |state, _cx| {
                                             if state.app.rescan_library().is_ok()
-                                                && state.app.scan_in_progress
+                                                && state.app.library_state.scan_in_progress
                                             {
                                                 // Show progress modal
                                                 state.app.scan_progress_modal = Some(

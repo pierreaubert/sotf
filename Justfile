@@ -60,10 +60,10 @@ test-negative:
 test-proptest:
 	PROPTEST_CASES=10000 cargo test -p sotf-gpui --test proptest_tests
 
-ntest
-	# Note: --lib is intentionally omitted to respect `test = false` in crates like sotf-gpui
-	# which have deeply nested GPUI macros that cause stack overflow in syn
-	RUST_MIN_STACK=16777216 cargo nextest run --release --no-fail-fast --workspace
+# Note: --lib is intentionally omitted to respect `test = false` in crates like sotf-gpui
+# which have deeply nested GPUI macros that cause stack overflow in syn
+ntest:
+    RUST_MIN_STACK=16777216 cargo nextest run --release --no-fail-fast --workspace
 
 # ----------------------------------------------------------------------
 # RUN

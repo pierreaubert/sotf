@@ -1,8 +1,8 @@
 impl PlayerView {
     fn adjust_volume(&mut self, delta: f32, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            state.app.volume = (state.app.volume + delta).clamp(0.0, 1.0);
-            let _ = state.player.lock().set_volume(state.app.volume);
+            state.app.playback.volume = (state.app.playback.volume + delta).clamp(0.0, 1.0);
+            let _ = state.player.lock().set_volume(state.app.playback.volume);
         });
         cx.notify();
     }

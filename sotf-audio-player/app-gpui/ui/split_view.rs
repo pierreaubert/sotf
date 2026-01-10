@@ -3,7 +3,7 @@ impl PlayerView {
     fn render_split_view(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let (theme, queue_ratio) = {
             let state = self.state.read(cx);
-            (state.app.theme.clone(), state.app.queue_panel_ratio)
+            (state.app.ui_state.theme.clone(), state.app.queue_panel_ratio)
         };
 
         div()
@@ -32,7 +32,7 @@ impl PlayerView {
                         state.app.is_dragging_volume,
                         state.app.volume_drag_start_y,
                         state.app.volume_drag_start_value,
-                        state.app.window_height,
+                        state.app.ui_state.window_height,
                         state.app.meters_panel_ratio,
                     )
                 };
@@ -103,7 +103,7 @@ impl PlayerView {
                         let volume_delta = delta_y / 100.0;
                         let new_volume = (volume_start_value + volume_delta).clamp(0.0, 1.0);
                         view.state.update(cx, |state, _cx| {
-                            state.app.volume = new_volume;
+                            state.app.playback.volume = new_volume;
                             let _ = state.player.lock().set_volume(new_volume);
                         });
                         cx.notify();

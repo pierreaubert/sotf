@@ -3,7 +3,6 @@
 //! Contains all state related to audio plugins including the plugin chain,
 //! graph view state, and editing state.
 
-use crate::app::constants;
 use crate::app::types::PluginUpdateType;
 use gpui::Entity;
 use gpui_ui_kit::workflow::{NodeId, WorkflowCanvas};
@@ -17,6 +16,7 @@ pub struct PluginState {
     pub pending_plugin_update: Option<PluginUpdateType>,
     pub editing_plugin_index: Option<usize>,
     pub plugin_param_selection: usize,
+    pub selected_plugin_index: usize,
     pub selected_eq_band: usize,
     pub matrix_selected_cell: Option<(usize, usize)>,
     pub plugin_view_mode: PluginViewMode,
@@ -58,6 +58,7 @@ impl Default for PluginState {
             pending_plugin_update: None,
             editing_plugin_index: None,
             plugin_param_selection: 0,
+            selected_plugin_index: 0,
             selected_eq_band: 0,
             matrix_selected_cell: None,
             plugin_view_mode: PluginViewMode::Rack,

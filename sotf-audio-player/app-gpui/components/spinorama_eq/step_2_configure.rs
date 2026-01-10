@@ -17,7 +17,7 @@ impl PlayerView {
 
     pub(crate) fn render_spinorama_configure(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let spinorama = &state.app.spinorama_eq_state;
 
         // Filter available modes based on phase data availability

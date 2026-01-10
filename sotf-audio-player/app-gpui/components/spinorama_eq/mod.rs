@@ -8,6 +8,7 @@
 
 use crate::app::types::{PluginUpdateType, Screen, SpinoramaStep};
 use crate::components::icons::{Icon, IconName};
+use crate::components::plugins::editing::PluginEditingManager;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -196,7 +197,7 @@ impl PlayerView {
     pub fn clear_spinorama_eq_from_playback(&mut self, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             // Find and remove EQ plugins
-            let plugins = state.app.plugin_chain.plugins();
+            let plugins = state.app.plugin_state.plugin_chain.plugins();
             let eq_indices: Vec<_> = plugins
                 .iter()
                 .enumerate()
@@ -211,12 +212,12 @@ impl PlayerView {
 
             // Remove in reverse order to maintain correct indices
             for idx in eq_indices.into_iter().rev() {
-                state.app.plugin_chain.remove_plugin(idx);
+                state.app.plugin_state.plugin_chain.remove_plugin(idx);
             }
 
-            state.app.pending_plugin_update = Some(PluginUpdateType::Structural);
+            state.app.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
             state.app.sync_spectrum_visible();
-            state.app.toast_message = Some(crate::app::ToastMessage::success(
+            state.app.ui_state.toast_message = Some(crate::app::ToastMessage::success(
                 "Cleared EQ from playback",
             ));
         });
@@ -323,7 +324,7 @@ impl PlayerView {
         }
 
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let current_step = state.app.spinorama_eq_state.step;
 
         // Content for current step
@@ -355,8 +356,8 @@ impl PlayerView {
     /// Render the spinorama EQ screen header with step indicators
     fn render_spinorama_header(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
-        let theme_id = state.app.theme_id;
+        let theme = state.app.ui_state.theme.clone();
+        let theme_id = state.app.ui_state.theme_id;
         let current_step = state.app.spinorama_eq_state.step;
         let can_go_next = state.app.spinorama_eq_state.can_advance();
         let is_busy = state.app.spinorama_eq_state.is_optimizing();
@@ -419,7 +420,7 @@ impl PlayerView {
                             view.state.update(cx, |state, _| {
                                 match state.app.spinorama_eq_state.step {
                                     SpinoramaStep::SelectSpeaker => {
-                                        state.app.current_screen = state.app.last_screen;
+                                        state.app.ui_state.current_screen = state.app.ui_state.last_screen;
                                     }
                                     _ => {
                                         if let Some(prev) =
@@ -447,7 +448,7 @@ impl PlayerView {
                             view.state.update(cx, |state, _| {
                                 match state.app.spinorama_eq_state.step {
                                     SpinoramaStep::Export => {
-                                        state.app.current_screen = state.app.last_screen;
+                                        state.app.ui_state.current_screen = state.app.ui_state.last_screen;
                                     }
                                     _ => {
                                         if let Some(next) = state.app.spinorama_eq_state.step.next()
@@ -491,7 +492,7 @@ impl PlayerView {
                     .child(Icon::new(IconName::Home).color(text_muted))
                     .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
                         state_for_home.update(cx, |state, _cx| {
-                            state.app.current_screen = Screen::Library;
+                            state.app.ui_state.current_screen = Screen::Library;
                         });
                     }),
             )
@@ -569,7 +570,7 @@ impl PlayerView {
         .detach();
     }
 
-    fn select_spinorama_speaker(&mut self, speaker: &str, cx: &mut Context<Self>) {
+    pub fn select_spinorama_speaker(&mut self, speaker: &str, cx: &mut Context<Self>) {
         log::info!("Selected speaker: {}", speaker);
         self.state.update(cx, |state, _cx| {
             state.app.spinorama_eq_state.selected_speaker = Some(speaker.to_string());
@@ -855,7 +856,7 @@ impl PlayerView {
         .detach();
     }
 
-    fn select_spinorama_version(&mut self, version: &str, cx: &mut Context<Self>) {
+    pub fn select_spinorama_version(&mut self, version: &str, cx: &mut Context<Self>) {
         log::info!("Selected version: {}", version);
         let speaker = {
             let state = self.state.read(cx);
@@ -874,7 +875,7 @@ impl PlayerView {
         }
     }
 
-    fn start_spinorama_optimization(&mut self, cx: &mut Context<Self>) {
+    pub fn start_spinorama_optimization(&mut self, cx: &mut Context<Self>) {
         log::info!("Starting spinorama optimization...");
 
         // Gather config from state
@@ -1270,7 +1271,7 @@ impl PlayerView {
 
         let Some(biquads) = biquads else {
             self.state.update(cx, |state, _cx| {
-                state.app.toast_message =
+                state.app.ui_state.toast_message =
                     Some(crate::app::ToastMessage::error("No EQ result to apply"));
             });
             cx.notify();
@@ -1279,7 +1280,7 @@ impl PlayerView {
 
         if biquads.is_empty() {
             self.state.update(cx, |state, _cx| {
-                state.app.toast_message =
+                state.app.ui_state.toast_message =
                     Some(crate::app::ToastMessage::warning("No filters in EQ result"));
             });
             cx.notify();
@@ -1303,7 +1304,7 @@ impl PlayerView {
 
         // Update the plugin chain
         self.state.update(cx, |state, _| {
-            let plugin_chain = &mut state.app.plugin_chain;
+            let plugin_chain = &mut state.app.plugin_state.plugin_chain;
 
             // Check if there's an existing EQ plugin
             if let Some(eq_idx) = plugin_chain.find_plugin_index(&sotf_audio_player::PluginType::EQ)
@@ -1340,9 +1341,9 @@ impl PlayerView {
             }
 
             // Mark that plugin chain was modified and needs sync
-            state.app.plugin_chain_modified = true;
-            state.app.pending_plugin_update = Some(PluginUpdateType::Structural);
-            state.app.toast_message = Some(crate::app::ToastMessage::success(&format!(
+            state.app.plugin_state.plugin_chain_modified = true;
+            state.app.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
+            state.app.ui_state.toast_message = Some(crate::app::ToastMessage::success(&format!(
                 "Applied {} filter Spinorama EQ",
                 num_filters
             )));
@@ -1369,7 +1370,7 @@ impl PlayerView {
 
         let Some(result) = result else {
             self.state.update(cx, |state, _cx| {
-                state.app.toast_message =
+                state.app.ui_state.toast_message =
                     Some(crate::app::ToastMessage::error("No EQ result to save"));
             });
             cx.notify();
@@ -1438,7 +1439,7 @@ impl PlayerView {
                     Ok(()) => {
                         log::info!("Saved Spinorama EQ to {:?}", file.path());
                         let _ = state_entity.update(cx, |state, cx| {
-                            state.app.toast_message = Some(crate::app::ToastMessage::success(
+                            state.app.ui_state.toast_message = Some(crate::app::ToastMessage::success(
                                 &format!("Saved to {}", file.path().display()),
                             ));
                             cx.notify();
@@ -1447,7 +1448,7 @@ impl PlayerView {
                     Err(e) => {
                         log::error!("Failed to save Spinorama EQ: {}", e);
                         let _ = state_entity.update(cx, |state, cx| {
-                            state.app.toast_message = Some(crate::app::ToastMessage::error(
+                            state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(
                                 &format!("Failed to save: {}", e),
                             ));
                             cx.notify();

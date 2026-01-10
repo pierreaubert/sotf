@@ -11,7 +11,7 @@ use gpui_ui_kit::{
 impl PlayerView {
     pub(crate) fn render_room_eq_load_data(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let error_message = state.app.room_eq_state.error_message.clone();
         let status_message = state.app.room_eq_state.status_message.clone();
         let has_measurements = state.app.room_eq_state.has_measurements();

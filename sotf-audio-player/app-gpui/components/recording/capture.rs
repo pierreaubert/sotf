@@ -173,7 +173,7 @@ impl PlayerView {
     /// Render signal type dropdown
     fn render_signal_type_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.recording_state;
         let view = cx.entity().clone();
 
@@ -220,7 +220,7 @@ impl PlayerView {
     /// Render duration dropdown
     fn render_duration_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.recording_state;
         let view = cx.entity().clone();
 
@@ -268,7 +268,7 @@ impl PlayerView {
     /// Render channel status section with recording controls
     fn render_channel_status_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let is_recording = state.app.recording_state.is_recording();
         let status_message = state.app.recording_state.status_message.clone();
         let recording_progress = state.app.recording_state.recording_progress;
@@ -348,7 +348,7 @@ impl PlayerView {
     /// Render the list of channels with their recording status
     fn render_channel_list(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.recording_state;
         let view = cx.entity().clone();
         let is_recording = recording_state.is_recording();
@@ -442,7 +442,7 @@ impl PlayerView {
     /// Render capture action buttons (redo and load from file)
     fn render_capture_redo_actions(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.recording_state;
         let is_recording = recording_state.is_recording();
         let view = cx.entity().clone();

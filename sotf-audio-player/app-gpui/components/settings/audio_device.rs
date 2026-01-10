@@ -15,8 +15,8 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
-        let translations = state.app.translations.clone();
+        let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
         let _playback_source = state.app.playback_source;
 
         let mut content = VStack::new().spacing(StackSpacing::Md);
@@ -89,7 +89,7 @@ impl PlayerView {
                                             if let Err(e) = state.player.lock().stop() {
                                                 log::error!("Failed to stop HAL playback: {}", e);
                                             }
-                                            state.app.is_playing = false;
+                                            state.app.playback.is_playing = false;
                                         });
                                     },
                                 )
@@ -265,9 +265,9 @@ impl PlayerView {
                                                 Some(device.name.clone());
 
                                             // If playing, restart track with new device
-                                            if state.app.is_playing {
+                                            if state.app.playback.is_playing {
                                                 if let Some(queue_idx) =
-                                                    state.app.current_queue_index
+                                                    state.app.playback.current_queue_index
                                                 {
                                                     if let Some(item) =
                                                         state.app.queue.get(queue_idx)
@@ -308,7 +308,7 @@ impl PlayerView {
             });
 
             // Add plugins from the current plugin chain (48kHz is the HAL default rate)
-            for plugin_config in state.app.plugin_chain.to_plugin_configs(48000.0) {
+            for plugin_config in state.app.plugin_state.plugin_chain.to_plugin_configs(48000.0) {
                 plugins.push(plugin_config);
             }
 
@@ -316,7 +316,7 @@ impl PlayerView {
             let output_device = state.app.current_output_device_name.clone();
 
             // Determine output channels from plugin chain
-            let output_channels = state.app.plugin_chain.output_channels();
+            let output_channels = state.app.plugin_state.plugin_chain.output_channels();
 
             // Start HAL playback
             match state
@@ -326,12 +326,12 @@ impl PlayerView {
             {
                 Ok(()) => {
                     state.app.playback_source = PlaybackSource::HalDevice;
-                    state.app.is_playing = true;
+                    state.app.playback.is_playing = true;
                     log::info!("HAL playback started successfully");
                 }
                 Err(e) => {
                     log::error!("Failed to start HAL playback: {}", e);
-                    state.app.toast_message = Some(crate::app::types::ToastMessage::error(
+                    state.app.ui_state.toast_message = Some(crate::app::types::ToastMessage::error(
                         format!("Failed to start HAL: {}", e),
                     ));
                 }

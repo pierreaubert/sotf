@@ -32,11 +32,11 @@ impl PlayerView {
                 param_index,
             } => {
                 // Zero-dropout individual parameter update
-                if let Some(plugin) = state.app.plugin_chain.get_plugin(plugin_index) {
+                if let Some(plugin) = state.app.plugin_state.plugin_chain.get_plugin(plugin_index) {
                     // We must map the UI index to the Engine index because the Engine reorders plugins
                     // (analyzers moved to the end) and filters out disabled ones.
                     if let Some(engine_index) =
-                        state.app.plugin_chain.get_engine_index(plugin_index)
+                        state.app.plugin_state.plugin_chain.get_engine_index(plugin_index)
                     {
                         if let Some((param_id, value)) =
                             param_index_to_engine_param(&plugin.settings, param_index)
@@ -48,7 +48,7 @@ impl PlayerView {
                         } else {
                             // Parameter not supported for individual update, fall back to structural
                             let sample_rate = 48000.0;
-                            let plugins = state.app.plugin_chain.to_plugin_configs(sample_rate);
+                            let plugins = state.app.plugin_state.plugin_chain.to_plugin_configs(sample_rate);
                             state.player.lock().update_plugins(plugins)
                         }
                     } else {
@@ -62,11 +62,11 @@ impl PlayerView {
             PluginUpdateType::Structural => {
                 // Full plugin chain rebuild
                 let sample_rate = 48000.0;
-                let plugins = state.app.plugin_chain.to_plugin_configs(sample_rate);
+                let plugins = state.app.plugin_state.plugin_chain.to_plugin_configs(sample_rate);
                 log::warn!(
                     "[GPUI] Structural update: sending {} plugins to engine (expected output: {} channels)",
                     plugins.len(),
-                    state.app.plugin_chain.output_channels()
+                    state.app.plugin_state.plugin_chain.output_channels()
                 );
                 state.player.lock().update_plugins(plugins)
             }
@@ -79,21 +79,21 @@ impl PlayerView {
 
     fn move_plugin_up(&mut self, _: &MovePluginUp, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            state.app.move_plugin_up(state.app.selected_plugin_index);
+            state.app.move_plugin_up(state.app.plugin_state.selected_plugin_index);
         });
         cx.notify();
     }
 
     fn move_plugin_down(&mut self, _: &MovePluginDown, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            state.app.move_plugin_down(state.app.selected_plugin_index);
+            state.app.move_plugin_down(state.app.plugin_state.selected_plugin_index);
         });
         cx.notify();
     }
 
     fn toggle_plugin(&mut self, _: &TogglePlugin, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            state.app.toggle_plugin(state.app.selected_plugin_index);
+            state.app.toggle_plugin(state.app.plugin_state.selected_plugin_index);
         });
         cx.notify();
     }

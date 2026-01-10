@@ -11,7 +11,7 @@ use super::render::render_channel_config_row;
 impl PlayerView {
     pub(crate) fn render_room_eq_configure(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let room_eq = &state.app.room_eq_state;
 
         // Build AutoEqConfig from our RoomEqOptimizerConfig
@@ -214,7 +214,7 @@ impl PlayerView {
     /// Render the list of channel configurations
     fn render_channel_config_list(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let speaker_configs = state.app.room_eq_state.speaker_configs.clone();
 
         if speaker_configs.is_empty() {

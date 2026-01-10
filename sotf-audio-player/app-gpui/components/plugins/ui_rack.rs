@@ -6,7 +6,10 @@ use super::render_plugin_content;
 use crate::app::state::{DividerDragState, DividerType};
 use crate::app::types::{PluginUpdateType, Screen};
 use crate::components::icons::{Icon, IconName};
+use crate::components::plugins::editing::PluginEditingManager;
+use crate::components::plugins::level_meters::LevelMeterManager;
 use crate::theme::Theme;
+
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -161,7 +164,7 @@ fn speaker_config_to_channels(config: &str) -> usize {
 
 impl PlayerView {
     pub(crate) fn render_plugins_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = self.state.read(cx).app.theme.clone();
+        let theme = self.state.read(cx).app.ui_state.theme.clone();
 
         div()
             .id("plugins-screen")
@@ -283,7 +286,7 @@ impl PlayerView {
             let state = self.state.read(cx);
             let plugins: Vec<_> = state
                 .app
-                .plugin_chain
+                .plugin_state.plugin_chain
                 .plugins()
                 .iter()
                 .map(|p| {
@@ -297,8 +300,8 @@ impl PlayerView {
                 .collect();
             (
                 plugins,
-                state.app.selected_plugin_index,
-                state.app.theme.clone(),
+                state.app.plugin_state.selected_plugin_index,
+                state.app.ui_state.theme.clone(),
             )
         };
 
@@ -355,7 +358,7 @@ impl PlayerView {
                             .child(Icon::new(IconName::Home).color(text_muted))
                             .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
                                 state_for_home.update(cx, |state, _cx| {
-                                    state.app.current_screen = Screen::Library;
+                                    state.app.ui_state.current_screen = Screen::Library;
                                 });
                             }),
                     )
@@ -462,12 +465,12 @@ impl PlayerView {
                                                 if source != target {
                                                     view.state.update(cx, |state, _cx| {
                                                         let chain_len =
-                                                            state.app.plugin_chain.plugins().len();
+                                                            state.app.plugin_state.plugin_chain.plugins().len();
 
                                                         // Check if source plugin is a LoudnessMonitor
                                                         let source_is_monitor = state
                                                             .app
-                                                            .plugin_chain
+                                                            .plugin_state.plugin_chain
                                                             .get_plugin(source)
                                                             .map(|p| {
                                                                 matches!(
@@ -488,10 +491,10 @@ impl PlayerView {
 
                                                         state
                                                             .app
-                                                            .plugin_chain
+                                                            .plugin_state.plugin_chain
                                                             .move_plugin(source, target);
-                                                        state.app.selected_plugin_index = target;
-                                                        state.app.pending_plugin_update =
+                                                        state.app.plugin_state.selected_plugin_index = target;
+                                                        state.app.plugin_state.pending_plugin_update =
                                                             Some(PluginUpdateType::Structural);
                                                         state.app.update_level_meter_groups(); // Reconfigure metering
                                                     });
@@ -511,7 +514,7 @@ impl PlayerView {
                                             cx.listener(
                                                 move |view, _: &MouseUpEvent, _window, cx| {
                                                     view.state.update(cx, |state, _cx| {
-                                                        state.app.selected_plugin_index = idx
+                                                        state.app.plugin_state.selected_plugin_index = idx
                                                     });
                                                     cx.notify();
                                                 },
@@ -674,11 +677,11 @@ impl PlayerView {
         let (theme, loudness) = {
             let state = self.state.read(cx);
             let loudness = if is_input {
-                state.app.input_loudness_info.clone()
+                state.app.playback.input_loudness_info.clone()
             } else {
-                state.app.loudness_info.clone()
+                state.app.playback.loudness_info.clone()
             };
-            (state.app.theme.clone(), loudness)
+            (state.app.ui_state.theme.clone(), loudness)
         };
 
         let theme_c = theme.clone();
@@ -862,12 +865,12 @@ impl PlayerView {
     /// Render add plugin buttons grouped by category (2 rows)
     fn render_add_plugin_buttons(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
 
         // Get list of plugins already in chain
         let present_plugins: Vec<_> = state
             .app
-            .plugin_chain
+            .plugin_state.plugin_chain
             .plugins()
             .iter()
             .map(|p| p.plugin_type().clone())
@@ -1015,15 +1018,15 @@ impl PlayerView {
             let state = self.state.read(cx);
             let plugin = state
                 .app
-                .plugin_chain
-                .get_plugin(state.app.selected_plugin_index)
+                .plugin_state.plugin_chain
+                .get_plugin(state.app.plugin_state.selected_plugin_index)
                 .cloned();
             (
                 plugin,
-                state.app.selected_plugin_index,
-                state.app.editing_plugin_index,
-                state.app.plugin_param_selection,
-                state.app.theme.clone(),
+                state.app.plugin_state.selected_plugin_index,
+                state.app.plugin_state.editing_plugin_index,
+                state.app.plugin_state.plugin_param_selection,
+                state.app.ui_state.theme.clone(),
             )
         };
 
@@ -1088,7 +1091,7 @@ impl PlayerView {
                     // Calculate output channels based on plugin chain for conditional divider
                     let state = self.state.read(cx);
                     let mut output_channels = 2;
-                    for p in state.app.plugin_chain.plugins() {
+                    for p in state.app.plugin_state.plugin_chain.plugins() {
                         if p.enabled {
                             match p.plugin_type() {
                                 PluginType::Upmixer => {
@@ -1181,7 +1184,7 @@ impl PlayerView {
                                         sotf_audio_player::PluginSettings::SpectrumAnalyzer {
                                             ..
                                         } => {
-                                            self.state.read(cx).app.spectrum_info.clone().map(|s| {
+                                            self.state.read(cx).app.playback.spectrum_info.clone().map(|s| {
                                                 std::sync::Arc::new(s)
                                                     as std::sync::Arc<
                                                         dyn std::any::Any + Send + Sync,
@@ -1190,7 +1193,7 @@ impl PlayerView {
                                         }
                                         sotf_audio_player::PluginSettings::Compressor {
                                             ..
-                                        } => self.state.read(cx).app.compressor_info.clone().map(
+                                        } => self.state.read(cx).app.playback.compressor_info.clone().map(
                                             |c| {
                                                 std::sync::Arc::new(c)
                                                     as std::sync::Arc<
@@ -1212,7 +1215,7 @@ impl PlayerView {
                                             // Find all LoudnessMonitor indices in the chain
                                             let monitor_indices: Vec<usize> = state
                                                 .app
-                                                .plugin_chain
+                                                .plugin_state.plugin_chain
                                                 .plugins()
                                                 .iter()
                                                 .enumerate()
@@ -1227,22 +1230,22 @@ impl PlayerView {
 
                                             if monitor_indices.len() <= 1 {
                                                 // Only one monitor - use output (default behavior)
-                                                state.app.loudness_info.clone()
+                                                state.app.playback.loudness_info.clone()
                                             } else if selected_idx == monitor_indices[0] {
                                                 // First monitor - show input levels
-                                                state.app.input_loudness_info.clone()
+                                                state.app.playback.input_loudness_info.clone()
                                             } else if selected_idx
                                                 == *monitor_indices.last().unwrap()
                                             {
                                                 // Last monitor - show output levels
-                                                state.app.loudness_info.clone()
+                                                state.app.playback.loudness_info.clone()
                                             } else {
                                                 // Middle monitor - show output (best available approximation)
-                                                state.app.loudness_info.clone()
+                                                state.app.playback.loudness_info.clone()
                                             }
                                         } else {
                                             // Non-monitor plugins use output loudness
-                                            state.app.loudness_info.clone()
+                                            state.app.playback.loudness_info.clone()
                                         }
                                     };
 
@@ -1254,7 +1257,7 @@ impl PlayerView {
                                         param_selection,
                                         &theme,
                                         self.state.read(cx).app.upmixer_config_open,
-                                        self.state.read(cx).app.selected_eq_band,
+                                        self.state.read(cx).app.plugin_state.selected_eq_band,
                                         loudness_for_plugin,
                                         plugin_data,
                                         self.state.read(cx).app.spectrum_tilt_select_open,

@@ -8,6 +8,7 @@
 
 use super::common::{render_edit_hints, render_knob, render_section_title};
 use crate::app::AppState;
+use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;

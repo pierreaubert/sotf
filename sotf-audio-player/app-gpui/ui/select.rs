@@ -2,10 +2,10 @@ impl PlayerView {
     fn select_next(&mut self, _: &SelectNext, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             // Block if in text input mode
-            if Self::is_text_input_mode(state.app.input_mode) {
+            if Self::is_text_input_mode(state.app.ui_state.input_mode) {
                 return;
             }
-            match state.app.current_screen {
+            match state.app.ui_state.current_screen {
                 Screen::Library => {
                     state.app.select_next_album();
                 }
@@ -21,10 +21,10 @@ impl PlayerView {
     fn select_prev(&mut self, _: &SelectPrev, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             // Block if in text input mode
-            if Self::is_text_input_mode(state.app.input_mode) {
+            if Self::is_text_input_mode(state.app.ui_state.input_mode) {
                 return;
             }
-            match state.app.current_screen {
+            match state.app.ui_state.current_screen {
                 Screen::Library => {
                     state.app.select_previous_album();
                 }
@@ -44,7 +44,7 @@ impl PlayerView {
         const LIST_PAGE_SIZE: usize = 20;
 
         self.state
-            .update(cx, |state, _cx| match state.app.current_screen {
+            .update(cx, |state, _cx| match state.app.ui_state.current_screen {
                 Screen::Library => {
                     // Grid view: move by full rows
                     state.app.page_down_albums(GRID_COLUMNS * GRID_PAGE_ROWS);
@@ -64,7 +64,7 @@ impl PlayerView {
         const LIST_PAGE_SIZE: usize = 20;
 
         self.state
-            .update(cx, |state, _cx| match state.app.current_screen {
+            .update(cx, |state, _cx| match state.app.ui_state.current_screen {
                 Screen::Library => {
                     // Grid view: move by full rows
                     state.app.page_up_albums(GRID_COLUMNS * GRID_PAGE_ROWS);
@@ -79,7 +79,7 @@ impl PlayerView {
 
     fn select_left(&mut self, _: &SelectLeft, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            if state.app.current_screen == Screen::Library {
+            if state.app.ui_state.current_screen == Screen::Library {
                 state.app.select_grid_left();
             }
         });
@@ -88,7 +88,7 @@ impl PlayerView {
 
     fn select_right(&mut self, _: &SelectRight, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            if state.app.current_screen == Screen::Library {
+            if state.app.ui_state.current_screen == Screen::Library {
                 state.app.select_grid_right();
             }
         });
@@ -97,7 +97,7 @@ impl PlayerView {
 
     fn select_up(&mut self, _: &SelectUp, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            if state.app.current_screen == Screen::Library {
+            if state.app.ui_state.current_screen == Screen::Library {
                 state.app.select_grid_up();
             }
         });
@@ -106,7 +106,7 @@ impl PlayerView {
 
     fn select_down(&mut self, _: &SelectDown, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            if state.app.current_screen == Screen::Library {
+            if state.app.ui_state.current_screen == Screen::Library {
                 state.app.select_grid_down();
             }
         });

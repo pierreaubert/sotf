@@ -14,6 +14,7 @@ use gpui_ui_kit::{
 
 use crate::app::types::{MeterDisplayMode, Screen};
 use crate::components::icons::{Icon, IconName};
+use crate::components::plugins::level_meters::LevelMeterManager;
 use sotf_audio_player::Track;
 
 use crate::ui::PlayerView;
@@ -21,8 +22,8 @@ use crate::ui::PlayerView;
 impl PlayerView {
     pub(crate) fn render_queue_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
-        let translations = state.app.translations.clone();
+        let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
 
         // Use ratios for panel widths (layout will compute actual sizes)
         let queue_list_ratio = state.app.queue_list_ratio;
@@ -66,7 +67,7 @@ impl PlayerView {
                             .child(Icon::new(IconName::Home).color(text_muted))
                             .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
                                 state_for_home.update(cx, |state, _cx| {
-                                    state.app.current_screen = Screen::Library;
+                                    state.app.ui_state.current_screen = Screen::Library;
                                 });
                             }),
                     )
@@ -119,7 +120,7 @@ impl PlayerView {
                                 .flex_1()
                                 .overflow_y_scroll()
                                 .children(state.app.queue.iter().enumerate().map(|(idx, item)| {
-                                    let is_current = state.app.current_queue_index == Some(idx);
+                                    let is_current = state.app.playback.current_queue_index == Some(idx);
                                     let theme = theme.clone();
                                     let theme_hover = theme.clone();
                                     div()
@@ -141,7 +142,7 @@ impl PlayerView {
                                             MouseButton::Left,
                                             cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                                                 view.state.update(cx, |state, _cx| {
-                                                    state.app.current_queue_index = Some(idx);
+                                                    state.app.playback.current_queue_index = Some(idx);
                                                     if let Some(path) = state.app.queue[idx]
                                                         .current_track()
                                                         .map(|t| t.path.clone())
@@ -157,8 +158,8 @@ impl PlayerView {
                                             cx.listener(
                                                 move |view, event: &MouseUpEvent, _window, cx| {
                                                     view.state.update(cx, |state, _cx| {
-                                                        state.app.current_queue_index = Some(idx);
-                                                        state.app.context_menu =
+                                                        state.app.playback.current_queue_index = Some(idx);
+                                                        state.app.ui_state.context_menu =
                                                         Some(crate::app::ContextMenuState {
                                                             menu_type:
                                                                 crate::app::ContextMenuType::QueueItem,
@@ -446,7 +447,7 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         // Clone theme for use in closures (moved into flat_map)
         let theme_for_closure = theme.clone();
         let translations = translations.clone();
@@ -454,6 +455,7 @@ impl PlayerView {
         // Get current queue item with all album info
         let queue_item = state
             .app
+            .playback
             .current_queue_index
             .and_then(|idx| state.app.queue.get(idx));
 
@@ -765,7 +767,7 @@ impl PlayerView {
                                 let path = track_path.clone();
                                 view.state.update(cx, |state, _cx| {
                                     // Update the track index in the current queue item
-                                    if let Some(queue_idx) = state.app.current_queue_index {
+                                    if let Some(queue_idx) = state.app.playback.current_queue_index {
                                         if let Some(item) = state.app.queue.get_mut(queue_idx) {
                                             item.current_track_index = idx;
                                         }

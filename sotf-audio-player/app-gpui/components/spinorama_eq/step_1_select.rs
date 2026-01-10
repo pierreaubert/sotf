@@ -20,11 +20,11 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
-        let theme_id = state.app.theme_id;
+        let theme = state.app.ui_state.theme.clone();
+        let theme_id = state.app.ui_state.theme_id;
         let button_theme = ButtonTheme::from(&theme.to_ui_kit_theme(theme_id));
         let spinorama = &state.app.spinorama_eq_state;
-        let app_width = state.app.window_width;
+        let app_width = state.app.ui_state.window_width;
 
         let search_query = spinorama.speaker_search.clone();
         let selected_speaker = spinorama.selected_speaker.clone();
@@ -89,7 +89,7 @@ impl PlayerView {
                                         move |_window, cx| {
                                             log::info!("[SPINORAMA] on_edit_start: entering SpinoramaSpeakerSearch mode");
                                             state_for_start.update(cx, |state, _cx| {
-                                                state.app.input_mode =
+                                                state.app.ui_state.input_mode =
                                                     crate::app::InputMode::SpinoramaSpeakerSearch;
                                             });
                                         }
@@ -106,7 +106,7 @@ impl PlayerView {
                                     .on_edit_end({
                                         move |_result, _window, cx| {
                                             state_for_end.update(cx, |state, _cx| {
-                                                state.app.input_mode =
+                                                state.app.ui_state.input_mode =
                                                     crate::app::InputMode::Normal;
                                             });
                                         }

@@ -141,3 +141,11 @@ path = "tests/event_integration/mod.rs"
 [[test]]
 name = "state_machine"
 path = "tests/state_machine/mod.rs"
+
+[[test]]
+name = "types_tests"
+path = "tests/types_tests.rs"
+
+[[test]]
+name = "config_tests"
+path = "tests/config_tests.rs"

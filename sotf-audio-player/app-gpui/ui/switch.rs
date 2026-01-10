@@ -1,9 +1,9 @@
 impl PlayerView {
     pub(crate) fn switch_screen(&mut self, screen: Screen, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            if state.app.current_screen != screen {
-                state.app.last_screen = state.app.current_screen;
-                state.app.current_screen = screen;
+            if state.app.ui_state.current_screen != screen {
+                state.app.ui_state.last_screen = state.app.ui_state.current_screen;
+                state.app.ui_state.current_screen = screen;
             }
         });
         cx.notify();
@@ -19,8 +19,8 @@ impl PlayerView {
 
     fn switch_to_plugins(&mut self, _: &SwitchToPlugins, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            state.app.current_screen = Screen::Settings;
-            state.app.active_settings_tab = crate::app::SettingsTab::AudioDevice;
+            state.app.ui_state.current_screen = Screen::Settings;
+            state.app.ui_state.active_settings_tab = crate::app::SettingsTab::AudioDevice;
         });
         cx.notify();
     }
@@ -49,8 +49,8 @@ impl PlayerView {
 
     fn switch_to_devices(&mut self, _: &SwitchToDevices, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            state.app.current_screen = Screen::Settings;
-            state.app.active_settings_tab = crate::app::SettingsTab::AudioDevice;
+            state.app.ui_state.current_screen = Screen::Settings;
+            state.app.ui_state.active_settings_tab = crate::app::SettingsTab::AudioDevice;
         });
         cx.notify();
     }

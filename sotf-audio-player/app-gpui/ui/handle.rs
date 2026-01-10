@@ -35,14 +35,14 @@ impl PlayerView {
                     state.app.clear_autocomplete();
                     match state.app.load_apo_file() {
                         Ok(()) => {
-                            state.app.toast_message = Some(crate::app::ToastMessage::success(
+                            state.app.ui_state.toast_message = Some(crate::app::ToastMessage::success(
                                 "APO file loaded successfully",
                             ));
                             state.app.apo_file_input.clear();
-                            state.app.input_mode = crate::app::InputMode::Normal;
+                            state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                         }
                         Err(e) => {
-                            state.app.toast_message = Some(crate::app::ToastMessage::error(
+                            state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(
                                 format!("Failed to load APO file: {}", e),
                             ));
                         }
@@ -99,14 +99,14 @@ impl PlayerView {
                     state.app.clear_autocomplete();
                     match state.app.load_sofa_file() {
                         Ok(()) => {
-                            state.app.toast_message = Some(crate::app::ToastMessage::success(
+                            state.app.ui_state.toast_message = Some(crate::app::ToastMessage::success(
                                 "SOFA file loaded successfully",
                             ));
                             state.app.sofa_file_input.clear();
-                            state.app.input_mode = crate::app::InputMode::Normal;
+                            state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                         }
                         Err(e) => {
-                            state.app.toast_message = Some(crate::app::ToastMessage::error(
+                            state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(
                                 format!("Failed to load SOFA file: {}", e),
                             ));
                         }
@@ -150,7 +150,7 @@ impl PlayerView {
                 log::info!("[SPINORAMA] Escape pressed - exiting search mode");
                 // Exit search mode
                 self.state.update(cx, |state, _cx| {
-                    state.app.input_mode = crate::app::InputMode::Normal;
+                    state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                 });
                 cx.notify();
             }
@@ -158,7 +158,7 @@ impl PlayerView {
                 log::info!("[SPINORAMA] Enter pressed - exiting search mode");
                 // Exit search mode, keep current search results
                 self.state.update(cx, |state, _cx| {
-                    state.app.input_mode = crate::app::InputMode::Normal;
+                    state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                 });
                 cx.notify();
             }
@@ -204,10 +204,10 @@ impl PlayerView {
             }
             "escape" => {
                 self.state.update(cx, |state, _cx| {
-                    state.app.input_mode = crate::app::InputMode::Normal;
+                    state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                     state.app.plugin_file_input.clear();
                     state.app.clear_autocomplete();
-                    state.app.pending_studio_close = false; // Cancel close if save cancelled
+                    state.app.ui_state.pending_studio_close = false; // Cancel close if save cancelled
                 });
                 cx.notify();
             }
@@ -215,19 +215,19 @@ impl PlayerView {
                 self.state.update(cx, |state, _cx| {
                     // If there are presets shown and input is empty, use selected preset (overwrite)
                     if state.app.plugin_file_input.is_empty()
-                        && !state.app.available_plugin_presets.is_empty()
+                        && !state.app.plugin_state.available_plugin_presets.is_empty()
                     {
                         state.app.save_selected_preset();
                     } else if !state.app.plugin_file_input.is_empty() {
                         state.app.save_plugin_chain();
                     }
-                    state.app.input_mode = crate::app::InputMode::Normal;
+                    state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                     state.app.clear_autocomplete();
-                    state.app.plugin_chain_modified = false;
+                    state.app.plugin_state.plugin_chain_modified = false;
 
-                    if state.app.pending_studio_close {
-                        state.app.pending_studio_close = false;
-                        state.app.current_screen = state.app.last_screen;
+                    if state.app.ui_state.pending_studio_close {
+                        state.app.ui_state.pending_studio_close = false;
+                        state.app.ui_state.current_screen = state.app.ui_state.last_screen;
                     }
                 });
                 cx.notify();
@@ -236,7 +236,7 @@ impl PlayerView {
                 // Navigate preset list when input is empty
                 self.state.update(cx, |state, _cx| {
                     if state.app.plugin_file_input.is_empty()
-                        && !state.app.available_plugin_presets.is_empty()
+                        && !state.app.plugin_state.available_plugin_presets.is_empty()
                     {
                         state.app.select_previous_preset();
                     }
@@ -247,7 +247,7 @@ impl PlayerView {
                 // Navigate preset list when input is empty
                 self.state.update(cx, |state, _cx| {
                     if state.app.plugin_file_input.is_empty()
-                        && !state.app.available_plugin_presets.is_empty()
+                        && !state.app.plugin_state.available_plugin_presets.is_empty()
                     {
                         state.app.select_next_preset();
                     }
@@ -297,7 +297,7 @@ impl PlayerView {
             }
             "escape" => {
                 self.state.update(cx, |state, _cx| {
-                    state.app.input_mode = crate::app::InputMode::Normal;
+                    state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                     state.app.plugin_file_input.clear();
                     state.app.clear_autocomplete();
                 });
@@ -307,13 +307,13 @@ impl PlayerView {
                 self.state.update(cx, |state, _cx| {
                     // If there are presets shown and input is empty, load selected preset
                     if state.app.plugin_file_input.is_empty()
-                        && !state.app.available_plugin_presets.is_empty()
+                        && !state.app.plugin_state.available_plugin_presets.is_empty()
                     {
                         state.app.load_selected_preset();
                     } else if !state.app.plugin_file_input.is_empty() {
                         state.app.load_plugin_chain();
                     }
-                    state.app.input_mode = crate::app::InputMode::Normal;
+                    state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                     state.app.clear_autocomplete();
                 });
                 cx.notify();
@@ -354,7 +354,7 @@ impl PlayerView {
             use crate::app::InputMode;
 
             // Block action if in text input modes (where typing should take priority)
-            match state.app.input_mode {
+            match state.app.ui_state.input_mode {
                 InputMode::Search
                 | InputMode::SavePlugins
                 | InputMode::LoadPlugins
@@ -371,7 +371,7 @@ impl PlayerView {
                         state.app.directory_input.clear();
                         state.app.clear_autocomplete();
                     }
-                    state.app.input_mode = InputMode::Normal;
+                    state.app.ui_state.input_mode = InputMode::Normal;
                     return;
                 }
                 _ => {
@@ -380,7 +380,7 @@ impl PlayerView {
             }
 
             // Handle screen-specific actions in Normal mode
-            match state.app.current_screen {
+            match state.app.ui_state.current_screen {
                 Screen::Library => {
                     // Add selected album to queue
                     if let Some(path) = state.app.add_album_to_queue() {

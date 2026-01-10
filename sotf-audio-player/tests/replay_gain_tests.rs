@@ -64,7 +64,7 @@ fn test_update_replay_gain() {
     fixtures::ensure_demo_files_exist();
 
     let (_temp_dir, db_path) = fixtures::temp_database();
-    let mut library = MusicLibrary::with_custom_database_for_testing(&db_path).unwrap();
+
 
     // Add a single track
     let classical_file = fixtures::get_demo_file("classical.wav");

@@ -1,3 +1,4 @@
+use crate::components::plugins::editing::PluginEditingManager;
 use crate::ui::PlayerView;
 use gpui::*;
 use sotf_audio_player::{EQFilter, PluginSettings, PluginType};
@@ -41,7 +42,7 @@ impl PlayerView {
         if measurement_path.is_none() {
             log::warn!("No measurement file selected");
             self.state.update(cx, |state, cx| {
-                state.app.toast_message = Some(crate::app::types::ToastMessage::error(
+                state.app.ui_state.toast_message = Some(crate::app::types::ToastMessage::error(
                     "Please select a measurement file",
                 ));
                 cx.notify();
@@ -197,28 +198,28 @@ impl PlayerView {
                 };
 
                 // Add to chain (insert before Matrix for proper ordering)
-                let insert_idx = state.app.plugin_chain.user_plugin_insert_index();
+                let insert_idx = state.app.plugin_state.plugin_chain.user_plugin_insert_index();
                 state
                     .app
-                    .plugin_chain
+                    .plugin_state.plugin_chain
                     .insert_plugin(insert_idx, &PluginType::EQ);
-                if let Some(plugin) = state.app.plugin_chain.get_plugin_mut(insert_idx) {
+                if let Some(plugin) = state.app.plugin_state.plugin_chain.get_plugin_mut(insert_idx) {
                     plugin.settings = settings;
                     // Ensure it's enabled
                     plugin.enabled = true;
                 }
 
                 // Notify engine
-                state.app.pending_plugin_update =
+                state.app.plugin_state.pending_plugin_update =
                     Some(crate::app::types::PluginUpdateType::Structural);
                 state.app.sync_spectrum_visible();
 
-                state.app.toast_message = Some(crate::app::types::ToastMessage::success(
+                state.app.ui_state.toast_message = Some(crate::app::types::ToastMessage::success(
                     "Applied Headphone EQ",
                 ));
                 cx.notify();
             } else {
-                state.app.toast_message = Some(crate::app::types::ToastMessage::warning(
+                state.app.ui_state.toast_message = Some(crate::app::types::ToastMessage::warning(
                     "No optimization result to apply",
                 ));
                 cx.notify();
@@ -257,14 +258,14 @@ impl PlayerView {
                     let _ = state_entity.update(&mut cx.clone(), |state, cx| {
                         match write_res {
                             Ok(_) => {
-                                state.app.toast_message =
+                                state.app.ui_state.toast_message =
                                     Some(crate::app::types::ToastMessage::success(format!(
                                         "Saved EQ to {}",
                                         path.display()
                                     )));
                             }
                             Err(e) => {
-                                state.app.toast_message =
+                                state.app.ui_state.toast_message =
                                     Some(crate::app::types::ToastMessage::error(format!(
                                         "Failed to save: {}",
                                         e
@@ -278,7 +279,7 @@ impl PlayerView {
             .detach();
         } else {
             self.state.update(cx, |state, cx| {
-                state.app.toast_message = Some(crate::app::types::ToastMessage::warning(
+                state.app.ui_state.toast_message = Some(crate::app::types::ToastMessage::warning(
                     "No optimization result to save",
                 ));
                 cx.notify();

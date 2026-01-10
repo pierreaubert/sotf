@@ -16,7 +16,10 @@ rustflags = [
   "-C", "link-arg=Accelerate",
   "-C", "link-arg=-L /Applications/Xcode.app/Contents/Frameworks",
   # for clang but why?
-  "-C", "link-arg=-L /opt/homebrew/Cellar/llvm/21.1.7/lib"
+  "-C", "link-arg=-L /opt/homebrew/Cellar/llvm/21.1.7/lib",
+  # link with llvm or sold (commented out - using system default linker)
+  # "-C", "link-arg=-fuse-ld=/opt/homebrew/opt/llvm/bin/ld64.lld",
+  # "-C", "link-arg=-fuse-ld=/usr/local/bin/ld64.sold",
 ]
 
 # macOS Intel - using Accelerate framework, untested
@@ -85,3 +88,5 @@ rustflags = [
   "-C", "target-feature=+crt-static",
   "-C", "target-feature=+neon",
 ]
+
+

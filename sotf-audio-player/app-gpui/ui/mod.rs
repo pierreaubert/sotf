@@ -15,9 +15,11 @@ pub use crate::app::actions::*;
 use crate::components::plugins::actions::{
     ResetPluginParam, SelectPluginParam, StartKnobDrag, UpdatePluginParam,
 };
+use crate::components::plugins::editing::PluginEditingManager;
+use crate::components::plugins::level_meters::LevelMeterManager;
 
 pub struct PlayerView {
-    pub(crate) state: Entity<AppState>,
+    pub state: Entity<AppState>,
     pub(crate) focus_handle: FocusHandle,
     pub(crate) volume_focus_handle: FocusHandle,
     last_saved_window_bounds: Option<Bounds<Pixels>>,
@@ -54,16 +56,16 @@ impl PlayerView {
 
                     // Collect data needed for infinite scroll check before state update
                     let scroll_check_data =
-                        if view.state.read(cx).app.current_screen == Screen::Library {
+                        if view.state.read(cx).app.ui_state.current_screen == Screen::Library {
                             let scroll_y: f32 = view.grid_scroll_handle.offset().y.into();
                             let state = view.state.read(cx);
-                            let item_count = state.app.library_items_per_page;
+                            let item_count = state.app.library_state.items_per_page;
                             let total_albums = state.app.filtered_albums().len();
-                            let columns = state.app.library_columns.max(1);
+                            let columns = state.app.library_state.library_columns.max(1);
                             let rows = (item_count + columns - 1) / columns;
                             let card_height = 220.0;
                             let estimated_height = rows as f32 * card_height;
-                            let window_height = state.app.window_height;
+                            let window_height = state.app.ui_state.window_height;
                             let scroll_position = scroll_y.abs();
                             let scrollable_distance = (estimated_height - window_height).max(0.0);
                             let remaining_scroll = scrollable_distance - scroll_position;
@@ -84,47 +86,47 @@ impl PlayerView {
                         let should_update_spectrum = frame_count % 2 == 0;
                         let include_spectrum = should_update_spectrum
                             && (state.app.spectrum_visible
-                                || state.app.current_screen == Screen::Spectrum);
+                                || state.app.ui_state.current_screen == Screen::Spectrum);
 
                         let playback_state =
                             state.player.lock().get_playback_state(include_spectrum);
 
-                        state.app.position_secs = playback_state.position_secs;
-                        state.app.duration_secs = state.app.get_current_track_duration();
+                        state.app.playback.position_secs = playback_state.position_secs;
+                        state.app.playback.duration_secs = state.app.get_current_track_duration();
 
                         if playback_state.input_loudness.is_some() {
-                            let _ = state.app.input_loudness_info.take();
-                            state.app.input_loudness_info = playback_state.input_loudness;
+                            let _ = state.app.playback.input_loudness_info.take();
+                            state.app.playback.input_loudness_info = playback_state.input_loudness;
                         }
 
                         if playback_state.output_loudness.is_some() {
-                            let _ = state.app.loudness_info.take();
-                            state.app.loudness_info = playback_state.output_loudness;
+                            let _ = state.app.playback.loudness_info.take();
+                            state.app.playback.loudness_info = playback_state.output_loudness;
                         }
 
                         state.app.update_level_meter_groups();
 
                         if include_spectrum {
-                            let _ = state.app.spectrum_info.take();
-                            state.app.spectrum_info = playback_state.spectrum;
+                            let _ = state.app.playback.spectrum_info.take();
+                            state.app.playback.spectrum_info = playback_state.spectrum;
                         }
 
-                        state.app.compressor_info = playback_state.compressor;
+                        state.app.playback.compressor_info = playback_state.compressor;
 
-                        if let Some(update_type) = state.app.pending_plugin_update.take() {
+                        if let Some(update_type) = state.app.plugin_state.pending_plugin_update.take() {
                             log::warn!("[GPUI] Applying pending plugin update: {:?}", update_type);
                             Self::apply_plugin_update(state, update_type);
                         }
 
                         // Check if playback ended and auto-advance
-                        if state.app.is_playing
+                        if state.app.playback.is_playing
                             && !playback_state.is_playing
-                            && state.app.current_queue_index.is_some()
+                            && state.app.playback.current_queue_index.is_some()
                         {
                             if let Some(path) = state.app.next_track() {
                                 let sample_rate = 48000.0;
-                                let plugins = state.app.plugin_chain.to_plugin_configs(sample_rate);
-                                let output_channels = state.app.plugin_chain.output_channels();
+                                let plugins = state.app.plugin_state.plugin_chain.to_plugin_configs(sample_rate);
+                                let output_channels = state.app.plugin_state.plugin_chain.output_channels();
 
                                 if let Err(e) = state.player.lock().load_and_play(
                                     path,
@@ -133,10 +135,10 @@ impl PlayerView {
                                     state.app.current_output_device_name.clone(),
                                 ) {
                                     log::error!("Failed to auto-advance: {}", e);
-                                    state.app.is_playing = false;
+                                    state.app.playback.is_playing = false;
                                 }
                             } else {
-                                state.app.is_playing = false;
+                                state.app.playback.is_playing = false;
                             }
                         }
 
@@ -244,13 +246,13 @@ impl PlayerView {
 
     fn toggle_search(&mut self, _: &ToggleSearch, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            if state.app.input_mode == crate::app::InputMode::Search {
+            if state.app.ui_state.input_mode == crate::app::InputMode::Search {
                 log::info!("toggle_search: exiting search mode");
-                state.app.input_mode = crate::app::InputMode::Normal;
+                state.app.ui_state.input_mode = crate::app::InputMode::Normal;
             } else {
                 log::info!("toggle_search: entering search mode");
-                state.app.input_mode = crate::app::InputMode::Search;
-                state.app.search_query.clear();
+                state.app.ui_state.input_mode = crate::app::InputMode::Search;
+                state.app.library_state.search_query.clear();
             }
         });
         cx.notify();
@@ -258,15 +260,15 @@ impl PlayerView {
 
     fn cancel(&mut self, _: &Cancel, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            state.app.input_mode = crate::app::InputMode::Normal;
-            state.app.search_query.clear();
+            state.app.ui_state.input_mode = crate::app::InputMode::Normal;
+            state.app.library_state.search_query.clear();
             state.app.directory_input.clear();
             state.app.apo_file_input.clear();
             state.app.sofa_file_input.clear();
             state.app.clear_autocomplete();
             state.app.dismiss_toast();
-            state.app.context_menu = None; // Close context menu
-            state.app.active_menu = crate::app::ActiveMenu::None; // Close dropdown menus
+            state.app.ui_state.context_menu = None; // Close context menu
+            state.app.ui_state.active_menu = crate::app::ActiveMenu::None; // Close dropdown menus
         });
         cx.notify();
     }
@@ -283,10 +285,10 @@ impl PlayerView {
     fn toggle_help(&mut self, _: &ToggleHelp, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             use crate::app::InputMode;
-            if state.app.input_mode == InputMode::Help {
-                state.app.input_mode = InputMode::Normal;
+            if state.app.ui_state.input_mode == InputMode::Help {
+                state.app.ui_state.input_mode = InputMode::Normal;
             } else {
-                state.app.input_mode = InputMode::Help;
+                state.app.ui_state.input_mode = InputMode::Help;
             }
         });
         cx.notify();
@@ -300,10 +302,10 @@ impl PlayerView {
     ) {
         self.state.update(cx, |state, _cx| {
             use crate::app::InputMode;
-            if state.app.input_mode == InputMode::HelpSupport {
-                state.app.input_mode = InputMode::Normal;
+            if state.app.ui_state.input_mode == InputMode::HelpSupport {
+                state.app.ui_state.input_mode = InputMode::Normal;
             } else {
-                state.app.input_mode = InputMode::HelpSupport;
+                state.app.ui_state.input_mode = InputMode::HelpSupport;
             }
         });
         cx.notify();
@@ -312,10 +314,10 @@ impl PlayerView {
     fn about(&mut self, _: &About, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             use crate::app::InputMode;
-            if state.app.input_mode == InputMode::About {
-                state.app.input_mode = InputMode::Normal;
+            if state.app.ui_state.input_mode == InputMode::About {
+                state.app.ui_state.input_mode = InputMode::Normal;
             } else {
-                state.app.input_mode = InputMode::About;
+                state.app.ui_state.input_mode = InputMode::About;
             }
         });
         cx.notify();
@@ -323,7 +325,7 @@ impl PlayerView {
 
     fn toggle_expand(&mut self, _: &ToggleExpand, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
-            if state.app.current_screen == Screen::Queue {
+            if state.app.ui_state.current_screen == Screen::Queue {
                 state.app.toggle_queue_item_expansion();
             }
         });
@@ -333,10 +335,10 @@ impl PlayerView {
     fn remove_item(&mut self, _: &RemoveItem, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             // Block if in text input mode
-            if Self::is_text_input_mode(state.app.input_mode) {
+            if Self::is_text_input_mode(state.app.ui_state.input_mode) {
                 return;
             }
-            if state.app.current_screen == Screen::Queue {
+            if state.app.ui_state.current_screen == Screen::Queue {
                 state.app.remove_from_queue(state.app.selected_queue_index);
             }
         });
@@ -368,7 +370,7 @@ impl PlayerView {
         self.state.update(cx, |state, _cx| {
             use crate::app::InputMode;
             // Enter add directory mode
-            state.app.input_mode = InputMode::AddDirectory;
+            state.app.ui_state.input_mode = InputMode::AddDirectory;
             state.app.directory_input.clear();
             state.app.clear_autocomplete();
         });
@@ -380,7 +382,7 @@ impl PlayerView {
             // Start scan (this will be async in reality, but for now we do it synchronously)
             if let Err(e) = state.app.scan_library() {
                 log::error!("Library scan failed: {}", e);
-                state.app.toast_message = Some(crate::app::ToastMessage::error(format!(
+                state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(format!(
                     "Scan failed: {}",
                     e
                 )));
@@ -398,7 +400,7 @@ impl PlayerView {
         self.state.update(cx, |state, _cx| {
             if let Err(e) = state.app.scan_library() {
                 log::error!("Library scan failed: {}", e);
-                state.app.toast_message = Some(crate::app::ToastMessage::error(format!(
+                state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(format!(
                     "Scan failed: {}",
                     e
                 )));
@@ -418,8 +420,8 @@ impl PlayerView {
 
     pub(crate) fn play_track(state: &mut AppState, path: std::path::PathBuf) {
         let sample_rate = 48000.0;
-        let plugins = state.app.plugin_chain.to_plugin_configs(sample_rate);
-        let output_channels = state.app.plugin_chain.output_channels();
+        let plugins = state.app.plugin_state.plugin_chain.to_plugin_configs(sample_rate);
+        let output_channels = state.app.plugin_state.plugin_chain.output_channels();
 
         log::warn!(
             "[GPUI] play_track: starting with {} plugins, output_channels={}",
@@ -434,7 +436,7 @@ impl PlayerView {
             state.app.current_output_device_name.clone(),
         ) {
             log::error!("Failed to play track: {}", e);
-            state.app.is_playing = false;
+            state.app.playback.is_playing = false;
         }
     }
     // Plugin parameter handling
@@ -459,8 +461,8 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) {
         self.state.update(cx, |state, _cx| {
-            state.app.editing_plugin_index = Some(action.plugin_idx);
-            state.app.plugin_param_selection = action.param_idx;
+            state.app.plugin_state.editing_plugin_index = Some(action.plugin_idx);
+            state.app.plugin_state.plugin_param_selection = action.param_idx;
         });
         cx.notify();
     }

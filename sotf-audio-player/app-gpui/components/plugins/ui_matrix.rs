@@ -185,7 +185,7 @@ fn render_preset_buttons(
                 .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                     entity_clone.update(cx, |state, _| {
                         // Get current matrix and apply preset
-                        if let Some(plugin) = state.app.plugin_chain.get_plugin_mut(plugin_idx) {
+                        if let Some(plugin) = state.app.plugin_state.plugin_chain.get_plugin_mut(plugin_idx) {
                             if let sotf_audio_player::PluginSettings::Matrix {
                                 input_channels: in_ch,
                                 output_channels: out_ch,
@@ -193,7 +193,7 @@ fn render_preset_buttons(
                             } = plugin.settings
                             {
                                 apply_matrix_preset(in_ch, out_ch, matrix, &preset_owned);
-                                state.app.pending_plugin_update =
+                                state.app.plugin_state.pending_plugin_update =
                                     Some(PluginUpdateType::Structural);
                             }
                         }
@@ -372,7 +372,7 @@ fn render_matrix_cell(
             entity_click.update(cx, |state, _| {
                 if event.click_count >= 2 {
                     // Double-click to reset to 0
-                    if let Some(plugin) = state.app.plugin_chain.get_plugin_mut(plugin_idx) {
+                    if let Some(plugin) = state.app.plugin_state.plugin_chain.get_plugin_mut(plugin_idx) {
                         if let sotf_audio_player::PluginSettings::Matrix {
                             input_channels,
                             ref mut matrix,
@@ -382,19 +382,19 @@ fn render_matrix_cell(
                             let idx = cell_index(input_idx, output_idx, input_channels);
                             if idx < matrix.len() {
                                 matrix[idx] = 0.0;
-                                state.app.pending_plugin_update =
+                                state.app.plugin_state.pending_plugin_update =
                                     Some(PluginUpdateType::Structural);
                             }
                         }
                     }
                 } else {
                     // Single click: select and toggle between 0 and 1
-                    state.app.matrix_selected_cell = Some((input_idx, output_idx));
-                    state.app.editing_plugin_index = Some(plugin_idx);
-                    state.app.plugin_param_selection = param_idx;
+                    state.app.plugin_state.matrix_selected_cell = Some((input_idx, output_idx));
+                    state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                    state.app.plugin_state.plugin_param_selection = param_idx;
 
                     // Toggle gain
-                    if let Some(plugin) = state.app.plugin_chain.get_plugin_mut(plugin_idx) {
+                    if let Some(plugin) = state.app.plugin_state.plugin_chain.get_plugin_mut(plugin_idx) {
                         if let sotf_audio_player::PluginSettings::Matrix {
                             input_channels,
                             ref mut matrix,
@@ -405,7 +405,7 @@ fn render_matrix_cell(
                             if idx < matrix.len() {
                                 // Toggle: if > 0.5, set to 0; otherwise set to 1
                                 matrix[idx] = if matrix[idx] > 0.5 { 0.0 } else { 1.0 };
-                                state.app.pending_plugin_update =
+                                state.app.plugin_state.pending_plugin_update =
                                     Some(PluginUpdateType::Structural);
                             }
                         }
@@ -416,7 +416,7 @@ fn render_matrix_cell(
         // Scroll to adjust value
         .on_scroll_wheel(move |event, _, cx| {
             entity_scroll.update(cx, |state, _| {
-                if let Some(plugin) = state.app.plugin_chain.get_plugin_mut(plugin_idx) {
+                if let Some(plugin) = state.app.plugin_state.plugin_chain.get_plugin_mut(plugin_idx) {
                     if let sotf_audio_player::PluginSettings::Matrix {
                         input_channels,
                         ref mut matrix,
@@ -442,7 +442,7 @@ fn render_matrix_cell(
                                 };
                                 let new_db = (current_db + delta).clamp(MIN_DB, MAX_DB);
                                 matrix[idx] = db_to_linear(new_db);
-                                state.app.pending_plugin_update =
+                                state.app.plugin_state.pending_plugin_update =
                                     Some(PluginUpdateType::Structural);
                             }
                         }

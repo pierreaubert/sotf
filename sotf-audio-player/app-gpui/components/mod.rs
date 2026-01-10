@@ -25,9 +25,9 @@ use gpui::*;
 impl PlayerView {
     pub(crate) fn render_settings_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
-        let active_tab = state.app.active_settings_tab;
-        let translations = state.app.translations.clone();
+        let theme = state.app.ui_state.theme.clone();
+        let active_tab = state.app.ui_state.active_settings_tab;
+        let translations = state.app.ui_state.translations.clone();
 
         // Content area based on active tab
         let content = match active_tab {
@@ -85,7 +85,7 @@ impl PlayerView {
                             .child(Icon::new(IconName::Home).color(text_muted))
                             .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
                                 state_for_home.update(cx, |state, _cx| {
-                                    state.app.current_screen = Screen::Library;
+                                    state.app.ui_state.current_screen = Screen::Library;
                                 });
                             }),
                     )
@@ -162,7 +162,7 @@ impl PlayerView {
                                 )
                                 .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
                                     entity_clone.update(cx, |state, _cx| {
-                                        state.app.active_settings_tab = tab_variant;
+                                        state.app.ui_state.active_settings_tab = tab_variant;
                                     });
                                 });
 

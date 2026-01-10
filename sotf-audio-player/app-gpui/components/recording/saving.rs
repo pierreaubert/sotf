@@ -15,7 +15,7 @@ impl PlayerView {
     /// Render the saving step UI
     pub(crate) fn render_recording_saving_step(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.recording_state;
 
         let has_recordings = recording_state
@@ -52,7 +52,7 @@ impl PlayerView {
     /// Render the save name input card
     fn render_save_name_card(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let save_name = state.app.recording_state.save_name.clone();
         let view = cx.entity().clone();
 
@@ -106,7 +106,7 @@ impl PlayerView {
     /// Render the save location card
     fn render_save_location_card(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.recording_state;
         let view = cx.entity().clone();
 
@@ -205,7 +205,7 @@ impl PlayerView {
     /// Render the save contents card showing what will be saved
     fn render_save_contents_card(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.recording_state;
         let save_name = &recording_state.save_name;
 
@@ -341,7 +341,7 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let status_message = state.app.recording_state.status_message.clone();
         let view = cx.entity().clone();
 

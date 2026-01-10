@@ -1,6 +1,7 @@
 //! Dialog and modal rendering components
 
 use crate::app::Screen;
+use crate::components::plugins::editing::PluginEditingManager;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
@@ -12,8 +13,8 @@ use gpui_ui_kit::{
 impl PlayerView {
     pub(crate) fn render_help_modal(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
-        let screen_name = match state.app.current_screen {
+        let theme = state.app.ui_state.theme.clone();
+        let screen_name = match state.app.ui_state.current_screen {
             Screen::Library => "Library",
             Screen::Queue => "Queue",
             Screen::Spectrum => "Spectrum",
@@ -27,7 +28,7 @@ impl PlayerView {
         };
 
         // Get keybindings for current screen
-        let keybindings = get_keybindings_for_screen(state.app.current_screen);
+        let keybindings = get_keybindings_for_screen(state.app.ui_state.current_screen);
 
         Dialog::new("help-modal")
             .title(format!("Keyboard Shortcuts - {} Screen", screen_name))
@@ -73,7 +74,7 @@ impl PlayerView {
 
     pub(crate) fn render_about_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
 
         Dialog::new("about-dialog")
             .title("About SotF Player")
@@ -85,7 +86,7 @@ impl PlayerView {
                     let state = state.clone();
                     cx.defer(move |cx| {
                         state.update(cx, |state, _| {
-                            state.app.input_mode = crate::app::InputMode::Normal;
+                            state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                         });
                     });
                 }
@@ -190,7 +191,7 @@ impl PlayerView {
                                 let state = view.state.clone();
                                 cx.defer(move |cx| {
                                     state.update(cx, |state, _| {
-                                        state.app.input_mode = crate::app::InputMode::Normal;
+                                        state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                                     });
                                 });
                             })),
@@ -246,7 +247,7 @@ impl PlayerView {
 
     pub(crate) fn render_help_support_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
 
         Dialog::new("help-support-dialog")
             .title("Help & Support")
@@ -372,7 +373,7 @@ impl PlayerView {
     /// Render modal for empty library prompt shown on startup
     pub(crate) fn render_empty_library_prompt(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
 
         Dialog::new("empty-library-prompt")
             .title("Welcome to SotF Player")
@@ -432,7 +433,7 @@ impl PlayerView {
                                         let state = self.state.clone();
                                         move |_, _window, cx| {
                                             state.update(cx, |state, _| {
-                                                state.app.input_mode =
+                                                state.app.ui_state.input_mode =
                                                     crate::app::InputMode::Normal;
                                             });
                                         }
@@ -458,10 +459,10 @@ impl PlayerView {
                                         move |_, _window, cx| {
                                             state.update(cx, |state, _| {
                                                 // Navigate to Settings > Library tab
-                                                state.app.input_mode =
+                                                state.app.ui_state.input_mode =
                                                     crate::app::InputMode::Normal;
-                                                state.app.current_screen = Screen::Settings;
-                                                state.app.active_settings_tab =
+                                                state.app.ui_state.current_screen = Screen::Settings;
+                                                state.app.ui_state.active_settings_tab =
                                                     crate::app::SettingsTab::Library;
                                             });
                                         }
@@ -525,9 +526,9 @@ impl PlayerView {
 
     pub(crate) fn render_toast(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
 
-        if let Some(toast) = &state.app.toast_message {
+        if let Some(toast) = &state.app.ui_state.toast_message {
             let (bg_color, border_color, icon) = match toast.toast_type {
                 crate::app::ToastType::Success => (theme.toast_success_bg, theme.success, "✓"),
                 crate::app::ToastType::Error => (theme.toast_error_bg, theme.error, "✗"),
@@ -573,9 +574,9 @@ impl PlayerView {
 
     pub(crate) fn render_context_menu(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
 
-        if let Some(menu) = &state.app.context_menu {
+        if let Some(menu) = &state.app.ui_state.context_menu {
             let menu_items: Vec<(&'static str, &'static str)> = match menu.menu_type {
                 crate::app::ContextMenuType::Album => {
                     vec![("Add to Queue", "a"), ("Play Now", "enter")]
@@ -621,16 +622,18 @@ impl PlayerView {
                                 view.state.update(cx, |state, _cx| {
                                     let menu_type = state
                                         .app
+                                        .ui_state
                                         .context_menu
                                         .as_ref()
                                         .map(|m| m.menu_type.clone());
                                     let item_idx = state
                                         .app
+                                        .ui_state
                                         .context_menu
                                         .as_ref()
                                         .map(|m| m.item_index)
                                         .unwrap_or(0);
-                                    state.app.context_menu = None;
+                                    state.app.ui_state.context_menu = None;
 
                                     if let Some(mt) = menu_type {
                                         match (mt, label) {
@@ -657,7 +660,7 @@ impl PlayerView {
                                                 crate::app::ContextMenuType::QueueItem,
                                                 "Play from Here",
                                             ) => {
-                                                state.app.current_queue_index = Some(item_idx);
+                                                state.app.playback.current_queue_index = Some(item_idx);
                                                 // Play the first track of the queue item
                                                 if let Some(queue_item) =
                                                     state.app.queue.get(item_idx)
@@ -735,7 +738,7 @@ impl PlayerView {
 
     pub(crate) fn render_apo_file_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
 
         Dialog::new("apo-file-dialog")
             .title("Load APO File for EQ Plugin")
@@ -770,7 +773,7 @@ impl PlayerView {
 
     pub(crate) fn render_sofa_file_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
 
         Dialog::new("sofa-file-dialog")
             .title("Load SOFA File for Binaural Decoder")
@@ -805,9 +808,9 @@ impl PlayerView {
 
     pub(crate) fn render_save_plugins_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
-        let presets = state.app.available_plugin_presets.clone();
-        let selected_preset = state.app.selected_preset_index;
+        let theme = state.app.ui_state.theme.clone();
+        let presets = state.app.plugin_state.available_plugin_presets.clone();
+        let selected_preset = state.app.plugin_state.selected_preset_index;
         let input = state.app.plugin_file_input.clone();
 
         Dialog::new("save-plugins-dialog")
@@ -870,9 +873,9 @@ impl PlayerView {
 
     pub(crate) fn render_load_plugins_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
-        let presets = state.app.available_plugin_presets.clone();
-        let selected_preset = state.app.selected_preset_index;
+        let theme = state.app.ui_state.theme.clone();
+        let presets = state.app.plugin_state.available_plugin_presets.clone();
+        let selected_preset = state.app.plugin_state.selected_preset_index;
         let input = state.app.plugin_file_input.clone();
 
         Dialog::new("load-plugins-dialog")
@@ -1007,7 +1010,7 @@ impl PlayerView {
         &self,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let theme = self.state.read(cx).app.theme.clone();
+        let theme = self.state.read(cx).app.ui_state.theme.clone();
 
         let global_shortcuts = vec![
             ("Space", "Play / Pause"),
@@ -1059,7 +1062,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |_window, cx| {
                     state.update(cx, |state, _| {
-                        state.app.input_mode = crate::app::InputMode::Normal;
+                        state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                     });
                 }
             })
@@ -1090,7 +1093,7 @@ impl PlayerView {
                             .build()
                             .on_click(cx.listener(|view, _event: &ClickEvent, _window, cx| {
                                 view.state.update(cx, |state, _cx| {
-                                    state.app.input_mode = crate::app::InputMode::Normal;
+                                    state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                                 });
                                 cx.notify();
                             })),
@@ -1134,7 +1137,7 @@ impl PlayerView {
     /// Render the scan progress modal
     pub(crate) fn render_scan_progress_modal(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
 
         // Get the active modal info
         let modal = match &state.app.scan_progress_modal {
@@ -1145,8 +1148,8 @@ impl PlayerView {
         // Get progress info based on scan type
         let (progress, processed, total, succeeded, failed) = match modal.scan_type {
             crate::app::types::ScanType::Library => {
-                let albums = state.app.scan_progress_albums;
-                let tracks = state.app.scan_progress_tracks;
+                let albums = state.app.library_state.scan_progress_albums;
+                let tracks = state.app.library_state.scan_progress_tracks;
                 // For library scan, we don't have a total count upfront
                 (0.0, tracks, 0usize, albums, 0usize)
             }
@@ -1187,7 +1190,7 @@ impl PlayerView {
 
         // Check if scan is complete
         let is_complete = match scan_type {
-            crate::app::types::ScanType::Library => !state.app.scan_in_progress,
+            crate::app::types::ScanType::Library => !state.app.library_state.scan_in_progress,
             crate::app::types::ScanType::ReplayGain => !state.app.replay_gain_manager.in_progress,
             crate::app::types::ScanType::Bliss => !state.app.bliss_manager.in_progress,
             crate::app::types::ScanType::Waveform => !state.app.waveform_manager.in_progress,

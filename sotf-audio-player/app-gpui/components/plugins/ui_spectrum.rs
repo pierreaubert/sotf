@@ -10,6 +10,7 @@ use sotf_plugins::{SpectralTiltCorrection, TiltReferenceFreq};
 
 use super::common::{ParamSectionStyle, render_edit_hints, render_knob, render_section_header};
 use crate::app::AppState;
+use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 
@@ -704,9 +705,9 @@ impl PlayerView {
     /// Uses GPU-accelerated SpectrumElement for high-performance rendering
     pub(crate) fn render_spectrum_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
 
-        let content = if let Some(info) = &state.app.spectrum_info {
+        let content = if let Some(info) = &state.app.playback.spectrum_info {
             // Convert magnitudes to Arc for the GPU element
             let magnitudes: Arc<[f32]> = info.magnitudes.clone().into();
 

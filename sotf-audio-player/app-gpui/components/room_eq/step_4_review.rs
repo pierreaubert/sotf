@@ -7,7 +7,7 @@ use super::render::render_channel_result_card;
 impl PlayerView {
     pub(crate) fn render_room_eq_review(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let pre_score = state.app.room_eq_state.average_pre_score();
         let post_score = state.app.room_eq_state.average_post_score();
 
@@ -78,7 +78,7 @@ impl PlayerView {
     /// Render per-channel optimization results
     fn render_channel_results(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let channel_results = state.app.room_eq_state.channel_results.clone();
 
         if channel_results.is_empty() {

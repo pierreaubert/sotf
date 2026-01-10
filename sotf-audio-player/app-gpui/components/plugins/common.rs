@@ -1,6 +1,7 @@
 //! Common utilities for plugin UI components
 
 use crate::app::AppState;
+use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
@@ -521,8 +522,8 @@ pub fn render_vertical_slider_sized(
             let entity = entity.clone();
             move |_, cx| {
                 entity.update(cx, |state, _| {
-                    state.app.editing_plugin_index = Some(plugin_idx);
-                    state.app.plugin_param_selection = idx;
+                    state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                    state.app.plugin_state.plugin_param_selection = idx;
                 });
             }
         })
@@ -598,8 +599,8 @@ pub fn render_vertical_slider_with_ticks(
             let entity = entity.clone();
             move |_, cx| {
                 entity.update(cx, |state, _| {
-                    state.app.editing_plugin_index = Some(plugin_idx);
-                    state.app.plugin_param_selection = idx;
+                    state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                    state.app.plugin_state.plugin_param_selection = idx;
                 });
             }
         })
@@ -813,8 +814,8 @@ pub fn render_knob_sized(
             let entity = entity.clone();
             move |_, cx| {
                 entity.update(cx, |state, _| {
-                    state.app.editing_plugin_index = Some(plugin_idx);
-                    state.app.plugin_param_selection = idx;
+                    state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                    state.app.plugin_state.plugin_param_selection = idx;
                 });
             }
         })

@@ -183,7 +183,7 @@ fn main() {
                     let player = Player::new();
 
                     // Apply loaded volume to player
-                    if let Err(e) = player.set_volume(app.volume) {
+                    if let Err(e) = player.set_volume(app.playback.volume) {
                         log::warn!("Failed to set initial volume: {}", e);
                     }
 

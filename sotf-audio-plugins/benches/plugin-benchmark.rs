@@ -7,11 +7,11 @@
 // - Plugin host (chain processing)
 // - Different buffer sizes and sample rates
 
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
 use sotf_plugins::{
-    GainPlugin, InPlacePlugin, InPlacePluginAdapter, Plugin, PluginHost, ProcessContext,
+    GainPlugin, InPlacePlugin, InPlacePluginAdapter, PluginHost, ProcessContext,
 };
-use std::f32::consts::PI;
 
 // ============================================================================
 // Gain Plugin Benchmarks
@@ -25,22 +25,16 @@ fn benchmark_gain_plugin(c: &mut Criterion) {
         let mut plugin = GainPlugin::new(2, 3.0);
         plugin.initialize(48000).unwrap();
 
-        let input = vec![0.5f32; buffer_size * 2];
+        let mut buffer = vec![0.5f32; buffer_size * 2];
         let context = ProcessContext {
             sample_rate: 48000,
             num_frames: buffer_size,
         };
 
-        let mut output = vec![0.0f32; buffer_size * 2];
-
         group.bench_function(&format!("process_{}frames", buffer_size), |b| {
             b.iter(|| {
                 plugin
-                    .process(
-                        black_box(&input),
-                        black_box(&mut output),
-                        black_box(&context),
-                    )
+                    .process_in_place(black_box(&mut buffer), black_box(&context))
                     .unwrap();
             })
         });
@@ -52,22 +46,16 @@ fn benchmark_gain_plugin(c: &mut Criterion) {
         plugin.initialize(sample_rate).unwrap();
 
         let buffer_size = 512;
-        let input = vec![0.5f32; buffer_size * 2];
+        let mut buffer = vec![0.5f32; buffer_size * 2];
         let context = ProcessContext {
             sample_rate,
             num_frames: buffer_size,
         };
 
-        let mut output = vec![0.0f32; buffer_size * 2];
-
         group.bench_function(&format!("process_{}hz", sample_rate), |b| {
             b.iter(|| {
                 plugin
-                    .process(
-                        black_box(&input),
-                        black_box(&mut output),
-                        black_box(&context),
-                    )
+                    .process_in_place(black_box(&mut buffer), black_box(&context))
                     .unwrap();
             })
         });
@@ -79,22 +67,16 @@ fn benchmark_gain_plugin(c: &mut Criterion) {
         plugin.initialize(48000).unwrap();
 
         let buffer_size = 512;
-        let input = vec![0.5f32; buffer_size * 2];
+        let mut buffer = vec![0.5f32; buffer_size * 2];
         let context = ProcessContext {
             sample_rate: 48000,
             num_frames: buffer_size,
         };
 
-        let mut output = vec![0.0f32; buffer_size * 2];
-
         group.bench_function(&format!("process_{}db", gain_db), |b| {
             b.iter(|| {
                 plugin
-                    .process(
-                        black_box(&input),
-                        black_box(&mut output),
-                        black_box(&context),
-                    )
+                    .process_in_place(black_box(&mut buffer), black_box(&context))
                     .unwrap();
             })
         });
@@ -106,22 +88,16 @@ fn benchmark_gain_plugin(c: &mut Criterion) {
         plugin.initialize(48000).unwrap();
 
         let buffer_size = 512;
-        let input = vec![0.5f32; buffer_size * channels];
+        let mut buffer = vec![0.5f32; buffer_size * channels];
         let context = ProcessContext {
             sample_rate: 48000,
             num_frames: buffer_size,
         };
 
-        let mut output = vec![0.0f32; buffer_size * channels];
-
         group.bench_function(&format!("process_{}ch", channels), |b| {
             b.iter(|| {
                 plugin
-                    .process(
-                        black_box(&input),
-                        black_box(&mut output),
-                        black_box(&context),
-                    )
+                    .process_in_place(black_box(&mut buffer), black_box(&context))
                     .unwrap();
             })
         });
@@ -149,11 +125,6 @@ fn benchmark_host_chain(c: &mut Criterion) {
 
         let buffer_size = 512;
         let input = vec![0.5f32; buffer_size * 2];
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames: buffer_size,
-        };
-
         let mut output = vec![0.0f32; buffer_size * 2];
 
         group.bench_function(&format!("{}plugins", chain_length), |b| {
@@ -175,11 +146,6 @@ fn benchmark_host_chain(c: &mut Criterion) {
         }
 
         let input = vec![0.5f32; buffer_size * 2];
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames: buffer_size,
-        };
-
         let mut output = vec![0.0f32; buffer_size * 2];
 
         group.bench_function(&format!("{}frames", buffer_size), |b| {
@@ -202,11 +168,6 @@ fn benchmark_host_chain(c: &mut Criterion) {
 
         let buffer_size = 512;
         let input = vec![0.5f32; buffer_size * 2];
-        let context = ProcessContext {
-            sample_rate,
-            num_frames: buffer_size,
-        };
-
         let mut output = vec![0.0f32; buffer_size * 2];
 
         group.bench_function(&format!("{}hz", sample_rate), |b| {
@@ -272,22 +233,16 @@ fn benchmark_per_sample_cost(c: &mut Criterion) {
             let mut plugin = GainPlugin::new(channels, 0.0);
             plugin.initialize(48000).unwrap();
 
-            let input = vec![0.5f32; buffer_size * channels];
+            let mut buffer = vec![0.5f32; buffer_size * channels];
             let context = ProcessContext {
                 sample_rate: 48000,
                 num_frames: buffer_size,
             };
 
-            let mut output = vec![0.0f32; buffer_size * channels];
-
             group.bench_function(name, |b| {
                 b.iter(|| {
                     plugin
-                        .process(
-                            black_box(&input),
-                            black_box(&mut output),
-                            black_box(&context),
-                        )
+                        .process_in_place(black_box(&mut buffer), black_box(&context))
                         .unwrap();
                 })
             });

@@ -17,17 +17,17 @@ impl Render for PlayerView {
         // Check if dimensions actually changed to avoid unnecessary updates
         let needs_dimension_update = {
             let state = self.state.read(cx);
-            (state.app.window_height - window_height).abs() > 0.5
-                || (state.app.window_width - window_width).abs() > 0.5
+            (state.app.ui_state.window_height - window_height).abs() > 0.5
+                || (state.app.ui_state.window_width - window_width).abs() > 0.5
         };
 
         if needs_dimension_update {
             let state = self.state.clone();
             cx.defer(move |cx| {
                 state.update(cx, |state, _cx| {
-                    state.app.window_height = window_height;
-                    state.app.window_width = window_width;
-                    state.app.layout_mode = if window_height >= 800.0 {
+                    state.app.ui_state.window_height = window_height;
+                    state.app.ui_state.window_width = window_width;
+                    state.app.ui_state.layout_mode = if window_height >= 800.0 {
                         crate::app::LayoutMode::Expanded
                     } else {
                         crate::app::LayoutMode::Compact
@@ -75,17 +75,17 @@ impl Render for PlayerView {
         let (current_screen, input_mode, theme, layout_mode, active_menu) = {
             let state = self.state.read(cx);
             (
-                state.app.current_screen,
-                state.app.input_mode,
-                state.app.theme.clone(),
-                state.app.layout_mode,
-                state.app.active_menu,
+                state.app.ui_state.current_screen,
+                state.app.ui_state.input_mode,
+                state.app.ui_state.theme.clone(),
+                state.app.ui_state.layout_mode,
+                state.app.ui_state.active_menu,
             )
         };
 
         // Keep gpui-ui-kit global theme in sync with app theme so components get consistent defaults.
         // This allows builder overrides but ensures out-of-the-box colors match the app theme.
-        let ui_kit_theme = theme.to_ui_kit_theme(self.state.read(cx).app.theme_id);
+        let ui_kit_theme = theme.to_ui_kit_theme(self.state.read(cx).app.ui_state.theme_id);
         cx.set_global(UiKitThemeState {
             theme: ui_kit_theme,
         });
@@ -94,7 +94,7 @@ impl Render for PlayerView {
         // Use "TextInput" context when typing to disable single-letter keybindings
         let key_context = {
             let state = self.state.read(cx);
-            if Self::is_text_input_mode(state.app.input_mode) {
+            if Self::is_text_input_mode(state.app.ui_state.input_mode) {
                 "TextInput"
             } else {
                 "PlayerView"
@@ -186,8 +186,8 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::clear_meter_mutes_solos))
             .on_key_down(cx.listener(|view, event: &KeyDownEvent, _window, cx| {
                 // Handle text input for search mode and add directory mode
-                let input_mode = view.state.read(cx).app.input_mode;
-                let current_screen = view.state.read(cx).app.current_screen;
+                let input_mode = view.state.read(cx).app.ui_state.input_mode;
+                let current_screen = view.state.read(cx).app.ui_state.current_screen;
 
                 log::debug!(
                     "on_key_down: key='{}', input_mode={:?}",
@@ -243,7 +243,7 @@ impl Render for PlayerView {
                                     view.state.update(cx, |state, _cx| {
                                         state.app.refresh_plugin_presets();
                                         state.app.plugin_file_input.clear();
-                                        state.app.input_mode = crate::app::InputMode::SavePlugins;
+                                        state.app.ui_state.input_mode = crate::app::InputMode::SavePlugins;
                                     });
                                     cx.notify();
                                 }
@@ -252,7 +252,7 @@ impl Render for PlayerView {
                                     view.state.update(cx, |state, _cx| {
                                         state.app.refresh_plugin_presets();
                                         state.app.plugin_file_input.clear();
-                                        state.app.input_mode = crate::app::InputMode::LoadPlugins;
+                                        state.app.ui_state.input_mode = crate::app::InputMode::LoadPlugins;
                                     });
                                     cx.notify();
                                 }
@@ -316,20 +316,20 @@ impl Render for PlayerView {
             // Scan progress modal
             .child(self.render_scan_progress_modal(cx))
             .child(self.render_toast(cx))
-            .when(self.state.read(cx).app.context_menu.is_some(), |div| {
+            .when(self.state.read(cx).app.ui_state.context_menu.is_some(), |div| {
                 div.child(self.render_context_menu(cx))
             })
             // Studio menu overlay (click outside to close)
-            .when(self.state.read(cx).app.show_studio_menu, |div| {
+            .when(self.state.read(cx).app.ui_state.show_studio_menu, |div| {
                 div.child(self.render_studio_menu_overlay(cx))
             })
             // Device popup overlay (click outside to close)
-            .when(self.state.read(cx).app.show_device_popup, |div| {
+            .when(self.state.read(cx).app.ui_state.show_device_popup, |div| {
                 div.child(self.render_device_popup_overlay(cx))
             })
             // Device popup (rendered here to be above overlay)
-            .when(self.state.read(cx).app.show_device_popup, |div| {
-                let translations = &self.state.read(cx).app.translations;
+            .when(self.state.read(cx).app.ui_state.show_device_popup, |div| {
+                let translations = &self.state.read(cx).app.ui_state.translations;
                 div.child(self.render_device_popup(translations.playback_output_devices, cx))
             })
             // Menu dropdowns rendered last for z-ordering

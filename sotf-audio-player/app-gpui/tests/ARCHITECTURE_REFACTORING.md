@@ -363,13 +363,27 @@ fn test_play_from_search() {
 ## Next Steps
 
 1. ✅ Review this plan (completed 2026-01-09)
-2. **Phase 6.0**: Audit field usage with `grep` to identify all callers
-3. **Phase 6.1**: Start with PlaybackState migration
-   - Remove duplicate fields from `App`
-   - Update all `app.volume` → `app.playback.volume` etc.
-   - Add unit tests for `PlaybackState`
-4. Continue with remaining phases in order
-5. Add integration tests for cross-manager communication
+2. ✅ **Phase 6.0**: Audit field usage (completed 2026-01-10, see PHASE_6_0_AUDIT.md)
+3. ✅ **Phase 1A**: Delete 7 zero-reference duplicate fields (completed 2026-01-10)
+4. ✅ **Phase 1B**: Migrate UI fields to ui_state (completed 2026-01-10)
+   - Migrated: theme, theme_id, language, translations, keymap_preset
+   - Migrated: context_menu, active_menu, layout_mode, window_height, window_width
+   - Migrated: last_loaded_preset to plugin_state
+   - ~100 callsites updated across codebase
+5. ✅ **Phase 2**: Migrate additional UI fields (completed 2026-01-10)
+   - Migrated: input_mode, last_screen, show_device_popup, show_studio_menu
+   - Migrated: should_quit, pending_studio_close, startup_db_check_done
+   - Migrated: active_settings_tab, filter_menu_open
+   - Removed 17 duplicate field declarations from App struct
+6. ✅ **Phase 3**: Migrate LibraryState fields (completed 2026-01-10)
+   - Migrated: search_query, selected_album_index → library_state.selected_index
+   - Migrated: scan_in_progress, scan_progress_tracks, scan_progress_albums
+   - ~130 callsites updated across codebase
+7. ✅ **Phase 4**: Migrate PluginState fields (completed 2026-01-10)
+   - Migrated: selected_plugin_index → plugin_state.selected_plugin_index
+   - ~18 callsites updated across codebase
+8. **Phase 5**: Migrate remaining fields (NEXT)
+9. Add integration tests for cross-manager communication
 
 ## Field Mapping Reference
 

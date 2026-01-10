@@ -11,9 +11,9 @@ impl PlayerView {
     /// Render theme settings content
     pub(crate) fn render_theme_settings_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme_id = state.app.theme_id;
-        let theme = state.app.theme.clone();
-        let translations = state.app.translations.clone();
+        let theme_id = state.app.ui_state.theme_id;
+        let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
 
         div().flex().flex_col().gap_6().child(
             div()
@@ -55,9 +55,9 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let state = self.state.read(cx);
-        let language = state.app.language;
-        let theme = state.app.theme.clone();
-        let translations = state.app.translations.clone();
+        let language = state.app.ui_state.language;
+        let theme = state.app.ui_state.theme.clone();
+        let translations = state.app.ui_state.translations.clone();
 
         div().flex().flex_col().gap_6().child(
             div()

@@ -3,117 +3,158 @@
 //! Contains methods for plugin chain management, parameter editing, and presets.
 
 use sotf_audio_player::PluginSettings;
+use sotf_plugins::{SpectralTiltCorrection, TiltReferenceFreq};
 
 use super::common::param_index_to_engine_param;
 use crate::app::types::PluginUpdateType;
 use crate::app::{App, ToastMessage};
 
-impl App {
+pub trait PluginEditingManager {
+    fn sync_spectrum_visible(&mut self);
+    fn add_plugin(&mut self, plugin_type: &sotf_audio_player::PluginType);
+    fn toggle_plugin(&mut self, index: usize);
+    fn move_plugin_up(&mut self, index: usize);
+    fn move_plugin_down(&mut self, index: usize);
+    fn select_next_plugin(&mut self);
+    fn select_previous_plugin(&mut self);
+    fn remove_plugin(&mut self, index: usize);
+    fn get_editing_plugin(&self) -> Option<&sotf_audio_player::Plugin>;
+    fn get_editing_plugin_mut(&mut self) -> Option<&mut sotf_audio_player::Plugin>;
+    fn select_next_param(&mut self);
+    fn select_previous_param(&mut self);
+    fn adjust_selected_param(&mut self, delta: f64) -> bool;
+    
+    // Additional methods
+    fn set_plugin_param(&mut self, plugin_idx: usize, param_idx: usize, value: f64);
+    fn set_plugin_param_string(&mut self, plugin_idx: usize, param_idx: usize, value: String);
+    fn set_spectrum_tilt_correction(&mut self, plugin_idx: usize, correction: SpectralTiltCorrection);
+    fn set_spectrum_tilt_reference(&mut self, plugin_idx: usize, reference: TiltReferenceFreq);
+    fn reset_plugin_param(&mut self, plugin_idx: usize, param_idx: usize);
+    fn load_apo_file(&mut self) -> Result<(), String>;
+    fn load_sofa_file(&mut self) -> Result<(), String>;
+    fn add_eq_band(&mut self) -> Result<(), String>;
+    fn remove_eq_band(&mut self, band_idx: usize) -> Result<(), String>;
+    fn toggle_eq_band_mute(&mut self, band_idx: usize) -> Result<(), String>;
+    fn toggle_eq_band_solo(&mut self, band_idx: usize) -> Result<(), String>;
+    fn refresh_plugin_presets(&mut self);
+    fn save_plugin_chain(&mut self);
+    fn save_selected_preset(&mut self);
+    fn load_plugin_chain(&mut self);
+    fn load_selected_preset(&mut self);
+    fn select_next_preset(&mut self);
+    fn select_previous_preset(&mut self);
+}
+
+impl PluginEditingManager for App {
     /// Sync spectrum_visible flag with the actual plugin chain contents.
     /// Should be called whenever the plugin chain changes structurally.
-    pub fn sync_spectrum_visible(&mut self) {
-        self.spectrum_visible = self.plugin_chain.has_enabled_spectrum_analyzer();
+    /// Sync spectrum_visible flag with the actual plugin chain contents.
+    /// Should be called whenever the plugin chain changes structurally.
+    fn sync_spectrum_visible(&mut self) {
+        self.spectrum_visible = self.plugin_state.plugin_chain.has_enabled_spectrum_analyzer();
     }
 
     // Plugin management methods
-    pub fn add_plugin(&mut self, plugin_type: &sotf_audio_player::PluginType) {
+    // Plugin management methods
+    fn add_plugin(&mut self, plugin_type: &sotf_audio_player::PluginType) {
         // Insert user plugins before the Matrix (between input monitor and matrix)
-        let insert_idx = self.plugin_chain.user_plugin_insert_index();
-        self.plugin_chain.insert_plugin(insert_idx, plugin_type);
-        self.selected_plugin_index = insert_idx;
-        self.plugin_chain.update_channel_dependent_plugins();
-        self.pending_plugin_update = Some(PluginUpdateType::Structural);
+        let insert_idx = self.plugin_state.plugin_chain.user_plugin_insert_index();
+        self.plugin_state.plugin_chain.insert_plugin(insert_idx, plugin_type);
+        self.plugin_state.selected_plugin_index = insert_idx;
+        self.plugin_state.plugin_chain.update_channel_dependent_plugins();
+        self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
         self.sync_spectrum_visible();
     }
 
-    pub fn toggle_plugin(&mut self, index: usize) {
-        self.plugin_chain.toggle_plugin(index);
+    fn toggle_plugin(&mut self, index: usize) {
+        self.plugin_state.plugin_chain.toggle_plugin(index);
         // Update BinauralDecoder input channels after toggle
-        self.plugin_chain.update_channel_dependent_plugins();
-        self.pending_plugin_update = Some(PluginUpdateType::Structural);
+        self.plugin_state.plugin_chain.update_channel_dependent_plugins();
+        self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
         self.sync_spectrum_visible();
     }
 
-    pub fn move_plugin_up(&mut self, index: usize) {
+    fn move_plugin_up(&mut self, index: usize) {
         if index > 0 {
-            self.plugin_chain.move_plugin(index, index - 1);
-            self.selected_plugin_index = index - 1;
+            self.plugin_state.plugin_chain.move_plugin(index, index - 1);
+            self.plugin_state.selected_plugin_index = index - 1;
             // Update BinauralDecoder input channels after move
-            self.plugin_chain.update_channel_dependent_plugins();
-            self.pending_plugin_update = Some(PluginUpdateType::Structural);
+            self.plugin_state.plugin_chain.update_channel_dependent_plugins();
+            self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
         }
     }
 
-    pub fn move_plugin_down(&mut self, index: usize) {
-        if index < self.plugin_chain.len() - 1 {
-            self.plugin_chain.move_plugin(index, index + 1);
-            self.selected_plugin_index = index + 1;
+    fn move_plugin_down(&mut self, index: usize) {
+        if index < self.plugin_state.plugin_chain.len() - 1 {
+            self.plugin_state.plugin_chain.move_plugin(index, index + 1);
+            self.plugin_state.selected_plugin_index = index + 1;
             // Update BinauralDecoder input channels after move
-            self.plugin_chain.update_channel_dependent_plugins();
-            self.pending_plugin_update = Some(PluginUpdateType::Structural);
+            self.plugin_state.plugin_chain.update_channel_dependent_plugins();
+            self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
         }
     }
 
-    pub fn select_next_plugin(&mut self) {
-        if !self.plugin_chain.is_empty() {
-            self.selected_plugin_index = (self.selected_plugin_index + 1) % self.plugin_chain.len();
+    fn select_next_plugin(&mut self) {
+        if !self.plugin_state.plugin_chain.is_empty() {
+            self.plugin_state.selected_plugin_index = (self.plugin_state.selected_plugin_index + 1) % self.plugin_state.plugin_chain.len();
         }
     }
 
-    pub fn select_previous_plugin(&mut self) {
-        if !self.plugin_chain.is_empty() {
-            if self.selected_plugin_index == 0 {
-                self.selected_plugin_index = self.plugin_chain.len() - 1;
+    fn select_previous_plugin(&mut self) {
+        if !self.plugin_state.plugin_chain.is_empty() {
+            if self.plugin_state.selected_plugin_index == 0 {
+                self.plugin_state.selected_plugin_index = self.plugin_state.plugin_chain.len() - 1;
             } else {
-                self.selected_plugin_index -= 1;
+                self.plugin_state.selected_plugin_index -= 1;
             }
         }
     }
 
-    pub fn remove_plugin(&mut self, index: usize) {
-        if index < self.plugin_chain.len() {
-            self.plugin_chain.remove_plugin(index);
+    fn remove_plugin(&mut self, index: usize) {
+        if index < self.plugin_state.plugin_chain.len() {
+            self.plugin_state.plugin_chain.remove_plugin(index);
             // Update BinauralDecoder input channels after removal
-            self.plugin_chain.update_channel_dependent_plugins();
-            self.pending_plugin_update = Some(PluginUpdateType::Structural);
+            self.plugin_state.plugin_chain.update_channel_dependent_plugins();
+            self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
             self.sync_spectrum_visible();
             // Adjust selection
-            if self.selected_plugin_index >= self.plugin_chain.len()
-                && self.selected_plugin_index > 0
+            if self.plugin_state.selected_plugin_index >= self.plugin_state.plugin_chain.len()
+                && self.plugin_state.selected_plugin_index > 0
             {
-                self.selected_plugin_index = self.plugin_chain.len() - 1;
+                self.plugin_state.selected_plugin_index = self.plugin_state.plugin_chain.len() - 1;
             }
         }
     }
 
     // Plugin editing methods
-    pub fn get_editing_plugin(&self) -> Option<&sotf_audio_player::Plugin> {
-        self.editing_plugin_index
-            .and_then(|idx| self.plugin_chain.get_plugin(idx))
+    // Plugin editing methods
+    fn get_editing_plugin(&self) -> Option<&sotf_audio_player::Plugin> {
+        self.plugin_state.editing_plugin_index
+            .and_then(|idx| self.plugin_state.plugin_chain.get_plugin(idx))
     }
 
-    pub fn get_editing_plugin_mut(&mut self) -> Option<&mut sotf_audio_player::Plugin> {
-        self.editing_plugin_index
-            .and_then(|idx| self.plugin_chain.get_plugin_mut(idx))
+    fn get_editing_plugin_mut(&mut self) -> Option<&mut sotf_audio_player::Plugin> {
+        self.plugin_state.editing_plugin_index
+            .and_then(|idx| self.plugin_state.plugin_chain.get_plugin_mut(idx))
     }
 
-    pub fn select_next_param(&mut self) {
+    fn select_next_param(&mut self) {
         if let Some(plugin) = self.get_editing_plugin() {
             let param_count = get_param_count(&plugin.settings);
             if param_count > 0 {
-                self.plugin_param_selection = (self.plugin_param_selection + 1) % param_count;
+                self.plugin_state.plugin_param_selection = (self.plugin_state.plugin_param_selection + 1) % param_count;
             }
         }
     }
 
-    pub fn select_previous_param(&mut self) {
+    fn select_previous_param(&mut self) {
         if let Some(plugin) = self.get_editing_plugin() {
             let param_count = get_param_count(&plugin.settings);
             if param_count > 0 {
-                if self.plugin_param_selection == 0 {
-                    self.plugin_param_selection = param_count - 1;
+                if self.plugin_state.plugin_param_selection == 0 {
+                    self.plugin_state.plugin_param_selection = param_count - 1;
                 } else {
-                    self.plugin_param_selection -= 1;
+                    self.plugin_state.plugin_param_selection -= 1;
                 }
             }
         }
@@ -121,8 +162,10 @@ impl App {
 
     /// Adjust the currently selected parameter by the given delta
     /// Returns true if the parameter was adjusted successfully
-    pub fn adjust_selected_param(&mut self, delta: f64) -> bool {
-        let param_idx = self.plugin_param_selection;
+    /// Adjust the currently selected parameter by the given delta
+    /// Returns true if the parameter was adjusted successfully
+    fn adjust_selected_param(&mut self, delta: f64) -> bool {
+        let param_idx = self.plugin_state.plugin_param_selection;
         let mut channel_count_changed = false;
 
         let result = if let Some(plugin) = self.get_editing_plugin_mut() {
@@ -1143,7 +1186,7 @@ impl App {
         };
 
         if result && channel_count_changed {
-            self.plugin_chain.update_channel_dependent_plugins();
+            self.plugin_state.plugin_chain.update_channel_dependent_plugins();
         }
 
         if result {
@@ -1151,8 +1194,8 @@ impl App {
             let update_type = if channel_count_changed {
                 // Channel count changes always require structural update
                 PluginUpdateType::Structural
-            } else if let Some(plugin_idx) = self.editing_plugin_index {
-                if let Some(plugin) = self.plugin_chain.get_plugin(plugin_idx) {
+            } else if let Some(plugin_idx) = self.plugin_state.editing_plugin_index {
+                if let Some(plugin) = self.plugin_state.plugin_chain.get_plugin(plugin_idx) {
                     if param_index_to_engine_param(&plugin.settings, param_idx).is_some() {
                         PluginUpdateType::Parameter {
                             plugin_index: plugin_idx,
@@ -1167,18 +1210,18 @@ impl App {
             } else {
                 PluginUpdateType::Structural
             };
-            self.pending_plugin_update = Some(update_type);
+            self.plugin_state.pending_plugin_update = Some(update_type);
         }
 
         result
     }
 
     /// Set a specific parameter value for a plugin
-    pub fn set_plugin_param(&mut self, plugin_idx: usize, param_idx: usize, value: f64) {
+    fn set_plugin_param(&mut self, plugin_idx: usize, param_idx: usize, value: f64) {
         let mut channel_count_changed = false;
         let mut update_needed = false;
 
-        if let Some(plugin) = self.plugin_chain.get_plugin_mut(plugin_idx) {
+        if let Some(plugin) = self.plugin_state.plugin_chain.get_plugin_mut(plugin_idx) {
             match &mut plugin.settings {
                 PluginSettings::Upmixer {
                     speaker_config,
@@ -2101,7 +2144,7 @@ impl App {
         }
 
         if channel_count_changed {
-            self.plugin_chain.update_channel_dependent_plugins();
+            self.plugin_state.plugin_chain.update_channel_dependent_plugins();
         }
 
         if update_needed {
@@ -2109,7 +2152,7 @@ impl App {
             let update_type = if channel_count_changed {
                 // Channel count changes always require structural update
                 PluginUpdateType::Structural
-            } else if let Some(plugin) = self.plugin_chain.get_plugin(plugin_idx) {
+            } else if let Some(plugin) = self.plugin_state.plugin_chain.get_plugin(plugin_idx) {
                 if param_index_to_engine_param(&plugin.settings, param_idx).is_some() {
                     PluginUpdateType::Parameter {
                         plugin_index: plugin_idx,
@@ -2121,15 +2164,15 @@ impl App {
             } else {
                 PluginUpdateType::Structural
             };
-            self.pending_plugin_update = Some(update_type);
+            self.plugin_state.pending_plugin_update = Some(update_type);
         }
     }
 
     /// Set a string parameter value for a plugin (e.g., path configs, file paths)
-    pub fn set_plugin_param_string(&mut self, plugin_idx: usize, param_idx: usize, value: String) {
+    fn set_plugin_param_string(&mut self, plugin_idx: usize, param_idx: usize, value: String) {
         let mut update_needed = false;
 
-        if let Some(plugin) = self.plugin_chain.get_plugin_mut(plugin_idx) {
+        if let Some(plugin) = self.plugin_state.plugin_chain.get_plugin_mut(plugin_idx) {
             match &mut plugin.settings {
                 PluginSettings::ABCompare {
                     path_a_config,
@@ -2158,44 +2201,44 @@ impl App {
 
         if update_needed {
             // String parameters always require structural update
-            self.pending_plugin_update = Some(PluginUpdateType::Structural);
+            self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
         }
     }
 
     /// Set spectrum analyzer tilt correction mode
-    pub fn set_spectrum_tilt_correction(
+    fn set_spectrum_tilt_correction(
         &mut self,
         plugin_idx: usize,
         tilt: sotf_plugins::SpectralTiltCorrection,
     ) {
-        if let Some(plugin) = self.plugin_chain.get_plugin_mut(plugin_idx) {
+        if let Some(plugin) = self.plugin_state.plugin_chain.get_plugin_mut(plugin_idx) {
             if let PluginSettings::SpectrumAnalyzer {
                 tilt_correction, ..
             } = &mut plugin.settings
             {
                 *tilt_correction = tilt;
-                self.pending_plugin_update = Some(PluginUpdateType::Structural);
+                self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
             }
         }
     }
 
     /// Set spectrum analyzer tilt reference frequency
-    pub fn set_spectrum_tilt_reference(
+    fn set_spectrum_tilt_reference(
         &mut self,
         plugin_idx: usize,
         reference: sotf_plugins::TiltReferenceFreq,
     ) {
-        if let Some(plugin) = self.plugin_chain.get_plugin_mut(plugin_idx) {
+        if let Some(plugin) = self.plugin_state.plugin_chain.get_plugin_mut(plugin_idx) {
             if let PluginSettings::SpectrumAnalyzer { tilt_reference, .. } = &mut plugin.settings {
                 *tilt_reference = reference;
-                self.pending_plugin_update = Some(PluginUpdateType::Structural);
+                self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
             }
         }
     }
 
     /// Reset a specific parameter to its default value
-    pub fn reset_plugin_param(&mut self, plugin_idx: usize, param_idx: usize) {
-        let plugin_type = if let Some(plugin) = self.plugin_chain.get_plugin(plugin_idx) {
+    fn reset_plugin_param(&mut self, plugin_idx: usize, param_idx: usize) {
+        let plugin_type = if let Some(plugin) = self.plugin_state.plugin_chain.get_plugin(plugin_idx) {
             plugin.plugin_type()
         } else {
             return;
@@ -2383,7 +2426,7 @@ impl App {
     }
 
     /// Load EQ filters from APO file
-    pub fn load_apo_file(&mut self) -> Result<(), String> {
+    fn load_apo_file(&mut self) -> Result<(), String> {
         use sotf_audio_player::EQFilter;
         use std::path::Path;
 
@@ -2406,7 +2449,7 @@ impl App {
             if let PluginSettings::EQ { channels, .. } = &plugin.settings {
                 let channels = *channels;
                 plugin.settings = PluginSettings::EQ { channels, filters };
-                self.pending_plugin_update = Some(PluginUpdateType::Structural);
+                self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
                 Ok(())
             } else {
                 Err("Selected plugin is not an EQ".to_string())
@@ -2417,7 +2460,7 @@ impl App {
     }
 
     /// Update SOFA file path for the currently editing binaural decoder plugin
-    pub fn load_sofa_file(&mut self) -> Result<(), String> {
+    fn load_sofa_file(&mut self) -> Result<(), String> {
         // Check plugin state before loading file (or rather, setting path)
         if let Some(plugin) = self.get_editing_plugin() {
             if !matches!(plugin.settings, PluginSettings::BinauralDecoder { .. }) {
@@ -2437,7 +2480,7 @@ impl App {
             } = plugin.settings
             {
                 *sofa_file = sofa_file_path;
-                self.pending_plugin_update = Some(PluginUpdateType::Structural);
+                self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
                 Ok(())
             } else {
                 Err("Selected plugin is not a Binaural Decoder".to_string())
@@ -2449,7 +2492,7 @@ impl App {
 
     /// Add a new EQ band to the currently editing EQ plugin
     /// Returns Ok(()) if successful, Err if no EQ plugin is being edited
-    pub fn add_eq_band(&mut self) -> Result<(), String> {
+    fn add_eq_band(&mut self) -> Result<(), String> {
         use math_audio_iir_fir::BiquadFilterType;
         use sotf_audio_player::EQFilter;
 
@@ -2474,7 +2517,7 @@ impl App {
                 let filters = filters.clone();
                 plugin.settings = PluginSettings::EQ { channels, filters };
 
-                self.pending_plugin_update = Some(PluginUpdateType::Structural);
+                self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
                 Ok(())
             } else {
                 Err("Selected plugin is not an EQ".to_string())
@@ -2486,7 +2529,7 @@ impl App {
 
     /// Remove an EQ band from the currently editing EQ plugin
     /// Returns Ok(()) if successful, Err if no EQ plugin is being edited or invalid index
-    pub fn remove_eq_band(&mut self, band_idx: usize) -> Result<(), String> {
+    fn remove_eq_band(&mut self, band_idx: usize) -> Result<(), String> {
         // Check plugin state before removing band
         if let Some(plugin) = self.get_editing_plugin() {
             if !matches!(plugin.settings, PluginSettings::EQ { .. }) {
@@ -2510,7 +2553,7 @@ impl App {
                 let filters = filters.clone();
                 plugin.settings = PluginSettings::EQ { channels, filters };
 
-                self.pending_plugin_update = Some(PluginUpdateType::Structural);
+                self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
                 Ok(())
             } else {
                 Err("Selected plugin is not an EQ".to_string())
@@ -2521,7 +2564,7 @@ impl App {
     }
 
     /// Toggle mute state for an EQ band
-    pub fn toggle_eq_band_mute(&mut self, band_idx: usize) -> Result<(), String> {
+    fn toggle_eq_band_mute(&mut self, band_idx: usize) -> Result<(), String> {
         if let Some(plugin) = self.get_editing_plugin() {
             if !matches!(plugin.settings, PluginSettings::EQ { .. }) {
                 return Err("Selected plugin is not an EQ".to_string());
@@ -2542,7 +2585,7 @@ impl App {
                 let filters = filters.clone();
                 plugin.settings = PluginSettings::EQ { channels, filters };
 
-                self.pending_plugin_update = Some(PluginUpdateType::Structural);
+                self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
                 Ok(())
             } else {
                 Err("Selected plugin is not an EQ".to_string())
@@ -2554,7 +2597,7 @@ impl App {
 
     /// Toggle solo state for an EQ band
     /// When any band is soloed, only soloed bands are active
-    pub fn toggle_eq_band_solo(&mut self, band_idx: usize) -> Result<(), String> {
+    fn toggle_eq_band_solo(&mut self, band_idx: usize) -> Result<(), String> {
         if let Some(plugin) = self.get_editing_plugin() {
             if !matches!(plugin.settings, PluginSettings::EQ { .. }) {
                 return Err("Selected plugin is not an EQ".to_string());
@@ -2575,7 +2618,7 @@ impl App {
                 let filters = filters.clone();
                 plugin.settings = PluginSettings::EQ { channels, filters };
 
-                self.pending_plugin_update = Some(PluginUpdateType::Structural);
+                self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
                 Ok(())
             } else {
                 Err("Selected plugin is not an EQ".to_string())
@@ -2588,9 +2631,9 @@ impl App {
     // Plugin preset save/load methods
 
     /// Refresh the list of available plugin presets from the config directory
-    pub fn refresh_plugin_presets(&mut self) {
-        self.available_plugin_presets.clear();
-        self.selected_preset_index = 0;
+    fn refresh_plugin_presets(&mut self) {
+        self.plugin_state.available_plugin_presets.clear();
+        self.plugin_state.selected_preset_index = 0;
 
         if let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir()
             && let Ok(entries) = std::fs::read_dir(&presets_dir)
@@ -2602,24 +2645,24 @@ impl App {
                     && ext == "json"
                     && let Some(filename) = path.file_name()
                 {
-                    self.available_plugin_presets
+                    self.plugin_state.available_plugin_presets
                         .push(filename.to_string_lossy().to_string());
                 }
             }
             // Sort presets alphabetically
-            self.available_plugin_presets.sort();
+            self.plugin_state.available_plugin_presets.sort();
         }
 
         log::info!(
             "Found {} plugin presets",
-            self.available_plugin_presets.len()
+            self.plugin_state.available_plugin_presets.len()
         );
     }
 
     /// Save plugin chain to file
-    pub fn save_plugin_chain(&mut self) {
+    fn save_plugin_chain(&mut self) {
         if self.plugin_file_input.is_empty() {
-            self.toast_message = Some(ToastMessage::error("No filename specified".to_string()));
+            self.ui_state.toast_message = Some(ToastMessage::error("No filename specified".to_string()));
             return;
         }
 
@@ -2631,7 +2674,7 @@ impl App {
         };
 
         let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() else {
-            self.toast_message = Some(ToastMessage::error(
+            self.ui_state.toast_message = Some(ToastMessage::error(
                 "Could not find presets directory".to_string(),
             ));
             return;
@@ -2643,59 +2686,60 @@ impl App {
 
         // Save using the plugin chain's own save method (handles path, validation, etc.)
         match self
-            .plugin_chain
+            .plugin_state.plugin_chain
             .save_to_file(&presets_dir, &self.plugin_file_input)
         {
             Ok(_) => {
-                self.toast_message = Some(ToastMessage::success(format!(
+                self.ui_state.toast_message = Some(ToastMessage::success(format!(
                     "Saved preset: {}",
                     filename_with_ext
                 )));
-                self.last_loaded_preset = Some(filename_with_ext);
+                self.plugin_state.last_loaded_preset = Some(filename_with_ext);
                 // Refresh presets list
                 self.refresh_plugin_presets();
             }
             Err(e) => {
-                self.toast_message = Some(ToastMessage::error(format!("Error saving: {}", e)));
+                self.ui_state.toast_message = Some(ToastMessage::error(format!("Error saving: {}", e)));
                 log::error!("Failed to save plugin chain: {}", e);
             }
         }
     }
 
     /// Save plugin chain to selected preset file (overwrite)
-    pub fn save_selected_preset(&mut self) {
-        if self.available_plugin_presets.is_empty() {
-            self.toast_message = Some(ToastMessage::error("No presets available".to_string()));
+    fn save_selected_preset(&mut self) {
+        if self.plugin_state.available_plugin_presets.is_empty() {
+            self.ui_state.toast_message = Some(ToastMessage::error("No presets available".to_string()));
             return;
         }
 
         if let Some(preset_filename) = self
+            .plugin_state
             .available_plugin_presets
-            .get(self.selected_preset_index)
+            .get(self.plugin_state.selected_preset_index)
             .cloned()
         {
             // Save using the plugin chain's own save method
             let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() else {
-                self.toast_message = Some(ToastMessage::error(
+                self.ui_state.toast_message = Some(ToastMessage::error(
                     "Could not find presets directory".to_string(),
                 ));
                 return;
             };
             match self
-                .plugin_chain
+                .plugin_state.plugin_chain
                 .save_to_file(&presets_dir, &preset_filename)
             {
                 Ok(_) => {
-                    self.toast_message = Some(ToastMessage::success(format!(
+                    self.ui_state.toast_message = Some(ToastMessage::success(format!(
                         "Overwritten preset: {}",
                         preset_filename
                     )));
-                    self.last_loaded_preset = Some(preset_filename);
+                    self.plugin_state.last_loaded_preset = Some(preset_filename);
                     // Refresh presets list
                     self.refresh_plugin_presets();
                 }
                 Err(e) => {
-                    self.toast_message = Some(ToastMessage::error(format!("Error saving: {}", e)));
+                    self.ui_state.toast_message = Some(ToastMessage::error(format!("Error saving: {}", e)));
                     log::error!("Failed to save plugin chain: {}", e);
                 }
             }
@@ -2703,26 +2747,26 @@ impl App {
     }
 
     /// Load plugin chain from file
-    pub fn load_plugin_chain(&mut self) {
+    fn load_plugin_chain(&mut self) {
         if self.plugin_file_input.is_empty() {
-            self.toast_message = Some(ToastMessage::error("No filename specified".to_string()));
+            self.ui_state.toast_message = Some(ToastMessage::error("No filename specified".to_string()));
             return;
         }
 
         // Load using the plugin chain's own load method (handles path, extension, etc.)
         let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() else {
-            self.toast_message = Some(ToastMessage::error(
+            self.ui_state.toast_message = Some(ToastMessage::error(
                 "Could not find presets directory".to_string(),
             ));
             return;
         };
         match self
-            .plugin_chain
+            .plugin_state.plugin_chain
             .load_from_file(&presets_dir, &self.plugin_file_input)
         {
             Ok(_) => {
                 // Update BinauralDecoder input channels after loading
-                self.plugin_chain.update_channel_dependent_plugins();
+                self.plugin_state.plugin_chain.update_channel_dependent_plugins();
 
                 // Get the final filename (with .json appended if needed)
                 let filename = if self.plugin_file_input.ends_with(".json") {
@@ -2731,58 +2775,59 @@ impl App {
                     format!("{}.json", self.plugin_file_input)
                 };
 
-                self.toast_message = Some(ToastMessage::success(format!(
+                self.ui_state.toast_message = Some(ToastMessage::success(format!(
                     "Loaded preset: {}",
                     filename
                 )));
-                self.pending_plugin_update = Some(PluginUpdateType::Structural);
+                self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
                 self.sync_spectrum_visible();
-                self.last_loaded_preset = Some(filename);
+                self.plugin_state.last_loaded_preset = Some(filename);
             }
             Err(e) => {
-                self.toast_message = Some(ToastMessage::error(format!("Error loading: {}", e)));
+                self.ui_state.toast_message = Some(ToastMessage::error(format!("Error loading: {}", e)));
                 log::error!("Failed to load plugin chain: {}", e);
             }
         }
     }
 
     /// Load the selected preset from the available presets list
-    pub fn load_selected_preset(&mut self) {
-        if self.available_plugin_presets.is_empty() {
-            self.toast_message = Some(ToastMessage::error("No presets available".to_string()));
+    fn load_selected_preset(&mut self) {
+        if self.plugin_state.available_plugin_presets.is_empty() {
+            self.ui_state.toast_message = Some(ToastMessage::error("No presets available".to_string()));
             return;
         }
 
         if let Some(preset_filename) = self
+            .plugin_state
             .available_plugin_presets
-            .get(self.selected_preset_index)
+            .get(self.plugin_state.selected_preset_index)
             .cloned()
         {
             let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() else {
-                self.toast_message = Some(ToastMessage::error(
+                self.ui_state.toast_message = Some(ToastMessage::error(
                     "Could not find presets directory".to_string(),
                 ));
                 return;
             };
             match self
-                .plugin_chain
+                .plugin_state.plugin_chain
                 .load_from_file(&presets_dir, &preset_filename)
             {
                 Ok(_) => {
                     // Update BinauralDecoder input channels after loading
-                    self.plugin_chain.update_channel_dependent_plugins();
+                    self.plugin_state.plugin_chain.update_channel_dependent_plugins();
 
-                    self.toast_message = Some(ToastMessage::success(format!(
+                    self.ui_state.toast_message = Some(ToastMessage::success(format!(
                         "Loaded preset: {} ({} plugins)",
                         preset_filename,
-                        self.plugin_chain.len()
+                        self.plugin_state.plugin_chain.len()
                     )));
-                    self.pending_plugin_update = Some(PluginUpdateType::Structural);
+                    self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
                     self.sync_spectrum_visible();
-                    self.last_loaded_preset = Some(preset_filename);
+                    self.plugin_state.last_loaded_preset = Some(preset_filename);
                 }
                 Err(e) => {
-                    self.toast_message =
+                    self.ui_state.toast_message =
                         Some(ToastMessage::error(format!("Error loading preset: {}", e)));
                     log::error!("Failed to load plugin chain: {}", e);
                 }
@@ -2791,20 +2836,20 @@ impl App {
     }
 
     /// Select the next preset in the list
-    pub fn select_next_preset(&mut self) {
-        if !self.available_plugin_presets.is_empty() {
-            self.selected_preset_index =
-                (self.selected_preset_index + 1) % self.available_plugin_presets.len();
+    fn select_next_preset(&mut self) {
+        if !self.plugin_state.available_plugin_presets.is_empty() {
+            self.plugin_state.selected_preset_index =
+                (self.plugin_state.selected_preset_index + 1) % self.plugin_state.available_plugin_presets.len();
         }
     }
 
     /// Select the previous preset in the list
-    pub fn select_previous_preset(&mut self) {
-        if !self.available_plugin_presets.is_empty() {
-            if self.selected_preset_index == 0 {
-                self.selected_preset_index = self.available_plugin_presets.len() - 1;
+    fn select_previous_preset(&mut self) {
+        if !self.plugin_state.available_plugin_presets.is_empty() {
+            if self.plugin_state.selected_preset_index == 0 {
+                self.plugin_state.selected_preset_index = self.plugin_state.available_plugin_presets.len() - 1;
             } else {
-                self.selected_preset_index -= 1;
+                self.plugin_state.selected_preset_index -= 1;
             }
         }
     }

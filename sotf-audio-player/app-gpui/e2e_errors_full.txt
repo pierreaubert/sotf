@@ -1,0 +1,248 @@
+warning: enum `CoordinateSystem` is never used
+  --> sotf-audio-plugins/src/sofa.rs:31:10
+   |
+31 | pub enum CoordinateSystem {
+   |          ^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `sotf-audio-plugins` (lib) generated 1 warning
+warning: fields `start_freq` and `start_gain` are never read
+  --> sotf-audio-player/app-gpui/components/plugins/ui_eq.rs:52:5
+   |
+47 | struct EqControlPointDrag {
+   |        ------------------ fields in this struct
+...
+52 |     start_freq: f64,
+   |     ^^^^^^^^^^
+53 |     start_gain: f64,
+   |     ^^^^^^^^^^
+   |
+   = note: `EqControlPointDrag` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `is_right_handle` is never read
+  --> sotf-audio-player/app-gpui/components/plugins/ui_eq.rs:77:5
+   |
+74 | struct EqQHandleDrag {
+   |        ------------- field in this struct
+...
+77 |     is_right_handle: bool, // true = right handle (increase Q), false = ...
+   |     ^^^^^^^^^^^^^^^
+   |
+   = note: `EqQHandleDrag` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+
+warning: field `volume_focus_handle` is never read
+  --> sotf-audio-player/app-gpui/ui/mod.rs:22:16
+   |
+19 | pub struct PlayerView {
+   |            ---------- field in this struct
+...
+22 |     pub(crate) volume_focus_handle: FocusHandle,
+   |                ^^^^^^^^^^^^^^^^^^^
+
+warning: `sotf-gpui` (lib) generated 3 warnings
+    Checking sotf-gpui v0.5.10 (/Users/pierre/src/sotf/sotf-audio-player/app-gpui)
+warning: unused imports: `Context`, `Render`, `Window`, and `div`
+ --> sotf-audio-player/app-gpui/tests/e2e/runner.rs:6:12
+  |
+6 | use gpui::{Context, Render, TestAppContext, VisualTestContext, Window, div, prelude::*, WindowHandle};
+  |            ^^^^^^^  ^^^^^^                                     ^^^^^^  ^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `ScrollDelta`, `ScrollWheelEvent`, `TouchPhase`, and `point`
+ --> sotf-audio-player/app-gpui/tests/e2e/simulator.rs:6:29
+  |
+6 |     Modifiers, MouseButton, ScrollDelta, ScrollWheelEvent, TouchPhase, VisualTestContext, point,
+  |                             ^^^^^^^^^^^  ^^^^^^^^^^^^^^^^  ^^^^^^^^^^                     ^^^^^
+
+warning: unused import: `SpinoramaOptimizationMode`
+ --> sotf-audio-player/app-gpui/tests/e2e/pages/spinorama.rs:2:62
+  |
+2 | use sotf_audio_player_gpui::app::types::{OptimizationStatus, SpinoramaOptimizationMode};
+  |                                                              ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: variable does not need to be mutable
+   --> sotf-audio-player/app-gpui/tests/e2e/runner.rs:122:21
+    |
+122 |                 let mut app = App::new();
+    |                     ----^^^
+    |                     |
+    |                     help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+  --> sotf-audio-player/app-gpui/tests/e2e/scenarios/spinorama_eq/flow.rs:55:9
+   |
+55 |     let mut runner = E2ERunner::new(scenario);
+   |         ----^^^^^^
+   |         |
+   |         help: remove this `mut`
+
+error[E0609]: no field `library_state` on type `&mut VolumeControlState`
+  --> sotf-audio-player/app-gpui/tests/e2e/scenarios/player/volume.rs:53:25
+   |
+53 |                 if self.library_state.selected_index > 0 {
+   |                         ^^^^^^^^^^^^^ unknown field
+   |
+   = note: available fields are: `volume`, `selected_album_index`, `volume_control_focused`
+
+error[E0609]: no field `library_state` on type `&mut VolumeControlState`
+  --> sotf-audio-player/app-gpui/tests/e2e/scenarios/player/volume.rs:54:26
+   |
+54 |                     self.library_state.selected_index -= 1;
+   |                          ^^^^^^^^^^^^^ unknown field
+   |
+   = note: available fields are: `volume`, `selected_album_index`, `volume_control_focused`
+
+error[E0609]: no field `library_state` on type `&mut VolumeControlState`
+  --> sotf-audio-player/app-gpui/tests/e2e/scenarios/player/volume.rs:57:28
+   |
+57 |             "down" => self.library_state.selected_index += 1,
+   |                            ^^^^^^^^^^^^^ unknown field
+   |
+   = note: available fields are: `volume`, `selected_album_index`, `volume_control_focused`
+
+error[E0599]: no variant or associated item named `SpinoramaEQ` found for enum `sotf_audio_player_gpui::Screen` in the current scope
+  --> sotf-audio-player/app-gpui/tests/e2e/scenarios/spinorama_eq/optimization.rs:23:36
+   |
+23 |         driver.navigate_to(Screen::SpinoramaEQ);
+   |                                    ^^^^^^^^^^^ variant or associated item not found in `sotf_audio_player_gpui::Screen`
+   |
+help: there is a variant with a similar name
+   |
+23 -         driver.navigate_to(Screen::SpinoramaEQ);
+23 +         driver.navigate_to(Screen::Spinorama);
+   |
+
+error[E0616]: field `state` of struct `PlayerView` is private
+  --> sotf-audio-player/app-gpui/tests/e2e/driver.rs:24:19
+   |
+24 |              view.state.update(cx, |state, cx| f(&mut state.app, cx))
+   |                   ^^^^^ private field
+
+error[E0609]: no field `current_screen` on type `&mut sotf_audio_player_gpui::App`
+  --> sotf-audio-player/app-gpui/tests/e2e/driver.rs:31:17
+   |
+31 |             app.current_screen = Screen::Settings;
+   |                 ^^^^^^^^^^^^^^ unknown field
+   |
+help: one of the expressions' fields has a field of the same name
+   |
+31 |             app.ui_state.current_screen = Screen::Settings;
+   |                 +++++++++
+
+error[E0609]: no field `active_settings_tab` on type `&mut sotf_audio_player_gpui::App`
+  --> sotf-audio-player/app-gpui/tests/e2e/driver.rs:32:17
+   |
+32 |             app.active_settings_tab = tab;
+   |                 ^^^^^^^^^^^^^^^^^^^ unknown field
+   |
+help: one of the expressions' fields has a field of the same name
+   |
+32 |             app.ui_state.active_settings_tab = tab;
+   |                 +++++++++
+
+error[E0609]: no field `current_screen` on type `&mut sotf_audio_player_gpui::App`
+  --> sotf-audio-player/app-gpui/tests/e2e/driver.rs:40:17
+   |
+40 |             app.current_screen = screen;
+   |                 ^^^^^^^^^^^^^^ unknown field
+   |
+help: one of the expressions' fields has a field of the same name
+   |
+40 |             app.ui_state.current_screen = screen;
+   |                 +++++++++
+
+error[E0616]: field `state` of struct `PlayerView` is private
+  --> sotf-audio-player/app-gpui/tests/e2e/driver.rs:48:31
+   |
+48 |              let state = view.state.read(cx);
+   |                               ^^^^^ private field
+
+error[E0616]: field `state` of struct `PlayerView` is private
+  --> sotf-audio-player/app-gpui/tests/e2e/pages/spinorama.rs:16:19
+   |
+16 |              view.state.update(cx, |state, _cx| {
+   |                   ^^^^^ private field
+
+error[E0616]: field `state` of struct `PlayerView` is private
+  --> sotf-audio-player/app-gpui/tests/e2e/pages/spinorama.rs:27:19
+   |
+27 |              view.state.update(cx, |state, _cx| {
+   |                   ^^^^^ private field
+
+error[E0616]: field `state` of struct `PlayerView` is private
+  --> sotf-audio-player/app-gpui/tests/e2e/pages/spinorama.rs:37:19
+   |
+37 |              view.state.update(cx, |state, _cx| {
+   |                   ^^^^^ private field
+
+error[E0616]: field `state` of struct `PlayerView` is private
+  --> sotf-audio-player/app-gpui/tests/e2e/pages/spinorama.rs:46:19
+   |
+46 |              view.state.update(cx, |state, _cx| {
+   |                   ^^^^^ private field
+
+error[E0616]: field `state` of struct `PlayerView` is private
+  --> sotf-audio-player/app-gpui/tests/e2e/pages/spinorama.rs:63:35
+   |
+63 |                  let state = view.state.read(cx);
+   |                                   ^^^^^ private field
+
+error[E0282]: type annotations needed
+  --> sotf-audio-player/app-gpui/tests/e2e/pages/spinorama.rs:70:59
+   |
+70 |                  OptimizationStatus::Failed => return Err(msg.unwrap_or_else(|| "Unknown error".to_string())),
+   |                                                           ^^^ cannot infer type
+
+error[E0616]: field `state` of struct `PlayerView` is private
+  --> sotf-audio-player/app-gpui/tests/e2e/pages/spinorama.rs:74:31
+   |
+74 |                          view.state.update(cx, |state, _cx| {
+   |                               ^^^^^ private field
+
+warning: unused import: `prelude`
+ --> sotf-audio-player/app-gpui/tests/e2e/scenarios/spinorama_eq/flow.rs:4:61
+  |
+4 | use gpui::{WindowHandle, VisualTestContext, TestAppContext, prelude::*};
+  |                                                             ^^^^^^^
+
+warning: unused variable: `cx`
+  --> sotf-audio-player/app-gpui/tests/e2e/runner.rs:72:23
+   |
+72 |     fn execute(&self, cx: &mut VisualTestContext, window: WindowHandle<PlayerView>) -> Result<(), Box<dyn Error>> {
+   |                       ^^ help: if this is intentional, prefix it with an underscore: `_cx`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `h`
+   --> sotf-audio-player/app-gpui/tests/e2e/scenarios/player/library/album_card.rs:144:13
+    |
+144 |     let (w, h) = get_card_dimensions(ViewMode::Compact);
+    |             ^ help: if this is intentional, prefix it with an underscore: `_h`
+
+warning: unused variable: `playback_state`
+   --> sotf-audio-player/app-gpui/tests/e2e/scenarios/player/queue/playback_workflow.rs:261:9
+    |
+261 |     let playback_state = Rc::new(RefCell::new(PlaybackState::Stopped));
+    |         ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_playback_state`
+
+warning: unused variable: `plugin_count`
+   --> sotf-audio-player/app-gpui/tests/e2e/scenarios/plugin_rack/rack.rs:409:9
+    |
+409 |     let plugin_count = 3;
+    |         ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_plugin_count`
+
+warning: unused variable: `plugins`
+   --> sotf-audio-player/app-gpui/tests/e2e/scenarios/plugin_rack/rack.rs:657:9
+    |
+657 |     let plugins: Rc<RefCell<Vec<TestPlugin>>> = Rc::new(RefCell::new(vec![
+    |         ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_plugins`
+
+Some errors have detailed explanations: E0282, E0599, E0609, E0616.
+For more information about an error, try `rustc --explain E0282`.
+warning: `sotf-gpui` (test "e2e") generated 11 warnings
+error: could not compile `sotf-gpui` (test "e2e") due to 16 previous errors; 11 warnings emitted

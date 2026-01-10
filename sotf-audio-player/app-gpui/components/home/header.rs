@@ -14,11 +14,11 @@ impl PlayerView {
         let (theme, active_menu, scan_in_progress, scan_progress_tracks, translations) = {
             let state = self.state.read(cx);
             (
-                state.app.theme.clone(),
-                state.app.active_menu,
-                state.app.scan_in_progress,
-                state.app.scan_progress_tracks,
-                state.app.translations.clone(),
+                state.app.ui_state.theme.clone(),
+                state.app.ui_state.active_menu,
+                state.app.library_state.scan_in_progress,
+                state.app.library_state.scan_progress_tracks,
+                state.app.ui_state.translations.clone(),
             )
         };
 
@@ -79,7 +79,7 @@ impl PlayerView {
     pub(crate) fn render_menu_dropdowns(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let (theme, active_menu) = {
             let state = self.state.read(cx);
-            (state.app.theme.clone(), state.app.active_menu)
+            (state.app.ui_state.theme.clone(), state.app.ui_state.active_menu)
         };
 
         div()
@@ -93,7 +93,7 @@ impl PlayerView {
                     MouseButton::Left,
                     cx.listener(|view, _: &MouseDownEvent, _window, cx| {
                         view.state.update(cx, |state, _cx| {
-                            state.app.active_menu = ActiveMenu::None;
+                            state.app.ui_state.active_menu = ActiveMenu::None;
                         });
                         cx.notify();
                     }),
@@ -126,10 +126,10 @@ impl PlayerView {
             MouseButton::Left,
             cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                 view.state.update(cx, |state, _cx| {
-                    if state.app.active_menu == menu_id {
-                        state.app.active_menu = ActiveMenu::None;
+                    if state.app.ui_state.active_menu == menu_id {
+                        state.app.ui_state.active_menu = ActiveMenu::None;
                     } else {
-                        state.app.active_menu = menu_id;
+                        state.app.ui_state.active_menu = menu_id;
                     }
                 });
                 cx.notify();
@@ -141,7 +141,7 @@ impl PlayerView {
     fn render_file_dropdown(&self, theme: Theme, cx: &mut Context<Self>) -> impl IntoElement {
         // Create a weak reference to self for the callback
         let state = self.state.clone();
-        let translations = self.state.read(cx).app.translations.clone();
+        let translations = self.state.read(cx).app.ui_state.translations.clone();
 
         Menu::new(
             "file-menu",
@@ -156,12 +156,12 @@ impl PlayerView {
         .theme(theme.to_menu_theme())
         .on_select(move |id, window, cx| {
             state.update(cx, |state, _cx| {
-                state.app.active_menu = ActiveMenu::None;
+                state.app.ui_state.active_menu = ActiveMenu::None;
             });
             match id.as_ref() {
                 "settings" => {
                     state.update(cx, |state, _cx| {
-                        state.app.current_screen = Screen::Settings;
+                        state.app.ui_state.current_screen = Screen::Settings;
                     });
                 }
                 "quit" => {
@@ -180,7 +180,7 @@ impl PlayerView {
     /// Render View menu dropdown
     fn render_show_dropdown(&self, theme: Theme, cx: &mut Context<Self>) -> impl IntoElement {
         let app_state = self.state.read(cx);
-        let translations = app_state.app.translations.clone();
+        let translations = app_state.app.ui_state.translations.clone();
         let _ = app_state;
 
         let state = self.state.clone();
@@ -203,16 +203,16 @@ impl PlayerView {
         .theme(theme.to_menu_theme())
         .on_select(move |id, _window, cx| {
             state.update(cx, |state, _cx| {
-                state.app.active_menu = ActiveMenu::None;
+                state.app.ui_state.active_menu = ActiveMenu::None;
                 match id.as_ref() {
-                    "studio" => state.app.current_screen = Screen::Studio,
-                    "recording" => state.app.current_screen = Screen::Recording,
-                    "roomeq" => state.app.current_screen = Screen::RoomEq,
-                    "headphoneeq" => state.app.current_screen = Screen::HeadphoneEq,
-                    "spinorama" => state.app.current_screen = Screen::Spinorama,
-                    "library" => state.app.current_screen = Screen::Library,
-                    "queue" => state.app.current_screen = Screen::Queue,
-                    "settings" => state.app.current_screen = Screen::Settings,
+                    "studio" => state.app.ui_state.current_screen = Screen::Studio,
+                    "recording" => state.app.ui_state.current_screen = Screen::Recording,
+                    "roomeq" => state.app.ui_state.current_screen = Screen::RoomEq,
+                    "headphoneeq" => state.app.ui_state.current_screen = Screen::HeadphoneEq,
+                    "spinorama" => state.app.ui_state.current_screen = Screen::Spinorama,
+                    "library" => state.app.ui_state.current_screen = Screen::Library,
+                    "queue" => state.app.ui_state.current_screen = Screen::Queue,
+                    "settings" => state.app.ui_state.current_screen = Screen::Settings,
                     _ => {}
                 }
             });
@@ -226,7 +226,7 @@ impl PlayerView {
     /// Render Help menu dropdown
     fn render_help_dropdown(&self, theme: Theme, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.clone();
-        let translations = self.state.read(cx).app.translations.clone();
+        let translations = self.state.read(cx).app.ui_state.translations.clone();
 
         Menu::new(
             "help-menu",
@@ -239,13 +239,13 @@ impl PlayerView {
         .theme(theme.to_menu_theme())
         .on_select(move |id, _window, cx| {
             state.update(cx, |state, _cx| {
-                state.app.active_menu = ActiveMenu::None;
+                state.app.ui_state.active_menu = ActiveMenu::None;
                 match id.as_ref() {
                     "shortcuts" => {
-                        state.app.input_mode = crate::app::InputMode::KeyboardShortcuts;
+                        state.app.ui_state.input_mode = crate::app::InputMode::KeyboardShortcuts;
                     }
                     "about" => {
-                        state.app.input_mode = crate::app::InputMode::About;
+                        state.app.ui_state.input_mode = crate::app::InputMode::About;
                     }
                     _ => {}
                 }
@@ -262,10 +262,10 @@ impl PlayerView {
         let (theme, layout_mode, current_screen, translations) = {
             let state = self.state.read(cx);
             (
-                state.app.theme.clone(),
-                state.app.layout_mode,
-                state.app.current_screen,
-                state.app.translations.clone(),
+                state.app.ui_state.theme.clone(),
+                state.app.ui_state.layout_mode,
+                state.app.ui_state.current_screen,
+                state.app.ui_state.translations.clone(),
             )
         };
 
@@ -332,7 +332,7 @@ impl PlayerView {
                         })
                         .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
                             entity_clone.update(cx, |state, _cx| {
-                                state.app.current_screen = screen_variant;
+                                state.app.ui_state.current_screen = screen_variant;
                             });
                         })
                         .child(label);

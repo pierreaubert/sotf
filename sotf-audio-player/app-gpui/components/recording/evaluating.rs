@@ -35,7 +35,7 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
 
         VStack::new()
             .spacing(StackSpacing::Lg)
@@ -66,7 +66,7 @@ impl PlayerView {
     /// Render plot controls (channel selector, smoothing)
     fn render_plot_controls(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.recording_state;
 
         let selected_channel = recording_state.plot_selected_channel;
@@ -293,7 +293,7 @@ impl PlayerView {
     /// Render magnitude plot
     fn render_magnitude_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let smoothing = state.app.recording_state.plot_smoothing;
 
         let results = self.get_filtered_results(cx);
@@ -320,7 +320,7 @@ impl PlayerView {
     /// Render phase plot
     fn render_phase_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let smoothing = state.app.recording_state.plot_smoothing;
 
         let results = self.get_filtered_results(cx);
@@ -347,7 +347,7 @@ impl PlayerView {
     /// Render group delay plot
     fn render_group_delay_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let smoothing = state.app.recording_state.plot_smoothing;
 
         let results = self.get_filtered_results(cx);
@@ -374,7 +374,7 @@ impl PlayerView {
     /// Render impulse response plot
     fn render_impulse_response_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
 
         let results = self.get_filtered_results(cx);
         let has_results = !results.is_empty();
@@ -1205,7 +1205,7 @@ impl PlayerView {
     /// Render a summary of recorded channels
     fn render_channel_summary(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.recording_state;
 
         let recorded_count = recording_state

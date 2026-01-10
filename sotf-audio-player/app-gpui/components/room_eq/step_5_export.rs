@@ -6,10 +6,10 @@ use gpui_ui_kit::{Button, ButtonVariant, Card, StackSpacing, Text, TextSize, Tex
 impl PlayerView {
     pub(crate) fn render_room_eq_export(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let has_eq_in_rack = state
             .app
-            .plugin_chain
+            .plugin_state.plugin_chain
             .find_plugin_index(&sotf_audio_player::PluginType::EQ)
             .is_some();
 
@@ -178,7 +178,7 @@ impl PlayerView {
         // Get the current plugin chain
         let plugin_chain = {
             let state = self.state.read(cx);
-            state.app.plugin_chain.clone()
+            state.app.plugin_state.plugin_chain.clone()
         };
 
         let state_entity = self.state.clone();
@@ -210,7 +210,7 @@ impl PlayerView {
                         let _ = state_entity.update(cx, |state, _| {
                             state.app.room_eq_state.status_message =
                                 format!("Backup saved to {}", file_path.display());
-                            state.app.toast_message =
+                            state.app.ui_state.toast_message =
                                 Some(crate::app::ToastMessage::success("Rack backup saved"));
                         });
                     }
@@ -299,7 +299,7 @@ impl PlayerView {
 
         // Update the plugin chain
         self.state.update(cx, |state, _| {
-            let plugin_chain = &mut state.app.plugin_chain;
+            let plugin_chain = &mut state.app.plugin_state.plugin_chain;
 
             // Check if there's an existing EQ plugin
             if let Some(eq_idx) = plugin_chain.find_plugin_index(&PluginType::EQ) {
@@ -333,10 +333,10 @@ impl PlayerView {
             }
 
             // Mark that plugin chain was modified and needs sync
-            state.app.plugin_chain_modified = true;
-            state.app.pending_plugin_update = Some(crate::app::types::PluginUpdateType::Structural);
+            state.app.plugin_state.plugin_chain_modified = true;
+            state.app.plugin_state.pending_plugin_update = Some(crate::app::types::PluginUpdateType::Structural);
             state.app.room_eq_state.status_message = "Room EQ applied to player!".to_string();
-            state.app.toast_message = Some(crate::app::ToastMessage::success(
+            state.app.ui_state.toast_message = Some(crate::app::ToastMessage::success(
                 "Room EQ applied successfully",
             ));
         });

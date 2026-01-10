@@ -1058,3 +1058,273 @@ fn test_add_and_remove_eq_band_roundtrip() {
     assert!((filters[0].q - 1.5).abs() < 0.001);
     assert!((filters[0].gain_db - 2.0).abs() < 0.001);
 }
+
+// ============================================================================
+// EQ COORDINATE CONVERSION TESTS (mirrored from ui_eq.rs)
+// ============================================================================
+
+// Constants matching ui_eq.rs
+const MIN_FREQ: f64 = 20.0;
+const MAX_FREQ: f64 = 20000.0;
+const MIN_GAIN_DB: f64 = -24.0;
+const MAX_GAIN_DB: f64 = 24.0;
+const CHART_LEFT_MARGIN: f32 = 40.0;
+const CHART_TOP_MARGIN: f32 = 20.0;
+const CHART_BOTTOM_MARGIN: f32 = 30.0;
+const CHART_HEIGHT: f32 = 300.0;
+const Q_BAR_MIN_WIDTH: f32 = 40.0;
+const Q_BAR_MAX_WIDTH: f32 = 100.0;
+const Q_MIN: f64 = 0.1;
+const Q_MAX: f64 = 10.0;
+
+// Mirrored coordinate conversion functions
+fn freq_to_x(freq: f64, plot_width: f32) -> f32 {
+    let log_min = MIN_FREQ.ln();
+    let log_max = MAX_FREQ.ln();
+    let log_freq = freq.clamp(MIN_FREQ, MAX_FREQ).ln();
+    let t = ((log_freq - log_min) / (log_max - log_min)) as f32;
+    CHART_LEFT_MARGIN + t * plot_width
+}
+
+fn x_to_freq(x: f32, plot_width: f32) -> f64 {
+    let t = ((x - CHART_LEFT_MARGIN) / plot_width).clamp(0.0, 1.0) as f64;
+    let log_min = MIN_FREQ.ln();
+    let log_max = MAX_FREQ.ln();
+    (log_min + t * (log_max - log_min)).exp()
+}
+
+fn gain_to_y(gain: f64) -> f32 {
+    let plot_height = CHART_HEIGHT - CHART_TOP_MARGIN - CHART_BOTTOM_MARGIN;
+    let t = ((MAX_GAIN_DB - gain) / (MAX_GAIN_DB - MIN_GAIN_DB)) as f32;
+    CHART_TOP_MARGIN + t * plot_height
+}
+
+fn y_to_gain(y: f32) -> f64 {
+    let plot_height = CHART_HEIGHT - CHART_TOP_MARGIN - CHART_BOTTOM_MARGIN;
+    let t = ((y - CHART_TOP_MARGIN) / plot_height).clamp(0.0, 1.0) as f64;
+    MAX_GAIN_DB - t * (MAX_GAIN_DB - MIN_GAIN_DB)
+}
+
+fn q_to_bar_width(q: f64) -> f32 {
+    let t = ((q - Q_MIN) / (Q_MAX - Q_MIN)).clamp(0.0, 1.0) as f32;
+    Q_BAR_MAX_WIDTH - t * (Q_BAR_MAX_WIDTH - Q_BAR_MIN_WIDTH)
+}
+
+fn drag_delta_to_q_change(delta_px: f32) -> f64 {
+    let scale = (Q_MAX - Q_MIN) / 60.0;
+    delta_px as f64 * scale
+}
+
+#[test]
+fn test_freq_x_roundtrip() {
+    let plot_width = 500.0;
+    let test_freqs = [20.0, 100.0, 1000.0, 10000.0, 20000.0];
+
+    for &freq in &test_freqs {
+        let x = freq_to_x(freq, plot_width);
+        let recovered_freq = x_to_freq(x, plot_width);
+        let rel_error = (recovered_freq - freq).abs() / freq;
+        assert!(
+            rel_error < 0.001,
+            "freq_to_x/x_to_freq roundtrip failed for freq={}: got {}, error={}",
+            freq,
+            recovered_freq,
+            rel_error
+        );
+    }
+}
+
+#[test]
+fn test_gain_y_roundtrip() {
+    let test_gains = [-24.0, -12.0, 0.0, 12.0, 24.0];
+
+    for &gain in &test_gains {
+        let y = gain_to_y(gain);
+        let recovered_gain = y_to_gain(y);
+        let abs_error = (recovered_gain - gain).abs();
+        assert!(
+            abs_error < 0.01,
+            "gain_to_y/y_to_gain roundtrip failed for gain={}: got {}, error={}",
+            gain,
+            recovered_gain,
+            abs_error
+        );
+    }
+}
+
+#[test]
+fn test_freq_to_x_boundaries() {
+    let plot_width = 500.0;
+
+    // MIN_FREQ should map to left margin
+    let x_min = freq_to_x(MIN_FREQ, plot_width);
+    assert!(
+        (x_min - CHART_LEFT_MARGIN).abs() < 0.01,
+        "MIN_FREQ should map to left margin: got {} expected {}",
+        x_min,
+        CHART_LEFT_MARGIN
+    );
+
+    // MAX_FREQ should map to left margin + plot_width
+    let x_max = freq_to_x(MAX_FREQ, plot_width);
+    let expected_max = CHART_LEFT_MARGIN + plot_width;
+    assert!(
+        (x_max - expected_max).abs() < 0.01,
+        "MAX_FREQ should map to right edge: got {} expected {}",
+        x_max,
+        expected_max
+    );
+}
+
+#[test]
+fn test_gain_to_y_boundaries() {
+    let plot_height = CHART_HEIGHT - CHART_TOP_MARGIN - CHART_BOTTOM_MARGIN;
+
+    // MAX_GAIN_DB should map to top margin
+    let y_max = gain_to_y(MAX_GAIN_DB);
+    assert!(
+        (y_max - CHART_TOP_MARGIN).abs() < 0.01,
+        "MAX_GAIN_DB should map to top margin: got {} expected {}",
+        y_max,
+        CHART_TOP_MARGIN
+    );
+
+    // MIN_GAIN_DB should map to top margin + plot_height
+    let y_min = gain_to_y(MIN_GAIN_DB);
+    let expected_min = CHART_TOP_MARGIN + plot_height;
+    assert!(
+        (y_min - expected_min).abs() < 0.01,
+        "MIN_GAIN_DB should map to bottom edge: got {} expected {}",
+        y_min,
+        expected_min
+    );
+
+    // 0 dB should be at vertical center
+    let y_zero = gain_to_y(0.0);
+    let expected_center = CHART_TOP_MARGIN + plot_height / 2.0;
+    assert!(
+        (y_zero - expected_center).abs() < 0.01,
+        "0 dB should map to vertical center: got {} expected {}",
+        y_zero,
+        expected_center
+    );
+}
+
+#[test]
+fn test_x_to_freq_clamping() {
+    let plot_width = 500.0;
+
+    // X before left margin should clamp to MIN_FREQ
+    let freq_before = x_to_freq(0.0, plot_width);
+    assert!(
+        (freq_before - MIN_FREQ).abs() < 0.01,
+        "x before margin should clamp to MIN_FREQ: got {}",
+        freq_before
+    );
+
+    // X after right edge should clamp to MAX_FREQ
+    let freq_after = x_to_freq(CHART_LEFT_MARGIN + plot_width + 100.0, plot_width);
+    assert!(
+        (freq_after - MAX_FREQ).abs() < 0.01,
+        "x after right edge should clamp to MAX_FREQ: got {}",
+        freq_after
+    );
+}
+
+#[test]
+fn test_y_to_gain_clamping() {
+    // Y before top margin should clamp to MAX_GAIN_DB
+    let gain_above = y_to_gain(0.0);
+    assert!(
+        (gain_above - MAX_GAIN_DB).abs() < 0.01,
+        "y above margin should clamp to MAX_GAIN_DB: got {}",
+        gain_above
+    );
+
+    // Y after bottom edge should clamp to MIN_GAIN_DB
+    let gain_below = y_to_gain(CHART_HEIGHT + 100.0);
+    assert!(
+        (gain_below - MIN_GAIN_DB).abs() < 0.01,
+        "y below bottom should clamp to MIN_GAIN_DB: got {}",
+        gain_below
+    );
+}
+
+#[test]
+fn test_q_to_bar_width_conversion() {
+    // Q_MIN should give maximum width
+    let width_at_min_q = q_to_bar_width(Q_MIN);
+    assert!(
+        (width_at_min_q - Q_BAR_MAX_WIDTH).abs() < 0.01,
+        "Q_MIN should give max width: got {} expected {}",
+        width_at_min_q,
+        Q_BAR_MAX_WIDTH
+    );
+
+    // Q_MAX should give minimum width
+    let width_at_max_q = q_to_bar_width(Q_MAX);
+    assert!(
+        (width_at_max_q - Q_BAR_MIN_WIDTH).abs() < 0.01,
+        "Q_MAX should give min width: got {} expected {}",
+        width_at_max_q,
+        Q_BAR_MIN_WIDTH
+    );
+
+    // Mid-Q should give mid-width
+    let mid_q = (Q_MIN + Q_MAX) / 2.0;
+    let mid_width = (Q_BAR_MIN_WIDTH + Q_BAR_MAX_WIDTH) / 2.0;
+    let width_at_mid_q = q_to_bar_width(mid_q);
+    assert!(
+        (width_at_mid_q - mid_width).abs() < 1.0,
+        "Mid Q should give mid width: got {} expected ~{}",
+        width_at_mid_q,
+        mid_width
+    );
+}
+
+#[test]
+fn test_drag_delta_to_q_change_conversion() {
+    // Dragging 60px should change Q by the full range
+    let full_range_delta = 60.0;
+    let q_change = drag_delta_to_q_change(full_range_delta);
+    let expected_change = Q_MAX - Q_MIN;
+
+    assert!(
+        (q_change - expected_change).abs() < 0.01,
+        "60px drag should change Q by full range: got {} expected {}",
+        q_change,
+        expected_change
+    );
+
+    // Negative delta should decrease Q
+    let negative_change = drag_delta_to_q_change(-30.0);
+    assert!(
+        negative_change < 0.0,
+        "Negative drag should decrease Q: got {}",
+        negative_change
+    );
+}
+
+#[test]
+fn test_freq_logarithmic_scaling() {
+    let plot_width = 600.0;
+
+    // Each octave should span equal distance on the plot
+    let x_100 = freq_to_x(100.0, plot_width);
+    let x_200 = freq_to_x(200.0, plot_width);
+    let x_1000 = freq_to_x(1000.0, plot_width);
+    let x_2000 = freq_to_x(2000.0, plot_width);
+
+    let octave_width_low = x_200 - x_100;
+    let octave_width_high = x_2000 - x_1000;
+
+    // Octaves should be approximately equal width in log scale
+    let rel_diff = (octave_width_high - octave_width_low).abs() / octave_width_low;
+    assert!(
+        rel_diff < 0.01,
+        "Octave widths should be equal in log scale: low={} high={} diff={}",
+        octave_width_low,
+        octave_width_high,
+        rel_diff
+    );
+}

@@ -29,7 +29,7 @@ impl PlayerView {
     /// Main Room EQ screen entry point
     pub(crate) fn render_room_eq_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let current_step = state.app.room_eq_state.step;
 
         // Content for current step
@@ -60,8 +60,8 @@ impl PlayerView {
     /// Render the room EQ screen header with step indicators using WizardHeader
     fn render_room_eq_header(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
-        let theme_id = state.app.theme_id;
+        let theme = state.app.ui_state.theme.clone();
+        let theme_id = state.app.ui_state.theme_id;
         let current_step = state.app.room_eq_state.step;
         let can_go_next = self.room_eq_can_advance(cx);
         let is_busy = state.app.room_eq_state.is_optimizing();
@@ -126,7 +126,7 @@ impl PlayerView {
                             view.state
                                 .update(cx, |state, _| match state.app.room_eq_state.step {
                                     RoomEqStep::LoadData => {
-                                        state.app.current_screen = state.app.last_screen;
+                                        state.app.ui_state.current_screen = state.app.ui_state.last_screen;
                                     }
                                     _ => {
                                         if let Some(prev) = state.app.room_eq_state.step.previous()
@@ -152,7 +152,7 @@ impl PlayerView {
                             view.state
                                 .update(cx, |state, _| match state.app.room_eq_state.step {
                                     RoomEqStep::Export => {
-                                        state.app.current_screen = state.app.last_screen;
+                                        state.app.ui_state.current_screen = state.app.ui_state.last_screen;
                                     }
                                     _ => {
                                         if let Some(next) = state.app.room_eq_state.step.next() {
@@ -194,7 +194,7 @@ impl PlayerView {
                     .child(Icon::new(IconName::Home).color(text_muted))
                     .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
                         state_for_home.update(cx, |state, _cx| {
-                            state.app.current_screen = Screen::Library;
+                            state.app.ui_state.current_screen = Screen::Library;
                         });
                     }),
             )

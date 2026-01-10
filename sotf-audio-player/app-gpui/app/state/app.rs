@@ -5,28 +5,32 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use gpui::Entity;
-use gpui_ui_kit::workflow::{NodeId, WorkflowCanvas};
+use gpui_ui_kit::workflow::NodeId;
 use sotf_audio::devices::AudioDevice;
-use sotf_audio_player::{
-    ConnectionDrag, GraphSelection, LoudnessData, MusicLibrary, NodeDrag, Player, PluginChain,
-    PluginGraph, PluginType, SpectrumData,
-};
+use sotf_audio_player::Player;
 
-use crate::app::SettingsTab;
 use crate::app::types::ReplayGainMode;
 use crate::i18n::{Language, Translations};
 use crate::keybindings::KeymapPreset;
 use crate::theme::{Theme, ThemeId};
 
 use crate::app::types::{
-    ActiveMenu, ChannelFilter, ChannelGroup, ContextMenuState, HeadphoneEqState, InputMode,
-    LayoutMode, LibrarySortOrder, LibraryStats, MeasureState, MeterDisplayMode,
-    OptimizationUiState, PlaybackSource, PluginViewMode, QueueItem, RecordingState, RoomEqState,
-    Screen, SpinoramaEqState, ToastMessage,
+    ChannelGroup, HeadphoneEqState, InputMode,
+    LibraryStats, MeasureState, MeterDisplayMode, OptimizationUiState, PlaybackSource, QueueItem,
+    RecordingState, RoomEqState, SpinoramaEqState, ToastMessage,
 };
 
 use super::{LibraryState, PlaybackState, PluginState, UIState};
+use crate::app::manager::{Manager, ManagerError};
+use crate::app::state::library::LibraryEvent;
+use crate::components::plugins::editing::PluginEditingManager;
+use crate::components::plugins::level_meters::LevelMeterManager;
+
+/// Messages that can be dispatched to the App
+#[derive(Debug, Clone)]
+pub enum AppMessage {
+    Library(LibraryEvent),
+}
 
 /// Mapping between workflow NodeIds and plugin indices / special nodes
 #[derive(Clone, Default, Debug)]
@@ -56,19 +60,17 @@ pub struct DividerDragState {
 
 #[derive(Debug)]
 pub struct App {
-    pub library: MusicLibrary,
+    // Library state - now managed via library_state
     /// Cached library statistics (artists, tracks, genres, years, etc.)
     /// Call invalidate_library_stats() when library changes, get_library_stats() to access
     pub library_stats: LibraryStats,
     pub library_scanner: Option<sotf_audio_player::LibraryScanner>,
+
+    // Queue state
     pub queue: Vec<QueueItem>,
     pub expanded_queue_items: Vec<bool>, // Track which queue items are expanded
-    pub current_screen: Screen,
-    pub last_screen: Screen, // Track previous screen for Back/Close logic
-    pub input_mode: InputMode,
 
-    // UI state
-    pub search_query: String,
+    // Input buffers (text input state)
     pub directory_input: String,
     pub plugin_file_input: String, // For save/load plugin chain
     pub apo_file_input: String,    // For loading APO EQ files
@@ -83,73 +85,14 @@ pub struct App {
     pub speaker_export_format: String,
     pub speaker_opt_ui: OptimizationUiState, // UI state (dropdowns)
 
-    pub selected_album_index: usize,
+    // Selection indices
     pub selected_directory_index: usize,
     pub selected_queue_index: usize,
-    pub selected_plugin_index: usize,
     pub album_list_offset: usize,
-    pub toast_message: Option<ToastMessage>, // Enhanced toast notifications
 
     // Autocomplete state
     pub autocomplete_suggestions: Vec<String>,
     pub autocomplete_index: usize,
-
-    // Plugin preset selection
-    pub available_plugin_presets: Vec<String>, // List of preset filenames
-    pub selected_preset_index: usize,
-
-    // Library sort and filter
-    pub library_sort_order: LibrarySortOrder,
-    pub channel_filter: ChannelFilter,
-    // Selection filters for each sort mode (None = show selection UI)
-    pub selected_genre: Option<String>,
-    pub selected_decade: Option<(i32, i32)>, // Decade range (start, end) e.g., (2020, 2029)
-    pub selected_year: Option<i32>,
-    pub selected_artist_letter: Option<char>, // First letter filter for artists
-    pub selected_artist: Option<String>,
-    pub selected_composer_letter: Option<char>, // First letter filter for composers
-    pub selected_composer: Option<String>,
-    pub selected_album_letter: Option<char>,
-    pub selected_track_range: Option<(usize, usize)>, // (min, max) track count range
-
-    // Pagination for library
-    pub library_items_per_page: usize, // Items per page
-    pub library_columns: usize,        // Number of columns in grid
-
-    // Plugin system
-    pub plugin_chain: PluginChain,
-    pub plugin_chain_modified: bool, // Track if plugins changed since last save
-    /// Pending plugin update to sync to audio engine (None = no update needed)
-    pub pending_plugin_update: Option<crate::app::types::PluginUpdateType>,
-    pub editing_plugin_index: Option<usize>,
-    pub plugin_param_selection: usize, // Which parameter is selected in edit mode
-    pub selected_eq_band: usize,       // Currently selected EQ band for display (0-indexed)
-    pub matrix_selected_cell: Option<(usize, usize)>, // Currently selected matrix cell (input, output)
-
-    // Plugin graph system (alternative to linear plugin chain)
-    pub plugin_view_mode: PluginViewMode,
-    pub plugin_graph: Option<PluginGraph>,
-    pub graph_selection: GraphSelection,
-    pub graph_connection_drag: Option<ConnectionDrag>,
-    pub graph_node_drag: Option<NodeDrag>,
-
-    // Workflow canvas (for WorkflowCanvas from gpui-ui-kit)
-    pub workflow_canvas: Option<Entity<WorkflowCanvas>>,
-    pub workflow_node_mapping: Option<WorkflowNodeMapping>,
-    /// The node ID being edited in the plugin modal (if any)
-    pub editing_plugin_node: Option<gpui_ui_kit::workflow::NodeId>,
-
-    // Playback state
-    pub is_playing: bool,
-    pub current_queue_index: Option<usize>,
-    pub volume: f32,
-    pub muted: bool,
-    pub position_secs: f64,
-    pub duration_secs: f64,
-
-    // Loudness monitoring
-    pub input_loudness_info: Option<LoudnessData>,
-    pub loudness_info: Option<LoudnessData>,
 
     // Level meters
     pub level_meter_groups: Vec<ChannelGroup>,
@@ -162,10 +105,6 @@ pub struct App {
 
     // Spectrum analyzer
     pub spectrum_visible: bool,
-    pub spectrum_info: Option<SpectrumData>,
-
-    // Compressor data (for real-time gain reduction display)
-    pub compressor_info: Option<sotf_plugins::CompressorData>,
 
     // Audio devices
     // Audio devices
@@ -198,39 +137,10 @@ pub struct App {
     pub spinorama_eq_state: SpinoramaEqState,
 
     // Flags
-    pub should_quit: bool,
     pub needs_rescan: bool,
-
-    // Scan progress
-    pub scan_in_progress: bool,
-    pub scan_progress_tracks: usize,
-    pub scan_progress_albums: usize,
 
     // Scan progress modal (for library, bliss, waveform, replaygain scans)
     pub scan_progress_modal: Option<crate::app::types::ScanProgressModal>,
-
-    // Last loaded plugin preset name (for config persistence)
-    pub last_loaded_preset: Option<String>,
-
-    // Context menu state
-    pub context_menu: Option<ContextMenuState>,
-
-    // Theme and i18n
-    pub theme_id: ThemeId,
-    pub theme: Theme,
-    pub language: Language,
-    pub translations: Translations,
-
-    // Keybindings
-    pub keymap_preset: KeymapPreset,
-
-    // Menu state
-    pub active_menu: ActiveMenu,
-
-    // Layout state
-    pub layout_mode: LayoutMode,
-    pub window_height: f32,
-    pub window_width: f32,
 
     // Panel layout (resizable)
     pub queue_panel_ratio: f32, // Height ratio for Queue section in split view (Library on top, Queue on bottom)
@@ -247,18 +157,6 @@ pub struct App {
 
     // Scan progress for threaded scanning
     pub scan_total_files: usize,
-
-    // Device popup state
-    pub show_device_popup: bool,
-
-    // Studio menu state
-    pub show_studio_menu: bool,
-
-    // active settings tab
-    pub active_settings_tab: SettingsTab,
-
-    // Filter menu state in library view
-    pub filter_menu_open: bool,
 
     // Volume drag state
     pub is_dragging_volume: bool,
@@ -295,9 +193,6 @@ pub struct App {
     pub replay_gain_mode: ReplayGainMode,
     pub replay_gain_preamp: f32,
 
-    // Flag for closing studio after save
-    pub pending_studio_close: bool,
-
     // Plugin UI states
     pub upmixer_config_open: bool,
     pub spectrum_tilt_select_open: bool,
@@ -315,10 +210,6 @@ pub struct App {
     // Divider drag state
     pub dragging_divider: Option<DividerDragState>,
 
-    // Startup database check state
-    /// Whether we've performed the initial database check on startup
-    pub startup_db_check_done: bool,
-
     // Composed state structs (for better separation of concerns)
     /// Playback-related state
     pub playback: PlaybackState,
@@ -328,7 +219,12 @@ pub struct App {
     pub plugin_state: PluginState,
     /// UI-related state
     pub ui_state: UIState,
+    
+    /// Shared state across managers
+    pub shared_state: Arc<super::SharedState>,
 }
+
+/// GPUI-compatible state wrapper
 
 /// GPUI-compatible state wrapper
 pub struct AppState {
@@ -338,25 +234,11 @@ pub struct AppState {
 
 impl App {
     pub fn new() -> Self {
-        // Try to create library with database, fallback to simple library
-        let library = MusicLibrary::with_database().unwrap_or_else(|e| {
-            log::warn!(
-                "Failed to initialize database, using in-memory library: {}",
-                e
-            );
-            MusicLibrary::new()
-        });
-
         let mut app = Self {
-            library,
             library_stats: LibraryStats::default(),
             library_scanner: None,
             queue: Vec::new(),
             expanded_queue_items: Vec::new(),
-            current_screen: Screen::Library,
-            last_screen: Screen::Library,
-            input_mode: InputMode::Normal,
-            search_query: String::new(),
             directory_input: String::new(),
             plugin_file_input: String::new(),
             apo_file_input: String::new(),
@@ -374,62 +256,14 @@ impl App {
             selected_directory_index: 0,
             selected_queue_index: 0,
             album_list_offset: 0,
-            toast_message: None,
             autocomplete_suggestions: Vec::new(),
             autocomplete_index: 0,
-            available_plugin_presets: Vec::new(),
-            selected_preset_index: 0,
-            selected_album_index: 0,
-            selected_plugin_index: 0,
-            selected_eq_band: 0,
-            library_sort_order: LibrarySortOrder::Album,
-            channel_filter: ChannelFilter::All,
-            selected_genre: None,
-            selected_decade: None,
-            selected_year: None,
-            selected_artist_letter: None,
-            selected_artist: None,
-            selected_composer_letter: None,
-            selected_composer: None,
-            selected_album_letter: None,
-            selected_track_range: None,
-            library_items_per_page: 50, // Show 50 items per page
-            library_columns: 4,
-            plugin_chain: {
-                let mut chain = PluginChain::new();
-                // Add default analyzer plugins for LUFS and level meters
-                chain.add_plugin(&PluginType::LoudnessMonitor);
-                chain
-            },
-            plugin_chain_modified: false,
-            pending_plugin_update: None,
-            editing_plugin_index: None,
-            plugin_param_selection: 0,
-            matrix_selected_cell: None,
-            plugin_view_mode: PluginViewMode::Rack,
-            plugin_graph: None,
-            graph_selection: GraphSelection::default(),
-            graph_connection_drag: None,
-            graph_node_drag: None,
-            workflow_canvas: None,
-            workflow_node_mapping: None,
-            editing_plugin_node: None,
-            is_playing: false,
-            current_queue_index: None,
-            volume: 0.1, // Start at 10% volume
-            muted: false,
-            position_secs: 0.0,
-            duration_secs: 0.0,
-            input_loudness_info: None,
-            loudness_info: None,
             level_meter_groups: Vec::new(),
             selected_level_meter_group: 0,
             level_meter_control_selection: 0,
             level_meter_last_channel_count: 0,
             level_meter_last_speaker_config: None,
             spectrum_visible: false,
-            spectrum_info: None,
-            compressor_info: None,
             output_devices: Vec::new(),
             selected_output_device_index: 0,
             current_output_device_name: None,
@@ -443,23 +277,8 @@ impl App {
             room_eq_applied_plugins: None,
             headphone_eq_state: HeadphoneEqState::default(),
             spinorama_eq_state: SpinoramaEqState::default(),
-            should_quit: false,
             needs_rescan: false,
-            scan_in_progress: false,
-            scan_progress_tracks: 0,
-            scan_progress_albums: 0,
             scan_progress_modal: None,
-            last_loaded_preset: None,
-            context_menu: None,
-            theme_id: ThemeId::default(),
-            theme: Theme::from_id(ThemeId::default()),
-            language: Language::default(),
-            translations: Translations::for_language(Language::default()),
-            keymap_preset: KeymapPreset::default(),
-            active_menu: ActiveMenu::None,
-            layout_mode: LayoutMode::Compact,
-            window_height: 600.0,
-            window_width: 800.0,
             queue_panel_ratio: 0.35,
             queue_list_ratio: 0.30,
             meters_panel_ratio: 0.25,
@@ -472,10 +291,6 @@ impl App {
             is_dragging_lufs_divider: false,
             divider_click_start: None,
             scan_total_files: 0,
-            show_device_popup: false,
-            show_studio_menu: false,
-            active_settings_tab: SettingsTab::Library,
-            filter_menu_open: false,
             is_dragging_volume: false,
             volume_drag_start_y: None,
             volume_drag_start_value: 0.0,
@@ -495,7 +310,6 @@ impl App {
             replay_gain_enabled: true,
             replay_gain_mode: ReplayGainMode::Track,
             replay_gain_preamp: 0.0,
-            pending_studio_close: false,
             upmixer_config_open: false,
             spectrum_tilt_select_open: false,
             spectrum_reference_select_open: false,
@@ -505,12 +319,12 @@ impl App {
             input_meter_width: 80.0,   // Default width for input meter panel
             output_meter_width: 140.0, // Default width for output meter panel
             dragging_divider: None,
-            startup_db_check_done: false,
             // Initialize composed state structs
             playback: PlaybackState::new(),
             library_state: LibraryState::new(),
             plugin_state: PluginState::new(),
             ui_state: UIState::new(),
+            shared_state: Arc::new(super::SharedState::new()),
         };
 
         // Initialize default stereo meter layout so meters are visible before audio starts
@@ -519,9 +333,16 @@ impl App {
         app
     }
 
+    /// Dispatch a message to the appropriate manager
+    pub fn dispatch(&mut self, msg: AppMessage) -> Result<(), ManagerError> {
+        match msg {
+            AppMessage::Library(event) => self.library_state.handle_event(event),
+        }
+    }
+
     /// Load library from database if available
     pub fn load_library_from_database(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        self.library.load_from_database()?;
+        self.library_state.library.load_from_database()?;
         // Update last scan times for directories from database
         self.update_directory_scan_times();
         // Invalidate cached stats since library content changed
@@ -534,10 +355,10 @@ impl App {
     /// Shows appropriate modal/toast based on database state.
     pub fn check_library_on_startup(&mut self) {
         // Only run once
-        if self.startup_db_check_done {
+        if self.ui_state.startup_db_check_done {
             return;
         }
-        self.startup_db_check_done = true;
+        self.ui_state.startup_db_check_done = true;
 
         // Try to load from database
         if let Err(e) = self.load_library_from_database() {
@@ -545,20 +366,20 @@ impl App {
         }
 
         // Check if library is empty
-        if self.library.albums.is_empty() {
+        if self.library_state.library.albums.is_empty() {
             // Show modal prompting to scan for music
-            self.input_mode = InputMode::EmptyLibraryPrompt;
+            self.ui_state.input_mode = InputMode::EmptyLibraryPrompt;
         } else {
             // Show toast with album count
-            let album_count = self.library.albums.len();
+            let album_count = self.library_state.library.albums.len();
             let message = format!("Loaded {} albums from database", album_count);
-            self.toast_message = Some(ToastMessage::info(message));
+            self.ui_state.toast_message = Some(ToastMessage::info(message));
         }
     }
 
     /// Update directory scan times from database
     fn update_directory_scan_times(&mut self) {
-        self.library.update_directory_scan_times();
+        self.library_state.library.update_directory_scan_times();
     }
 
     /// Select the best default sample rate from available rates.
@@ -635,18 +456,18 @@ impl App {
         let config = Config::load()?;
 
         // Restore directories
-        self.library.directories = config.directories;
+        self.library_state.library.directories = config.directories;
 
         // Restore theme
-        self.theme_id = config.theme;
-        self.theme = Theme::from_id(config.theme);
+        self.ui_state.theme_id = config.theme;
+        self.ui_state.theme = Theme::from_id(config.theme);
 
         // Restore language
-        self.language = config.language;
-        self.translations = Translations::for_language(config.language);
+        self.ui_state.language = config.language;
+        self.ui_state.translations = Translations::for_language(config.language);
 
         // Restore keymap preset
-        self.keymap_preset = config.keymap_preset;
+        self.ui_state.keymap_preset = config.keymap_preset;
 
         // Restore panel layout
         self.queue_panel_ratio = config.panel_layout.queue_ratio;
@@ -655,8 +476,8 @@ impl App {
         self.lufs_panel_ratio = config.panel_layout.lufs_ratio;
 
         // Restore volume and muted state
-        // self.volume = config.volume; // Always start at default (10%) per requirement
-        self.muted = config.muted;
+        // self.playback.volume = config.volume; // Always start at default (10%) per requirement
+        self.playback.muted = config.muted;
 
         // Restore recording config
         if !config.recording_config.playback.device_name.is_empty() {
@@ -684,15 +505,15 @@ impl App {
 
         // Restore plugin presets path if we had a last loaded preset
         if let Some(preset_name) = config.last_loaded_plugin_preset {
-            self.last_loaded_preset = Some(preset_name.clone());
+            self.plugin_state.last_loaded_preset = Some(preset_name.clone());
             // Load the preset file
             let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() else {
                 log::warn!("Could not find presets directory, skipping preset restore");
                 return Ok(());
             };
-            match self.plugin_chain.load_from_file(&presets_dir, &preset_name) {
+            match self.plugin_state.plugin_chain.load_from_file(&presets_dir, &preset_name) {
                 Ok(_) => {
-                    self.pending_plugin_update =
+                    self.plugin_state.pending_plugin_update =
                         Some(crate::app::types::PluginUpdateType::Structural);
                     self.sync_spectrum_visible();
                     log::info!("Restored plugin preset: {}", preset_name);
@@ -717,11 +538,11 @@ impl App {
     ) -> Result<(), Box<dyn std::error::Error>> {
         use crate::config::{Config, PanelLayout};
         let config = Config {
-            directories: self.library.directories.clone(),
-            last_loaded_plugin_preset: self.last_loaded_preset.clone(),
-            theme: self.theme_id,
-            language: self.language,
-            keymap_preset: self.keymap_preset,
+            directories: self.library_state.library.directories.clone(),
+            last_loaded_plugin_preset: self.plugin_state.last_loaded_preset.clone(),
+            theme: self.ui_state.theme_id,
+            language: self.ui_state.language,
+            keymap_preset: self.ui_state.keymap_preset,
             panel_layout: PanelLayout {
                 queue_ratio: self.queue_panel_ratio,
                 meters_ratio: self.meters_panel_ratio,
@@ -735,8 +556,8 @@ impl App {
                     .and_then(|c| Some(c.window_geometry))
                     .unwrap_or_default()
             }),
-            volume: self.volume,
-            muted: self.muted,
+            volume: self.playback.volume,
+            muted: self.playback.muted,
             recording_config: crate::app::config::RecordingConfigState {
                 playback: self.recording_state.playback_config.clone(),
                 recording: self.recording_state.recording_config.clone(),
@@ -761,50 +582,50 @@ impl App {
 
     /// Check and dismiss expired toast messages
     pub fn update_toast(&mut self) {
-        if let Some(ref toast) = self.toast_message {
+        if let Some(ref toast) = self.ui_state.toast_message {
             if toast.should_dismiss() {
-                self.toast_message = None;
+                self.ui_state.toast_message = None;
             }
         }
     }
 
     /// Dismiss the current toast message manually
     pub fn dismiss_toast(&mut self) {
-        self.toast_message = None;
+        self.ui_state.toast_message = None;
     }
 
     /// Cycle to the next theme
     pub fn next_theme(&mut self) {
-        self.theme_id = self.theme_id.next();
-        self.theme = Theme::from_id(self.theme_id);
+        self.ui_state.theme_id = self.ui_state.theme_id.next();
+        self.ui_state.theme = Theme::from_id(self.ui_state.theme_id);
     }
 
     /// Cycle to the next language
     pub fn next_language(&mut self) {
-        self.language = self.language.next();
-        self.translations = Translations::for_language(self.language);
+        self.ui_state.language = self.ui_state.language.next();
+        self.ui_state.translations = Translations::for_language(self.ui_state.language);
     }
 
     /// Set a specific theme
     pub fn set_theme(&mut self, theme_id: ThemeId) {
-        self.theme_id = theme_id;
-        self.theme = Theme::from_id(theme_id);
+        self.ui_state.theme_id = theme_id;
+        self.ui_state.theme = Theme::from_id(theme_id);
     }
 
     /// Set a specific language
     pub fn set_language(&mut self, language: Language) {
-        self.language = language;
-        self.translations = Translations::for_language(language);
+        self.ui_state.language = language;
+        self.ui_state.translations = Translations::for_language(language);
     }
 
     /// Cycle to the next keymap preset
     pub fn next_keymap_preset(&mut self) {
-        self.keymap_preset = self.keymap_preset.next();
+        self.ui_state.keymap_preset = self.ui_state.keymap_preset.next();
     }
 
     /// Set a specific keymap preset
     pub fn set_keymap_preset(&mut self, preset: KeymapPreset) {
-        self.keymap_preset = preset;
+        self.ui_state.keymap_preset = preset;
     }
 
     /// Invalidate cached library statistics. Call this when the library changes
@@ -848,7 +669,7 @@ impl App {
         let mut surround71_count = 0usize;
         let mut surround_plus_count = 0usize;
 
-        for album in &self.library.albums {
+        for album in &self.library_state.library.albums {
             // Count channels
             if let Some(channels) = album.uniform_channel_count() {
                 match channels {
@@ -1062,13 +883,13 @@ impl App {
 
     /// Calculate the width of the queue list panel.
     fn queue_list_width(&self) -> f32 {
-        self.window_width * self.queue_list_ratio
+        self.ui_state.window_width * self.queue_list_ratio
     }
 
     /// Calculate the width of the center panel (remaining after queue list and meters).
     fn center_panel_width(&self) -> f32 {
         let center_ratio = 1.0 - self.queue_list_ratio - self.meters_panel_ratio;
-        self.window_width * center_ratio
+        self.ui_state.window_width * center_ratio
     }
 
     /// Maximum characters for queue list album title (text_sm ~7px).

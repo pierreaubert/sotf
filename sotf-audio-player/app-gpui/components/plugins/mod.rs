@@ -19,7 +19,7 @@ mod ui_binaural;
 mod ui_compressor;
 mod ui_convolution;
 mod ui_denoiser;
-mod ui_eq;
+pub mod ui_eq;
 mod ui_expander;
 mod ui_gain;
 mod ui_gate;

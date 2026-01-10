@@ -161,9 +161,9 @@ const BREAKPOINT_HIDE_STUDIO_DEVICE: f32 = 400.0;
 impl PlayerView {
     pub(crate) fn render_footer(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = &state.app.theme;
-        let translations = state.app.translations.clone();
-        let window_width = state.app.window_width;
+        let theme = &state.app.ui_state.theme;
+        let translations = state.app.ui_state.translations.clone();
+        let window_width = state.app.ui_state.window_width;
 
         let bg_surface = theme.surface;
         let border_color = theme.border;
@@ -219,10 +219,10 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = &state.app.theme;
+        let theme = &state.app.ui_state.theme;
 
         // Get album art path from current queue item
-        let album_art_path = if let Some(queue_idx) = state.app.current_queue_index {
+        let album_art_path = if let Some(queue_idx) = state.app.playback.current_queue_index {
             if let Some(item) = state.app.queue.get(queue_idx) {
                 item.album.album_art_path.clone()
             } else {
@@ -275,7 +275,7 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = &state.app.theme;
+        let theme = &state.app.ui_state.theme;
         let no_track_label = translations.playback_no_track;
 
         // Check if we're in HAL input mode (macOS only)
@@ -303,7 +303,7 @@ impl PlayerView {
                 )
                 .child(div().text_xs().text_color(text_primary).child(format!(
                     "{} plugins active",
-                    state.app.plugin_chain.plugins().len()
+                    state.app.plugin_state.plugin_chain.plugins().len()
                 )))
                 .build()
                 .min_w(px(150.0))
@@ -311,7 +311,7 @@ impl PlayerView {
         }
 
         // Get current track info from queue
-        let (title, album_name, artist) = if let Some(queue_idx) = state.app.current_queue_index {
+        let (title, album_name, artist) = if let Some(queue_idx) = state.app.playback.current_queue_index {
             if let Some(item) = state.app.queue.get(queue_idx) {
                 let track_title = item
                     .current_track()
@@ -403,7 +403,7 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = &state.app.theme;
+        let theme = &state.app.ui_state.theme;
 
         // Check if we're in HAL mode - hide waveform/time display
         #[cfg(all(target_os = "macos", feature = "hal"))]
@@ -411,9 +411,9 @@ impl PlayerView {
         #[cfg(not(all(target_os = "macos", feature = "hal")))]
         let is_hal_mode = false;
 
-        let position_secs = state.app.position_secs;
-        let duration_secs = state.app.duration_secs;
-        let is_playing = state.app.is_playing;
+        let position_secs = state.app.playback.position_secs;
+        let duration_secs = state.app.playback.duration_secs;
+        let is_playing = state.app.playback.is_playing;
 
         // Format time as MM:SS
         let format_time = |secs: f64| -> String {
@@ -433,7 +433,7 @@ impl PlayerView {
         };
 
         // Get waveform data
-        let waveform = if let Some(queue_idx) = state.app.current_queue_index {
+        let waveform = if let Some(queue_idx) = state.app.playback.current_queue_index {
             if let Some(item) = state.app.queue.get(queue_idx) {
                 item.current_track().and_then(|t| t.waveform.clone())
             } else {
@@ -449,7 +449,7 @@ impl PlayerView {
 
         let theme_clone = {
             let state = self.state.read(cx);
-            state.app.theme.clone()
+            state.app.ui_state.theme.clone()
         };
 
         let bounds_ref = Rc::new(RefCell::new(None::<Bounds<Pixels>>));
@@ -495,8 +495,8 @@ impl PlayerView {
                             .id("transport-seek-back-wrapper")
                             .on_click(cx.listener(|view, _event: &ClickEvent, _window, cx| {
                                 view.state.update(cx, |state, _cx| {
-                                    let new_position = (state.app.position_secs - 30.0).max(0.0);
-                                    state.app.position_secs = new_position;
+                                    let new_position = (state.app.playback.position_secs - 30.0).max(0.0);
+                                    state.app.playback.position_secs = new_position;
                                     if let Err(e) = state.player.lock().seek(new_position) {
                                         log::error!("Failed to seek backward: {}", e);
                                     }
@@ -548,9 +548,9 @@ impl PlayerView {
                             .id("transport-seek-fwd-wrapper")
                             .on_click(cx.listener(|view, _event: &ClickEvent, _window, cx| {
                                 view.state.update(cx, |state, _cx| {
-                                    let max = state.app.duration_secs;
-                                    let new_position = (state.app.position_secs + 30.0).min(max);
-                                    state.app.position_secs = new_position;
+                                    let max = state.app.playback.duration_secs;
+                                    let new_position = (state.app.playback.position_secs + 30.0).min(max);
+                                    state.app.playback.position_secs = new_position;
                                     if let Err(e) = state.player.lock().seek(new_position) {
                                         log::error!("Failed to seek forward: {}", e);
                                     }
@@ -632,8 +632,8 @@ impl PlayerView {
 
                                                 view.state.update(cx, |state, _cx| {
                                                     let new_pos =
-                                                        state.app.duration_secs * ratio as f64;
-                                                    state.app.position_secs = new_pos;
+                                                        state.app.playback.duration_secs * ratio as f64;
+                                                    state.app.playback.position_secs = new_pos;
                                                     if let Err(e) =
                                                         state.player.lock().seek(new_pos)
                                                     {
@@ -707,7 +707,7 @@ impl PlayerView {
             theme_clone,
         ) = {
             let state = self.state.read(cx);
-            let theme = &state.app.theme;
+            let theme = &state.app.ui_state.theme;
             // Get device name and truncate to 7 characters
             let device_name = state
                 .app
@@ -720,11 +720,11 @@ impl PlayerView {
                 device_name
             };
             (
-                state.app.volume,
-                state.app.muted,
-                state.app.show_device_popup,
+                state.app.playback.volume,
+                state.app.playback.muted,
+                state.app.ui_state.show_device_popup,
                 truncated_device,
-                state.app.current_screen,
+                state.app.ui_state.current_screen,
                 theme.text_secondary,
                 theme.surface_hover,
                 theme.clone(),
@@ -763,7 +763,7 @@ impl PlayerView {
                             MouseButton::Left,
                             cx.listener(|view, _: &MouseUpEvent, _window, cx| {
                                 view.state.update(cx, |state, _cx| {
-                                    state.app.show_studio_menu = !state.app.show_studio_menu;
+                                    state.app.ui_state.show_studio_menu = !state.app.ui_state.show_studio_menu;
                                 });
                                 cx.notify();
                             }),
@@ -803,7 +803,7 @@ impl PlayerView {
                             MouseButton::Left,
                             cx.listener(|view, _: &MouseUpEvent, _window, cx| {
                                 view.state.update(cx, |state, _cx| {
-                                    state.app.show_device_popup = !state.app.show_device_popup;
+                                    state.app.ui_state.show_device_popup = !state.app.ui_state.show_device_popup;
                                 });
                                 cx.notify();
                             }),
@@ -835,7 +835,7 @@ impl PlayerView {
             .child(self.render_volume_button(volume, muted, theme_clone, cx))
             // Studio menu dropdown - shown when show_studio_menu is true
             .when(
-                self.state.read(cx).app.show_studio_menu && show_studio_device,
+                self.state.read(cx).app.ui_state.show_studio_menu && show_studio_device,
                 |el| el.child(self.render_studio_menu(translations, cx)),
             )
     }
@@ -851,7 +851,7 @@ impl PlayerView {
             (
                 state.app.output_devices.clone(),
                 state.app.selected_output_device_index,
-                state.app.theme.clone(),
+                state.app.ui_state.theme.clone(),
             )
         };
 
@@ -950,7 +950,7 @@ impl PlayerView {
                             view.state.update(cx, |state, _cx| {
                                 state.app.selected_output_device_index = idx;
                                 state.app.current_output_device_name = Some(device_name.clone());
-                                state.app.show_device_popup = false;
+                                state.app.ui_state.show_device_popup = false;
 
                                 // Apply the device selection to the player
                                 let mut player = state.player.lock();
@@ -974,7 +974,7 @@ impl PlayerView {
 
     /// Render the device popup overlay (click outside to close)
     pub(crate) fn render_device_popup_overlay(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let show_popup = self.state.read(cx).app.show_device_popup;
+        let show_popup = self.state.read(cx).app.ui_state.show_device_popup;
 
         div().absolute().inset_0().when(show_popup, |el| {
             // Use mouse_up so popup items can handle mouse_down first
@@ -982,7 +982,7 @@ impl PlayerView {
                 MouseButton::Left,
                 cx.listener(|view, _: &MouseUpEvent, _window, cx| {
                     view.state.update(cx, |state, _cx| {
-                        state.app.show_device_popup = false;
+                        state.app.ui_state.show_device_popup = false;
                     });
                     cx.notify();
                 }),
@@ -992,14 +992,14 @@ impl PlayerView {
 
     /// Render the studio menu overlay (click outside to close)
     pub(crate) fn render_studio_menu_overlay(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let show_menu = self.state.read(cx).app.show_studio_menu;
+        let show_menu = self.state.read(cx).app.ui_state.show_studio_menu;
 
         div().absolute().inset_0().when(show_menu, |el| {
             el.on_mouse_up(
                 MouseButton::Left,
                 cx.listener(|view, _: &MouseUpEvent, _window, cx| {
                     view.state.update(cx, |state, _cx| {
-                        state.app.show_studio_menu = false;
+                        state.app.ui_state.show_studio_menu = false;
                     });
                     cx.notify();
                 }),
@@ -1013,7 +1013,7 @@ impl PlayerView {
         translations: &crate::i18n::Translations,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let theme = self.state.read(cx).app.theme.clone();
+        let theme = self.state.read(cx).app.ui_state.theme.clone();
         let state = self.state.clone();
 
         Menu::new(
@@ -1031,15 +1031,15 @@ impl PlayerView {
         .theme(theme.to_menu_theme())
         .on_select(move |id, _window, cx| {
             state.update(cx, |state, _cx| {
-                state.app.show_studio_menu = false;
+                state.app.ui_state.show_studio_menu = false;
                 match id.as_ref() {
-                    "library" => state.app.current_screen = crate::app::Screen::Library,
-                    "studio" => state.app.current_screen = crate::app::Screen::Studio,
-                    "plugingraph" => state.app.current_screen = crate::app::Screen::PluginGraph,
-                    "recording" => state.app.current_screen = crate::app::Screen::Recording,
-                    "roomeq" => state.app.current_screen = crate::app::Screen::RoomEq,
-                    "headphoneeq" => state.app.current_screen = crate::app::Screen::HeadphoneEq,
-                    "spinorama" => state.app.current_screen = crate::app::Screen::Spinorama,
+                    "library" => state.app.ui_state.current_screen = crate::app::Screen::Library,
+                    "studio" => state.app.ui_state.current_screen = crate::app::Screen::Studio,
+                    "plugingraph" => state.app.ui_state.current_screen = crate::app::Screen::PluginGraph,
+                    "recording" => state.app.ui_state.current_screen = crate::app::Screen::Recording,
+                    "roomeq" => state.app.ui_state.current_screen = crate::app::Screen::RoomEq,
+                    "headphoneeq" => state.app.ui_state.current_screen = crate::app::Screen::HeadphoneEq,
+                    "spinorama" => state.app.ui_state.current_screen = crate::app::Screen::Spinorama,
                     _ => {}
                 }
             });
@@ -1083,7 +1083,7 @@ impl PlayerView {
                     if event.click_count == 2 {
                         // Double click resets volume to 10%
                         view.state.update(cx, |state, _cx| {
-                            state.app.volume = 0.1;
+                            state.app.playback.volume = 0.1;
                             let _ = state.player.lock().set_volume(0.1);
                         });
                         cx.notify();
@@ -1093,7 +1093,7 @@ impl PlayerView {
                     view.state.update(cx, |state, _cx| {
                         state.app.is_dragging_volume = true;
                         state.app.volume_drag_start_y = Some(event.position.y.into());
-                        state.app.volume_drag_start_value = state.app.volume;
+                        state.app.volume_drag_start_value = state.app.playback.volume;
                     });
                 }),
             )
@@ -1107,8 +1107,8 @@ impl PlayerView {
                     }
                 };
                 view.state.update(cx, |state, _cx| {
-                    let new_volume = (state.app.volume + delta).clamp(0.0, 1.0);
-                    state.app.volume = new_volume;
+                    let new_volume = (state.app.playback.volume + delta).clamp(0.0, 1.0);
+                    state.app.playback.volume = new_volume;
                     // Apply volume change to player
                     let _ = state.player.lock().set_volume(new_volume);
                 });
@@ -1131,12 +1131,12 @@ impl PlayerView {
                     key if key == "m" => {
                         // Toggle mute (visual only - affects VolumeKnob display)
                         view.state.update(cx, |state, _cx| {
-                            state.app.muted = !state.app.muted;
+                            state.app.playback.muted = !state.app.playback.muted;
                             // When muted, set volume to 0; restore when unmuted
-                            let effective_volume = if state.app.muted {
+                            let effective_volume = if state.app.playback.muted {
                                 0.0
                             } else {
-                                state.app.volume
+                                state.app.playback.volume
                             };
                             let _ = state.player.lock().set_volume(effective_volume);
                         });
@@ -1149,8 +1149,8 @@ impl PlayerView {
 
                 if let Some(delta) = delta {
                     view.state.update(cx, |state, _cx| {
-                        let new_volume = (state.app.volume + delta).clamp(0.0, 1.0);
-                        state.app.volume = new_volume;
+                        let new_volume = (state.app.playback.volume + delta).clamp(0.0, 1.0);
+                        state.app.playback.volume = new_volume;
                         let _ = state.player.lock().set_volume(new_volume);
                     });
                     cx.stop_propagation(); // Prevent arrow keys from moving album selection

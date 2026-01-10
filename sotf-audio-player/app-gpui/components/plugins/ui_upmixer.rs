@@ -7,6 +7,8 @@
 
 use super::common::{render_knob, render_vertical_slider_with_ticks};
 use crate::app::AppState;
+use crate::components::plugins::editing::PluginEditingManager;
+use crate::components::plugins::level_meters::LevelMeterManager;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;

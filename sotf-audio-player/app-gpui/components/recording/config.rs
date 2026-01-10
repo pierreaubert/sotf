@@ -110,7 +110,7 @@ impl PlayerView {
         let (theme, num_channels, sample_rate, speaker_config) = {
             let state = self.state.read(cx);
             (
-                state.app.theme.clone(),
+                state.app.ui_state.theme.clone(),
                 state.app.recording_state.playback_config.num_channels,
                 state.app.recording_state.playback_config.sample_rate,
                 state
@@ -203,7 +203,7 @@ impl PlayerView {
         let (theme, num_channels, sample_rate) = {
             let state = self.state.read(cx);
             (
-                state.app.theme.clone(),
+                state.app.ui_state.theme.clone(),
                 state.app.recording_state.recording_config.num_channels,
                 state.app.recording_state.recording_config.sample_rate,
             )
@@ -278,7 +278,7 @@ impl PlayerView {
     /// Render microphone calibration content for accordion
     fn render_mic_calibration_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.recording_state;
         let view = cx.entity().clone();
 
@@ -351,7 +351,7 @@ impl PlayerView {
     /// Render output directory content for accordion
     fn render_output_directory_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.recording_state;
         let view = cx.entity().clone();
 
@@ -491,7 +491,7 @@ impl PlayerView {
     /// Render playback device dropdown
     fn render_playback_device_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.recording_state;
         let view = cx.entity().clone();
 
@@ -579,7 +579,7 @@ impl PlayerView {
     /// Render playback sample rate dropdown
     fn render_playback_sample_rate_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.recording_state;
         let view = cx.entity().clone();
 
@@ -653,7 +653,7 @@ impl PlayerView {
     /// Render speaker configuration dropdown
     fn render_speaker_config_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.recording_state;
         let view = cx.entity().clone();
 
@@ -760,7 +760,7 @@ impl PlayerView {
                 .iter()
                 .map(|m| (m.interface_channel, m.group_name.clone()))
                 .collect();
-            (state.app.theme.clone(), mappings)
+            (state.app.ui_state.theme.clone(), mappings)
         };
         let view = cx.entity().clone();
 
@@ -840,7 +840,7 @@ impl PlayerView {
         current_group: &str,
     ) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.recording_state;
         let view = cx.entity().clone();
         let current_group = current_group.to_string();
@@ -906,7 +906,7 @@ impl PlayerView {
     /// Render recording device dropdown
     fn render_recording_device_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.recording_state;
         let view = cx.entity().clone();
 
@@ -995,7 +995,7 @@ impl PlayerView {
     /// Render recording sample rate dropdown
     fn render_recording_sample_rate_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.recording_state;
         let view = cx.entity().clone();
 
@@ -1072,7 +1072,7 @@ impl PlayerView {
     /// Render recording channel mapping table
     fn render_recording_channel_mapping(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.recording_state;
         let view = cx.entity().clone();
 

@@ -269,11 +269,10 @@ unused_result_ok = "warn"
 literal_string_with_formatting_args = "allow"
 
 [profile.dev]
-# NOTE: Aggressive optimization settings (opt-level="z", lto=true, strip=true)
-# in debug mode cause segfaults in cpal/CoreAudio device enumeration on macOS.
-# Using standard debug settings instead.
-opt-level = 0
-panic = "unwind"
+opt-level = 1
+split-debuginfo= "packed"
+debug = 1
+codegen-units = 256
 
 [profile.release]
 lto = true

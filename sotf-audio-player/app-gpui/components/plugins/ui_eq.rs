@@ -7,6 +7,7 @@
 
 use super::common::render_knob_sized;
 use crate::app::AppState;
+use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
@@ -416,7 +417,7 @@ fn render_eq_visualization(
                         let band_idx = drag_data.band_idx;
 
                         entity_left.update(cx, |state, cx| {
-                            state.app.editing_plugin_index = Some(plugin_idx);
+                            state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
                             // Update Q (param index = band_idx * 4 + 1)
                             state
                                 .app
@@ -481,7 +482,7 @@ fn render_eq_visualization(
                         let band_idx = drag_data.band_idx;
 
                         entity_right.update(cx, |state, cx| {
-                            state.app.editing_plugin_index = Some(plugin_idx);
+                            state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
                             // Update Q (param index = band_idx * 4 + 1)
                             state
                                 .app
@@ -516,7 +517,7 @@ fn render_eq_visualization(
                 move |_event, _window, cx| {
                     // Select this band when clicking on it
                     entity_click.update(cx, |state, _| {
-                        state.app.selected_eq_band = band_idx;
+                        state.app.plugin_state.selected_eq_band = band_idx;
                     });
                 }
             })
@@ -568,7 +569,7 @@ fn render_eq_visualization(
                     let band_idx = drag_data.band_idx;
 
                     entity_clone.update(cx, |state, cx| {
-                        state.app.editing_plugin_index = Some(plugin_idx);
+                        state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
                         // Update frequency (param index = band_idx * 4 + 0)
                         state
                             .app
@@ -712,7 +713,7 @@ pub fn render_eq_plugin(
                     .when(is_muted, |d| d.opacity(0.5))
                     .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
                         entity_clone.update(cx, |state, _| {
-                            state.app.selected_eq_band = band_idx;
+                            state.app.plugin_state.selected_eq_band = band_idx;
                         });
                     })
                     // Band number with filter type short code (e.g., "#1 PK")
@@ -748,7 +749,7 @@ pub fn render_eq_plugin(
                                         move |_event, _window, cx| {
                                             cx.stop_propagation();
                                             entity_clone2.update(cx, |state, cx| {
-                                                state.app.editing_plugin_index = Some(plugin_idx);
+                                                state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
                                                 if let Err(e) =
                                                     state.app.toggle_eq_band_mute(band_idx)
                                                 {
@@ -789,7 +790,7 @@ pub fn render_eq_plugin(
                                         move |_event, _window, cx| {
                                             cx.stop_propagation();
                                             entity_clone3.update(cx, |state, cx| {
-                                                state.app.editing_plugin_index = Some(plugin_idx);
+                                                state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
                                                 if let Err(e) =
                                                     state.app.toggle_eq_band_solo(band_idx)
                                                 {
@@ -826,7 +827,7 @@ pub fn render_eq_plugin(
                         .hover(|s| s.opacity(0.8))
                         .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
                             entity_clone.update(cx, |state, cx| {
-                                state.app.editing_plugin_index = Some(plugin_idx);
+                                state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
                                 if let Err(e) = state.app.add_eq_band() {
                                     log::warn!("Failed to add EQ band: {}", e);
                                 }

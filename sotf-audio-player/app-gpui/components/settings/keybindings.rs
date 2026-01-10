@@ -13,8 +13,8 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let state = self.state.read(cx);
-        let current_preset = state.app.keymap_preset;
-        let theme = state.app.theme.clone();
+        let current_preset = state.app.ui_state.keymap_preset;
+        let theme = state.app.ui_state.theme.clone();
 
         // Build comparison data: action -> preset -> key
         let comparison = build_keybinding_comparison();

@@ -69,7 +69,7 @@ impl Render for PaletteDragData {
 impl PlayerView {
     /// Ensure the WorkflowCanvas entity exists, creating it if needed
     pub(crate) fn ensure_workflow_canvas(&self, cx: &mut Context<Self>) {
-        let has_canvas = self.state.read(cx).app.workflow_canvas.is_some();
+        let has_canvas = self.state.read(cx).app.plugin_state.workflow_canvas.is_some();
 
         if !has_canvas {
             // Build workflow graph from plugin graph, or create a default graph
@@ -96,10 +96,10 @@ impl PlayerView {
                     .map(|c| c.channels as usize)
                     .unwrap_or(2);
                 (
-                    state.app.plugin_graph.clone(),
+                    state.app.plugin_state.plugin_graph.clone(),
                     output_device_name,
                     output_channels,
-                    state.app.theme.clone(),
+                    state.app.ui_state.theme.clone(),
                     state.app.input_devices.clone(),
                     state.app.output_devices.clone(),
                 )
@@ -125,15 +125,15 @@ impl PlayerView {
                 // Set double-click callback to open node editor modal
                 canvas.set_on_node_double_click(move |node_id, _window, cx| {
                     state_for_callback.update(cx, |state, _cx| {
-                        state.app.editing_plugin_node = Some(node_id);
-                        state.app.input_mode = crate::app::InputMode::EditingPluginNode;
+                        state.app.plugin_state.editing_plugin_node = Some(node_id);
+                        state.app.ui_state.input_mode = crate::app::InputMode::EditingPluginNode;
                     });
                 });
             });
 
             // Store the canvas entity
             self.state.update(cx, |state, _cx| {
-                state.app.workflow_canvas = Some(canvas);
+                state.app.plugin_state.workflow_canvas = Some(canvas);
             });
         }
     }
@@ -147,6 +147,7 @@ impl PlayerView {
             let state = self.state.read(cx);
             let (nc, cc) = state
                 .app
+                .plugin_state
                 .workflow_canvas
                 .as_ref()
                 .map(|canvas| {
@@ -154,10 +155,10 @@ impl PlayerView {
                     (stats.0, stats.1)
                 })
                 .unwrap_or((0, 0));
-            let pc = state.app.plugin_chain.len();
+            let pc = state.app.plugin_state.plugin_chain.len();
             (
-                state.app.theme.clone(),
-                state.app.workflow_canvas.clone(),
+                state.app.ui_state.theme.clone(),
+                state.app.plugin_state.workflow_canvas.clone(),
                 nc,
                 cc,
                 pc,
@@ -201,7 +202,7 @@ impl PlayerView {
 
     /// Handle dropping a palette item onto the canvas
     fn handle_palette_drop(&mut self, data: &PaletteDragData, cx: &mut Context<Self>) {
-        let canvas = self.state.read(cx).app.workflow_canvas.clone();
+        let canvas = self.state.read(cx).app.plugin_state.workflow_canvas.clone();
         if let Some(canvas) = canvas {
             // Create node based on item type
             let node = match &data.item_type {
@@ -244,7 +245,7 @@ impl PlayerView {
         plugin_count: usize,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let theme = self.state.read(cx).app.theme.clone();
+        let theme = self.state.read(cx).app.ui_state.theme.clone();
 
         let state_for_home = self.state.clone();
         let text_muted = theme.text_muted;
@@ -274,7 +275,7 @@ impl PlayerView {
                     .child(Icon::new(IconName::Home).color(text_muted))
                     .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
                         state_for_home.update(cx, |state, _cx| {
-                            state.app.current_screen = Screen::Library;
+                            state.app.ui_state.current_screen = Screen::Library;
                         });
                     }),
             )
@@ -332,7 +333,7 @@ impl PlayerView {
                                 MouseButton::Left,
                                 cx.listener(|view, _: &MouseUpEvent, _window, cx| {
                                     if let Some(canvas) =
-                                        view.state.read(cx).app.workflow_canvas.clone()
+                                        view.state.read(cx).app.plugin_state.workflow_canvas.clone()
                                     {
                                         canvas.update(cx, |canvas, cx| {
                                             canvas.reset_viewport(cx);
@@ -348,7 +349,7 @@ impl PlayerView {
 
     /// Render the sidebar palette with plugin types (draggable)
     fn render_graph_palette(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = self.state.read(cx).app.theme.clone();
+        let theme = self.state.read(cx).app.ui_state.theme.clone();
 
         // Input sources
         let input_items = vec![("Player", PaletteItemType::Player, theme.success)];
@@ -795,12 +796,12 @@ impl PlayerView {
     /// Render the plugin node editor modal
     pub(crate) fn render_plugin_node_modal(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let theme = state.app.theme.clone();
+        let theme = state.app.ui_state.theme.clone();
 
         // Get the node being edited
-        let node_id = state.app.editing_plugin_node;
+        let node_id = state.app.plugin_state.editing_plugin_node;
         let node_info = node_id.and_then(|id| {
-            state.app.workflow_canvas.as_ref().and_then(|canvas| {
+            state.app.plugin_state.workflow_canvas.as_ref().and_then(|canvas| {
                 let canvas_read = canvas.read(cx);
                 let graph = canvas_read.graph();
                 graph.nodes.get(&id).map(|node| {
@@ -836,6 +837,7 @@ impl PlayerView {
                 .and_then(|uuid| {
                     state
                         .app
+                        .plugin_state
                         .plugin_graph
                         .as_ref()
                         .and_then(|graph| graph.nodes.get(&uuid))
@@ -870,8 +872,8 @@ impl PlayerView {
                 let state = state_for_close.clone();
                 move |_, _, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.input_mode = crate::app::InputMode::Normal;
-                        state.app.editing_plugin_node = None;
+                        state.app.ui_state.input_mode = crate::app::InputMode::Normal;
+                        state.app.plugin_state.editing_plugin_node = None;
                     });
                 }
             })
@@ -959,9 +961,9 @@ impl PlayerView {
                                             .on_mouse_down(MouseButton::Left, move |_, _, cx| {
                                                 cx.stop_propagation();
                                                 state.update(cx, |state, _cx| {
-                                                    state.app.input_mode =
+                                                    state.app.ui_state.input_mode =
                                                         crate::app::InputMode::Normal;
-                                                    state.app.editing_plugin_node = None;
+                                                    state.app.plugin_state.editing_plugin_node = None;
                                                 });
                                             })
                                             .child("Close")
