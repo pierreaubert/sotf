@@ -8,6 +8,7 @@
 //! - Advanced plugins (multiband compressor/expander, denoiser, PND, A/B compare)
 //! - Plugin chain management (rack, graph)
 
+pub mod all_plugins;
 pub mod ab_compare;
 pub mod binaural;
 pub mod compressor;

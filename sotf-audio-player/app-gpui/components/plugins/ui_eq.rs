@@ -49,7 +49,6 @@ struct EqControlPointDrag {
     band_idx: usize,
     plugin_idx: usize,
     color: u32,
-    // Store initial values for delta-based dragging
     start_freq: f64,
     start_gain: f64,
     start_x: f32,
@@ -345,7 +344,6 @@ fn render_eq_visualization(
         let x = freq_to_x(filter.frequency, plot_width);
         let y = gain_to_y(filter.gain_db);
 
-        let entity_clone = entity.clone();
         let band_idx = i;
 
         // Control point circle
@@ -534,76 +532,60 @@ fn render_eq_visualization(
                     color,
                     start_freq: filter.frequency,
                     start_gain: filter.gain_db,
-                    start_x: x, // chart-relative X
-                    start_y: y, // chart-relative Y
+                    start_x: x,
+                    start_y: y,
                 },
-                |drag, window_pos, _, cx| {
+                |drag, _, _, cx| {
                     cx.stop_propagation();
-                    // Capture initial window position for delta calculation
-                    let mut drag_with_window_pos = drag.clone();
-                    let window_x: f32 = window_pos.x.into();
-                    let window_y: f32 = window_pos.y.into();
-                    // Store the offset between window coords and chart coords
-                    drag_with_window_pos.start_x = window_x;
-                    drag_with_window_pos.start_y = window_y;
-                    cx.new(|_| drag_with_window_pos)
+                    cx.new(|_| drag.clone())
                 },
             )
-            .on_drag_move::<EqControlPointDrag>({
-                let plot_width = plot_width;
-                move |event, window, cx| {
-                    let drag_data = event.drag(cx);
-                    let position = event.event.position;
-
-                    // Calculate delta from initial window position
-                    let x_px: f32 = position.x.into();
-                    let y_px: f32 = position.y.into();
-                    let delta_x = x_px - drag_data.start_x; // start_x stores initial window X
-                    let delta_y = y_px - drag_data.start_y; // start_y stores initial window Y
-
-                    // Compute initial chart position from stored freq/gain
-                    // This is stable across re-renders, unlike closure-captured values
-                    let initial_chart_x = freq_to_x(drag_data.start_freq, plot_width);
-                    let initial_chart_y = gain_to_y(drag_data.start_gain);
-
-                    // Apply delta to initial chart position
-                    let new_chart_x = initial_chart_x + delta_x;
-                    let new_chart_y = initial_chart_y + delta_y;
-
-                    // Convert to freq/gain
-                    let new_freq = x_to_freq(new_chart_x, plot_width).clamp(MIN_FREQ, MAX_FREQ);
-                    let new_gain = y_to_gain(new_chart_y).clamp(MIN_GAIN_DB, MAX_GAIN_DB);
-
-                    let plugin_idx = drag_data.plugin_idx;
-                    let band_idx = drag_data.band_idx;
-
-                    entity_clone.update(cx, |state, cx| {
-                        state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
-                        // Update frequency (param index = band_idx * 4 + 0)
-                        state
-                            .app
-                            .set_plugin_param(plugin_idx, band_idx * 4, new_freq);
-                        // Update gain (param index = band_idx * 4 + 2)
-                        state
-                            .app
-                            .set_plugin_param(plugin_idx, band_idx * 4 + 2, new_gain);
-                        cx.notify();
-                    });
-                    window.refresh();
-                }
-            })
             .into_any_element();
 
         control_points.push(control_point);
     }
 
     // Wrap chart and control points in a relative container
+    // The on_drag_move handler is on the container so it receives events
+    // even when the cursor moves away from the small control point circle
     div()
+        .id("eq-chart-container")
         .relative()
         .w(px(width))
         .h(px(CHART_HEIGHT))
         .child(chart_element)
         .children(control_points)
+        .on_drag_move::<EqControlPointDrag>({
+            let entity = entity.clone();
+            move |event, window, cx| {
+                let drag_data = event.drag(cx);
+                // Position is relative to this container div, which IS the chart area
+                let position = event.event.position;
+                let x_px: f32 = position.x.into();
+                let y_px: f32 = position.y.into();
+
+                // Convert directly to freq/gain (no delta calculation needed)
+                let new_freq = x_to_freq(x_px, plot_width).clamp(MIN_FREQ, MAX_FREQ);
+                let new_gain = y_to_gain(y_px).clamp(MIN_GAIN_DB, MAX_GAIN_DB);
+
+                let plugin_idx = drag_data.plugin_idx;
+                let band_idx = drag_data.band_idx;
+
+                entity.update(cx, |state, cx| {
+                    state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                    // Update frequency (param index = band_idx * 4 + 0)
+                    state
+                        .app
+                        .set_plugin_param(plugin_idx, band_idx * 4, new_freq);
+                    // Update gain (param index = band_idx * 4 + 2)
+                    state
+                        .app
+                        .set_plugin_param(plugin_idx, band_idx * 4 + 2, new_gain);
+                    cx.notify();
+                });
+                window.refresh();
+            }
+        })
         .into_any_element()
 }
 
