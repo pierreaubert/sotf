@@ -26,6 +26,7 @@ pub mod limiter;
 pub mod loudness;
 pub mod loudness_monitor;
 pub mod matrix;
+pub mod matrix_channel_propagation;
 pub mod mb_compressor;
 pub mod mb_expander;
 pub mod mute_solo;

@@ -103,4 +103,16 @@ impl<'a> PluginRackPage<'a> {
             app.plugin_state.selected_plugin_index = index;
         });
     }
+    pub fn get_matrix_channels(&mut self, index: usize) -> (usize, usize) {
+        self.driver.read_app(move |app| {
+            if let Some(plugin) = app.plugin_state.plugin_chain.get_plugin(index) {
+                match &plugin.settings {
+                    PluginSettings::Matrix { input_channels, output_channels, .. } => (*input_channels, *output_channels),
+                    _ => (0, 0),
+                }
+            } else {
+                (0, 0)
+            }
+        })
+    }
 }
