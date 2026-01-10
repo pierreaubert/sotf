@@ -317,7 +317,29 @@ impl PlayerView {
                                 .size(InputSize::Md)
                                 .bg_color(theme.surface)
                                 .text_color(theme.text_primary)
-                                .placeholder_color(theme.text_muted),
+                                .placeholder_color(theme.text_muted)
+                                .focus_handle(self.search_focus_handle.clone())
+                                .on_text_change({
+                                    let app_state = self.state.clone();
+                                    let view_handle = cx.entity().clone();
+                                    move |text, _window, cx| {
+                                        app_state.update(cx, |state, _| {
+                                            state.app.library_state.search_query = text;
+                                            if state.app.ui_state.input_mode != crate::app::InputMode::Search {
+                                                state.app.ui_state.input_mode = crate::app::InputMode::Search;
+                                            }
+                                        });
+                                        view_handle.update(cx, |_, cx| cx.notify());
+                                    }
+                                })
+                                .on_change({
+                                    let view_handle = cx.entity().clone();
+                                    move |_text, _window, cx| {
+                                         log::info!("Search confirmed");
+                                         // Optionally we could trigger something here
+                                         view_handle.update(cx, |_, cx| cx.notify());
+                                    }
+                                }),
                         ),
                     ),
                 )

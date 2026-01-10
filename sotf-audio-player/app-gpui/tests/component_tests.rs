@@ -1068,10 +1068,11 @@ const MIN_FREQ: f64 = 20.0;
 const MAX_FREQ: f64 = 20000.0;
 const MIN_GAIN_DB: f64 = -24.0;
 const MAX_GAIN_DB: f64 = 24.0;
-const CHART_LEFT_MARGIN: f32 = 40.0;
-const CHART_TOP_MARGIN: f32 = 20.0;
+const CHART_LEFT_MARGIN: f32 = 50.0;
+const CHART_TOP_MARGIN: f32 = 0.0; // No actual top offset in gpui-px layout
 const CHART_BOTTOM_MARGIN: f32 = 30.0;
 const CHART_HEIGHT: f32 = 300.0;
+const GPUI_PX_MARGIN_TOP: f32 = 10.0; // gpui-px uses this for plot_height calculation
 const Q_BAR_MIN_WIDTH: f32 = 40.0;
 const Q_BAR_MAX_WIDTH: f32 = 100.0;
 const Q_MIN: f64 = 0.1;
@@ -1094,13 +1095,15 @@ fn x_to_freq(x: f32, plot_width: f32) -> f64 {
 }
 
 fn gain_to_y(gain: f64) -> f32 {
-    let plot_height = CHART_HEIGHT - CHART_TOP_MARGIN - CHART_BOTTOM_MARGIN;
+    // gpui-px calculates plot_height = height - margin_top(10) - margin_bottom(30)
+    // but renders the plot starting at y=0 (no actual top margin offset)
+    let plot_height = CHART_HEIGHT - GPUI_PX_MARGIN_TOP - CHART_BOTTOM_MARGIN;
     let t = ((MAX_GAIN_DB - gain) / (MAX_GAIN_DB - MIN_GAIN_DB)) as f32;
     CHART_TOP_MARGIN + t * plot_height
 }
 
 fn y_to_gain(y: f32) -> f64 {
-    let plot_height = CHART_HEIGHT - CHART_TOP_MARGIN - CHART_BOTTOM_MARGIN;
+    let plot_height = CHART_HEIGHT - GPUI_PX_MARGIN_TOP - CHART_BOTTOM_MARGIN;
     let t = ((y - CHART_TOP_MARGIN) / plot_height).clamp(0.0, 1.0) as f64;
     MAX_GAIN_DB - t * (MAX_GAIN_DB - MIN_GAIN_DB)
 }
@@ -1178,9 +1181,10 @@ fn test_freq_to_x_boundaries() {
 
 #[test]
 fn test_gain_to_y_boundaries() {
-    let plot_height = CHART_HEIGHT - CHART_TOP_MARGIN - CHART_BOTTOM_MARGIN;
+    // Use GPUI_PX_MARGIN_TOP to match how gain_to_y calculates plot_height
+    let plot_height = CHART_HEIGHT - GPUI_PX_MARGIN_TOP - CHART_BOTTOM_MARGIN;
 
-    // MAX_GAIN_DB should map to top margin
+    // MAX_GAIN_DB should map to top margin (which is 0 since gpui-px doesn't render top offset)
     let y_max = gain_to_y(MAX_GAIN_DB);
     assert!(
         (y_max - CHART_TOP_MARGIN).abs() < 0.01,

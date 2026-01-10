@@ -21,6 +21,7 @@ use crate::components::plugins::level_meters::LevelMeterManager;
 pub struct PlayerView {
     pub state: Entity<AppState>,
     pub(crate) focus_handle: FocusHandle,
+    pub(crate) search_focus_handle: FocusHandle,
     pub(crate) volume_focus_handle: FocusHandle,
     last_saved_window_bounds: Option<Bounds<Pixels>>,
     /// Scroll handle for library grid view
@@ -34,6 +35,7 @@ pub struct PlayerView {
 impl PlayerView {
     pub fn new(state: Entity<AppState>, cx: &mut Context<Self>) -> Self {
         let focus_handle = cx.focus_handle();
+        let search_focus_handle = cx.focus_handle();
         let volume_focus_handle = cx.focus_handle();
 
         // Register plugin interactions
@@ -171,6 +173,7 @@ impl PlayerView {
         Self {
             state,
             focus_handle,
+            search_focus_handle,
             volume_focus_handle,
             last_saved_window_bounds: None,
             grid_scroll_handle: ScrollHandle::new(),
@@ -244,7 +247,8 @@ impl PlayerView {
         cx.notify();
     }
 
-    fn toggle_search(&mut self, _: &ToggleSearch, _: &mut Window, cx: &mut Context<Self>) {
+    fn toggle_search(&mut self, _: &ToggleSearch, window: &mut Window, cx: &mut Context<Self>) {
+        let mut should_focus = false;
         self.state.update(cx, |state, _cx| {
             if state.app.ui_state.input_mode == crate::app::InputMode::Search {
                 log::info!("toggle_search: exiting search mode");
@@ -253,8 +257,13 @@ impl PlayerView {
                 log::info!("toggle_search: entering search mode");
                 state.app.ui_state.input_mode = crate::app::InputMode::Search;
                 state.app.library_state.search_query.clear();
+                should_focus = true;
             }
         });
+        
+        if should_focus {
+            self.search_focus_handle.focus(window, cx);
+        }
         cx.notify();
     }
 

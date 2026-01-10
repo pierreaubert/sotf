@@ -7,3 +7,4 @@ pub mod queue;
 pub mod settings;
 pub mod startup;
 pub mod volume;
+pub mod search;

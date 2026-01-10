@@ -160,9 +160,13 @@ fn calculate_band_response(filter: &EQFilter, freq: f64) -> f64 {
 /// These MUST match gpui-px line chart margins (see gpui-px/src/line.rs)
 const CHART_LEFT_MARGIN: f32 = 50.0; // gpui-px margin_left
 const CHART_RIGHT_MARGIN: f32 = 20.0; // gpui-px margin_right (no secondary axis)
-const CHART_TOP_MARGIN: f32 = 10.0; // gpui-px margin_top (no title)
+// Note: gpui-px subtracts margin_top from plot_height but doesn't render top padding
+// so control points should use 0 for top margin offset
+const CHART_TOP_MARGIN: f32 = 0.0; // No actual top offset in gpui-px layout
 const CHART_BOTTOM_MARGIN: f32 = 30.0; // gpui-px margin_bottom
 const CHART_HEIGHT: f32 = 300.0;
+// gpui-px uses 10.0 for margin_top in plot_height calculation
+const GPUI_PX_MARGIN_TOP: f32 = 10.0;
 const MIN_FREQ: f64 = 20.0;
 const MAX_FREQ: f64 = 20000.0;
 const MIN_GAIN_DB: f64 = -24.0;
@@ -187,14 +191,16 @@ fn x_to_freq(x: f32, plot_width: f32) -> f64 {
 
 /// Convert gain (dB) to y pixel position
 fn gain_to_y(gain_db: f64) -> f32 {
-    let plot_height = CHART_HEIGHT - CHART_TOP_MARGIN - CHART_BOTTOM_MARGIN;
+    // gpui-px calculates plot_height = height - margin_top(10) - margin_bottom(30)
+    // but renders the plot starting at y=0 (no actual top margin offset)
+    let plot_height = CHART_HEIGHT - GPUI_PX_MARGIN_TOP - CHART_BOTTOM_MARGIN;
     let t = (MAX_GAIN_DB - gain_db) / (MAX_GAIN_DB - MIN_GAIN_DB);
     CHART_TOP_MARGIN + (t as f32) * plot_height
 }
 
 /// Convert y pixel position to gain (dB)
 fn y_to_gain(y: f32) -> f64 {
-    let plot_height = CHART_HEIGHT - CHART_TOP_MARGIN - CHART_BOTTOM_MARGIN;
+    let plot_height = CHART_HEIGHT - GPUI_PX_MARGIN_TOP - CHART_BOTTOM_MARGIN;
     let t = ((y - CHART_TOP_MARGIN) / plot_height).clamp(0.0, 1.0) as f64;
     MAX_GAIN_DB - t * (MAX_GAIN_DB - MIN_GAIN_DB)
 }
@@ -545,8 +551,6 @@ fn render_eq_visualization(
             )
             .on_drag_move::<EqControlPointDrag>({
                 let plot_width = plot_width;
-                let initial_chart_x = x;
-                let initial_chart_y = y;
                 move |event, window, cx| {
                     let drag_data = event.drag(cx);
                     let position = event.event.position;
@@ -554,8 +558,13 @@ fn render_eq_visualization(
                     // Calculate delta from initial window position
                     let x_px: f32 = position.x.into();
                     let y_px: f32 = position.y.into();
-                    let delta_x = x_px - drag_data.start_x; // start_x now stores initial window X
-                    let delta_y = y_px - drag_data.start_y; // start_y now stores initial window Y
+                    let delta_x = x_px - drag_data.start_x; // start_x stores initial window X
+                    let delta_y = y_px - drag_data.start_y; // start_y stores initial window Y
+
+                    // Compute initial chart position from stored freq/gain
+                    // This is stable across re-renders, unlike closure-captured values
+                    let initial_chart_x = freq_to_x(drag_data.start_freq, plot_width);
+                    let initial_chart_y = gain_to_y(drag_data.start_gain);
 
                     // Apply delta to initial chart position
                     let new_chart_x = initial_chart_x + delta_x;
@@ -1048,7 +1057,8 @@ mod tests {
 
     // Test constants matching the module constants
     const TEST_CHART_HEIGHT: f32 = 300.0;
-    const TEST_PLOT_HEIGHT: f32 = TEST_CHART_HEIGHT - CHART_TOP_MARGIN - CHART_BOTTOM_MARGIN;
+    // gpui-px uses GPUI_PX_MARGIN_TOP for height calculation, not CHART_TOP_MARGIN
+    const TEST_PLOT_HEIGHT: f32 = TEST_CHART_HEIGHT - GPUI_PX_MARGIN_TOP - CHART_BOTTOM_MARGIN;
 
     /// Test that freq_to_x and x_to_freq are inverse operations
     #[test]
