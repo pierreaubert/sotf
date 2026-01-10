@@ -491,7 +491,7 @@ impl PlayerView {
     // ==========================================================================
 
     /// Start recording all channels sequentially
-    fn start_recording_all_channels(&mut self, cx: &mut Context<Self>) {
+    pub fn start_recording_all_channels(&mut self, cx: &mut Context<Self>) {
         // Enable auto-record mode
         self.state.update(cx, |state, _| {
             state.app.recording_state.auto_record_remaining = true;
@@ -504,7 +504,7 @@ impl PlayerView {
     }
 
     /// Start recording a single channel
-    fn start_recording_channel(&mut self, channel_idx: usize, cx: &mut Context<Self>) {
+    pub fn start_recording_channel(&mut self, channel_idx: usize, cx: &mut Context<Self>) {
         use sotf_audio_player::signal_recorder::{
             SignalParams, SignalType, generate_signal, write_temp_wav,
         };

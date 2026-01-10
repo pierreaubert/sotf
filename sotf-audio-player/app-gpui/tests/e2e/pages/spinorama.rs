@@ -1,5 +1,5 @@
 use crate::driver::AppDriver;
-use sotf_audio_player_gpui::app::types::{OptimizationStatus, SpinoramaOptimizationMode};
+use sotf_audio_player_gpui::app::types::{OptimizationStatus, SpinoramaOptimizationMode, SpinoramaTargetCurve};
 
 pub struct SpinoramaPage<'a, 'b> {
     driver: &'a mut AppDriver<'b>,
@@ -85,12 +85,61 @@ impl<'a, 'b> SpinoramaPage<'a, 'b> {
     }
 
     pub fn set_optimization_params(&mut self, num_filters: usize, max_iter: usize) {
-         self.driver.update_app(|app, _| {
+         self.driver.update_app(move |app, _| {
              app.spinorama_eq_state.optimizer_config.num_filters = num_filters;
              app.spinorama_eq_state.optimizer_config.max_iter = max_iter;
              // Set small tolerance to ensure it finishes or runs
              app.spinorama_eq_state.optimizer_config.tolerance = 1e-5;
          });
+    }
+
+    pub fn set_optimization_mode(&mut self, mode: SpinoramaOptimizationMode) {
+        self.driver.update_app(move |app, _| {
+            app.spinorama_eq_state.optimizer_config.mode = mode;
+        });
+    }
+
+    pub fn set_frequency_limits(&mut self, min_freq: f64, max_freq: f64) {
+        self.driver.update_app(move |app, _| {
+            app.spinorama_eq_state.optimizer_config.min_freq = min_freq;
+            app.spinorama_eq_state.optimizer_config.max_freq = max_freq;
+        });
+    }
+
+    pub fn set_gain_limits(&mut self, min_db: f64, max_db: f64) {
+        self.driver.update_app(move |app, _| {
+            app.spinorama_eq_state.optimizer_config.min_db = min_db;
+            app.spinorama_eq_state.optimizer_config.max_db = max_db;
+        });
+    }
+
+    pub fn set_q_limits(&mut self, min_q: f64, max_q: f64) {
+        self.driver.update_app(move |app, _| {
+            app.spinorama_eq_state.optimizer_config.min_q = min_q;
+            app.spinorama_eq_state.optimizer_config.max_q = max_q;
+        });
+    }
+
+    pub fn set_algorithm_params(&mut self, population: usize, de_f: f64, de_cr: f64) {
+        self.driver.update_app(move |app, _| {
+            app.spinorama_eq_state.optimizer_config.population = population;
+            app.spinorama_eq_state.optimizer_config.de_f = de_f;
+            app.spinorama_eq_state.optimizer_config.de_cr = de_cr;
+        });
+    }
+
+    pub fn set_smoothing(&mut self, enabled: bool, window_size: usize) {
+        self.driver.update_app(move |app, _| {
+            app.spinorama_eq_state.optimizer_config.smooth = enabled;
+            app.spinorama_eq_state.optimizer_config.smooth_n = window_size;
+        });
+    }
+
+    pub fn set_advanced_config(&mut self, spacing_weight: f64, min_spacing_oct: f64) {
+        self.driver.update_app(move |app, _| {
+            app.spinorama_eq_state.optimizer_config.spacing_weight = spacing_weight;
+            app.spinorama_eq_state.optimizer_config.min_spacing_oct = min_spacing_oct;
+        });
     }
 
     pub fn inject_mock_data(&mut self) {

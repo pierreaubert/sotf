@@ -8,7 +8,7 @@
 
 use super::common::{
     render_edit_hints, render_knob, render_section_title, render_toggle,
-    render_transfer_curve_sized, render_vertical_slider_sized,
+    render_transfer_curve_sized, render_vertical_slider_with_ticks,
 };
 use super::level_meters::render_gr_meter;
 use crate::app::AppState;
@@ -85,7 +85,7 @@ pub fn render_compressor_plugin(
                             div()
                                 .flex()
                                 .gap_2()
-                                .child(render_vertical_slider_sized(
+                                .child(render_vertical_slider_with_ticks(
                                     entity.clone(),
                                     plugin_idx,
                                     "Threshold",
@@ -97,10 +97,10 @@ pub fn render_compressor_plugin(
                                     state.selected_param,
                                     state.is_editing,
                                     Some('t'),
-                                    Some(SLIDER_HEIGHT),
+                                    SLIDER_HEIGHT,
                                     theme,
                                 ))
-                                .child(render_vertical_slider_sized(
+                                .child(render_vertical_slider_with_ticks(
                                     entity.clone(),
                                     plugin_idx,
                                     "Ratio",
@@ -112,10 +112,10 @@ pub fn render_compressor_plugin(
                                     state.selected_param,
                                     state.is_editing,
                                     Some('r'),
-                                    Some(SLIDER_HEIGHT),
+                                    SLIDER_HEIGHT,
                                     theme,
                                 ))
-                                .child(render_vertical_slider_sized(
+                                .child(render_vertical_slider_with_ticks(
                                     entity.clone(),
                                     plugin_idx,
                                     "Knee",
@@ -127,7 +127,7 @@ pub fn render_compressor_plugin(
                                     state.selected_param,
                                     state.is_editing,
                                     Some('k'),
-                                    Some(SLIDER_HEIGHT),
+                                    SLIDER_HEIGHT,
                                     theme,
                                 )),
                         ),
@@ -143,7 +143,7 @@ pub fn render_compressor_plugin(
                             div()
                                 .flex()
                                 .gap_2()
-                                .child(render_vertical_slider_sized(
+                                .child(render_vertical_slider_with_ticks(
                                     entity.clone(),
                                     plugin_idx,
                                     "Attack",
@@ -155,10 +155,10 @@ pub fn render_compressor_plugin(
                                     state.selected_param,
                                     state.is_editing,
                                     Some('a'),
-                                    Some(SLIDER_HEIGHT),
+                                    SLIDER_HEIGHT,
                                     theme,
                                 ))
-                                .child(render_vertical_slider_sized(
+                                .child(render_vertical_slider_with_ticks(
                                     entity.clone(),
                                     plugin_idx,
                                     "Release",
@@ -170,7 +170,7 @@ pub fn render_compressor_plugin(
                                     state.selected_param,
                                     state.is_editing,
                                     Some('e'),
-                                    Some(SLIDER_HEIGHT),
+                                    SLIDER_HEIGHT,
                                     theme,
                                 )),
                         ),

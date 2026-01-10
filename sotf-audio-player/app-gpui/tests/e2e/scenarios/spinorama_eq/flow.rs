@@ -34,7 +34,14 @@ impl TestScenario for SpinoramaFlowScenario {
         page.set_target_curve("Harman In-Room 2018");
 
         // 5. Configure Optimizer
-        page.set_optimization_params(10, 5000);
+        page.set_optimization_params(3, 50); // Low filters and iterations for speed
+        page.set_optimization_mode(sotf_audio_player_gpui::app::types::SpinoramaOptimizationMode::SpeakerScore);
+        page.set_frequency_limits(100.0, 10000.0);
+        page.set_gain_limits(-6.0, 3.0);
+        page.set_q_limits(1.0, 4.0);
+        page.set_algorithm_params(20, 0.7, 0.8);
+        page.set_smoothing(true, 12);
+        page.set_advanced_config(2.0, 0.1); 
 
         // 6. Start Optimization
         page.start_optimization();
