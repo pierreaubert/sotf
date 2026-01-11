@@ -1336,7 +1336,7 @@ pub trait LevelMeterManager {
     fn select_next_level_meter_control(&mut self);
     fn select_previous_level_meter_control(&mut self);
     fn toggle_selected_level_meter_control(&mut self);
-    fn update_channel_mute_solo_plugin(&mut self);
+    fn update_matrix_plugin(&mut self);
 }
 
 impl LevelMeterManager for AppState {
@@ -1488,8 +1488,8 @@ impl LevelMeterManager for AppState {
             }
         }
 
-        // Update ChannelMuteSolo plugin to have correct number of channels
-        self.update_channel_mute_solo_plugin();
+        // Update Matrix plugin channel states
+        self.update_matrix_plugin();
     }
 
     /// Clear all mutes, solos, and dims in level meter groups
@@ -1500,7 +1500,7 @@ impl LevelMeterManager for AppState {
             group.soloed = false;
             group.dimmed = false;
         }
-        self.update_channel_mute_solo_plugin();
+        self.update_matrix_plugin();
     }
 
     /// Toggle mute for the selected level meter group
@@ -1511,7 +1511,7 @@ impl LevelMeterManager for AppState {
             .get_mut(self.selected_level_meter_group)
         {
             group.muted = !group.muted;
-            self.update_channel_mute_solo_plugin();
+            self.update_matrix_plugin();
         }
     }
 
@@ -1530,12 +1530,15 @@ impl LevelMeterManager for AppState {
             for (idx, g) in self.level_meter_groups.iter_mut().enumerate() {
                 if idx == self.selected_level_meter_group {
                     g.soloed = !is_currently_soloed;
+                    if g.soloed {
+                        g.muted = false;
+                    }
                 } else {
                     g.soloed = false;
                 }
             }
 
-            self.update_channel_mute_solo_plugin();
+            self.update_matrix_plugin();
         }
     }
 
@@ -1547,12 +1550,12 @@ impl LevelMeterManager for AppState {
             .get_mut(self.selected_level_meter_group)
         {
             group.dimmed = !group.dimmed;
-            self.update_channel_mute_solo_plugin();
+            self.update_matrix_plugin();
         }
     }
 
-    /// Update the ChannelMuteSolo plugin based on current level meter group states
-    fn update_channel_mute_solo_plugin(&mut self) {
+    /// Update the Matrix plugin based on current level meter group states
+    fn update_matrix_plugin(&mut self) {
         // Calculate total channel count
         let num_channels: usize = self
             .level_meter_groups
@@ -1586,23 +1589,22 @@ impl LevelMeterManager for AppState {
             }
         }
 
-        // Determine if any channel is muted, soloed, or dimmed
-        let enabled = channel_states
-            .iter()
-            .any(|s| s.muted || s.soloed || s.dimmed);
-
-        // Find and update the ChannelMuteSolo plugin
+        // Find and update the Matrix plugin
         for i in 0..self.plugin_state.plugin_chain.len() {
             if let Some(plugin) = self.plugin_state.plugin_chain.get_plugin_mut(i) {
-                if matches!(&plugin.settings, PluginSettings::ChannelMuteSolo { .. }) {
+                if matches!(&plugin.settings, PluginSettings::Matrix { .. }) {
                     // Update settings in memory
-                    plugin.settings = PluginSettings::ChannelMuteSolo {
-                        enabled,
-                        channel_states: channel_states.clone(),
-                    };
-                    // Flag that plugins need updating
+                    match &mut plugin.settings {
+                        PluginSettings::Matrix { channel_states: settings_states, .. } => {
+                            *settings_states = channel_states.clone();
+                            log::debug!("[LevelMeter] Updated Matrix channel_states: {:?}", settings_states);
+                        }
+                        _ => unreachable!(),
+                    }
+
+                    // Dispatch update to audio engine
                     self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
-                    return;
+                    return; // Only update the first matrix plugin found
                 }
             }
         }

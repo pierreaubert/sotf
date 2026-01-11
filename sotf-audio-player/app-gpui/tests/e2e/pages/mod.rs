@@ -3,3 +3,4 @@ pub mod settings;
 pub mod recording;
 pub mod library;
 pub mod plugin_rack;
+pub mod level_meter;

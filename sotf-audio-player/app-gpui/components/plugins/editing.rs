@@ -1180,6 +1180,105 @@ impl PluginEditingManager for App {
                     }
                     _ => false,
                 },
+                PluginSettings::FletcherMunson {
+                    reference_level_db,
+                    smoothing_ms,
+                    band1_freq,
+                    band1_q,
+                    band1_max_gain,
+                    band1_slope,
+                    band2_freq,
+                    band2_q,
+                    band2_max_gain,
+                    band2_slope,
+                    band3_freq,
+                    band3_q,
+                    band3_max_gain,
+                    band3_slope,
+                    band4_freq,
+                    band4_q,
+                    band4_max_gain,
+                    band4_slope,
+                    ..
+                } => match param_idx {
+                    0 => {
+                        *reference_level_db = (*reference_level_db + delta).clamp(-40.0, 0.0);
+                        true
+                    }
+                    1 => {
+                        *smoothing_ms = (*smoothing_ms + delta * 5.0).clamp(1.0, 200.0);
+                        true
+                    }
+                    // Band 1 parameters (offset 2)
+                    2 => {
+                        *band1_freq = (*band1_freq * (1.0 + delta * 0.05)).clamp(20.0, 20000.0);
+                        true
+                    }
+                    3 => {
+                        *band1_q = (*band1_q + delta * 0.1).clamp(0.1, 10.0);
+                        true
+                    }
+                    4 => {
+                        *band1_max_gain = (*band1_max_gain + delta).clamp(0.0, 24.0);
+                        true
+                    }
+                    5 => {
+                        *band1_slope = (*band1_slope + delta * 0.05).clamp(0.0, 1.0);
+                        true
+                    }
+                    // Band 2 parameters (offset 6)
+                    6 => {
+                        *band2_freq = (*band2_freq * (1.0 + delta * 0.05)).clamp(20.0, 20000.0);
+                        true
+                    }
+                    7 => {
+                        *band2_q = (*band2_q + delta * 0.1).clamp(0.1, 10.0);
+                        true
+                    }
+                    8 => {
+                        *band2_max_gain = (*band2_max_gain + delta).clamp(0.0, 24.0);
+                        true
+                    }
+                    9 => {
+                        *band2_slope = (*band2_slope + delta * 0.05).clamp(0.0, 1.0);
+                        true
+                    }
+                    // Band 3 parameters (offset 10)
+                    10 => {
+                        *band3_freq = (*band3_freq * (1.0 + delta * 0.05)).clamp(20.0, 20000.0);
+                        true
+                    }
+                    11 => {
+                        *band3_q = (*band3_q + delta * 0.1).clamp(0.1, 10.0);
+                        true
+                    }
+                    12 => {
+                        *band3_max_gain = (*band3_max_gain + delta).clamp(0.0, 24.0);
+                        true
+                    }
+                    13 => {
+                        *band3_slope = (*band3_slope + delta * 0.05).clamp(0.0, 1.0);
+                        true
+                    }
+                    // Band 4 parameters (offset 14)
+                    14 => {
+                        *band4_freq = (*band4_freq * (1.0 + delta * 0.05)).clamp(20.0, 20000.0);
+                        true
+                    }
+                    15 => {
+                        *band4_q = (*band4_q + delta * 0.1).clamp(0.1, 10.0);
+                        true
+                    }
+                    16 => {
+                        *band4_max_gain = (*band4_max_gain + delta).clamp(0.0, 24.0);
+                        true
+                    }
+                    17 => {
+                        *band4_slope = (*band4_slope + delta * 0.05).clamp(0.0, 1.0);
+                        true
+                    }
+                    _ => false,
+                },
             }
         } else {
             false
@@ -2878,5 +2977,6 @@ pub fn get_param_count(settings: &PluginSettings) -> usize {
         PluginSettings::Denoiser { .. } => 7, // reduction_db, floor_db, smoothing, attack_ms, release_ms, low_latency, polyphonic_detection
         PluginSettings::Pnd { .. } => 3, // correction_strength, analysis_window_ms, drift_smoothing
         PluginSettings::ABCompare { .. } => 9, // mix, mix_mode, selected_path, bypass, auto_gain_enabled, loudness_type, max_auto_gain_db, gain_smoothing_ms, mix_transition_ms
+        PluginSettings::FletcherMunson { .. } => 18, // reference_level, smoothing, 4 bands x 4 params each
     }
 }

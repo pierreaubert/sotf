@@ -20,7 +20,7 @@ use crate::components::plugins::level_meters::LevelMeterManager;
 
 pub struct PlayerView {
     pub state: Entity<AppState>,
-    pub(crate) focus_handle: FocusHandle,
+    pub focus_handle: FocusHandle,
     pub(crate) search_focus_handle: FocusHandle,
     pub(crate) volume_focus_handle: FocusHandle,
     last_saved_window_bounds: Option<Bounds<Pixels>>,

@@ -3,12 +3,12 @@ use gpui::*;
 use sotf_audio::plugins::{PluginType, PluginSettings};
 use sotf_audio_player_gpui::components::plugins::editing::PluginEditingManager;
 
-pub struct PluginRackPage<'a> {
-    driver: &'a mut AppDriver<'a>,
+pub struct PluginRackPage<'a, 'b> {
+    driver: &'a mut AppDriver<'b>,
 }
 
-impl<'a> PluginRackPage<'a> {
-    pub fn new(driver: &'a mut AppDriver<'a>) -> Self {
+impl<'a, 'b> PluginRackPage<'a, 'b> {
+    pub fn new(driver: &'a mut AppDriver<'b>) -> Self {
         Self { driver }
     }
 
@@ -114,5 +114,93 @@ impl<'a> PluginRackPage<'a> {
                 (0, 0)
             }
         })
+    }
+
+    pub fn has_spectrum_info(&mut self) -> bool {
+        self.driver.read_app(|app| {
+            app.playback.spectrum_info.is_some()
+        })
+    }
+
+    pub fn get_spectrum_magnitudes(&mut self) -> Vec<f32> {
+        self.driver.read_app(|app| {
+            app.playback.spectrum_info.as_ref().map(|info| info.magnitudes.iter().cloned().collect()).unwrap_or_default()
+        })
+    }
+
+    pub fn inject_test_track(&mut self) {
+        self.driver.update_app(|app, _cx| {
+            let track = sotf_audio_player::library::Track {
+                path: std::path::PathBuf::from("data_generated/test-audio/wav/white_noise/white_noise_ch2_sr44100_b16.wav"),
+                title: Some("Test Track".to_string()),
+                artist: Some("Test Artist".to_string()),
+                track_number: Some(1),
+                duration_secs: Some(180),
+                channels: Some(2),
+                sample_rate: Some(44100),
+                bit_depth: Some(16),
+                replay_gain: None,
+                replay_peak: None,
+                album_gain: None,
+                album_peak: None,
+                waveform: None,
+                genre: None,
+                composer: None,
+                disc_number: None,
+                conductor: None,
+                performer: None,
+                isrc: None,
+                album_artist: Some("Test Artist".to_string()),
+                ensemble: None,
+                edition: None,
+            };
+
+            let album = sotf_audio_player::library::Album {
+                id: None,
+                title: "Test Album".to_string(),
+                year: Some(2024),
+                tracks: vec![track],
+                album_art_path: None,
+                album_art_thumbnail: None,
+                play_count: 0,
+                edition: None,
+                dynamic_range: None,
+            };
+
+            app.queue.push(sotf_audio_player_gpui::app::types::QueueItem {
+                album,
+                current_track_index: 0,
+            });
+            app.selected_queue_index = 0;
+        });
+    }
+
+    pub fn toggle_playback(&mut self) {
+        use sotf_audio_player_gpui::app::actions::PlayPause;
+        self.driver.view.update(self.driver.cx, |_, _, cx| {
+             cx.dispatch_action(&PlayPause);
+        }).unwrap();
+    }
+
+    pub fn wait_for_spectrum(&mut self, duration: std::time::Duration) {
+        let step = std::time::Duration::from_millis(100);
+        let steps = (duration.as_millis() / step.as_millis()).max(1) as usize;
+        
+        for _ in 0..steps {
+            self.driver.cx.executor().advance_clock(step);
+            self.driver.run_until_parked();
+            if self.has_spectrum_info() {
+                return;
+            }
+        }
+    }
+
+    pub fn wait(&mut self, duration: std::time::Duration) {
+        self.driver.cx.executor().advance_clock(duration);
+        self.driver.run_until_parked();
+    }
+
+    pub fn run_until_parked(&mut self) {
+        self.driver.run_until_parked();
     }
 }

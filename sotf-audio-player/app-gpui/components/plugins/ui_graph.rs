@@ -495,6 +495,7 @@ fn plugin_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
         | PluginType::Convolution
         | PluginType::XTC => theme.accent,
         PluginType::LoudnessCompensation
+        | PluginType::FletcherMunson
         | PluginType::LoudnessMonitor
         | PluginType::SpectrumAnalyzer
         | PluginType::ChannelMuteSolo => theme.text_muted,
@@ -518,6 +519,7 @@ fn plugin_channel_counts(plugin_type: &PluginType) -> (usize, usize) {
         | PluginType::MultibandCompressor
         | PluginType::MultibandExpander
         | PluginType::LoudnessCompensation
+        | PluginType::FletcherMunson
         | PluginType::LoudnessMonitor
         | PluginType::SpectrumAnalyzer
         | PluginType::ChannelMuteSolo

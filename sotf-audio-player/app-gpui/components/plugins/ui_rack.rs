@@ -82,6 +82,7 @@ fn plugin_color(plugin_type: &PluginType, theme: &crate::theme::Theme) -> Rgba {
         PluginType::MultibandCompressor => theme.plugin_colors.compressor, // Reuse compressor color
         PluginType::MultibandExpander => theme.plugin_colors.gate, // Reuse gate color
         PluginType::LoudnessCompensation => theme.plugin_colors.loudness,
+        PluginType::FletcherMunson => theme.plugin_colors.loudness, // Reuse loudness color
         PluginType::BinauralDecoder => theme.plugin_colors.binaural,
         PluginType::Convolution => theme.plugin_colors.convolution,
         PluginType::LoudnessMonitor => theme.plugin_colors.monitor,
@@ -107,6 +108,7 @@ fn plugin_icon(plugin_type: &PluginType) -> &'static str {
         PluginType::MultibandCompressor => "◎",
         PluginType::MultibandExpander => "◇",
         PluginType::LoudnessCompensation => "♫",
+        PluginType::FletcherMunson => "🎧",
         PluginType::BinauralDecoder => "◎",
         PluginType::Convolution => "∿",
         PluginType::LoudnessMonitor => "◐",
@@ -132,6 +134,7 @@ fn short_name(plugin_type: &PluginType) -> &'static str {
         PluginType::MultibandCompressor => "MB Comp",
         PluginType::MultibandExpander => "MB Expand",
         PluginType::LoudnessCompensation => "Loudness",
+        PluginType::FletcherMunson => "F-M EQ",
         PluginType::BinauralDecoder => "Binaural",
         PluginType::Convolution => "Convolution",
         PluginType::LoudnessMonitor => "Monitor",

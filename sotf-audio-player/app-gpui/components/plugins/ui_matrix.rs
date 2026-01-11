@@ -190,6 +190,7 @@ fn render_preset_buttons(
                                 input_channels: in_ch,
                                 output_channels: out_ch,
                                 ref mut matrix,
+                                ..
                             } = plugin.settings
                             {
                                 apply_matrix_preset(in_ch, out_ch, matrix, &preset_owned);

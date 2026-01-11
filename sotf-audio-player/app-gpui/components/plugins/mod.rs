@@ -21,6 +21,7 @@ mod ui_convolution;
 mod ui_denoiser;
 pub mod ui_eq;
 mod ui_expander;
+mod ui_fletcher_munson;
 mod ui_gain;
 mod ui_gate;
 mod ui_graph;
@@ -52,6 +53,7 @@ pub use ui_convolution::render_convolution_plugin;
 pub use ui_denoiser::render_denoiser_plugin;
 pub use ui_eq::render_eq_plugin;
 pub use ui_expander::render_expander_plugin;
+pub use ui_fletcher_munson::render_fletcher_munson_plugin;
 pub use ui_gain::render_gain_plugin;
 pub use ui_gate::render_gate_plugin;
 pub use ui_limiter::render_limiter_plugin;
@@ -315,6 +317,55 @@ pub fn render_plugin_content(
             theme,
         )
         .into_any_element(),
+        PluginSettings::FletcherMunson {
+            playback_volume_db,
+            reference_level_db,
+            band1_freq,
+            band1_q,
+            band1_max_gain,
+            band1_slope,
+            band2_freq,
+            band2_q,
+            band2_max_gain,
+            band2_slope,
+            band3_freq,
+            band3_q,
+            band3_max_gain,
+            band3_slope,
+            band4_freq,
+            band4_q,
+            band4_max_gain,
+            band4_slope,
+            smoothing_ms,
+        } => render_fletcher_munson_plugin(
+            entity.clone(),
+            plugin_idx,
+            ui_fletcher_munson::FletcherMunsonRenderState {
+                playback_volume_db: *playback_volume_db,
+                reference_level_db: *reference_level_db,
+                band1_freq: *band1_freq,
+                band1_q: *band1_q,
+                band1_max_gain: *band1_max_gain,
+                band1_slope: *band1_slope,
+                band2_freq: *band2_freq,
+                band2_q: *band2_q,
+                band2_max_gain: *band2_max_gain,
+                band2_slope: *band2_slope,
+                band3_freq: *band3_freq,
+                band3_q: *band3_q,
+                band3_max_gain: *band3_max_gain,
+                band3_slope: *band3_slope,
+                band4_freq: *band4_freq,
+                band4_q: *band4_q,
+                band4_max_gain: *band4_max_gain,
+                band4_slope: *band4_slope,
+                smoothing_ms: *smoothing_ms,
+                is_editing,
+                selected_param,
+            },
+            theme,
+        )
+        .into_any_element(),
         PluginSettings::LoudnessMonitor => {
             render_loudness_monitor_plugin(loudness, plugin_idx, is_editing, theme)
                 .into_any_element()
@@ -402,6 +453,7 @@ pub fn render_plugin_content(
             input_channels,
             output_channels,
             matrix,
+            ..
         } => render_matrix_plugin(
             entity.clone(),
             plugin_idx,
