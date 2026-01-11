@@ -63,4 +63,45 @@ mod tests {
         assert!((output_dimmed[0] - 0.1f32).abs() < 0.0001, "Ch0 should be dimmed to 0.1, got {}", output_dimmed[0]);
         assert_eq!(output_dimmed[1], 1.0, "Ch1 should be unchanged");
     }
+
+
+    #[test]
+    fn test_matrix_plugin_parameters() {
+        use sotf_plugins::{ParameterId, ParameterValue};
+
+        let matrix = vec![1.0, 0.0, 0.0, 1.0];
+        let mut plugin = MatrixPlugin::with_matrix(2, 2, matrix).unwrap();
+
+        // Check Mute Parameter
+        let mute0_id = ParameterId("mute_0".to_string());
+        plugin.set_parameter(mute0_id.clone(), ParameterValue::Bool(true)).unwrap();
+        
+        // Verify via get_parameter
+        let val = plugin.get_parameter(&mute0_id).unwrap();
+        match val {
+            ParameterValue::Bool(b) => assert!(b, "mute_0 should be true"),
+            _ => panic!("Expected Bool"),
+        }
+
+        // Verify via process (audio engine effect)
+        let input = vec![1.0, 1.0];
+        let mut output = vec![0.0; 2];
+        let context = ProcessContext { sample_rate: 48000, num_frames: 1 };
+        plugin.process(&input, &mut output, &context).unwrap();
+        assert_eq!(output[0], 0.0, "Audio should be muted via parameter");
+
+        // Check Dim Parameter
+        let dim1_id = ParameterId("dim_1".to_string());
+        plugin.set_parameter(dim1_id.clone(), ParameterValue::Bool(true)).unwrap();
+         // Verify via get_parameter
+        let val = plugin.get_parameter(&dim1_id).unwrap();
+        match val {
+            ParameterValue::Bool(b) => assert!(b, "dim_1 should be true"),
+            _ => panic!("Expected Bool"),
+        }
+        
+        // Verify via process (audio engine effect)
+        plugin.process(&input, &mut output, &context).unwrap();
+        assert!((output[1] - 0.1).abs() < 0.001, "Audio Ch1 should be dimmed via parameter");
+    }
 }

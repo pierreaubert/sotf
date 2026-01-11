@@ -465,6 +465,11 @@ impl PlayerView {
                                             move |view, info: &PluginDragInfo, _window, cx| {
                                                 let source = info.source_index;
                                                 let target = idx;
+                                                log::info!(
+                                                    "[GPUI] Plugin drop: source={} target={}",
+                                                    source,
+                                                    target
+                                                );
                                                 if source != target {
                                                     view.state.update(cx, |state, _cx| {
                                                         let chain_len =
@@ -489,14 +494,29 @@ impl PlayerView {
                                                             && target != 0
                                                             && target != chain_len - 1
                                                         {
+                                                            log::info!(
+                                                                "[GPUI] Rejecting monitor move to middle position"
+                                                            );
                                                             return; // Reject move
                                                         }
 
+                                                        log::info!(
+                                                            "[GPUI] Moving plugin {} -> {}",
+                                                            source,
+                                                            target
+                                                        );
                                                         state
                                                             .app
-                                                            .plugin_state.plugin_chain
+                                                            .plugin_state
+                                                            .plugin_chain
                                                             .move_plugin(source, target);
                                                         state.app.plugin_state.selected_plugin_index = target;
+                                                        // Update channel-dependent plugins after move
+                                                        state
+                                                            .app
+                                                            .plugin_state
+                                                            .plugin_chain
+                                                            .update_channel_dependent_plugins();
                                                         state.app.plugin_state.pending_plugin_update =
                                                             Some(PluginUpdateType::Structural);
                                                         state.app.update_level_meter_groups(); // Reconfigure metering
@@ -906,6 +926,7 @@ impl PlayerView {
             PluginType::Convolution,
             PluginType::XTC,
             PluginType::LoudnessCompensation,
+            PluginType::FletcherMunson,
             PluginType::LoudnessMonitor,
             PluginType::SpectrumAnalyzer,
             PluginType::Pnd,

@@ -35,17 +35,19 @@ pub struct MatrixRenderState<'a> {
 }
 
 /// Convert linear gain to dB string for display
+/// Supports negative gains (for M/S encoding) by showing with minus sign prefix
 fn format_gain_db(linear: f32) -> String {
     const SILENCE_THRESHOLD: f32 = 0.001; // -60 dB
 
-    if linear < SILENCE_THRESHOLD {
+    if linear.abs() < SILENCE_THRESHOLD {
         "-\u{221e}".to_string() // -infinity symbol
     } else {
-        let db = 20.0 * linear.log10();
+        let sign = if linear < 0.0 { "-" } else { "" };
+        let db = 20.0 * linear.abs().log10();
         if db.abs() < 0.05 {
-            "0".to_string()
+            format!("{}0", sign)
         } else {
-            format!("{:.1}", db)
+            format!("{}{:.1}", sign, db)
         }
     }
 }
@@ -142,7 +144,7 @@ fn render_preset_buttons(
     current_preset: &str,
     theme: &Theme,
 ) -> impl IntoElement {
-    let presets = ["Identity", "Swap L/R", "Mono Mix"];
+    let presets = ["Identity", "Swap L/R", "Mono Mix", "M/S Encode", "M/S Decode"];
 
     div()
         .flex()
@@ -312,19 +314,26 @@ fn render_matrix_cell(
     let gain_db = format_gain_db(gain);
     let param_idx = cell_index(input_idx, output_idx, input_count);
 
-    // Color intensity based on gain (0 = dark, 1 = bright)
-    let intensity = gain.clamp(0.0, 1.0);
-    let is_active = gain > 0.001;
+    // Color intensity based on absolute gain (0 = dark, 1 = bright)
+    let intensity = gain.abs().clamp(0.0, 1.0);
+    let is_active = gain.abs() > 0.001;
+    let is_negative = gain < -0.001;
 
-    // Background color: interpolate from surface to accent based on intensity
+    // Background color: interpolate from surface to accent/warning based on intensity
+    // Negative gains (for M/S) use warning color
     let bg_color = if is_selected {
         theme.accent_muted
     } else if is_active {
-        // Blend surface toward accent based on intensity
+        let target_color = if is_negative {
+            theme.warning // Orange/yellow for negative (inverted polarity)
+        } else {
+            theme.accent
+        };
+        // Blend surface toward target based on intensity
         Rgba {
-            r: theme.surface.r + (theme.accent.r - theme.surface.r) * intensity * 0.5,
-            g: theme.surface.g + (theme.accent.g - theme.surface.g) * intensity * 0.5,
-            b: theme.surface.b + (theme.accent.b - theme.surface.b) * intensity * 0.5,
+            r: theme.surface.r + (target_color.r - theme.surface.r) * intensity * 0.5,
+            g: theme.surface.g + (target_color.g - theme.surface.g) * intensity * 0.5,
+            b: theme.surface.b + (target_color.b - theme.surface.b) * intensity * 0.5,
             a: 1.0,
         }
     } else {
@@ -414,7 +423,7 @@ fn render_matrix_cell(
                 }
             });
         })
-        // Scroll to adjust value
+        // Scroll to adjust value (preserving sign for negative gains)
         .on_scroll_wheel(move |event, _, cx| {
             entity_scroll.update(cx, |state, _| {
                 if let Some(plugin) = state.app.plugin_state.plugin_chain.get_plugin_mut(plugin_idx) {
@@ -436,13 +445,18 @@ fn render_matrix_cell(
                             };
 
                             if delta.abs() > 0.01 {
-                                let current_db = if matrix[idx] < 0.001 {
+                                let current_val = matrix[idx];
+                                let sign = if current_val < 0.0 { -1.0 } else { 1.0 };
+                                let abs_val = current_val.abs();
+
+                                let current_db = if abs_val < 0.001 {
                                     MIN_DB
                                 } else {
-                                    20.0 * matrix[idx].log10()
+                                    20.0 * abs_val.log10()
                                 };
                                 let new_db = (current_db + delta).clamp(MIN_DB, MAX_DB);
-                                matrix[idx] = db_to_linear(new_db);
+                                // Preserve sign, apply new magnitude
+                                matrix[idx] = sign * db_to_linear(new_db);
                                 state.app.plugin_state.pending_plugin_update =
                                     Some(PluginUpdateType::Structural);
                             }

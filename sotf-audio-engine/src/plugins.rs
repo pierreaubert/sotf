@@ -1960,6 +1960,10 @@ pub fn detect_matrix_preset(in_ch: usize, out_ch: usize, matrix: &[f32]) -> &'st
         "Swap L/R"
     } else if is_mono_mix_matrix(in_ch, out_ch, matrix) {
         "Mono Mix"
+    } else if is_ms_encode_matrix(in_ch, out_ch, matrix) {
+        "M/S Encode"
+    } else if is_ms_decode_matrix(in_ch, out_ch, matrix) {
+        "M/S Decode"
     } else {
         "Custom"
     }
@@ -2001,16 +2005,52 @@ fn is_swap_matrix(in_ch: usize, out_ch: usize, matrix: &[f32]) -> bool {
 }
 
 /// Check if matrix is a mono mix (all inputs summed equally to all outputs)
+/// Uses equal-voltage summing: gain = 1/N where N = number of inputs
+/// For stereo: 1/2 = 0.5 = -6dB per channel (preserves level for mono-compatible content)
 fn is_mono_mix_matrix(in_ch: usize, out_ch: usize, matrix: &[f32]) -> bool {
     if matrix.len() != in_ch * out_ch || in_ch == 0 {
         return false;
     }
 
-    // Expected gain for equal power mix
-    let expected_gain = 1.0 / (in_ch as f32).sqrt();
+    // Expected gain for equal voltage (mono-compatible) mix
+    let expected_gain = 1.0 / (in_ch as f32);
 
     for value in matrix {
         if (*value - expected_gain).abs() > 0.001 {
+            return false;
+        }
+    }
+    true
+}
+
+/// Check if matrix is M/S Encode (stereo only)
+/// Mid = 0.5*L + 0.5*R, Side = 0.5*L - 0.5*R
+/// Matrix: [[0.5, 0.5], [0.5, -0.5]] = [0.5, 0.5, 0.5, -0.5]
+fn is_ms_encode_matrix(in_ch: usize, out_ch: usize, matrix: &[f32]) -> bool {
+    if in_ch != 2 || out_ch != 2 || matrix.len() != 4 {
+        return false;
+    }
+
+    let expected = [0.5, 0.5, 0.5, -0.5];
+    for (i, &exp) in expected.iter().enumerate() {
+        if (matrix[i] - exp).abs() > 0.001 {
+            return false;
+        }
+    }
+    true
+}
+
+/// Check if matrix is M/S Decode (stereo only)
+/// L = Mid + Side, R = Mid - Side
+/// Matrix: [[1.0, 1.0], [1.0, -1.0]] = [1.0, 1.0, 1.0, -1.0]
+fn is_ms_decode_matrix(in_ch: usize, out_ch: usize, matrix: &[f32]) -> bool {
+    if in_ch != 2 || out_ch != 2 || matrix.len() != 4 {
+        return false;
+    }
+
+    let expected = [1.0, 1.0, 1.0, -1.0];
+    for (i, &exp) in expected.iter().enumerate() {
+        if (matrix[i] - exp).abs() > 0.001 {
             return false;
         }
     }
@@ -2040,8 +2080,39 @@ pub fn apply_matrix_preset(in_ch: usize, out_ch: usize, matrix: &mut Vec<f32>, p
             }
         }
         "Mono Mix" => {
-            let gain = 1.0 / (in_ch as f32).sqrt();
+            // Equal-voltage summing: 1/N per channel
+            // For stereo: 1/2 = 0.5 = -6dB per channel
+            // This preserves level for mono-compatible content (L=R)
+            let gain = 1.0 / (in_ch as f32);
             matrix.fill(gain);
+        }
+        "M/S Encode" => {
+            // Mid/Side encoding (stereo only)
+            // Mid = 0.5*L + 0.5*R, Side = 0.5*L - 0.5*R
+            if in_ch >= 2 && out_ch >= 2 {
+                matrix[0] = 0.5; // Out 0 (Mid) <- 0.5 * In 0 (L)
+                matrix[1] = 0.5; // Out 0 (Mid) <- 0.5 * In 1 (R)
+                matrix[in_ch] = 0.5; // Out 1 (Side) <- 0.5 * In 0 (L)
+                matrix[in_ch + 1] = -0.5; // Out 1 (Side) <- -0.5 * In 1 (R)
+                // Pass through remaining channels
+                for i in 2..in_ch.min(out_ch) {
+                    matrix[i * in_ch + i] = 1.0;
+                }
+            }
+        }
+        "M/S Decode" => {
+            // Mid/Side decoding (stereo only)
+            // L = Mid + Side, R = Mid - Side
+            if in_ch >= 2 && out_ch >= 2 {
+                matrix[0] = 1.0; // Out 0 (L) <- 1.0 * In 0 (Mid)
+                matrix[1] = 1.0; // Out 0 (L) <- 1.0 * In 1 (Side)
+                matrix[in_ch] = 1.0; // Out 1 (R) <- 1.0 * In 0 (Mid)
+                matrix[in_ch + 1] = -1.0; // Out 1 (R) <- -1.0 * In 1 (Side)
+                // Pass through remaining channels
+                for i in 2..in_ch.min(out_ch) {
+                    matrix[i * in_ch + i] = 1.0;
+                }
+            }
         }
         _ => {
             // Custom or unknown - set to identity as fallback

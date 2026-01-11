@@ -108,11 +108,12 @@ impl MatrixPlugin {
             ));
         }
 
-        // Validate gains are in valid range [0.0, 1.0]
+        // Validate gains are in valid range [-1.0, 1.0]
+        // Negative gains are needed for M/S encoding (Side = 0.5*L - 0.5*R)
         for (idx, &gain) in matrix.iter().enumerate() {
-            if !(0.0..=1.0).contains(&gain) {
+            if !(-1.0..=1.0).contains(&gain) {
                 return Err(format!(
-                    "Matrix element {} has invalid gain {:.3} (must be 0.0-1.0)",
+                    "Matrix element {} has invalid gain {:.3} (must be -1.0 to 1.0)",
                     idx, gain
                 ));
             }
@@ -176,11 +177,12 @@ impl MatrixPlugin {
             ));
         }
 
-        // Validate gains are in valid range [0.0, 1.0]
+        // Validate gains are in valid range [-1.0, 1.0]
+        // Negative gains are needed for M/S encoding
         for (idx, &gain) in matrix.iter().enumerate() {
-            if !(0.0..=1.0).contains(&gain) {
+            if !(-1.0..=1.0).contains(&gain) {
                 return Err(format!(
-                    "Matrix element {} has invalid gain {:.3} (must be 0.0-1.0)",
+                    "Matrix element {} has invalid gain {:.3} (must be -1.0 to 1.0)",
                     idx, gain
                 ));
             }
@@ -267,8 +269,8 @@ impl MatrixPlugin {
                 num_outputs - 1
             ));
         }
-        if !(0.0..=1.0).contains(&gain) {
-            return Err(format!("Gain {:.3} out of range (must be 0.0-1.0)", gain));
+        if !(-1.0..=1.0).contains(&gain) {
+            return Err(format!("Gain {:.3} out of range (must be -1.0 to 1.0)", gain));
         }
 
         self.matrix[output_ch * num_inputs + input_ch] = gain;
@@ -297,9 +299,9 @@ impl MatrixPlugin {
 
         // Validate gains
         for (idx, &gain) in matrix.iter().enumerate() {
-            if !(0.0..=1.0).contains(&gain) {
+            if !(-1.0..=1.0).contains(&gain) {
                 return Err(format!(
-                    "Matrix element {} has invalid gain {:.3} (must be 0.0-1.0)",
+                    "Matrix element {} has invalid gain {:.3} (must be -1.0 to 1.0)",
                     idx, gain
                 ));
             }
@@ -382,51 +384,170 @@ impl Plugin for MatrixPlugin {
                 );
             }
         }
+
+        // Create parameters for channel states (Mute/Solo/Dim)
+        for out_ch in 0..num_outputs {
+            // Mute
+            params.push(
+                Parameter::new_bool(
+                    &format!("mute_{}", out_ch),
+                    &format!("Mute Out{}", out_ch),
+                    false,
+                )
+                .with_description(&format!("Mute output channel {}", out_ch))
+                .with_group("Channel Control"),
+            );
+
+            // Solo
+            params.push(
+                Parameter::new_bool(
+                    &format!("solo_{}", out_ch),
+                    &format!("Solo Out{}", out_ch),
+                    false,
+                )
+                .with_description(&format!("Solo output channel {}", out_ch))
+                .with_group("Channel Control"),
+            );
+
+            // Dim
+            params.push(
+                Parameter::new_bool(
+                    &format!("dim_{}", out_ch),
+                    &format!("Dim Out{}", out_ch),
+                    false,
+                )
+                .with_description(&format!("Dim output channel {}", out_ch))
+                .with_group("Channel Control"),
+            );
+        }
+
         params
     }
 
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
-        // Parse parameter ID: "gain_IN_OUT"
+        // Parse parameter ID: "gain_IN_OUT" or "mute_CH", "solo_CH", "dim_CH"
         let id_str = id.0.as_str();
-        if !id_str.starts_with("gain_") {
-            return Err(format!("Unknown parameter: {}", id));
+
+        if id_str.starts_with("gain_") {
+            let parts: Vec<&str> = id_str.split('_').collect();
+            if parts.len() != 3 {
+                return Err(format!("Invalid parameter format: {}", id));
+            }
+
+            let in_ch = parts[1]
+                .parse::<usize>()
+                .map_err(|_| format!("Invalid input channel: {}", parts[1]))?;
+            let out_ch = parts[2]
+                .parse::<usize>()
+                .map_err(|_| format!("Invalid output channel: {}", parts[2]))?;
+
+            let gain = value
+                .as_float()
+                .ok_or_else(|| "Parameter value must be a float".to_string())?;
+
+            return self.set_gain(in_ch, out_ch, gain);
         }
 
-        let parts: Vec<&str> = id_str.split('_').collect();
-        if parts.len() != 3 {
-            return Err(format!("Invalid parameter format: {}", id));
+        // Handle channel state parameters
+        if let Some(rest) = id_str.strip_prefix("mute_") {
+            let ch = rest
+                .parse::<usize>()
+                .map_err(|_| format!("Invalid channel index: {}", rest))?;
+            let val = value
+                .as_bool()
+                .ok_or_else(|| "Parameter value must be a boolean".to_string())?;
+            
+            // Ensure vector is large enough
+            if ch >= self.num_outputs() {
+                return Err(format!("Channel index {} out of range", ch));
+            }
+            if self.channel_states.len() <= ch {
+                 self.channel_states.resize(self.num_outputs(), ChannelState::default());
+            }
+            self.channel_states[ch].muted = val;
+            return Ok(());
         }
 
-        let in_ch = parts[1]
-            .parse::<usize>()
-            .map_err(|_| format!("Invalid input channel: {}", parts[1]))?;
-        let out_ch = parts[2]
-            .parse::<usize>()
-            .map_err(|_| format!("Invalid output channel: {}", parts[2]))?;
+        if let Some(rest) = id_str.strip_prefix("solo_") {
+            let ch = rest
+                .parse::<usize>()
+                .map_err(|_| format!("Invalid channel index: {}", rest))?;
+             let val = value
+                .as_bool()
+                .ok_or_else(|| "Parameter value must be a boolean".to_string())?;
 
-        let gain = value
-            .as_float()
-            .ok_or_else(|| "Parameter value must be a float".to_string())?;
+             if ch >= self.num_outputs() {
+                return Err(format!("Channel index {} out of range", ch));
+            }
+            if self.channel_states.len() <= ch {
+                 self.channel_states.resize(self.num_outputs(), ChannelState::default());
+            }
+            self.channel_states[ch].soloed = val;
+            return Ok(());
+        }
 
-        self.set_gain(in_ch, out_ch, gain)
+        if let Some(rest) = id_str.strip_prefix("dim_") {
+            let ch = rest
+                .parse::<usize>()
+                .map_err(|_| format!("Invalid channel index: {}", rest))?;
+             let val = value
+                .as_bool()
+                .ok_or_else(|| "Parameter value must be a boolean".to_string())?;
+            
+             if ch >= self.num_outputs() {
+                return Err(format!("Channel index {} out of range", ch));
+            }
+            if self.channel_states.len() <= ch {
+                 self.channel_states.resize(self.num_outputs(), ChannelState::default());
+            }
+            self.channel_states[ch].dimmed = val;
+            return Ok(());
+        }
+
+        Err(format!("Unknown parameter: {}", id))
     }
 
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
-        // Parse parameter ID: "gain_IN_OUT"
+        // Parse parameter ID: "gain_IN_OUT" or "mute_CH", etc.
         let id_str = id.0.as_str();
-        if !id_str.starts_with("gain_") {
-            return None;
+
+        if id_str.starts_with("gain_") {
+            let parts: Vec<&str> = id_str.split('_').collect();
+            if parts.len() != 3 {
+                return None;
+            }
+
+            let in_ch = parts[1].parse::<usize>().ok()?;
+            let out_ch = parts[2].parse::<usize>().ok()?;
+
+            return self.get_gain(in_ch, out_ch).map(ParameterValue::Float);
         }
 
-        let parts: Vec<&str> = id_str.split('_').collect();
-        if parts.len() != 3 {
-            return None;
+        if let Some(rest) = id_str.strip_prefix("mute_") {
+            let ch = rest.parse::<usize>().ok()?;
+            if ch < self.channel_states.len() {
+                return Some(ParameterValue::Bool(self.channel_states[ch].muted));
+            }
+            return Some(ParameterValue::Bool(false)); // Default
         }
 
-        let in_ch = parts[1].parse::<usize>().ok()?;
-        let out_ch = parts[2].parse::<usize>().ok()?;
+        if let Some(rest) = id_str.strip_prefix("solo_") {
+             let ch = rest.parse::<usize>().ok()?;
+            if ch < self.channel_states.len() {
+                return Some(ParameterValue::Bool(self.channel_states[ch].soloed));
+            }
+            return Some(ParameterValue::Bool(false));
+        }
 
-        self.get_gain(in_ch, out_ch).map(ParameterValue::Float)
+        if let Some(rest) = id_str.strip_prefix("dim_") {
+             let ch = rest.parse::<usize>().ok()?;
+            if ch < self.channel_states.len() {
+                return Some(ParameterValue::Bool(self.channel_states[ch].dimmed));
+            }
+            return Some(ParameterValue::Bool(false));
+        }
+
+        None
     }
 
     fn process(
@@ -631,7 +752,9 @@ mod tests {
     fn test_invalid_gain_range() {
         let mut plugin = MatrixPlugin::new(2, 2);
         assert!(plugin.set_gain(0, 0, 1.5).is_err()); // > 1.0
-        assert!(plugin.set_gain(0, 0, -0.1).is_err()); // < 0.0
+        assert!(plugin.set_gain(0, 0, -1.5).is_err()); // < -1.0
+        // Negative gains within range should work (for M/S encoding)
+        assert!(plugin.set_gain(0, 0, -0.5).is_ok());
     }
 
     #[test]

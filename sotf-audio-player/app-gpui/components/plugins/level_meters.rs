@@ -1370,8 +1370,25 @@ impl LevelMeterManager for AppState {
         }
 
         // Update cache
+        // Update cache
         self.level_meter_last_channel_count = num_channels;
         self.level_meter_last_speaker_config = current_speaker_config.clone();
+
+        // Capture previous states to preserve them
+        let old_groups: Vec<(String, bool, bool, bool)> = self
+            .level_meter_groups
+            .iter()
+            .map(|g| (g.name.clone(), g.muted, g.soloed, g.dimmed))
+            .collect();
+
+        // Helper to find previous state
+        let get_previous_state = |name: &str| -> (bool, bool, bool) {
+            old_groups
+                .iter()
+                .find(|(n, _, _, _)| n == name)
+                .map(|(_, m, s, d)| (*m, *s, *d))
+                .unwrap_or((false, false, false))
+        };
 
         self.level_meter_groups.clear();
 
@@ -1385,6 +1402,7 @@ impl LevelMeterManager for AppState {
         if let Some(groups) = meter_groups {
             // Convert static specs to runtime groups
             for group_spec in groups {
+                let (muted, soloed, dimmed) = get_previous_state(group_spec.name);
                 self.level_meter_groups.push(ChannelGroup {
                     name: group_spec.name.to_string(),
                     channels: group_spec
@@ -1400,9 +1418,9 @@ impl LevelMeterManager for AppState {
                                 .collect(),
                         })
                         .collect(),
-                    muted: false,
-                    soloed: false,
-                    dimmed: false,
+                    muted,
+                    soloed,
+                    dimmed,
                 });
             }
         } else {
@@ -1410,6 +1428,7 @@ impl LevelMeterManager for AppState {
             match num_channels {
                 1 => {
                     // Mono
+                    let (muted, soloed, dimmed) = get_previous_state("Mono");
                     self.level_meter_groups.push(ChannelGroup {
                         name: "Mono".to_string(),
                         channels: vec![ChannelInfo {
@@ -1417,13 +1436,14 @@ impl LevelMeterManager for AppState {
                             name: "M".to_string(),
                             display_name: vec!["M".to_string()],
                         }],
-                        muted: false,
-                        soloed: false,
-                        dimmed: false,
+                        muted,
+                        soloed,
+                        dimmed,
                     });
                 }
                 4 => {
                     // Quad (FL, FR, SL, SR) - not a standard speaker config
+                    let (muted_lr, soloed_lr, dimmed_lr) = get_previous_state("L/R");
                     self.level_meter_groups.push(ChannelGroup {
                         name: "L/R".to_string(),
                         channels: vec![
@@ -1438,10 +1458,12 @@ impl LevelMeterManager for AppState {
                                 display_name: vec!["R".to_string()],
                             },
                         ],
-                        muted: false,
-                        soloed: false,
-                        dimmed: false,
+                        muted: muted_lr,
+                        soloed: soloed_lr,
+                        dimmed: dimmed_lr,
                     });
+                    
+                    let (muted_sr, soloed_sr, dimmed_sr) = get_previous_state("Surrounds");
                     self.level_meter_groups.push(ChannelGroup {
                         name: "Surrounds".to_string(),
                         channels: vec![
@@ -1456,13 +1478,14 @@ impl LevelMeterManager for AppState {
                                 display_name: vec!["S".to_string(), "R".to_string()],
                             },
                         ],
-                        muted: false,
-                        soloed: false,
-                        dimmed: false,
+                        muted: muted_sr,
+                        soloed: soloed_sr,
+                        dimmed: dimmed_sr,
                     });
                 }
                 _ => {
                     // Generic fallback - treat all channels as one group
+                    let (muted, soloed, dimmed) = get_previous_state("All Channels");
                     let channels: Vec<ChannelInfo> = (0..num_channels)
                         .map(|i| {
                             let spec = make_fallback_channel(i);
@@ -1480,9 +1503,9 @@ impl LevelMeterManager for AppState {
                     self.level_meter_groups.push(ChannelGroup {
                         name: "All Channels".to_string(),
                         channels,
-                        muted: false,
-                        soloed: false,
-                        dimmed: false,
+                        muted,
+                        soloed,
+                        dimmed,
                     });
                 }
             }
@@ -1589,22 +1612,21 @@ impl LevelMeterManager for AppState {
             }
         }
 
-        // Find and update the Matrix plugin
-        for i in 0..self.plugin_state.plugin_chain.len() {
+        // Find and update the LAST Matrix plugin (closest to output)
+        for i in (0..self.plugin_state.plugin_chain.len()).rev() {
             if let Some(plugin) = self.plugin_state.plugin_chain.get_plugin_mut(i) {
                 if matches!(&plugin.settings, PluginSettings::Matrix { .. }) {
                     // Update settings in memory
                     match &mut plugin.settings {
                         PluginSettings::Matrix { channel_states: settings_states, .. } => {
                             *settings_states = channel_states.clone();
-                            log::debug!("[LevelMeter] Updated Matrix channel_states: {:?}", settings_states);
                         }
                         _ => unreachable!(),
                     }
 
                     // Dispatch update to audio engine
                     self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
-                    return; // Only update the first matrix plugin found
+                    return; // Only update the last matrix plugin found
                 }
             }
         }

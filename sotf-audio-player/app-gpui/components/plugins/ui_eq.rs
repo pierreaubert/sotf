@@ -168,9 +168,48 @@ const CHART_HEIGHT: f32 = 300.0;
 const GPUI_PX_MARGIN_TOP: f32 = 10.0;
 const MIN_FREQ: f64 = 20.0;
 const MAX_FREQ: f64 = 20000.0;
-const MIN_GAIN_DB: f64 = -24.0;
-const MAX_GAIN_DB: f64 = 24.0;
 const CONTROL_POINT_RADIUS: f32 = 8.0;
+
+/// Calculate dynamic y-axis range based on filter gains.
+/// Returns (min_db, max_db) for the chart y-axis.
+///
+/// Logic:
+/// - If max absolute gain <= 0.5 dB, use -1.0 to +1.0 dB
+/// - Otherwise, multiply by 1.2 and round to next integer (separately for upper/lower)
+fn calculate_dynamic_y_range(filters: &[EQFilter]) -> (f64, f64) {
+    if filters.is_empty() {
+        return (-1.0, 1.0);
+    }
+
+    // Find min and max gain across all filters
+    let mut min_gain = 0.0_f64;
+    let mut max_gain = 0.0_f64;
+
+    for filter in filters {
+        if filter.gain_db < min_gain {
+            min_gain = filter.gain_db;
+        }
+        if filter.gain_db > max_gain {
+            max_gain = filter.gain_db;
+        }
+    }
+
+    // Calculate upper bound
+    let upper_bound = if max_gain <= 0.5 {
+        1.0
+    } else {
+        (max_gain * 1.2).ceil()
+    };
+
+    // Calculate lower bound
+    let lower_bound = if min_gain.abs() <= 0.5 {
+        -1.0
+    } else {
+        (min_gain * 1.2).floor()
+    };
+
+    (lower_bound, upper_bound)
+}
 
 /// Convert frequency (Hz) to x pixel position
 fn freq_to_x(freq: f64, plot_width: f32) -> f32 {
@@ -188,20 +227,20 @@ fn x_to_freq(x: f32, plot_width: f32) -> f64 {
     (log_min + t * (log_max - log_min)).exp()
 }
 
-/// Convert gain (dB) to y pixel position
-fn gain_to_y(gain_db: f64) -> f32 {
+/// Convert gain (dB) to y pixel position with dynamic range
+fn gain_to_y(gain_db: f64, min_db: f64, max_db: f64) -> f32 {
     // gpui-px calculates plot_height = height - margin_top(10) - margin_bottom(30)
     // but renders the plot starting at y=0 (no actual top margin offset)
     let plot_height = CHART_HEIGHT - GPUI_PX_MARGIN_TOP - CHART_BOTTOM_MARGIN;
-    let t = (MAX_GAIN_DB - gain_db) / (MAX_GAIN_DB - MIN_GAIN_DB);
+    let t = (max_db - gain_db) / (max_db - min_db);
     CHART_TOP_MARGIN + (t as f32) * plot_height
 }
 
-/// Convert y pixel position to gain (dB)
-fn y_to_gain(y: f32) -> f64 {
+/// Convert y pixel position to gain (dB) with dynamic range
+fn y_to_gain(y: f32, min_db: f64, max_db: f64) -> f64 {
     let plot_height = CHART_HEIGHT - GPUI_PX_MARGIN_TOP - CHART_BOTTOM_MARGIN;
     let t = ((y - CHART_TOP_MARGIN) / plot_height).clamp(0.0, 1.0) as f64;
-    MAX_GAIN_DB - t * (MAX_GAIN_DB - MIN_GAIN_DB)
+    max_db - t * (max_db - min_db)
 }
 
 /// Render EQ frequency response using gpui-px with draggable control points
@@ -215,6 +254,9 @@ fn render_eq_visualization(
     theme: &Theme,
     width: f32,
 ) -> impl IntoElement {
+    // Calculate dynamic y-axis range based on filter gains
+    let (min_db, max_db) = calculate_dynamic_y_range(filters);
+
     // Generate frequency points (logarithmically spaced from 20Hz to 20kHz)
     let num_points = 120;
     let min_freq = 20.0_f64;
@@ -287,7 +329,7 @@ fn render_eq_visualization(
         .x_label("Frequency")
         .y_label("dB")
         .x_range(MIN_FREQ, MAX_FREQ)
-        .y_range(MIN_GAIN_DB, MAX_GAIN_DB) // Fixed Y range so control points align
+        .y_range(min_db, max_db) // Dynamic Y range based on filter gains
         .size(width, 300.0)
         .color(text_muted_u32) // Combined response line
         .stroke_width(2.5)
@@ -342,7 +384,7 @@ fn render_eq_visualization(
 
         // Calculate position
         let x = freq_to_x(filter.frequency, plot_width);
-        let y = gain_to_y(filter.gain_db);
+        let y = gain_to_y(filter.gain_db, min_db, max_db);
 
         let band_idx = i;
 
@@ -565,8 +607,9 @@ fn render_eq_visualization(
                 let y_px: f32 = position.y.into();
 
                 // Convert directly to freq/gain (no delta calculation needed)
+                // Use wider range for dragging to allow extending beyond current view
                 let new_freq = x_to_freq(x_px, plot_width).clamp(MIN_FREQ, MAX_FREQ);
-                let new_gain = y_to_gain(y_px).clamp(MIN_GAIN_DB, MAX_GAIN_DB);
+                let new_gain = y_to_gain(y_px, min_db, max_db).clamp(-24.0, 24.0);
 
                 let plugin_idx = drag_data.plugin_idx;
                 let band_idx = drag_data.band_idx;
@@ -1041,6 +1084,9 @@ mod tests {
     const TEST_CHART_HEIGHT: f32 = 300.0;
     // gpui-px uses GPUI_PX_MARGIN_TOP for height calculation, not CHART_TOP_MARGIN
     const TEST_PLOT_HEIGHT: f32 = TEST_CHART_HEIGHT - GPUI_PX_MARGIN_TOP - CHART_BOTTOM_MARGIN;
+    // Fixed gain range for testing (used as reference range)
+    const TEST_MIN_GAIN_DB: f64 = -24.0;
+    const TEST_MAX_GAIN_DB: f64 = 24.0;
 
     /// Test that freq_to_x and x_to_freq are inverse operations
     #[test]
@@ -1068,8 +1114,8 @@ mod tests {
         let test_gains = [-24.0, -12.0, 0.0, 12.0, 24.0];
 
         for &gain in &test_gains {
-            let y = gain_to_y(gain);
-            let recovered_gain = y_to_gain(y);
+            let y = gain_to_y(gain, TEST_MIN_GAIN_DB, TEST_MAX_GAIN_DB);
+            let recovered_gain = y_to_gain(y, TEST_MIN_GAIN_DB, TEST_MAX_GAIN_DB);
             let abs_error = (recovered_gain - gain).abs();
             assert!(
                 abs_error < 0.01,
@@ -1110,7 +1156,7 @@ mod tests {
     #[test]
     fn test_gain_to_y_boundaries() {
         // MAX_GAIN_DB should map to top margin
-        let y_max = gain_to_y(MAX_GAIN_DB);
+        let y_max = gain_to_y(TEST_MAX_GAIN_DB, TEST_MIN_GAIN_DB, TEST_MAX_GAIN_DB);
         assert!(
             (y_max - CHART_TOP_MARGIN).abs() < 0.01,
             "MAX_GAIN_DB should map to top margin: got {} expected {}",
@@ -1119,7 +1165,7 @@ mod tests {
         );
 
         // MIN_GAIN_DB should map to top margin + plot_height
-        let y_min = gain_to_y(MIN_GAIN_DB);
+        let y_min = gain_to_y(TEST_MIN_GAIN_DB, TEST_MIN_GAIN_DB, TEST_MAX_GAIN_DB);
         let expected_min = CHART_TOP_MARGIN + TEST_PLOT_HEIGHT;
         assert!(
             (y_min - expected_min).abs() < 0.01,
@@ -1129,7 +1175,7 @@ mod tests {
         );
 
         // 0 dB should be at vertical center
-        let y_zero = gain_to_y(0.0);
+        let y_zero = gain_to_y(0.0, TEST_MIN_GAIN_DB, TEST_MAX_GAIN_DB);
         let expected_center = CHART_TOP_MARGIN + TEST_PLOT_HEIGHT / 2.0;
         assert!(
             (y_zero - expected_center).abs() < 0.01,
@@ -1165,17 +1211,17 @@ mod tests {
     #[test]
     fn test_y_to_gain_clamping() {
         // Y before top margin should clamp to MAX_GAIN_DB
-        let gain_above = y_to_gain(0.0);
+        let gain_above = y_to_gain(0.0, TEST_MIN_GAIN_DB, TEST_MAX_GAIN_DB);
         assert!(
-            (gain_above - MAX_GAIN_DB).abs() < 0.01,
+            (gain_above - TEST_MAX_GAIN_DB).abs() < 0.01,
             "y above margin should clamp to MAX_GAIN_DB: got {}",
             gain_above
         );
 
         // Y after bottom edge should clamp to MIN_GAIN_DB
-        let gain_below = y_to_gain(TEST_CHART_HEIGHT + 100.0);
+        let gain_below = y_to_gain(TEST_CHART_HEIGHT + 100.0, TEST_MIN_GAIN_DB, TEST_MAX_GAIN_DB);
         assert!(
-            (gain_below - MIN_GAIN_DB).abs() < 0.01,
+            (gain_below - TEST_MIN_GAIN_DB).abs() < 0.01,
             "y below bottom should clamp to MIN_GAIN_DB: got {}",
             gain_below
         );
@@ -1223,10 +1269,10 @@ mod tests {
 
         // Test various filter configurations
         let test_cases = [
-            (MIN_FREQ, MIN_GAIN_DB),
-            (MIN_FREQ, MAX_GAIN_DB),
-            (MAX_FREQ, MIN_GAIN_DB),
-            (MAX_FREQ, MAX_GAIN_DB),
+            (MIN_FREQ, TEST_MIN_GAIN_DB),
+            (MIN_FREQ, TEST_MAX_GAIN_DB),
+            (MAX_FREQ, TEST_MIN_GAIN_DB),
+            (MAX_FREQ, TEST_MAX_GAIN_DB),
             (1000.0, 0.0),
             (100.0, -6.0),
             (10000.0, 6.0),
@@ -1234,7 +1280,7 @@ mod tests {
 
         for (freq, gain) in test_cases {
             let x = freq_to_x(freq, plot_width);
-            let y = gain_to_y(gain);
+            let y = gain_to_y(gain, TEST_MIN_GAIN_DB, TEST_MAX_GAIN_DB);
 
             // X should be within chart area (left margin to left margin + plot width)
             assert!(
