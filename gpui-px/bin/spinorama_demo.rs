@@ -4,7 +4,7 @@
 //! using the high-level gpui-px charting API.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -15,6 +15,7 @@ use autoeq::read::{
 use autoeq::{Curve, DirectivityData};
 use gpui::prelude::FluentBuilder;
 use gpui::*;
+use gpui_px::interaction::{InteractiveChart, InteractiveChartConfig, InteractiveChartState};
 use gpui_px::{
     ColorScale, Colormap, LegendPosition, ScaleType, Surface3DState, heatmap, line, surface3d,
 };
@@ -123,6 +124,12 @@ struct SpinoramaApp {
     // Colormap selection
     selected_colormap: Colormap,
     colormap_dropdown_open: bool,
+    // Interactive chart state for frequency/SPL plots (CEA2034, horizontal/vertical SPL)
+    freq_spl_chart_state: InteractiveChartState,
+    // Interactive chart state for contour plot
+    contour_chart_state: InteractiveChartState,
+    // Hidden series for CEA2034 chart (toggled via legend clicks)
+    cea2034_hidden_series: Rc<RefCell<HashSet<usize>>>,
 }
 
 impl SpinoramaApp {
@@ -157,6 +164,26 @@ impl SpinoramaApp {
             // Colormap selection (Turbo is good default for spinorama)
             selected_colormap: Colormap::Turbo,
             colormap_dropdown_open: false,
+            // Interactive chart state for freq/SPL plots: X=20Hz-20kHz (log), Y=-40 to 10 dB
+            freq_spl_chart_state: InteractiveChartState::new(20.0, 20000.0, -40.0, 10.0)
+                .with_log_x(true)
+                .with_size(900.0, 500.0)
+                .with_config(
+                    InteractiveChartConfig::new()
+                        .with_left_margin(50.0)
+                        .with_top_margin(30.0),
+                ),
+            // Interactive chart state for contour: X=100Hz-20kHz (log), Y=-60 to 60 deg
+            contour_chart_state: InteractiveChartState::new(100.0, 20000.0, -60.0, 60.0)
+                .with_log_x(true)
+                .with_size(900.0, 500.0)
+                .with_config(
+                    InteractiveChartConfig::new()
+                        .with_left_margin(50.0)
+                        .with_top_margin(30.0),
+                ),
+            // Hidden series for legend toggle
+            cea2034_hidden_series: Rc::new(RefCell::new(HashSet::new())),
         };
 
         // Start loading speakers list
@@ -1027,22 +1054,50 @@ impl SpinoramaApp {
         let freq: Vec<f64> = freq_indices.iter().map(|&i| first_curve.freq[i]).collect();
         let first_spl: Vec<f64> = freq_indices.iter().map(|&i| first_curve.spl[i]).collect();
 
-        // Start building the line chart
+        // Get zoom state from interactive chart state
+        let (x_min, x_max) = self.freq_spl_chart_state.x_domain();
+        let (y_min, y_max) = self.freq_spl_chart_state.y_domain();
+        let is_zoomed = self.freq_spl_chart_state.is_zoomed();
+
+        // Chart dimensions
+        let chart_width = 900.0_f32;
+        let chart_height = 500.0_f32;
+
+        // Get hidden series for legend toggle
+        let hidden_series_set = self.cea2034_hidden_series.borrow().clone();
+        let hidden_indices: Vec<usize> = hidden_series_set.iter().copied().collect();
+
+        // Clone for the callback
+        let hidden_series_ref = self.cea2034_hidden_series.clone();
+
+        // Start building the line chart with zoom-adjusted ranges
         let mut chart = line(&freq, &first_spl)
             .title(format!(
-                "CEA2034 - {}",
-                self.selected_speaker.as_deref().unwrap_or("Unknown")
+                "CEA2034 - {}{}",
+                self.selected_speaker.as_deref().unwrap_or("Unknown"),
+                if is_zoomed { " (zoomed)" } else { "" }
             ))
             .x_label("Frequency (Hz)")
             .y_label("SPL (dB)")
             .label(first_name)
             .color(first_color)
             .x_scale(ScaleType::Log)
-            .x_range(20.0, 20000.0)
-            .y_range(-40.0, 10.0)
-            .size(900.0, 500.0)
+            .x_range(x_min, x_max)
+            .y_range(y_min, y_max)
+            .size(chart_width, chart_height)
             .stroke_width(2.0)
-            .legend_position(LegendPosition::Bottom);
+            .legend_position(LegendPosition::Bottom)
+            .hidden_series(&hidden_indices)
+            .on_legend_click(move |series_idx, window, _cx| {
+                // Toggle visibility of the clicked series
+                let mut hidden = hidden_series_ref.borrow_mut();
+                if hidden.contains(&series_idx) {
+                    hidden.remove(&series_idx);
+                } else {
+                    hidden.insert(series_idx);
+                }
+                window.refresh();
+            });
 
         // Add remaining SPL curves
         for &name in spl_curve_names.iter().skip(1) {
@@ -1078,14 +1133,29 @@ impl SpinoramaApp {
         }
 
         match chart.build() {
-            Ok(element) => div().flex().flex_col().gap_6().child(element).child(
-                div().mt_4().p_4().bg(rgb(0xf5f5f5)).rounded_md().child(
-                    div()
-                        .text_sm()
-                        .text_color(rgb(0x666666))
-                        .child("Built with gpui-px high-level charting API"),
-                ),
-            ),
+            Ok(element) => {
+                // Wrap chart with interactive handlers using gpui-px InteractiveChart
+                let interactive_chart = InteractiveChart::new(
+                    "cea2034-chart",
+                    element,
+                    self.freq_spl_chart_state.clone(),
+                )
+                .build();
+
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_6()
+                    .child(interactive_chart)
+                    .child(
+                        div().mt_4().p_4().bg(rgb(0xf5f5f5)).rounded_md().child(
+                            div()
+                                .text_sm()
+                                .text_color(rgb(0x666666))
+                                .child("Drag to pan • Scroll to zoom • Double-click to reset • Click legend to toggle"),
+                        ),
+                    )
+            }
             Err(e) => div().flex().items_center().justify_center().h_full().child(
                 div()
                     .text_base()
@@ -1181,23 +1251,29 @@ impl SpinoramaApp {
         let first_color = interpolate_color(0);
         let first_label = format!("{:.0}°", first_curve.angle);
 
+        // Get zoom state from interactive chart state
+        let (x_min, x_max) = self.freq_spl_chart_state.x_domain();
+        let (y_min, y_max) = self.freq_spl_chart_state.y_domain();
+        let is_zoomed = self.freq_spl_chart_state.is_zoomed();
+
         let mut chart = line(&freq, &first_spl)
             .title(format!(
-                "{} SPL - {}",
+                "{} SPL - {}{}",
                 if plane == "horizontal" {
                     "Horizontal"
                 } else {
                     "Vertical"
                 },
-                self.selected_speaker.as_deref().unwrap_or("Unknown")
+                self.selected_speaker.as_deref().unwrap_or("Unknown"),
+                if is_zoomed { " (zoomed)" } else { "" }
             ))
             .x_label("Frequency (Hz)")
             .y_label("SPL (dB)")
             .label(&first_label)
             .color(first_color)
             .x_scale(ScaleType::Log)
-            .x_range(20.0, 20000.0)
-            .y_range(-40.0, 10.0)
+            .x_range(x_min, x_max)
+            .y_range(y_min, y_max)
             .size(900.0, 500.0)
             .stroke_width(1.5)
             .legend_position(LegendPosition::Hidden); // Too many curves for legend
@@ -1221,51 +1297,61 @@ impl SpinoramaApp {
         let angle_max = curves.last().map(|c| c.angle).unwrap_or(60.0);
 
         match chart.build() {
-            Ok(element) => div()
-                .flex()
-                .flex_col()
-                .gap_6()
-                .child(element)
-                // Angle color legend
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .p_4()
-                        .bg(rgb(0xf5f5f5))
-                        .rounded_md()
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(rgb(0x666666))
-                                .child(format!("{:.0}°", angle_min)),
-                        )
-                        // Gradient strip
-                        .children((0..6).map(|i| {
-                            let (r, g, b) = viridis_colors[i];
-                            let color = ((r * 255.0) as u32) << 16
-                                | ((g * 255.0) as u32) << 8
-                                | (b * 255.0) as u32;
-                            div().flex_1().h(px(16.0)).bg(rgb(color))
-                        }))
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(rgb(0x666666))
-                                .child(format!("{:.0}°", angle_max)),
-                        ),
+            Ok(element) => {
+                // Wrap chart with interactive handlers
+                let interactive_chart = InteractiveChart::new(
+                    format!("{}-spl-chart", plane),
+                    element,
+                    self.freq_spl_chart_state.clone(),
                 )
-                .child(
-                    div()
-                        .mt_2()
-                        .text_sm()
-                        .text_color(rgb(0x888888))
-                        .child(format!(
-                            "{} curves from {:.0}° to {:.0}°",
-                            num_curves, angle_min, angle_max
-                        )),
-                ),
+                .build();
+
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_6()
+                    .child(interactive_chart)
+                    // Angle color legend
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .p_4()
+                            .bg(rgb(0xf5f5f5))
+                            .rounded_md()
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(rgb(0x666666))
+                                    .child(format!("{:.0}°", angle_min)),
+                            )
+                            // Gradient strip
+                            .children((0..6).map(|i| {
+                                let (r, g, b) = viridis_colors[i];
+                                let color = ((r * 255.0) as u32) << 16
+                                    | ((g * 255.0) as u32) << 8
+                                    | (b * 255.0) as u32;
+                                div().flex_1().h(px(16.0)).bg(rgb(color))
+                            }))
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(rgb(0x666666))
+                                    .child(format!("{:.0}°", angle_max)),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .mt_2()
+                            .text_sm()
+                            .text_color(rgb(0x888888))
+                            .child(format!(
+                                "{} curves from {:.0}° to {:.0}° • Drag to pan • Scroll to zoom • Double-click to reset",
+                                num_curves, angle_min, angle_max
+                            )),
+                    )
+            }
             Err(e) => div().flex().items_center().justify_center().h_full().child(
                 div()
                     .text_base()
@@ -1355,30 +1441,58 @@ impl SpinoramaApp {
             .size(900.0, 500.0)
             .build()
         {
-            Ok(element) => div().flex().flex_col().gap_6().child(element).child(
+            Ok(element) => {
+                // Wrap chart with interactive handlers
+                let interactive_chart = InteractiveChart::new(
+                    "contour-chart",
+                    element,
+                    self.contour_chart_state.clone(),
+                )
+                .build();
+
                 div()
                     .flex()
-                    .gap_4()
-                    .p_4()
-                    .bg(rgb(0xf5f5f5))
-                    .rounded_md()
-                    .child(div().text_sm().text_color(rgb(0x666666)).child(format!(
-                        "X: Frequency ({:.0} Hz - {:.0} Hz, log scale)",
-                        freq_min, freq_max
-                    )))
+                    .flex_col()
+                    .gap_6()
+                    .child(interactive_chart)
                     .child(
                         div()
-                            .text_sm()
-                            .text_color(rgb(0x666666))
-                            .child(format!("Y: Angle ({:.0}° to {:.0}°)", angle_min, angle_max)),
+                            .flex()
+                            .flex_wrap()
+                            .gap_4()
+                            .p_4()
+                            .bg(rgb(0xf5f5f5))
+                            .rounded_md()
+                            .child(div().text_sm().text_color(rgb(0x666666)).child(format!(
+                                "X: Frequency ({:.0} Hz - {:.0} Hz, log scale)",
+                                freq_min, freq_max
+                            )))
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(rgb(0x666666))
+                                    .child(format!(
+                                        "Y: Angle ({:.0}° to {:.0}°)",
+                                        angle_min, angle_max
+                                    )),
+                            )
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(rgb(0x666666))
+                                    .child(format!(
+                                        "SPL range: {:.1} dB to {:.1} dB",
+                                        spl_min, spl_max
+                                    )),
+                            )
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(rgb(0x888888))
+                                    .child("Drag to pan • Scroll to zoom • Double-click to reset"),
+                            ),
                     )
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(rgb(0x666666))
-                            .child(format!("SPL range: {:.1} dB to {:.1} dB", spl_min, spl_max)),
-                    ),
-            ),
+            }
             Err(e) => div().flex().items_center().justify_center().h_full().child(
                 div()
                     .text_base()

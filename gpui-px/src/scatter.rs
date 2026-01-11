@@ -71,6 +71,9 @@ pub struct ScatterChart {
     height: f32,
     x_scale_type: ScaleType,
     y_scale_type: ScaleType,
+    // Axis range overrides (for zoom support)
+    x_range: Option<[f64; 2]>,
+    y_range: Option<[f64; 2]>,
     // Legend settings
     show_legend: bool,
     legend_position: LegendPosition,
@@ -136,6 +139,18 @@ impl ScatterChart {
     /// Set Y-axis scale type (linear or log).
     pub fn y_scale(mut self, scale: ScaleType) -> Self {
         self.y_scale_type = scale;
+        self
+    }
+
+    /// Set explicit X-axis range (for zoom support).
+    pub fn x_range(mut self, min: f64, max: f64) -> Self {
+        self.x_range = Some([min, max]);
+        self
+    }
+
+    /// Set explicit Y-axis range (for zoom support).
+    pub fn y_range(mut self, min: f64, max: f64) -> Self {
+        self.y_range = Some([min, max]);
         self
     }
 
@@ -377,15 +392,25 @@ impl ScatterChart {
             - height_for_legend as f64)
             .max(0.0);
 
-        // Calculate domains with padding - include all series
-        let mut all_x: Vec<f64> = self.x.clone();
-        let mut all_y: Vec<f64> = self.y.clone();
-        for series in &self.series {
-            all_x.extend_from_slice(&series.x);
-            all_y.extend_from_slice(&series.y);
-        }
-        let (x_min, x_max) = extent_padded(&all_x, DEFAULT_PADDING_FRACTION);
-        let (y_min, y_max) = extent_padded(&all_y, DEFAULT_PADDING_FRACTION);
+        // Calculate domains with padding - include all series, or use explicit ranges if set
+        let (x_min, x_max) = if let Some([min, max]) = self.x_range {
+            (min, max)
+        } else {
+            let mut all_x: Vec<f64> = self.x.clone();
+            for series in &self.series {
+                all_x.extend_from_slice(&series.x);
+            }
+            extent_padded(&all_x, DEFAULT_PADDING_FRACTION)
+        };
+        let (y_min, y_max) = if let Some([min, max]) = self.y_range {
+            (min, max)
+        } else {
+            let mut all_y: Vec<f64> = self.y.clone();
+            for series in &self.series {
+                all_y.extend_from_slice(&series.y);
+            }
+            extent_padded(&all_y, DEFAULT_PADDING_FRACTION)
+        };
 
         // Create data points for primary series
         let primary_data: Vec<ScatterPoint> = self
@@ -427,6 +452,7 @@ impl ScatterChart {
                     .w(px(plot_width as f32))
                     .h(px(plot_height as f32))
                     .relative()
+                    .overflow_hidden()
                     .bg(self.theme.plot_background)
                     .child(render_grid(
                         &$x_scale,
@@ -744,6 +770,8 @@ pub fn scatter(x: &[f64], y: &[f64]) -> ScatterChart {
         height: DEFAULT_HEIGHT,
         x_scale_type: ScaleType::Linear,
         y_scale_type: ScaleType::Linear,
+        x_range: None,
+        y_range: None,
         show_legend: false,
         legend_position: LegendPosition::default(),
         legend_position_explicit: false,

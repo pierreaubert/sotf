@@ -948,6 +948,7 @@ impl LineChart {
                     .w(px(plot_width as f32))
                     .h(px(plot_height as f32))
                     .relative()
+                    .overflow_hidden()
                     .bg(self.theme.plot_background)
                     .child(render_grid(
                         &x_scale,
@@ -1063,6 +1064,7 @@ impl LineChart {
                     .w(px(plot_width as f32))
                     .h(px(plot_height as f32))
                     .relative()
+                    .overflow_hidden()
                     .bg(self.theme.plot_background)
                     .child(render_grid(
                         &x_scale,
@@ -1182,6 +1184,7 @@ impl LineChart {
                     .w(px(plot_width as f32))
                     .h(px(plot_height as f32))
                     .relative()
+                    .overflow_hidden()
                     .bg(self.theme.plot_background)
                     .child(render_grid(
                         &x_scale,
@@ -1300,6 +1303,7 @@ impl LineChart {
                     .w(px(plot_width as f32))
                     .h(px(plot_height as f32))
                     .relative()
+                    .overflow_hidden()
                     .bg(self.theme.plot_background)
                     .child(render_grid(
                         &x_scale,

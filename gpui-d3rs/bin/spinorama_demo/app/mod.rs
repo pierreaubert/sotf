@@ -845,8 +845,8 @@ impl SpinoramaApp {
             )
     }
 
-    /// Wrap a chart in an interactive container with brush/zoom handlers
-    fn wrap_freq_spl_chart_interactive(
+    /// Wrap a chart element with interactive mouse handlers for pan/drag and zoom
+    pub fn wrap_freq_spl_chart_interactive(
         &self,
         chart: Div,
         chart_id: ChartId,
@@ -866,11 +866,16 @@ impl SpinoramaApp {
             ChartId::DirectivityContour => self.directivity_contour_chart_bounds.clone(),
         };
         let chart_bounds_for_move = chart_bounds.clone();
-        let chart_bounds_for_up = chart_bounds.clone();
         let chart_bounds_for_prepaint = chart_bounds.clone();
 
         // Left axis spacer width (from render_freq_spl_plot)
         let left_margin = 80.0_f32;
+
+        // Track drag start position for pan
+        let drag_start: Rc<RefCell<Option<(f32, f32)>>> = Rc::new(RefCell::new(None));
+        let drag_start_down = drag_start.clone();
+        let drag_start_move = drag_start.clone();
+        let drag_start_up = drag_start.clone();
 
         // Helper to convert window position to chart-relative coordinates
         // using the stored chart bounds
@@ -914,112 +919,52 @@ impl SpinoramaApp {
                         ChartId::DirectivityContour => "directivity-contour-chart",
                     })
                     .relative()
+                    .cursor_grab()
                     .child(chart)
-                    // Mouse down to start brush
+                    // Mouse down to start pan
                     .on_mouse_down(MouseButton::Left, move |event, _window, cx| {
                         let pos = event.position;
                         let bounds = chart_bounds.borrow();
                         let (chart_x, chart_y) =
                             to_chart_coords(pos, &bounds, left_margin, chart_width, chart_height);
 
-                        entity.update(cx, |this, cx| {
+                        *drag_start_down.borrow_mut() = Some((chart_x, chart_y));
+
+                        entity.update(cx, |this, _cx| {
                             this.active_brush_chart = Some(chart_id);
-                            match chart_id {
-                                ChartId::FreqSpl => {
-                                    this.freq_spl_brush.start(chart_x as f64, chart_y as f64)
-                                }
-                                ChartId::SplContour => {
-                                    this.spl_contour_brush.start(chart_x as f64, chart_y as f64)
-                                }
-                                ChartId::DirectivityContour => this
-                                    .directivity_contour_brush
-                                    .start(chart_x as f64, chart_y as f64),
-                            }
-                            cx.notify();
                         });
                     })
-                    // Mouse move to update brush during drag
+                    // Mouse move to pan during drag
                     .on_mouse_move(move |event, _window, cx| {
-                        entity2.update(cx, |this, cx| {
-                            if this.active_brush_chart == Some(chart_id) {
-                                let pos = event.position;
-                                let bounds = chart_bounds_for_move.borrow();
-                                let (chart_x, chart_y) = to_chart_coords(
-                                    pos,
-                                    &bounds,
-                                    left_margin,
-                                    chart_width,
-                                    chart_height,
-                                );
+                        if let Some((start_x, start_y)) = *drag_start_move.borrow() {
+                            let pos = event.position;
+                            let bounds = chart_bounds_for_move.borrow();
+                            let (chart_x, chart_y) = to_chart_coords(
+                                pos,
+                                &bounds,
+                                left_margin,
+                                chart_width,
+                                chart_height,
+                            );
 
-                                match chart_id {
-                                    ChartId::FreqSpl => {
-                                        this.freq_spl_brush.update(chart_x as f64, chart_y as f64)
-                                    }
-                                    ChartId::SplContour => this
-                                        .spl_contour_brush
-                                        .update(chart_x as f64, chart_y as f64),
-                                    ChartId::DirectivityContour => this
-                                        .directivity_contour_brush
-                                        .update(chart_x as f64, chart_y as f64),
-                                }
-                                cx.notify();
+                            let dx = chart_x - start_x;
+                            let dy = chart_y - start_y;
+
+                            if dx.abs() > 1.0 || dy.abs() > 1.0 {
+                                entity2.update(cx, |this, cx| {
+                                    this.apply_pan(chart_id, dx, dy, chart_width, chart_height);
+                                    cx.notify();
+                                });
+                                // Update drag start for continuous panning
+                                *drag_start_move.borrow_mut() = Some((chart_x, chart_y));
                             }
-                        });
+                        }
                     })
-                    // Mouse up to end brush and apply zoom
-                    .on_mouse_up(MouseButton::Left, move |event, _window, cx| {
-                        entity3.update(cx, |this, cx| {
-                            if this.active_brush_chart == Some(chart_id) {
-                                let pos = event.position;
-                                let bounds = chart_bounds_for_up.borrow();
-                                let (chart_x, chart_y) = to_chart_coords(
-                                    pos,
-                                    &bounds,
-                                    left_margin,
-                                    chart_width,
-                                    chart_height,
-                                );
-
-                                // Final update
-                                match chart_id {
-                                    ChartId::FreqSpl => {
-                                        this.freq_spl_brush.update(chart_x as f64, chart_y as f64)
-                                    }
-                                    ChartId::SplContour => this
-                                        .spl_contour_brush
-                                        .update(chart_x as f64, chart_y as f64),
-                                    ChartId::DirectivityContour => this
-                                        .directivity_contour_brush
-                                        .update(chart_x as f64, chart_y as f64),
-                                }
-
-                                // Get selection and apply zoom
-                                let selection = match chart_id {
-                                    ChartId::FreqSpl => this.freq_spl_brush.end(),
-                                    ChartId::SplContour => this.spl_contour_brush.end(),
-                                    ChartId::DirectivityContour => {
-                                        this.directivity_contour_brush.end()
-                                    }
-                                };
-
-                                if let Some(sel) = selection {
-                                    // Check if selection is large enough
-                                    if sel.width() >= 5.0 && sel.height() >= 5.0 {
-                                        // Convert pixel selection to domain coordinates
-                                        // using the current zoom state and chart dimensions
-                                        this.apply_zoom_from_selection(
-                                            chart_id,
-                                            sel,
-                                            chart_width,
-                                            chart_height,
-                                        );
-                                    }
-                                }
-
-                                this.active_brush_chart = None;
-                                cx.notify();
-                            }
+                    // Mouse up to end pan
+                    .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+                        *drag_start_up.borrow_mut() = None;
+                        entity3.update(cx, |this, _cx| {
+                            this.active_brush_chart = None;
                         });
                     })
                     // Double click to reset zoom
@@ -1087,6 +1032,51 @@ impl SpinoramaApp {
 
         // Apply zoom
         zoom_state.zoom_to(x_min, x_max, y_min, y_max);
+    }
+
+    /// Apply pan/drag by converting pixel delta to domain delta
+    fn apply_pan(
+        &mut self,
+        chart_id: ChartId,
+        dx: f32,
+        dy: f32,
+        chart_width: f32,
+        chart_height: f32,
+    ) {
+        let (zoom_state, is_log_x) = match chart_id {
+            ChartId::FreqSpl => (&mut self.freq_spl_zoom, true),
+            ChartId::SplContour => (&mut self.spl_contour_zoom, true),
+            ChartId::DirectivityContour => (&mut self.directivity_contour_zoom, true),
+        };
+
+        let (x_min, x_max) = zoom_state.x_domain();
+        let (y_min, y_max) = zoom_state.y_domain();
+
+        // Convert pixel delta to domain delta
+        let (new_x_min, new_x_max) = if is_log_x {
+            // For log scale, pan in log space
+            let log_min = x_min.ln();
+            let log_max = x_max.ln();
+            let log_range = log_max - log_min;
+            let log_delta = -(dx as f64) * log_range / (chart_width as f64);
+            (
+                (log_min + log_delta).exp(),
+                (log_max + log_delta).exp(),
+            )
+        } else {
+            let x_range = x_max - x_min;
+            let domain_dx = -(dx as f64) * x_range / (chart_width as f64);
+            (x_min + domain_dx, x_max + domain_dx)
+        };
+
+        // Y is linear, and inverted (screen Y increases downward)
+        let y_range = y_max - y_min;
+        let domain_dy = (dy as f64) * y_range / (chart_height as f64);
+        let new_y_min = y_min + domain_dy;
+        let new_y_max = y_max + domain_dy;
+
+        // Apply the pan by zooming to the new domain
+        zoom_state.zoom_to(new_x_min, new_x_max, new_y_min, new_y_max);
     }
 
     fn render_loading(&self) -> Div {

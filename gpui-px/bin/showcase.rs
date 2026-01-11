@@ -5,6 +5,7 @@
 
 use gpui::*;
 use gpui_px::*;
+use gpui_px::interaction::{InteractiveChart, InteractiveChartConfig, InteractiveChartState};
 use gpui_ui_kit::{MiniApp, MiniAppConfig};
 
 fn main() {
@@ -90,6 +91,9 @@ struct ShowcaseApp {
     // Interactive state
     heatmap_color_scale: ColorScale,
     contour_color_scale: ColorScale,
+    // Interactive chart states for pan/zoom
+    scatter_chart_state: InteractiveChartState,
+    line_chart_state: InteractiveChartState,
 }
 
 impl ShowcaseApp {
@@ -103,12 +107,33 @@ impl ShowcaseApp {
         let contour_size = 50;
         let contour_z = generate_grid_data(contour_size);
 
+        // Create interactive chart states with appropriate domains
+        let config = InteractiveChartConfig::new()
+            .with_left_margin(50.0)
+            .with_top_margin(30.0);
+
+        // Calculate actual data ranges for scatter chart (with padding)
+        let scatter_x_min = scatter_x.iter().cloned().fold(f64::INFINITY, f64::min);
+        let scatter_x_max = scatter_x.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let scatter_y_min = scatter_y.iter().cloned().fold(f64::INFINITY, f64::min);
+        let scatter_y_max = scatter_y.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let scatter_x_pad = (scatter_x_max - scatter_x_min) * 0.05;
+        let scatter_y_pad = (scatter_y_max - scatter_y_min) * 0.05;
+
+        // Calculate actual data ranges for line chart (with padding)
+        let line_x_min = line_x.iter().cloned().fold(f64::INFINITY, f64::min);
+        let line_x_max = line_x.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let line_y_min = line_y.iter().cloned().fold(f64::INFINITY, f64::min);
+        let line_y_max = line_y.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let line_x_pad = (line_x_max - line_x_min) * 0.05;
+        let line_y_pad = (line_y_max - line_y_min) * 0.05;
+
         Self {
             current_section: ChartSection::default(),
-            scatter_x,
-            scatter_y,
-            line_x,
-            line_y,
+            scatter_x: scatter_x.clone(),
+            scatter_y: scatter_y.clone(),
+            line_x: line_x.clone(),
+            line_y: line_y.clone(),
             bar_categories,
             bar_values,
             boxplot_x,
@@ -119,6 +144,23 @@ impl ShowcaseApp {
             contour_size,
             heatmap_color_scale: ColorScale::Viridis,
             contour_color_scale: ColorScale::Viridis,
+            // Interactive chart states - domains based on actual data ranges
+            scatter_chart_state: InteractiveChartState::new(
+                scatter_x_min - scatter_x_pad,
+                scatter_x_max + scatter_x_pad,
+                scatter_y_min - scatter_y_pad,
+                scatter_y_max + scatter_y_pad,
+            )
+            .with_size(600.0, 400.0)
+            .with_config(config.clone()),
+            line_chart_state: InteractiveChartState::new(
+                line_x_min - line_x_pad,
+                line_x_max + line_x_pad,
+                line_y_min - line_y_pad,
+                line_y_max + line_y_pad,
+            )
+            .with_size(600.0, 400.0)
+            .with_config(config),
         }
     }
 
@@ -294,6 +336,30 @@ impl ShowcaseApp {
     // ========================================================================
 
     fn render_scatter_demo(&self) -> Div {
+        // Get zoom state
+        let is_zoomed = self.scatter_chart_state.is_zoomed();
+
+        let mut chart_builder = scatter(&self.scatter_x, &self.scatter_y)
+            .title(format!(
+                "Spiral Pattern{}",
+                if is_zoomed { " (zoomed)" } else { "" }
+            ))
+            .color(0x1f77b4)
+            .point_radius(5.0)
+            .size(600.0, 400.0);
+
+        // Only set explicit ranges when zoomed
+        if is_zoomed {
+            let (x_min, x_max) = self.scatter_chart_state.x_domain();
+            let (y_min, y_max) = self.scatter_chart_state.y_domain();
+            chart_builder = chart_builder.x_range(x_min, x_max).y_range(y_min, y_max);
+        }
+
+        let chart = chart_builder.build().unwrap();
+
+        let interactive_chart =
+            InteractiveChart::new("scatter-chart", chart, self.scatter_chart_state.clone()).build();
+
         div()
             .flex()
             .flex_col()
@@ -311,15 +377,13 @@ impl ShowcaseApp {
                     .max_w(px(600.0))
                     .child("Displays individual data points with x,y coordinates. Ideal for exploring correlations, identifying clusters, and spotting outliers."),
             )
-            .child({
-                scatter(&self.scatter_x, &self.scatter_y)
-                    .title("Spiral Pattern")
-                    .color(0x1f77b4)
-                    .point_radius(5.0)
-                    .size(600.0, 400.0)
-                    .build()
-                    .unwrap()
-            })
+            .child(interactive_chart)
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(rgb(0x888888))
+                    .child("Drag to pan • Scroll to zoom • Double-click to reset"),
+            )
             .child(
                 div()
                     .mt_4()
@@ -355,6 +419,30 @@ impl ShowcaseApp {
     // ========================================================================
 
     fn render_line_demo(&self) -> Div {
+        // Get zoom state
+        let is_zoomed = self.line_chart_state.is_zoomed();
+
+        let mut chart_builder = line(&self.line_x, &self.line_y)
+            .title(format!(
+                "Sine Wave{}",
+                if is_zoomed { " (zoomed)" } else { "" }
+            ))
+            .color(0xff7f0e)
+            .stroke_width(2.0)
+            .size(600.0, 400.0);
+
+        // Only set explicit ranges when zoomed
+        if is_zoomed {
+            let (x_min, x_max) = self.line_chart_state.x_domain();
+            let (y_min, y_max) = self.line_chart_state.y_domain();
+            chart_builder = chart_builder.x_range(x_min, x_max).y_range(y_min, y_max);
+        }
+
+        let chart = chart_builder.build().unwrap();
+
+        let interactive_chart =
+            InteractiveChart::new("line-chart", chart, self.line_chart_state.clone()).build();
+
         div()
             .flex()
             .flex_col()
@@ -372,15 +460,13 @@ impl ShowcaseApp {
                     .max_w(px(600.0))
                     .child("Connects data points with lines to show trends over continuous domains. Perfect for time series, measurements, and sequential data."),
             )
-            .child({
-                line(&self.line_x, &self.line_y)
-                    .title("Sine Wave")
-                    .color(0xff7f0e)
-                    .stroke_width(2.0)
-                    .size(600.0, 400.0)
-                    .build()
-                    .unwrap()
-            })
+            .child(interactive_chart)
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(rgb(0x888888))
+                    .child("Drag to pan • Scroll to zoom • Double-click to reset"),
+            )
             .child(
                 div()
                     .mt_4()

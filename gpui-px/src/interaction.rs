@@ -534,6 +534,404 @@ pub use gpui_render::{
     render_brush_overlay, render_crosshairs, render_reset_button, render_zoom_indicator,
 };
 
+// ============================================================================
+// InteractiveChart Component
+// ============================================================================
+
+#[cfg(feature = "gpui")]
+mod interactive_chart {
+    use super::*;
+    use gpui::prelude::*;
+    use gpui::{
+        AnyElement, ClickEvent, ElementId, IntoElement, MouseButton, Pixels, Point, ScrollDelta,
+        ScrollWheelEvent, div, hsla, px,
+    };
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    /// Callback type for when zoom state changes
+    pub type OnZoomChange = Rc<dyn Fn((f64, f64), (f64, f64))>;
+
+    /// Configuration for interactive chart behavior
+    #[derive(Clone)]
+    pub struct InteractiveChartConfig {
+        /// Enable pan/drag with left mouse button
+        pub enable_pan: bool,
+        /// Enable scroll wheel zoom
+        pub enable_wheel_zoom: bool,
+        /// Enable double-click to reset zoom
+        pub enable_double_click_reset: bool,
+        /// Show zoom indicator when zoomed
+        pub show_zoom_indicator: bool,
+        /// Wheel zoom configuration
+        pub wheel_config: WheelConfig,
+        /// Left margin (for axis labels) - mouse coordinates are adjusted by this
+        pub left_margin: f32,
+        /// Top margin (for title) - mouse coordinates are adjusted by this
+        pub top_margin: f32,
+    }
+
+    impl Default for InteractiveChartConfig {
+        fn default() -> Self {
+            Self {
+                enable_pan: true,
+                enable_wheel_zoom: true,
+                enable_double_click_reset: true,
+                show_zoom_indicator: true,
+                wheel_config: WheelConfig::default(),
+                left_margin: 50.0,
+                top_margin: 30.0,
+            }
+        }
+    }
+
+    impl InteractiveChartConfig {
+        /// Create a new config with all interactions enabled
+        pub fn new() -> Self {
+            Self::default()
+        }
+
+        /// Set left margin for axis labels
+        pub fn with_left_margin(mut self, margin: f32) -> Self {
+            self.left_margin = margin;
+            self
+        }
+
+        /// Set top margin for title
+        pub fn with_top_margin(mut self, margin: f32) -> Self {
+            self.top_margin = margin;
+            self
+        }
+
+        /// Enable or disable pan/drag
+        pub fn with_pan(mut self, enable: bool) -> Self {
+            self.enable_pan = enable;
+            self
+        }
+
+        /// Enable or disable wheel zoom
+        pub fn with_wheel_zoom(mut self, enable: bool) -> Self {
+            self.enable_wheel_zoom = enable;
+            self
+        }
+
+        /// Enable or disable double-click reset
+        pub fn with_double_click_reset(mut self, enable: bool) -> Self {
+            self.enable_double_click_reset = enable;
+            self
+        }
+    }
+
+    /// Shared state for interactive chart that can be passed to chart builders
+    #[derive(Clone)]
+    pub struct InteractiveChartState {
+        /// The chart interaction state (zoom, brush)
+        pub interaction: Rc<RefCell<ChartInteraction>>,
+        /// Configuration
+        pub config: InteractiveChartConfig,
+        /// Callback when zoom changes
+        pub on_zoom_change: Option<OnZoomChange>,
+    }
+
+    impl InteractiveChartState {
+        /// Create a new interactive chart state with specified domain bounds
+        pub fn new(x_min: f64, x_max: f64, y_min: f64, y_max: f64) -> Self {
+            Self {
+                interaction: Rc::new(RefCell::new(ChartInteraction::new(
+                    x_min, x_max, y_min, y_max,
+                ))),
+                config: InteractiveChartConfig::default(),
+                on_zoom_change: None,
+            }
+        }
+
+        /// Set X-axis to logarithmic scale
+        pub fn with_log_x(self, is_log: bool) -> Self {
+            self.interaction.borrow_mut().x_is_log = is_log;
+            {
+                let mut interaction = self.interaction.borrow_mut();
+                interaction.zoom = interaction.zoom.clone().with_log_x(is_log);
+            }
+            self
+        }
+
+        /// Set Y-axis to logarithmic scale
+        pub fn with_log_y(self, is_log: bool) -> Self {
+            self.interaction.borrow_mut().y_is_log = is_log;
+            {
+                let mut interaction = self.interaction.borrow_mut();
+                interaction.zoom = interaction.zoom.clone().with_log_y(is_log);
+            }
+            self
+        }
+
+        /// Set the plot dimensions
+        pub fn with_size(self, width: f32, height: f32) -> Self {
+            self.interaction.borrow_mut().plot_size = (width, height);
+            self
+        }
+
+        /// Set the configuration
+        pub fn with_config(mut self, config: InteractiveChartConfig) -> Self {
+            self.config = config;
+            self
+        }
+
+        /// Set callback for zoom changes
+        pub fn on_zoom_change<F>(mut self, callback: F) -> Self
+        where
+            F: Fn((f64, f64), (f64, f64)) + 'static,
+        {
+            self.on_zoom_change = Some(Rc::new(callback));
+            self
+        }
+
+        /// Get current X domain (for use in chart builders)
+        pub fn x_domain(&self) -> (f64, f64) {
+            self.interaction.borrow().x_domain()
+        }
+
+        /// Get current Y domain (for use in chart builders)
+        pub fn y_domain(&self) -> (f64, f64) {
+            self.interaction.borrow().y_domain()
+        }
+
+        /// Check if currently zoomed
+        pub fn is_zoomed(&self) -> bool {
+            self.interaction.borrow().is_zoomed()
+        }
+
+        /// Get current brush selection
+        pub fn current_brush_selection(&self) -> Option<BrushSelection> {
+            self.interaction.borrow().current_brush_selection()
+        }
+
+        /// Reset zoom to original view
+        pub fn reset_zoom(&self) {
+            self.interaction.borrow_mut().reset_zoom();
+            if let Some(ref callback) = self.on_zoom_change {
+                let interaction = self.interaction.borrow();
+                callback(interaction.x_domain(), interaction.y_domain());
+            }
+        }
+
+        /// Convert pixel coordinates to chart-relative coordinates
+        /// Uses the configured margins to offset from the element position
+        fn to_chart_coords(&self, pos: Point<Pixels>) -> (f32, f32) {
+            let config = &self.config;
+            let interaction = self.interaction.borrow();
+            let (plot_width, plot_height) = interaction.plot_size;
+
+            // Subtract margins to get chart-relative coordinates
+            let chart_x = (f32::from(pos.x) - config.left_margin)
+                .max(0.0)
+                .min(plot_width);
+            let chart_y = (f32::from(pos.y) - config.top_margin)
+                .max(0.0)
+                .min(plot_height);
+            (chart_x, chart_y)
+        }
+
+        /// Apply pan delta to the zoom state
+        pub fn apply_pan(&self, dx: f32, dy: f32) {
+            let mut interaction = self.interaction.borrow_mut();
+            let (plot_width, plot_height) = interaction.plot_size;
+            let (x_min, x_max) = interaction.x_domain();
+            let (y_min, y_max) = interaction.y_domain();
+
+            // Convert pixel delta to domain delta
+            let x_range = x_max - x_min;
+            let y_range = y_max - y_min;
+
+            // For log scale, we need to handle panning differently
+            let (new_x_min, new_x_max) = if interaction.x_is_log {
+                // For log scale, pan in log space
+                let log_min = x_min.log10();
+                let log_max = x_max.log10();
+                let log_range = log_max - log_min;
+                let log_delta = -(dx as f64 / plot_width as f64) * log_range;
+                (10_f64.powf(log_min + log_delta), 10_f64.powf(log_max + log_delta))
+            } else {
+                let delta = -(dx as f64 / plot_width as f64) * x_range;
+                (x_min + delta, x_max + delta)
+            };
+
+            let (new_y_min, new_y_max) = if interaction.y_is_log {
+                let log_min = y_min.log10();
+                let log_max = y_max.log10();
+                let log_range = log_max - log_min;
+                let log_delta = (dy as f64 / plot_height as f64) * log_range;
+                (10_f64.powf(log_min + log_delta), 10_f64.powf(log_max + log_delta))
+            } else {
+                // Y is inverted (screen coords vs domain coords)
+                let delta = (dy as f64 / plot_height as f64) * y_range;
+                (y_min + delta, y_max + delta)
+            };
+
+            interaction.zoom_to(new_x_min, new_x_max, new_y_min, new_y_max);
+        }
+    }
+
+    /// Builder for creating an interactive chart wrapper
+    pub struct InteractiveChart {
+        /// The chart element to wrap
+        child: AnyElement,
+        /// Shared state
+        state: InteractiveChartState,
+        /// Element ID for the wrapper
+        id: ElementId,
+    }
+
+    impl InteractiveChart {
+        /// Create a new interactive chart wrapper
+        pub fn new(
+            id: impl Into<ElementId>,
+            child: impl IntoElement,
+            state: InteractiveChartState,
+        ) -> Self {
+            Self {
+                child: child.into_any_element(),
+                state,
+                id: id.into(),
+            }
+        }
+
+        /// Build the interactive chart element
+        pub fn build(self) -> impl IntoElement {
+            let state = self.state.clone();
+            let state_for_down = self.state.clone();
+            let state_for_move = self.state.clone();
+            let state_for_click = self.state.clone();
+            let state_for_wheel = self.state.clone();
+
+            let is_zoomed = state.is_zoomed();
+            let config = state.config.clone();
+
+            // Track drag state using RefCell for interior mutability
+            let drag_start: Rc<RefCell<Option<(f32, f32)>>> = Rc::new(RefCell::new(None));
+            let drag_start_down = drag_start.clone();
+            let drag_start_move = drag_start.clone();
+            let drag_start_up = drag_start.clone();
+
+            div()
+                .id(self.id)
+                .relative()
+                .cursor_grab()
+                .child(self.child)
+                // Zoom indicator
+                .when(is_zoomed && config.show_zoom_indicator, |el| {
+                    el.child(
+                        div()
+                            .absolute()
+                            .right(px(10.0))
+                            .top(px(10.0))
+                            .px_2()
+                            .py_1()
+                            .bg(hsla(0.0, 0.0, 0.2, 0.7))
+                            .rounded_md()
+                            .text_xs()
+                            .text_color(hsla(0.0, 0.0, 1.0, 0.9))
+                            .child("Zoomed (double-click to reset)"),
+                    )
+                })
+                // Mouse down - start pan
+                .on_mouse_down(MouseButton::Left, move |event, _window, _cx| {
+                    if state_for_down.config.enable_pan {
+                        let (x, y) = state_for_down.to_chart_coords(event.position);
+                        *drag_start_down.borrow_mut() = Some((x, y));
+                    }
+                })
+                // Mouse move - pan if dragging
+                .on_mouse_move(move |event, _window, _cx| {
+                    if state_for_move.config.enable_pan {
+                        if let Some((start_x, start_y)) = *drag_start_move.borrow() {
+                            let (x, y) = state_for_move.to_chart_coords(event.position);
+                            let dx = x - start_x;
+                            let dy = y - start_y;
+                            if dx.abs() > 1.0 || dy.abs() > 1.0 {
+                                state_for_move.apply_pan(dx, dy);
+                                // Update drag start to current position for continuous panning
+                                *drag_start_move.borrow_mut() = Some((x, y));
+                            }
+                        }
+                    }
+                })
+                // Mouse up - end pan
+                .on_mouse_up(MouseButton::Left, move |_event, _window, _cx| {
+                    *drag_start_up.borrow_mut() = None;
+                })
+                // Click - handle double-click reset
+                .on_click(move |event: &ClickEvent, _window, _cx| {
+                    if state_for_click.config.enable_double_click_reset && event.click_count() >= 2
+                    {
+                        state_for_click.reset_zoom();
+                    }
+                })
+                // Scroll wheel - zoom
+                .on_scroll_wheel(move |event: &ScrollWheelEvent, _window, _cx| {
+                    if state_for_wheel.config.enable_wheel_zoom {
+                        let (x, y) = state_for_wheel.to_chart_coords(event.position);
+                        let delta_y = match event.delta {
+                            ScrollDelta::Lines(lines) => lines.y,
+                            ScrollDelta::Pixels(pixels) => f32::from(pixels.y) * 0.01,
+                        };
+
+                        apply_wheel_zoom(
+                            &mut state_for_wheel.interaction.borrow_mut(),
+                            delta_y,
+                            x,
+                            y,
+                            &state_for_wheel.config.wheel_config,
+                        );
+
+                        // Notify zoom change
+                        if let Some(ref callback) = state_for_wheel.on_zoom_change {
+                            let interaction = state_for_wheel.interaction.borrow();
+                            callback(interaction.x_domain(), interaction.y_domain());
+                        }
+                    }
+                })
+        }
+    }
+
+    /// Helper function to wrap a chart element with interactive behavior
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use gpui_px::{line, ScaleType};
+    /// use gpui_px::interaction::{InteractiveChartState, interactive};
+    ///
+    /// // Create shared state
+    /// let state = InteractiveChartState::new(20.0, 20000.0, -40.0, 10.0)
+    ///     .with_log_x(true)
+    ///     .with_size(800.0, 400.0);
+    ///
+    /// // Build chart with zoom-adjusted ranges
+    /// let chart = line(&freq, &spl)
+    ///     .x_scale(ScaleType::Log)
+    ///     .x_range(state.x_domain().0, state.x_domain().1)
+    ///     .y_range(state.y_domain().0, state.y_domain().1)
+    ///     .build()?;
+    ///
+    /// // Wrap with interactive behavior
+    /// let interactive_chart = interactive("my-chart", chart, state.clone())
+    ///     .build(cx, app);
+    /// ```
+    pub fn interactive(
+        id: impl Into<ElementId>,
+        child: impl IntoElement,
+        state: InteractiveChartState,
+    ) -> InteractiveChart {
+        InteractiveChart::new(id, child, state)
+    }
+}
+
+#[cfg(feature = "gpui")]
+pub use interactive_chart::{
+    InteractiveChart, InteractiveChartConfig, InteractiveChartState, OnZoomChange, interactive,
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -701,5 +1099,74 @@ mod tests {
         interaction.cancel_brush();
         assert!(!interaction.is_brushing());
         assert!(interaction.current_brush_selection().is_none());
+    }
+
+    #[cfg(feature = "gpui")]
+    mod interactive_chart_state_tests {
+        use super::super::interactive_chart::*;
+
+        #[test]
+        fn test_interactive_chart_state_creation() {
+            let state = InteractiveChartState::new(20.0, 20000.0, -40.0, 10.0);
+            assert_eq!(state.x_domain(), (20.0, 20000.0));
+            assert_eq!(state.y_domain(), (-40.0, 10.0));
+            assert!(!state.is_zoomed());
+        }
+
+        #[test]
+        fn test_interactive_chart_state_with_log_x() {
+            let state = InteractiveChartState::new(20.0, 20000.0, -40.0, 10.0).with_log_x(true);
+            assert!(state.interaction.borrow().x_is_log);
+        }
+
+        #[test]
+        fn test_interactive_chart_state_with_size() {
+            let state =
+                InteractiveChartState::new(20.0, 20000.0, -40.0, 10.0).with_size(800.0, 400.0);
+            assert_eq!(state.interaction.borrow().plot_size, (800.0, 400.0));
+        }
+
+        #[test]
+        fn test_interactive_chart_state_reset_zoom() {
+            let state = InteractiveChartState::new(0.0, 100.0, 0.0, 100.0);
+
+            // Zoom in
+            state.interaction.borrow_mut().zoom_to(25.0, 75.0, 25.0, 75.0);
+            assert!(state.is_zoomed());
+
+            // Reset
+            state.reset_zoom();
+            assert!(!state.is_zoomed());
+            assert_eq!(state.x_domain(), (0.0, 100.0));
+        }
+
+        #[test]
+        fn test_interactive_chart_config() {
+            let config = InteractiveChartConfig::new()
+                .with_left_margin(60.0)
+                .with_top_margin(40.0)
+                .with_pan(true)
+                .with_wheel_zoom(true)
+                .with_double_click_reset(true);
+
+            assert_eq!(config.left_margin, 60.0);
+            assert_eq!(config.top_margin, 40.0);
+            assert!(config.enable_pan);
+            assert!(config.enable_wheel_zoom);
+            assert!(config.enable_double_click_reset);
+        }
+
+        #[test]
+        fn test_interactive_chart_state_with_config() {
+            let config = InteractiveChartConfig::new()
+                .with_left_margin(80.0)
+                .with_pan(false);
+
+            let state =
+                InteractiveChartState::new(0.0, 100.0, 0.0, 100.0).with_config(config.clone());
+
+            assert_eq!(state.config.left_margin, 80.0);
+            assert!(!state.config.enable_pan);
+        }
     }
 }
