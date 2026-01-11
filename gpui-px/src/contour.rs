@@ -32,6 +32,9 @@ pub struct ContourChart {
     opacity: f32,
     width: f32,
     height: f32,
+    // Axis range overrides (for zoom support)
+    x_range: Option<[f64; 2]>,
+    y_range: Option<[f64; 2]>,
 }
 
 impl std::fmt::Debug for ContourChart {
@@ -116,6 +119,18 @@ impl ContourChart {
         self
     }
 
+    /// Set explicit X-axis range (for zoom support).
+    pub fn x_range(mut self, min: f64, max: f64) -> Self {
+        self.x_range = Some([min, max]);
+        self
+    }
+
+    /// Set explicit Y-axis range (for zoom support).
+    pub fn y_range(mut self, min: f64, max: f64) -> Self {
+        self.y_range = Some([min, max]);
+        self
+    }
+
     /// Build and validate the chart, returning renderable element.
     pub fn build(self) -> Result<impl IntoElement, ChartError> {
         // Validate inputs
@@ -180,9 +195,17 @@ impl ContourChart {
 
         let theme = DefaultAxisTheme;
 
-        // Calculate domains with padding
-        let (x_min, x_max) = extent_padded(&x_values, 0.0);
-        let (y_min, y_max) = extent_padded(&y_values, 0.0);
+        // Calculate domains with padding, or use explicit ranges if set
+        let (x_min, x_max) = if let Some([min, max]) = self.x_range {
+            (min, max)
+        } else {
+            extent_padded(&x_values, 0.0)
+        };
+        let (y_min, y_max) = if let Some([min, max]) = self.y_range {
+            (min, max)
+        } else {
+            extent_padded(&y_values, 0.0)
+        };
 
         // Calculate z extent for auto-thresholds
         let (z_min, z_max) = extent_padded(&self.z, 0.0);
@@ -241,6 +264,7 @@ impl ContourChart {
                                     .w(px(plot_width as f32))
                                     .h(px(plot_height as f32))
                                     .relative()
+                                    .overflow_hidden()
                                     .bg(rgb(0xf8f8f8))
                                     .child(render_grid(
                                         &x_scale,
@@ -288,6 +312,7 @@ impl ContourChart {
                                     .w(px(plot_width as f32))
                                     .h(px(plot_height as f32))
                                     .relative()
+                                    .overflow_hidden()
                                     .bg(rgb(0xf8f8f8))
                                     .child(render_grid(
                                         &x_scale,
@@ -335,6 +360,7 @@ impl ContourChart {
                                     .w(px(plot_width as f32))
                                     .h(px(plot_height as f32))
                                     .relative()
+                                    .overflow_hidden()
                                     .bg(rgb(0xf8f8f8))
                                     .child(render_grid(
                                         &x_scale,
@@ -382,6 +408,7 @@ impl ContourChart {
                                     .w(px(plot_width as f32))
                                     .h(px(plot_height as f32))
                                     .relative()
+                                    .overflow_hidden()
                                     .bg(rgb(0xf8f8f8))
                                     .child(render_grid(
                                         &x_scale,
@@ -474,6 +501,8 @@ pub fn contour(z: &[f64], grid_width: usize, grid_height: usize) -> ContourChart
         opacity: 0.8,
         width: DEFAULT_WIDTH,
         height: DEFAULT_HEIGHT,
+        x_range: None,
+        y_range: None,
     }
 }
 
@@ -553,6 +582,16 @@ mod tests {
             .thresholds(vec![0.0, 0.5, 1.0])
             .opacity(0.8)
             .size(800.0, 600.0)
+            .build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_contour_with_explicit_ranges() {
+        let z = vec![1.0; 9]; // 3x3 grid
+        let result = contour(&z, 3, 3)
+            .x_range(0.0, 10.0)
+            .y_range(-5.0, 5.0)
             .build();
         assert!(result.is_ok());
     }

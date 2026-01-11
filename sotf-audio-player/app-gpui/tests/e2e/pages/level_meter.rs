@@ -21,27 +21,32 @@ impl<'a, 'b> LevelMeterPage<'a, 'b> {
     }
 
     pub fn toggle_mute(&mut self, group_idx: usize) {
-        // Note: Using direct app update because cx.dispatch_action is unreliable in this test environment
         self.driver.update_app(|app, _| {
-            app.selected_level_meter_group = group_idx;
-            app.toggle_level_meter_mute();
+            // Mirror UI behavior: Read current state, invert, and set
+            if let Some(group) = app.level_meter_groups.get(group_idx) {
+                let new_state = !group.muted;
+                app.set_level_meter_mute(group_idx, new_state);
+            }
         });
         self.driver.run_until_parked();
     }
 
     pub fn toggle_solo(&mut self, group_idx: usize) {
-        // Note: Using direct app update because cx.dispatch_action is unreliable in this test environment
         self.driver.update_app(|app, _| {
-            app.selected_level_meter_group = group_idx;
-            app.toggle_level_meter_solo();
+           if let Some(group) = app.level_meter_groups.get(group_idx) {
+                let new_state = !group.soloed;
+                app.set_level_meter_solo(group_idx, new_state);
+            }
         });
         self.driver.run_until_parked();
     }
 
     pub fn toggle_dim(&mut self, group_idx: usize) {
         self.driver.update_app(|app, _| {
-            app.selected_level_meter_group = group_idx;
-            app.toggle_level_meter_dim();
+            if let Some(group) = app.level_meter_groups.get(group_idx) {
+                let new_state = !group.dimmed;
+                app.set_level_meter_dim(group_idx, new_state);
+            }
         });
         self.driver.run_until_parked();
     }

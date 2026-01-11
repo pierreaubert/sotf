@@ -973,6 +973,7 @@ impl PlayerView {
                                         fill_ratio,
                                         yellow_threshold,
                                         red_threshold,
+                                        None, // Side panel meters don't show peak hold
                                         name,
                                         &theme_c,
                                     )

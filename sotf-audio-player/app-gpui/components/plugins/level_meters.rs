@@ -505,10 +505,12 @@ pub fn render_peak_meter(peak_db: f64, ceiling_db: f64, theme: &Theme) -> impl I
 }
 
 /// Render a meter with gradient coloring (green, yellow at top, red at clip)
+/// Optional peak_ratio shows a peak hold indicator line
 pub fn render_gradient_meter(
     fill_ratio: f32,
     yellow_threshold: f32,
     red_threshold: f32,
+    peak_ratio: Option<f32>,
     channel_name: String,
     theme: &Theme,
 ) -> impl IntoElement {
@@ -526,6 +528,7 @@ pub fn render_gradient_meter(
     };
 
     let theme_c = theme.clone();
+    let peak_color = theme.meter_colors.peak;
     div()
         .flex()
         .flex_col()
@@ -583,6 +586,21 @@ pub fn render_gradient_meter(
                                 red_height,
                             )))
                             .bg(theme_c.meter_clip),
+                    )
+                })
+                // Peak hold indicator (horizontal line)
+                .when(peak_ratio.is_some_and(|p| p > 0.001), |el| {
+                    let peak_pos = peak_ratio.unwrap_or(0.0);
+                    el.child(
+                        div()
+                            .absolute()
+                            .left_0()
+                            .right_0()
+                            .bottom(gpui::Length::Definite(gpui::DefiniteLength::Fraction(
+                                peak_pos,
+                            )))
+                            .h(px(2.0))
+                            .bg(peak_color),
                     )
                 }),
         )
@@ -932,6 +950,7 @@ impl PlayerView {
         group_idx: usize,
         _is_selected: bool,
         loudness: Option<&sotf_audio_player::LoudnessData>,
+        peak_hold: &[f64],
         theme: &Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
@@ -955,6 +974,19 @@ impl PlayerView {
                     -60.0
                 };
 
+                // Get peak hold value for this channel
+                let peak_hold_value = peak_hold.get(channel.index).copied().unwrap_or(0.0);
+                let peak_hold_db = if peak_hold_value > 0.0001 {
+                    20.0 * peak_hold_value.log10()
+                } else {
+                    -60.0
+                };
+                let peak_hold_ratio = if peak_hold_value > 0.0001 {
+                    Some(db_to_position(peak_hold_db))
+                } else {
+                    None
+                };
+
                 let fill_ratio = db_to_position(peak_db);
                 let yellow_threshold = db_to_position(-6.0);
                 let red_threshold = db_to_position(-1.0);
@@ -963,6 +995,7 @@ impl PlayerView {
                     fill_ratio,
                     yellow_threshold,
                     red_threshold,
+                    peak_hold_ratio,
                     channel.name.clone(),
                 )
             })
@@ -985,11 +1018,12 @@ impl PlayerView {
                     .flex_1()
                     .min_h(px(200.0))
                     .children(channel_data.into_iter().map(
-                        |(fill_ratio, yellow_threshold, red_threshold, name)| {
+                        |(fill_ratio, yellow_threshold, red_threshold, peak_hold_ratio, name)| {
                             render_gradient_meter(
                                 fill_ratio,
                                 yellow_threshold,
                                 red_threshold,
+                                peak_hold_ratio,
                                 name,
                                 theme,
                             )
@@ -1070,33 +1104,15 @@ impl PlayerView {
                             match button_type {
                                 "mute" => {
                                     let new_state = !state.app.level_meter_groups[group_idx].muted;
-                                    state.app.level_meter_groups[group_idx].muted = new_state;
-                                    // Handle solo exclusivity logic if needed, or simply update plugin
-                                    state.app.update_matrix_plugin();
+                                    state.app.set_level_meter_mute(group_idx, new_state);
                                 }
                                 "solo" => {
                                     let new_state = !state.app.level_meter_groups[group_idx].soloed;
-                                    // Implement solo exclusivity logic manually here or move logic to a helper
-                                    // For now, mirroring toggle_level_meter_solo logic:
-                                    if new_state {
-                                        // Unsolo others
-                                        for (i, g) in state.app.level_meter_groups.iter_mut().enumerate() {
-                                            if i == group_idx {
-                                                g.soloed = true;
-                                                g.muted = false;
-                                            } else {
-                                                g.soloed = false;
-                                            }
-                                        }
-                                    } else {
-                                        state.app.level_meter_groups[group_idx].soloed = false;
-                                    }
-                                    state.app.update_matrix_plugin();
+                                    state.app.set_level_meter_solo(group_idx, new_state);
                                 }
                                 "dim" => {
-                                    state.app.level_meter_groups[group_idx].dimmed =
-                                        !state.app.level_meter_groups[group_idx].dimmed;
-                                    state.app.update_matrix_plugin();
+                                    let new_state = !state.app.level_meter_groups[group_idx].dimmed;
+                                    state.app.set_level_meter_dim(group_idx, new_state);
                                 }
                                 _ => {}
                             }
@@ -1110,13 +1126,14 @@ impl PlayerView {
 
     /// Render separate Meters panel (for queue screen)
     pub fn render_meters_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let (theme, loudness, groups, selected_group) = {
+        let (theme, loudness, groups, selected_group, peak_hold) = {
             let state = self.state.read(cx);
             (
                 state.app.ui_state.theme.clone(),
                 state.app.playback.loudness_info.clone(),
                 state.app.level_meter_groups.clone(),
                 state.app.selected_level_meter_group,
+                state.app.level_meter_peak_hold.clone(),
             )
         };
 
@@ -1183,6 +1200,7 @@ impl PlayerView {
                             idx,
                             is_selected,
                             loudness.as_ref(),
+                            &peak_hold,
                             &theme,
                             cx,
                         )
@@ -1345,10 +1363,14 @@ pub fn calculate_meters_panel_width(num_channels: usize) -> f32 {
 
 pub trait LevelMeterManager {
     fn update_level_meter_groups(&mut self);
+    fn update_level_meter_peak_hold(&mut self);
     fn clear_level_meter_mutes_and_solos(&mut self);
     fn toggle_level_meter_mute(&mut self);
     fn toggle_level_meter_solo(&mut self);
     fn toggle_level_meter_dim(&mut self);
+    fn set_level_meter_mute(&mut self, group_idx: usize, muted: bool);
+    fn set_level_meter_solo(&mut self, group_idx: usize, soloed: bool);
+    fn set_level_meter_dim(&mut self, group_idx: usize, dimmed: bool);
     fn select_next_level_meter_group(&mut self);
     fn select_previous_level_meter_group(&mut self);
     fn select_next_level_meter_control(&mut self);
@@ -1533,6 +1555,48 @@ impl LevelMeterManager for AppState {
         self.update_matrix_plugin();
     }
 
+    /// Update peak hold values for level meters
+    /// Peak hold captures the maximum value and decays over time
+    fn update_level_meter_peak_hold(&mut self) {
+        const PEAK_HOLD_DECAY_RATE: f64 = 0.95; // Per-frame decay (multiply by this each frame)
+        const PEAK_HOLD_DECAY_THRESHOLD: f64 = 0.0001; // Below this, set to 0
+
+        let now = std::time::Instant::now();
+
+        // Get current channel peaks from loudness data
+        let current_peaks = self
+            .playback
+            .loudness_info
+            .as_ref()
+            .map(|l| l.channel_peaks.clone())
+            .unwrap_or_default();
+
+        // Resize peak hold array if needed
+        if self.level_meter_peak_hold.len() != current_peaks.len() {
+            self.level_meter_peak_hold.resize(current_peaks.len(), 0.0);
+        }
+
+        // Update each channel's peak hold
+        for (i, &current_peak) in current_peaks.iter().enumerate() {
+            if i < self.level_meter_peak_hold.len() {
+                // If current peak is higher than held peak, update immediately
+                if current_peak > self.level_meter_peak_hold[i] {
+                    self.level_meter_peak_hold[i] = current_peak;
+                } else {
+                    // Apply decay to held peak
+                    self.level_meter_peak_hold[i] *= PEAK_HOLD_DECAY_RATE;
+
+                    // Clamp to zero if below threshold
+                    if self.level_meter_peak_hold[i] < PEAK_HOLD_DECAY_THRESHOLD {
+                        self.level_meter_peak_hold[i] = 0.0;
+                    }
+                }
+            }
+        }
+
+        self.level_meter_peak_hold_last_update = Some(now);
+    }
+
     /// Clear all mutes, solos, and dims in level meter groups
     /// Clear all mutes, solos, and dims in level meter groups
     fn clear_level_meter_mutes_and_solos(&mut self) {
@@ -1544,54 +1608,69 @@ impl LevelMeterManager for AppState {
         self.update_matrix_plugin();
     }
 
+    /// Set mute state for a specific group
+    fn set_level_meter_mute(&mut self, group_idx: usize, muted: bool) {
+        if let Some(group) = self.level_meter_groups.get_mut(group_idx) {
+            group.muted = muted;
+            self.update_matrix_plugin();
+        }
+    }
+
+    /// Set solo state for a specific group (with exclusivity logic)
+    fn set_level_meter_solo(&mut self, group_idx: usize, soloed: bool) {
+        if group_idx >= self.level_meter_groups.len() {
+            return;
+        }
+
+        if soloed {
+            // Solo behavior: only one group can be soloed at a time
+            for (idx, g) in self.level_meter_groups.iter_mut().enumerate() {
+                if idx == group_idx {
+                    g.soloed = true;
+                    // When soloing, ensure it's unmuted? Logic says:
+                    // "When soloing, set soloed=true on selected group... if g.soloed { g.muted = false; }"
+                    g.muted = false;
+                } else {
+                    g.soloed = false;
+                }
+            }
+        } else {
+             if let Some(group) = self.level_meter_groups.get_mut(group_idx) {
+                group.soloed = false;
+             }
+        }
+        self.update_matrix_plugin();
+    }
+
+    /// Set dim state for a specific group
+    fn set_level_meter_dim(&mut self, group_idx: usize, dimmed: bool) {
+        if let Some(group) = self.level_meter_groups.get_mut(group_idx) {
+            group.dimmed = dimmed;
+            self.update_matrix_plugin();
+        }
+    }
+
     /// Toggle mute for the selected level meter group
     /// Toggle mute for the selected level meter group
     fn toggle_level_meter_mute(&mut self) {
-        if let Some(group) = self
-            .level_meter_groups
-            .get_mut(self.selected_level_meter_group)
-        {
-            group.muted = !group.muted;
-            self.update_matrix_plugin();
+        if let Some(group) = self.level_meter_groups.get(self.selected_level_meter_group) {
+            self.set_level_meter_mute(self.selected_level_meter_group, !group.muted);
         }
     }
 
     /// Toggle solo for the selected level meter group
     /// Toggle solo for the selected level meter group
     fn toggle_level_meter_solo(&mut self) {
-        if let Some(group) = self
-            .level_meter_groups
-            .get_mut(self.selected_level_meter_group)
-        {
-            let is_currently_soloed = group.soloed;
-
-            // Solo behavior: only one group can be soloed at a time
-            // When soloing, set soloed=true on selected group, soloed=false on all others
-            // When un-soloing, set soloed=false on selected group
-            for (idx, g) in self.level_meter_groups.iter_mut().enumerate() {
-                if idx == self.selected_level_meter_group {
-                    g.soloed = !is_currently_soloed;
-                    if g.soloed {
-                        g.muted = false;
-                    }
-                } else {
-                    g.soloed = false;
-                }
-            }
-
-            self.update_matrix_plugin();
+        if let Some(group) = self.level_meter_groups.get(self.selected_level_meter_group) {
+            self.set_level_meter_solo(self.selected_level_meter_group, !group.soloed);
         }
     }
 
     /// Toggle dim for the selected level meter group
     /// Toggle dim for the selected level meter group
     fn toggle_level_meter_dim(&mut self) {
-        if let Some(group) = self
-            .level_meter_groups
-            .get_mut(self.selected_level_meter_group)
-        {
-            group.dimmed = !group.dimmed;
-            self.update_matrix_plugin();
+        if let Some(group) = self.level_meter_groups.get(self.selected_level_meter_group) {
+            self.set_level_meter_dim(self.selected_level_meter_group, !group.dimmed);
         }
     }
 

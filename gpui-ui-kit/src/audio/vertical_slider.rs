@@ -70,6 +70,9 @@ pub struct VerticalSliderTheme {
     /// Background secondary (for value badge)
     #[theme(default = 0x2a2a2aff, from = surface)]
     pub background_secondary: Rgba,
+    /// Peak marker color (for audio peak indicators)
+    #[theme(default = 0xff6b6bff, from = error)]
+    pub peak_marker: Rgba,
 }
 
 /// Vertical slider size variants
@@ -409,6 +412,8 @@ pub struct VerticalSlider {
     show_ticks: bool,
     selected: bool,
     disabled: bool,
+    /// Optional peak marker value (for audio peak indicators)
+    peak: Option<f64>,
     theme: Option<VerticalSliderTheme>,
     on_change: Option<Box<dyn Fn(f64, &mut Window, &mut App) + 'static>>,
     on_drag_start: Option<Box<dyn Fn(f32, f64, &mut Window, &mut App) + 'static>>,
@@ -434,6 +439,7 @@ impl VerticalSlider {
             show_ticks: false,
             selected: false,
             disabled: false,
+            peak: None,
             theme: None,
             on_change: None,
             on_drag_start: None,
@@ -524,6 +530,16 @@ impl VerticalSlider {
     /// Set disabled state
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
+        self
+    }
+
+    /// Set an optional peak marker value
+    ///
+    /// When set, displays a thick horizontal line at the peak position.
+    /// Useful for audio applications to show peak levels.
+    /// The peak value should be in the same range as min/max.
+    pub fn peak(mut self, peak: Option<f64>) -> Self {
+        self.peak = peak;
         self
     }
 
@@ -622,6 +638,12 @@ impl RenderOnce for VerticalSlider {
 
         // Use scale-aware normalization for slider position
         let normalized = self.value_to_normalized(self.value) as f32;
+
+        // Calculate peak normalized position (if peak is set)
+        let peak_normalized = self.peak.map(|peak_value| {
+            let clamped_peak = peak_value.clamp(self.min, self.max);
+            self.value_to_normalized(clamped_peak) as f32
+        });
 
         let formatted_label = self.format_label();
         let value_str = self.format_value();
@@ -908,6 +930,20 @@ impl RenderOnce for VerticalSlider {
                 .rounded_sm()
                 .when(selected, |d| d.shadow_sm()),
         );
+
+        // Peak marker (optional) - thick horizontal line at peak position
+        if let Some(peak_pos) = peak_normalized {
+            let peak_color = theme.peak_marker;
+            track = track.child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .right_0()
+                    .bottom(relative(peak_pos))
+                    .h(px(3.0)) // Thick line for visibility
+                    .bg(peak_color),
+            );
+        }
 
         // Track event handlers (if not disabled)
         if !disabled {

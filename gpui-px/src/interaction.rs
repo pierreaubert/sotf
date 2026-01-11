@@ -842,7 +842,7 @@ mod interactive_chart {
                     }
                 })
                 // Mouse move - pan if dragging
-                .on_mouse_move(move |event, _window, _cx| {
+                .on_mouse_move(move |event, window, _cx| {
                     if state_for_move.config.enable_pan {
                         if let Some((start_x, start_y)) = *drag_start_move.borrow() {
                             let (x, y) = state_for_move.to_chart_coords(event.position);
@@ -852,6 +852,8 @@ mod interactive_chart {
                                 state_for_move.apply_pan(dx, dy);
                                 // Update drag start to current position for continuous panning
                                 *drag_start_move.borrow_mut() = Some((x, y));
+                                // Trigger re-render
+                                window.refresh();
                             }
                         }
                     }
@@ -861,14 +863,15 @@ mod interactive_chart {
                     *drag_start_up.borrow_mut() = None;
                 })
                 // Click - handle double-click reset
-                .on_click(move |event: &ClickEvent, _window, _cx| {
+                .on_click(move |event: &ClickEvent, window, _cx| {
                     if state_for_click.config.enable_double_click_reset && event.click_count() >= 2
                     {
                         state_for_click.reset_zoom();
+                        window.refresh();
                     }
                 })
                 // Scroll wheel - zoom
-                .on_scroll_wheel(move |event: &ScrollWheelEvent, _window, _cx| {
+                .on_scroll_wheel(move |event: &ScrollWheelEvent, window, _cx| {
                     if state_for_wheel.config.enable_wheel_zoom {
                         let (x, y) = state_for_wheel.to_chart_coords(event.position);
                         let delta_y = match event.delta {
@@ -889,6 +892,9 @@ mod interactive_chart {
                             let interaction = state_for_wheel.interaction.borrow();
                             callback(interaction.x_domain(), interaction.y_domain());
                         }
+
+                        // Trigger re-render
+                        window.refresh();
                     }
                 })
         }

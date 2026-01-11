@@ -102,6 +102,10 @@ pub struct App {
     pub level_meter_last_channel_count: usize,
     /// Cached speaker config to avoid rebuilding meter groups every frame
     pub level_meter_last_speaker_config: Option<String>,
+    /// Peak hold values per channel (linear scale, 0.0 to 1.0+)
+    pub level_meter_peak_hold: Vec<f64>,
+    /// Last update time for peak hold decay
+    pub level_meter_peak_hold_last_update: Option<std::time::Instant>,
 
     // Spectrum analyzer
     pub spectrum_visible: bool,
@@ -263,6 +267,8 @@ impl App {
             level_meter_control_selection: 0,
             level_meter_last_channel_count: 0,
             level_meter_last_speaker_config: None,
+            level_meter_peak_hold: Vec::new(),
+            level_meter_peak_hold_last_update: None,
             spectrum_visible: false,
             output_devices: Vec::new(),
             selected_output_device_index: 0,

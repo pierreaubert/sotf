@@ -426,6 +426,7 @@ fn theme_to_vertical_slider_theme(theme: &Theme) -> VerticalSliderTheme {
         text_muted: theme.text_muted,
         text_on_accent: theme.text_on_accent,
         background_secondary: theme.background_secondary,
+        peak_marker: theme.meter_colors.peak,
     }
 }
 

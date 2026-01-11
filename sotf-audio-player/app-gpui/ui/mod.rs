@@ -107,6 +107,7 @@ impl PlayerView {
                         }
 
                         state.app.update_level_meter_groups();
+                        state.app.update_level_meter_peak_hold();
 
                         if include_spectrum {
                             let _ = state.app.playback.spectrum_info.take();
