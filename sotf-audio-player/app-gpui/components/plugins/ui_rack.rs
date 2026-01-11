@@ -412,16 +412,115 @@ impl PlayerView {
                                 surface: theme_c.surface,
                                 text_on_accent: theme_c.text_on_accent,
                             };
+                            // Drop zone colors
+                            let drop_highlight = theme_c.drag_over_highlight;
+                            let drop_border = theme_c.drag_over_border;
+                            let line_color = if enabled {
+                                theme_c.accent
+                            } else {
+                                theme_c.text_muted
+                            };
+
                             div()
                                 .flex()
                                 .items_center()
                                 .gap_1()
-                                // Connection line before
-                                .child(div().w(px(20.0)).h(px(2.0)).bg(if enabled {
-                                    theme_c.accent
-                                } else {
-                                    theme_c.text_muted
-                                }))
+                                // Connection line before - also a drop zone for inserting between plugins
+                                .child(
+                                    div()
+                                        .id(("plugin-gap", idx))
+                                        .w(px(20.0))
+                                        .h(px(90.0)) // Full height for easier targeting
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .child(
+                                            div()
+                                                .w_full()
+                                                .h(px(2.0))
+                                                .bg(line_color),
+                                        )
+                                        // Visual feedback when dragging over gap
+                                        .drag_over::<PluginDragInfo>({
+                                            move |style, _, _, _| {
+                                                style
+                                                    .bg(drop_highlight)
+                                                    .border_2()
+                                                    .border_color(drop_border)
+                                                    .rounded_md()
+                                            }
+                                        })
+                                        // Drop on gap inserts at this position
+                                        .on_drop(cx.listener(
+                                            move |view, info: &PluginDragInfo, _window, cx| {
+                                                let source = info.source_index;
+                                                // Dropping on gap before idx means insert at idx
+                                                let target = idx;
+                                                log::info!(
+                                                    "[GPUI] Plugin drop on gap: source={} target={}",
+                                                    source,
+                                                    target
+                                                );
+                                                // Calculate the actual insert position
+                                                // If dragging forward (source < target), we insert before target
+                                                // If dragging backward (source > target), we insert at target
+                                                let insert_pos = if source < target {
+                                                    target - 1
+                                                } else {
+                                                    target
+                                                };
+                                                if source != insert_pos {
+                                                    view.state.update(cx, |state, _cx| {
+                                                        let chain_len =
+                                                            state.app.plugin_state.plugin_chain.plugins().len();
+
+                                                        // Check if source plugin is a LoudnessMonitor
+                                                        let source_is_monitor = state
+                                                            .app
+                                                            .plugin_state
+                                                            .plugin_chain
+                                                            .get_plugin(source)
+                                                            .map(|p| {
+                                                                matches!(
+                                                                    p.plugin_type(),
+                                                                    PluginType::LoudnessMonitor
+                                                                )
+                                                            })
+                                                            .unwrap_or(false);
+
+                                                        if source_is_monitor
+                                                            && insert_pos != 0
+                                                            && insert_pos != chain_len - 1
+                                                        {
+                                                            return;
+                                                        }
+
+                                                        log::info!(
+                                                            "[GPUI] Moving plugin {} -> {} (gap insert)",
+                                                            source,
+                                                            insert_pos
+                                                        );
+                                                        state
+                                                            .app
+                                                            .plugin_state
+                                                            .plugin_chain
+                                                            .move_plugin(source, insert_pos);
+                                                        state.app.plugin_state.selected_plugin_index =
+                                                            insert_pos;
+                                                        state
+                                                            .app
+                                                            .plugin_state
+                                                            .plugin_chain
+                                                            .update_channel_dependent_plugins();
+                                                        state.app.plugin_state.pending_plugin_update =
+                                                            Some(PluginUpdateType::Structural);
+                                                        state.app.update_level_meter_groups();
+                                                    });
+                                                    cx.notify();
+                                                }
+                                            },
+                                        )),
+                                )
                                 // Plugin module box - draggable and droppable
                                 .child(
                                     div()
@@ -663,15 +762,91 @@ impl PlayerView {
                                                 .child(short_name(&plugin_type)),
                                         ),
                                 )
-                                // Connection line after
-                                .child(div().w(px(20.0)).h(px(2.0)).bg(if enabled {
-                                    theme_c.accent
-                                } else {
-                                    theme_c.text_muted
-                                }))
                         },
                     ))
-                    // Output Meter removed from rack strip (moved to detail panel)
+                    // Trailing drop zone after all plugins (for dropping at the end)
+                    .when(!is_empty, |d| {
+                        let drop_highlight = theme.drag_over_highlight;
+                        let drop_border = theme.drag_over_border;
+                        let line_color = theme.accent;
+                        let end_idx = plugin_count;
+
+                        d.child(
+                            div()
+                                .id("plugin-gap-end")
+                                .w(px(20.0))
+                                .h(px(90.0))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .child(div().w_full().h(px(2.0)).bg(line_color))
+                                .drag_over::<PluginDragInfo>({
+                                    move |style, _, _, _| {
+                                        style
+                                            .bg(drop_highlight)
+                                            .border_2()
+                                            .border_color(drop_border)
+                                            .rounded_md()
+                                    }
+                                })
+                                .on_drop(cx.listener(
+                                    move |view, info: &PluginDragInfo, _window, cx| {
+                                        let source = info.source_index;
+                                        log::info!(
+                                            "[GPUI] Plugin drop on end gap: source={} end_idx={}",
+                                            source,
+                                            end_idx
+                                        );
+                                        // Move to last position
+                                        let target = end_idx - 1;
+                                        if source != target {
+                                            view.state.update(cx, |state, _cx| {
+                                                let chain_len =
+                                                    state.app.plugin_state.plugin_chain.plugins().len();
+
+                                                let source_is_monitor = state
+                                                    .app
+                                                    .plugin_state
+                                                    .plugin_chain
+                                                    .get_plugin(source)
+                                                    .map(|p| {
+                                                        matches!(
+                                                            p.plugin_type(),
+                                                            PluginType::LoudnessMonitor
+                                                        )
+                                                    })
+                                                    .unwrap_or(false);
+
+                                                if source_is_monitor && target != chain_len - 1 {
+                                                    return;
+                                                }
+
+                                                log::info!(
+                                                    "[GPUI] Moving plugin {} -> {} (end)",
+                                                    source,
+                                                    target
+                                                );
+                                                state
+                                                    .app
+                                                    .plugin_state
+                                                    .plugin_chain
+                                                    .move_plugin(source, target);
+                                                state.app.plugin_state.selected_plugin_index = target;
+                                                state
+                                                    .app
+                                                    .plugin_state
+                                                    .plugin_chain
+                                                    .update_channel_dependent_plugins();
+                                                state.app.plugin_state.pending_plugin_update =
+                                                    Some(PluginUpdateType::Structural);
+                                                state.app.update_level_meter_groups();
+                                            });
+                                            cx.notify();
+                                        }
+                                    },
+                                )),
+                        )
+                    })
                     // Empty state
                     .when(is_empty, |d| {
                         d.child(

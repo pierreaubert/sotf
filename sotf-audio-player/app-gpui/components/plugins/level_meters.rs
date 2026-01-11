@@ -1069,16 +1069,34 @@ impl PlayerView {
                         if group_idx < state.app.level_meter_groups.len() {
                             match button_type {
                                 "mute" => {
-                                    state.app.level_meter_groups[group_idx].muted =
-                                        !state.app.level_meter_groups[group_idx].muted
+                                    let new_state = !state.app.level_meter_groups[group_idx].muted;
+                                    state.app.level_meter_groups[group_idx].muted = new_state;
+                                    // Handle solo exclusivity logic if needed, or simply update plugin
+                                    state.app.update_matrix_plugin();
                                 }
                                 "solo" => {
-                                    state.app.level_meter_groups[group_idx].soloed =
-                                        !state.app.level_meter_groups[group_idx].soloed
+                                    let new_state = !state.app.level_meter_groups[group_idx].soloed;
+                                    // Implement solo exclusivity logic manually here or move logic to a helper
+                                    // For now, mirroring toggle_level_meter_solo logic:
+                                    if new_state {
+                                        // Unsolo others
+                                        for (i, g) in state.app.level_meter_groups.iter_mut().enumerate() {
+                                            if i == group_idx {
+                                                g.soloed = true;
+                                                g.muted = false;
+                                            } else {
+                                                g.soloed = false;
+                                            }
+                                        }
+                                    } else {
+                                        state.app.level_meter_groups[group_idx].soloed = false;
+                                    }
+                                    state.app.update_matrix_plugin();
                                 }
                                 "dim" => {
                                     state.app.level_meter_groups[group_idx].dimmed =
-                                        !state.app.level_meter_groups[group_idx].dimmed
+                                        !state.app.level_meter_groups[group_idx].dimmed;
+                                    state.app.update_matrix_plugin();
                                 }
                                 _ => {}
                             }
@@ -1611,6 +1629,7 @@ impl LevelMeterManager for AppState {
                 }
             }
         }
+
 
         // Find and update the LAST Matrix plugin (closest to output)
         for i in (0..self.plugin_state.plugin_chain.len()).rev() {

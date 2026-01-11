@@ -22,13 +22,6 @@ impl App {
             channel_filter,
         );
 
-        log::debug!(
-            "filtered_albums: query='{}', library_count={}, result_count={}",
-            self.library_state.search_query,
-            self.library_state.library.albums.len(),
-            albums.len()
-        );
-
         // When there's an active search query, skip all selection filters.
         // This ensures search results are not filtered by letter/genre/decade/etc
         // that the user may have selected before entering search mode.
