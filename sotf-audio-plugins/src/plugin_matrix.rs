@@ -4,6 +4,7 @@
 
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use super::ChannelState;
 
 /// Matrix mixer plugin that routes N input channels to P output channels
 ///
@@ -57,6 +58,8 @@ pub struct MatrixPlugin {
     /// Total number of physical output channels in the audio buffer
     /// (max(output_channel_map) + 1, or output_channel_map.len() if empty)
     physical_output_channels: usize,
+    /// Mute/Solo/Dim state for each logical output channel
+    channel_states: Vec<ChannelState>,
 }
 
 impl MatrixPlugin {
@@ -76,6 +79,7 @@ impl MatrixPlugin {
             matrix,
             physical_input_channels: input_channels,
             physical_output_channels: output_channels,
+            channel_states: Vec::new(),
         }
     }
 
@@ -120,6 +124,7 @@ impl MatrixPlugin {
             matrix,
             physical_input_channels: input_channels,
             physical_output_channels: output_channels,
+            channel_states: Vec::new(),
         })
     }
 
@@ -191,7 +196,14 @@ impl MatrixPlugin {
             matrix,
             physical_input_channels,
             physical_output_channels,
+            channel_states: Vec::new(),
         })
+    }
+
+    /// Set initial channel states (builder pattern)
+    pub fn with_channel_states(mut self, channel_states: Vec<ChannelState>) -> Self {
+        self.channel_states = channel_states;
+        self
     }
 
     /// Create an identity matrix
@@ -451,6 +463,9 @@ impl Plugin for MatrixPlugin {
         // Zero output buffer first (needed for sparse mapping)
         output.fill(0.0);
 
+        // Check if any channel is soloed
+        let any_soloed = self.channel_states.iter().any(|s| s.soloed);
+
         // Process frame by frame
         for frame in 0..num_frames {
             let in_frame_offset = frame * self.physical_input_channels;
@@ -473,6 +488,23 @@ impl Plugin for MatrixPlugin {
 
                     let input_sample = input[in_frame_offset + physical_in_ch];
                     sum += gain * input_sample;
+                }
+
+                // Apply Mute/Solo/Dim logic if states available
+                if let Some(state) = self.channel_states.get(logical_out_ch) {
+                    if state.muted {
+                        sum = 0.0;
+                    } else if any_soloed && !state.soloed {
+                        sum = 0.0;
+                    } else {
+                        // Apply dim attenuation if dimmed
+                        // Typically Dim is -20dB (0.1) but let's use a fixed factor or parameter.
+                        // Ideally checking a "Dim Level" parameter, but for enabled/disabled bool
+                        // we can standardise on -20dB.
+                        if state.dimmed {
+                             sum *= 0.1;
+                        }
+                    }
                 }
 
                 // Map logical output to physical output

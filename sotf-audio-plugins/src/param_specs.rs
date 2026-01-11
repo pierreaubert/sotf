@@ -557,6 +557,70 @@ pub mod denoiser {
 // Multiband Expander Plugin
 // ============================================================================
 
+// ============================================================================
+// Fletcher-Munson Loudness Compensation Plugin
+// ============================================================================
+
+pub mod fletcher_munson {
+    // Playback volume (set by engine/UI when master volume changes)
+    pub const PLAYBACK_VOLUME_DB_DEFAULT: f32 = 0.0;
+    pub const PLAYBACK_VOLUME_DB_MIN: f32 = -80.0;
+    pub const PLAYBACK_VOLUME_DB_MAX: f32 = 0.0;
+
+    // Reference level where response is flat (corresponds to ~80 dB SPL)
+    pub const REFERENCE_LEVEL_DB_DEFAULT: f32 = -14.0;
+    pub const REFERENCE_LEVEL_DB_MIN: f32 = -40.0;
+    pub const REFERENCE_LEVEL_DB_MAX: f32 = 0.0;
+
+    // Smoothing time for gain transitions (ms)
+    pub const SMOOTHING_MS_DEFAULT: f32 = 30.0;
+    pub const SMOOTHING_MS_MIN: f32 = 1.0;
+    pub const SMOOTHING_MS_MAX: f32 = 200.0;
+
+    // Band frequency ranges
+    pub const BAND_FREQ_MIN: f64 = 20.0;
+    pub const BAND_FREQ_MAX: f64 = 20000.0;
+
+    // Band Q ranges
+    pub const BAND_Q_MIN: f64 = 0.1;
+    pub const BAND_Q_MAX: f64 = 10.0;
+
+    // Band max gain ranges
+    pub const BAND_MAX_GAIN_MIN: f64 = 0.0;
+    pub const BAND_MAX_GAIN_MAX: f64 = 24.0;
+
+    // Band slope ranges (dB gain per dB volume delta)
+    pub const BAND_SLOPE_MIN: f64 = 0.0;
+    pub const BAND_SLOPE_MAX: f64 = 1.0;
+
+    // Band 1: Sub-bass (~60 Hz) - ISO 226 shows largest compensation needed here
+    pub const BAND1_FREQ_DEFAULT: f64 = 60.0;
+    pub const BAND1_Q_DEFAULT: f64 = 0.5;
+    pub const BAND1_MAX_GAIN_DEFAULT: f64 = 15.0;
+    pub const BAND1_SLOPE_DEFAULT: f64 = 0.6;
+
+    // Band 2: Mid-bass (~250 Hz) - moderate compensation
+    pub const BAND2_FREQ_DEFAULT: f64 = 250.0;
+    pub const BAND2_Q_DEFAULT: f64 = 0.707;
+    pub const BAND2_MAX_GAIN_DEFAULT: f64 = 8.0;
+    pub const BAND2_SLOPE_DEFAULT: f64 = 0.4;
+
+    // Band 3: Presence (~3.5 kHz) - small boost (ear most sensitive here)
+    pub const BAND3_FREQ_DEFAULT: f64 = 3500.0;
+    pub const BAND3_Q_DEFAULT: f64 = 1.0;
+    pub const BAND3_MAX_GAIN_DEFAULT: f64 = 4.0;
+    pub const BAND3_SLOPE_DEFAULT: f64 = 0.2;
+
+    // Band 4: Air/brilliance (~12 kHz) - treble compensation
+    pub const BAND4_FREQ_DEFAULT: f64 = 12000.0;
+    pub const BAND4_Q_DEFAULT: f64 = 0.707;
+    pub const BAND4_MAX_GAIN_DEFAULT: f64 = 6.0;
+    pub const BAND4_SLOPE_DEFAULT: f64 = 0.3;
+
+    // Enabled default
+    pub const ENABLED_DEFAULT: bool = true;
+}
+
 pub mod multiband_expander {
     // Number of bands (same as multiband compressor)
     pub const NUM_BANDS_DEFAULT: usize = 3;

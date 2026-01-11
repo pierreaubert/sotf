@@ -11,10 +11,10 @@ use super::{
 use sotf_plugins::{
     CompressorPluginParams, ConvolutionPlugin, ConvolutionPluginParams, CrossoverPlugin,
     CrossoverPluginParams, DelayPlugin, DelayPluginParams, DenoiserPlugin, DenoiserPluginParams,
-    EqPluginParams, ExpanderPluginParams, GainPluginParams, GatePluginParams, Host,
-    LimiterPluginParams, LoudnessCompensationPluginParams, LoudnessMonitorPlugin,
-    MultibandCompressorPluginParams, MultibandExpanderPluginParams, Plugin, PluginHost,
-    SpectrumAnalyzerPlugin, SpectrumConfig, UpmixerPluginParams,
+    EqPluginParams, ExpanderPluginParams, FletcherMunsonPluginParams, GainPluginParams,
+    GatePluginParams, Host, LimiterPluginParams, LoudnessCompensationPluginParams,
+    LoudnessMonitorPlugin, MultibandCompressorPluginParams, MultibandExpanderPluginParams, Plugin,
+    PluginHost, SpectrumAnalyzerPlugin, SpectrumConfig, UpmixerPluginParams,
 };
 
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
@@ -553,6 +553,22 @@ fn create_plugin(
             Ok(Box::new(plugin))
         }
 
+        "fletcher_munson" => {
+            use sotf_plugins::FletcherMunsonPlugin;
+
+            let params: FletcherMunsonPluginParams =
+                serde_json::from_value(parameters.clone()).map_err(|e| {
+                    format!(
+                        "Failed to parse Fletcher-Munson plugin parameters: {}",
+                        e
+                    )
+                })?;
+
+            let mut plugin = FletcherMunsonPlugin::from_params(channels, params);
+            plugin.initialize(sample_rate)?;
+            Ok(Box::new(plugin))
+        }
+
         "matrix" => {
             #[derive(Debug, Clone, serde::Deserialize)]
             struct MatrixPluginParams {
@@ -568,13 +584,16 @@ fn create_plugin(
                 output_channel_map: Option<Vec<usize>>,
                 // Matrix data
                 matrix: Vec<f32>,
+                // Channel states for Mute/Solo
+                #[serde(default)]
+                channel_states: Option<Vec<sotf_plugins::ChannelState>>,
             }
 
             let params: MatrixPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse matrix plugin parameters: {}", e))?;
 
             // Determine if using sparse or dense mapping
-            let plugin = if let (Some(in_map), Some(out_map)) =
+            let mut plugin = if let (Some(in_map), Some(out_map)) =
                 (params.input_channel_map, params.output_channel_map)
             {
                 // Sparse mapping
@@ -593,6 +612,13 @@ fn create_plugin(
                         .to_string(),
                 );
             };
+
+            if let Some(states) = params.channel_states {
+                log::debug!("[Engine] Matrix Plugin created with channel_states: {:?}", states);
+                plugin = plugin.with_channel_states(states);
+            } else {
+                log::trace!("[Engine] Matrix Plugin created WITHOUT channel_states");
+            }
 
             Ok(Box::new(plugin))
         }

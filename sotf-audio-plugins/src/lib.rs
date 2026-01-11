@@ -39,6 +39,7 @@ mod plugin_delay;
 mod plugin_denoiser;
 mod plugin_eq;
 mod plugin_expander;
+mod plugin_fletcher_munson;
 mod plugin_gain;
 mod plugin_gate;
 mod plugin_limiter;
@@ -86,6 +87,9 @@ pub use plugin_delay::{DelayPlugin, DelayPluginParams};
 pub use plugin_denoiser::{DenoiserData, DenoiserPlugin, DenoiserPluginParams};
 pub use plugin_eq::{BiquadFilterConfig, EqPlugin, EqPluginParams};
 pub use plugin_expander::{ExpanderData, ExpanderPlugin, ExpanderPluginParams};
+pub use plugin_fletcher_munson::{
+    FletcherMunsonBand, FletcherMunsonPlugin, FletcherMunsonPluginParams,
+};
 pub use plugin_gain::{GainPlugin, GainPluginParams};
 pub use plugin_gate::{GateData, GatePlugin, GatePluginParams};
 pub use plugin_limiter::{LimiterPlugin, LimiterPluginParams};

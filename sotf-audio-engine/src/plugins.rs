@@ -16,6 +16,7 @@ pub enum PluginType {
     MultibandCompressor,
     MultibandExpander,
     LoudnessCompensation,
+    FletcherMunson,
     BinauralDecoder,
     Convolution,
     LoudnessMonitor,
@@ -41,6 +42,7 @@ impl PluginType {
             Self::MultibandCompressor => "Multiband Compressor",
             Self::MultibandExpander => "Multiband Expander",
             Self::LoudnessCompensation => "Loudness Compensation",
+            Self::FletcherMunson => "Fletcher-Munson",
             Self::BinauralDecoder => "Binaural Decoder",
             Self::Convolution => "Convolution",
             Self::LoudnessMonitor => "Loudness Monitor",
@@ -66,6 +68,7 @@ impl PluginType {
             Self::MultibandCompressor => "Multiband Dynamic Range Compressor",
             Self::MultibandExpander => "Multiband Dynamic Range Expander",
             Self::LoudnessCompensation => "Equal Loudness Compensation",
+            Self::FletcherMunson => "Volume-dependent ISO 226 loudness curves",
             Self::BinauralDecoder => "Multi-channel to Binaural (HRTF)",
             Self::Convolution => "FFT-based Convolution (IR Processing)",
             Self::LoudnessMonitor => "Real-time EBU R128 loudness monitoring",
@@ -91,6 +94,7 @@ impl PluginType {
             Self::MultibandCompressor,
             Self::MultibandExpander,
             Self::LoudnessCompensation,
+            Self::FletcherMunson,
             Self::BinauralDecoder,
             Self::Convolution,
             Self::LoudnessMonitor,
@@ -364,6 +368,62 @@ fn default_auto_gain_max_db() -> f64 {
 
 fn default_auto_gain_smoothing_ms() -> f64 {
     100.0
+}
+
+// Fletcher-Munson defaults (using param_specs values)
+fn default_fm_reference_level_db() -> f64 {
+    -14.0 // ~80 dB SPL reference
+}
+fn default_fm_band1_freq() -> f64 {
+    60.0 // Sub-bass
+}
+fn default_fm_band1_q() -> f64 {
+    0.5
+}
+fn default_fm_band1_max_gain() -> f64 {
+    15.0
+}
+fn default_fm_band1_slope() -> f64 {
+    0.6
+}
+fn default_fm_band2_freq() -> f64 {
+    250.0 // Mid-bass
+}
+fn default_fm_band2_q() -> f64 {
+    0.707
+}
+fn default_fm_band2_max_gain() -> f64 {
+    8.0
+}
+fn default_fm_band2_slope() -> f64 {
+    0.4
+}
+fn default_fm_band3_freq() -> f64 {
+    3500.0 // Presence
+}
+fn default_fm_band3_q() -> f64 {
+    1.0
+}
+fn default_fm_band3_max_gain() -> f64 {
+    4.0
+}
+fn default_fm_band3_slope() -> f64 {
+    0.2
+}
+fn default_fm_band4_freq() -> f64 {
+    12000.0 // Air/brilliance
+}
+fn default_fm_band4_q() -> f64 {
+    0.707
+}
+fn default_fm_band4_max_gain() -> f64 {
+    6.0
+}
+fn default_fm_band4_slope() -> f64 {
+    0.3
+}
+fn default_fm_smoothing_ms() -> f64 {
+    30.0
 }
 
 // Gate/Limiter defaults (defined locally as they use f64 and match engine defaults)
@@ -891,6 +951,53 @@ pub enum PluginSettings {
         #[serde(default = "default_auto_gain_smoothing_ms")]
         auto_gain_smoothing_ms: f64,
     },
+    FletcherMunson {
+        /// Current playback volume (set by engine/UI)
+        #[serde(default)]
+        playback_volume_db: f64,
+        /// Reference level where response is flat
+        #[serde(default = "default_fm_reference_level_db")]
+        reference_level_db: f64,
+        /// Band 1 (sub-bass) parameters
+        #[serde(default = "default_fm_band1_freq")]
+        band1_freq: f64,
+        #[serde(default = "default_fm_band1_q")]
+        band1_q: f64,
+        #[serde(default = "default_fm_band1_max_gain")]
+        band1_max_gain: f64,
+        #[serde(default = "default_fm_band1_slope")]
+        band1_slope: f64,
+        /// Band 2 (mid-bass) parameters
+        #[serde(default = "default_fm_band2_freq")]
+        band2_freq: f64,
+        #[serde(default = "default_fm_band2_q")]
+        band2_q: f64,
+        #[serde(default = "default_fm_band2_max_gain")]
+        band2_max_gain: f64,
+        #[serde(default = "default_fm_band2_slope")]
+        band2_slope: f64,
+        /// Band 3 (presence) parameters
+        #[serde(default = "default_fm_band3_freq")]
+        band3_freq: f64,
+        #[serde(default = "default_fm_band3_q")]
+        band3_q: f64,
+        #[serde(default = "default_fm_band3_max_gain")]
+        band3_max_gain: f64,
+        #[serde(default = "default_fm_band3_slope")]
+        band3_slope: f64,
+        /// Band 4 (air/brilliance) parameters
+        #[serde(default = "default_fm_band4_freq")]
+        band4_freq: f64,
+        #[serde(default = "default_fm_band4_q")]
+        band4_q: f64,
+        #[serde(default = "default_fm_band4_max_gain")]
+        band4_max_gain: f64,
+        #[serde(default = "default_fm_band4_slope")]
+        band4_slope: f64,
+        /// Smoothing time for gain transitions (ms)
+        #[serde(default = "default_fm_smoothing_ms")]
+        smoothing_ms: f64,
+    },
     BinauralDecoder {
         sofa_file: String,
         input_channels: usize,
@@ -929,6 +1036,8 @@ pub enum PluginSettings {
         input_channels: usize,
         output_channels: usize,
         matrix: Vec<f32>, // Row-major: matrix[out * in_count + in] = linear_gain
+        #[serde(default)]
+        channel_states: Vec<sotf_plugins::ChannelState>,
     },
     XTC {
         #[serde(default = "default_xtc_distance_m")]
@@ -1022,6 +1131,7 @@ impl PluginSettings {
             Self::MultibandCompressor { .. } => PluginType::MultibandCompressor,
             Self::MultibandExpander { .. } => PluginType::MultibandExpander,
             Self::LoudnessCompensation { .. } => PluginType::LoudnessCompensation,
+            Self::FletcherMunson { .. } => PluginType::FletcherMunson,
             Self::BinauralDecoder { .. } => PluginType::BinauralDecoder,
             Self::Convolution { .. } => PluginType::Convolution,
             Self::LoudnessMonitor => PluginType::LoudnessMonitor,
@@ -1339,6 +1449,59 @@ impl PluginSettings {
                     "auto_gain_smoothing_ms": auto_gain_smoothing_ms,
                 }),
             ),
+            Self::FletcherMunson {
+                playback_volume_db,
+                reference_level_db,
+                band1_freq,
+                band1_q,
+                band1_max_gain,
+                band1_slope,
+                band2_freq,
+                band2_q,
+                band2_max_gain,
+                band2_slope,
+                band3_freq,
+                band3_q,
+                band3_max_gain,
+                band3_slope,
+                band4_freq,
+                band4_q,
+                band4_max_gain,
+                band4_slope,
+                smoothing_ms,
+            } => PluginConfig::new(
+                "fletcher_munson",
+                json!({
+                    "playback_volume_db": playback_volume_db,
+                    "reference_level_db": reference_level_db,
+                    "band1": {
+                        "frequency": band1_freq,
+                        "q": band1_q,
+                        "max_gain_db": band1_max_gain,
+                        "slope": band1_slope,
+                    },
+                    "band2": {
+                        "frequency": band2_freq,
+                        "q": band2_q,
+                        "max_gain_db": band2_max_gain,
+                        "slope": band2_slope,
+                    },
+                    "band3": {
+                        "frequency": band3_freq,
+                        "q": band3_q,
+                        "max_gain_db": band3_max_gain,
+                        "slope": band3_slope,
+                    },
+                    "band4": {
+                        "frequency": band4_freq,
+                        "q": band4_q,
+                        "max_gain_db": band4_max_gain,
+                        "slope": band4_slope,
+                    },
+                    "smoothing_ms": smoothing_ms,
+                    "enabled": true,
+                }),
+            ),
             Self::BinauralDecoder {
                 sofa_file,
                 input_channels,
@@ -1400,12 +1563,14 @@ impl PluginSettings {
                 input_channels,
                 output_channels,
                 matrix,
+                channel_states,
             } => PluginConfig::new(
                 "matrix",
                 json!({
                     "input_channels": input_channels,
                     "output_channels": output_channels,
                     "matrix": matrix,
+                    "channel_states": channel_states,
                 }),
             ),
             Self::XTC {
@@ -1641,6 +1806,27 @@ impl PluginSettings {
                 auto_gain_max_db: default_auto_gain_max_db(),
                 auto_gain_smoothing_ms: default_auto_gain_smoothing_ms(),
             },
+            PluginType::FletcherMunson => Self::FletcherMunson {
+                playback_volume_db: 0.0,
+                reference_level_db: default_fm_reference_level_db(),
+                band1_freq: default_fm_band1_freq(),
+                band1_q: default_fm_band1_q(),
+                band1_max_gain: default_fm_band1_max_gain(),
+                band1_slope: default_fm_band1_slope(),
+                band2_freq: default_fm_band2_freq(),
+                band2_q: default_fm_band2_q(),
+                band2_max_gain: default_fm_band2_max_gain(),
+                band2_slope: default_fm_band2_slope(),
+                band3_freq: default_fm_band3_freq(),
+                band3_q: default_fm_band3_q(),
+                band3_max_gain: default_fm_band3_max_gain(),
+                band3_slope: default_fm_band3_slope(),
+                band4_freq: default_fm_band4_freq(),
+                band4_q: default_fm_band4_q(),
+                band4_max_gain: default_fm_band4_max_gain(),
+                band4_slope: default_fm_band4_slope(),
+                smoothing_ms: default_fm_smoothing_ms(),
+            },
             PluginType::BinauralDecoder => Self::BinauralDecoder {
                 sofa_file: String::new(),
                 input_channels: 6, // Default to 5.1
@@ -1670,6 +1856,7 @@ impl PluginSettings {
                 input_channels: 2,
                 output_channels: 2,
                 matrix: vec![1.0, 0.0, 0.0, 1.0], // Identity 2x2
+                channel_states: vec![],
             },
             PluginType::XTC => Self::XTC {
                 distance_m: default_xtc_distance_m(),
@@ -2465,20 +2652,26 @@ impl PluginChain {
                 PluginSettings::Matrix {
                     input_channels,
                     output_channels,
-                    matrix: _,
+                    matrix,
+                    channel_states,
                 } => {
                     if *input_channels != current_channels {
-                        // Resize matrix to identity
-                        let mut new_matrix = vec![0.0; *output_channels * current_channels];
-                        let min_ch = (*output_channels).min(current_channels);
-                        for c in 0..min_ch {
-                            new_matrix[c * current_channels + c] = 1.0;
-                        }
+                        // Resize matrix to match new input channels (square matrix)
+                        // allowing it to act as pass-through/identity by default
+                        let mut new_matrix = matrix.clone();
+                        resize_matrix(
+                            &mut new_matrix,
+                            *input_channels,
+                            *output_channels,
+                            current_channels,
+                            current_channels,
+                        );
 
                         updated_settings = Some(PluginSettings::Matrix {
                             input_channels: current_channels,
-                            output_channels: *output_channels,
+                            output_channels: current_channels,
                             matrix: new_matrix,
+                            channel_states: channel_states.clone(),
                         });
                     }
                 }
