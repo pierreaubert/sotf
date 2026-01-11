@@ -18,7 +18,7 @@ impl PlayerView {
     pub(crate) fn render_spinorama_configure(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let spinorama = &state.app.spinorama_eq_state;
+        let spinorama = &state.app.measurement_state.spinorama_eq_state;
 
         // Filter available modes based on phase data availability
         // Default is IIR. If phase data is available, add FIR and mixed options.
@@ -93,8 +93,8 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |mode, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.dropdowns.opt_mode = mode.to_string();
-                        state.app.spinorama_eq_state.dropdowns.opt_mode_open = false;
+                        state.app.measurement_state.spinorama_eq_state.dropdowns.opt_mode = mode.to_string();
+                        state.app.measurement_state.spinorama_eq_state.dropdowns.opt_mode_open = false;
                     });
                 }
             })
@@ -102,7 +102,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |open, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state.app.spinorama_eq_state.dropdowns.opt_mode_open = open;
+                        state.app.measurement_state.spinorama_eq_state.dropdowns.opt_mode_open = open;
                         cx.notify();
                     });
                 }
@@ -111,8 +111,8 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |model, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.peq_model = model.to_string();
-                        state.app.spinorama_eq_state.dropdowns.peq_model_open = false;
+                        state.app.measurement_state.spinorama_eq_state.optimizer_config.peq_model = model.to_string();
+                        state.app.measurement_state.spinorama_eq_state.dropdowns.peq_model_open = false;
                     });
                 }
             })
@@ -120,7 +120,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |open, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state.app.spinorama_eq_state.dropdowns.peq_model_open = open;
+                        state.app.measurement_state.spinorama_eq_state.dropdowns.peq_model_open = open;
                         cx.notify();
                     });
                 }
@@ -130,13 +130,13 @@ impl PlayerView {
                 move |algo, _window, cx| {
                     use crate::app::types::RoomEqAlgorithm;
                     state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.algorithm = match algo {
+                        state.app.measurement_state.spinorama_eq_state.optimizer_config.algorithm = match algo {
                             "nlopt:cobyla" => RoomEqAlgorithm::Cobyla,
                             "autoeq:de" => RoomEqAlgorithm::DifferentialEvolution,
                             "nlopt:neldermead" => RoomEqAlgorithm::NelderMead,
                             _ => RoomEqAlgorithm::Cobyla,
                         };
-                        state.app.spinorama_eq_state.dropdowns.algorithm_open = false;
+                        state.app.measurement_state.spinorama_eq_state.dropdowns.algorithm_open = false;
                     });
                 }
             })
@@ -144,7 +144,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |open, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state.app.spinorama_eq_state.dropdowns.algorithm_open = open;
+                        state.app.measurement_state.spinorama_eq_state.dropdowns.algorithm_open = open;
                         cx.notify();
                     });
                 }
@@ -153,7 +153,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.num_filters = value;
+                        state.app.measurement_state.spinorama_eq_state.optimizer_config.num_filters = value;
                     });
                 }
             })
@@ -161,7 +161,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.min_q = value;
+                        state.app.measurement_state.spinorama_eq_state.optimizer_config.min_q = value;
                     });
                 }
             })
@@ -169,7 +169,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.max_q = value;
+                        state.app.measurement_state.spinorama_eq_state.optimizer_config.max_q = value;
                     });
                 }
             })
@@ -177,7 +177,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.min_db = value;
+                        state.app.measurement_state.spinorama_eq_state.optimizer_config.min_db = value;
                     });
                 }
             })
@@ -185,7 +185,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.max_db = value;
+                        state.app.measurement_state.spinorama_eq_state.optimizer_config.max_db = value;
                     });
                 }
             })
@@ -193,7 +193,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.min_freq = value;
+                        state.app.measurement_state.spinorama_eq_state.optimizer_config.min_freq = value;
                     });
                 }
             })
@@ -201,7 +201,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.max_freq = value;
+                        state.app.measurement_state.spinorama_eq_state.optimizer_config.max_freq = value;
                     });
                 }
             })
@@ -209,7 +209,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.max_iter = value;
+                        state.app.measurement_state.spinorama_eq_state.optimizer_config.max_iter = value;
                     });
                 }
             })
@@ -217,7 +217,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.population = value;
+                        state.app.measurement_state.spinorama_eq_state.optimizer_config.population = value;
                     });
                 }
             })
@@ -225,7 +225,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.de_f = value;
+                        state.app.measurement_state.spinorama_eq_state.optimizer_config.de_f = value;
                     });
                 }
             })
@@ -233,7 +233,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.de_cr = value;
+                        state.app.measurement_state.spinorama_eq_state.optimizer_config.de_cr = value;
                     });
                 }
             })
@@ -241,9 +241,9 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |strategy, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.strategy =
+                        state.app.measurement_state.spinorama_eq_state.optimizer_config.strategy =
                             strategy.to_string();
-                        state.app.spinorama_eq_state.dropdowns.strategy_open = false;
+                        state.app.measurement_state.spinorama_eq_state.dropdowns.strategy_open = false;
                     });
                 }
             })
@@ -251,7 +251,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |open, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state.app.spinorama_eq_state.dropdowns.strategy_open = open;
+                        state.app.measurement_state.spinorama_eq_state.dropdowns.strategy_open = open;
                         cx.notify();
                     });
                 }
@@ -260,7 +260,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.refine = value;
+                        state.app.measurement_state.spinorama_eq_state.optimizer_config.refine = value;
                     });
                 }
             })
@@ -268,8 +268,8 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |algo, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.local_algo = algo.to_string();
-                        state.app.spinorama_eq_state.dropdowns.local_algo_open = false;
+                        state.app.measurement_state.spinorama_eq_state.optimizer_config.local_algo = algo.to_string();
+                        state.app.measurement_state.spinorama_eq_state.dropdowns.local_algo_open = false;
                     });
                 }
             })
@@ -277,7 +277,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |open, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state.app.spinorama_eq_state.dropdowns.local_algo_open = open;
+                        state.app.measurement_state.spinorama_eq_state.dropdowns.local_algo_open = open;
                         cx.notify();
                     });
                 }
@@ -286,7 +286,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.smooth = value;
+                        state.app.measurement_state.spinorama_eq_state.optimizer_config.smooth = value;
                     });
                 }
             })
@@ -294,7 +294,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.spacing_weight = value;
+                        state.app.measurement_state.spinorama_eq_state.optimizer_config.spacing_weight = value;
                     });
                 }
             })
@@ -304,6 +304,7 @@ impl PlayerView {
                     state.update(cx, |state, _cx| {
                         state
                             .app
+                            .measurement_state
                             .spinorama_eq_state
                             .optimizer_config
                             .min_spacing_oct = value;
@@ -314,7 +315,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.sample_rate = value as u32;
+                        state.app.measurement_state.spinorama_eq_state.optimizer_config.sample_rate = value as u32;
                     });
                 }
             })
@@ -322,7 +323,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.fir_taps = value;
+                        state.app.measurement_state.spinorama_eq_state.optimizer_config.fir_taps = value;
                     });
                 }
             })
@@ -330,8 +331,8 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |phase, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.fir_phase = phase.to_string();
-                        state.app.spinorama_eq_state.dropdowns.fir_phase_open = false;
+                        state.app.measurement_state.spinorama_eq_state.optimizer_config.fir_phase = phase.to_string();
+                        state.app.measurement_state.spinorama_eq_state.dropdowns.fir_phase_open = false;
                     });
                 }
             })
@@ -339,7 +340,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |open, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state.app.spinorama_eq_state.dropdowns.fir_phase_open = open;
+                        state.app.measurement_state.spinorama_eq_state.dropdowns.fir_phase_open = open;
                         cx.notify();
                     });
                 }
@@ -348,7 +349,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.tolerance = value;
+                        state.app.measurement_state.spinorama_eq_state.optimizer_config.tolerance = value;
                     });
                 }
             })
@@ -356,7 +357,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.atolerance = value;
+                        state.app.measurement_state.spinorama_eq_state.optimizer_config.atolerance = value;
                     });
                 }
             })
@@ -364,7 +365,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.optimizer_config.smooth_n = value;
+                        state.app.measurement_state.spinorama_eq_state.optimizer_config.smooth_n = value;
                     });
                 }
             });
@@ -438,6 +439,7 @@ impl PlayerView {
                                             view.state.update(cx, |state, _cx| {
                                                 state
                                                     .app
+                                                    .measurement_state
                                                     .spinorama_eq_state
                                                     .optimizer_config
                                                     .mode = mode_value;
@@ -506,6 +508,7 @@ impl PlayerView {
                                                         view.state.update(cx, |state, _cx| {
                                                             state
                                                                 .app
+                                                                .measurement_state
                                                                 .spinorama_eq_state
                                                                 .optimizer_config
                                                                 .target_curve = curve_value;

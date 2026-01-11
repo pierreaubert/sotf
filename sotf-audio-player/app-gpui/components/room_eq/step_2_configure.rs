@@ -12,7 +12,7 @@ impl PlayerView {
     pub(crate) fn render_room_eq_configure(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let room_eq = &state.app.room_eq_state;
+        let room_eq = &state.app.measurement_state.room_eq_state;
 
         // Build AutoEqConfig from our RoomEqOptimizerConfig
         let config = &room_eq.optimizer_config;
@@ -60,13 +60,13 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |algo, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state.app.room_eq_state.optimizer_config.algorithm = match algo {
+                        state.app.measurement_state.room_eq_state.optimizer_config.algorithm = match algo {
                             "nlopt:cobyla" => RoomEqAlgorithm::Cobyla,
                             "autoeq:de" => RoomEqAlgorithm::DifferentialEvolution,
                             "nlopt:neldermead" => RoomEqAlgorithm::NelderMead,
                             _ => RoomEqAlgorithm::Cobyla,
                         };
-                        state.app.room_eq_state.dropdowns.algorithm_open = false;
+                        state.app.measurement_state.room_eq_state.dropdowns.algorithm_open = false;
                         cx.notify();
                     });
                 }
@@ -75,7 +75,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |open, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state.app.room_eq_state.dropdowns.algorithm_open = open;
+                        state.app.measurement_state.room_eq_state.dropdowns.algorithm_open = open;
                         cx.notify();
                     });
                 }
@@ -86,7 +86,7 @@ impl PlayerView {
                     state.update(cx, |state, cx| {
                         // PEQ model is stored in autoeq_config.peq_model which is read-only display
                         // The actual model selection doesn't need to be stored separately
-                        state.app.room_eq_state.dropdowns.peq_model_open = false;
+                        state.app.measurement_state.room_eq_state.dropdowns.peq_model_open = false;
                         cx.notify();
                     });
                 }
@@ -95,7 +95,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |open, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state.app.room_eq_state.dropdowns.peq_model_open = open;
+                        state.app.measurement_state.room_eq_state.dropdowns.peq_model_open = open;
                         cx.notify();
                     });
                 }
@@ -104,7 +104,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state.app.room_eq_state.optimizer_config.num_filters = value;
+                        state.app.measurement_state.room_eq_state.optimizer_config.num_filters = value;
                         cx.notify();
                     });
                 }
@@ -113,7 +113,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state.app.room_eq_state.optimizer_config.min_q = value;
+                        state.app.measurement_state.room_eq_state.optimizer_config.min_q = value;
                         cx.notify();
                     });
                 }
@@ -122,7 +122,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state.app.room_eq_state.optimizer_config.max_q = value;
+                        state.app.measurement_state.room_eq_state.optimizer_config.max_q = value;
                         cx.notify();
                     });
                 }
@@ -131,7 +131,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state.app.room_eq_state.optimizer_config.min_db = value;
+                        state.app.measurement_state.room_eq_state.optimizer_config.min_db = value;
                         cx.notify();
                     });
                 }
@@ -140,7 +140,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state.app.room_eq_state.optimizer_config.max_db = value;
+                        state.app.measurement_state.room_eq_state.optimizer_config.max_db = value;
                         cx.notify();
                     });
                 }
@@ -149,7 +149,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state.app.room_eq_state.optimizer_config.min_freq = value;
+                        state.app.measurement_state.room_eq_state.optimizer_config.min_freq = value;
                         cx.notify();
                     });
                 }
@@ -158,7 +158,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state.app.room_eq_state.optimizer_config.max_freq = value;
+                        state.app.measurement_state.room_eq_state.optimizer_config.max_freq = value;
                         cx.notify();
                     });
                 }
@@ -167,7 +167,7 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state.app.room_eq_state.optimizer_config.max_iter = value;
+                        state.app.measurement_state.room_eq_state.optimizer_config.max_iter = value;
                         cx.notify();
                     });
                 }
@@ -215,7 +215,7 @@ impl PlayerView {
     fn render_channel_config_list(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let speaker_configs = state.app.room_eq_state.speaker_configs.clone();
+        let speaker_configs = state.app.measurement_state.room_eq_state.speaker_configs.clone();
 
         if speaker_configs.is_empty() {
             return VStack::new()

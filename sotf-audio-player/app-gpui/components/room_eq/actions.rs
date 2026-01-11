@@ -6,15 +6,16 @@ impl PlayerView {
         self.state.update(cx, |state, _cx| {
             state
                 .app
+                .measurement_state
                 .room_eq_state
-                .load_from_recording(&state.app.recording_state);
-            state.app.room_eq_state.init_speaker_configs();
-            let channel_count = state.app.room_eq_state.channel_measurements.len();
-            state.app.room_eq_state.status_message = format!(
+                .load_from_recording(&state.app.measurement_state.recording_state);
+            state.app.measurement_state.room_eq_state.init_speaker_configs();
+            let channel_count = state.app.measurement_state.room_eq_state.channel_measurements.len();
+            state.app.measurement_state.room_eq_state.status_message = format!(
                 "Successfully loaded {} channel(s) from recording session",
                 channel_count
             );
-            state.app.room_eq_state.error_message = None;
+            state.app.measurement_state.room_eq_state.error_message = None;
         });
     }
 
@@ -55,7 +56,7 @@ impl PlayerView {
                                 if measurements_file.channels.is_empty() {
                                     log::error!("No channels found in measurements file");
                                     let _ = state_entity.update(cx, |state, _| {
-                                        state.app.room_eq_state.error_message =
+                                        state.app.measurement_state.room_eq_state.error_message =
                                             Some("No channels found in the measurement file".to_string());
                                     });
                                     return;
@@ -66,7 +67,7 @@ impl PlayerView {
                                     if channel.measurement.frequencies.is_empty() {
                                         log::error!("Channel {} '{}' has no frequency data", idx, channel.channel_name);
                                         let _ = state_entity.update(cx, |state, _| {
-                                            state.app.room_eq_state.error_message =
+                                            state.app.measurement_state.room_eq_state.error_message =
                                                 Some(format!("Channel '{}' has no frequency data", channel.channel_name));
                                         });
                                         return;
@@ -105,17 +106,17 @@ impl PlayerView {
 
                                 let channel_count = measurements_file.channels.len();
                                 let _ = state_entity.update(cx, |state, _| {
-                                    state.app.room_eq_state.channel_measurements =
+                                    state.app.measurement_state.room_eq_state.channel_measurements =
                                         measurements_file.channels;
-                                    state.app.room_eq_state.speaker_configs = speaker_configs;
-                                    state.app.room_eq_state.data_source =
+                                    state.app.measurement_state.room_eq_state.speaker_configs = speaker_configs;
+                                    state.app.measurement_state.room_eq_state.data_source =
                                         RoomEqDataSource::FromFile(file_path.clone());
-                                    state.app.room_eq_state.status_message = format!(
+                                    state.app.measurement_state.room_eq_state.status_message = format!(
                                         "Successfully loaded {} channel(s) from {}",
                                         channel_count,
                                         file_path.display()
                                     );
-                                    state.app.room_eq_state.error_message = None;
+                                    state.app.measurement_state.room_eq_state.error_message = None;
                                 });
                             }
                             Err(e) => {
@@ -136,7 +137,7 @@ impl PlayerView {
                                 };
 
                                 let _ = state_entity.update(cx, |state, _| {
-                                    state.app.room_eq_state.error_message = Some(error_msg);
+                                    state.app.measurement_state.room_eq_state.error_message = Some(error_msg);
                                 });
                             }
                         }
@@ -144,7 +145,7 @@ impl PlayerView {
                     Err(e) => {
                         log::error!("File read error: {}", e);
                         let _ = state_entity.update(cx, |state, _| {
-                            state.app.room_eq_state.error_message =
+                            state.app.measurement_state.room_eq_state.error_message =
                                 Some(format!("Failed to read file: {}", e));
                         });
                     }

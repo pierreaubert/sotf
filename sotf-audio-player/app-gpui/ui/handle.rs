@@ -4,7 +4,7 @@ impl PlayerView {
         match event.keystroke.key.as_str() {
             "backspace" => {
                 self.state.update(cx, |state, _cx| {
-                    state.app.apo_file_input.pop();
+                    state.app.input_state.apo_file_input.pop();
                     state.app.clear_autocomplete();
                 });
                 cx.notify();
@@ -12,9 +12,9 @@ impl PlayerView {
             "tab" => {
                 // File autocomplete support
                 self.state.update(cx, |state, _cx| {
-                    if state.app.autocomplete_suggestions.is_empty() {
+                    if state.app.input_state.autocomplete_suggestions.is_empty() {
                         state.app.generate_autocomplete_suggestions_for_apo_file();
-                        if !state.app.autocomplete_suggestions.is_empty() {
+                        if !state.app.input_state.autocomplete_suggestions.is_empty() {
                             state.app.apply_autocomplete_to_apo_file();
                         }
                     } else {
@@ -38,7 +38,7 @@ impl PlayerView {
                             state.app.ui_state.toast_message = Some(crate::app::ToastMessage::success(
                                 "APO file loaded successfully",
                             ));
-                            state.app.apo_file_input.clear();
+                            state.app.input_state.apo_file_input.clear();
                             state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                         }
                         Err(e) => {
@@ -54,7 +54,7 @@ impl PlayerView {
                 // Add character to input
                 if let Some(text) = event.keystroke.key_char.as_ref() {
                     self.state.update(cx, |state, _cx| {
-                        state.app.apo_file_input.push_str(text);
+                        state.app.input_state.apo_file_input.push_str(text);
                         state.app.clear_autocomplete();
                     });
                     cx.notify();
@@ -68,7 +68,7 @@ impl PlayerView {
         match event.keystroke.key.as_str() {
             "backspace" => {
                 self.state.update(cx, |state, _cx| {
-                    state.app.sofa_file_input.pop();
+                    state.app.input_state.sofa_file_input.pop();
                     state.app.clear_autocomplete();
                 });
                 cx.notify();
@@ -76,9 +76,9 @@ impl PlayerView {
             "tab" => {
                 // File autocomplete support
                 self.state.update(cx, |state, _cx| {
-                    if state.app.autocomplete_suggestions.is_empty() {
+                    if state.app.input_state.autocomplete_suggestions.is_empty() {
                         state.app.generate_autocomplete_suggestions_for_sofa_file();
-                        if !state.app.autocomplete_suggestions.is_empty() {
+                        if !state.app.input_state.autocomplete_suggestions.is_empty() {
                             state.app.apply_autocomplete_to_sofa_file();
                         }
                     } else {
@@ -102,7 +102,7 @@ impl PlayerView {
                             state.app.ui_state.toast_message = Some(crate::app::ToastMessage::success(
                                 "SOFA file loaded successfully",
                             ));
-                            state.app.sofa_file_input.clear();
+                            state.app.input_state.sofa_file_input.clear();
                             state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                         }
                         Err(e) => {
@@ -118,7 +118,7 @@ impl PlayerView {
                 // Add character to input
                 if let Some(text) = event.keystroke.key_char.as_ref() {
                     self.state.update(cx, |state, _cx| {
-                        state.app.sofa_file_input.push_str(text);
+                        state.app.input_state.sofa_file_input.push_str(text);
                         state.app.clear_autocomplete();
                     });
                     cx.notify();
@@ -141,8 +141,8 @@ impl PlayerView {
             "backspace" => {
                 log::info!("[SPINORAMA] Backspace pressed");
                 self.state.update(cx, |state, _cx| {
-                    state.app.spinorama_eq_state.speaker_search.pop();
-                    state.app.spinorama_eq_state.update_suggestions();
+                    state.app.measurement_state.spinorama_eq_state.speaker_search.pop();
+                    state.app.measurement_state.spinorama_eq_state.update_suggestions();
                 });
                 cx.notify();
             }
@@ -167,8 +167,8 @@ impl PlayerView {
                 if let Some(text) = event.keystroke.key_char.as_ref() {
                     log::info!("[SPINORAMA] Character typed: '{}'", text);
                     self.state.update(cx, |state, _cx| {
-                        state.app.spinorama_eq_state.speaker_search.push_str(text);
-                        state.app.spinorama_eq_state.update_suggestions();
+                        state.app.measurement_state.spinorama_eq_state.speaker_search.push_str(text);
+                        state.app.measurement_state.spinorama_eq_state.update_suggestions();
                     });
                     cx.notify();
                 }
@@ -181,7 +181,7 @@ impl PlayerView {
         match event.keystroke.key.as_str() {
             "backspace" => {
                 self.state.update(cx, |state, _cx| {
-                    state.app.plugin_file_input.pop();
+                    state.app.input_state.plugin_file_input.pop();
                     state.app.clear_autocomplete();
                 });
                 cx.notify();
@@ -189,11 +189,11 @@ impl PlayerView {
             "tab" => {
                 // Autocomplete from available presets
                 self.state.update(cx, |state, _cx| {
-                    if state.app.autocomplete_suggestions.is_empty() {
+                    if state.app.input_state.autocomplete_suggestions.is_empty() {
                         state
                             .app
                             .generate_autocomplete_suggestions_for_save_preset();
-                        if !state.app.autocomplete_suggestions.is_empty() {
+                        if !state.app.input_state.autocomplete_suggestions.is_empty() {
                             state.app.apply_autocomplete_to_plugin_file();
                         }
                     } else {
@@ -205,7 +205,7 @@ impl PlayerView {
             "escape" => {
                 self.state.update(cx, |state, _cx| {
                     state.app.ui_state.input_mode = crate::app::InputMode::Normal;
-                    state.app.plugin_file_input.clear();
+                    state.app.input_state.plugin_file_input.clear();
                     state.app.clear_autocomplete();
                     state.app.ui_state.pending_studio_close = false; // Cancel close if save cancelled
                 });
@@ -214,11 +214,11 @@ impl PlayerView {
             "enter" => {
                 self.state.update(cx, |state, _cx| {
                     // If there are presets shown and input is empty, use selected preset (overwrite)
-                    if state.app.plugin_file_input.is_empty()
+                    if state.app.input_state.plugin_file_input.is_empty()
                         && !state.app.plugin_state.available_plugin_presets.is_empty()
                     {
                         state.app.save_selected_preset();
-                    } else if !state.app.plugin_file_input.is_empty() {
+                    } else if !state.app.input_state.plugin_file_input.is_empty() {
                         state.app.save_plugin_chain();
                     }
                     state.app.ui_state.input_mode = crate::app::InputMode::Normal;
@@ -235,7 +235,7 @@ impl PlayerView {
             "up" => {
                 // Navigate preset list when input is empty
                 self.state.update(cx, |state, _cx| {
-                    if state.app.plugin_file_input.is_empty()
+                    if state.app.input_state.plugin_file_input.is_empty()
                         && !state.app.plugin_state.available_plugin_presets.is_empty()
                     {
                         state.app.select_previous_preset();
@@ -246,7 +246,7 @@ impl PlayerView {
             "down" => {
                 // Navigate preset list when input is empty
                 self.state.update(cx, |state, _cx| {
-                    if state.app.plugin_file_input.is_empty()
+                    if state.app.input_state.plugin_file_input.is_empty()
                         && !state.app.plugin_state.available_plugin_presets.is_empty()
                     {
                         state.app.select_next_preset();
@@ -258,7 +258,7 @@ impl PlayerView {
                 // Add character to input
                 if let Some(text) = event.keystroke.key_char.as_ref() {
                     self.state.update(cx, |state, _cx| {
-                        state.app.plugin_file_input.push_str(text);
+                        state.app.input_state.plugin_file_input.push_str(text);
                         state.app.clear_autocomplete();
                     });
                     cx.notify();
@@ -272,7 +272,7 @@ impl PlayerView {
         match event.keystroke.key.as_str() {
             "backspace" => {
                 self.state.update(cx, |state, _cx| {
-                    state.app.plugin_file_input.pop();
+                    state.app.input_state.plugin_file_input.pop();
                     state.app.clear_autocomplete();
                 });
                 cx.notify();
@@ -280,12 +280,12 @@ impl PlayerView {
             "tab" => {
                 // Autocomplete file path
                 self.state.update(cx, |state, _cx| {
-                    if !state.app.plugin_file_input.is_empty() {
-                        if state.app.autocomplete_suggestions.is_empty() {
+                    if !state.app.input_state.plugin_file_input.is_empty() {
+                        if state.app.input_state.autocomplete_suggestions.is_empty() {
                             state
                                 .app
                                 .generate_autocomplete_suggestions_for_plugin_file();
-                            if !state.app.autocomplete_suggestions.is_empty() {
+                            if !state.app.input_state.autocomplete_suggestions.is_empty() {
                                 state.app.apply_autocomplete_to_plugin_file();
                             }
                         } else {
@@ -298,7 +298,7 @@ impl PlayerView {
             "escape" => {
                 self.state.update(cx, |state, _cx| {
                     state.app.ui_state.input_mode = crate::app::InputMode::Normal;
-                    state.app.plugin_file_input.clear();
+                    state.app.input_state.plugin_file_input.clear();
                     state.app.clear_autocomplete();
                 });
                 cx.notify();
@@ -306,11 +306,11 @@ impl PlayerView {
             "enter" => {
                 self.state.update(cx, |state, _cx| {
                     // If there are presets shown and input is empty, load selected preset
-                    if state.app.plugin_file_input.is_empty()
+                    if state.app.input_state.plugin_file_input.is_empty()
                         && !state.app.plugin_state.available_plugin_presets.is_empty()
                     {
                         state.app.load_selected_preset();
-                    } else if !state.app.plugin_file_input.is_empty() {
+                    } else if !state.app.input_state.plugin_file_input.is_empty() {
                         state.app.load_plugin_chain();
                     }
                     state.app.ui_state.input_mode = crate::app::InputMode::Normal;
@@ -321,7 +321,7 @@ impl PlayerView {
             "up" | "k" => {
                 // Navigate through presets
                 self.state.update(cx, |state, _cx| {
-                    if state.app.plugin_file_input.is_empty() {
+                    if state.app.input_state.plugin_file_input.is_empty() {
                         state.app.select_previous_preset();
                     }
                 });
@@ -330,7 +330,7 @@ impl PlayerView {
             "down" | "j" => {
                 // Navigate through presets
                 self.state.update(cx, |state, _cx| {
-                    if state.app.plugin_file_input.is_empty() {
+                    if state.app.input_state.plugin_file_input.is_empty() {
                         state.app.select_next_preset();
                     }
                 });
@@ -340,7 +340,7 @@ impl PlayerView {
                 // Add character to input
                 if let Some(text) = event.keystroke.key_char.as_ref() {
                     self.state.update(cx, |state, _cx| {
-                        state.app.plugin_file_input.push_str(text);
+                        state.app.input_state.plugin_file_input.push_str(text);
                         state.app.clear_autocomplete();
                     });
                     cx.notify();
@@ -365,10 +365,10 @@ impl PlayerView {
                 }
                 InputMode::AddDirectory => {
                     // Add the directory
-                    if !state.app.directory_input.is_empty() {
-                        let path = std::path::PathBuf::from(&state.app.directory_input);
+                    if !state.app.input_state.directory_input.is_empty() {
+                        let path = std::path::PathBuf::from(&state.app.input_state.directory_input);
                         state.app.add_directory(path);
-                        state.app.directory_input.clear();
+                        state.app.input_state.directory_input.clear();
                         state.app.clear_autocomplete();
                     }
                     state.app.ui_state.input_mode = InputMode::Normal;
@@ -407,7 +407,7 @@ impl PlayerView {
         match event.keystroke.key.as_str() {
             "backspace" => {
                 self.state.update(cx, |state, _cx| {
-                    state.app.directory_input.pop();
+                    state.app.input_state.directory_input.pop();
                     state.app.clear_autocomplete();
                 });
                 cx.notify();
@@ -415,7 +415,7 @@ impl PlayerView {
             "tab" => {
                 // Tab autocomplete
                 self.state.update(cx, |state, _cx| {
-                    if state.app.autocomplete_suggestions.is_empty() {
+                    if state.app.input_state.autocomplete_suggestions.is_empty() {
                         state.app.generate_autocomplete_suggestions();
                     } else {
                         state.app.next_autocomplete();
@@ -433,7 +433,7 @@ impl PlayerView {
                 // Add character to directory input
                 if let Some(text) = event.keystroke.key_char.as_ref() {
                     self.state.update(cx, |state, _cx| {
-                        state.app.directory_input.push_str(text);
+                        state.app.input_state.directory_input.push_str(text);
                         state.app.clear_autocomplete();
                     });
                     cx.notify();

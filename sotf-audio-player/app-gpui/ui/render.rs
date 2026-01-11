@@ -242,7 +242,7 @@ impl Render for PlayerView {
                                     // Enter save plugins mode (Shift-S)
                                     view.state.update(cx, |state, _cx| {
                                         state.app.refresh_plugin_presets();
-                                        state.app.plugin_file_input.clear();
+                                        state.app.input_state.plugin_file_input.clear();
                                         state.app.ui_state.input_mode = crate::app::InputMode::SavePlugins;
                                     });
                                     cx.notify();
@@ -251,7 +251,7 @@ impl Render for PlayerView {
                                     // Enter load plugins mode
                                     view.state.update(cx, |state, _cx| {
                                         state.app.refresh_plugin_presets();
-                                        state.app.plugin_file_input.clear();
+                                        state.app.input_state.plugin_file_input.clear();
                                         state.app.ui_state.input_mode = crate::app::InputMode::LoadPlugins;
                                     });
                                     cx.notify();

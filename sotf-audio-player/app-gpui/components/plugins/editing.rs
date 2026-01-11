@@ -2538,7 +2538,7 @@ impl PluginEditingManager for App {
             return Err("No plugin being edited".to_string());
         }
 
-        let path = Path::new(&self.apo_file_input);
+        let path = Path::new(&self.input_state.apo_file_input);
 
         // Load filters from APO file
         let filters = EQFilter::from_apo_file(path)?;
@@ -2570,7 +2570,7 @@ impl PluginEditingManager for App {
         }
 
         // Clone the sofa_file_input before borrowing plugin mutably
-        let sofa_file_path = self.sofa_file_input.clone();
+        let sofa_file_path = self.input_state.sofa_file_input.clone();
 
         // Update the currently editing plugin
         if let Some(plugin) = self.get_editing_plugin_mut() {
@@ -2760,16 +2760,16 @@ impl PluginEditingManager for App {
 
     /// Save plugin chain to file
     fn save_plugin_chain(&mut self) {
-        if self.plugin_file_input.is_empty() {
+        if self.input_state.plugin_file_input.is_empty() {
             self.ui_state.toast_message = Some(ToastMessage::error("No filename specified".to_string()));
             return;
         }
 
         // Check if file exists and show warning if overwriting
-        let filename_with_ext = if self.plugin_file_input.ends_with(".json") {
-            self.plugin_file_input.clone()
+        let filename_with_ext = if self.input_state.plugin_file_input.ends_with(".json") {
+            self.input_state.plugin_file_input.clone()
         } else {
-            format!("{}.json", self.plugin_file_input)
+            format!("{}.json", self.input_state.plugin_file_input)
         };
 
         let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() else {
@@ -2786,7 +2786,7 @@ impl PluginEditingManager for App {
         // Save using the plugin chain's own save method (handles path, validation, etc.)
         match self
             .plugin_state.plugin_chain
-            .save_to_file(&presets_dir, &self.plugin_file_input)
+            .save_to_file(&presets_dir, &self.input_state.plugin_file_input)
         {
             Ok(_) => {
                 self.ui_state.toast_message = Some(ToastMessage::success(format!(
@@ -2847,7 +2847,7 @@ impl PluginEditingManager for App {
 
     /// Load plugin chain from file
     fn load_plugin_chain(&mut self) {
-        if self.plugin_file_input.is_empty() {
+        if self.input_state.plugin_file_input.is_empty() {
             self.ui_state.toast_message = Some(ToastMessage::error("No filename specified".to_string()));
             return;
         }
@@ -2861,17 +2861,17 @@ impl PluginEditingManager for App {
         };
         match self
             .plugin_state.plugin_chain
-            .load_from_file(&presets_dir, &self.plugin_file_input)
+            .load_from_file(&presets_dir, &self.input_state.plugin_file_input)
         {
             Ok(_) => {
                 // Update BinauralDecoder input channels after loading
                 self.plugin_state.plugin_chain.update_channel_dependent_plugins();
 
                 // Get the final filename (with .json appended if needed)
-                let filename = if self.plugin_file_input.ends_with(".json") {
-                    self.plugin_file_input.clone()
+                let filename = if self.input_state.plugin_file_input.ends_with(".json") {
+                    self.input_state.plugin_file_input.clone()
                 } else {
-                    format!("{}.json", self.plugin_file_input)
+                    format!("{}.json", self.input_state.plugin_file_input)
                 };
 
                 self.ui_state.toast_message = Some(ToastMessage::success(format!(

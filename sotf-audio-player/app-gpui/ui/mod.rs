@@ -135,7 +135,7 @@ impl PlayerView {
                                     path,
                                     plugins,
                                     output_channels,
-                                    state.app.current_output_device_name.clone(),
+                                    state.app.audio_device_state.current_output_device_name.clone(),
                                 ) {
                                     log::error!("Failed to auto-advance: {}", e);
                                     state.app.playback.is_playing = false;
@@ -272,9 +272,9 @@ impl PlayerView {
         self.state.update(cx, |state, _cx| {
             state.app.ui_state.input_mode = crate::app::InputMode::Normal;
             state.app.library_state.search_query.clear();
-            state.app.directory_input.clear();
-            state.app.apo_file_input.clear();
-            state.app.sofa_file_input.clear();
+            state.app.input_state.directory_input.clear();
+            state.app.input_state.apo_file_input.clear();
+            state.app.input_state.sofa_file_input.clear();
             state.app.clear_autocomplete();
             state.app.dismiss_toast();
             state.app.ui_state.context_menu = None; // Close context menu
@@ -381,7 +381,7 @@ impl PlayerView {
             use crate::app::InputMode;
             // Enter add directory mode
             state.app.ui_state.input_mode = InputMode::AddDirectory;
-            state.app.directory_input.clear();
+            state.app.input_state.directory_input.clear();
             state.app.clear_autocomplete();
         });
         cx.notify();
@@ -443,7 +443,7 @@ impl PlayerView {
             path,
             plugins,
             output_channels,
-            state.app.current_output_device_name.clone(),
+            state.app.audio_device_state.current_output_device_name.clone(),
         ) {
             log::error!("Failed to play track: {}", e);
             state.app.playback.is_playing = false;

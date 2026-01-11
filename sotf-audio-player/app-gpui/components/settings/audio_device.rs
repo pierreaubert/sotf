@@ -17,7 +17,7 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
-        let _playback_source = state.app.playback_source;
+        let _playback_source = state.app.audio_device_state.playback_source;
 
         let mut content = VStack::new().spacing(StackSpacing::Md);
 
@@ -84,7 +84,7 @@ impl PlayerView {
                                     MouseButton::Left,
                                     move |_: &MouseUpEvent, _window, cx| {
                                         state_clone.update(cx, |state, _cx| {
-                                            state.app.playback_source = PlaybackSource::File;
+                                            state.app.audio_device_state.playback_source = PlaybackSource::File;
                                             // Stop HAL playback if running
                                             if let Err(e) = state.player.lock().stop() {
                                                 log::error!("Failed to stop HAL playback: {}", e);
@@ -159,11 +159,12 @@ impl PlayerView {
             div().grid().grid_cols(2).gap_3().w_full().children(
                 state
                     .app
+                    .audio_device_state
                     .output_devices
                     .iter()
                     .enumerate()
                     .map(|(idx, device)| {
-                        let is_selected = state.app.selected_output_device_index == idx;
+                        let is_selected = state.app.audio_device_state.selected_output_device_index == idx;
                         let sample_rate = device
                             .default_config
                             .as_ref()
@@ -259,9 +260,9 @@ impl PlayerView {
                                 MouseButton::Left,
                                 cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                                     view.state.update(cx, |state, _cx| {
-                                        state.app.selected_output_device_index = idx;
-                                        if let Some(device) = state.app.output_devices.get(idx) {
-                                            state.app.current_output_device_name =
+                                        state.app.audio_device_state.selected_output_device_index = idx;
+                                        if let Some(device) = state.app.audio_device_state.output_devices.get(idx) {
+                                            state.app.audio_device_state.current_output_device_name =
                                                 Some(device.name.clone());
 
                                             // If playing, restart track with new device
@@ -313,7 +314,7 @@ impl PlayerView {
             }
 
             // Get output device
-            let output_device = state.app.current_output_device_name.clone();
+            let output_device = state.app.audio_device_state.current_output_device_name.clone();
 
             // Determine output channels from plugin chain
             let output_channels = state.app.plugin_state.plugin_chain.output_channels();
@@ -325,7 +326,7 @@ impl PlayerView {
                 .start_hal_playback(plugins, output_channels, output_device)
             {
                 Ok(()) => {
-                    state.app.playback_source = PlaybackSource::HalDevice;
+                    state.app.audio_device_state.playback_source = PlaybackSource::HalDevice;
                     state.app.playback.is_playing = true;
                     log::info!("HAL playback started successfully");
                 }

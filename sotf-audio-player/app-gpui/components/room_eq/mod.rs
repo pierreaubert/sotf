@@ -30,7 +30,7 @@ impl PlayerView {
     pub(crate) fn render_room_eq_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let current_step = state.app.room_eq_state.step;
+        let current_step = state.app.measurement_state.room_eq_state.step;
 
         // Content for current step
         let content = match current_step {
@@ -62,9 +62,9 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let theme_id = state.app.ui_state.theme_id;
-        let current_step = state.app.room_eq_state.step;
+        let current_step = state.app.measurement_state.room_eq_state.step;
         let can_go_next = self.room_eq_can_advance(cx);
-        let is_busy = state.app.room_eq_state.is_optimizing();
+        let is_busy = state.app.measurement_state.room_eq_state.is_optimizing();
 
         let step_index = current_step.index();
 
@@ -124,14 +124,14 @@ impl PlayerView {
                         MouseButton::Left,
                         cx.listener(|view, _, _, cx| {
                             view.state
-                                .update(cx, |state, _| match state.app.room_eq_state.step {
+                                .update(cx, |state, _| match state.app.measurement_state.room_eq_state.step {
                                     RoomEqStep::LoadData => {
                                         state.app.ui_state.current_screen = state.app.ui_state.last_screen;
                                     }
                                     _ => {
-                                        if let Some(prev) = state.app.room_eq_state.step.previous()
+                                        if let Some(prev) = state.app.measurement_state.room_eq_state.step.previous()
                                         {
-                                            state.app.room_eq_state.step = prev;
+                                            state.app.measurement_state.room_eq_state.step = prev;
                                         }
                                     }
                                 });
@@ -150,13 +150,13 @@ impl PlayerView {
                         MouseButton::Left,
                         cx.listener(|view, _, _, cx| {
                             view.state
-                                .update(cx, |state, _| match state.app.room_eq_state.step {
+                                .update(cx, |state, _| match state.app.measurement_state.room_eq_state.step {
                                     RoomEqStep::Export => {
                                         state.app.ui_state.current_screen = state.app.ui_state.last_screen;
                                     }
                                     _ => {
-                                        if let Some(next) = state.app.room_eq_state.step.next() {
-                                            state.app.room_eq_state.step = next;
+                                        if let Some(next) = state.app.measurement_state.room_eq_state.step.next() {
+                                            state.app.measurement_state.room_eq_state.step = next;
                                         }
                                     }
                                 });
@@ -207,7 +207,7 @@ impl PlayerView {
     /// Check if we can advance from current step
     fn room_eq_can_advance(&self, cx: &Context<Self>) -> bool {
         let state = self.state.read(cx);
-        let room_eq = &state.app.room_eq_state;
+        let room_eq = &state.app.measurement_state.room_eq_state;
 
         match room_eq.step {
             RoomEqStep::LoadData => room_eq.has_measurements(),

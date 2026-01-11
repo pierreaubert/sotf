@@ -16,7 +16,7 @@ impl PlayerView {
         let theme = state.app.ui_state.theme.clone();
         let theme_id = state.app.ui_state.theme_id;
         let button_theme = ButtonTheme::from(&theme.to_ui_kit_theme(theme_id));
-        let headphone_eq = &state.app.headphone_eq_state;
+        let headphone_eq = &state.app.measurement_state.headphone_eq_state;
         let result = headphone_eq.result.as_ref();
 
         VStack::new()

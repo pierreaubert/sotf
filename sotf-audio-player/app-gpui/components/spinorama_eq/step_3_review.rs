@@ -11,7 +11,7 @@ impl PlayerView {
     pub(crate) fn render_spinorama_review(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let spinorama = &state.app.spinorama_eq_state;
+        let spinorama = &state.app.measurement_state.spinorama_eq_state;
         let result = spinorama.result.as_ref();
         let full_result = spinorama.full_result.as_ref();
 

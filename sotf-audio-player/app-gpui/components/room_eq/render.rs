@@ -64,7 +64,7 @@ pub(crate) fn render_channel_config_row(
                                 view.update(cx, |this, cx| {
                                     this.state.update(cx, |state, _| {
                                         if let Some(cfg) =
-                                            state.app.room_eq_state.speaker_configs.get_mut(idx)
+                                            state.app.measurement_state.room_eq_state.speaker_configs.get_mut(idx)
                                         {
                                             cfg.config_type = SpeakerConfigType::Single;
                                         }
@@ -89,7 +89,7 @@ pub(crate) fn render_channel_config_row(
                                 view.update(cx, |this, cx| {
                                     this.state.update(cx, |state, _| {
                                         if let Some(cfg) =
-                                            state.app.room_eq_state.speaker_configs.get_mut(idx)
+                                            state.app.measurement_state.room_eq_state.speaker_configs.get_mut(idx)
                                         {
                                             cfg.config_type = SpeakerConfigType::MultiDriver;
                                         }
@@ -142,7 +142,7 @@ fn render_crossover_dropdown(
         move |_, cx| {
             view.update(cx, |this, cx| {
                 this.state.update(cx, |state, _| {
-                    if let Some(cfg) = state.app.room_eq_state.speaker_configs.get_mut(channel_idx)
+                    if let Some(cfg) = state.app.measurement_state.room_eq_state.speaker_configs.get_mut(channel_idx)
                     {
                         // Find current index and cycle to next
                         let current_idx = crossover_types

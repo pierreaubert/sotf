@@ -67,7 +67,7 @@ impl PlayerView {
     fn render_plot_controls(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let recording_state = &state.app.recording_state;
+        let recording_state = &state.app.measurement_state.recording_state;
 
         let selected_channel = recording_state.plot_selected_channel;
         let smoothing = recording_state.plot_smoothing;
@@ -136,6 +136,7 @@ impl PlayerView {
                                                 this.state.update(cx, |state, _| {
                                                     state
                                                         .app
+                                                        .measurement_state
                                                         .recording_state
                                                         .plot_channel_dropdown_open = open;
                                                 });
@@ -150,6 +151,7 @@ impl PlayerView {
                                                 this.state.update(cx, |state, _| {
                                                     state
                                                         .app
+                                                        .measurement_state
                                                         .recording_state
                                                         .plot_selected_channel =
                                                         if value.as_ref() == "all" {
@@ -159,6 +161,7 @@ impl PlayerView {
                                                         };
                                                     state
                                                         .app
+                                                        .measurement_state
                                                         .recording_state
                                                         .plot_channel_dropdown_open = false;
                                                 });
@@ -192,6 +195,7 @@ impl PlayerView {
                                                 this.state.update(cx, |state, _| {
                                                     state
                                                         .app
+                                                        .measurement_state
                                                         .recording_state
                                                         .plot_smoothing_dropdown_open = open;
                                                 });
@@ -204,7 +208,7 @@ impl PlayerView {
                                         move |value, _, cx| {
                                             view.update(cx, |this, cx| {
                                                 this.state.update(cx, |state, _| {
-                                                    state.app.recording_state.plot_smoothing =
+                                                    state.app.measurement_state.recording_state.plot_smoothing =
                                                         match value.as_ref() {
                                                             "1" => PlotSmoothing::Octave1,
                                                             "3" => PlotSmoothing::Octave3,
@@ -214,6 +218,7 @@ impl PlayerView {
                                                         };
                                                     state
                                                         .app
+                                                        .measurement_state
                                                         .recording_state
                                                         .plot_smoothing_dropdown_open = false;
                                                 });
@@ -233,7 +238,7 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> Vec<(String, usize, RecordingResult)> {
         let state = self.state.read(cx);
-        let recording_state = &state.app.recording_state;
+        let recording_state = &state.app.measurement_state.recording_state;
         let selected_channel = recording_state.plot_selected_channel;
 
         recording_state
@@ -294,7 +299,7 @@ impl PlayerView {
     fn render_magnitude_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let smoothing = state.app.recording_state.plot_smoothing;
+        let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
         let results = self.get_filtered_results(cx);
         let has_results = !results.is_empty();
@@ -321,7 +326,7 @@ impl PlayerView {
     fn render_phase_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let smoothing = state.app.recording_state.plot_smoothing;
+        let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
         let results = self.get_filtered_results(cx);
         let has_results = !results.is_empty();
@@ -348,7 +353,7 @@ impl PlayerView {
     fn render_group_delay_plot(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let smoothing = state.app.recording_state.plot_smoothing;
+        let smoothing = state.app.measurement_state.recording_state.plot_smoothing;
 
         let results = self.get_filtered_results(cx);
         let has_results = !results.is_empty();
@@ -1206,7 +1211,7 @@ impl PlayerView {
     fn render_channel_summary(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let recording_state = &state.app.recording_state;
+        let recording_state = &state.app.measurement_state.recording_state;
 
         let recorded_count = recording_state
             .channel_recordings

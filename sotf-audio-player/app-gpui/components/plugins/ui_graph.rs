@@ -84,14 +84,16 @@ impl PlayerView {
                 let state = self.state.read(cx);
                 let output_device_name = state
                     .app
+                    .audio_device_state
                     .output_devices
-                    .get(state.app.selected_output_device_index)
+                    .get(state.app.audio_device_state.selected_output_device_index)
                     .map(|d| d.name.clone())
                     .unwrap_or_else(|| "Default Output".to_string());
                 let output_channels = state
                     .app
+                    .audio_device_state
                     .output_devices
-                    .get(state.app.selected_output_device_index)
+                    .get(state.app.audio_device_state.selected_output_device_index)
                     .and_then(|d| d.default_config.as_ref())
                     .map(|c| c.channels as usize)
                     .unwrap_or(2);
@@ -100,8 +102,8 @@ impl PlayerView {
                     output_device_name,
                     output_channels,
                     state.app.ui_state.theme.clone(),
-                    state.app.input_devices.clone(),
-                    state.app.output_devices.clone(),
+                    state.app.audio_device_state.input_devices.clone(),
+                    state.app.audio_device_state.output_devices.clone(),
                 )
             };
 

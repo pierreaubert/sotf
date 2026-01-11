@@ -23,7 +23,7 @@ impl PlayerView {
         let theme = state.app.ui_state.theme.clone();
         let theme_id = state.app.ui_state.theme_id;
         let button_theme = ButtonTheme::from(&theme.to_ui_kit_theme(theme_id));
-        let spinorama = &state.app.spinorama_eq_state;
+        let spinorama = &state.app.measurement_state.spinorama_eq_state;
         let app_width = state.app.ui_state.window_width;
 
         let search_query = spinorama.speaker_search.clone();
@@ -98,8 +98,8 @@ impl PlayerView {
                                         move |text, _window, cx| {
                                             log::info!("[SPINORAMA] on_text_change: {}", text);
                                             state_for_text.update(cx, |state, _cx| {
-                                                state.app.spinorama_eq_state.speaker_search = text;
-                                                state.app.spinorama_eq_state.update_suggestions();
+                                                state.app.measurement_state.spinorama_eq_state.speaker_search = text;
+                                                state.app.measurement_state.spinorama_eq_state.update_suggestions();
                                             });
                                         }
                                     })

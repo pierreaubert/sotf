@@ -116,13 +116,13 @@ impl PlayerView {
         // Get the DSP output from state
         let dsp_output = {
             let state = self.state.read(cx);
-            state.app.room_eq_state.dsp_output.clone()
+            state.app.measurement_state.room_eq_state.dsp_output.clone()
         };
 
         let Some(dsp_output) = dsp_output else {
             log::warn!("No DSP output to export");
             self.state.update(cx, |state, _| {
-                state.app.room_eq_state.error_message =
+                state.app.measurement_state.room_eq_state.error_message =
                     Some("No optimization results to export".to_string());
             });
             return;
@@ -148,14 +148,14 @@ impl PlayerView {
                             Ok(()) => {
                                 log::info!("Exported room EQ config to {:?}", file.path());
                                 let _ = state_entity.update(cx, |state, _| {
-                                    state.app.room_eq_state.status_message =
+                                    state.app.measurement_state.room_eq_state.status_message =
                                         format!("Saved to {}", file.path().display());
                                 });
                             }
                             Err(e) => {
                                 log::error!("Failed to write room EQ file: {}", e);
                                 let _ = state_entity.update(cx, |state, _| {
-                                    state.app.room_eq_state.error_message =
+                                    state.app.measurement_state.room_eq_state.error_message =
                                         Some(format!("Failed to write: {}", e));
                                 });
                             }
@@ -164,7 +164,7 @@ impl PlayerView {
                     Err(e) => {
                         log::error!("Failed to serialize room EQ JSON: {}", e);
                         let _ = state_entity.update(cx, |state, _| {
-                            state.app.room_eq_state.error_message =
+                            state.app.measurement_state.room_eq_state.error_message =
                                 Some(format!("Failed to serialize: {}", e));
                         });
                     }
@@ -208,7 +208,7 @@ impl PlayerView {
                     Ok(()) => {
                         log::info!("Saved rack backup to {:?}", file_path);
                         let _ = state_entity.update(cx, |state, _| {
-                            state.app.room_eq_state.status_message =
+                            state.app.measurement_state.room_eq_state.status_message =
                                 format!("Backup saved to {}", file_path.display());
                             state.app.ui_state.toast_message =
                                 Some(crate::app::ToastMessage::success("Rack backup saved"));
@@ -217,7 +217,7 @@ impl PlayerView {
                     Err(e) => {
                         log::error!("Failed to save rack backup: {}", e);
                         let _ = state_entity.update(cx, |state, _| {
-                            state.app.room_eq_state.error_message =
+                            state.app.measurement_state.room_eq_state.error_message =
                                 Some(format!("Failed to save backup: {}", e));
                         });
                     }
@@ -234,13 +234,13 @@ impl PlayerView {
         // Get the DSP output from state
         let dsp_output = {
             let state = self.state.read(cx);
-            state.app.room_eq_state.dsp_output.clone()
+            state.app.measurement_state.room_eq_state.dsp_output.clone()
         };
 
         let Some(dsp_output) = dsp_output else {
             log::warn!("No DSP output to apply");
             self.state.update(cx, |state, _| {
-                state.app.room_eq_state.error_message =
+                state.app.measurement_state.room_eq_state.error_message =
                     Some("No optimization results to apply".to_string());
             });
             return;
@@ -289,7 +289,7 @@ impl PlayerView {
         if eq_filters.is_empty() {
             log::warn!("No EQ filters found in optimization results");
             self.state.update(cx, |state, _| {
-                state.app.room_eq_state.error_message =
+                state.app.measurement_state.room_eq_state.error_message =
                     Some("No EQ filters found in optimization results".to_string());
             });
             return;
@@ -335,7 +335,7 @@ impl PlayerView {
             // Mark that plugin chain was modified and needs sync
             state.app.plugin_state.plugin_chain_modified = true;
             state.app.plugin_state.pending_plugin_update = Some(crate::app::types::PluginUpdateType::Structural);
-            state.app.room_eq_state.status_message = "Room EQ applied to player!".to_string();
+            state.app.measurement_state.room_eq_state.status_message = "Room EQ applied to player!".to_string();
             state.app.ui_state.toast_message = Some(crate::app::ToastMessage::success(
                 "Room EQ applied successfully",
             ));

@@ -6,7 +6,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use gpui_ui_kit::workflow::NodeId;
-use sotf_audio::devices::AudioDevice;
 use sotf_audio_player::Player;
 
 use crate::app::types::ReplayGainMode;
@@ -15,12 +14,12 @@ use crate::keybindings::KeymapPreset;
 use crate::theme::{Theme, ThemeId};
 
 use crate::app::types::{
-    ChannelGroup, HeadphoneEqState, InputMode,
-    LibraryStats, MeasureState, MeterDisplayMode, OptimizationUiState, PlaybackSource, QueueItem,
-    RecordingState, RoomEqState, SpinoramaEqState, ToastMessage,
+    ChannelGroup, InputMode,
+    LibraryStats, MeterDisplayMode, OptimizationUiState, QueueItem,
+    ToastMessage,
 };
 
-use super::{LibraryState, PlaybackState, PluginState, UIState};
+use super::{InputState, LibraryState, PlaybackState, PluginState, UIState};
 use crate::app::manager::{Manager, ManagerError};
 use crate::app::state::library::LibraryEvent;
 use crate::components::plugins::editing::PluginEditingManager;
@@ -70,12 +69,6 @@ pub struct App {
     pub queue: Vec<QueueItem>,
     pub expanded_queue_items: Vec<bool>, // Track which queue items are expanded
 
-    // Input buffers (text input state)
-    pub directory_input: String,
-    pub plugin_file_input: String, // For save/load plugin chain
-    pub apo_file_input: String,    // For loading APO EQ files
-    pub sofa_file_input: String,   // For loading SOFA HRTF files
-
     // Speaker Optimization State
     pub speaker_model: String, // Selected speaker model name (e.g. "KEF LS50 Meta")
     pub speaker_params: sotf_audio_player::autoeq::OptimizationParams,
@@ -89,10 +82,6 @@ pub struct App {
     pub selected_directory_index: usize,
     pub selected_queue_index: usize,
     pub album_list_offset: usize,
-
-    // Autocomplete state
-    pub autocomplete_suggestions: Vec<String>,
-    pub autocomplete_index: usize,
 
     // Level meters
     pub level_meter_groups: Vec<ChannelGroup>,
@@ -109,36 +98,6 @@ pub struct App {
 
     // Spectrum analyzer
     pub spectrum_visible: bool,
-
-    // Audio devices
-    // Audio devices
-    pub output_devices: Vec<AudioDevice>,
-    pub selected_output_device_index: usize,
-    pub current_output_device_name: Option<String>,
-
-    pub input_devices: Vec<AudioDevice>,
-    pub selected_input_device_index: usize,
-    pub current_input_device_name: Option<String>,
-
-    /// Audio source mode (File player or HAL device input)
-    pub playback_source: PlaybackSource,
-
-    // Measurement state
-    pub measure_state: Option<MeasureState>,
-
-    // Recording screen state
-    pub recording_state: RecordingState,
-
-    // Room EQ screen state
-    pub room_eq_state: RoomEqState,
-    /// Applied room EQ plugins (ready to be sent to audio engine)
-    pub room_eq_applied_plugins: Option<Vec<sotf_audio::PluginConfig>>,
-
-    // Headphone EQ screen state
-    pub headphone_eq_state: HeadphoneEqState,
-
-    // Spinorama EQ screen state
-    pub spinorama_eq_state: SpinoramaEqState,
 
     // Flags
     pub needs_rescan: bool,
@@ -188,10 +147,6 @@ pub struct App {
     // Bliss audio analysis scanner manager
     pub bliss_manager: sotf_audio_player::BlissScanManager,
 
-    // Parameter editing state
-    pub editing_param: Option<String>,
-    pub editing_value: String,
-
     // ReplayGain settings
     pub replay_gain_enabled: bool,
     pub replay_gain_mode: ReplayGainMode,
@@ -223,7 +178,13 @@ pub struct App {
     pub plugin_state: PluginState,
     /// UI-related state
     pub ui_state: UIState,
-    
+    /// Input-related state (text fields, autocomplete)
+    pub input_state: InputState,
+    /// Audio device state (input/output devices, playback source)
+    pub audio_device_state: super::AudioDeviceState,
+    /// Measurement and EQ workflow state
+    pub measurement_state: super::MeasurementState,
+
     /// Shared state across managers
     pub shared_state: Arc<super::SharedState>,
 }
@@ -243,10 +204,6 @@ impl App {
             library_scanner: None,
             queue: Vec::new(),
             expanded_queue_items: Vec::new(),
-            directory_input: String::new(),
-            plugin_file_input: String::new(),
-            apo_file_input: String::new(),
-            sofa_file_input: String::new(),
 
             // Speaker State Init
             speaker_model: String::new(),
@@ -260,8 +217,6 @@ impl App {
             selected_directory_index: 0,
             selected_queue_index: 0,
             album_list_offset: 0,
-            autocomplete_suggestions: Vec::new(),
-            autocomplete_index: 0,
             level_meter_groups: Vec::new(),
             selected_level_meter_group: 0,
             level_meter_control_selection: 0,
@@ -270,19 +225,6 @@ impl App {
             level_meter_peak_hold: Vec::new(),
             level_meter_peak_hold_last_update: None,
             spectrum_visible: false,
-            output_devices: Vec::new(),
-            selected_output_device_index: 0,
-            current_output_device_name: None,
-            input_devices: Vec::new(),
-            selected_input_device_index: 0,
-            current_input_device_name: None,
-            playback_source: PlaybackSource::default(),
-            measure_state: None,
-            recording_state: RecordingState::default(),
-            room_eq_state: RoomEqState::default(),
-            room_eq_applied_plugins: None,
-            headphone_eq_state: HeadphoneEqState::default(),
-            spinorama_eq_state: SpinoramaEqState::default(),
             needs_rescan: false,
             scan_progress_modal: None,
             queue_panel_ratio: 0.35,
@@ -311,8 +253,6 @@ impl App {
             waveform_manager: sotf_audio_player::WaveformScanManager::new(),
             replay_gain_manager: sotf_audio_player::ReplayGainScanManager::new(),
             bliss_manager: sotf_audio_player::BlissScanManager::new(),
-            editing_param: None,
-            editing_value: String::new(),
             replay_gain_enabled: true,
             replay_gain_mode: ReplayGainMode::Track,
             replay_gain_preamp: 0.0,
@@ -330,6 +270,9 @@ impl App {
             library_state: LibraryState::new(),
             plugin_state: PluginState::new(),
             ui_state: UIState::new(),
+            input_state: InputState::new(),
+            audio_device_state: super::AudioDeviceState::new(),
+            measurement_state: super::MeasurementState::new(),
             shared_state: Arc::new(super::SharedState::new()),
         };
 
@@ -407,22 +350,22 @@ impl App {
         // Load available devices
         if let Ok(devices_map) = sotf_audio::devices::get_audio_devices() {
             if let Some(output_devices) = devices_map.get("output") {
-                self.output_devices = output_devices.clone();
+                self.audio_device_state.output_devices = output_devices.clone();
                 // Find the default device
                 if let Some(default_idx) = output_devices.iter().position(|d| d.is_default) {
-                    self.selected_output_device_index = default_idx;
+                    self.audio_device_state.selected_output_device_index = default_idx;
                     // Initialize recording state playback device if not already set
-                    if self.recording_state.playback_config.device_name.is_empty() {
+                    if self.measurement_state.recording_state.playback_config.device_name.is_empty() {
                         let device = &output_devices[default_idx];
-                        self.recording_state.playback_config.device_name = device.name.clone();
-                        self.recording_state.playback_config.device_id = device.name.clone();
+                        self.measurement_state.recording_state.playback_config.device_name = device.name.clone();
+                        self.measurement_state.recording_state.playback_config.device_id = device.name.clone();
                         if let Some(ref config) = device.default_config {
-                            self.recording_state.playback_config.num_channels =
+                            self.measurement_state.recording_state.playback_config.num_channels =
                                 config.channels as usize;
                         }
-                        self.recording_state.playback_config.available_sample_rates =
+                        self.measurement_state.recording_state.playback_config.available_sample_rates =
                             device.available_sample_rates.clone();
-                        self.recording_state.playback_config.sample_rate =
+                        self.measurement_state.recording_state.playback_config.sample_rate =
                             Self::select_default_sample_rate(
                                 &device.available_sample_rates,
                                 device.default_config.as_ref().map(|c| c.sample_rate),
@@ -431,22 +374,22 @@ impl App {
                 }
             }
             if let Some(input_devices) = devices_map.get("input") {
-                self.input_devices = input_devices.clone();
+                self.audio_device_state.input_devices = input_devices.clone();
                 // Find the default device
                 if let Some(default_idx) = input_devices.iter().position(|d| d.is_default) {
-                    self.selected_input_device_index = default_idx;
+                    self.audio_device_state.selected_input_device_index = default_idx;
                     // Initialize recording state recording device if not already set
-                    if self.recording_state.recording_config.device_name.is_empty() {
+                    if self.measurement_state.recording_state.recording_config.device_name.is_empty() {
                         let device = &input_devices[default_idx];
-                        self.recording_state.recording_config.device_name = device.name.clone();
-                        self.recording_state.recording_config.device_id = device.name.clone();
+                        self.measurement_state.recording_state.recording_config.device_name = device.name.clone();
+                        self.measurement_state.recording_state.recording_config.device_id = device.name.clone();
                         if let Some(ref config) = device.default_config {
-                            self.recording_state.recording_config.num_channels =
+                            self.measurement_state.recording_state.recording_config.num_channels =
                                 config.channels as usize;
                         }
-                        self.recording_state.recording_config.available_sample_rates =
+                        self.measurement_state.recording_state.recording_config.available_sample_rates =
                             device.available_sample_rates.clone();
-                        self.recording_state.recording_config.sample_rate =
+                        self.measurement_state.recording_state.recording_config.sample_rate =
                             Self::select_default_sample_rate(
                                 &device.available_sample_rates,
                                 device.default_config.as_ref().map(|c| c.sample_rate),
@@ -487,24 +430,24 @@ impl App {
 
         // Restore recording config
         if !config.recording_config.playback.device_name.is_empty() {
-            self.recording_state.playback_config = config.recording_config.playback;
+            self.measurement_state.recording_state.playback_config = config.recording_config.playback;
         }
         if !config.recording_config.recording.device_name.is_empty() {
-            self.recording_state.recording_config = config.recording_config.recording;
+            self.measurement_state.recording_state.recording_config = config.recording_config.recording;
         }
 
-        self.recording_state.signal_type = config.recording_config.signal_type;
-        self.recording_state.signal_duration_secs = config.recording_config.signal_duration_secs;
-        self.recording_state.signal_level_db = config.recording_config.signal_level_db;
-        self.recording_state.mic_calibration_path = config.recording_config.mic_calibration_path;
-        self.recording_state.recording_directory = config.recording_config.recording_directory;
-        self.recording_state.recording_base_directory =
+        self.measurement_state.recording_state.signal_type = config.recording_config.signal_type;
+        self.measurement_state.recording_state.signal_duration_secs = config.recording_config.signal_duration_secs;
+        self.measurement_state.recording_state.signal_level_db = config.recording_config.signal_level_db;
+        self.measurement_state.recording_state.mic_calibration_path = config.recording_config.mic_calibration_path;
+        self.measurement_state.recording_state.recording_directory = config.recording_config.recording_directory;
+        self.measurement_state.recording_state.recording_base_directory =
             config.recording_config.recording_base_directory;
 
         // Reload calibration data if path exists
-        if let Some(ref path) = self.recording_state.mic_calibration_path {
+        if let Some(ref path) = self.measurement_state.recording_state.mic_calibration_path {
             if let Ok(content) = std::fs::read_to_string(path) {
-                self.recording_state.mic_calibration_data =
+                self.measurement_state.recording_state.mic_calibration_data =
                     crate::app::types::CalibrationData::parse(&content);
             }
         }
@@ -565,14 +508,14 @@ impl App {
             volume: self.playback.volume,
             muted: self.playback.muted,
             recording_config: crate::app::config::RecordingConfigState {
-                playback: self.recording_state.playback_config.clone(),
-                recording: self.recording_state.recording_config.clone(),
-                signal_type: self.recording_state.signal_type,
-                signal_duration_secs: self.recording_state.signal_duration_secs,
-                signal_level_db: self.recording_state.signal_level_db,
-                mic_calibration_path: self.recording_state.mic_calibration_path.clone(),
-                recording_directory: self.recording_state.recording_directory.clone(),
-                recording_base_directory: self.recording_state.recording_base_directory.clone(),
+                playback: self.measurement_state.recording_state.playback_config.clone(),
+                recording: self.measurement_state.recording_state.recording_config.clone(),
+                signal_type: self.measurement_state.recording_state.signal_type,
+                signal_duration_secs: self.measurement_state.recording_state.signal_duration_secs,
+                signal_level_db: self.measurement_state.recording_state.signal_level_db,
+                mic_calibration_path: self.measurement_state.recording_state.mic_calibration_path.clone(),
+                recording_directory: self.measurement_state.recording_state.recording_directory.clone(),
+                recording_base_directory: self.measurement_state.recording_state.recording_base_directory.clone(),
             },
         };
         config.save()?;
@@ -580,8 +523,8 @@ impl App {
     }
 
     pub fn get_device_max_channels(&self) -> Option<usize> {
-        self.output_devices
-            .get(self.selected_output_device_index)
+        self.audio_device_state.output_devices
+            .get(self.audio_device_state.selected_output_device_index)
             .and_then(|device| device.default_config.as_ref())
             .map(|config| config.channels as usize)
     }

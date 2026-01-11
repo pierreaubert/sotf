@@ -232,14 +232,14 @@ impl PlayerView {
         // Check if we need to auto-fetch speakers before reading state
         let needs_fetch = {
             let state = self.state.read(cx);
-            state.app.spinorama_eq_state.needs_speaker_refresh()
-                && !state.app.spinorama_eq_state.loading_speakers
+            state.app.measurement_state.spinorama_eq_state.needs_speaker_refresh()
+                && !state.app.measurement_state.spinorama_eq_state.loading_speakers
         };
 
         if needs_fetch {
             // Set loading flag immediately to prevent duplicate fetches
             self.state.update(cx, |state, _| {
-                state.app.spinorama_eq_state.loading_speakers = true;
+                state.app.measurement_state.spinorama_eq_state.loading_speakers = true;
             });
             // Schedule fetch
             cx.spawn(async move |view, cx| {
@@ -253,7 +253,7 @@ impl PlayerView {
         // Check if we need to auto-load spinorama curves (Step 1 with speaker selected but curves not loaded)
         let needs_curves = {
             let state = self.state.read(cx);
-            let spinorama = &state.app.spinorama_eq_state;
+            let spinorama = &state.app.measurement_state.spinorama_eq_state;
             spinorama.step == SpinoramaStep::SelectSpeaker
                 && spinorama.selected_speaker.is_some()
                 && !spinorama.selected_version.is_empty()
@@ -270,11 +270,12 @@ impl PlayerView {
                 (
                     state
                         .app
+                        .measurement_state
                         .spinorama_eq_state
                         .selected_speaker
                         .clone()
                         .unwrap_or_default(),
-                    state.app.spinorama_eq_state.selected_version.clone(),
+                    state.app.measurement_state.spinorama_eq_state.selected_version.clone(),
                 )
             };
             log::info!(
@@ -283,7 +284,7 @@ impl PlayerView {
                 version
             );
             self.state.update(cx, |state, _| {
-                state.app.spinorama_eq_state.loading_spinorama_curves = true;
+                state.app.measurement_state.spinorama_eq_state.loading_spinorama_curves = true;
             });
             spawn_spinorama_curves_thread(speaker, version);
 
@@ -302,16 +303,16 @@ impl PlayerView {
 
                     if let Some(result) = spinorama_result {
                         let _ = state_for_poll.update(cx, |state, cx| {
-                            state.app.spinorama_eq_state.loading_spinorama_curves = false;
+                            state.app.measurement_state.spinorama_eq_state.loading_spinorama_curves = false;
                             match result {
                                 Ok(curves) => {
                                     log::info!("Auto-loaded spinorama curves successfully");
-                                    state.app.spinorama_eq_state.spinorama_curves = curves;
-                                    state.app.spinorama_eq_state.spinorama_curves_error = None;
+                                    state.app.measurement_state.spinorama_eq_state.spinorama_curves = curves;
+                                    state.app.measurement_state.spinorama_eq_state.spinorama_curves_error = None;
                                 }
                                 Err(e) => {
                                     log::error!("Failed to auto-load spinorama curves: {}", e);
-                                    state.app.spinorama_eq_state.spinorama_curves_error = Some(e);
+                                    state.app.measurement_state.spinorama_eq_state.spinorama_curves_error = Some(e);
                                 }
                             }
                             cx.notify();
@@ -325,7 +326,7 @@ impl PlayerView {
 
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let current_step = state.app.spinorama_eq_state.step;
+        let current_step = state.app.measurement_state.spinorama_eq_state.step;
 
         // Content for current step
         let content = match current_step {
@@ -358,9 +359,9 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let theme_id = state.app.ui_state.theme_id;
-        let current_step = state.app.spinorama_eq_state.step;
-        let can_go_next = state.app.spinorama_eq_state.can_advance();
-        let is_busy = state.app.spinorama_eq_state.is_optimizing();
+        let current_step = state.app.measurement_state.spinorama_eq_state.step;
+        let can_go_next = state.app.measurement_state.spinorama_eq_state.can_advance();
+        let is_busy = state.app.measurement_state.spinorama_eq_state.is_optimizing();
 
         let step_index = current_step.index();
 
@@ -418,15 +419,15 @@ impl PlayerView {
                         MouseButton::Left,
                         cx.listener(|view, _, _, cx| {
                             view.state.update(cx, |state, _| {
-                                match state.app.spinorama_eq_state.step {
+                                match state.app.measurement_state.spinorama_eq_state.step {
                                     SpinoramaStep::SelectSpeaker => {
                                         state.app.ui_state.current_screen = state.app.ui_state.last_screen;
                                     }
                                     _ => {
                                         if let Some(prev) =
-                                            state.app.spinorama_eq_state.step.previous()
+                                            state.app.measurement_state.spinorama_eq_state.step.previous()
                                         {
-                                            state.app.spinorama_eq_state.step = prev;
+                                            state.app.measurement_state.spinorama_eq_state.step = prev;
                                         }
                                     }
                                 }
@@ -446,14 +447,14 @@ impl PlayerView {
                         MouseButton::Left,
                         cx.listener(|view, _, _, cx| {
                             view.state.update(cx, |state, _| {
-                                match state.app.spinorama_eq_state.step {
+                                match state.app.measurement_state.spinorama_eq_state.step {
                                     SpinoramaStep::Export => {
                                         state.app.ui_state.current_screen = state.app.ui_state.last_screen;
                                     }
                                     _ => {
-                                        if let Some(next) = state.app.spinorama_eq_state.step.next()
+                                        if let Some(next) = state.app.measurement_state.spinorama_eq_state.step.next()
                                         {
-                                            state.app.spinorama_eq_state.step = next;
+                                            state.app.measurement_state.spinorama_eq_state.step = next;
                                         }
                                     }
                                 }
@@ -510,8 +511,8 @@ impl PlayerView {
         log::info!("Fetching spinorama speakers from API...");
         // Note: loading_speakers is set to true before spawning to prevent duplicate fetches
         self.state.update(cx, |state, _cx| {
-            state.app.spinorama_eq_state.loading_speakers = true;
-            state.app.spinorama_eq_state.error_message = None;
+            state.app.measurement_state.spinorama_eq_state.loading_speakers = true;
+            state.app.measurement_state.spinorama_eq_state.error_message = None;
         });
         cx.notify();
 
@@ -545,19 +546,19 @@ impl PlayerView {
                         Ok(speakers) => {
                             log::info!("Fetched {} speakers from spinorama.org", speakers.len());
                             let _ = state_entity.update(cx, |state, cx| {
-                                state.app.spinorama_eq_state.available_speakers = speakers;
-                                state.app.spinorama_eq_state.loading_speakers = false;
-                                state.app.spinorama_eq_state.speakers_cached_at =
+                                state.app.measurement_state.spinorama_eq_state.available_speakers = speakers;
+                                state.app.measurement_state.spinorama_eq_state.loading_speakers = false;
+                                state.app.measurement_state.spinorama_eq_state.speakers_cached_at =
                                     Some(std::time::Instant::now());
-                                state.app.spinorama_eq_state.update_suggestions();
+                                state.app.measurement_state.spinorama_eq_state.update_suggestions();
                                 cx.notify();
                             });
                         }
                         Err(e) => {
                             log::error!("Failed to fetch speakers: {}", e);
                             let _ = state_entity.update(cx, |state, cx| {
-                                state.app.spinorama_eq_state.loading_speakers = false;
-                                state.app.spinorama_eq_state.error_message =
+                                state.app.measurement_state.spinorama_eq_state.loading_speakers = false;
+                                state.app.measurement_state.spinorama_eq_state.error_message =
                                     Some(format!("Failed to fetch speakers: {}", e));
                                 cx.notify();
                             });
@@ -573,12 +574,12 @@ impl PlayerView {
     pub fn select_spinorama_speaker(&mut self, speaker: &str, cx: &mut Context<Self>) {
         log::info!("Selected speaker: {}", speaker);
         self.state.update(cx, |state, _cx| {
-            state.app.spinorama_eq_state.selected_speaker = Some(speaker.to_string());
+            state.app.measurement_state.spinorama_eq_state.selected_speaker = Some(speaker.to_string());
             // Reset phase data flag and clear version/measurement lists
-            state.app.spinorama_eq_state.has_phase_data = false;
-            state.app.spinorama_eq_state.available_versions.clear();
-            state.app.spinorama_eq_state.available_measurements.clear();
-            state.app.spinorama_eq_state.loading_versions = true;
+            state.app.measurement_state.spinorama_eq_state.has_phase_data = false;
+            state.app.measurement_state.spinorama_eq_state.available_versions.clear();
+            state.app.measurement_state.spinorama_eq_state.available_measurements.clear();
+            state.app.measurement_state.spinorama_eq_state.loading_versions = true;
         });
         cx.notify();
 
@@ -636,11 +637,11 @@ impl PlayerView {
                             let first_version = versions.first().cloned();
                             let selected_version = first_version.clone();
                             let _ = state_entity.update(cx, |state, cx| {
-                                state.app.spinorama_eq_state.available_versions = versions;
-                                state.app.spinorama_eq_state.loading_versions = false;
+                                state.app.measurement_state.spinorama_eq_state.available_versions = versions;
+                                state.app.measurement_state.spinorama_eq_state.loading_versions = false;
                                 // Auto-select first version if available
                                 if let Some(ref version) = selected_version {
-                                    state.app.spinorama_eq_state.selected_version = version.clone();
+                                    state.app.measurement_state.spinorama_eq_state.selected_version = version.clone();
                                 }
                                 cx.notify();
                             });
@@ -658,8 +659,8 @@ impl PlayerView {
                         Err(e) => {
                             log::error!("Failed to fetch versions: {}", e);
                             let _ = state_entity.update(cx, |state, cx| {
-                                state.app.spinorama_eq_state.loading_versions = false;
-                                state.app.spinorama_eq_state.error_message =
+                                state.app.measurement_state.spinorama_eq_state.loading_versions = false;
+                                state.app.measurement_state.spinorama_eq_state.error_message =
                                     Some(format!("Failed to fetch versions: {}", e));
                                 cx.notify();
                             });
@@ -685,8 +686,8 @@ impl PlayerView {
         );
 
         self.state.update(cx, |state, _cx| {
-            state.app.spinorama_eq_state.loading_measurements = true;
-            state.app.spinorama_eq_state.available_measurements.clear();
+            state.app.measurement_state.spinorama_eq_state.loading_measurements = true;
+            state.app.measurement_state.spinorama_eq_state.available_measurements.clear();
         });
         cx.notify();
 
@@ -750,13 +751,13 @@ impl PlayerView {
                             };
                             let measurement_for_phase = selected_measurement.clone();
                             let _ = state_entity.update(cx, |state, cx| {
-                                state.app.spinorama_eq_state.available_measurements = measurements;
-                                state.app.spinorama_eq_state.loading_measurements = false;
-                                state.app.spinorama_eq_state.selected_measurement =
+                                state.app.measurement_state.spinorama_eq_state.available_measurements = measurements;
+                                state.app.measurement_state.spinorama_eq_state.loading_measurements = false;
+                                state.app.measurement_state.spinorama_eq_state.selected_measurement =
                                     selected_measurement;
                                 // Auto-load spinorama curves if CEA2034 is selected
                                 if has_cea2034 {
-                                    state.app.spinorama_eq_state.loading_spinorama_curves = true;
+                                    state.app.measurement_state.spinorama_eq_state.loading_spinorama_curves = true;
                                 }
                                 cx.notify();
                             });
@@ -787,7 +788,7 @@ impl PlayerView {
                                         PHASE_CHECK_RESULT.lock().unwrap().take()
                                     {
                                         let _ = state_entity.update(cx, |state, cx| {
-                                            state.app.spinorama_eq_state.has_phase_data = has_phase;
+                                            state.app.measurement_state.spinorama_eq_state.has_phase_data = has_phase;
                                             log::info!("Phase data availability: {}", has_phase);
                                             cx.notify();
                                         });
@@ -803,17 +804,18 @@ impl PlayerView {
                                     };
                                     if let Some(result) = spinorama_result {
                                         let _ = state_entity.update(cx, |state, cx| {
-                                            state.app.spinorama_eq_state.loading_spinorama_curves =
+                                            state.app.measurement_state.spinorama_eq_state.loading_spinorama_curves =
                                                 false;
                                             match result {
                                                 Ok(curves) => {
                                                     log::info!(
                                                         "Auto-loaded spinorama curves successfully"
                                                     );
-                                                    state.app.spinorama_eq_state.spinorama_curves =
+                                                    state.app.measurement_state.spinorama_eq_state.spinorama_curves =
                                                         curves;
                                                     state
                                                         .app
+                                                        .measurement_state
                                                         .spinorama_eq_state
                                                         .spinorama_curves_error = None;
                                                 }
@@ -824,6 +826,7 @@ impl PlayerView {
                                                     );
                                                     state
                                                         .app
+                                                        .measurement_state
                                                         .spinorama_eq_state
                                                         .spinorama_curves_error = Some(e);
                                                 }
@@ -842,8 +845,8 @@ impl PlayerView {
                         Err(e) => {
                             log::error!("Failed to fetch measurements: {}", e);
                             let _ = state_entity.update(cx, |state, cx| {
-                                state.app.spinorama_eq_state.loading_measurements = false;
-                                state.app.spinorama_eq_state.error_message =
+                                state.app.measurement_state.spinorama_eq_state.loading_measurements = false;
+                                state.app.measurement_state.spinorama_eq_state.error_message =
                                     Some(format!("Failed to fetch measurements: {}", e));
                                 cx.notify();
                             });
@@ -860,12 +863,12 @@ impl PlayerView {
         log::info!("Selected version: {}", version);
         let speaker = {
             let state = self.state.read(cx);
-            state.app.spinorama_eq_state.selected_speaker.clone()
+            state.app.measurement_state.spinorama_eq_state.selected_speaker.clone()
         };
 
         self.state.update(cx, |state, _cx| {
-            state.app.spinorama_eq_state.selected_version = version.to_string();
-            state.app.spinorama_eq_state.has_phase_data = false;
+            state.app.measurement_state.spinorama_eq_state.selected_version = version.to_string();
+            state.app.measurement_state.spinorama_eq_state.has_phase_data = false;
         });
         cx.notify();
 
@@ -881,7 +884,7 @@ impl PlayerView {
         // Gather config from state
         let (speaker_name, version, measurement, curve_name, optimizer_config, mode, target_curve) = {
             let state = self.state.read(cx);
-            let spinorama = &state.app.spinorama_eq_state;
+            let spinorama = &state.app.measurement_state.spinorama_eq_state;
             let speaker = spinorama.selected_speaker.clone().unwrap_or_default();
             let version = spinorama.selected_version.clone();
             let measurement = spinorama.selected_measurement.clone();
@@ -902,7 +905,7 @@ impl PlayerView {
 
         if speaker_name.is_empty() {
             self.state.update(cx, |state, _cx| {
-                state.app.spinorama_eq_state.error_message =
+                state.app.measurement_state.spinorama_eq_state.error_message =
                     Some("No speaker selected".to_string());
             });
             cx.notify();
@@ -910,12 +913,12 @@ impl PlayerView {
         }
 
         self.state.update(cx, |state, _cx| {
-            state.app.spinorama_eq_state.optimization_status =
+            state.app.measurement_state.spinorama_eq_state.optimization_status =
                 crate::app::types::OptimizationStatus::Running;
-            state.app.spinorama_eq_state.status_message = "Loading measurement data...".to_string();
-            state.app.spinorama_eq_state.progress = 0.0;
-            state.app.spinorama_eq_state.progress_history.clear();
-            state.app.spinorama_eq_state.error_message = None;
+            state.app.measurement_state.spinorama_eq_state.status_message = "Loading measurement data...".to_string();
+            state.app.measurement_state.spinorama_eq_state.progress = 0.0;
+            state.app.measurement_state.spinorama_eq_state.progress_history.clear();
+            state.app.measurement_state.spinorama_eq_state.error_message = None;
         });
         cx.notify();
 
@@ -1192,13 +1195,14 @@ impl PlayerView {
                         for (iter, loss, score, _) in &new_progress {
                             state
                                 .app
+                                .measurement_state
                                 .spinorama_eq_state
                                 .progress_history
                                 .push((*iter, *loss, *score));
                         }
                         // Update progress from last entry
                         if let Some((_, _, _, pct)) = new_progress.last() {
-                            state.app.spinorama_eq_state.progress = *pct;
+                            state.app.measurement_state.spinorama_eq_state.progress = *pct;
                         }
                         cx.notify();
                     });
@@ -1210,18 +1214,18 @@ impl PlayerView {
                 if let Some((success, result, full_result, error)) = result_ready {
                     let _ = state_for_poll.update(cx, |state, cx| {
                         if success {
-                            state.app.spinorama_eq_state.optimization_status =
+                            state.app.measurement_state.spinorama_eq_state.optimization_status =
                                 crate::app::types::OptimizationStatus::Completed;
-                            state.app.spinorama_eq_state.status_message = "Complete!".to_string();
-                            state.app.spinorama_eq_state.progress = 1.0;
-                            state.app.spinorama_eq_state.result = result;
-                            state.app.spinorama_eq_state.full_result = full_result;
-                            state.app.spinorama_eq_state.step =
+                            state.app.measurement_state.spinorama_eq_state.status_message = "Complete!".to_string();
+                            state.app.measurement_state.spinorama_eq_state.progress = 1.0;
+                            state.app.measurement_state.spinorama_eq_state.result = result;
+                            state.app.measurement_state.spinorama_eq_state.full_result = full_result;
+                            state.app.measurement_state.spinorama_eq_state.step =
                                 crate::app::types::SpinoramaStep::Review;
                         } else {
-                            state.app.spinorama_eq_state.optimization_status =
+                            state.app.measurement_state.spinorama_eq_state.optimization_status =
                                 crate::app::types::OptimizationStatus::Failed;
-                            state.app.spinorama_eq_state.error_message = error;
+                            state.app.measurement_state.spinorama_eq_state.error_message = error;
                         }
                         cx.notify();
                     });
@@ -1230,7 +1234,7 @@ impl PlayerView {
 
                 // Update progress message
                 let _ = state_for_poll.update(cx, |state, cx| {
-                    if state.app.spinorama_eq_state.optimization_status
+                    if state.app.measurement_state.spinorama_eq_state.optimization_status
                         == crate::app::types::OptimizationStatus::Running
                     {
                         // Cycle through messages
@@ -1246,7 +1250,7 @@ impl PlayerView {
                             2 => "..",
                             _ => "...",
                         };
-                        state.app.spinorama_eq_state.status_message = format!("Optimizing{}", dots);
+                        state.app.measurement_state.spinorama_eq_state.status_message = format!("Optimizing{}", dots);
                         cx.notify();
                     }
                 });
@@ -1263,6 +1267,7 @@ impl PlayerView {
             let state = self.state.read(cx);
             state
                 .app
+                .measurement_state
                 .spinorama_eq_state
                 .result
                 .as_ref()
@@ -1357,10 +1362,11 @@ impl PlayerView {
         // Get the result and export format
         let (result, export_format, speaker_name) = {
             let state = self.state.read(cx);
-            let result = state.app.spinorama_eq_state.result.clone();
-            let format = state.app.spinorama_eq_state.export_format.clone();
+            let result = state.app.measurement_state.spinorama_eq_state.result.clone();
+            let format = state.app.measurement_state.spinorama_eq_state.export_format.clone();
             let speaker = state
                 .app
+                .measurement_state
                 .spinorama_eq_state
                 .selected_speaker
                 .clone()

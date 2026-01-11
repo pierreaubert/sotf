@@ -16,7 +16,7 @@ impl PlayerView {
         let theme = state.app.ui_state.theme.clone();
         let theme_id = state.app.ui_state.theme_id;
         let button_theme = ButtonTheme::from(&theme.to_ui_kit_theme(theme_id));
-        let spinorama = &state.app.spinorama_eq_state;
+        let spinorama = &state.app.measurement_state.spinorama_eq_state;
         let result = spinorama.result.as_ref();
         let export_format = spinorama.export_format.clone();
 
@@ -146,6 +146,7 @@ impl PlayerView {
                                                                     |state, _cx| {
                                                                         state
                                                                             .app
+                                                                            .measurement_state
                                                                             .spinorama_eq_state
                                                                             .export_format =
                                                                             value.clone();

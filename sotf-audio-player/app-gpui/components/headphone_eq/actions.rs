@@ -20,7 +20,7 @@ impl PlayerView {
             if let Some(file) = file {
                 let path = file.path().to_string_lossy().to_string();
                 let _ = state_entity.update(&mut cx.clone(), |state, _| {
-                    state.app.headphone_eq_state.measurement_path = Some(path);
+                    state.app.measurement_state.headphone_eq_state.measurement_path = Some(path);
                 });
             }
         })
@@ -29,15 +29,16 @@ impl PlayerView {
 
     pub(crate) fn start_headphone_eq_optimization(&mut self, cx: &mut Context<Self>) {
         let state = self.state.read(cx);
-        let measurement_path = state.app.headphone_eq_state.measurement_path.clone();
-        let target_preset = state.app.headphone_eq_state.target_preset.clone();
+        let measurement_path = state.app.measurement_state.headphone_eq_state.measurement_path.clone();
+        let target_preset = state.app.measurement_state.headphone_eq_state.target_preset.clone();
         let custom_target_path = state
             .app
+            .measurement_state
             .headphone_eq_state
             .custom_target_path
             .clone()
             .unwrap_or_default();
-        let config = state.app.headphone_eq_state.optimizer_config.clone();
+        let config = state.app.measurement_state.headphone_eq_state.optimizer_config.clone();
 
         if measurement_path.is_none() {
             log::warn!("No measurement file selected");
@@ -53,13 +54,13 @@ impl PlayerView {
 
         // Update status to running
         self.state.update(cx, |state, cx| {
-            state.app.headphone_eq_state.optimization_status =
+            state.app.measurement_state.headphone_eq_state.optimization_status =
                 crate::app::types::OptimizationStatus::Running;
-            state.app.headphone_eq_state.status_message = "Starting optimization...".to_string();
-            state.app.headphone_eq_state.progress = 0.0;
-            state.app.headphone_eq_state.progress_history.clear();
-            state.app.headphone_eq_state.result = None;
-            state.app.headphone_eq_state.error_message = None;
+            state.app.measurement_state.headphone_eq_state.status_message = "Starting optimization...".to_string();
+            state.app.measurement_state.headphone_eq_state.progress = 0.0;
+            state.app.measurement_state.headphone_eq_state.progress_history.clear();
+            state.app.measurement_state.headphone_eq_state.result = None;
+            state.app.measurement_state.headphone_eq_state.error_message = None;
             cx.notify();
         });
 
@@ -153,17 +154,17 @@ impl PlayerView {
                             ),
                         };
 
-                        state.app.headphone_eq_state.result = Some(app_result);
-                        state.app.headphone_eq_state.optimization_status =
+                        state.app.measurement_state.headphone_eq_state.result = Some(app_result);
+                        state.app.measurement_state.headphone_eq_state.optimization_status =
                             crate::app::types::OptimizationStatus::Completed;
-                        state.app.headphone_eq_state.status_message =
+                        state.app.measurement_state.headphone_eq_state.status_message =
                             "Optimization completed successfully".to_string();
                     }
                     Err(e) => {
-                        state.app.headphone_eq_state.optimization_status =
+                        state.app.measurement_state.headphone_eq_state.optimization_status =
                             crate::app::types::OptimizationStatus::Failed;
-                        state.app.headphone_eq_state.error_message = Some(e.clone());
-                        state.app.headphone_eq_state.status_message =
+                        state.app.measurement_state.headphone_eq_state.error_message = Some(e.clone());
+                        state.app.measurement_state.headphone_eq_state.status_message =
                             format!("Optimization failed: {}", e);
                     }
                 }
@@ -175,7 +176,7 @@ impl PlayerView {
 
     pub(crate) fn apply_headphone_eq_result(&mut self, cx: &mut Context<Self>) {
         self.state.update(cx, |state, cx| {
-            if let Some(result) = &state.app.headphone_eq_state.result {
+            if let Some(result) = &state.app.measurement_state.headphone_eq_state.result {
                 // Convert biquads to EQFilters, filtering out near-zero gain filters
                 let filters: Vec<EQFilter> = result
                     .biquads
@@ -229,10 +230,10 @@ impl PlayerView {
 
     pub(crate) fn save_headphone_eq_result(&mut self, cx: &mut Context<Self>) {
         let state = self.state.read(cx);
-        if let Some(result) = &state.app.headphone_eq_state.result {
+        if let Some(result) = &state.app.measurement_state.headphone_eq_state.result {
             // Clone data needed for async task
             let result_json = serde_json::to_string_pretty(result).unwrap_or_default();
-            let save_name = state.app.headphone_eq_state.save_name.clone();
+            let save_name = state.app.measurement_state.headphone_eq_state.save_name.clone();
 
             let default_name = if save_name.is_empty() {
                 "headphone_eq.json".to_string()

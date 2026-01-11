@@ -37,7 +37,7 @@ impl PlayerView {
     /// Render the config step UI
     pub(crate) fn render_recording_config_step(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let expanded_sections = state.app.recording_state.config_accordion_expanded.clone();
+        let expanded_sections = state.app.measurement_state.recording_state.config_accordion_expanded.clone();
         let view = cx.entity().clone();
 
         // Build accordion content for each section (convert to AnyElement to release borrows)
@@ -89,7 +89,7 @@ impl PlayerView {
                             view.update(cx, |this, cx| {
                                 this.state.update(cx, |state, _| {
                                     let expanded =
-                                        &mut state.app.recording_state.config_accordion_expanded;
+                                        &mut state.app.measurement_state.recording_state.config_accordion_expanded;
                                     if is_expanded {
                                         if !expanded.contains(item_id) {
                                             expanded.push(item_id.clone());
@@ -111,10 +111,11 @@ impl PlayerView {
             let state = self.state.read(cx);
             (
                 state.app.ui_state.theme.clone(),
-                state.app.recording_state.playback_config.num_channels,
-                state.app.recording_state.playback_config.sample_rate,
+                state.app.measurement_state.recording_state.playback_config.num_channels,
+                state.app.measurement_state.recording_state.playback_config.sample_rate,
                 state
                     .app
+                    .measurement_state
                     .recording_state
                     .playback_config
                     .speaker_configuration,
@@ -155,10 +156,10 @@ impl PlayerView {
                             move |value, _window, cx| {
                                 view.update(cx, |this, cx| {
                                     this.state.update(cx, |state, _| {
-                                        state.app.recording_state.playback_config.num_channels =
+                                        state.app.measurement_state.recording_state.playback_config.num_channels =
                                             value as usize;
                                         update_playback_channel_mappings(
-                                            &mut state.app.recording_state,
+                                            &mut state.app.measurement_state.recording_state,
                                         );
                                     });
                                     cx.notify();
@@ -204,8 +205,8 @@ impl PlayerView {
             let state = self.state.read(cx);
             (
                 state.app.ui_state.theme.clone(),
-                state.app.recording_state.recording_config.num_channels,
-                state.app.recording_state.recording_config.sample_rate,
+                state.app.measurement_state.recording_state.recording_config.num_channels,
+                state.app.measurement_state.recording_state.recording_config.sample_rate,
             )
         };
         let view = cx.entity().clone();
@@ -249,10 +250,10 @@ impl PlayerView {
                         move |value, _window, cx| {
                             view.update(cx, |this, cx| {
                                 this.state.update(cx, |state, _| {
-                                    state.app.recording_state.recording_config.num_channels =
+                                    state.app.measurement_state.recording_state.recording_config.num_channels =
                                         value as usize;
                                     update_recording_channel_mappings(
-                                        &mut state.app.recording_state,
+                                        &mut state.app.measurement_state.recording_state,
                                     );
                                 });
                                 cx.notify();
@@ -279,7 +280,7 @@ impl PlayerView {
     fn render_mic_calibration_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let recording_state = &state.app.recording_state;
+        let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.entity().clone();
 
         // Extract calibration data for the graph
@@ -325,9 +326,9 @@ impl PlayerView {
                                     move |_, cx| {
                                         view.update(cx, |this, cx| {
                                             this.state.update(cx, |state, _| {
-                                                state.app.recording_state.mic_calibration_path =
+                                                state.app.measurement_state.recording_state.mic_calibration_path =
                                                     None;
-                                                state.app.recording_state.mic_calibration_data =
+                                                state.app.measurement_state.recording_state.mic_calibration_data =
                                                     None;
                                             });
                                             cx.notify();
@@ -352,7 +353,7 @@ impl PlayerView {
     fn render_output_directory_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let recording_state = &state.app.recording_state;
+        let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.entity().clone();
 
         let base_dir = recording_state.recording_base_directory.clone();
@@ -416,9 +417,10 @@ impl PlayerView {
                                             this.state.update(cx, |state, _| {
                                                 state
                                                     .app
+                                                    .measurement_state
                                                     .recording_state
                                                     .recording_base_directory = None;
-                                                state.app.recording_state.recording_directory =
+                                                state.app.measurement_state.recording_state.recording_directory =
                                                     None;
                                             });
                                             cx.notify();
@@ -480,8 +482,8 @@ impl PlayerView {
                 log::info!("Created recording directory: {}", full_path);
 
                 let _ = state_entity.update(&mut cx.clone(), |state, _| {
-                    state.app.recording_state.recording_base_directory = Some(base_path);
-                    state.app.recording_state.recording_directory = Some(full_path);
+                    state.app.measurement_state.recording_state.recording_base_directory = Some(base_path);
+                    state.app.measurement_state.recording_state.recording_directory = Some(full_path);
                 });
             }
         })
@@ -492,11 +494,12 @@ impl PlayerView {
     fn render_playback_device_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let recording_state = &state.app.recording_state;
+        let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.entity().clone();
 
         let options: Vec<SelectOption> = state
             .app
+            .audio_device_state
             .output_devices
             .iter()
             .map(|d| SelectOption::new(d.name.clone(), d.name.clone()))
@@ -505,6 +508,7 @@ impl PlayerView {
         let selected_value = if recording_state.playback_config.device_name.is_empty() {
             state
                 .app
+                .audio_device_state
                 .output_devices
                 .first()
                 .map(|d| d.name.clone())
@@ -524,7 +528,7 @@ impl PlayerView {
                 move |is_open, _window, cx| {
                     view.update(cx, |this, cx| {
                         this.state.update(cx, |state, _| {
-                            state.app.recording_state.playback_device_dropdown_open = is_open;
+                            state.app.measurement_state.recording_state.playback_device_dropdown_open = is_open;
                         });
                         cx.notify();
                     });
@@ -535,12 +539,13 @@ impl PlayerView {
                 move |value, _window, cx| {
                     view.update(cx, |this, cx| {
                         this.state.update(cx, |state, _| {
-                            state.app.recording_state.playback_config.device_name =
+                            state.app.measurement_state.recording_state.playback_config.device_name =
                                 value.to_string();
-                            state.app.recording_state.playback_config.device_id = value.to_string();
+                            state.app.measurement_state.recording_state.playback_config.device_id = value.to_string();
                             // Update device info from selected device
                             if let Some(device) = state
                                 .app
+                                .audio_device_state
                                 .output_devices
                                 .iter()
                                 .find(|d| d.name == value.as_ref())
@@ -559,16 +564,17 @@ impl PlayerView {
                                         .unwrap_or(48000)
                                 };
 
-                                state.app.recording_state.playback_config.sample_rate =
+                                state.app.measurement_state.recording_state.playback_config.sample_rate =
                                     default_rate;
                                 // Update available sample rates from device
                                 state
                                     .app
+                                    .measurement_state
                                     .recording_state
                                     .playback_config
                                     .available_sample_rates = device.available_sample_rates.clone();
                             }
-                            state.app.recording_state.playback_device_dropdown_open = false;
+                            state.app.measurement_state.recording_state.playback_device_dropdown_open = false;
                         });
                         cx.notify();
                     });
@@ -580,7 +586,7 @@ impl PlayerView {
     fn render_playback_sample_rate_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let recording_state = &state.app.recording_state;
+        let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.entity().clone();
 
         let available_rates = &recording_state.playback_config.available_sample_rates;
@@ -621,6 +627,7 @@ impl PlayerView {
                                     this.state.update(cx, |state, _| {
                                         state
                                             .app
+                                            .measurement_state
                                             .recording_state
                                             .playback_sample_rate_dropdown_open = is_open;
                                     });
@@ -634,11 +641,12 @@ impl PlayerView {
                                 view.update(cx, |this, cx| {
                                     this.state.update(cx, |state, _| {
                                         if let Ok(rate) = value.parse::<u32>() {
-                                            state.app.recording_state.playback_config.sample_rate =
+                                            state.app.measurement_state.recording_state.playback_config.sample_rate =
                                                 rate;
                                         }
                                         state
                                             .app
+                                            .measurement_state
                                             .recording_state
                                             .playback_sample_rate_dropdown_open = false;
                                     });
@@ -654,7 +662,7 @@ impl PlayerView {
     fn render_speaker_config_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let recording_state = &state.app.recording_state;
+        let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.entity().clone();
 
         let options: Vec<SelectOption> = SpeakerConfiguration::all()
@@ -688,7 +696,7 @@ impl PlayerView {
                             move |is_open, _window, cx| {
                                 view.update(cx, |this, cx| {
                                     this.state.update(cx, |state, _| {
-                                        state.app.recording_state.speaker_config_dropdown_open =
+                                        state.app.measurement_state.recording_state.speaker_config_dropdown_open =
                                             is_open;
                                     });
                                     cx.notify();
@@ -709,6 +717,7 @@ impl PlayerView {
 
                                         state
                                             .app
+                                            .measurement_state
                                             .recording_state
                                             .playback_config
                                             .speaker_configuration = new_config;
@@ -717,6 +726,7 @@ impl PlayerView {
                                         if new_config != SpeakerConfiguration::Custom {
                                             state
                                                 .app
+                                                .measurement_state
                                                 .recording_state
                                                 .playback_config
                                                 .num_channels = new_config.channel_count();
@@ -724,6 +734,7 @@ impl PlayerView {
                                             let channel_names = new_config.default_channel_names();
                                             state
                                                 .app
+                                                .measurement_state
                                                 .recording_state
                                                 .playback_config
                                                 .channel_mappings = channel_names
@@ -736,7 +747,7 @@ impl PlayerView {
                                                 .collect();
                                         }
 
-                                        state.app.recording_state.speaker_config_dropdown_open =
+                                        state.app.measurement_state.recording_state.speaker_config_dropdown_open =
                                             false;
                                     });
                                     cx.notify();
@@ -754,6 +765,7 @@ impl PlayerView {
             let state = self.state.read(cx);
             let mappings: Vec<_> = state
                 .app
+                .measurement_state
                 .recording_state
                 .playback_config
                 .channel_mappings
@@ -810,6 +822,7 @@ impl PlayerView {
                                                 this.state.update(cx, |state, _| {
                                                     if let Some(m) = state
                                                         .app
+                                                        .measurement_state
                                                         .recording_state
                                                         .playback_config
                                                         .channel_mappings
@@ -841,7 +854,7 @@ impl PlayerView {
     ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let recording_state = &state.app.recording_state;
+        let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.entity().clone();
         let current_group = current_group.to_string();
 
@@ -873,7 +886,7 @@ impl PlayerView {
                     move |is_open, _window, cx| {
                         view.update(cx, |this, cx| {
                             this.state.update(cx, |state, _| {
-                                state.app.recording_state.channel_name_dropdown_open =
+                                state.app.measurement_state.recording_state.channel_name_dropdown_open =
                                     if is_open { Some(channel_idx) } else { None };
                             });
                             cx.notify();
@@ -887,6 +900,7 @@ impl PlayerView {
                             this.state.update(cx, |state, _| {
                                 if let Some(mapping) = state
                                     .app
+                                    .measurement_state
                                     .recording_state
                                     .playback_config
                                     .channel_mappings
@@ -894,7 +908,7 @@ impl PlayerView {
                                 {
                                     mapping.group_name = value.to_string();
                                 }
-                                state.app.recording_state.channel_name_dropdown_open = None;
+                                state.app.measurement_state.recording_state.channel_name_dropdown_open = None;
                             });
                             cx.notify();
                         });
@@ -907,11 +921,12 @@ impl PlayerView {
     fn render_recording_device_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let recording_state = &state.app.recording_state;
+        let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.entity().clone();
 
         let options: Vec<SelectOption> = state
             .app
+            .audio_device_state
             .input_devices
             .iter()
             .map(|d| SelectOption::new(d.name.clone(), d.name.clone()))
@@ -920,6 +935,7 @@ impl PlayerView {
         let selected_value = if recording_state.recording_config.device_name.is_empty() {
             state
                 .app
+                .audio_device_state
                 .input_devices
                 .first()
                 .map(|d| d.name.clone())
@@ -939,7 +955,7 @@ impl PlayerView {
                 move |is_open, _window, cx| {
                     view.update(cx, |this, cx| {
                         this.state.update(cx, |state, _| {
-                            state.app.recording_state.recording_device_dropdown_open = is_open;
+                            state.app.measurement_state.recording_state.recording_device_dropdown_open = is_open;
                         });
                         cx.notify();
                     });
@@ -950,13 +966,14 @@ impl PlayerView {
                 move |value, _window, cx| {
                     view.update(cx, |this, cx| {
                         this.state.update(cx, |state, _| {
-                            state.app.recording_state.recording_config.device_name =
+                            state.app.measurement_state.recording_state.recording_config.device_name =
                                 value.to_string();
-                            state.app.recording_state.recording_config.device_id =
+                            state.app.measurement_state.recording_state.recording_config.device_id =
                                 value.to_string();
                             // Update device info from selected device
                             if let Some(device) = state
                                 .app
+                                .audio_device_state
                                 .input_devices
                                 .iter()
                                 .find(|d| d.name == value.as_ref())
@@ -975,16 +992,17 @@ impl PlayerView {
                                         .unwrap_or(48000)
                                 };
 
-                                state.app.recording_state.recording_config.sample_rate =
+                                state.app.measurement_state.recording_state.recording_config.sample_rate =
                                     default_rate;
                                 // Update available sample rates from device
                                 state
                                     .app
+                                    .measurement_state
                                     .recording_state
                                     .recording_config
                                     .available_sample_rates = device.available_sample_rates.clone();
                             }
-                            state.app.recording_state.recording_device_dropdown_open = false;
+                            state.app.measurement_state.recording_state.recording_device_dropdown_open = false;
                         });
                         cx.notify();
                     });
@@ -996,7 +1014,7 @@ impl PlayerView {
     fn render_recording_sample_rate_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let recording_state = &state.app.recording_state;
+        let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.entity().clone();
 
         let available_rates = &recording_state.recording_config.available_sample_rates;
@@ -1037,6 +1055,7 @@ impl PlayerView {
                                     this.state.update(cx, |state, _| {
                                         state
                                             .app
+                                            .measurement_state
                                             .recording_state
                                             .recording_sample_rate_dropdown_open = is_open;
                                     });
@@ -1052,12 +1071,14 @@ impl PlayerView {
                                         if let Ok(rate) = value.parse::<u32>() {
                                             state
                                                 .app
+                                                .measurement_state
                                                 .recording_state
                                                 .recording_config
                                                 .sample_rate = rate;
                                         }
                                         state
                                             .app
+                                            .measurement_state
                                             .recording_state
                                             .recording_sample_rate_dropdown_open = false;
                                     });
@@ -1073,7 +1094,7 @@ impl PlayerView {
     fn render_recording_channel_mapping(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let recording_state = &state.app.recording_state;
+        let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.entity().clone();
 
         VStack::new()
@@ -1123,6 +1144,7 @@ impl PlayerView {
                                                     this.state.update(cx, |state, _| {
                                                         if let Some(m) = state
                                                             .app
+                                                            .measurement_state
                                                             .recording_state
                                                             .recording_config
                                                             .channel_mappings
@@ -1231,8 +1253,8 @@ impl PlayerView {
                 }
 
                 let _ = state_entity.update(&mut cx.clone(), |state, _| {
-                    state.app.recording_state.mic_calibration_path = Some(path);
-                    state.app.recording_state.mic_calibration_data = calibration_data;
+                    state.app.measurement_state.recording_state.mic_calibration_path = Some(path);
+                    state.app.measurement_state.recording_state.mic_calibration_data = calibration_data;
                 });
             }
         })

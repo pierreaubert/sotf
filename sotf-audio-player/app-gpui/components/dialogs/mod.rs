@@ -759,7 +759,7 @@ impl PlayerView {
                             .border_1()
                             .border_color(theme.accent)
                             .child(
-                                Text::new(format!("{}█", state.app.apo_file_input))
+                                Text::new(format!("{}█", state.app.input_state.apo_file_input))
                                     .size(TextSize::Sm),
                             ),
                     ),
@@ -794,7 +794,7 @@ impl PlayerView {
                             .border_1()
                             .border_color(theme.accent)
                             .child(
-                                Text::new(format!("{}█", state.app.sofa_file_input))
+                                Text::new(format!("{}█", state.app.input_state.sofa_file_input))
                                     .size(TextSize::Sm),
                             ),
                     ),
@@ -811,7 +811,7 @@ impl PlayerView {
         let theme = state.app.ui_state.theme.clone();
         let presets = state.app.plugin_state.available_plugin_presets.clone();
         let selected_preset = state.app.plugin_state.selected_preset_index;
-        let input = state.app.plugin_file_input.clone();
+        let input = state.app.input_state.plugin_file_input.clone();
 
         Dialog::new("save-plugins-dialog")
             .title("Save Plugin Preset")
@@ -876,7 +876,7 @@ impl PlayerView {
         let theme = state.app.ui_state.theme.clone();
         let presets = state.app.plugin_state.available_plugin_presets.clone();
         let selected_preset = state.app.plugin_state.selected_preset_index;
-        let input = state.app.plugin_file_input.clone();
+        let input = state.app.input_state.plugin_file_input.clone();
 
         Dialog::new("load-plugins-dialog")
             .title("Load Plugin Preset")

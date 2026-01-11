@@ -39,10 +39,10 @@ impl PlayerView {
     /// Render signal configuration section
     fn render_signal_config_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let signal_level_db = state.app.recording_state.signal_level_db;
-        let signal_type = state.app.recording_state.signal_type;
-        let sweep_start_freq = state.app.recording_state.sweep_start_freq;
-        let sweep_end_freq = state.app.recording_state.sweep_end_freq;
+        let signal_level_db = state.app.measurement_state.recording_state.signal_level_db;
+        let signal_type = state.app.measurement_state.recording_state.signal_type;
+        let sweep_start_freq = state.app.measurement_state.recording_state.sweep_start_freq;
+        let sweep_end_freq = state.app.measurement_state.recording_state.sweep_end_freq;
         let _ = state;
 
         let is_sweep = signal_type == RecordingSignalType::Sweep;
@@ -95,7 +95,7 @@ impl PlayerView {
                                         .on_change(move |val, _window, cx| {
                                             view.update(cx, |this, cx| {
                                                 this.state.update(cx, |state, _| {
-                                                    state.app.recording_state.signal_level_db =
+                                                    state.app.measurement_state.recording_state.signal_level_db =
                                                         val as f32;
                                                 });
                                                 cx.notify();
@@ -131,6 +131,7 @@ impl PlayerView {
                                                     this.state.update(cx, |state, _| {
                                                         state
                                                             .app
+                                                            .measurement_state
                                                             .recording_state
                                                             .sweep_start_freq = val as f32;
                                                     });
@@ -157,7 +158,7 @@ impl PlayerView {
                                             .on_change(move |val, _window, cx| {
                                                 view2.update(cx, |this, cx| {
                                                     this.state.update(cx, |state, _| {
-                                                        state.app.recording_state.sweep_end_freq =
+                                                        state.app.measurement_state.recording_state.sweep_end_freq =
                                                             val as f32;
                                                     });
                                                     cx.notify();
@@ -174,7 +175,7 @@ impl PlayerView {
     fn render_signal_type_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let recording_state = &state.app.recording_state;
+        let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.entity().clone();
 
         let options: Vec<SelectOption> = RecordingSignalType::all()
@@ -192,7 +193,7 @@ impl PlayerView {
                 move |is_open, _window, cx| {
                     view.update(cx, |this, cx| {
                         this.state.update(cx, |state, _| {
-                            state.app.recording_state.signal_type_dropdown_open = is_open;
+                            state.app.measurement_state.recording_state.signal_type_dropdown_open = is_open;
                         });
                         cx.notify();
                     });
@@ -203,13 +204,13 @@ impl PlayerView {
                 move |value, _window, cx| {
                     view.update(cx, |this, cx| {
                         this.state.update(cx, |state, _| {
-                            state.app.recording_state.signal_type = match value.as_ref() {
+                            state.app.measurement_state.recording_state.signal_type = match value.as_ref() {
                                 "Sweep" => RecordingSignalType::Sweep,
                                 "White Noise" => RecordingSignalType::WhiteNoise,
                                 "Pink Noise" => RecordingSignalType::PinkNoise,
                                 _ => RecordingSignalType::Sweep,
                             };
-                            state.app.recording_state.signal_type_dropdown_open = false;
+                            state.app.measurement_state.recording_state.signal_type_dropdown_open = false;
                         });
                         cx.notify();
                     });
@@ -221,7 +222,7 @@ impl PlayerView {
     fn render_duration_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let recording_state = &state.app.recording_state;
+        let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.entity().clone();
 
         let options = vec![
@@ -243,7 +244,7 @@ impl PlayerView {
                 move |is_open, _window, cx| {
                     view.update(cx, |this, cx| {
                         this.state.update(cx, |state, _| {
-                            state.app.recording_state.duration_dropdown_open = is_open;
+                            state.app.measurement_state.recording_state.duration_dropdown_open = is_open;
                         });
                         cx.notify();
                     });
@@ -255,9 +256,9 @@ impl PlayerView {
                     view.update(cx, |this, cx| {
                         this.state.update(cx, |state, _| {
                             if let Ok(duration) = value.parse::<f32>() {
-                                state.app.recording_state.signal_duration_secs = duration;
+                                state.app.measurement_state.recording_state.signal_duration_secs = duration;
                             }
-                            state.app.recording_state.duration_dropdown_open = false;
+                            state.app.measurement_state.recording_state.duration_dropdown_open = false;
                         });
                         cx.notify();
                     });
@@ -269,9 +270,9 @@ impl PlayerView {
     fn render_channel_status_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let is_recording = state.app.recording_state.is_recording();
-        let status_message = state.app.recording_state.status_message.clone();
-        let recording_progress = state.app.recording_state.recording_progress;
+        let is_recording = state.app.measurement_state.recording_state.is_recording();
+        let status_message = state.app.measurement_state.recording_state.status_message.clone();
+        let recording_progress = state.app.measurement_state.recording_state.recording_progress;
         let _ = state;
 
         let view = cx.entity().clone();
@@ -349,7 +350,7 @@ impl PlayerView {
     fn render_channel_list(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let recording_state = &state.app.recording_state;
+        let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.entity().clone();
         let is_recording = recording_state.is_recording();
 
@@ -443,7 +444,7 @@ impl PlayerView {
     fn render_capture_redo_actions(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let recording_state = &state.app.recording_state;
+        let recording_state = &state.app.measurement_state.recording_state;
         let is_recording = recording_state.is_recording();
         let view = cx.entity().clone();
 
@@ -494,7 +495,7 @@ impl PlayerView {
     pub fn start_recording_all_channels(&mut self, cx: &mut Context<Self>) {
         // Enable auto-record mode
         self.state.update(cx, |state, _| {
-            state.app.recording_state.auto_record_remaining = true;
+            state.app.measurement_state.recording_state.auto_record_remaining = true;
         });
 
         // Start with the first channel
@@ -526,7 +527,7 @@ impl PlayerView {
             recording_directory,
         ) = {
             let state = self.state.read(cx);
-            let rec_state = &state.app.recording_state;
+            let rec_state = &state.app.measurement_state.recording_state;
 
             // Get the channel info
             let channel_info = rec_state.channel_recordings.get(channel_idx);
@@ -583,7 +584,7 @@ impl PlayerView {
             None => {
                 log::error!("No recording directory selected");
                 self.state.update(cx, |state, _| {
-                    state.app.recording_state.status_message =
+                    state.app.measurement_state.recording_state.status_message =
                         "Please select a recording directory in the Configuration step".to_string();
                 });
                 cx.notify();
@@ -595,16 +596,17 @@ impl PlayerView {
         self.state.update(cx, |state, _| {
             if let Some(recording) = state
                 .app
+                .measurement_state
                 .recording_state
                 .channel_recordings
                 .get_mut(channel_idx)
             {
                 recording.state = ChannelRecordingState::Recording;
             }
-            state.app.recording_state.current_recording_channel = Some(channel_idx);
-            state.app.recording_state.status_message =
+            state.app.measurement_state.recording_state.current_recording_channel = Some(channel_idx);
+            state.app.measurement_state.recording_state.status_message =
                 format!("Recording channel {}...", channel_name);
-            state.app.recording_state.recording_progress = 0.0;
+            state.app.measurement_state.recording_state.recording_progress = 0.0;
         });
         cx.notify();
 
@@ -636,14 +638,15 @@ impl PlayerView {
                 self.state.update(cx, |state, _| {
                     if let Some(recording) = state
                         .app
+                        .measurement_state
                         .recording_state
                         .channel_recordings
                         .get_mut(channel_idx)
                     {
                         recording.state = ChannelRecordingState::Error;
                     }
-                    state.app.recording_state.current_recording_channel = None;
-                    state.app.recording_state.status_message = format!("Error: {}", e);
+                    state.app.measurement_state.recording_state.current_recording_channel = None;
+                    state.app.measurement_state.recording_state.status_message = format!("Error: {}", e);
                 });
                 cx.notify();
                 return;
@@ -661,14 +664,15 @@ impl PlayerView {
                 self.state.update(cx, |state, _| {
                     if let Some(recording) = state
                         .app
+                        .measurement_state
                         .recording_state
                         .channel_recordings
                         .get_mut(channel_idx)
                     {
                         recording.state = ChannelRecordingState::Error;
                     }
-                    state.app.recording_state.current_recording_channel = None;
-                    state.app.recording_state.status_message = format!("Error: {}", e);
+                    state.app.measurement_state.recording_state.current_recording_channel = None;
+                    state.app.measurement_state.recording_state.status_message = format!("Error: {}", e);
                 });
                 cx.notify();
                 return;
@@ -753,6 +757,7 @@ impl PlayerView {
 
                                     if let Some(recording) = state
                                         .app
+                                        .measurement_state
                                         .recording_state
                                         .channel_recordings
                                         .get_mut(channel_idx)
@@ -769,23 +774,24 @@ impl PlayerView {
                                             phase_deg: analysis_result.phase_deg,
                                         });
                                     }
-                                    state.app.recording_state.status_message =
+                                    state.app.measurement_state.recording_state.status_message =
                                         format!("Channel {} recording complete", channel_name);
 
                                     // Check if we should auto-record the next channel
-                                    state.app.recording_state.auto_record_remaining
+                                    state.app.measurement_state.recording_state.auto_record_remaining
                                 }
                                 Err(e) => {
                                     log::error!("Failed to analyze recording: {}", e);
                                     if let Some(recording) = state
                                         .app
+                                        .measurement_state
                                         .recording_state
                                         .channel_recordings
                                         .get_mut(channel_idx)
                                     {
                                         recording.state = ChannelRecordingState::Error;
                                     }
-                                    state.app.recording_state.status_message =
+                                    state.app.measurement_state.recording_state.status_message =
                                         format!("Analysis error: {}", e);
                                     false
                                 }
@@ -795,28 +801,30 @@ impl PlayerView {
                             log::error!("Recording failed: {}", e);
                             if let Some(recording) = state
                                 .app
+                                .measurement_state
                                 .recording_state
                                 .channel_recordings
                                 .get_mut(channel_idx)
                             {
                                 recording.state = ChannelRecordingState::Error;
                             }
-                            state.app.recording_state.status_message =
+                            state.app.measurement_state.recording_state.status_message =
                                 format!("Recording error: {}", e);
 
                             // Stop auto-recording on error
-                            state.app.recording_state.auto_record_remaining = false;
+                            state.app.measurement_state.recording_state.auto_record_remaining = false;
                             false
                         }
                     };
 
-                    state.app.recording_state.current_recording_channel = None;
-                    state.app.recording_state.recording_progress = 1.0;
+                    state.app.measurement_state.recording_state.current_recording_channel = None;
+                    state.app.measurement_state.recording_state.recording_progress = 1.0;
 
                     // Find next channel to record if in auto-record mode
                     let next_channel_idx = if should_continue {
                         state
                             .app
+                            .measurement_state
                             .recording_state
                             .channel_recordings
                             .iter()
@@ -843,8 +851,8 @@ impl PlayerView {
                     log::info!("Auto-recording complete - all channels recorded");
                     let _ = view_entity.update(cx, |view, cx| {
                         view.state.update(cx, |state, _| {
-                            state.app.recording_state.auto_record_remaining = false;
-                            state.app.recording_state.status_message =
+                            state.app.measurement_state.recording_state.auto_record_remaining = false;
+                            state.app.measurement_state.recording_state.status_message =
                                 "All channels recorded successfully!".to_string();
                         });
                         cx.notify();
@@ -863,13 +871,13 @@ impl PlayerView {
     /// Stop all recording
     fn stop_recording(&mut self, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _| {
-            state.app.recording_state.current_recording_channel = None;
-            state.app.recording_state.recording_progress = 0.0;
-            state.app.recording_state.status_message = "Recording stopped".to_string();
-            state.app.recording_state.auto_record_remaining = false; // Disable auto-record mode
+            state.app.measurement_state.recording_state.current_recording_channel = None;
+            state.app.measurement_state.recording_state.recording_progress = 0.0;
+            state.app.measurement_state.recording_state.status_message = "Recording stopped".to_string();
+            state.app.measurement_state.recording_state.auto_record_remaining = false; // Disable auto-record mode
 
             // Reset any channels that were recording back to empty
-            for recording in &mut state.app.recording_state.channel_recordings {
+            for recording in &mut state.app.measurement_state.recording_state.channel_recordings {
                 if recording.state == ChannelRecordingState::Recording {
                     recording.state = ChannelRecordingState::Empty;
                 }
@@ -883,14 +891,14 @@ impl PlayerView {
     /// Reset all recordings to empty state
     fn reset_all_recordings(&mut self, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _| {
-            for recording in &mut state.app.recording_state.channel_recordings {
+            for recording in &mut state.app.measurement_state.recording_state.channel_recordings {
                 recording.state = ChannelRecordingState::Empty;
                 recording.result = None;
             }
-            state.app.recording_state.current_recording_channel = None;
-            state.app.recording_state.recording_progress = 0.0;
-            state.app.recording_state.status_message = String::new();
-            state.app.recording_state.auto_record_remaining = false;
+            state.app.measurement_state.recording_state.current_recording_channel = None;
+            state.app.measurement_state.recording_state.recording_progress = 0.0;
+            state.app.measurement_state.recording_state.status_message = String::new();
+            state.app.measurement_state.recording_state.auto_record_remaining = false;
         });
         cx.notify();
 
@@ -906,7 +914,7 @@ impl PlayerView {
         // Get recordings, recording directory, configuration, and convert to RoomEqMeasurementsFile format
         let (measurements_file, recording_dir) = {
             let state = self.state.read(cx);
-            let rec_state = &state.app.recording_state;
+            let rec_state = &state.app.measurement_state.recording_state;
             let recordings = &rec_state.channel_recordings;
             let recording_dir = rec_state.recording_directory.clone();
 
@@ -1003,12 +1011,12 @@ impl PlayerView {
                 if let Err(e) = std::fs::write(&json_path, json) {
                     log::error!("Failed to write recordings file: {}", e);
                     self.state.update(cx, |state, _| {
-                        state.app.recording_state.status_message = format!("Failed to save: {}", e);
+                        state.app.measurement_state.recording_state.status_message = format!("Failed to save: {}", e);
                     });
                 } else {
                     log::info!("Recordings saved to {:?}", json_path);
                     self.state.update(cx, |state, _| {
-                        state.app.recording_state.status_message =
+                        state.app.measurement_state.recording_state.status_message =
                             format!("Saved to {}", json_path.display());
                     });
                 }
@@ -1016,7 +1024,7 @@ impl PlayerView {
             Err(e) => {
                 log::error!("Failed to serialize recordings: {}", e);
                 self.state.update(cx, |state, _| {
-                    state.app.recording_state.status_message =
+                    state.app.measurement_state.recording_state.status_message =
                         format!("Failed to serialize: {}", e);
                 });
             }
@@ -1094,17 +1102,17 @@ impl PlayerView {
                                         })
                                         .collect();
 
-                                    state.app.recording_state.channel_recordings = recordings;
+                                    state.app.measurement_state.recording_state.channel_recordings = recordings;
 
                                     // Also set the recording directory to the file's directory
                                     if let Some(dir) = file_dir {
-                                        state.app.recording_state.recording_directory =
+                                        state.app.measurement_state.recording_state.recording_directory =
                                             Some(dir.to_string_lossy().to_string());
                                     }
 
-                                    state.app.recording_state.status_message = format!(
+                                    state.app.measurement_state.recording_state.status_message = format!(
                                         "Loaded {} channels from {}",
-                                        state.app.recording_state.channel_recordings.len(),
+                                        state.app.measurement_state.recording_state.channel_recordings.len(),
                                         file_path.display()
                                     );
                                 });
@@ -1112,7 +1120,7 @@ impl PlayerView {
                             Err(e) => {
                                 log::error!("Failed to parse recordings JSON: {}", e);
                                 let _ = state_entity.update(&mut cx.clone(), |state, _| {
-                                    state.app.recording_state.status_message =
+                                    state.app.measurement_state.recording_state.status_message =
                                         format!("Failed to parse: {}", e);
                                 });
                             }
@@ -1121,7 +1129,7 @@ impl PlayerView {
                     Err(e) => {
                         log::error!("Failed to read recordings file: {}", e);
                         let _ = state_entity.update(&mut cx.clone(), |state, _| {
-                            state.app.recording_state.status_message =
+                            state.app.measurement_state.recording_state.status_message =
                                 format!("Failed to read: {}", e);
                         });
                     }

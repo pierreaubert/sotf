@@ -16,7 +16,7 @@ impl PlayerView {
     pub(crate) fn render_recording_saving_step(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let recording_state = &state.app.recording_state;
+        let recording_state = &state.app.measurement_state.recording_state;
 
         let has_recordings = recording_state
             .channel_recordings
@@ -53,7 +53,7 @@ impl PlayerView {
     fn render_save_name_card(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let save_name = state.app.recording_state.save_name.clone();
+        let save_name = state.app.measurement_state.recording_state.save_name.clone();
         let view = cx.entity().clone();
 
         Card::new().content(
@@ -84,7 +84,7 @@ impl PlayerView {
                                         move |value, _, cx| {
                                             view.update(cx, |this, cx| {
                                                 this.state.update(cx, |state, _| {
-                                                    state.app.recording_state.save_name = value;
+                                                    state.app.measurement_state.recording_state.save_name = value;
                                                 });
                                                 cx.notify();
                                             });
@@ -107,7 +107,7 @@ impl PlayerView {
     fn render_save_location_card(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let recording_state = &state.app.recording_state;
+        let recording_state = &state.app.measurement_state.recording_state;
         let view = cx.entity().clone();
 
         let base_dir = recording_state.recording_base_directory.clone();
@@ -171,9 +171,10 @@ impl PlayerView {
                                                 this.state.update(cx, |state, _| {
                                                     state
                                                         .app
+                                                        .measurement_state
                                                         .recording_state
                                                         .recording_base_directory = None;
-                                                    state.app.recording_state.recording_directory =
+                                                    state.app.measurement_state.recording_state.recording_directory =
                                                         None;
                                                 });
                                                 cx.notify();
@@ -206,7 +207,7 @@ impl PlayerView {
     fn render_save_contents_card(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let recording_state = &state.app.recording_state;
+        let recording_state = &state.app.measurement_state.recording_state;
         let save_name = &recording_state.save_name;
 
         let recorded_channels: Vec<_> = recording_state
@@ -342,7 +343,7 @@ impl PlayerView {
     ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let status_message = state.app.recording_state.status_message.clone();
+        let status_message = state.app.measurement_state.recording_state.status_message.clone();
         let view = cx.entity().clone();
 
         let can_save = has_recordings && recording_dir.is_some();

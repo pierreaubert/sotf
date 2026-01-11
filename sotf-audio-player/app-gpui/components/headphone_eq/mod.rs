@@ -63,7 +63,7 @@ impl PlayerView {
     pub(crate) fn render_headphone_eq_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let current_step = state.app.headphone_eq_state.step;
+        let current_step = state.app.measurement_state.headphone_eq_state.step;
 
         // Content for current step
         let content = match current_step {
@@ -98,9 +98,9 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let theme_id = state.app.ui_state.theme_id;
-        let current_step = state.app.headphone_eq_state.step;
-        let can_go_next = state.app.headphone_eq_state.can_advance();
-        let is_busy = state.app.headphone_eq_state.is_optimizing();
+        let current_step = state.app.measurement_state.headphone_eq_state.step;
+        let can_go_next = state.app.measurement_state.headphone_eq_state.can_advance();
+        let is_busy = state.app.measurement_state.headphone_eq_state.is_optimizing();
 
         // Map current step to index
         let step_index = match current_step {
@@ -164,15 +164,15 @@ impl PlayerView {
                         MouseButton::Left,
                         cx.listener(|view, _, _, cx| {
                             view.state.update(cx, |state, _| {
-                                match state.app.headphone_eq_state.step {
+                                match state.app.measurement_state.headphone_eq_state.step {
                                     HeadphoneEqStep::MeasurementTarget => {
                                         state.app.ui_state.current_screen = state.app.ui_state.last_screen;
                                     }
                                     _ => {
                                         if let Some(prev) =
-                                            state.app.headphone_eq_state.step.previous()
+                                            state.app.measurement_state.headphone_eq_state.step.previous()
                                         {
-                                            state.app.headphone_eq_state.step = prev;
+                                            state.app.measurement_state.headphone_eq_state.step = prev;
                                         }
                                     }
                                 }
@@ -192,14 +192,14 @@ impl PlayerView {
                         MouseButton::Left,
                         cx.listener(|view, _, _, cx| {
                             view.state.update(cx, |state, _| {
-                                match state.app.headphone_eq_state.step {
+                                match state.app.measurement_state.headphone_eq_state.step {
                                     HeadphoneEqStep::Save => {
                                         state.app.ui_state.current_screen = state.app.ui_state.last_screen;
                                     }
                                     _ => {
-                                        if let Some(next) = state.app.headphone_eq_state.step.next()
+                                        if let Some(next) = state.app.measurement_state.headphone_eq_state.step.next()
                                         {
-                                            state.app.headphone_eq_state.step = next;
+                                            state.app.measurement_state.headphone_eq_state.step = next;
                                         }
                                     }
                                 }

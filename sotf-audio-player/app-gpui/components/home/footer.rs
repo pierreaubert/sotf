@@ -280,7 +280,7 @@ impl PlayerView {
 
         // Check if we're in HAL input mode (macOS only)
         #[cfg(all(target_os = "macos", feature = "hal"))]
-        if matches!(state.app.playback_source, PlaybackSource::HalDevice) {
+        if matches!(state.app.audio_device_state.playback_source, PlaybackSource::HalDevice) {
             let text_primary = theme.text_primary;
             let text_secondary = theme.text_secondary;
             let accent = theme.accent;
@@ -407,7 +407,7 @@ impl PlayerView {
 
         // Check if we're in HAL mode - hide waveform/time display
         #[cfg(all(target_os = "macos", feature = "hal"))]
-        let is_hal_mode = matches!(state.app.playback_source, PlaybackSource::HalDevice);
+        let is_hal_mode = matches!(state.app.audio_device_state.playback_source, PlaybackSource::HalDevice);
         #[cfg(not(all(target_os = "macos", feature = "hal")))]
         let is_hal_mode = false;
 
@@ -711,6 +711,7 @@ impl PlayerView {
             // Get device name and truncate to 7 characters
             let device_name = state
                 .app
+                .audio_device_state
                 .current_output_device_name
                 .clone()
                 .unwrap_or_else(|| default_device_label.to_string());
@@ -849,8 +850,8 @@ impl PlayerView {
         let (devices, selected_index, theme) = {
             let state = self.state.read(cx);
             (
-                state.app.output_devices.clone(),
-                state.app.selected_output_device_index,
+                state.app.audio_device_state.output_devices.clone(),
+                state.app.audio_device_state.selected_output_device_index,
                 state.app.ui_state.theme.clone(),
             )
         };
@@ -948,8 +949,8 @@ impl PlayerView {
                         MouseButton::Left,
                         cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                             view.state.update(cx, |state, _cx| {
-                                state.app.selected_output_device_index = idx;
-                                state.app.current_output_device_name = Some(device_name.clone());
+                                state.app.audio_device_state.selected_output_device_index = idx;
+                                state.app.audio_device_state.current_output_device_name = Some(device_name.clone());
                                 state.app.ui_state.show_device_popup = false;
 
                                 // Apply the device selection to the player

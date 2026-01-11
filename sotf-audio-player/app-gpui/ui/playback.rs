@@ -41,7 +41,7 @@ impl PlayerView {
                     path,
                     plugins,
                     output_channels,
-                    state.app.current_output_device_name.clone(),
+                    state.app.audio_device_state.current_output_device_name.clone(),
                 ) {
                     log::error!("Failed to play next track: {}", e);
                     state.app.playback.is_playing = false;
@@ -68,7 +68,7 @@ impl PlayerView {
                     path,
                     plugins,
                     output_channels,
-                    state.app.current_output_device_name.clone(),
+                    state.app.audio_device_state.current_output_device_name.clone(),
                 ) {
                     log::error!("Failed to play previous track: {}", e);
                     state.app.playback.is_playing = false;
