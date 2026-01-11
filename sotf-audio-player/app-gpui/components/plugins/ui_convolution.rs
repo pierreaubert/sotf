@@ -204,5 +204,5 @@ pub fn render_convolution_plugin(
                         )),
                 ),
         )
-        .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
+        // .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
 }

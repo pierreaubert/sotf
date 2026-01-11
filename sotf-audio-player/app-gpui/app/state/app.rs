@@ -101,6 +101,7 @@ pub struct App {
 
     // Flags
     pub needs_rescan: bool,
+    pub is_loading_initial_data: bool,
 
     // Scan progress modal (for library, bliss, waveform, replaygain scans)
     pub scan_progress_modal: Option<crate::app::types::ScanProgressModal>,
@@ -226,6 +227,7 @@ impl App {
             level_meter_peak_hold_last_update: None,
             spectrum_visible: false,
             needs_rescan: false,
+            is_loading_initial_data: true,
             scan_progress_modal: None,
             queue_panel_ratio: 0.35,
             queue_list_ratio: 0.30,
@@ -324,6 +326,8 @@ impl App {
             let message = format!("Loaded {} albums from database", album_count);
             self.ui_state.toast_message = Some(ToastMessage::info(message));
         }
+
+        self.is_loading_initial_data = false;
     }
 
     /// Update directory scan times from database

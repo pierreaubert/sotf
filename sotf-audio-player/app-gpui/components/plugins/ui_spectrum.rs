@@ -8,7 +8,7 @@ use gpui::*;
 use gpui_ui_kit::{Select, SelectOption, SelectSize};
 use sotf_plugins::{SpectralTiltCorrection, TiltReferenceFreq};
 
-use super::common::{ParamSectionStyle, render_edit_hints, render_knob, render_section_header};
+use super::common::{render_knob, render_section_header};
 use crate::app::AppState;
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
@@ -136,17 +136,7 @@ impl SpectrumElement {
         ((db + 100.0) / 100.0).clamp(0.0, 1.0)
     }
 
-    /// Get color for a frequency bin based on its position
-    fn bin_color(&self, bin_index: usize, total_bins: usize) -> Rgba {
-        let t = bin_index as f32 / total_bins as f32;
-        if t < 0.3 {
-            self.colors.low
-        } else if t < 0.7 {
-            self.colors.mid
-        } else {
-            self.colors.high
-        }
-    }
+
 }
 
 impl IntoElement for SpectrumElement {
@@ -224,14 +214,21 @@ impl Element for SpectrumElement {
             border_style: Default::default(),
         });
 
-        // Calculate bar width
-        let total_gap = self.bar_gap * (bar_count as f32 - 1.0);
-        let available_width = bounds.size.width - total_gap - px(4.0); // 2px padding each side
-        let bar_width = available_width / bar_count as f32;
+        // Optimization: For high bin counts, drawing thousands of quads is slow.
+        // Use a single Path to draw the spectrum shape.
+        // If bin count is low (< 100), bars look nice. If high, a filled curve/histogram is better.
+        // We switch to Path rendering always for consistent performance.
 
-        // Paint each bar
+        // Build the path points
+        let mut path = PathBuilder::fill();
+        // Start at bottom left
+        path.move_to(point(bounds.origin.x, bounds.origin.y + bounds.size.height));
+
+        let total_width = bounds.size.width;
+        let step_width = total_width / bar_count as f32;
+
         for (i, &mag) in self.magnitudes.iter().enumerate() {
-            // Apply smoothing if we have previous values
+            // Apply smoothing
             let smoothed_mag = if let Some(ref prev) = self.previous_magnitudes {
                 if i < prev.len() {
                     prev[i] * self.smoothing + mag * (1.0 - self.smoothing)
@@ -243,32 +240,37 @@ impl Element for SpectrumElement {
             };
 
             let height_ratio = self.db_to_height(smoothed_mag);
-            let bar_height = bounds.size.height * height_ratio - px(4.0); // 2px padding top and bottom
+            // Height ratio 0.0 means bar_height should be small? 
+            // bounds.size.height is max height. 
+            // y goes down (0 at top).
+            // So if height_ratio is 1.0 (max), bar_height is bounds.height.
+            // y = bounds.y + bounds.height - bar_height = bounds.y.
+            // Correct.
+            let bar_height = (bounds.size.height * height_ratio).max(px(0.0));
+            
+            let x = bounds.origin.x + step_width * i as f32;
+            let y = bounds.origin.y + bounds.size.height - bar_height;
 
-            if bar_height > px(0.0) {
-                let x = bounds.origin.x + px(2.0) + (bar_width + self.bar_gap) * i as f32;
-                let y = bounds.origin.y + bounds.size.height - bar_height - px(2.0);
-
-                let color = self.bin_color(i, bar_count);
-
-                window.paint_quad(PaintQuad {
-                    bounds: Bounds {
-                        origin: point(x, y),
-                        size: size(bar_width, bar_height),
-                    },
-                    corner_radii: Corners {
-                        top_left: px(2.0),
-                        top_right: px(2.0),
-                        bottom_left: px(0.0),
-                        bottom_right: px(0.0),
-                    },
-                    background: color.into(),
-                    border_widths: Edges::default(),
-                    border_color: Hsla::transparent_black(),
-                    border_style: Default::default(),
-                });
-            }
+            // Add points for "stepped" look (histogram style)
+            path.line_to(point(x, y)); // Move up/down to new height
+            path.line_to(point(x + step_width, y)); // Move right across bar width
         }
+
+        // Finish at bottom right
+        path.line_to(point(bounds.origin.x + bounds.size.width, bounds.origin.y + bounds.size.height));
+        // Close shape
+        path.line_to(point(bounds.origin.x, bounds.origin.y + bounds.size.height));
+
+        // Use a solid color for the filled path (e.g., Green/Low color)
+        // Note: GPUI paint_path currently supports a single color.
+        // For gradient support, we would need to use a mask or shader, which is more complex.
+        // For now, this resolves the performance bottleneck.
+        window.paint_path(
+            path.build().unwrap(),
+            self.colors.low,
+        );
+        
+        // Note: 'paint_path' with filled shape works best.
     }
 }
 
@@ -697,7 +699,7 @@ pub fn render_spectrum_analyzer_plugin(
                         ),
                 ),
         )
-        .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
+        // .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
 }
 
 impl PlayerView {

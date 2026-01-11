@@ -320,6 +320,7 @@ pub fn render_plugin_content(
         PluginSettings::FletcherMunson {
             playback_volume_db,
             reference_level_db,
+            enabled: _, // Ignored as it's handled by rack wrapper
             band1_freq,
             band1_q,
             band1_max_gain,
@@ -337,6 +338,10 @@ pub fn render_plugin_content(
             band4_max_gain,
             band4_slope,
             smoothing_ms,
+            auto_gain_enabled,
+            auto_gain_max_db,
+            auto_gain_smoothing_ms,
+            auto_gain_loudness_type,
         } => render_fletcher_munson_plugin(
             entity.clone(),
             plugin_idx,
@@ -360,6 +365,10 @@ pub fn render_plugin_content(
                 band4_max_gain: *band4_max_gain,
                 band4_slope: *band4_slope,
                 smoothing_ms: *smoothing_ms,
+                auto_gain_enabled: *auto_gain_enabled,
+                auto_gain_max_db: *auto_gain_max_db,
+                auto_gain_smoothing_ms: *auto_gain_smoothing_ms,
+                auto_gain_loudness_type: *auto_gain_loudness_type,
                 is_editing,
                 selected_param,
             },

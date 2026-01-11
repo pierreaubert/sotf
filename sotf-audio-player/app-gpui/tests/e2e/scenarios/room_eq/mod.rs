@@ -14,6 +14,8 @@ use gpui::TestAppContext;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+pub mod parameter_check; // Register the new test scenarios
+
 // =============================================================================
 // Mock Types for Testing (mirrors app/types.rs)
 // =============================================================================

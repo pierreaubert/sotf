@@ -101,6 +101,7 @@ pub(crate) struct SpectrumAnalyzer {
     /// Sample rate in Hz
     sample_rate: u32,
     /// Number of channels
+    #[allow(dead_code)]
     channels: u32,
     /// FFT size (power of 2)
     fft_size: usize,
@@ -108,7 +109,19 @@ pub(crate) struct SpectrumAnalyzer {
     sample_buffer: Vec<f32>,
     /// Write position in circular buffer
     buffer_pos: usize,
+    /// Real FFT planner
+    r2c: Arc<dyn realfft::RealToComplex<f32>>,
+    /// FFT input buffer
+    fft_input: Vec<f32>,
+    /// FFT output buffer
+    fft_output: Vec<realfft::num_complex::Complex<f32>>,
+    /// Scratch buffer for FFT
+    #[allow(dead_code)]
+    fft_scratch: Vec<realfft::num_complex::Complex<f32>>,
+    /// Window function (Hann)
+    window_function: Vec<f32>,
     /// Frequency bin centers
+    #[allow(dead_code)]
     bin_centers: Vec<f32>,
     /// Current spectrum measurements (smoothed)
     current_spectrum: Arc<Mutex<SpectrumInfo>>,
@@ -135,8 +148,23 @@ impl SpectrumAnalyzer {
             return Err("smoothing must be between 0.0 and 1.0".to_string());
         }
 
-        // FFT size: use at least 2048 for good frequency resolution
-        let fft_size = 2048;
+        // FFT size: use at least 4096 for better resolution at low frequencies
+        // For 48kHz, 4096 gives ~11.7Hz resolution per bin
+        let fft_size = 4096;
+
+        // Initialize FFT
+        let mut planner = realfft::RealFftPlanner::<f32>::new();
+        let r2c = planner.plan_fft_forward(fft_size);
+        let fft_input = r2c.make_input_vec();
+        let fft_output = r2c.make_output_vec();
+        let fft_scratch = r2c.make_scratch_vec();
+
+        // Pre-compute window function (Hann)
+        let window_function: Vec<f32> = (0..fft_size)
+            .map(|i| {
+                0.5 * (1.0 - (2.0 * std::f32::consts::PI * i as f32 / (fft_size - 1) as f32).cos())
+            })
+            .collect();
 
         // Generate logarithmic frequency bins
         let (_bin_edges, bin_centers) =
@@ -164,6 +192,11 @@ impl SpectrumAnalyzer {
             fft_size,
             sample_buffer: vec![0.0; fft_size],
             buffer_pos: 0,
+            r2c,
+            fft_input,
+            fft_output,
+            fft_scratch,
+            window_function,
             bin_centers,
             current_spectrum,
             prev_magnitudes: vec![f32::NEG_INFINITY; num_bins],
@@ -225,15 +258,26 @@ impl SpectrumAnalyzer {
 
     /// Add audio frames to the analyzer
     fn add_frames(&mut self, samples: &[f32]) -> Result<(), String> {
-        // Mix all channels to mono for spectrum analysis
-        let mono_samples = self.mix_to_mono(samples);
+        // Mix all channels to mono for spectrum analysis (simplified)
+        // Optimization: In many DAWs, analyzer just takes left channel or sum.
+        // For performance, averaging is linear.
+        let channels = self.channels as usize;
+        let num_frames = samples.len() / channels;
 
-        // Add samples to circular buffer
-        for sample in mono_samples {
-            self.sample_buffer[self.buffer_pos] = sample;
+        // Iterate frames and add to circular buffer
+        for frame_idx in 0..num_frames {
+            let mut sum = 0.0;
+            // Simple loop unrolling hint to compiler
+            for ch in 0..channels {
+                sum += samples[frame_idx * channels + ch];
+            }
+            let mono_sample = sum / channels as f32;
+
+            self.sample_buffer[self.buffer_pos] = mono_sample;
             self.buffer_pos = (self.buffer_pos + 1) % self.fft_size;
 
-            // When buffer is full, compute spectrum
+            // When buffer wraps around, we have enough new data to compute
+            // (Note: This is a simple strategy. For overlapped windows, we'd check differently)
             if self.buffer_pos == 0 {
                 self.compute_spectrum()?;
             }
@@ -242,47 +286,130 @@ impl SpectrumAnalyzer {
         Ok(())
     }
 
-    /// Mix all channels to mono
-    fn mix_to_mono(&self, samples: &[f32]) -> Vec<f32> {
-        let channels = self.channels as usize;
-        let num_frames = samples.len() / channels;
+    /// Compute spectrum using FFT
+    fn compute_spectrum(&mut self) -> Result<(), String> {
+        // Prepare input: windowed samples
+        // The buffer is circular, but we want a contiguous block for FFT.
+        // Since we process when buffer_pos == 0 (wrap around), the buffer is already contiguous logic-wise?
+        // Wait, self.buffer_pos wraps 0..fft_size.
+        // Yes, if we just finished writing at end, the buffer is full and ordered old->new if we started at 0?
+        // Actually, buffer is circular. If we just wrapped to 0, the last sample written was at index fft_size-1.
+        // So the buffer contains [oldest ... newest].
+        // This is contiguous in memory.
 
-        let mut mono = Vec::with_capacity(num_frames);
-        for frame_idx in 0..num_frames {
-            let mut sum = 0.0;
-            for ch in 0..channels {
-                sum += samples[frame_idx * channels + ch];
-            }
-            mono.push(sum / channels as f32);
+        // Apply window and copy to input
+        for (i, &sample) in self.sample_buffer.iter().enumerate() {
+            self.fft_input[i] = sample * self.window_function[i];
         }
 
-        mono
-    }
+        // Run FFT
+        self.r2c
+            .process(&mut self.fft_input, &mut self.fft_output)
+            .map_err(|e| format!("FFT error: {}", e))?;
 
-    /// Compute spectrum using Goertzel algorithm
-    fn compute_spectrum(&mut self) -> Result<(), String> {
-        // Apply Hann window
-        let windowed = self.apply_hann_window(&self.sample_buffer);
+        // Compute magnitude spectrum for bins
+        // FFT gives linear spaced bins from 0 to Nyquist.
+        // Bin size = SampleRate / FFTSize.
+        // Example: 48000 / 4096 = 11.7 Hz/bin.
+        // Index 0 = DC, Index 1 = 11.7 Hz, etc.
 
-        // Compute magnitude spectrum at bin frequencies
-        let mut magnitudes = vec![0.0; self.config.num_bins];
+        let fft_bin_size = self.sample_rate as f32 / self.fft_size as f32;
+        let mut magnitudes = vec![f32::NEG_INFINITY; self.config.num_bins]; // Init with silence (-inf dB)
 
-        for (bin_idx, &center_freq) in self.bin_centers.iter().enumerate() {
-            let magnitude = self.compute_bin_magnitude(&windowed, center_freq);
-            magnitudes[bin_idx] = magnitude;
+        // Iterate over log bins and average energy from FFT bins
+        // Optimization: iterate FFT bins and accumulate into target log bins
+        // Because log bins at high freq cover many FFT bins.
+        // Log bins at low freq might be smaller than FFT resolution?
+        // 4096 size -> 11.7Hz. If low bin is 20Hz-30Hz (10Hz width), it might not get any center?
+        // We use interpolation or nearest neighbor for simplicity and speed.
+
+        // Precompute this mapping? No, depends on sample rate, but that changes rarely.
+        // Do it on the fly: O(N_fft) scan.
+
+        let _max_fft_bin = self.fft_output.len(); // N/2 + 1
+
+        // Initialize accumulators
+        // We track max energy in the bin (peak detection style is better for spectrum visuals than average usually)
+        // Or average power? Standard analyzers often use max for transient visibility.
+        // Let's use Max Magnitude in the frequency range of the bin.
+
+        // To map FFT bins to Log Bins efficiently:
+        // We know the frequency of each FFT bin: i * fft_bin_size.
+        // We find which Log Bin it belongs to.
+        // Since both are sorted, we can do a linear scan.
+
+
+        // Find start freq of first bin (approximate)
+        // Self::generate_log_bins gives centers. Let's assume edges are implicitly defined.
+        // We need edges to Bucket correctly.
+        // Reconstruction:
+        let log_min = self.config.min_freq.log10();
+        let log_max = self.config.max_freq.log10();
+        let num_log_bins = self.config.num_bins;
+
+        // Iterate FFT bins
+        for (i, complex_val) in self.fft_output.iter().enumerate().skip(1) { // Skip DC
+            let freq = i as f32 * fft_bin_size;
+            if freq > self.config.max_freq {
+                break;
+            }
+            if freq < self.config.min_freq {
+                continue;
+            }
+
+            // Calculate magnitude
+            // mag = sqrt(re^2 + im^2) * 2 / N (normalized)
+            // But we want dB.
+            // 20 * log10(norm_mag).
+            let norm = complex_val.norm();
+            // Scaling: RealFFT output is not normalized by 1/N. Norm is N/2 times amplitude?
+            // Usually unnormalized FFT: peak 1.0 sine -> N/2 magnitude.
+            // So we divide by N/2, or multiply by 2/N.
+            let amplitude = norm * 2.0 / self.fft_size as f32;
+            
+            let mag_db = if amplitude > 1e-10 {
+                20.0 * amplitude.log10()
+            } else {
+                -200.0 // Noise floor
+            };
+
+            // Find which log bin this frequency belongs to
+            // log10(f) mapped to 0..num_bins
+            let log_f = freq.log10();
+            let relative_pos = (log_f - log_min) / (log_max - log_min);
+            let target_bin = (relative_pos * num_log_bins as f32).floor() as usize;
+
+            if target_bin < num_log_bins {
+                if mag_db > magnitudes[target_bin] {
+                    magnitudes[target_bin] = mag_db;
+                }
+            }
+        }
+
+        // Interpolation for empty bins (if FFT resolution is too low for low freq bins)
+        // This is rare with 4096 size and >20Hz min, but possible.
+        // Simple fix: if -inf, take neighbor? Or leave as gap?
+        // Better: linear interpolation from nearest non-inf bins.
+        // For simplicity/perf: forward fill then backward fill
+        let mut last_val = -100.0;
+        for mag in magnitudes.iter_mut() {
+            if *mag == f32::NEG_INFINITY {
+                *mag = last_val;
+            } else {
+                last_val = *mag;
+            }
         }
 
         // Apply smoothing (exponential moving average)
-        for (i, val) in magnitudes.iter_mut().enumerate().take(self.config.num_bins) {
+        for (i, val) in magnitudes.iter_mut().enumerate() {
             if self.prev_magnitudes[i].is_finite() {
                 *val = self.config.smoothing * self.prev_magnitudes[i]
                     + (1.0 - self.config.smoothing) * *val;
             }
         }
-
         self.prev_magnitudes = magnitudes.clone();
 
-        // Apply tilt correction (after smoothing, before display)
+        // Apply tilt correction
         for (i, val) in magnitudes.iter_mut().enumerate() {
             *val += self.tilt_corrections[i];
         }
@@ -300,72 +427,23 @@ impl SpectrumAnalyzer {
         Ok(())
     }
 
-    /// Apply Hann window to samples
-    fn apply_hann_window(&self, samples: &[f32]) -> Vec<f32> {
-        let n = samples.len();
-        samples
-            .iter()
-            .enumerate()
-            .map(|(i, &sample)| {
-                let window =
-                    0.5 * (1.0 - (2.0 * std::f32::consts::PI * i as f32 / (n - 1) as f32).cos());
-                sample * window
-            })
-            .collect()
-    }
-
-    /// Compute magnitude at a specific frequency using Goertzel algorithm
-    fn compute_bin_magnitude(&self, samples: &[f32], freq: f32) -> f32 {
-        let normalized_freq = freq / self.sample_rate as f32;
-        let w = 2.0 * std::f32::consts::PI * normalized_freq;
-
-        let mut s0;
-        let mut s1 = 0.0;
-        let mut s2 = 0.0;
-
-        let coeff = 2.0 * w.cos();
-
-        for &sample in samples {
-            s0 = sample + coeff * s1 - s2;
-            s2 = s1;
-            s1 = s0;
-        }
-
-        let real = s1 - s2 * w.cos();
-        let imag = s2 * w.sin();
-
-        let magnitude = (real * real + imag * imag).sqrt();
-
-        // Normalize by window sum for proper dB scaling
-        let window_sum = samples.len() as f32 / 2.0;
-        let normalized_magnitude = magnitude / window_sum;
-
-        // Convert to dB (20 * log10(magnitude / reference))
-        if normalized_magnitude > 1e-10 {
-            20.0 * normalized_magnitude.log10()
-        } else {
-            f32::NEG_INFINITY
-        }
-    }
-
-    /// Get the current spectrum measurements
+    /// Retrieve current spectrum
     fn get_spectrum(&self) -> SpectrumInfo {
         let spectrum = self.current_spectrum.lock().unwrap();
         spectrum.clone()
     }
 
-    /// Reset the analyzer
+    /// Reset analyzer state
     fn reset(&mut self) -> Result<(), String> {
         self.sample_buffer.fill(0.0);
         self.buffer_pos = 0;
+        self.fft_input.fill(0.0);
         self.prev_magnitudes.fill(f32::NEG_INFINITY);
-
         {
-            let mut spectrum = self.current_spectrum.lock().unwrap();
-            spectrum.magnitudes.fill(f32::NEG_INFINITY);
-            spectrum.peak_magnitude = f32::NEG_INFINITY;
+            let mut s = self.current_spectrum.lock().unwrap();
+            s.magnitudes.fill(f32::NEG_INFINITY);
+            s.peak_magnitude = f32::NEG_INFINITY;
         }
-
         Ok(())
     }
 }

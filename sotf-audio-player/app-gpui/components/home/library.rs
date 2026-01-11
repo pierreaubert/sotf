@@ -7,6 +7,7 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Input, InputSize, TabItem, TabVariant, Tabs, TabsTheme,
+    Spinner, SpinnerSize,
 };
 use std::sync::Arc;
 
@@ -204,9 +205,17 @@ impl PlayerView {
             .flex_col()
             .size_full()
             .p_2()
-            // Top row: Centered tabs (including Filter and Search)
-            .child(
-                div().flex().justify_center().mb_2().child(
+            .when(state.app.is_loading_initial_data, |el| {
+                el.justify_center().items_center().child(
+                    div().child(
+                        Spinner::new()
+                            .size(SpinnerSize::Xl),
+                    ),
+                )
+            })
+            .when(!state.app.is_loading_initial_data, |el| {
+                el.child(
+                    div().flex().justify_center().mb_2().child(
                     Tabs::new("library-sort-tabs")
                         .tabs(sort_tabs)
                         .selected_index(sort_tab_index)
@@ -376,6 +385,7 @@ impl PlayerView {
                         cx,
                     )),
             )
+        })
     }
 
     /// Render library content - either selection UI or album grid based on sort order

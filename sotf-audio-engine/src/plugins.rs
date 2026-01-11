@@ -374,6 +374,9 @@ fn default_auto_gain_smoothing_ms() -> f64 {
 fn default_fm_reference_level_db() -> f64 {
     -14.0 // ~80 dB SPL reference
 }
+fn default_fm_enabled() -> bool {
+    true
+}
 fn default_fm_band1_freq() -> f64 {
     60.0 // Sub-bass
 }
@@ -424,6 +427,12 @@ fn default_fm_band4_slope() -> f64 {
 }
 fn default_fm_smoothing_ms() -> f64 {
     30.0
+}
+fn default_fm_auto_gain_max_db() -> f64 {
+    12.0
+}
+fn default_fm_auto_gain_smoothing_ms() -> f64 {
+    100.0
 }
 
 // Gate/Limiter defaults (defined locally as they use f64 and match engine defaults)
@@ -958,6 +967,9 @@ pub enum PluginSettings {
         /// Reference level where response is flat
         #[serde(default = "default_fm_reference_level_db")]
         reference_level_db: f64,
+        /// Enabled bypass switch
+        #[serde(default = "default_fm_enabled")]
+        enabled: bool,
         /// Band 1 (sub-bass) parameters
         #[serde(default = "default_fm_band1_freq")]
         band1_freq: f64,
@@ -997,6 +1009,18 @@ pub enum PluginSettings {
         /// Smoothing time for gain transitions (ms)
         #[serde(default = "default_fm_smoothing_ms")]
         smoothing_ms: f64,
+        /// Auto-gain enabled
+        #[serde(default)]
+        auto_gain_enabled: bool,
+        /// Auto-gain maximum correction in dB
+        #[serde(default = "default_fm_auto_gain_max_db")]
+        auto_gain_max_db: f64,
+        /// Auto-gain smoothing time in ms
+        #[serde(default = "default_fm_auto_gain_smoothing_ms")]
+        auto_gain_smoothing_ms: f64,
+        /// Auto-gain loudness type (0 = Momentary, 1 = ShortTerm)
+        #[serde(default)]
+        auto_gain_loudness_type: i32,
     },
     BinauralDecoder {
         sofa_file: String,
@@ -1452,6 +1476,7 @@ impl PluginSettings {
             Self::FletcherMunson {
                 playback_volume_db,
                 reference_level_db,
+                enabled,
                 band1_freq,
                 band1_q,
                 band1_max_gain,
@@ -1469,6 +1494,10 @@ impl PluginSettings {
                 band4_max_gain,
                 band4_slope,
                 smoothing_ms,
+                auto_gain_enabled,
+                auto_gain_max_db,
+                auto_gain_smoothing_ms,
+                auto_gain_loudness_type,
             } => PluginConfig::new(
                 "fletcher_munson",
                 json!({
@@ -1499,7 +1528,11 @@ impl PluginSettings {
                         "slope": band4_slope,
                     },
                     "smoothing_ms": smoothing_ms,
-                    "enabled": true,
+                    "enabled": enabled,
+                    "auto_gain_enabled": auto_gain_enabled,
+                    "auto_gain_max_db": auto_gain_max_db,
+                    "auto_gain_smoothing_ms": auto_gain_smoothing_ms,
+                    "auto_gain_loudness_type": auto_gain_loudness_type,
                 }),
             ),
             Self::BinauralDecoder {
@@ -1809,6 +1842,7 @@ impl PluginSettings {
             PluginType::FletcherMunson => Self::FletcherMunson {
                 playback_volume_db: 0.0,
                 reference_level_db: default_fm_reference_level_db(),
+                enabled: default_fm_enabled(),
                 band1_freq: default_fm_band1_freq(),
                 band1_q: default_fm_band1_q(),
                 band1_max_gain: default_fm_band1_max_gain(),
@@ -1826,6 +1860,10 @@ impl PluginSettings {
                 band4_max_gain: default_fm_band4_max_gain(),
                 band4_slope: default_fm_band4_slope(),
                 smoothing_ms: default_fm_smoothing_ms(),
+                auto_gain_enabled: false,
+                auto_gain_max_db: default_fm_auto_gain_max_db(),
+                auto_gain_smoothing_ms: default_fm_auto_gain_smoothing_ms(),
+                auto_gain_loudness_type: 0,
             },
             PluginType::BinauralDecoder => Self::BinauralDecoder {
                 sofa_file: String::new(),

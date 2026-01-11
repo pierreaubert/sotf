@@ -8,3 +8,4 @@ pub mod settings;
 pub mod startup;
 pub mod volume;
 pub mod search;
+pub mod view_switching;

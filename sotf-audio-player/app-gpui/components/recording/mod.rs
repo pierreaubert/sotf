@@ -97,9 +97,8 @@ impl PlayerView {
         let wizard_theme = WizardTheme::from(&ui_kit_theme);
         let button_theme = ButtonTheme::from(&ui_kit_theme);
 
-        // Check if output directory is configured
-        let has_output_dir = state.app.measurement_state.recording_state.recording_base_directory.is_some();
-
+        let has_output_dir = state.app.measurement_state.recording_state.recording_directory.is_some();
+        
         // Determine if next button should be disabled
         let next_disabled = match current_step {
             RecordingStep::Config => !has_output_dir,

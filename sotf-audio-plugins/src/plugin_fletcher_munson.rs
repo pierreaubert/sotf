@@ -16,6 +16,7 @@
 // - Reference level parameter to define "flat" response point
 // - Output compensation to prevent clipping
 
+use super::auto_gain::{AutoGain, AutoGainLoudnessType, AutoGainParams};
 use super::param_specs::fletcher_munson::*;
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
@@ -70,6 +71,22 @@ fn default_smoothing_ms() -> f32 {
 
 fn default_enabled() -> bool {
     ENABLED_DEFAULT
+}
+
+fn default_auto_gain_enabled() -> bool {
+    AUTO_GAIN_ENABLED_DEFAULT
+}
+
+fn default_auto_gain_max_db() -> f32 {
+    AUTO_GAIN_MAX_DB_DEFAULT
+}
+
+fn default_auto_gain_smoothing_ms() -> f32 {
+    AUTO_GAIN_SMOOTHING_MS_DEFAULT
+}
+
+fn default_auto_gain_loudness_type() -> i32 {
+    AUTO_GAIN_LOUDNESS_TYPE_DEFAULT
 }
 
 fn default_band1() -> FletcherMunsonBand {
@@ -143,6 +160,22 @@ pub struct FletcherMunsonPluginParams {
     /// Plugin enabled/bypass
     #[serde(default = "default_enabled")]
     pub enabled: bool,
+
+    /// Auto-gain compensation enabled
+    #[serde(default = "default_auto_gain_enabled")]
+    pub auto_gain_enabled: bool,
+
+    /// Maximum auto-gain correction in dB
+    #[serde(default = "default_auto_gain_max_db")]
+    pub auto_gain_max_db: f32,
+
+    /// Auto-gain smoothing time in ms
+    #[serde(default = "default_auto_gain_smoothing_ms")]
+    pub auto_gain_smoothing_ms: f32,
+
+    /// Loudness measurement type: 0 = Momentary, 1 = ShortTerm
+    #[serde(default = "default_auto_gain_loudness_type")]
+    pub auto_gain_loudness_type: i32,
 }
 
 impl Default for FletcherMunsonPluginParams {
@@ -156,6 +189,10 @@ impl Default for FletcherMunsonPluginParams {
             band4: default_band4(),
             smoothing_ms: default_smoothing_ms(),
             enabled: default_enabled(),
+            auto_gain_enabled: default_auto_gain_enabled(),
+            auto_gain_max_db: default_auto_gain_max_db(),
+            auto_gain_smoothing_ms: default_auto_gain_smoothing_ms(),
+            auto_gain_loudness_type: default_auto_gain_loudness_type(),
         }
     }
 }
@@ -208,6 +245,21 @@ pub struct FletcherMunsonPlugin {
 
     /// Output compensation smoother
     compensation_smoother: Smoother,
+
+    /// Auto-gain compensation for loudness matching
+    auto_gain: Option<AutoGain>,
+
+    /// Auto-gain enabled state
+    auto_gain_enabled: bool,
+
+    /// Auto-gain max dB
+    auto_gain_max_db: f32,
+
+    /// Auto-gain smoothing ms
+    auto_gain_smoothing_ms: f32,
+
+    /// Auto-gain loudness type (0 = Momentary, 1 = ShortTerm)
+    auto_gain_loudness_type: i32,
 }
 
 impl FletcherMunsonPlugin {
@@ -228,6 +280,29 @@ impl FletcherMunsonPlugin {
             params.band4.clone(),
         ];
 
+        // Create auto-gain if enabled
+        let loudness_type = if params.auto_gain_loudness_type == 0 {
+            AutoGainLoudnessType::Momentary
+        } else {
+            AutoGainLoudnessType::ShortTerm
+        };
+
+        let auto_gain = if params.auto_gain_enabled {
+            AutoGain::new(
+                num_channels,
+                sample_rate,
+                AutoGainParams {
+                    enabled: true,
+                    loudness_type,
+                    max_gain_db: params.auto_gain_max_db,
+                    smoothing_ms: params.auto_gain_smoothing_ms,
+                },
+            )
+            .ok()
+        } else {
+            None
+        };
+
         let mut plugin = Self {
             num_channels,
             sample_rate,
@@ -245,6 +320,11 @@ impl FletcherMunsonPlugin {
             ],
             last_applied_gains: [0.0; NUM_BANDS],
             compensation_smoother: Smoother::new(1.0, smoothing_ms, sample_rate),
+            auto_gain,
+            auto_gain_enabled: params.auto_gain_enabled,
+            auto_gain_max_db: params.auto_gain_max_db,
+            auto_gain_smoothing_ms: params.auto_gain_smoothing_ms,
+            auto_gain_loudness_type: params.auto_gain_loudness_type,
         };
 
         plugin.rebuild_filters();
@@ -421,6 +501,50 @@ impl Plugin for FletcherMunsonPlugin {
             .with_importance(ParameterImportance::Useful),
         ];
 
+        // Auto-gain parameters
+        params.push(
+            Parameter::new_bool("auto_gain_enabled", "Auto Gain", AUTO_GAIN_ENABLED_DEFAULT)
+                .with_description("Enable automatic loudness compensation")
+                .with_group("Auto Gain")
+                .with_importance(ParameterImportance::Useful),
+        );
+        params.push(
+            Parameter::new_float(
+                "auto_gain_max_db",
+                "Max Gain",
+                AUTO_GAIN_MAX_DB_DEFAULT,
+                AUTO_GAIN_MAX_DB_MIN,
+                AUTO_GAIN_MAX_DB_MAX,
+            )
+            .with_description("Maximum auto-gain correction (dB)")
+            .with_group("Auto Gain")
+            .with_importance(ParameterImportance::Useful),
+        );
+        params.push(
+            Parameter::new_float(
+                "auto_gain_smoothing_ms",
+                "AG Smoothing",
+                AUTO_GAIN_SMOOTHING_MS_DEFAULT,
+                AUTO_GAIN_SMOOTHING_MS_MIN,
+                AUTO_GAIN_SMOOTHING_MS_MAX,
+            )
+            .with_description("Auto-gain smoothing time (ms)")
+            .with_group("Auto Gain")
+            .with_importance(ParameterImportance::FineTuning),
+        );
+        params.push(
+            Parameter::new_int(
+                "auto_gain_loudness_type",
+                "Loudness Type",
+                AUTO_GAIN_LOUDNESS_TYPE_DEFAULT,
+                0,
+                1,
+            )
+            .with_description("0=Momentary (400ms), 1=ShortTerm (3s)")
+            .with_group("Auto Gain")
+            .with_importance(ParameterImportance::FineTuning),
+        );
+
         // Band parameters
         for band_idx in 1..=NUM_BANDS {
             let (freq_default, q_default, max_gain_default, slope_default) = match band_idx {
@@ -548,6 +672,73 @@ impl Plugin for FletcherMunsonPlugin {
                 }
                 return Err("smoothing_ms must be a float".to_string());
             }
+            "auto_gain_enabled" => {
+                if let Some(v) = value.as_bool() {
+                    self.auto_gain_enabled = v;
+                    if v {
+                        // Create auto-gain if not exists
+                        if self.auto_gain.is_none() {
+                            let loudness_type = if self.auto_gain_loudness_type == 0 {
+                                AutoGainLoudnessType::Momentary
+                            } else {
+                                AutoGainLoudnessType::ShortTerm
+                            };
+                            self.auto_gain = AutoGain::new(
+                                self.num_channels,
+                                self.sample_rate,
+                                AutoGainParams {
+                                    enabled: true,
+                                    loudness_type,
+                                    max_gain_db: self.auto_gain_max_db,
+                                    smoothing_ms: self.auto_gain_smoothing_ms,
+                                },
+                            )
+                            .ok();
+                        } else if let Some(ag) = &mut self.auto_gain {
+                            ag.set_enabled(true);
+                        }
+                    } else if let Some(ag) = &mut self.auto_gain {
+                        ag.set_enabled(false);
+                    }
+                    return Ok(());
+                }
+                return Err("auto_gain_enabled must be a bool".to_string());
+            }
+            "auto_gain_max_db" => {
+                if let Some(v) = value.as_float() {
+                    self.auto_gain_max_db = v;
+                    if let Some(ag) = &mut self.auto_gain {
+                        ag.set_max_gain_db(v);
+                    }
+                    return Ok(());
+                }
+                return Err("auto_gain_max_db must be a float".to_string());
+            }
+            "auto_gain_smoothing_ms" => {
+                if let Some(v) = value.as_float() {
+                    self.auto_gain_smoothing_ms = v;
+                    if let Some(ag) = &mut self.auto_gain {
+                        ag.set_smoothing_ms(v);
+                    }
+                    return Ok(());
+                }
+                return Err("auto_gain_smoothing_ms must be a float".to_string());
+            }
+            "auto_gain_loudness_type" => {
+                if let Some(v) = value.as_int() {
+                    self.auto_gain_loudness_type = v;
+                    if let Some(ag) = &mut self.auto_gain {
+                        let loudness_type = if v == 0 {
+                            AutoGainLoudnessType::Momentary
+                        } else {
+                            AutoGainLoudnessType::ShortTerm
+                        };
+                        ag.set_loudness_type(loudness_type);
+                    }
+                    return Ok(());
+                }
+                return Err("auto_gain_loudness_type must be an int".to_string());
+            }
             _ => {}
         }
 
@@ -597,6 +788,14 @@ impl Plugin for FletcherMunsonPlugin {
             "reference_level_db" => return Some(ParameterValue::Float(self.reference_level_db)),
             "enabled" => return Some(ParameterValue::Bool(self.enabled)),
             "smoothing_ms" => return Some(ParameterValue::Float(self.smoothing_ms)),
+            "auto_gain_enabled" => return Some(ParameterValue::Bool(self.auto_gain_enabled)),
+            "auto_gain_max_db" => return Some(ParameterValue::Float(self.auto_gain_max_db)),
+            "auto_gain_smoothing_ms" => {
+                return Some(ParameterValue::Float(self.auto_gain_smoothing_ms))
+            }
+            "auto_gain_loudness_type" => {
+                return Some(ParameterValue::Int(self.auto_gain_loudness_type))
+            }
             _ => {}
         }
 
@@ -635,6 +834,13 @@ impl Plugin for FletcherMunsonPlugin {
         self.rebuild_filters();
         self.update_band_gains();
 
+        // Reinitialize auto-gain with new sample rate
+        if let Some(ag) = &mut self.auto_gain {
+            if let Err(e) = ag.set_sample_rate(sample_rate) {
+                log::warn!("Failed to set auto-gain sample rate: {}", e);
+            }
+        }
+
         Ok(())
     }
 
@@ -651,6 +857,11 @@ impl Plugin for FletcherMunsonPlugin {
             .reset(self.compensation_smoother.target());
 
         self.last_applied_gains = [0.0; NUM_BANDS];
+
+        // Reset auto-gain
+        if let Some(ag) = &mut self.auto_gain {
+            ag.reset();
+        }
     }
 
     fn process(
@@ -687,6 +898,13 @@ impl Plugin for FletcherMunsonPlugin {
             self.rebuild_filters();
         }
 
+        // Measure input for auto-gain if enabled
+        if let Some(ag) = &mut self.auto_gain {
+            if ag.is_enabled() {
+                let _ = ag.measure_input(input);
+            }
+        }
+
         // Process each frame
         for frame_idx in 0..context.num_frames {
             // Advance smoothers and get current gains
@@ -715,6 +933,14 @@ impl Plugin for FletcherMunsonPlugin {
 
                 // Apply compensation gain to prevent clipping
                 output[sample_idx] = (sample as f32) * compensation;
+            }
+        }
+
+        // Measure output and apply auto-gain compensation if enabled
+        if let Some(ag) = &mut self.auto_gain {
+            if ag.is_enabled() {
+                let _ = ag.measure_output(output);
+                ag.apply_compensation(output, context.num_frames);
             }
         }
 

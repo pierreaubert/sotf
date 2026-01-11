@@ -619,6 +619,17 @@ pub mod fletcher_munson {
 
     // Enabled default
     pub const ENABLED_DEFAULT: bool = true;
+
+    // Auto-gain parameters
+    pub const AUTO_GAIN_ENABLED_DEFAULT: bool = false;
+    pub const AUTO_GAIN_MAX_DB_DEFAULT: f32 = 12.0;
+    pub const AUTO_GAIN_MAX_DB_MIN: f32 = 0.0;
+    pub const AUTO_GAIN_MAX_DB_MAX: f32 = 24.0;
+    pub const AUTO_GAIN_SMOOTHING_MS_DEFAULT: f32 = 100.0;
+    pub const AUTO_GAIN_SMOOTHING_MS_MIN: f32 = 10.0;
+    pub const AUTO_GAIN_SMOOTHING_MS_MAX: f32 = 500.0;
+    // 0 = Momentary (400ms), 1 = ShortTerm (3s)
+    pub const AUTO_GAIN_LOUDNESS_TYPE_DEFAULT: i32 = 0;
 }
 
 pub mod multiband_expander {

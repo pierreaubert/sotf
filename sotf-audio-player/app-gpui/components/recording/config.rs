@@ -6,7 +6,13 @@ use crate::app::types::{CalibrationData, ChannelMapping, RecordingState, Speaker
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_px::{ScaleType, line};
+use gpui_px::ScaleType;
+use d3rs::axis::{AxisConfig, DefaultAxisTheme, render_axis};
+use d3rs::color::D3Color;
+use d3rs::grid::{GridConfig, render_grid};
+use d3rs::prelude::LogScale;
+use d3rs::scale::LinearScale;
+use d3rs::shape::{LineConfig, LinePoint, render_line};
 use gpui_ui_kit::{
     Accordion, AccordionItem, AccordionMode, Badge, BadgeVariant, Button, ButtonSize,
     ButtonVariant, HStack, Input, InputSize, NumberInput, NumberInputSize, Select, SelectOption,
@@ -148,7 +154,7 @@ impl PlayerView {
                     NumberInput::new("playback_channel_count")
                         .value(num_channels as f64)
                         .min(1.0)
-                        .max(16.0)
+                        .max(128.0)
                         .step(1.0)
                         .size(NumberInputSize::Sm)
                         .on_change({
@@ -242,7 +248,7 @@ impl PlayerView {
                 NumberInput::new("recording_channel_count")
                     .value(num_channels as f64)
                     .min(1.0)
-                    .max(16.0)
+                    .max(128.0)
                     .step(1.0)
                     .size(NumberInputSize::Sm)
                     .on_change({
@@ -812,7 +818,7 @@ impl PlayerView {
                                     )))
                                     .value(interface_ch as f64)
                                     .min(1.0)
-                                    .max(16.0)
+                                    .max(128.0)
                                     .step(1.0)
                                     .size(NumberInputSize::Sm)
                                     .on_change({
@@ -1134,7 +1140,7 @@ impl PlayerView {
                                         )))
                                         .value(interface_ch as f64)
                                         .min(1.0)
-                                        .max(16.0)
+                                        .max(128.0)
                                         .step(1.0)
                                         .size(NumberInputSize::Sm)
                                         .on_change({
@@ -1170,49 +1176,184 @@ impl PlayerView {
         data: &CalibrationData,
         theme: &crate::theme::Theme,
     ) -> impl IntoElement {
-        // Create the line chart with log scale on X-axis (frequency)
-        let chart_result = line(&data.frequencies, &data.spl_db)
-            .title("Microphone Calibration Curve")
-            .x_label("Frequency (Hz)")
-            .y_label("SPL (dB)")
-            .x_scale(ScaleType::Log)
-            .color(0x3b82f6) // Blue color
-            .stroke_width(2.0)
-            .size(500.0, 200.0)
-            .build();
+        let chart_width: f32 = 500.0;
+        let chart_height: f32 = 200.0;
+        let margin_left: f32 = 60.0;
+        let margin_right: f32 = 20.0;
+        let margin_top: f32 = 20.0;
+        let margin_bottom: f32 = 40.0;
 
-        match chart_result {
-            Ok(chart) => div()
-                .mt_4()
-                .p_2()
-                .bg(theme.surface)
-                .rounded_md()
-                .border_1()
-                .border_color(theme.border)
-                .child(chart)
-                .into_any_element(),
-            Err(e) => {
-                log::error!("Failed to render calibration graph: {:?}", e);
-                // Create a light red background color for error
-                let error_bg = Rgba {
-                    r: theme.error.r,
-                    g: theme.error.g,
-                    b: theme.error.b,
-                    a: 0.1,
-                };
+        let plot_width = chart_width - margin_left - margin_right;
+        let plot_height = chart_height - margin_top - margin_bottom;
+
+        let axis_theme = DefaultAxisTheme;
+
+        // Create log scale for frequency (20Hz - 20kHz)
+        let x_scale = LogScale::new()
+            .domain(20.0, 20000.0)
+            .range(0.0, plot_width as f64);
+
+        // Find y-axis range (spl_db is f64)
+        let (min_db, max_db) = data
+            .spl_db
+            .iter()
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(min, max), &v| {
+                (min.min(v), max.max(v))
+            });
+
+        // Add some padding to Y range
+        let y_min = if min_db.is_finite() { min_db - 5.0 } else { -10.0 };
+        let y_max = if max_db.is_finite() { max_db + 5.0 } else { 10.0 };
+
+        let y_scale = LinearScale::new()
+            .domain(y_min, y_max)
+            .range(plot_height as f64, 0.0);
+
+        let freq_ticks: Vec<f64> = vec![
+            20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0,
+        ];
+        
+        let mag_range = (y_max - y_min) as i32;
+        let mag_step = if mag_range > 40 {
+            10
+        } else if mag_range > 20 {
+            5
+        } else {
+            2
+        };
+        let mag_ticks: Vec<f64> = ((y_min as i32 / mag_step * mag_step)
+            ..=(y_max as i32 / mag_step * mag_step + mag_step))
+            .step_by(mag_step as usize)
+            .map(|v| v as f64)
+            .collect();
+
+        // Build line points
+        let points: Vec<LinePoint> = data.frequencies
+            .iter()
+            .zip(data.spl_db.iter())
+            .filter(|&(&f, _)| f >= 20.0 && f <= 20000.0)
+            .map(|(&f, &m)| LinePoint {
+                x: f as f64,
+                y: m as f64,
+            })
+            .collect();
+
+        // Use theme primary color for visibility (high contrast)
+        // D3Color::from_rgba expects gpui::Rgba. Theme colors are usually Hsla, which implements Into<Rgba>.
+        let stroke_color = D3Color::from_rgba(theme.text_primary.into());
+        let line_config = LineConfig::new().stroke_color(stroke_color).stroke_width(2.0);
+        let line_element = render_line(&x_scale, &y_scale, &points, &line_config).into_any_element();
+
+        div()
+            .mt_4()
+            .p_2()
+            .bg(theme.surface)
+            .rounded_md()
+            .border_1()
+            .border_color(theme.border)
+            .child(
                 div()
-                    .mt_4()
-                    .p_4()
-                    .bg(error_bg)
-                    .rounded_md()
+                    .w(px(chart_width))
+                    .h(px(chart_height))
+                    .relative()
                     .child(
-                        Text::new(format!("Failed to render graph: {:?}", e))
-                            .size(TextSize::Sm)
-                            .color(theme.error),
+                        div()
+                            .absolute()
+                            .top(px(0.0))
+                            .left(px(margin_left))
+                            .child(
+                                Text::new("Microphone Calibration Curve")
+                                    .size(TextSize::Sm)
+                                    .weight(TextWeight::Bold)
+                                    .color(theme.accent)
+                            )
                     )
-                    .into_any_element()
-            }
-        }
+                    .child(
+                        div()
+                            .absolute()
+                            .left(px(0.0))
+                            .top(px(margin_top))
+                            .w(px(margin_left))
+                            .h(px(plot_height))
+                            .child(render_axis(
+                                &y_scale,
+                                &AxisConfig::left()
+                                    .with_tick_values(mag_ticks.clone())
+                                    // LABEL: SPL (dB) - Exact casing as requested, ensuring correctness
+                                    .with_formatter(|v| format!("{:.0} dB", v)),
+                                plot_height,
+                                &axis_theme,
+                            )),
+                    )
+                    // Y-Axis Label
+                    .child(
+                         div()
+                            .absolute()
+                            .left(px(10.0))
+                            .top(px(margin_top + plot_height / 2.0 - 40.0))
+                            .w(px(20.0))
+                            .child(
+                                Text::new("SPL (dB)")
+                                    .size(TextSize::Xs)
+                                    .color(theme.text_secondary)
+                            )
+                    )
+                    .child(
+                        div()
+                            .absolute()
+                            .left(px(margin_left))
+                            .top(px(margin_top))
+                            .w(px(plot_width))
+                            .h(px(plot_height))
+                            .overflow_hidden()
+                            .child(render_grid(
+                                &x_scale,
+                                &y_scale,
+                                &GridConfig::with_lines()
+                                    .with_vertical_values(freq_ticks.clone())
+                                    .with_horizontal_values(mag_ticks),
+                                plot_width,
+                                plot_height,
+                                &axis_theme,
+                            ))
+                            .child(line_element),
+                    )
+                    .child(
+                        div()
+                            .absolute()
+                            .left(px(margin_left))
+                            .top(px(margin_top + plot_height))
+                            .w(px(plot_width))
+                            .h(px(margin_bottom))
+                            .child(render_axis(
+                                &x_scale,
+                                &AxisConfig::bottom()
+                                    .with_tick_values(freq_ticks)
+                                    .with_formatter(|f| {
+                                        if f >= 1000.0 {
+                                            format!("{:.0}k", f / 1000.0)
+                                        } else {
+                                            format!("{:.0}", f)
+                                        }
+                                    }),
+                                plot_width,
+                                &axis_theme,
+                            )),
+                    )
+                    // X-Axis Label
+                    .child(
+                        div()
+                            .absolute()
+                            .left(px(margin_left + plot_width / 2.0 - 40.0))
+                            .bottom(px(5.0))
+                            .child(
+                                Text::new("Frequency (Hz)")
+                                    .size(TextSize::Xs)
+                                    .color(theme.text_secondary)
+                            )
+                    )
+            )
+            .into_any_element()
     }
 
     /// Open file dialog to browse for calibration file

@@ -27,7 +27,7 @@ impl TestScenario for RecordingParameterCheckScenario {
 
         // 1. Navigate to Recording Page
         let mut page = RecordingPage::new(&mut driver);
-        page.navigate_to();
+        page.navigate_to_recording();
 
         // 2. Change Playback Device
         let test_device = "Buffered Output";
@@ -66,6 +66,21 @@ impl TestScenario for RecordingParameterCheckScenario {
         let (start, end) = page.get_sweep_range();
         assert!((start - 50.0).abs() < 0.001);
         assert!((end - 15000.0).abs() < 0.001);
+
+        // 9. Change Signal Level
+        let test_level = -12.5;
+        page.set_signal_level(test_level);
+        assert!((page.get_signal_level() - test_level).abs() < 0.001);
+
+        // 10. Change Mic Calibration
+        let cal_path = "/tmp/cal.txt";
+        page.set_mic_calibration(cal_path);
+        assert_eq!(page.get_mic_calibration(), Some(cal_path.to_string()));
+
+        // 11. Change Recording Directory
+        let rec_dir = "/tmp/recordings";
+        page.set_recording_directory(rec_dir);
+        assert_eq!(page.get_recording_directory(), Some(rec_dir.to_string()));
 
         Ok(())
     }

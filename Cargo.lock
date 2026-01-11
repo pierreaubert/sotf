@@ -634,9 +634,9 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "autoeq"
-version = "0.3.8"
+version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7672a47de9a243b116e51c44b00101195d0609fc1026259cddd72e961bce3043"
+checksum = "3f35afbabe43a738e1938800e861465e89e114a427e3632b7a110d9b2aabeb36"
 dependencies = [
  "anyhow",
  "autoeq-cea2034",

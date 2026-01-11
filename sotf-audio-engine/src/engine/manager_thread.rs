@@ -1275,17 +1275,32 @@ fn handle_command(
                 return ManagerResponse::Error(e);
             }
 
-            // Wait for response from processing thread
-            if let Some(response) = processing.try_recv_response() {
-                match response {
-                    super::ProcessingResponse::PluginData(data) => {
-                        ManagerResponse::PluginData(data)
+            // Wait for response from processing thread with timeout
+            // GetPluginData is time-sensitive for UI, so we wait briefly
+            let start = std::time::Instant::now();
+            let timeout = std::time::Duration::from_millis(100);
+
+            loop {
+                if let Some(response) = processing.try_recv_response() {
+                    match response {
+                        super::ProcessingResponse::PluginData(data) => {
+                            return ManagerResponse::PluginData(data);
+                        }
+                        super::ProcessingResponse::Error(e) => {
+                            return ManagerResponse::Error(e);
+                        }
+                        _ => {
+                             // Ignore unexpected responses (e.g. from previous timed out requests)
+                             continue;
+                        }
                     }
-                    super::ProcessingResponse::Error(e) => ManagerResponse::Error(e),
-                    _ => ManagerResponse::Error("Unexpected response".to_string()),
                 }
-            } else {
-                ManagerResponse::Error("No response from processing thread".to_string())
+
+                if start.elapsed() > timeout {
+                    return ManagerResponse::Error("Timeout waiting for plugin data".to_string());
+                }
+
+                std::thread::yield_now();
             }
         }
         ManagerCommand::ReloadConfig => {

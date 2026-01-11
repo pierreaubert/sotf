@@ -1,7 +1,7 @@
 //! Fletcher-Munson Loudness Compensation Plugin UI
 
 use super::common::{
-    ParamSectionStyle, render_edit_hints, render_knob, render_section_title,
+    ParamSectionStyle, render_edit_hints, render_knob, render_section_title, render_toggle,
 };
 use crate::app::AppState;
 use crate::theme::Theme;
@@ -34,6 +34,11 @@ pub struct FletcherMunsonRenderState {
     pub band4_slope: f64,
     // Smoothing
     pub smoothing_ms: f64,
+    // Auto-gain
+    pub auto_gain_enabled: bool,
+    pub auto_gain_max_db: f64,
+    pub auto_gain_smoothing_ms: f64,
+    pub auto_gain_loudness_type: i32,
     // UI state
     pub is_editing: bool,
     pub selected_param: usize,
@@ -89,7 +94,7 @@ pub fn render_fletcher_munson_plugin(
                     -40.0,
                     0.0,
                     "dB",
-                    0,
+                    1, // Corrected index (was 0)
                     state.selected_param,
                     state.is_editing,
                     None,
@@ -103,7 +108,7 @@ pub fn render_fletcher_munson_plugin(
                     1.0,
                     200.0,
                     "ms",
-                    1,
+                    3, // Corrected index (was 1)
                     state.selected_param,
                     state.is_editing,
                     None,
@@ -155,6 +160,66 @@ pub fn render_fletcher_munson_plugin(
                         ),
                 ),
         )
+        // Auto-gain section
+        .child(
+            div()
+                .flex()
+                .gap_4()
+                .items_center()
+                .child(render_section_title("AUTO GAIN", theme))
+                .child(render_toggle(
+                    entity.clone(),
+                    plugin_idx,
+                    "Enabled",
+                    state.auto_gain_enabled,
+                    4, // Auto-gain enabled index
+                    state.selected_param,
+                    state.is_editing,
+                    theme,
+                ))
+                .child(render_knob(
+                    entity.clone(),
+                    plugin_idx,
+                    "Max Gain",
+                    state.auto_gain_max_db,
+                    0.0,
+                    24.0,
+                    "dB",
+                    5, // Corrected index (was 21)
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
+                ))
+                .child(render_knob(
+                    entity.clone(),
+                    plugin_idx,
+                    "AG Smooth",
+                    state.auto_gain_smoothing_ms,
+                    10.0,
+                    500.0,
+                    "ms",
+                    6, // Corrected index (was 22)
+                    state.selected_param,
+                    state.is_editing,
+                    None,
+                    theme,
+                ))
+                .child(render_toggle(
+                    entity.clone(),
+                    plugin_idx,
+                    if state.auto_gain_loudness_type == 0 {
+                        "Momentary"
+                    } else {
+                        "ShortTerm"
+                    },
+                    state.auto_gain_loudness_type == 1,
+                    7, // Auto-gain type index
+                    state.selected_param,
+                    state.is_editing,
+                    theme,
+                )),
+        )
         // Bands - 2x2 grid
         .child(
             div()
@@ -175,7 +240,7 @@ pub fn render_fletcher_munson_plugin(
                             state.band1_max_gain,
                             state.band1_slope,
                             band1_current,
-                            2, // param offset
+                            8, // Corrected index (was 4/2)
                             state.selected_param,
                             state.is_editing,
                             theme,
@@ -189,7 +254,7 @@ pub fn render_fletcher_munson_plugin(
                             state.band2_max_gain,
                             state.band2_slope,
                             band2_current,
-                            6, // param offset
+                            12, // Corrected index (was 8/6)
                             state.selected_param,
                             state.is_editing,
                             theme,
@@ -209,7 +274,7 @@ pub fn render_fletcher_munson_plugin(
                             state.band3_max_gain,
                             state.band3_slope,
                             band3_current,
-                            10, // param offset
+                            16, // Corrected index (was 12/10)
                             state.selected_param,
                             state.is_editing,
                             theme,
@@ -223,14 +288,14 @@ pub fn render_fletcher_munson_plugin(
                             state.band4_max_gain,
                             state.band4_slope,
                             band4_current,
-                            14, // param offset
+                            20, // Corrected index (was 16/14)
                             state.selected_param,
                             state.is_editing,
                             theme,
                         )),
                 ),
         )
-        .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
+        // .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
 }
 
 /// Render a single band section with freq, Q, max gain, slope, and current gain display

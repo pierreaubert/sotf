@@ -290,5 +290,5 @@ pub fn render_compressor_plugin(
                         .child(render_gr_meter(meter_value, -30.0, theme)),
                 ),
         )
-        .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
+        // .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
 }

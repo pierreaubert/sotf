@@ -1,6 +1,6 @@
 [package]
 name = "gpui-ui-kit"
-version.workspace = true
+version = "0.5.10"
 authors.workspace = true
 edition.workspace = true
 description = "A reusable UI component library for GPUI applications"
@@ -19,7 +19,7 @@ serde_json = { workspace = true }
 uuid = { workspace = true }
 
 # Proc macros for theme generation
-gpui-ui-kit-macros = { path = "gpui-ui-kit-macros" }
+gpui-ui-kit-macros = { version = "0.5.10", path = "gpui-ui-kit-macros" }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }

@@ -1199,6 +1199,10 @@ impl PluginEditingManager for App {
                     band4_q,
                     band4_max_gain,
                     band4_slope,
+                    auto_gain_enabled,
+                    auto_gain_max_db,
+                    auto_gain_smoothing_ms,
+                    auto_gain_loudness_type,
                     ..
                 } => match param_idx {
                     0 => {
@@ -1275,6 +1279,24 @@ impl PluginEditingManager for App {
                     }
                     17 => {
                         *band4_slope = (*band4_slope + delta * 0.05).clamp(0.0, 1.0);
+                        true
+                    }
+                    // Auto-gain parameters (offset 18)
+                    18 => {
+                        *auto_gain_enabled = !*auto_gain_enabled;
+                        true
+                    }
+                    19 => {
+                        *auto_gain_max_db = (*auto_gain_max_db + delta).clamp(0.0, 24.0);
+                        true
+                    }
+                    20 => {
+                        *auto_gain_smoothing_ms =
+                            (*auto_gain_smoothing_ms + delta * 10.0).clamp(10.0, 500.0);
+                        true
+                    }
+                    21 => {
+                        *auto_gain_loudness_type = if *auto_gain_loudness_type == 0 { 1 } else { 0 };
                         true
                     }
                     _ => false,
@@ -2238,6 +2260,119 @@ impl PluginEditingManager for App {
                     }
                     _ => {}
                 },
+                PluginSettings::FletcherMunson {
+                    playback_volume_db,
+                    reference_level_db,
+                    enabled,
+                    smoothing_ms,
+                    auto_gain_enabled,
+                    auto_gain_max_db,
+                    auto_gain_smoothing_ms,
+                    auto_gain_loudness_type,
+                    band1_freq,
+                    band1_q,
+                    band1_max_gain,
+                    band1_slope,
+                    band2_freq,
+                    band2_q,
+                    band2_max_gain,
+                    band2_slope,
+                    band3_freq,
+                    band3_q,
+                    band3_max_gain,
+                    band3_slope,
+                    band4_freq,
+                    band4_q,
+                    band4_max_gain,
+                    band4_slope,
+                } => {
+                    use sotf_audio_player::param_specs::fletcher_munson::*;
+                    match param_idx {
+                        0 => {
+                            *playback_volume_db = value.clamp(
+                                PLAYBACK_VOLUME_DB_MIN as f64,
+                                PLAYBACK_VOLUME_DB_MAX as f64,
+                            );
+                            update_needed = true;
+                        }
+                        1 => {
+                            *reference_level_db = value.clamp(
+                                REFERENCE_LEVEL_DB_MIN as f64,
+                                REFERENCE_LEVEL_DB_MAX as f64,
+                            );
+                            update_needed = true;
+                        }
+                        2 => {
+                            *enabled = value > 0.5;
+                            update_needed = true;
+                        }
+                        3 => {
+                            *smoothing_ms =
+                                value.clamp(SMOOTHING_MS_MIN as f64, SMOOTHING_MS_MAX as f64);
+                            update_needed = true;
+                        }
+                        4 => {
+                            *auto_gain_enabled = value > 0.5;
+                            update_needed = true;
+                        }
+                        5 => {
+                            *auto_gain_max_db = value.clamp(
+                                AUTO_GAIN_MAX_DB_MIN as f64,
+                                AUTO_GAIN_MAX_DB_MAX as f64,
+                            );
+                            update_needed = true;
+                        }
+                        6 => {
+                            *auto_gain_smoothing_ms = value.clamp(
+                                AUTO_GAIN_SMOOTHING_MS_MIN as f64,
+                                AUTO_GAIN_SMOOTHING_MS_MAX as f64,
+                            );
+                            update_needed = true;
+                        }
+                        7 => {
+                            *auto_gain_loudness_type = (value as i32).clamp(0, 1);
+                            update_needed = true;
+                        }
+                        _ => {
+                            if param_idx >= 8 && param_idx < 24 {
+                                let rel_idx = param_idx - 8;
+                                let band_idx = (rel_idx / 4) + 1;
+                                let field_idx = rel_idx % 4;
+
+                                let (freq, q, max_gain, slope) = match band_idx {
+                                    1 => (band1_freq, band1_q, band1_max_gain, band1_slope),
+                                    2 => (band2_freq, band2_q, band2_max_gain, band2_slope),
+                                    3 => (band3_freq, band3_q, band3_max_gain, band3_slope),
+                                    4 => (band4_freq, band4_q, band4_max_gain, band4_slope),
+                                    _ => return,
+                                };
+
+                                match field_idx {
+                                    0 => {
+                                        *freq = value
+                                            .clamp(BAND_FREQ_MIN as f64, BAND_FREQ_MAX as f64);
+                                        update_needed = true;
+                                    }
+                                    1 => {
+                                        *q = value.clamp(BAND_Q_MIN as f64, BAND_Q_MAX as f64);
+                                        update_needed = true;
+                                    }
+                                    2 => {
+                                        *max_gain = value
+                                            .clamp(BAND_MAX_GAIN_MIN as f64, BAND_MAX_GAIN_MAX as f64);
+                                        update_needed = true;
+                                    }
+                                    3 => {
+                                        *slope =
+                                            value.clamp(BAND_SLOPE_MIN as f64, BAND_SLOPE_MAX as f64);
+                                        update_needed = true;
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -2516,6 +2651,78 @@ impl PluginEditingManager for App {
                 7 => *gain_smoothing_ms,
                 8 => *mix_transition_ms,
                 _ => return,
+            },
+            PluginSettings::FletcherMunson {
+                playback_volume_db,
+                reference_level_db,
+                enabled,
+                smoothing_ms,
+                auto_gain_enabled,
+                auto_gain_max_db,
+                auto_gain_smoothing_ms,
+                auto_gain_loudness_type,
+                band1_freq,
+                band1_q,
+                band1_max_gain,
+                band1_slope,
+                band2_freq,
+                band2_q,
+                band2_max_gain,
+                band2_slope,
+                band3_freq,
+                band3_q,
+                band3_max_gain,
+                band3_slope,
+                band4_freq,
+                band4_q,
+                band4_max_gain,
+                band4_slope,
+            } => match param_idx {
+                0 => *playback_volume_db as f64,
+                1 => *reference_level_db as f64,
+                2 => {
+                    if *enabled {
+                        1.0
+                    } else {
+                        0.0
+                    }
+                }
+                3 => *smoothing_ms as f64,
+                4 => {
+                    if *auto_gain_enabled {
+                        1.0
+                    } else {
+                        0.0
+                    }
+                }
+                5 => *auto_gain_max_db as f64,
+                6 => *auto_gain_smoothing_ms as f64,
+                7 => *auto_gain_loudness_type as f64,
+                _ => {
+                    if param_idx >= 8 && param_idx < 24 {
+                        let rel_idx = param_idx - 8;
+                        let band_idx = (rel_idx / 4) + 1;
+                        let field_idx = rel_idx % 4;
+
+                        let (freq, q, max_gain, slope) = match band_idx {
+                            1 => (band1_freq, band1_q, band1_max_gain, band1_slope),
+                            2 => (band2_freq, band2_q, band2_max_gain, band2_slope),
+                            3 => (band3_freq, band3_q, band3_max_gain, band3_slope),
+                            4 => (band4_freq, band4_q, band4_max_gain, band4_slope),
+                            _ => return,
+                        };
+
+                        match field_idx {
+                            0 => *freq,
+                            1 => *q,
+                            2 => *max_gain,
+                            3 => *slope,
+                            _ => return,
+                        }
+                    } else {
+                        return;
+                    }
+                }
             },
             _ => return,
         };
@@ -2977,6 +3184,6 @@ pub fn get_param_count(settings: &PluginSettings) -> usize {
         PluginSettings::Denoiser { .. } => 7, // reduction_db, floor_db, smoothing, attack_ms, release_ms, low_latency, polyphonic_detection
         PluginSettings::Pnd { .. } => 3, // correction_strength, analysis_window_ms, drift_smoothing
         PluginSettings::ABCompare { .. } => 9, // mix, mix_mode, selected_path, bypass, auto_gain_enabled, loudness_type, max_auto_gain_db, gain_smoothing_ms, mix_transition_ms
-        PluginSettings::FletcherMunson { .. } => 18, // reference_level, smoothing, 4 bands x 4 params each
+        PluginSettings::FletcherMunson { .. } => 22, // reference_level, smoothing, 4 bands x 4 params each, + 4 auto-gain params
     }
 }
