@@ -1,0 +1,21 @@
+[package]
+name = "plugins-ffi"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "C FFI bindings for SOTF audio plugins (for Audio Unit integration)"
+license.workspace = true
+
+[lib]
+crate-type = ["staticlib", "cdylib"]
+
+[target.'cfg(target_os = "macos")'.dependencies]
+plugins = { workspace = true }
+engine = { workspace = true }
+math-iir-fir = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.build-dependencies]
+cbindgen = { workspace = true }

@@ -10,14 +10,14 @@ SOTF is a comprehensive Rust workspace for audio optimization, playback, and aco
 
 ## Architecture
 
-### 1. Audio Engine (`sotf-audio-engine`)
+### 1. Audio Engine (`engine`)
 A native Rust engine replacing external dependencies like CamillaDSP.
 -   **Threading Model:**
     -   `Decoder`: Reads/decodes files (Symphonia) to PCM.
     -   `Processing`: Applies plugin chain (EQ, Compressor, etc.).
     -   `Playback`: Outputs to hardware (cpal).
     -   `Manager`: Coordinates threads and config.
--   **Plugins (`sotf-audio-plugins`):** JSON-configurable DSP modules (PEQ, Convolution, Upmixer, Loudness). Hot-reloadable.
+-   **Plugins (`plugins`):** JSON-configurable DSP modules (PEQ, Convolution, Upmixer, Loudness). Hot-reloadable.
 -   **Decoding:** Supports FLAC, MP3, AAC, ALAC, Vorbis, WAV via `symphonia`.
 
 ### 2. AutoEQ (`autoeq`)
@@ -31,8 +31,8 @@ CLI tools for frequency response optimization.
 -   **`math-solvers`:** Linear algebra solvers (GMRES, ILU) with parallel execution.
 
 ### 4. Applications
--   **`sotf-audio-player/app-tui`:** Production-ready terminal music player. Supports library scanning and ReplayGain.
--   **`sotf-audio-player/app-gpui`:** Experimental GUI player using Zed's GPUI framework.
+-   **`player/app-tui`:** Production-ready terminal music player. Supports library scanning and ReplayGain.
+-   **`player/app-gpui`:** Experimental GUI player using Zed's GPUI framework.
 -   **`sotf-macos-hal`:** macOS CoreAudio HAL driver for system-wide audio processing.
 
 ## Build and Run
@@ -68,9 +68,9 @@ The project uses `just` as a command runner.
 ## Directory Structure
 
 -   `autoeq/`: Core AutoEQ CLI and optimization logic.
--   `sotf-audio-engine/`: Core audio processing (threads, I/O, DSP).
--   `sotf-audio-plugins/`: DSP plugin implementations.
--   `sotf-audio-player/`: Shared player logic and TUI/GUI apps.
+-   `engine/`: Core audio processing (threads, I/O, DSP).
+-   `plugins/`: DSP plugin implementations.
+-   `player/`: Shared player logic and TUI/GUI apps.
 -   `math-*/`: Mathematical libraries (BEM, FEM, DE, Solvers).
 -   `gpui-*/`: UI libraries based on GPUI.
 -   `sotf-macos-hal/`: macOS Audio Server Plug-in.
@@ -88,4 +88,4 @@ The project uses `just` as a command runner.
 
 -   **Complex Tasks:** Use `codebase_investigator` to map dependencies or understand flow before refactoring.
 -   **Planning:** Use `write_todos` for multi-step implementations.
--   **Verification:** Run relevant tests after changes. For audio engine changes, verify compilation of `sotf-audio-engine`.
+-   **Verification:** Run relevant tests after changes. For audio engine changes, verify compilation of `engine`.

@@ -42,7 +42,7 @@ just install-...
 ```
 On Windows,
 ```shell
-.\sotf-audio-player\windows\build-windows.bat
+.\player\windows\build-windows.bat
 ```
 
 Then run post-install and download various data files
@@ -72,9 +72,9 @@ The code is in 3 parts:
 - [math-audio](https://github.com/pierreaubert/math-audio) : a toolkit for DSP processing, FEM and BEM simulations
 - [autoeq](https://github.com/pierreaubert/autoeq) : a toolkit for generating EQ from measurements (IIR, FIR, MSO, DSO etc)
 - this repository [sotf](https://github.com/pierreaubert/sotf) which is mostly the UI and TUI and the audio backend. It also as a GPUI toolkit with components and plots (see below).
-  - sotf-audio-engine : an audio engine (process streams or files and output pcm to your audio device)
-  - sotf-audio-plugins: a set of audio plugins
-  - sotf-audio-player: a library and 2 players one terminal based and one with a native UI.
+  - engine : an audio engine (process streams or files and output pcm to your audio device)
+  - plugins: a set of audio plugins
+  - player: a library and 2 players one terminal based and one with a native UI.
 
 Why did you not reuse more code? The goal was to learn Rust and to learn other things I always wondered about:
 - How to write an audio player? I took inspiration from camilladsp and wrote my own. I could have use Camilla (and I did at the beginning)
@@ -137,7 +137,7 @@ A theme editor
 
 Status: experimental
 
-### sotf-audio-*
+### sotf-*
 
 This backend take care of all the Audio activities (from recording to playing). It also provides support for IIR filters, SPL computations etc.
 
@@ -167,13 +167,13 @@ It does have interfaces to demonstrate how the system works:
 - A better looking interface is in construction on src-gpui-player but not ready for general use at all.
 
 Status:
-- sotf-audio-engine: production quality
-- sotf-audio-plugins: code is good but some plugins need tuning.
-- sotf-audio-plugins/src-ffi: beta quality
+- engine: production quality
+- plugins: code is good but some plugins need tuning.
+- plugins/src-ffi: beta quality
 - gpui-au: a bridge between AUv3 plugin and gpui
-- sotf-audio-player: production quality
-- sotf-audio-player/app-tui: good quality, can scan by 4k albums and play them with an TUI interface. It is good for testing parameters and plugins.
-- sotf-audio-player/app-gpui: experimental status
+- player: production quality
+- player/app-tui: good quality, can scan by 4k albums and play them with an TUI interface. It is good for testing parameters and plugins.
+- player/app-gpui: experimental status
 
 
 ### MacOS specific: sotf-macos-hal

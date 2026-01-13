@@ -6,9 +6,6 @@
 # should be done automatically
 dyld_fallback_library_path := '/Applications/Xcode.app/Contents/Framework'
 
-# opencv
-opencv_haarcascades_path := '/opt/homebrew/Cellar/opencv/4.12.0_15/share/opencv4/haarcascades'
-
 default:
 	just --list
 
@@ -16,29 +13,26 @@ default:
 # Downloads
 # ----------------------------------------------------------------------
 
-download-once: download-sofa download-world-atlas generate-audio-tests
+download-once: download-sofa generate-audio-tests
 
 download-sofa:
 	mkdir -p data_cached/org.sofacoustics/mit
 	wget -O data_cached/org.sofacoustics/mit/kemar_normal_pinna.sofa https://sofacoustics.org/data/database/mit/mit_kemar_normal_pinna.sofa
 	wget -O data_cached/org.sofacoustics/mit/kemar_large.sofa https://sofacoustics.org/data/database/mit/mit_kemar_large_pinna.sofa
 
-download-world-atlas:
-	wget -q -O gpui-d3rs/bin/showcase/data/land-50m.json https://cdn.jsdelivr.net/npm/world-atlas@2/land-50m.json
-
 convert-sofa-to-sqlite:
 	@for sofa in data_cached/org.sofacoustics/mit/*.sofa; do \
 		hrtfdb="$${sofa%.sofa}.hrtfdb"; \
 		if [ ! -f "$$hrtfdb" ]; then \
 			echo "Converting $$sofa -> $$hrtfdb"; \
-			cargo run --bin sofa_to_sqlite -p sotf-audio-plugins --features=sofa_support --release -- "$$sofa" "$$hrtfdb"; \
+			cargo run --bin sofa-to-sqlite -p tools --features=sofa_support --release -- "$$sofa" "$$hrtfdb"; \
 		else \
 			echo "Skipping $$sofa (already converted)"; \
 		fi \
 	done
 
 generate-audio-tests: prod-generate-audio-tests
-	cargo run --bin generate-audio-tests --release
+	cargo run --bin generate-audio-tests -p tools --release
 
 # ----------------------------------------------------------------------
 # TEST
@@ -72,19 +66,19 @@ ntest:
 # Run the GPUI player (debug mode with ad-hoc signing for macOS file dialogs)
 run-gpui:
 	cargo build --bin SotF
-	codesign --force --deep --sign - --entitlements sotf-audio-player/macos/debug.entitlements target/debug/SotF
+	codesign --force --deep --sign - --entitlements scripts/debug.entitlements target/debug/SotF
 	./target/debug/SotF
 
 # Run the GPUI player (release mode)
 run-gpui-release:
 	cargo build --release --bin SotF
-	codesign --force --deep --sign - --entitlements sotf-audio-player/macos/entitlements.plist target/release/SotF
+	codesign --force --deep --sign - --entitlements scripts/entitlements.plist target/release/SotF
 	./target/release/SotF
 
 # Run the GPUI player (release mode)
 run-gpui-leaks:
 	RUSTFLAGS="-C debuginfo=2" cargo build --release --bin SotF
-	codesign --force --deep --sign - --entitlements sotf-audio-player/macos/entitlements.plist target/release/SotF
+	codesign --force --deep --sign - --entitlements scripts/entitlements.plist target/release/SotF
 	./target/release/SotF
 
 # Run the TUI player
@@ -113,13 +107,12 @@ alias build := prod
 prod: prod-workspace prod-sotf-player prod-sotf-recorder prod-generate-audio-tests
 
 prod-generate-audio-tests:
-	cargo build --release --bin generate-audio-tests -p sotf-audio-engine
+	cargo build --release --bin generate-audio-tests -p tools
 
 prod-workspace:
 	cargo build --release --workspace
 
 prod-sotf-player: prod-sotf-tui prod-sotf-gpui
-	cargo build --release --bin sotf-player
 
 prod-sotf-gpui:
 	cargo build --release --bin SotF -p sotf-gpui
@@ -128,10 +121,10 @@ prod-sotf-tui:
 	cargo build --release --bin sotf-tui -p sotf-tui
 
 prod-sotf-recorder:
-	cargo build --release --bin sotf-recorder
+	cargo build --release --bin sotf-recorder-cli -p app-cli
 
 prod-hal:
-	cargo build --release -p soft-hal
+	cargo build --release -p driver-hal
 
 # shortcuts
 tui:
@@ -143,10 +136,10 @@ gpui:
 gpui-release-macos:
 	#!/usr/bin/env bash
 	set -euo pipefail
-	sh -x ./sotf-audio-player/macos/build-dmg.sh --sign --notarize
+	sh -x ./scripts/build-dmg.sh --sign --notarize
 
 gpui-release-windows:
-	echo "cd sotf-audio-player/windows and launch the bat script"
+	echo "cd scripts and launch build-windows.bat or build-windows.ps1"
 
 # ----------------------------------------------------------------------
 # AUDIO UNIT (macOS only)
@@ -157,30 +150,30 @@ build-au-rust:
 	#!/usr/bin/env bash
 	set -euxo pipefail
 	# Build for both architectures
-	cargo build --release -p sotf-audio-plugins-ffi --target x86_64-apple-darwin
-	cargo build --release -p sotf-audio-plugins-ffi --target aarch64-apple-darwin
+	cargo build --release -p plugins-ffi --target x86_64-apple-darwin
+	cargo build --release -p plugins-ffi --target aarch64-apple-darwin
 	cargo build --release -p gpui-au --target x86_64-apple-darwin
 	cargo build --release -p gpui-au --target aarch64-apple-darwin
 	# Create universal binaries
-	mkdir -p sotf-audio-plugins/src-au/Resources
+	mkdir -p crates/plugins-au/Resources
 	lipo -create \
 		target/x86_64-apple-darwin/release/libsotf_audio_plugins_ffi.a \
 		target/aarch64-apple-darwin/release/libsotf_audio_plugins_ffi.a \
-		-output sotf-audio-plugins/src-au/Resources/libsotf_audio_plugins_ffi.a
+		-output crates/plugins-au/Resources/libsotf_audio_plugins_ffi.a
 	lipo -create \
 		target/x86_64-apple-darwin/release/libgpui_au.a \
 		target/aarch64-apple-darwin/release/libgpui_au.a \
-		-output sotf-audio-plugins/src-au/Resources/libgpui_au.a
+		-output crates/plugins-au/Resources/libgpui_au.a
 	# Copy header files
-	cp sotf-audio-plugins/src-ffi/sotf_audio_plugin_ffi.h sotf-audio-plugins/src-au/Shared/
-	cp gpui-au/GPUIBridge.h sotf-audio-plugins/src-au/Shared/
+	cp crates/plugins-ffi/sotf_audio_plugin_ffi.h crates/plugins-au/Shared/
+	cp crates/plugins-gpui/GPUIBridge.h crates/plugins-au/Shared/
 	echo "✅ Universal Rust FFI libraries created"
 
 # Build Audio Unit plugins in Xcode
 build-au-swift: build-au-rust
 	#!/usr/bin/env bash
 	set -euxo pipefail
-	cd sotf-audio-plugins/src-au
+	cd crates/plugins-au
 	# Generate Xcode project with XcodeGen
 	if [ ! -d "SOTFAudioUnits.xcodeproj" ] || [ "project.yml" -nt "SOTFAudioUnits.xcodeproj/project.pbxproj" ]; then
 		echo "🔨 Generating Xcode project with XcodeGen..."
@@ -233,9 +226,9 @@ build-au: build-au-rust build-au-swift
 # ----------------------------------------------------------------------
 
 bench:
-	cargo run --release --bin binaural-decoder-benchmark
-	cargo run --release --bin upmixer-benchmark
-	cargo run --release --bin compressor-benchmark
+	cargo bench -p plugins --bench binaural-decoder-benchmark
+	cargo bench -p plugins --bench upmixer-benchmark
+	cargo bench -p plugins --bench compressor-benchmark
 
 # ----------------------------------------------------------------------
 # CLEAN

@@ -196,6 +196,60 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 
 [[package]]
+name = "app-cli"
+version = "0.5.11"
+dependencies = [
+ "autoeq-env",
+ "chrono",
+ "clap",
+ "cpal",
+ "criterion",
+ "ctrlc",
+ "directories 6.0.0",
+ "driver-hal",
+ "ebur128",
+ "engine",
+ "env_logger",
+ "hound",
+ "id3",
+ "libc",
+ "log",
+ "math-iir-fir",
+ "metaflac",
+ "ndarray 0.17.1",
+ "notify",
+ "num-complex",
+ "parking_lot",
+ "plugins",
+ "rand 0.9.2",
+ "realfft",
+ "rtrb",
+ "rubato",
+ "rusqlite",
+ "rustfft",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "signal-hook 0.4.1",
+ "symphonia",
+ "symphonia-bundle-flac",
+ "symphonia-bundle-mp3",
+ "symphonia-codec-aac",
+ "symphonia-codec-alac",
+ "symphonia-codec-pcm",
+ "symphonia-codec-vorbis",
+ "symphonia-core",
+ "symphonia-format-isomp4",
+ "symphonia-format-ogg",
+ "symphonia-format-riff",
+ "symphonia-metadata",
+ "tempfile",
+ "tokio",
+ "walkdir",
+ "which 8.0.0",
+]
+
+[[package]]
 name = "approx"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2437,6 +2491,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "75b325c5dbd37f80359721ad39aca5a29fb04c89279657cffdda8736d0c0b9d2"
 
 [[package]]
+name = "driver-hal"
+version = "0.5.11"
+dependencies = [
+ "anyhow",
+ "core-foundation 0.10.0",
+ "core-foundation-sys",
+ "coreaudio-sys",
+ "crossbeam",
+ "env_logger",
+ "libc",
+ "log",
+ "rb",
+ "tempfile",
+ "thiserror 2.0.17",
+]
+
+[[package]]
 name = "dtor"
 version = "0.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2521,6 +2592,61 @@ name = "endi"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "66b7e2430c6dff6a955451e2cfc438f09cea1965a9d6f87f7e3b90decc014099"
+
+[[package]]
+name = "engine"
+version = "0.5.11"
+dependencies = [
+ "autoeq-env",
+ "chrono",
+ "clap",
+ "cpal",
+ "criterion",
+ "crossterm",
+ "ctrlc",
+ "directories 6.0.0",
+ "driver-hal",
+ "ebur128",
+ "env_logger",
+ "hound",
+ "id3",
+ "libc",
+ "log",
+ "math-iir-fir",
+ "metaflac",
+ "ndarray 0.17.1",
+ "notify",
+ "num-complex",
+ "parking_lot",
+ "plugins",
+ "rand 0.9.2",
+ "ratatui",
+ "realfft",
+ "rtrb",
+ "rubato",
+ "rusqlite",
+ "rustfft",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "signal-hook 0.4.1",
+ "symphonia",
+ "symphonia-bundle-flac",
+ "symphonia-bundle-mp3",
+ "symphonia-codec-aac",
+ "symphonia-codec-alac",
+ "symphonia-codec-pcm",
+ "symphonia-codec-vorbis",
+ "symphonia-core",
+ "symphonia-format-isomp4",
+ "symphonia-format-ogg",
+ "symphonia-format-riff",
+ "symphonia-metadata",
+ "tempfile",
+ "tokio",
+ "walkdir",
+ "which 8.0.0",
+]
 
 [[package]]
 name = "enumflags2"
@@ -3445,7 +3571,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-au"
-version = "0.5.10"
+version = "0.5.11"
 dependencies = [
  "cocoa 0.26.0",
  "core-foundation 0.10.0",
@@ -3459,17 +3585,14 @@ dependencies = [
  "metal 0.33.0",
  "objc",
  "parking_lot",
+ "player",
  "rust-embed",
- "sotf-audio-player",
 ]
 
 [[package]]
 name = "gpui-d3rs"
-version = "0.5.10"
+version = "0.6.0"
 dependencies = [
- "approx",
- "autoeq",
- "autoeq-cea2034",
  "bytemuck",
  "delaunator",
  "fontdue",
@@ -3477,45 +3600,26 @@ dependencies = [
  "gpui",
  "gpui-ui-kit",
  "image",
- "ndarray 0.17.1",
  "pollster 0.4.0",
  "regex",
- "reqwest",
  "serde",
  "serde_json",
- "tokio",
- "urlencoding",
  "wgpu",
 ]
 
 [[package]]
 name = "gpui-px"
-version = "0.5.10"
+version = "0.6.0"
 dependencies = [
- "autoeq",
  "gpui",
  "gpui-d3rs",
  "gpui-ui-kit",
- "reqwest",
  "thiserror 2.0.17",
- "tokio",
- "urlencoding",
-]
-
-[[package]]
-name = "gpui-themes"
-version = "0.5.10"
-dependencies = [
- "gpui",
- "gpui-ui-kit",
- "gpui_macros",
- "serde",
- "serde_json",
 ]
 
 [[package]]
 name = "gpui-ui-kit"
-version = "0.5.10"
+version = "0.6.0"
 dependencies = [
  "gpui",
  "gpui-ui-kit-macros",
@@ -3526,7 +3630,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-ui-kit-macros"
-version = "0.5.10"
+version = "0.6.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6275,6 +6379,70 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 
 [[package]]
+name = "player"
+version = "0.5.11"
+dependencies = [
+ "anyhow",
+ "autoeq",
+ "autoeq-cea2034",
+ "autoeq-env",
+ "bliss-audio",
+ "chrono",
+ "clap",
+ "directories 6.0.0",
+ "ebur128",
+ "engine",
+ "env_logger",
+ "image",
+ "log",
+ "math-iir-fir",
+ "ndarray 0.17.1",
+ "ndarray-linalg",
+ "num-complex",
+ "num_cpus",
+ "parking_lot",
+ "player",
+ "plugins",
+ "rubato",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "symphonia",
+ "symphonia-bundle-flac",
+ "symphonia-bundle-mp3",
+ "symphonia-codec-aac",
+ "symphonia-core",
+ "symphonia-format-isomp4",
+ "symphonia-format-ogg",
+ "symphonia-format-riff",
+ "symphonia-metadata",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tokio",
+ "unicode-normalization",
+ "uuid",
+ "walkdir",
+]
+
+[[package]]
+name = "player-midi"
+version = "0.5.11"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "dirs 6.0.0",
+ "env_logger",
+ "log",
+ "midir",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tokio",
+]
+
+[[package]]
 name = "plotly"
 version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6334,6 +6502,75 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "51bae2ac328883f7acdfea3d66a7c35751187f870bc81f94563733a154d7a670"
 dependencies = [
  "plotters-backend",
+]
+
+[[package]]
+name = "plugins"
+version = "0.5.11"
+dependencies = [
+ "anyhow",
+ "autoeq-env",
+ "bincode",
+ "chrono",
+ "clap",
+ "cpal",
+ "criterion",
+ "ctrlc",
+ "directories 6.0.0",
+ "driver-hal",
+ "ebur128",
+ "env_logger",
+ "hound",
+ "id3",
+ "libc",
+ "log",
+ "math-iir-fir",
+ "metaflac",
+ "ndarray 0.17.1",
+ "netcdf",
+ "notify",
+ "parking_lot",
+ "proptest",
+ "rand 0.9.2",
+ "rayon",
+ "realfft",
+ "rubato",
+ "rusqlite",
+ "rustfft",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "signal-hook 0.4.1",
+ "symphonia",
+ "symphonia-bundle-flac",
+ "symphonia-bundle-mp3",
+ "symphonia-codec-aac",
+ "symphonia-codec-alac",
+ "symphonia-codec-pcm",
+ "symphonia-codec-vorbis",
+ "symphonia-core",
+ "symphonia-format-isomp4",
+ "symphonia-format-ogg",
+ "symphonia-format-riff",
+ "symphonia-metadata",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tokio",
+ "walkdir",
+ "which 8.0.0",
+]
+
+[[package]]
+name = "plugins-ffi"
+version = "0.5.11"
+dependencies = [
+ "cbindgen 0.29.2",
+ "engine",
+ "log",
+ "math-iir-fir",
+ "plugins",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -8033,202 +8270,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "sotf-audio-engine"
-version = "0.5.10"
-dependencies = [
- "autoeq-env",
- "chrono",
- "clap",
- "cpal",
- "criterion",
- "crossterm",
- "ctrlc",
- "directories 6.0.0",
- "ebur128",
- "env_logger",
- "hound",
- "id3",
- "libc",
- "log",
- "math-iir-fir",
- "metaflac",
- "ndarray 0.17.1",
- "notify",
- "num-complex",
- "parking_lot",
- "rand 0.9.2",
- "ratatui",
- "realfft",
- "rtrb",
- "rubato",
- "rusqlite",
- "rustfft",
- "serde",
- "serde_json",
- "serde_yaml",
- "signal-hook 0.4.1",
- "sotf-audio-plugins",
- "sotf-hal",
- "symphonia",
- "symphonia-bundle-flac",
- "symphonia-bundle-mp3",
- "symphonia-codec-aac",
- "symphonia-codec-alac",
- "symphonia-codec-pcm",
- "symphonia-codec-vorbis",
- "symphonia-core",
- "symphonia-format-isomp4",
- "symphonia-format-ogg",
- "symphonia-format-riff",
- "symphonia-metadata",
- "tempfile",
- "tokio",
- "walkdir",
- "which 8.0.0",
-]
-
-[[package]]
-name = "sotf-audio-player"
-version = "0.5.10"
-dependencies = [
- "anyhow",
- "autoeq",
- "autoeq-cea2034",
- "autoeq-env",
- "bliss-audio",
- "chrono",
- "clap",
- "directories 6.0.0",
- "ebur128",
- "env_logger",
- "image",
- "log",
- "math-iir-fir",
- "ndarray 0.17.1",
- "ndarray-linalg",
- "num-complex",
- "num_cpus",
- "parking_lot",
- "rubato",
- "rusqlite",
- "serde",
- "serde_json",
- "sotf-audio-engine",
- "sotf-audio-player",
- "sotf-audio-plugins",
- "symphonia",
- "symphonia-bundle-flac",
- "symphonia-bundle-mp3",
- "symphonia-codec-aac",
- "symphonia-core",
- "symphonia-format-isomp4",
- "symphonia-format-ogg",
- "symphonia-format-riff",
- "symphonia-metadata",
- "tempfile",
- "thiserror 2.0.17",
- "tokio",
- "unicode-normalization",
- "uuid",
- "walkdir",
-]
-
-[[package]]
-name = "sotf-audio-player-midi"
-version = "0.5.10"
-dependencies = [
- "anyhow",
- "chrono",
- "dirs 6.0.0",
- "env_logger",
- "log",
- "midir",
- "parking_lot",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.17",
- "tokio",
-]
-
-[[package]]
-name = "sotf-audio-plugins"
-version = "0.5.10"
-dependencies = [
- "anyhow",
- "autoeq-env",
- "bincode",
- "chrono",
- "clap",
- "cpal",
- "criterion",
- "ctrlc",
- "directories 6.0.0",
- "ebur128",
- "env_logger",
- "hound",
- "id3",
- "libc",
- "log",
- "math-iir-fir",
- "metaflac",
- "ndarray 0.17.1",
- "netcdf",
- "notify",
- "parking_lot",
- "proptest",
- "rand 0.9.2",
- "rayon",
- "realfft",
- "rubato",
- "rusqlite",
- "rustfft",
- "serde",
- "serde_json",
- "serde_yaml",
- "signal-hook 0.4.1",
- "sotf-hal",
- "symphonia",
- "symphonia-bundle-flac",
- "symphonia-bundle-mp3",
- "symphonia-codec-aac",
- "symphonia-codec-alac",
- "symphonia-codec-pcm",
- "symphonia-codec-vorbis",
- "symphonia-core",
- "symphonia-format-isomp4",
- "symphonia-format-ogg",
- "symphonia-format-riff",
- "symphonia-metadata",
- "tempfile",
- "thiserror 2.0.17",
- "tokio",
- "walkdir",
- "which 8.0.0",
-]
-
-[[package]]
-name = "sotf-audio-plugins-ffi"
-version = "0.5.10"
-dependencies = [
- "cbindgen 0.29.2",
- "log",
- "math-iir-fir",
- "serde",
- "serde_json",
- "sotf-audio-engine",
- "sotf-audio-plugins",
-]
-
-[[package]]
 name = "sotf-gpui"
-version = "0.5.10"
+version = "0.5.11"
 dependencies = [
  "anyhow",
  "autoeq",
  "chrono",
  "clap",
  "cpal",
+ "driver-hal",
+ "engine",
  "env_logger",
  "gpui",
  "gpui-d3rs",
@@ -8245,6 +8296,8 @@ dependencies = [
  "ndarray 0.17.1",
  "num-complex",
  "parking_lot",
+ "player",
+ "plugins",
  "proptest",
  "reqwest",
  "rfd",
@@ -8252,10 +8305,6 @@ dependencies = [
  "serde",
  "serde_json",
  "smol",
- "sotf-audio-engine",
- "sotf-audio-player",
- "sotf-audio-plugins",
- "sotf-hal",
  "strsim",
  "symphonia",
  "symphonia-bundle-flac",
@@ -8274,25 +8323,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "sotf-hal"
-version = "0.5.10"
-dependencies = [
- "anyhow",
- "core-foundation 0.10.0",
- "core-foundation-sys",
- "coreaudio-sys",
- "crossbeam",
- "env_logger",
- "libc",
- "log",
- "rb",
- "tempfile",
- "thiserror 2.0.17",
-]
-
-[[package]]
 name = "sotf-head-tracker"
-version = "0.5.10"
+version = "0.5.11"
 dependencies = [
  "block2",
  "crossbeam",
@@ -8316,25 +8348,25 @@ dependencies = [
 
 [[package]]
 name = "sotf-tui"
-version = "0.5.10"
+version = "0.5.11"
 dependencies = [
  "chrono",
  "clap",
  "crossterm",
  "directories 6.0.0",
  "ebur128",
+ "engine",
  "env_logger",
  "image",
  "log",
  "math-iir-fir",
  "parking_lot",
+ "player",
+ "plugins",
  "ratatui",
  "ratatui-image",
  "serde",
  "serde_json",
- "sotf-audio-engine",
- "sotf-audio-player",
- "sotf-audio-plugins",
  "symphonia",
  "symphonia-bundle-flac",
  "symphonia-bundle-mp3",
@@ -9298,6 +9330,51 @@ name = "toml_writer"
 version = "1.0.6+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab16f14aed21ee8bfd8ec22513f7287cd4a91aa92e44edfe2c17ddd004e92607"
+
+[[package]]
+name = "tools"
+version = "0.5.11"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "bliss-audio",
+ "chrono",
+ "clap",
+ "directories 6.0.0",
+ "ebur128",
+ "engine",
+ "env_logger",
+ "hound",
+ "image",
+ "log",
+ "ndarray 0.17.1",
+ "ndarray-linalg",
+ "netcdf",
+ "num-complex",
+ "num_cpus",
+ "parking_lot",
+ "player",
+ "plugins",
+ "rubato",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "symphonia",
+ "symphonia-bundle-flac",
+ "symphonia-bundle-mp3",
+ "symphonia-codec-aac",
+ "symphonia-core",
+ "symphonia-format-isomp4",
+ "symphonia-format-ogg",
+ "symphonia-format-riff",
+ "symphonia-metadata",
+ "tempfile",
+ "thiserror 2.0.17",
+ "tokio",
+ "unicode-normalization",
+ "uuid",
+ "walkdir",
+]
 
 [[package]]
 name = "tower"

@@ -12,8 +12,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 SOTF (Sound of the Future) is a comprehensive audio optimization and playback system. The project consists of:
 
 1. **AutoEQ CLI tools** for speaker/headphone EQ optimization using measurements from spinorama.org or custom data
-3. **Native Audio Engine** (`sotf-audio-engine`) with multi-threaded processing, plugin system, and Symphonia for audio decoding
-4. **Audio Players**: TUI player (`sotf-audio-player-tui`), CLI tools, and experimental GPUI player
+3. **Native Audio Engine** (`engine`) with multi-threaded processing, plugin system, and Symphonia for audio decoding
+4. **Audio Players**: TUI player (`player-tui`), CLI tools, and experimental GPUI player
 5. **Optimization algorithms** including Differential Evolution, NLopt algorithms, and metaheuristic approaches
 6. **macOS-specific features**: CoreAudio HAL driver and menubar configuration app
 
@@ -24,16 +24,16 @@ SOTF (Sound of the Future) is a comprehensive audio optimization and playback sy
 This is a Cargo workspace with distinct crates organized by functionality:
 
 **Audio Engine & Players:**
-- **`sotf-audio-engine/`**: Core audio processing engine with multi-threaded architecture, plugin system, and Symphonia decoding
-- **`sotf-audio-player/`**: High-level audio playback API and utilities
-- **`sotf-audio-player-tui/`**: Terminal UI music player with library scanning (production quality)
-- **`sotf-audio-player-gpui/`**: Experimental GPUI-based player (not in default build)
-- **`sotf-audio-player-midi/`**: MIDI integration support
+- **`engine/`**: Core audio processing engine with multi-threaded architecture, plugin system, and Symphonia decoding
+- **`player/`**: High-level audio playback API and utilities
+- **`player-tui/`**: Terminal UI music player with library scanning (production quality)
+- **`player-gpui/`**: Experimental GPUI-based player (not in default build)
+- **`player-midi/`**: MIDI integration support
 
 **Audio Plugins:**
-- **`sotf-audio-plugins/`**: Plugin implementations (EQ, compressor, upmixer, analyzers, etc.)
-- **`sotf-audio-plugins-ffi/`**: FFI interface for Audio Unit integration
-- **`sotf-audio-plugins-au/`**: macOS Audio Unit plugin implementation
+- **`plugins/`**: Plugin implementations (EQ, compressor, upmixer, analyzers, etc.)
+- **`plugins-ffi/`**: FFI interface for Audio Unit integration
+- **`plugins-au/`**: macOS Audio Unit plugin implementation
 
 **AutoEQ & Optimization:**
 - **`autoeq/`**: Core CLI for EQ optimization with multiple binaries (autoeq, roomeq, benchmarks)
@@ -54,11 +54,11 @@ This is a Cargo workspace with distinct crates organized by functionality:
 **Other:**
 - **`sotf-head-scanner/`**: Experimental head scanning app for HRTF generation (not in default build)
 
-### Audio Architecture (`sotf-audio-engine`)
+### Audio Architecture (`engine`)
 
 The audio subsystem uses a **native multi-threaded audio engine** with a flexible plugin system:
 
-#### AudioEngine (`sotf-audio-engine/src/engine/`)
+#### AudioEngine (`engine/src/engine/`)
 
 Multi-threaded audio processing engine with 4 threads:
 - **Thread 1**: Decoder - Reads audio files, decodes to PCM, resamples
@@ -76,7 +76,7 @@ Key components:
 - `config_watcher.rs`: File watching and Unix signal handling (SIGHUP, SIGTERM, SIGINT)
 - `types.rs`: PluginConfig, PlaybackState, AudioEngineState
 
-#### Plugin System (`sotf-audio-plugins/src/`)
+#### Plugin System (`plugins/src/`)
 
 Flexible plugin architecture supporting:
 
@@ -113,7 +113,7 @@ PluginConfig {
 }
 ```
 
-#### Audio Decoding (`sotf-audio-engine/src/decoder/`)
+#### Audio Decoding (`engine/src/decoder/`)
 
 Symphonia-based multi-format decoder supporting:
 - **Formats**: FLAC, MP3, AAC, ALAC, Vorbis, WAV, OGG, MP4/M4A
@@ -122,7 +122,7 @@ Symphonia-based multi-format decoder supporting:
   - `stream.rs`: Streaming state machine with seek support
   - `format_detection.rs`: Automatic format detection
 
-#### AudioStreamingManager (`sotf-audio-engine/src/manager.rs`)
+#### AudioStreamingManager (`engine/src/manager.rs`)
 
 High-level API for audio playback:
 - File loading with format detection
@@ -195,7 +195,7 @@ just prod-workspace
 
 # Build specific binaries
 just prod-autoeq
-just prod-sotf-audio
+just prod-sotf
 
 # Development build (debug mode)
 just dev
@@ -485,7 +485,7 @@ pub struct EngineConfig {
 
 ## Key Applications
 
-### TUI Music Player (`sotf-audio-player-tui`)
+### TUI Music Player (`player-tui`)
 
 Production-quality terminal music player with:
 - **Library scanning**: Scans and indexes audio files with metadata
@@ -569,7 +569,7 @@ cargo run --bin benchmark_convergence --release
 
 ### Working on Plugins
 
-Plugin implementations are in `sotf-audio-plugins/src/`:
+Plugin implementations are in `plugins/src/`:
 - Each plugin implements the `Plugin` trait from `plugin.rs`
 - Plugins are registered in the factory in `mod.rs`
 - Test plugins with the TUI player or CLI player
@@ -625,7 +625,7 @@ just validate-au      # Run auval validation
 ### File Naming Conventions
 
 - **Binaries**: Use underscores (e.g., `sotf_player_cli`, `autoeq_download_speakers`)
-- **Crates**: Use hyphens (e.g., `sotf-audio-engine`, `math-iir`)
+- **Crates**: Use hyphens (e.g., `engine`, `math-iir`)
 - **Module files**: Use underscores (e.g., `signal_analysis.rs`, `plugin_eq.rs`)
 
 ### Testing Strategy
@@ -650,5 +650,5 @@ just validate-au      # Run auval validation
 - **Static Binary Support**: Cross-compilation for musl/static binaries
 - **Workspace version bump**: Now at 0.5.3 (individual crates may vary)
 - Read @GPUI.md before working on GPUI code.
-- when adding features to the sotf-players the business logic goes into the common library sotf-audio-player/src
+- when adding features to the players the business logic goes into the common library player/src
 - never use unsafe without asking

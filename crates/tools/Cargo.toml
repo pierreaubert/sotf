@@ -1,0 +1,93 @@
+[package]
+name = "tools"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "Tools for generating test signal or converting formats"
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "generate-audio-tests"
+path = "bin/generate_audio_tests.rs"
+
+[[bin]]
+name = "wav2csv"
+path = "bin/wav2csv.rs"
+
+[[bin]]
+name = "sofa-to-sqlite"
+path = "bin/sofa_to_sqlite.rs"
+required-features = ["sofa_support"]
+
+[features]
+default = ["sofa_support"]
+sofa_support = ["dep:netcdf"]
+
+[dependencies]
+plugins = { workspace = true }
+engine = { workspace = true }
+netcdf = { workspace = true, optional = true }
+
+# math
+ndarray = { workspace = true }
+ndarray-linalg = { workspace = true }
+num-complex = { workspace = true }
+
+# common stuff
+anyhow = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+directories = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+walkdir = { workspace = true }
+rusqlite = { workspace = true }
+tokio = { workspace = true }
+parking_lot = { workspace = true }
+uuid = { workspace = true }
+
+# Image processing for album art thumbnails
+image = { workspace = true }
+
+# Unicode normalization for removing diacritics
+unicode-normalization = { workspace = true }
+
+# audio
+hound = { workspace = true }
+bincode = { workspace = true }
+symphonia = { workspace = true }
+symphonia-core = { workspace = true }
+symphonia-metadata = { workspace = true }
+symphonia-bundle-flac = { workspace = true }
+symphonia-bundle-mp3 = { workspace = true }
+symphonia-codec-aac = { workspace = true }
+symphonia-format-riff = { workspace = true }
+symphonia-format-ogg = { workspace = true }
+symphonia-format-isomp4 = { workspace = true }
+ebur128 = { workspace = true }
+
+# bliss audio analysis (no ffmpeg, we use our own Symphonia decoder)
+bliss-audio = { workspace = true }
+rubato = { workspace = true }
+num_cpus = { workspace = true }
+
+# CLI for bliss scanner
+clap = { workspace = true }
+
+# use vcpkg (gmsh, opencv4 ...)
+[package.metadata.vcpkg]
+git = "https://github.com/microsoft/vcpkg"
+rev = "84bab45"
+dependencies = ["nlopt", "hdf5", "netcdf-c", "openblas"]
+
+# [package.metadata.vcpkg.target]
+# x86_64-apple-darwin = { dependencies = ["sdl2", "sdl2-gfx" ] }
+# x86_64-unknown-linux-gnu = { dependencies = ["sdl2", "opencv"] }
+# x86_64-pc-windows-msvc = { triplet = "x64-windows-static", dependencies = ["sdl2", "zeromq"] }
+
+[dev-dependencies]
+player = { workspace = true, features = ["testing"] }
+tempfile = { workspace = true }
