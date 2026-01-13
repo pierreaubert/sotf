@@ -755,7 +755,8 @@ mod tests {
         let mut plugin = SpectrumAnalyzerPlugin::new(5).unwrap();
         plugin.initialize(48000).unwrap();
 
-        let num_frames = 2048;
+        // Must provide enough frames to fill the FFT buffer (4096)
+        let num_frames = 4096;
         let mut input = vec![0.0_f32; num_frames * 5];
 
         // Different frequency on each channel

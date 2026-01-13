@@ -1120,7 +1120,7 @@ impl PlayerView {
         &self,
         settings: &PluginSettings,
         theme: &Theme,
-        _cx: &mut Context<Self>,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
         let entity = self.state.clone();
         let plugin_idx = 0; // Modal doesn't need actual index for display
@@ -1136,6 +1136,7 @@ impl PlayerView {
                     selected_band_idx: 0,
                 },
                 theme,
+                cx,
             )
             .into_any_element(),
 

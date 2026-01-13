@@ -1067,11 +1067,13 @@ impl PlayerView {
         let bg_color: gpui::Hsla = theme.surface_hover.into();
         let text_color: gpui::Hsla = theme.text_primary.into();
         let focus_ring_color: gpui::Hsla = theme.accent.into();
+        
+        let focus_handle = self.volume_focus_handle.clone();
 
         div()
             .id("volume-button")
             .cursor_pointer()
-            .focusable()
+            .track_focus(&focus_handle)
             .focus(|style| {
                 style
                     .border_2()
@@ -1080,7 +1082,9 @@ impl PlayerView {
             })
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(move |view, event: &MouseDownEvent, _window, cx| {
+                cx.listener(move |view, event: &MouseDownEvent, window, cx| {
+                    window.focus(&focus_handle, cx);
+                    
                     if event.click_count == 2 {
                         // Double click resets volume to 10%
                         view.state.update(cx, |state, _cx| {
@@ -1115,49 +1119,7 @@ impl PlayerView {
                 });
                 cx.notify();
             }))
-            .on_key_down(cx.listener(|view, event: &KeyDownEvent, _window, cx| {
-                // Keyboard volume control: arrows, +/-, m for mute
-                const VOLUME_STEP: f32 = 0.05; // 5% per keypress
-                const VOLUME_STEP_LARGE: f32 = 0.10; // 10% for page up/down
-
-                let delta = match &event.keystroke.key {
-                    key if key == "up" || key == "right" => Some(VOLUME_STEP),
-                    key if key == "down" || key == "left" => Some(-VOLUME_STEP),
-                    key if key == "pageup" => Some(VOLUME_STEP_LARGE),
-                    key if key == "pagedown" => Some(-VOLUME_STEP_LARGE),
-                    key if key == "=" || key == "+" => Some(VOLUME_STEP),
-                    key if key == "-" => Some(-VOLUME_STEP),
-                    key if key == "home" => Some(1.0), // Max volume (will be clamped)
-                    key if key == "end" => Some(-1.0), // Min volume (will be clamped)
-                    key if key == "m" => {
-                        // Toggle mute (visual only - affects VolumeKnob display)
-                        view.state.update(cx, |state, _cx| {
-                            state.app.playback.muted = !state.app.playback.muted;
-                            // When muted, set volume to 0; restore when unmuted
-                            let effective_volume = if state.app.playback.muted {
-                                0.0
-                            } else {
-                                state.app.playback.volume
-                            };
-                            let _ = state.player.lock().set_volume(effective_volume);
-                        });
-                        cx.stop_propagation(); // Prevent event from triggering global actions
-                        cx.notify();
-                        return;
-                    }
-                    _ => None,
-                };
-
-                if let Some(delta) = delta {
-                    view.state.update(cx, |state, _cx| {
-                        let new_volume = (state.app.playback.volume + delta).clamp(0.0, 1.0);
-                        state.app.playback.volume = new_volume;
-                        let _ = state.player.lock().set_volume(new_volume);
-                    });
-                    cx.stop_propagation(); // Prevent arrow keys from moving album selection
-                    cx.notify();
-                }
-            }))
+            .key_context("volume-control")
             .child(
                 VolumeKnob::new()
                     .value(volume)

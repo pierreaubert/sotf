@@ -17,6 +17,11 @@ actions!(
         VolumeDown,
         VolumeUpSmall,
         VolumeDownSmall,
+        VolumeUpLarge,
+        VolumeDownLarge,
+        VolumeMax,
+        VolumeMin,
+        ToggleMute,
         SwitchToDevices,
         SwitchToHeadphoneEQ,
         SwitchToLibrary,
@@ -86,5 +91,11 @@ actions!(
         ToggleMeterSolo,
         ToggleMeterDim,
         ClearMeterMutesSolos,
+        IncrementPluginParam,
+        DecrementPluginParam,
+        IncrementPluginParamLarge,
+        DecrementPluginParamLarge,
+        IncrementPluginParamSmall,
+        DecrementPluginParamSmall,
     ]
 );

@@ -2393,19 +2393,38 @@ impl PluginChain {
     /// Map a UI plugin index (from self.plugins) to the index in the engine's processing chain.
     /// Returns None if the plugin is disabled (not in engine).
     ///
-    /// The engine order is: [Enabled Processing Plugins] followed by [Enabled Monitoring Plugins].
+    /// The engine order is:
+    /// 1. First LoudnessMonitor (input monitor) - index 0
+    /// 2. Processing plugins - indices 1..N
+    /// 3. Other monitoring plugins (subsequent LoudnessMonitors, Spectrum, etc.) - at the end
     pub fn get_engine_index(&self, ui_index: usize) -> Option<usize> {
         let target_plugin = self.plugins.get(ui_index)?;
         if !target_plugin.enabled {
             return None;
         }
 
+        // Determine if this is the first LoudnessMonitor (input monitor)
+        let first_loudness_idx = self.plugins.iter().position(|p| {
+            p.enabled && matches!(p.plugin_type(), PluginType::LoudnessMonitor)
+        });
+        let target_is_first_loudness = first_loudness_idx == Some(ui_index)
+            && matches!(target_plugin.plugin_type(), PluginType::LoudnessMonitor);
+
+        if target_is_first_loudness {
+            // First LoudnessMonitor is always at engine index 0
+            return Some(0);
+        }
+
         let target_is_monitor = target_plugin.plugin_type().is_monitoring();
-        let mut engine_idx = 0;
+
+        // Check if there's an enabled input monitor (counts toward engine offset)
+        let has_input_monitor = first_loudness_idx.is_some();
+        let input_monitor_offset = if has_input_monitor { 1 } else { 0 };
 
         if !target_is_monitor {
             // Target is a processing plugin.
-            // Engine index is the count of enabled processing plugins before it.
+            // Engine index is input_monitor_offset + count of enabled processing plugins before it.
+            let mut engine_idx = input_monitor_offset;
             for (i, p) in self.plugins.iter().enumerate() {
                 if i == ui_index {
                     return Some(engine_idx);
@@ -2415,22 +2434,30 @@ impl PluginChain {
                 }
             }
         } else {
-            // Target is a monitoring plugin.
-            // Engine index is (Count of ALL enabled processing plugins) + (Count of enabled monitors before it).
+            // Target is a monitoring plugin (but not first LoudnessMonitor - handled above).
+            // Engine index is input_monitor_offset + (all enabled processing plugins) + (count of enabled monitors before it, excluding first LoudnessMonitor).
 
             // 1. Count all enabled processing plugins
+            let mut engine_idx = input_monitor_offset;
             for p in &self.plugins {
                 if p.enabled && !p.plugin_type().is_monitoring() {
                     engine_idx += 1;
                 }
             }
 
-            // 2. Count enabled monitors until we hit target
+            // 2. Count enabled monitors until we hit target (skip first LoudnessMonitor)
+            let mut found_first_loudness = false;
             for (i, p) in self.plugins.iter().enumerate() {
+                if p.enabled && matches!(p.plugin_type(), PluginType::LoudnessMonitor) {
+                    if !found_first_loudness {
+                        found_first_loudness = true;
+                        continue; // Skip first LoudnessMonitor, it's already counted at index 0
+                    }
+                }
                 if i == ui_index {
                     return Some(engine_idx);
                 }
-                if p.enabled && p.plugin_type().is_monitoring() {
+                if p.enabled && p.plugin_type().is_monitoring() && (found_first_loudness || !matches!(p.plugin_type(), PluginType::LoudnessMonitor)) {
                     engine_idx += 1;
                 }
             }
@@ -2440,18 +2467,30 @@ impl PluginChain {
     }
 
     pub fn to_plugin_configs(&self, sample_rate: f64) -> Vec<PluginConfig> {
-        // Separate processing plugins from analyzer plugins
-        // Analyzers should always be at the end to measure the final output
+        // Separate plugins into three categories:
+        // 1. Input monitor (first LoudnessMonitor) - measures input signal BEFORE processing
+        // 2. Processing plugins - transform the audio
+        // 3. Output analyzers (subsequent LoudnessMonitors, Spectrum, etc.) - measure AFTER processing
+        let mut input_monitor: Option<PluginConfig> = None;
         let mut processing_plugins = Vec::new();
         let mut analyzer_plugins = Vec::new();
+        let mut found_first_loudness_monitor = false;
 
         for plugin in &self.plugins {
             if let Some(config) = plugin.to_plugin_config(sample_rate) {
                 match plugin.plugin_type() {
-                    // Analyzer plugins go at the end
-                    PluginType::LoudnessMonitor
-                    | PluginType::SpectrumAnalyzer
-                    | PluginType::ChannelMuteSolo => {
+                    // First LoudnessMonitor is input monitor, stays at beginning
+                    // Subsequent LoudnessMonitors go at the end
+                    PluginType::LoudnessMonitor => {
+                        if !found_first_loudness_monitor {
+                            input_monitor = Some(config);
+                            found_first_loudness_monitor = true;
+                        } else {
+                            analyzer_plugins.push(config);
+                        }
+                    }
+                    // Other analyzer plugins always go at the end
+                    PluginType::SpectrumAnalyzer | PluginType::ChannelMuteSolo => {
                         analyzer_plugins.push(config);
                     }
                     // Processing plugins maintain their order
@@ -2462,9 +2501,14 @@ impl PluginChain {
             }
         }
 
-        // Concatenate: processing first, then analyzers
-        processing_plugins.extend(analyzer_plugins);
-        processing_plugins
+        // Concatenate: input monitor, then processing, then output analyzers
+        let mut result = Vec::new();
+        if let Some(monitor) = input_monitor {
+            result.push(monitor);
+        }
+        result.extend(processing_plugins);
+        result.extend(analyzer_plugins);
+        result
     }
 
     /// Get the speaker configuration ID from the last enabled upmixer/binaural decoder

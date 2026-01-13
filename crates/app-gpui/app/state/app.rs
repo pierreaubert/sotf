@@ -320,11 +320,6 @@ impl App {
         if self.library_state.library.albums.is_empty() {
             // Show modal prompting to scan for music
             self.ui_state.input_mode = InputMode::EmptyLibraryPrompt;
-        } else {
-            // Show toast with album count
-            let album_count = self.library_state.library.albums.len();
-            let message = format!("Loaded {} albums from database", album_count);
-            self.ui_state.toast_message = Some(ToastMessage::info(message));
         }
 
         self.is_loading_initial_data = false;

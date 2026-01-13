@@ -1462,6 +1462,7 @@ impl PlayerView {
                                         plugin_data,
                                         self.state.read(cx).app.spectrum_tilt_select_open,
                                         self.state.read(cx).app.spectrum_reference_select_open,
+                                        cx,
                                     )
                                 }),
                         )

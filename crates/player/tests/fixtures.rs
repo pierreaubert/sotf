@@ -5,6 +5,9 @@ use tempfile::TempDir;
 /// Returns the path to the demo audio files directory
 pub fn demo_audio_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("app-gpui")
         .join("assets")
         .join("demo-audio")
 }

@@ -18,9 +18,12 @@ impl TestScenario for SpectrumAutoRunScenario {
         let mut page = PluginRackPage::new(&mut driver);
 
         // 1. Add Spectrum Analyzer Plugin
-        // Ensure starting state is clean
-        while page.get_plugin_count() > 0 {
-            page.remove_plugin(0);
+        // Ensure starting state is clean by removing only non-permanent plugins
+        let count = page.get_plugin_count();
+        for i in (0..count).rev() {
+            if !page.is_plugin_permanent(i) {
+                page.remove_plugin(i);
+            }
         }
 
         let spectrum_id = page.add_plugin(PluginType::SpectrumAnalyzer);

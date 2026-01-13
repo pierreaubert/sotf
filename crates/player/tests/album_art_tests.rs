@@ -21,7 +21,7 @@ fn test_album_art_discovery_and_thumbnail_generation() {
 
     // Copy an image file as 'cover.png'
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let src_image = root.join("assets").join("brands").join("focusrite.png");
+    let src_image = root.parent().unwrap().join("app-gpui").join("assets").join("brands").join("focusrite.png");
     let target_image = music_path.join("cover.png");
     
     // Check if source image exists, otherwise skip or use a dummy if needed
@@ -85,7 +85,7 @@ fn test_album_art_discovery_in_artwork_subdir() {
 
     // Copy image to Artwork/front.png
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let src_image = root.join("assets").join("brands").join("focusrite.png");
+    let src_image = root.parent().unwrap().join("app-gpui").join("assets").join("brands").join("focusrite.png");
     let target_image = artwork_path.join("front.png");
     fs::copy(&src_image, &target_image).unwrap();
 

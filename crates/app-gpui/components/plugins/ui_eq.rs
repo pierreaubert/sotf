@@ -9,6 +9,7 @@ use super::common::render_knob_sized;
 use crate::app::AppState;
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
+use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_px::{ChartTheme, ScaleType, line};
@@ -18,8 +19,81 @@ use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use sotf_audio_player::EQFilter;
 use sotf_audio_player::param_specs::eq::*;
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 /// Sample rate for filter calculations
 const SAMPLE_RATE: f64 = 48000.0;
+
+/// Wrapper element to capture bounds for coordinate transformation
+struct EqChartWrapper {
+    child: AnyElement,
+    bounds_ref: Rc<RefCell<Option<Bounds<Pixels>>>>,
+}
+
+impl EqChartWrapper {
+    fn new(child: AnyElement, bounds_ref: Rc<RefCell<Option<Bounds<Pixels>>>>) -> Self {
+        Self { child, bounds_ref }
+    }
+}
+
+impl IntoElement for EqChartWrapper {
+    type Element = Self;
+    fn into_element(self) -> Self::Element {
+        self
+    }
+}
+
+impl Element for EqChartWrapper {
+    type RequestLayoutState = ();
+    type PrepaintState = ();
+
+    fn id(&self) -> Option<ElementId> {
+        None
+    }
+
+    fn source_location(&self) -> Option<&'static std::panic::Location<'static>> {
+        Some(std::panic::Location::caller())
+    }
+
+    fn request_layout(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, Self::RequestLayoutState) {
+        let layout_id = self.child.request_layout(window, cx);
+        (layout_id, ())
+    }
+
+    fn prepaint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        _bounds: Bounds<Pixels>,
+        _request_layout: &mut Self::RequestLayoutState,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Self::PrepaintState {
+        self.child.prepaint(window, cx);
+        ()
+    }
+
+    fn paint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        _request_layout: &mut Self::RequestLayoutState,
+        _prepaint: &mut Self::PrepaintState,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        *self.bounds_ref.borrow_mut() = Some(bounds);
+        self.child.paint(window, cx);
+    }
+}
 
 /// Q handle bar constants
 const Q_BAR_MIN_WIDTH: f32 = 40.0;
@@ -161,10 +235,12 @@ const CHART_LEFT_MARGIN: f32 = 50.0; // gpui-px margin_left
 const CHART_RIGHT_MARGIN: f32 = 20.0; // gpui-px margin_right (no secondary axis)
 // Note: gpui-px subtracts margin_top from plot_height but doesn't render top padding
 // so control points should use 0 for top margin offset
-const CHART_TOP_MARGIN: f32 = 0.0; // No actual top offset in gpui-px layout
-const CHART_BOTTOM_MARGIN: f32 = 30.0; // gpui-px margin_bottom
+// UPDATE: gpui-px renders the plot area starting at margin_top offset.
+// We must match this offset for control points to align with the rendered curve.
+const CHART_TOP_MARGIN: f32 = 5.0; // Adjusted to 5.0 for better alignment
+const CHART_BOTTOM_MARGIN: f32 = 40.0; // Increased to 40.0 to avoid legend overlap
 const CHART_HEIGHT: f32 = 300.0;
-// gpui-px uses 10.0 for margin_top in plot_height calculation
+// gpui-px uses 10.0 for margin_top in plot_height calculation by default
 const GPUI_PX_MARGIN_TOP: f32 = 10.0;
 const MIN_FREQ: f64 = 20.0;
 const MAX_FREQ: f64 = 20000.0;
@@ -377,6 +453,9 @@ fn render_eq_visualization(
 
     // Create control points for each filter
     let mut control_points: Vec<AnyElement> = Vec::new();
+    // Shared bounds reference for drag handlers
+    let bounds_ref = Rc::new(RefCell::new(None::<Bounds<Pixels>>));
+
     for (i, filter) in filters.iter().enumerate() {
         let is_selected = selected_band == Some(i);
         let color = BAND_COLORS.get(i).copied().unwrap_or(0x9ca3af);
@@ -417,6 +496,7 @@ fn render_eq_visualization(
         let left_handle = {
             let entity_left = entity.clone();
             let current_q = filter.q;
+            let bounds_ref = bounds_ref.clone();
             div()
                 .id(("eq-q-left", i))
                 .absolute()
@@ -450,11 +530,14 @@ fn render_eq_visualization(
                 )
                 .on_drag_move::<EqQHandleDrag>({
                     move |event, window, cx| {
+                        let bounds = if let Some(b) = *bounds_ref.borrow() { b } else { return };
                         let drag_data = event.drag(cx);
                         let position = event.event.position;
-                        let x_px: f32 = position.x.into();
+                        // Convert global mouse X to local chart coordinate
+                        let x_px: f32 = (position.x - bounds.origin.x).into();
 
                         // For left handle: moving left decreases Q, moving right increases Q
+                        // drag_data.start_x is in local coordinates
                         let delta = drag_data.start_x - x_px;
                         let q_change = drag_delta_to_q_change(delta);
                         let new_q = (drag_data.start_q + q_change).clamp(Q_MIN, Q_MAX);
@@ -470,7 +553,7 @@ fn render_eq_visualization(
                                 .set_plugin_param(plugin_idx, band_idx * 4 + 1, new_q);
                             cx.notify();
                         });
-                        window.refresh();
+                        // window.refresh(); // Not needed with cx.notify()
                     }
                 })
                 .into_any_element()
@@ -482,6 +565,7 @@ fn render_eq_visualization(
         let right_handle = {
             let entity_right = entity.clone();
             let current_q = filter.q;
+            let bounds_ref = bounds_ref.clone();
             div()
                 .id(("eq-q-right", i))
                 .absolute()
@@ -515,9 +599,11 @@ fn render_eq_visualization(
                 )
                 .on_drag_move::<EqQHandleDrag>({
                     move |event, window, cx| {
+                        let bounds = if let Some(b) = *bounds_ref.borrow() { b } else { return };
                         let drag_data = event.drag(cx);
                         let position = event.event.position;
-                        let x_px: f32 = position.x.into();
+                        // Convert global mouse X to local chart coordinate
+                        let x_px: f32 = (position.x - bounds.origin.x).into();
 
                         // For right handle: moving right increases Q, moving left decreases Q
                         let delta = x_px - drag_data.start_x;
@@ -535,7 +621,7 @@ fn render_eq_visualization(
                                 .set_plugin_param(plugin_idx, band_idx * 4 + 1, new_q);
                             cx.notify();
                         });
-                        window.refresh();
+                        // window.refresh();
                     }
                 })
                 .into_any_element()
@@ -590,7 +676,7 @@ fn render_eq_visualization(
     // Wrap chart and control points in a relative container
     // The on_drag_move handler is on the container so it receives events
     // even when the cursor moves away from the small control point circle
-    div()
+    let container = div()
         .id("eq-chart-container")
         .relative()
         .w(px(width))
@@ -599,12 +685,16 @@ fn render_eq_visualization(
         .children(control_points)
         .on_drag_move::<EqControlPointDrag>({
             let entity = entity.clone();
+            let bounds_ref = bounds_ref.clone();
             move |event, window, cx| {
+                let bounds = if let Some(b) = *bounds_ref.borrow() { b } else { return };
                 let drag_data = event.drag(cx);
                 // Position is relative to this container div, which IS the chart area
                 let position = event.event.position;
-                let x_px: f32 = position.x.into();
-                let y_px: f32 = position.y.into();
+                
+                // Convert global mouse coordinates to local chart coordinates
+                let x_px: f32 = (position.x - bounds.origin.x).into();
+                let y_px: f32 = (position.y - bounds.origin.y).into();
 
                 // Convert directly to freq/gain (no delta calculation needed)
                 // Use wider range for dragging to allow extending beyond current view
@@ -626,10 +716,11 @@ fn render_eq_visualization(
                         .set_plugin_param(plugin_idx, band_idx * 4 + 2, new_gain);
                     cx.notify();
                 });
-                window.refresh();
+                // window.refresh();
             }
-        })
-        .into_any_element()
+        });
+
+    EqChartWrapper::new(container.into_any_element(), bounds_ref).into_any_element()
 }
 
 /// Render the EQ plugin with graphical visualization
@@ -638,6 +729,7 @@ pub fn render_eq_plugin(
     plugin_idx: usize,
     state: EqRenderState,
     theme: &Theme,
+    cx: &mut Context<PlayerView>,
 ) -> impl IntoElement {
     // Clamp selected band to valid range
     let selected_band_idx = state
@@ -691,7 +783,8 @@ pub fn render_eq_plugin(
     let controls_section = div()
         .flex()
         .flex_col()
-        .gap_2()
+        .items_center() // Center band selector and knob box
+        .gap_4()
         .when(use_horizontal_layout, |d| d.min_w(px(300.0)))
         .when(!use_horizontal_layout, |d| d.w_full())
         // Band selector tabs (custom rendering to avoid context issues)
@@ -699,6 +792,7 @@ pub fn render_eq_plugin(
             let mut tabs_container = div()
                 .flex()
                 .items_center()
+                .justify_center() // Center tabs
                 .gap_2()
                 .p_1()
                 .bg(theme.surface)
@@ -723,8 +817,12 @@ pub fn render_eq_plugin(
                 let success = theme.success;
                 let border = theme.border;
 
+                let focus_handle = cx.focus_handle();
+
                 let tab = div()
                     .id(("eq-band", band_idx))
+                    .track_focus(&focus_handle)
+                    .key_context("plugin-control")
                     .flex()
                     .flex_col()
                     .items_center()
@@ -734,20 +832,22 @@ pub fn render_eq_plugin(
                     .text_sm()
                     .rounded_md()
                     .cursor_pointer()
-                    .when(is_selected, |d| {
+                    .when(is_selected, |d: Stateful<Div>| {
                         d.bg(accent)
                             .text_color(text_on_accent)
                             .font_weight(FontWeight::SEMIBOLD)
                     })
-                    .when(!is_selected, |d| {
+                    .when(!is_selected, |d: Stateful<Div>| {
                         d.bg(bg_secondary)
                             .text_color(text_secondary)
-                            .hover(move |s| s.bg(surface_hover))
+                            .hover(move |s: StyleRefinement| s.bg(surface_hover))
                     })
-                    .when(is_muted, |d| d.opacity(0.5))
+                    .when(is_muted, |d: Stateful<Div>| d.opacity(0.5))
                     .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
                         entity_clone.update(cx, |state, _| {
                             state.app.plugin_state.selected_eq_band = band_idx;
+                            // Also set editing plugin index so keybindings work
+                            state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
                         });
                     })
                     // Band number with filter type short code (e.g., "#1 PK")
@@ -850,6 +950,9 @@ pub fn render_eq_plugin(
                     let entity_clone = entity.clone();
                     let plugin_idx = plugin_idx;
                     div()
+                        .id("eq-add-band")
+                        .focusable()
+                        .key_context("plugin-control")
                         .px_3()
                         .py_1p5()
                         .text_sm()
@@ -858,7 +961,7 @@ pub fn render_eq_plugin(
                         .cursor_pointer()
                         .bg(theme.success)
                         .text_color(theme.text_on_accent)
-                        .hover(|s| s.opacity(0.8))
+                        .hover(|s: StyleRefinement| s.opacity(0.8))
                         .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
                             entity_clone.update(cx, |state, cx| {
                                 state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
@@ -905,8 +1008,8 @@ pub fn render_eq_plugin(
                     .child(
                         div()
                             .flex()
-                            .gap_2()
-                            .justify_around()
+                            .gap_6()
+                            .justify_center()
                             .child(render_knob_sized(
                                 entity.clone(),
                                 plugin_idx,
@@ -970,7 +1073,7 @@ pub fn render_eq_plugin(
         div()
             .flex()
             .flex_col()
-            .gap_3()
+            .gap_8() // Increased gap between graph and controls
             .child(graph_section)
             .child(controls_section)
     };

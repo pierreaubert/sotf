@@ -73,7 +73,51 @@ pub fn get_keybindings(preset: KeymapPreset) -> Vec<KeyBinding> {
         KeymapPreset::VSCode => bindings.extend(vscode_bindings()),
     }
 
+    // Volume control context bindings (always active when volume control is focused)
+    bindings.extend(volume_control_bindings());
+
+    // Plugin control context bindings (active when a plugin parameter control is focused)
+    bindings.extend(plugin_control_bindings());
+
     bindings
+}
+
+/// Bindings for the plugin control context
+fn plugin_control_bindings() -> Vec<KeyBinding> {
+    vec![
+        KeyBinding::new("up", actions::IncrementPluginParam, Some("plugin-control")),
+        KeyBinding::new("right", actions::IncrementPluginParam, Some("plugin-control")),
+        KeyBinding::new("down", actions::DecrementPluginParam, Some("plugin-control")),
+        KeyBinding::new("left", actions::DecrementPluginParam, Some("plugin-control")),
+        KeyBinding::new("shift-up", actions::IncrementPluginParamSmall, Some("plugin-control")),
+        KeyBinding::new("shift-right", actions::IncrementPluginParamSmall, Some("plugin-control")),
+        KeyBinding::new("shift-down", actions::DecrementPluginParamSmall, Some("plugin-control")),
+        KeyBinding::new("shift-left", actions::DecrementPluginParamSmall, Some("plugin-control")),
+        KeyBinding::new("pageup", actions::IncrementPluginParamLarge, Some("plugin-control")),
+        KeyBinding::new("pagedown", actions::DecrementPluginParamLarge, Some("plugin-control")),
+        KeyBinding::new("+", actions::IncrementPluginParam, Some("plugin-control")),
+        KeyBinding::new("=", actions::IncrementPluginParam, Some("plugin-control")),
+        KeyBinding::new("-", actions::DecrementPluginParam, Some("plugin-control")),
+        KeyBinding::new("_", actions::DecrementPluginParam, Some("plugin-control")),
+    ]
+}
+
+/// Bindings for the volume control context
+fn volume_control_bindings() -> Vec<KeyBinding> {
+    vec![
+        KeyBinding::new("up", actions::VolumeUp, Some("volume-control")),
+        KeyBinding::new("right", actions::VolumeUp, Some("volume-control")),
+        KeyBinding::new("down", actions::VolumeDown, Some("volume-control")),
+        KeyBinding::new("left", actions::VolumeDown, Some("volume-control")),
+        KeyBinding::new("=", actions::VolumeUp, Some("volume-control")),
+        KeyBinding::new("+", actions::VolumeUp, Some("volume-control")),
+        KeyBinding::new("-", actions::VolumeDown, Some("volume-control")),
+        KeyBinding::new("pageup", actions::VolumeUpLarge, Some("volume-control")),
+        KeyBinding::new("pagedown", actions::VolumeDownLarge, Some("volume-control")),
+        KeyBinding::new("home", actions::VolumeMax, Some("volume-control")),
+        KeyBinding::new("end", actions::VolumeMin, Some("volume-control")),
+        KeyBinding::new("m", actions::ToggleMute, Some("volume-control")),
+    ]
 }
 
 /// Bindings common to all presets (playback, screen switching, etc.)

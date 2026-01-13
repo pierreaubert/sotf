@@ -72,6 +72,7 @@ pub use ui_xtc::render_xtc_plugin;
 
 use crate::app::AppState;
 use crate::theme::Theme;
+use crate::ui::PlayerView;
 use gpui::*;
 use sotf_audio_player::PluginSettings;
 
@@ -90,6 +91,7 @@ pub fn render_plugin_content(
     plugin_data: Option<std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     spectrum_tilt_select_open: bool,
     spectrum_reference_select_open: bool,
+    cx: &mut Context<PlayerView>,
 ) -> AnyElement {
     match settings {
         PluginSettings::EQ { filters, .. } => {
@@ -104,6 +106,7 @@ pub fn render_plugin_content(
                     selected_band_idx,
                 },
                 theme,
+                cx,
             )
             .into_any_element()
         }

@@ -55,6 +55,12 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
         })
     }
 
+    pub fn is_plugin_permanent(&mut self, index: usize) -> bool {
+        self.driver.read_app(move |app| {
+            app.plugin_state.plugin_chain.get_plugin(index).map(|p| p.permanent).unwrap_or(false)
+        })
+    }
+
     pub fn toggle_plugin(&mut self, index: usize) {
         self.driver.update_app(move |app, _cx| {
             app.toggle_plugin(index);
