@@ -1,11 +1,11 @@
-// ============================================================================
-// Analyzer Plugin Trait
-// ============================================================================
-//
-// Analyzer plugins process audio but don't produce audio output.
-// Instead, they compute metrics/visualizations that can be read by the host.
-//
-// Examples: loudness monitoring, spectrum analysis, phase meters, etc.
+//! ============================================================================
+//! Analyzer Plugin Trait
+//! ============================================================================
+//!
+//! Analyzer plugins process audio but don't produce audio output.
+//! Instead, they compute metrics/visualizations that can be read by the host.
+//!
+//! Examples: loudness monitoring, spectrum analysis, phase meters, etc.
 
 use super::plugin::{PluginInfo, PluginResult, ProcessContext};
 use serde::{Deserialize, Serialize};

@@ -1,12 +1,12 @@
-// ============================================================================
-// A/B Comparison Plugin
-// ============================================================================
-//
-// This plugin allows fair comparison between two audio processing chains
-// with automatic loudness matching. Each path (A or B) can be:
-// - A single plugin
-// - A rack (linear chain of plugins)
-// - A graph (full DAG topology)
+//! ============================================================================
+//! A/B Comparison Plugin
+//! ============================================================================
+//!
+//! This plugin allows fair comparison between two audio processing chains
+//! with automatic loudness matching. Each path (A or B) can be:
+//! - A single plugin
+//! - A rack (linear chain of plugins)
+//! - A graph (full DAG topology)
 
 use crate::auto_gain::{AutoGain, AutoGainLoudnessType, AutoGainParams};
 use crate::host::{DawHost, GraphEdge};

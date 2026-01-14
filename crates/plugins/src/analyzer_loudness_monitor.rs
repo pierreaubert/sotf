@@ -1,9 +1,9 @@
-// ============================================================================
-// Loudness Monitor Analyzer Plugin
-// ============================================================================
-//
-// Wraps the LoudnessMonitor as an AnalyzerPlugin.
-// Provides real-time EBU R128 loudness measurements.
+//! ============================================================================
+//! Loudness Monitor Analyzer Plugin
+//! ============================================================================
+//!
+//! Wraps the LoudnessMonitor as an AnalyzerPlugin.
+//! Provides real-time EBU R128 loudness measurements.
 
 use super::analyzer::LoudnessData;
 use super::parameters::{Parameter, ParameterId, ParameterValue};

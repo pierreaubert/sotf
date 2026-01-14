@@ -1,10 +1,10 @@
-// ============================================================================
-// Spectrum Analyzer Plugin
-// ============================================================================
-//
-// Provides real-time frequency spectrum analysis using FFT.
-// This file contains both the core SpectrumAnalyzer implementation and
-// the AnalyzerPlugin wrapper.
+//! ============================================================================
+//! Spectrum Analyzer Plugin
+//! ============================================================================
+//!
+//! Provides real-time frequency spectrum analysis using FFT.
+//! This file contains both the core SpectrumAnalyzer implementation and
+//! the AnalyzerPlugin wrapper.
 
 use super::analyzer::SpectrumData;
 use super::parameters::{Parameter, ParameterId, ParameterValue};
@@ -366,7 +366,7 @@ impl SpectrumAnalyzer {
             // Usually unnormalized FFT: peak 1.0 sine -> N/2 magnitude.
             // So we divide by N/2, or multiply by 2/N.
             let amplitude = norm * 2.0 / self.fft_size as f32;
-            
+
             let mag_db = if amplitude > 1e-10 {
                 20.0 * amplitude.log10()
             } else {

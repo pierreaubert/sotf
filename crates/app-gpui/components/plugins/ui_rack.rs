@@ -171,6 +171,7 @@ impl PlayerView {
 
         div()
             .id("plugins-screen")
+            .key_context("PluginRack")
             .flex()
             .flex_col()
             .size_full()

@@ -728,7 +728,26 @@ impl PlayerView {
                                             .speaker_configuration = new_config;
 
                                         // Update channel count and mappings based on configuration
-                                        if new_config != SpeakerConfiguration::Custom {
+                                        if new_config == SpeakerConfiguration::Custom {
+                                            // For custom config, keep current channel count but use generic names
+                                            let num_channels = state
+                                                .app
+                                                .measurement_state
+                                                .recording_state
+                                                .playback_config
+                                                .num_channels;
+                                            state
+                                                .app
+                                                .measurement_state
+                                                .recording_state
+                                                .playback_config
+                                                .channel_mappings = (0..num_channels)
+                                                .map(|i| ChannelMapping {
+                                                    interface_channel: i,
+                                                    group_name: format!("Ch{}", i + 1),
+                                                })
+                                                .collect();
+                                        } else {
                                             state
                                                 .app
                                                 .measurement_state
@@ -746,7 +765,7 @@ impl PlayerView {
                                                 .iter()
                                                 .enumerate()
                                                 .map(|(i, name)| ChannelMapping {
-                                                    interface_channel: i, // 1-indexed for display
+                                                    interface_channel: i,
                                                     group_name: name.to_string(),
                                                 })
                                                 .collect();
@@ -766,7 +785,7 @@ impl PlayerView {
     /// Render playback channel mapping table
     fn render_playback_channel_mapping(&self, cx: &mut Context<Self>) -> impl IntoElement {
         // Extract all needed data upfront, then release the borrow
-        let (theme, channel_data) = {
+        let (theme, channel_data, is_custom) = {
             let state = self.state.read(cx);
             let mappings: Vec<_> = state
                 .app
@@ -777,7 +796,14 @@ impl PlayerView {
                 .iter()
                 .map(|m| (m.interface_channel, m.group_name.clone()))
                 .collect();
-            (state.app.ui_state.theme.clone(), mappings)
+            let is_custom = state
+                .app
+                .measurement_state
+                .recording_state
+                .playback_config
+                .speaker_configuration
+                == SpeakerConfiguration::Custom;
+            (state.app.ui_state.theme.clone(), mappings, is_custom)
         };
         let view = cx.entity().clone();
 
@@ -788,9 +814,16 @@ impl PlayerView {
                     let view = view.clone();
                     let theme = theme.clone();
                     let interface_ch = *interface_channel;
+                    let group_name = group_name.clone();
 
-                    // Render the dropdown for this channel
-                    let group_dropdown = self.render_channel_group_dropdown(cx, idx, group_name);
+                    // For custom config, show text input; otherwise show dropdown
+                    let name_widget = if is_custom {
+                        self.render_channel_name_input(cx, idx, &group_name)
+                            .into_any_element()
+                    } else {
+                        self.render_channel_group_dropdown(cx, idx, &group_name)
+                            .into_any_element()
+                    };
 
                     HStack::new()
                         .spacing(StackSpacing::Md)
@@ -843,11 +876,49 @@ impl PlayerView {
                                     })
                                 }),
                         )
-                        .child(group_dropdown)
+                        .child(name_widget)
                         .into_any_element()
                 },
             ))
             .into_any_element()
+    }
+
+    /// Render custom text input for channel name (used when Custom speaker configuration is selected)
+    fn render_channel_name_input(
+        &self,
+        cx: &mut Context<Self>,
+        channel_idx: usize,
+        current_name: &str,
+    ) -> impl IntoElement {
+        let view = cx.entity().clone();
+        let current_name = current_name.to_string();
+
+        div().w(px(160.0)).child(
+            Input::new(SharedString::from(format!("channel_name_{}", channel_idx)))
+                .placeholder("Channel name")
+                .value(current_name)
+                .size(InputSize::Sm)
+                .on_change({
+                    let view = view.clone();
+                    move |value, _window, cx| {
+                        view.update(cx, |this, cx| {
+                            this.state.update(cx, |state, _| {
+                                if let Some(mapping) = state
+                                    .app
+                                    .measurement_state
+                                    .recording_state
+                                    .playback_config
+                                    .channel_mappings
+                                    .get_mut(channel_idx)
+                                {
+                                    mapping.group_name = value.to_string();
+                                }
+                            });
+                            cx.notify();
+                        });
+                    }
+                }),
+        )
     }
 
     /// Render channel group dropdown for a specific channel (playback only)
@@ -1406,14 +1477,20 @@ impl PlayerView {
 fn update_playback_channel_mappings(state: &mut RecordingState) {
     let target_count = state.playback_config.num_channels;
     let current_count = state.playback_config.channel_mappings.len();
+    let is_custom = state.playback_config.speaker_configuration == SpeakerConfiguration::Custom;
 
     if target_count > current_count {
         // Add new mappings
         for i in current_count..target_count {
-            let group = CHANNEL_GROUPS
-                .get(i)
-                .map(|(id, _)| id.to_string())
-                .unwrap_or_default();
+            let group = if is_custom {
+                // Use generic channel names for custom config
+                format!("Ch{}", i + 1)
+            } else {
+                CHANNEL_GROUPS
+                    .get(i)
+                    .map(|(id, _)| id.to_string())
+                    .unwrap_or_else(|| format!("Ch{}", i + 1))
+            };
             state.playback_config.channel_mappings.push(ChannelMapping {
                 interface_channel: i, // 0-indexed internally
                 group_name: group,
