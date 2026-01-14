@@ -3,6 +3,7 @@
 // ============================================================================
 
 use super::UpmixerPlugin;
+use crate::simd::flush_denormals_inplace;
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 
 impl UpmixerPlugin {
@@ -102,35 +103,59 @@ impl UpmixerPlugin {
             let attack_coeff = 1.0 - (-1.0 / (attack_time_sec * self.sample_rate as f32)).exp();
             let release_coeff = 1.0 - (-1.0 / (release_time_sec * self.sample_rate as f32)).exp();
 
+            // Soft threshold for envelope detection - prevents clicks at threshold crossing
+            // Using a sigmoid-like transition instead of hard threshold
+            let threshold = 0.001_f32;
+            let soft_knee = 0.0005_f32; // Transition zone width
+
             for i in 0..self.fft_size {
                 // Use the time-domain LFE signal as the envelope
                 let lfe_amp = self.time_out_channels[lfe_idx][i].abs();
 
-                // Smooth envelope: gradually ramp up/down instead of hard switching
-                // This prevents clicks and pops when sub-harmonic synthesis turns on/off
-                if lfe_amp > 0.001 {
-                    // Attack: envelope moves toward 1.0
-                    self.subharmonic_envelope += (1.0 - self.subharmonic_envelope) * attack_coeff;
+                // Smooth envelope using soft threshold for click-free transitions
+                // Instead of hard threshold, use continuous envelope tracking
+                // that responds proportionally to input amplitude
+                let target_envelope = if lfe_amp < threshold - soft_knee {
+                    0.0
+                } else if lfe_amp > threshold + soft_knee {
+                    1.0
                 } else {
-                    // Release: envelope moves toward 0.0
-                    self.subharmonic_envelope += (0.0 - self.subharmonic_envelope) * release_coeff;
+                    // Soft knee region: smooth transition
+                    0.5 + (lfe_amp - threshold) / (2.0 * soft_knee)
+                };
+
+                // Apply attack or release based on whether we're going up or down
+                let envelope_coeff = if target_envelope > self.subharmonic_envelope {
+                    attack_coeff
+                } else {
+                    release_coeff
+                };
+                self.subharmonic_envelope +=
+                    (target_envelope - self.subharmonic_envelope) * envelope_coeff;
+
+                // Always generate sub-harmonic with envelope applied
+                // Very small envelopes will be inaudible but still smooth
+                self.subharmonic_phase += phase_inc;
+                if self.subharmonic_phase > 2.0 * std::f32::consts::PI {
+                    self.subharmonic_phase -= 2.0 * std::f32::consts::PI;
                 }
 
-                // Only generate sub-harmonic if envelope is above threshold
-                if self.subharmonic_envelope > 0.0001 {
-                    self.subharmonic_phase += phase_inc;
-                    if self.subharmonic_phase > 2.0 * std::f32::consts::PI {
-                        self.subharmonic_phase -= 2.0 * std::f32::consts::PI;
-                    }
+                // Apply envelope to sub-harmonic for smooth transitions
+                let sub = self.subharmonic_phase.sin()
+                    * lfe_amp
+                    * self.subharmonic_gain.current()
+                    * self.subharmonic_envelope;
 
-                    // Apply envelope to sub-harmonic for smooth transitions
-                    let sub = self.subharmonic_phase.sin()
-                        * lfe_amp
-                        * self.subharmonic_gain.current()
-                        * self.subharmonic_envelope;
+                // Only add if envelope is significant (prevents denormal issues)
+                if self.subharmonic_envelope > 1e-6 {
                     self.time_out_channels[lfe_idx][i] += sub;
                 }
             }
+        }
+
+        // Flush denormals from LFE channel after sub-harmonic synthesis
+        if let Some(lfe_idx) = self.speaker_config.speakers.iter().position(|s| s.is_lfe) {
+            flush_denormals_inplace(&mut self.time_out_channels[lfe_idx]);
         }
     }
 }

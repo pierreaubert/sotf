@@ -18,6 +18,7 @@
 use super::param_specs::upmixer::*;
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use super::simd::flush_denormals_inplace;
 use super::smoothing::Smoother;
 use super::speaker_config::{SpeakerConfig, get_speaker_config};
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
@@ -427,13 +428,13 @@ impl UpmixerPlugin {
 
             param_speaker_config: ParameterId::from("speaker_config"),
             param_gain_front_direct: ParameterId::from("gain_front_direct"),
-            gain_front_direct: Smoother::new(gain_front_direct, 50.0, sample_rate),
+            gain_front_direct: Smoother::new(gain_front_direct, 5.0, sample_rate),
 
             param_gain_front_ambient: ParameterId::from("gain_front_ambient"),
-            gain_front_ambient: Smoother::new(gain_front_ambient, 50.0, sample_rate),
+            gain_front_ambient: Smoother::new(gain_front_ambient, 5.0, sample_rate),
 
             param_gain_rear_ambient: ParameterId::from("gain_rear_ambient"),
-            gain_rear_ambient: Smoother::new(gain_rear_ambient, 50.0, sample_rate),
+            gain_rear_ambient: Smoother::new(gain_rear_ambient, 5.0, sample_rate),
 
             param_lfe_cutoff_hz: ParameterId::from("lfe_cutoff_hz"),
             lfe_cutoff_hz,
@@ -448,15 +449,15 @@ impl UpmixerPlugin {
             bandpass_hz,
 
             param_height_gain: ParameterId::from("height_gain"),
-            height_gain: Smoother::new(height_gain, 50.0, sample_rate),
+            height_gain: Smoother::new(height_gain, 5.0, sample_rate),
 
             param_lfe_gain: ParameterId::from("lfe_gain"),
-            lfe_gain: Smoother::new(lfe_gain, 50.0, sample_rate),
+            lfe_gain: Smoother::new(lfe_gain, 5.0, sample_rate),
 
             param_enable_subharmonic_synth: ParameterId::from("enable_subharmonic_synth"),
             enable_subharmonic_synth,
             param_subharmonic_gain: ParameterId::from("subharmonic_gain"),
-            subharmonic_gain: Smoother::new(subharmonic_gain, 50.0, sample_rate),
+            subharmonic_gain: Smoother::new(subharmonic_gain, 5.0, sample_rate),
 
             param_enable_hr_direct: ParameterId::from("enable_hr_direct"),
             enable_hr_direct: true, // Enable by default for multi-resolution analysis
@@ -1836,10 +1837,13 @@ Upper bound for dialogue detection analysis.",
                 self.temp_input_block = temp_input;
 
                 // Accumulate output (overlap-add) at next_add_position
+                // Apply synthesis window for proper COLA with Hann window at 50% overlap
+                // This ensures perfect reconstruction and prevents discontinuities
                 for i in 0..self.fft_size {
+                    let window_val = self.window[i];
                     for ch in 0..self.num_output_channels {
                         self.output_accumulator[ch][self.next_add_position + i] +=
-                            output_block[i * self.num_output_channels + ch];
+                            output_block[i * self.num_output_channels + ch] * window_val;
                     }
                 }
 
@@ -1852,6 +1856,13 @@ Upper bound for dialogue detection analysis.",
                     // Subsequent blocks: add hop_size more samples, next block starts hop_size later
                     self.output_accumulator_fill += self.hop_size;
                     self.next_add_position += self.hop_size;
+                }
+
+                // Flush denormals from accumulator to prevent CPU performance spikes
+                for ch in 0..self.num_output_channels {
+                    let start = self.next_add_position - self.hop_size;
+                    let end = self.next_add_position;
+                    flush_denormals_inplace(&mut self.output_accumulator[ch][start..end]);
                 }
 
                 self.output_block = output_block;

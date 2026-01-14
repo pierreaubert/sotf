@@ -3,7 +3,7 @@
 // ============================================================================
 
 use super::UpmixerPlugin;
-use crate::simd::compute_covariance_simd;
+use crate::simd::{compute_covariance_simd, flush_denormals_complex_inplace};
 use rustfft::num_complex::Complex;
 
 fn base_ambient_gain_from_coherence(coherence: f32, ambient_boost: f32) -> f32 {
@@ -298,6 +298,14 @@ impl UpmixerPlugin {
                 self.apply_adaptive_decorrelation(upmix_start, upmix_end, decorrelation_strength);
             }
         }
+
+        // Flush denormals from frequency domain buffers to prevent CPU performance issues
+        flush_denormals_complex_inplace(&mut self.direct);
+        flush_denormals_complex_inplace(&mut self.direct_left);
+        flush_denormals_complex_inplace(&mut self.direct_right);
+        flush_denormals_complex_inplace(&mut self.ambient_left);
+        flush_denormals_complex_inplace(&mut self.ambient_right);
+        flush_denormals_complex_inplace(&mut self.lfe);
 
         // Apply spectral and temporal smoothing to height_band_gains
         self.smooth_height_gains();

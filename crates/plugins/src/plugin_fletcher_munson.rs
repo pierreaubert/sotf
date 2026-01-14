@@ -791,10 +791,10 @@ impl Plugin for FletcherMunsonPlugin {
             "auto_gain_enabled" => return Some(ParameterValue::Bool(self.auto_gain_enabled)),
             "auto_gain_max_db" => return Some(ParameterValue::Float(self.auto_gain_max_db)),
             "auto_gain_smoothing_ms" => {
-                return Some(ParameterValue::Float(self.auto_gain_smoothing_ms))
+                return Some(ParameterValue::Float(self.auto_gain_smoothing_ms));
             }
             "auto_gain_loudness_type" => {
-                return Some(ParameterValue::Int(self.auto_gain_loudness_type))
+                return Some(ParameterValue::Int(self.auto_gain_loudness_type));
             }
             _ => {}
         }
@@ -1019,10 +1019,7 @@ mod tests {
 
         // Set band parameter
         plugin
-            .set_parameter(
-                ParameterId::from("band1_freq"),
-                ParameterValue::Float(80.0),
-            )
+            .set_parameter(ParameterId::from("band1_freq"), ParameterValue::Float(80.0))
             .unwrap();
 
         let value = plugin.get_parameter(&ParameterId::from("band1_freq"));

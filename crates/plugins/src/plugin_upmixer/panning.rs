@@ -3,6 +3,7 @@
 // ============================================================================
 
 use super::UpmixerPlugin;
+use crate::simd::flush_denormals_inplace;
 
 impl UpmixerPlugin {
     /// Phase 3: Apply VBAP panning to distribute to output speakers and perform inverse FFT
@@ -163,6 +164,9 @@ impl UpmixerPlugin {
                     *sample = 0.0;
                 }
             }
+
+            // Flush denormals to prevent CPU performance spikes and audio crackle
+            flush_denormals_inplace(&mut self.time_out_channels[ch_idx]);
         }
     }
 }

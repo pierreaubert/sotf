@@ -69,6 +69,20 @@ impl Smoother {
         self.target
     }
 
+    /// Process one sample step (updates current value) - per-sample smoothing
+    /// Returns the smoothed value for this sample
+    #[inline]
+    pub fn process_sample(&mut self, sample: f32) -> f32 {
+        // Apply smoothing to parameter changes, then process input with smoothed gain
+        // This gives smooth parameter transitions AND smooth gain application
+        if (self.current - self.target).abs() < 1e-5 {
+            self.current = self.target;
+        } else {
+            self.current = self.target + self.coeff * (self.current - self.target);
+        }
+        sample * self.current
+    }
+
     /// Reset to value immediately
     pub fn reset(&mut self, value: f32) {
         self.target = value;

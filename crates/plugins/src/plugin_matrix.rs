@@ -2,9 +2,9 @@
 // Matrix Plugin - Channel mixer with configurable gain matrix
 // ============================================================================
 
+use super::ChannelState;
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
-use super::ChannelState;
 
 /// Matrix mixer plugin that routes N input channels to P output channels
 ///
@@ -270,7 +270,10 @@ impl MatrixPlugin {
             ));
         }
         if !(-1.0..=1.0).contains(&gain) {
-            return Err(format!("Gain {:.3} out of range (must be -1.0 to 1.0)", gain));
+            return Err(format!(
+                "Gain {:.3} out of range (must be -1.0 to 1.0)",
+                gain
+            ));
         }
 
         self.matrix[output_ch * num_inputs + input_ch] = gain;
@@ -456,13 +459,14 @@ impl Plugin for MatrixPlugin {
             let val = value
                 .as_bool()
                 .ok_or_else(|| "Parameter value must be a boolean".to_string())?;
-            
+
             // Ensure vector is large enough
             if ch >= self.num_outputs() {
                 return Err(format!("Channel index {} out of range", ch));
             }
             if self.channel_states.len() <= ch {
-                 self.channel_states.resize(self.num_outputs(), ChannelState::default());
+                self.channel_states
+                    .resize(self.num_outputs(), ChannelState::default());
             }
             self.channel_states[ch].muted = val;
             return Ok(());
@@ -472,15 +476,16 @@ impl Plugin for MatrixPlugin {
             let ch = rest
                 .parse::<usize>()
                 .map_err(|_| format!("Invalid channel index: {}", rest))?;
-             let val = value
+            let val = value
                 .as_bool()
                 .ok_or_else(|| "Parameter value must be a boolean".to_string())?;
 
-             if ch >= self.num_outputs() {
+            if ch >= self.num_outputs() {
                 return Err(format!("Channel index {} out of range", ch));
             }
             if self.channel_states.len() <= ch {
-                 self.channel_states.resize(self.num_outputs(), ChannelState::default());
+                self.channel_states
+                    .resize(self.num_outputs(), ChannelState::default());
             }
             self.channel_states[ch].soloed = val;
             return Ok(());
@@ -490,15 +495,16 @@ impl Plugin for MatrixPlugin {
             let ch = rest
                 .parse::<usize>()
                 .map_err(|_| format!("Invalid channel index: {}", rest))?;
-             let val = value
+            let val = value
                 .as_bool()
                 .ok_or_else(|| "Parameter value must be a boolean".to_string())?;
-            
-             if ch >= self.num_outputs() {
+
+            if ch >= self.num_outputs() {
                 return Err(format!("Channel index {} out of range", ch));
             }
             if self.channel_states.len() <= ch {
-                 self.channel_states.resize(self.num_outputs(), ChannelState::default());
+                self.channel_states
+                    .resize(self.num_outputs(), ChannelState::default());
             }
             self.channel_states[ch].dimmed = val;
             return Ok(());
@@ -532,7 +538,7 @@ impl Plugin for MatrixPlugin {
         }
 
         if let Some(rest) = id_str.strip_prefix("solo_") {
-             let ch = rest.parse::<usize>().ok()?;
+            let ch = rest.parse::<usize>().ok()?;
             if ch < self.channel_states.len() {
                 return Some(ParameterValue::Bool(self.channel_states[ch].soloed));
             }
@@ -540,7 +546,7 @@ impl Plugin for MatrixPlugin {
         }
 
         if let Some(rest) = id_str.strip_prefix("dim_") {
-             let ch = rest.parse::<usize>().ok()?;
+            let ch = rest.parse::<usize>().ok()?;
             if ch < self.channel_states.len() {
                 return Some(ParameterValue::Bool(self.channel_states[ch].dimmed));
             }
@@ -623,7 +629,7 @@ impl Plugin for MatrixPlugin {
                         // Ideally checking a "Dim Level" parameter, but for enabled/disabled bool
                         // we can standardise on -20dB.
                         if state.dimmed {
-                             sum *= 0.1;
+                            sum *= 0.1;
                         }
                     }
                 }

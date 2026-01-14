@@ -555,9 +555,197 @@ pub fn interleave_stereo(left: &[f32], right: &[f32], output: &mut [f32]) {
     }
 }
 
+/// Flush denormal numbers to zero to prevent CPU performance spikes and audio glitches.
+///
+/// Denormal floats (values with magnitude < 1e-30) cause significant CPU overhead
+/// when processed by FMA instructions, leading to audio artifacts and crackle.
+/// This function checks each sample and sets denormals to exactly 0.0.
+#[inline]
+pub fn flush_denormals_inplace(samples: &mut [f32]) {
+    const DENORM_THRESHOLD: f32 = 1e-30;
+
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    {
+        use std::arch::x86_64::*;
+
+        let threshold = unsafe { _mm256_set1_ps(DENORM_THRESHOLD) };
+        let zero = unsafe { _mm256_set1_ps(0.0) };
+        let len = samples.len();
+        let simd_len = (len / 8) * 8;
+
+        for i in (0..simd_len).step_by(8) {
+            unsafe {
+                let ptr = samples.as_mut_ptr().add(i);
+                let val = _mm256_loadu_ps(ptr);
+                let abs_val = _mm256_andnot_ps(_mm256_set1_ps(-0.0), val);
+                let mask = _mm256_cmp_ps(abs_val, threshold, _CMP_LT_OQ);
+                let result = _mm256_blendv_ps(val, zero, mask);
+                _mm256_storeu_ps(ptr, result);
+            }
+        }
+
+        for i in simd_len..len {
+            if samples[i].abs() < DENORM_THRESHOLD {
+                samples[i] = 0.0;
+            }
+        }
+    }
+
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    {
+        use std::arch::aarch64::*;
+
+        let threshold = unsafe { vdupq_n_f32(DENORM_THRESHOLD) };
+        let zero = unsafe { vdupq_n_f32(0.0) };
+        let len = samples.len();
+        let simd_len = (len / 4) * 4;
+
+        for i in (0..simd_len).step_by(4) {
+            unsafe {
+                let ptr = samples.as_mut_ptr().add(i);
+                let val = vld1q_f32(ptr);
+                let abs_val = vabsq_f32(val);
+                let mask = vcleq_f32(abs_val, threshold);
+                let result = vbslq_f32(mask, zero, val);
+                vst1q_f32(ptr, result);
+            }
+        }
+
+        for i in simd_len..len {
+            if samples[i].abs() < DENORM_THRESHOLD {
+                samples[i] = 0.0;
+            }
+        }
+    }
+
+    #[cfg(not(any(
+        all(target_arch = "x86_64", target_feature = "avx2"),
+        all(target_arch = "aarch64", target_feature = "neon")
+    )))]
+    {
+        for sample in samples {
+            if sample.abs() < DENORM_THRESHOLD {
+                *sample = 0.0;
+            }
+        }
+    }
+}
+
+/// Flush denormals in complex buffer (applies to both real and imaginary parts)
+#[inline]
+pub fn flush_denormals_complex_inplace(samples: &mut [Complex<f32>]) {
+    const DENORM_THRESHOLD: f32 = 1e-30;
+
+    for sample in samples {
+        if sample.re.abs() < DENORM_THRESHOLD {
+            sample.re = 0.0;
+        }
+        if sample.im.abs() < DENORM_THRESHOLD {
+            sample.im = 0.0;
+        }
+    }
+}
+
+#[cfg(test)]
+mod denorm_tests {
+    use super::*;
+
+    #[test]
+    fn test_flush_denormals_basic() {
+        let mut samples = [1e-31_f32, 1e-20, 1e-10, 0.0, -1e-31, 1.0];
+        flush_denormals_inplace(&mut samples);
+        assert_eq!(samples[0], 0.0);
+        assert_eq!(samples[1], 1e-20);
+        assert_eq!(samples[2], 1e-10);
+        assert_eq!(samples[3], 0.0);
+        assert_eq!(samples[4], 0.0);
+        assert_eq!(samples[5], 1.0);
+    }
+
+    #[test]
+    fn test_flush_denormals_complex() {
+        use rustfft::num_complex::Complex;
+        let mut samples = [
+            Complex::new(1e-31, 1e-30),
+            Complex::new(1.0, 1e-31),
+            Complex::new(0.0, 0.0),
+        ];
+        flush_denormals_complex_inplace(&mut samples);
+        assert_eq!(samples[0].re, 0.0);
+        assert!((samples[0].im - 1e-30).abs() < 1e-35);
+        assert_eq!(samples[1].re, 1.0);
+        assert_eq!(samples[1].im, 0.0);
+        assert_eq!(samples[2].re, 0.0);
+        assert_eq!(samples[2].im, 0.0);
+    }
+
+    #[test]
+    fn test_flush_denormals_empty() {
+        let mut samples: [f32; 0] = [];
+        flush_denormals_inplace(&mut samples);
+    }
+
+    #[test]
+    fn test_flush_denormals_unaligned() {
+        let mut samples = [1e-31_f32; 7];
+        flush_denormals_inplace(&mut samples);
+        for s in samples.iter() {
+            assert_eq!(*s, 0.0);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ============================================================================
+    // Denormal Flushing Tests
+    // ============================================================================
+
+    #[test]
+    fn test_flush_denormals_basic() {
+        let mut samples = [1e-31_f32, 1e-20, 1e-10, 0.0, -1e-31, 1.0];
+        flush_denormals_inplace(&mut samples);
+        assert_eq!(samples[0], 0.0);
+        assert_eq!(samples[1], 1e-20);
+        assert_eq!(samples[2], 1e-10);
+        assert_eq!(samples[3], 0.0);
+        assert_eq!(samples[4], 0.0);
+        assert_eq!(samples[5], 1.0);
+    }
+
+    #[test]
+    fn test_flush_denormals_complex() {
+        use rustfft::num_complex::Complex;
+        let mut samples = [
+            Complex::new(1e-31, 1e-30),
+            Complex::new(1.0, 1e-31),
+            Complex::new(0.0, 0.0),
+        ];
+        flush_denormals_complex_inplace(&mut samples);
+        assert_eq!(samples[0].re, 0.0);
+        assert!((samples[0].im - 1e-30).abs() < 1e-35);
+        assert_eq!(samples[1].re, 1.0);
+        assert_eq!(samples[1].im, 0.0);
+        assert_eq!(samples[2].re, 0.0);
+        assert_eq!(samples[2].im, 0.0);
+    }
+
+    #[test]
+    fn test_flush_denormals_empty() {
+        let mut samples: [f32; 0] = [];
+        flush_denormals_inplace(&mut samples);
+    }
+
+    #[test]
+    fn test_flush_denormals_unaligned() {
+        let mut samples = [1e-31_f32; 7];
+        flush_denormals_inplace(&mut samples);
+        for s in samples.iter() {
+            assert_eq!(*s, 0.0);
+        }
+    }
 
     // ============================================================================
     // SIMD Correctness Tests

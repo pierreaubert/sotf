@@ -735,7 +735,8 @@ impl DawHost {
         since = "0.5.10",
         note = "Parallel processing disabled for scratch buffer reuse"
     )]
-    #[allow(dead_code)] fn process_stage_parallel(
+    #[allow(dead_code)]
+    fn process_stage_parallel(
         &self,
         stage: &ProcessingStage,
         graph_input: &[f32],

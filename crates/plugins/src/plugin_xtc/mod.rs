@@ -38,7 +38,6 @@ use serde::{Deserialize, Serialize};
 use std::f32::consts::PI;
 use std::sync::Arc;
 
-
 // ============================================================================
 // Configuration
 // ============================================================================
@@ -173,7 +172,6 @@ impl Default for XtcPluginParams {
         }
     }
 }
-
 
 // ============================================================================
 // Plugin Implementation
@@ -382,7 +380,9 @@ impl XtcPlugin {
         let sample_rate = self.sample_rate;
 
         // In Block mode, store old filters for crossfading
-        if self.params.head_tracking_smoothing_mode == SmoothingMode::Block && self.crossfade_progress >= 1.0 {
+        if self.params.head_tracking_smoothing_mode == SmoothingMode::Block
+            && self.crossfade_progress >= 1.0
+        {
             self.prev_filters = Some(self.filters.clone());
             self.crossfade_progress = 0.0;
         }
@@ -821,7 +821,6 @@ impl Plugin for XtcPlugin {
     }
 }
 
-
 // ============================================================================
 // Crosstalk Cancellation Filter Computation
 // ============================================================================
@@ -878,7 +877,7 @@ fn compute_xtc_filters_asymmetric(
     let x_offset = params.head_offset_x;
 
     // Effective speaker angles relative to rotated head
-    let theta_left = theta_rad + yaw_rad;  // Left speaker angle
+    let theta_left = theta_rad + yaw_rad; // Left speaker angle
     let theta_right = theta_rad - yaw_rad; // Right speaker angle
 
     // Left ear paths
@@ -1241,7 +1240,6 @@ fn compute_beta(freq: f32, params: &XtcPluginParams) -> f32 {
 
     beta_base * low_freq_factor * high_freq_factor
 }
-
 
 // ============================================================================
 // Tests

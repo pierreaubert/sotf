@@ -3,6 +3,7 @@
 // ============================================================================
 
 use super::UpmixerPlugin;
+use crate::simd::flush_denormals_inplace;
 use rustfft::num_complex::Complex;
 
 impl UpmixerPlugin {
@@ -112,5 +113,8 @@ impl UpmixerPlugin {
                 output[idx] = self.hr_time_out_channels[ch_idx][i] * combined_scale;
             }
         }
+
+        // Flush denormals from HR output to prevent CPU performance spikes
+        flush_denormals_inplace(output);
     }
 }

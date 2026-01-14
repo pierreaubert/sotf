@@ -338,7 +338,6 @@ impl SpectrumAnalyzer {
         // We find which Log Bin it belongs to.
         // Since both are sorted, we can do a linear scan.
 
-
         // Find start freq of first bin (approximate)
         // Self::generate_log_bins gives centers. Let's assume edges are implicitly defined.
         // We need edges to Bucket correctly.
@@ -348,7 +347,8 @@ impl SpectrumAnalyzer {
         let num_log_bins = self.config.num_bins;
 
         // Iterate FFT bins
-        for (i, complex_val) in self.fft_output.iter().enumerate().skip(1) { // Skip DC
+        for (i, complex_val) in self.fft_output.iter().enumerate().skip(1) {
+            // Skip DC
             let freq = i as f32 * fft_bin_size;
             if freq > self.config.max_freq {
                 break;

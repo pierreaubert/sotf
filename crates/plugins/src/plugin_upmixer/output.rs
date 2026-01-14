@@ -3,6 +3,7 @@
 // ============================================================================
 
 use super::UpmixerPlugin;
+use crate::simd::flush_denormals_inplace;
 
 impl UpmixerPlugin {
     /// Phase 5: Extract real parts from time domain and apply final scaling
@@ -55,17 +56,11 @@ impl UpmixerPlugin {
         for i in 0..self.fft_size {
             let idx = i * self.num_output_channels;
             for ch in 0..self.num_output_channels {
-                let mut sample = self.time_out_channels[ch][i] * final_scale;
-
-                // Flush denormals to zero to prevent CPU spikes and audio glitches
-                // Denormal numbers (very small floats near zero) can cause significant
-                // performance degradation and numerical instability
-                if sample.abs() < 1e-30 {
-                    sample = 0.0;
-                }
-
+                let sample = self.time_out_channels[ch][i] * final_scale;
                 output[idx + ch] = sample;
             }
         }
+
+        flush_denormals_inplace(output);
     }
 }
