@@ -10,6 +10,7 @@
 use super::auto_gain::{AutoGain, AutoGainLoudnessType, AutoGainParams};
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use super::simd::flush_denormals_inplace;
 use math_audio_iir_fir::Biquad;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
@@ -474,6 +475,10 @@ impl Plugin for EqPlugin {
         // Apply auto-gain compensation
         self.auto_gain
             .apply_compensation(output, context.num_frames);
+
+        // Flush denormals to prevent CPU performance spikes and audio crackle
+        // IIR biquad filter calculations can produce denormal numbers
+        flush_denormals_inplace(output);
 
         Ok(())
     }

@@ -19,6 +19,7 @@
 use super::param_specs::compressor::*;
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use super::simd::flush_denormals_inplace;
 use super::smoothing::Smoother;
 use serde::{Deserialize, Serialize};
 use std::f32::consts::PI;
@@ -557,6 +558,10 @@ impl InPlacePlugin for CompressorPlugin {
                 }
             }
         }
+
+        // Flush denormals to prevent CPU performance spikes and audio crackle
+        // Compressor gain reduction and envelope calculations can produce denormal numbers
+        flush_denormals_inplace(buffer);
 
         Ok(())
     }

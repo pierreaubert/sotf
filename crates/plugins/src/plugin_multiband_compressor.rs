@@ -18,6 +18,7 @@
 use super::param_specs::multiband_compressor::*;
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use super::simd::flush_denormals_inplace;
 use super::smoothing::Smoother;
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use serde::{Deserialize, Serialize};
@@ -1000,6 +1001,10 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                 *sample = dry_mix * dry_signal[i] + wet_mix * *sample;
             }
         }
+
+        // Flush denormals to prevent CPU performance spikes and audio crackle
+        // Multiband compressor envelope calculations can produce denormal numbers
+        flush_denormals_inplace(buffer);
 
         Ok(())
     }

@@ -15,6 +15,7 @@
 use super::param_specs::limiter::*;
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use super::smoothing::Smoother;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
@@ -82,9 +83,14 @@ pub struct LimiterPlugin {
     param_mix: ParameterId,
     mix: f32,
 
+    // Smoothed parameters for click-free parameter changes
+    threshold_smoother: Smoother,
+    mix_smoother: Smoother,
+
     // State
     envelope: f32,                   // Current gain reduction envelope
     release_coeff: f32,              // Release coefficient
+    attack_coeff: f32,               // Attack coefficient (for fast attack instead of instant)
     lookahead_buffer: VecDeque<f32>, // Circular buffer for lookahead (interleaved)
     lookahead_samples: usize,        // Lookahead buffer size in samples
 }
@@ -124,8 +130,13 @@ impl LimiterPlugin {
             param_mix: ParameterId::from("mix"),
             mix: 1.0,
 
+            // Smoothed parameters (5ms for fast but smooth response)
+            threshold_smoother: Smoother::new(10.0_f32.powf(threshold_db / 20.0), 5.0, 44100),
+            mix_smoother: Smoother::new(1.0, 5.0, 44100),
+
             envelope: 0.0,
             release_coeff: 0.0,
+            attack_coeff: 0.9, // Fast attack (0.9 = ~1ms attack time)
             lookahead_buffer: VecDeque::new(),
             lookahead_samples: 0,
         }
@@ -243,6 +254,9 @@ impl InPlacePlugin for LimiterPlugin {
     fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
         if id == self.param_threshold {
             self.threshold_db = value.as_float().ok_or("Invalid threshold value")?;
+            // Convert dB to linear and set target for smoother
+            let linear = 10.0_f32.powf(self.threshold_db / 20.0);
+            self.threshold_smoother.set_target(linear);
         } else if id == self.param_release {
             self.release_ms = value.as_float().ok_or("Invalid release value")?.max(1.0);
             self.update_coefficients();
@@ -253,6 +267,7 @@ impl InPlacePlugin for LimiterPlugin {
             self.soft = value.as_bool().ok_or("Invalid soft value")?;
         } else if id == self.param_mix {
             self.mix = value.as_float().ok_or("Invalid mix value")?.clamp(0.0, 1.0);
+            self.mix_smoother.set_target(self.mix);
         } else {
             return Err(format!("Unknown parameter: {}", id));
         }
@@ -278,6 +293,11 @@ impl InPlacePlugin for LimiterPlugin {
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
         self.update_coefficients();
+
+        // Update smoother times for the new sample rate
+        self.threshold_smoother.set_time(5.0, sample_rate);
+        self.mix_smoother.set_time(5.0, sample_rate);
+
         Ok(())
     }
 
@@ -293,9 +313,14 @@ impl InPlacePlugin for LimiterPlugin {
         context: &ProcessContext,
     ) -> PluginResult<()> {
         let num_frames = context.num_frames;
-        let threshold_linear = 10.0_f32.powf(self.threshold_db / 20.0);
-        let dry_mix = 1.0 - self.mix;
-        let wet_mix = self.mix;
+
+        // Update smoothers per sample for smooth parameter transitions
+        let _ = self.threshold_smoother.next();
+        let _ = self.mix_smoother.next();
+        let threshold_linear = self.threshold_smoother.current();
+        let smoothed_mix = self.mix_smoother.current();
+        let dry_mix = 1.0 - smoothed_mix;
+        let wet_mix = smoothed_mix;
 
         for frame in 0..num_frames {
             // Process all channels for this frame
@@ -327,10 +352,11 @@ impl InPlacePlugin for LimiterPlugin {
                 0.0
             };
 
-            // Envelope follower (instant attack, smooth release)
+            // Envelope follower (fast attack, smooth release) instead of instant attack
+            // This prevents clicks while still providing effective limiting
             if target_gr_db > self.envelope {
-                // Instant attack - use maximum to prevent overshoots
-                self.envelope = target_gr_db.max(self.envelope);
+                // Fast attack (0.9 coeff = ~1ms attack time at 44.1kHz)
+                self.envelope = target_gr_db + self.attack_coeff * (self.envelope - target_gr_db);
             } else {
                 // Smooth release
                 self.envelope = target_gr_db + self.release_coeff * (self.envelope - target_gr_db);
@@ -354,6 +380,11 @@ impl InPlacePlugin for LimiterPlugin {
 
                     // Dry/wet mix
                     buffer[sample_idx] = dry_mix * dry + wet_mix * wet;
+
+                    // Flush denormals to prevent CPU performance spikes and audio crackle
+                    if buffer[sample_idx].abs() < 1e-30 && buffer[sample_idx] != 0.0 {
+                        buffer[sample_idx] = 0.0;
+                    }
                 } else {
                     buffer[sample_idx] = 0.0;
                 }

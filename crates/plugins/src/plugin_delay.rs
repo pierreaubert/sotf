@@ -11,6 +11,7 @@
 
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use super::smoothing::Smoother;
 use serde::{Deserialize, Serialize};
 
 // ============================================================================
@@ -71,6 +72,10 @@ pub struct DelayPlugin {
     param_mix: ParameterId,
     mix: f32,
 
+    // Smoothed parameters to prevent clicks during parameter changes
+    feedback_smoother: Smoother,
+    mix_smoother: Smoother,
+
     // Delay buffers (one per channel)
     delay_buffers: Vec<Vec<f32>>,
     // Write positions in the circular buffers
@@ -108,6 +113,10 @@ impl DelayPlugin {
 
             param_mix: ParameterId::from("mix"),
             mix: mix.clamp(0.0, 1.0),
+
+            // Smoothed parameters (5ms time constant for fast but click-free changes)
+            feedback_smoother: Smoother::new(feedback.clamp(0.0, 0.95), 5.0, sample_rate),
+            mix_smoother: Smoother::new(mix.clamp(0.0, 1.0), 5.0, sample_rate),
 
             delay_buffers,
             write_positions,
@@ -203,14 +212,16 @@ impl InPlacePlugin for DelayPlugin {
             }
         } else if id == self.param_feedback {
             if let Some(feedback) = value.as_float() {
-                self.set_feedback(feedback);
+                self.feedback = feedback.clamp(0.0, 0.95);
+                self.feedback_smoother.set_target(self.feedback);
                 Ok(())
             } else {
                 Err("Feedback parameter must be a float".to_string())
             }
         } else if id == self.param_mix {
             if let Some(mix) = value.as_float() {
-                self.set_mix(mix);
+                self.mix = mix.clamp(0.0, 1.0);
+                self.mix_smoother.set_target(self.mix);
                 Ok(())
             } else {
                 Err("Mix parameter must be a float".to_string())
@@ -235,6 +246,10 @@ impl InPlacePlugin for DelayPlugin {
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
         self.update_delay_length();
+
+        // Update smoother times for the new sample rate
+        self.feedback_smoother.set_time(5.0, sample_rate);
+        self.mix_smoother.set_time(5.0, sample_rate);
 
         // Resize buffers if needed for the new sample rate
         let max_delay_samples = Self::ms_to_samples(5000.0, sample_rate);
@@ -271,6 +286,13 @@ impl InPlacePlugin for DelayPlugin {
 
         // Process each frame
         for frame in 0..num_frames {
+            // Update smoothers per sample for smooth transitions
+            let _ = self.feedback_smoother.next();
+            let _ = self.mix_smoother.next();
+            let current_feedback = self.feedback_smoother.current();
+            let current_mix = self.mix_smoother.current();
+            let current_dry_mix = 1.0 - current_mix;
+
             for ch in 0..self.channels {
                 let sample_idx = frame * self.channels + ch;
                 let input_sample = buffer[sample_idx];
@@ -286,15 +308,21 @@ impl InPlacePlugin for DelayPlugin {
                 let delayed_sample = self.delay_buffers[ch][read_pos];
 
                 // Write to delay buffer (input + feedback from delayed signal)
-                self.delay_buffers[ch][self.write_positions[ch]] =
-                    input_sample + delayed_sample * self.feedback;
+                let feedback_sample = input_sample + delayed_sample * current_feedback;
+                self.delay_buffers[ch][self.write_positions[ch]] = feedback_sample;
+
+                // Flush denormals to prevent CPU performance spikes and audio crackle
+                // Feedback loops can accumulate denormal numbers from floating-point precision errors
+                if feedback_sample.abs() < 1e-30 && feedback_sample != 0.0 {
+                    self.delay_buffers[ch][self.write_positions[ch]] = 0.0;
+                }
 
                 // Advance write position (circular buffer)
                 self.write_positions[ch] =
                     (self.write_positions[ch] + 1) % self.delay_buffers[ch].len();
 
-                // Mix dry and wet signals
-                buffer[sample_idx] = input_sample * (1.0 - self.mix) + delayed_sample * self.mix;
+                // Mix dry and wet signals using smoothed values
+                buffer[sample_idx] = input_sample * current_dry_mix + delayed_sample * current_mix;
             }
         }
 

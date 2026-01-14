@@ -5,6 +5,7 @@
 use super::param_specs::convolution::*;
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use super::simd::flush_denormals_inplace;
 use super::smoothing::Smoother;
 use parking_lot::RwLock;
 use rustfft::FftPlanner;
@@ -627,6 +628,10 @@ impl Plugin for ConvolutionPlugin {
             // Passthrough
             output.copy_from_slice(input);
         }
+
+        // Flush denormals to prevent CPU performance spikes and audio crackle
+        // FFT convolution and overlap-add can produce denormal numbers
+        flush_denormals_inplace(output);
 
         Ok(())
     }

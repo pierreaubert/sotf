@@ -7,6 +7,7 @@
 
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
+use super::simd::flush_denormals_inplace;
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use serde::{Deserialize, Serialize};
 
@@ -225,6 +226,10 @@ impl InPlacePlugin for CrossoverPlugin {
                 buffer[idx] = sample;
             }
         }
+
+        // Flush denormals to prevent CPU performance spikes and audio crackle
+        // IIR filter calculations can produce denormal numbers
+        flush_denormals_inplace(buffer);
 
         Ok(())
     }
