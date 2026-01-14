@@ -3,9 +3,7 @@
 //! Tests realistic queue operations including adding albums, navigating
 //! through the queue, and managing playback order.
 
-use crate::common::state_builder::{
-    TestAlbum, TestPlaybackState, TestQueueItem, TestTrack,
-};
+use crate::common::state_builder::{TestAlbum, TestPlaybackState, TestQueueItem, TestTrack};
 
 // =============================================================================
 // Helper: Create test data
@@ -42,12 +40,12 @@ fn test_build_queue_from_empty() {
     assert_eq!(state.current_queue_index, Some(0));
 
     // Add more albums
-    state.queue.push(TestQueueItem::from_album(
-        create_album("Album2", "Artist2", 3),
-    ));
-    state.queue.push(TestQueueItem::from_album(
-        create_album("Album3", "Artist3", 4),
-    ));
+    state.queue.push(TestQueueItem::from_album(create_album(
+        "Album2", "Artist2", 3,
+    )));
+    state.queue.push(TestQueueItem::from_album(create_album(
+        "Album3", "Artist3", 4,
+    )));
 
     assert_eq!(state.queue.len(), 3);
     // Current index unchanged
@@ -71,7 +69,11 @@ fn test_queue_diverse_albums() {
     let mut total_tracks = 0;
     while state.next_track().is_some() {
         total_tracks += 1;
-        assert_eq!(state.volume, 0.5, "Volume changed after {} tracks", total_tracks);
+        assert_eq!(
+            state.volume, 0.5,
+            "Volume changed after {} tracks",
+            total_tracks
+        );
     }
 
     // Should have played all tracks minus the first (1-1 + 4-1 + 12-1 + 24-1 = 40)
@@ -131,8 +133,7 @@ fn test_navigate_forward_through_queue() {
             i
         );
         assert_eq!(
-            state.queue[album_idx].current_track_index,
-            track_idx,
+            state.queue[album_idx].current_track_index, track_idx,
             "Wrong track at step {}",
             i
         );
@@ -149,8 +150,7 @@ fn test_navigate_forward_through_queue() {
 #[test]
 fn test_position_resets_on_navigation() {
     let albums = vec![create_album("Album", "Artist", 5)];
-    let mut state = TestPlaybackState::default()
-        .with_queue(create_queue(albums));
+    let mut state = TestPlaybackState::default().with_queue(create_queue(albums));
     state.duration_secs = 180.0;
     state.position_secs = 120.0; // 2 minutes into track
 
@@ -256,8 +256,7 @@ fn test_empty_queue_safety() {
 #[test]
 fn test_queue_index_bounds() {
     let albums = vec![create_album("Album", "Artist", 3)];
-    let mut state = TestPlaybackState::default()
-        .with_queue(create_queue(albums));
+    let mut state = TestPlaybackState::default().with_queue(create_queue(albums));
 
     // Manually set invalid index
     state.current_queue_index = Some(100);
@@ -344,9 +343,9 @@ fn test_dynamic_queue_addition() {
     state.next_track();
 
     // Add another album to queue
-    state.queue.push(TestQueueItem::from_album(
-        create_album("Added", "Artist", 2),
-    ));
+    state.queue.push(TestQueueItem::from_album(create_album(
+        "Added", "Artist", 2,
+    )));
 
     // Continue listening through original album
     state.next_track();
@@ -363,11 +362,7 @@ fn test_dynamic_queue_addition() {
 #[test]
 fn test_queue_with_duplicates() {
     let album = create_album("Repeat", "Artist", 3);
-    let albums = vec![
-        album.clone(),
-        album.clone(),
-        album,
-    ];
+    let albums = vec![album.clone(), album.clone(), album];
     let mut state = TestPlaybackState::default()
         .with_volume(0.5)
         .with_queue(create_queue(albums));

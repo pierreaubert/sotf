@@ -13,7 +13,11 @@ impl PlayerView {
         let progress = state.app.measurement_state.room_eq_state.overall_progress;
         let status_msg = &state.app.measurement_state.room_eq_state.status_message;
         let is_running = state.app.measurement_state.room_eq_state.is_optimizing();
-        let is_completed = state.app.measurement_state.room_eq_state.is_optimization_complete();
+        let is_completed = state
+            .app
+            .measurement_state
+            .room_eq_state
+            .is_optimization_complete();
 
         VStack::new()
             .spacing(StackSpacing::Lg)
@@ -304,17 +308,32 @@ impl PlayerView {
 
         // Update state to running
         self.state.update(cx, |state, _cx| {
-            state.app.measurement_state.room_eq_state.optimization_status = OptimizationStatus::Running;
-            state.app.measurement_state.room_eq_state.status_message = "Starting optimization...".to_string();
-            state.app.measurement_state.room_eq_state.channel_results.clear();
+            state
+                .app
+                .measurement_state
+                .room_eq_state
+                .optimization_status = OptimizationStatus::Running;
+            state.app.measurement_state.room_eq_state.status_message =
+                "Starting optimization...".to_string();
+            state
+                .app
+                .measurement_state
+                .room_eq_state
+                .channel_results
+                .clear();
             state.app.measurement_state.room_eq_state.overall_progress = 0.0;
         });
 
         if channel_configs.is_empty() {
             log::warn!("No channels to optimize");
             self.state.update(cx, |state, _cx| {
-                state.app.measurement_state.room_eq_state.optimization_status = OptimizationStatus::Failed;
-                state.app.measurement_state.room_eq_state.error_message = Some("No channels to optimize".to_string());
+                state
+                    .app
+                    .measurement_state
+                    .room_eq_state
+                    .optimization_status = OptimizationStatus::Failed;
+                state.app.measurement_state.room_eq_state.error_message =
+                    Some("No channels to optimize".to_string());
             });
             return;
         }
@@ -334,7 +353,8 @@ impl PlayerView {
                 // Update status for current channel
                 let channel_name_for_status = channel_name.clone();
                 let _ = state_clone.update(&mut cx.clone(), |state, cx| {
-                    state.app.measurement_state.room_eq_state.current_channel = Some(channel_name_for_status.clone());
+                    state.app.measurement_state.room_eq_state.current_channel =
+                        Some(channel_name_for_status.clone());
                     state.app.measurement_state.room_eq_state.status_message = format!(
                         "Optimizing {} ({}/{})",
                         channel_name_for_status,
@@ -461,8 +481,11 @@ impl PlayerView {
                     Err(e) => {
                         log::error!("Channel {} optimization failed: {}", channel_name, e);
                         let _ = state_clone.update(&mut cx.clone(), |state, cx| {
-                            state.app.measurement_state.room_eq_state.optimization_status =
-                                OptimizationStatus::Failed;
+                            state
+                                .app
+                                .measurement_state
+                                .room_eq_state
+                                .optimization_status = OptimizationStatus::Failed;
                             state.app.measurement_state.room_eq_state.error_message =
                                 Some(format!("Task error for {}: {}", channel_name, e));
                             cx.notify();
@@ -491,7 +514,11 @@ impl PlayerView {
             );
 
             let _ = state_clone.update(&mut cx.clone(), |state, cx| {
-                state.app.measurement_state.room_eq_state.optimization_status = OptimizationStatus::Completed;
+                state
+                    .app
+                    .measurement_state
+                    .room_eq_state
+                    .optimization_status = OptimizationStatus::Completed;
                 state.app.measurement_state.room_eq_state.status_message = format!(
                     "Optimization complete! Score: {:.2} -> {:.2}",
                     avg_pre, avg_post
@@ -527,26 +554,33 @@ impl PlayerView {
                     );
                 }
 
-                state.app.measurement_state.room_eq_state.dsp_output = Some(crate::app::types::DspChainOutput {
-                    channels: dsp_channels,
-                    metadata: Some(crate::app::types::DspChainMetadata {
-                        pre_score: avg_pre,
-                        post_score: avg_post,
-                        algorithm: state
-                            .app
-                            .measurement_state
-                            .room_eq_state
-                            .optimizer_config
-                            .algorithm
-                            .as_str()
-                            .to_string(),
-                        iterations: state.app.measurement_state.room_eq_state.optimizer_config.max_iter,
-                        timestamp: chrono::Utc::now().to_rfc3339(),
-                    }),
-                });
+                state.app.measurement_state.room_eq_state.dsp_output =
+                    Some(crate::app::types::DspChainOutput {
+                        channels: dsp_channels,
+                        metadata: Some(crate::app::types::DspChainMetadata {
+                            pre_score: avg_pre,
+                            post_score: avg_post,
+                            algorithm: state
+                                .app
+                                .measurement_state
+                                .room_eq_state
+                                .optimizer_config
+                                .algorithm
+                                .as_str()
+                                .to_string(),
+                            iterations: state
+                                .app
+                                .measurement_state
+                                .room_eq_state
+                                .optimizer_config
+                                .max_iter,
+                            timestamp: chrono::Utc::now().to_rfc3339(),
+                        }),
+                    });
 
                 // Advance to review step
-                state.app.measurement_state.room_eq_state.step = crate::app::types::RoomEqStep::Review;
+                state.app.measurement_state.room_eq_state.step =
+                    crate::app::types::RoomEqStep::Review;
                 cx.notify();
             });
         })

@@ -70,7 +70,10 @@ fn test_search_isolation_during_typing() {
     }
 
     // All should be in search query, none should trigger actions
-    assert!(state.triggered_actions.is_empty(), "No actions should trigger");
+    assert!(
+        state.triggered_actions.is_empty(),
+        "No actions should trigger"
+    );
     assert_eq!(
         state.search_query, "012345 +-",
         "All keys should be in query"
@@ -116,14 +119,8 @@ fn test_rating_filter_sequence() {
 
     // Verify all actions were triggered
     assert_eq!(state.triggered_actions.len(), 6);
-    assert_eq!(
-        state.triggered_actions[0],
-        TestAction::SetFilterRating(1)
-    );
-    assert_eq!(
-        state.triggered_actions[5],
-        TestAction::SetFilterAll
-    );
+    assert_eq!(state.triggered_actions[0], TestAction::SetFilterRating(1));
+    assert_eq!(state.triggered_actions[5], TestAction::SetFilterAll);
 }
 
 /// Test volume control workflow
@@ -144,11 +141,19 @@ fn test_volume_control_sequence() {
     // Verify actions
     assert_eq!(state.triggered_actions.len(), 8);
     assert_eq!(
-        state.triggered_actions.iter().filter(|a| **a == TestAction::VolumeUp).count(),
+        state
+            .triggered_actions
+            .iter()
+            .filter(|a| **a == TestAction::VolumeUp)
+            .count(),
         5
     );
     assert_eq!(
-        state.triggered_actions.iter().filter(|a| **a == TestAction::VolumeDown).count(),
+        state
+            .triggered_actions
+            .iter()
+            .filter(|a| **a == TestAction::VolumeDown)
+            .count(),
         3
     );
 }
@@ -164,7 +169,12 @@ fn test_play_pause_sequence() {
     }
 
     assert_eq!(state.triggered_actions.len(), 5);
-    assert!(state.triggered_actions.iter().all(|a| *a == TestAction::PlayPause));
+    assert!(
+        state
+            .triggered_actions
+            .iter()
+            .all(|a| *a == TestAction::PlayPause)
+    );
 }
 
 // =============================================================================

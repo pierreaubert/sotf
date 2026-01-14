@@ -1,6 +1,6 @@
 use crate::driver::AppDriver;
 use gpui::*;
-use sotf_audio::plugins::{PluginType, PluginSettings};
+use sotf_audio::plugins::{PluginSettings, PluginType};
 use sotf_audio_player_gpui::components::plugins::editing::PluginEditingManager;
 
 pub struct PluginRackPage<'a, 'b> {
@@ -22,7 +22,12 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
     /// unless we explicitly want to test the *menu*.
     pub fn add_plugin(&mut self, plugin_type: PluginType) -> usize {
         let max_id_opt = self.driver.read_app(|app| {
-             app.plugin_state.plugin_chain.plugins().iter().map(|p| p.id).max()
+            app.plugin_state
+                .plugin_chain
+                .plugins()
+                .iter()
+                .map(|p| p.id)
+                .max()
         });
 
         self.driver.update_app(move |app, _cx| {
@@ -30,34 +35,49 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
         });
 
         let new_id = self.driver.read_app(move |app| {
-             app.plugin_state.plugin_chain.plugins().iter()
-                 .map(|p| p.id)
-                 .find(|&id| max_id_opt.map_or(true, |max| id > max))
-                 .expect("Should have at least one plugin now")
+            app.plugin_state
+                .plugin_chain
+                .plugins()
+                .iter()
+                .map(|p| p.id)
+                .find(|&id| max_id_opt.map_or(true, |max| id > max))
+                .expect("Should have at least one plugin now")
         });
 
         new_id
     }
 
     pub fn get_plugin_count(&mut self) -> usize {
-        self.driver.read_app(|app| app.plugin_state.plugin_chain.len())
+        self.driver
+            .read_app(|app| app.plugin_state.plugin_chain.len())
     }
 
     pub fn get_plugin_type(&mut self, index: usize) -> Option<PluginType> {
         self.driver.read_app(move |app| {
-             app.plugin_state.plugin_chain.get_plugin(index).map(|p| p.plugin_type())
+            app.plugin_state
+                .plugin_chain
+                .get_plugin(index)
+                .map(|p| p.plugin_type())
         })
     }
 
     pub fn is_plugin_enabled(&mut self, index: usize) -> bool {
         self.driver.read_app(move |app| {
-            app.plugin_state.plugin_chain.get_plugin(index).map(|p| p.enabled).unwrap_or(false)
+            app.plugin_state
+                .plugin_chain
+                .get_plugin(index)
+                .map(|p| p.enabled)
+                .unwrap_or(false)
         })
     }
 
     pub fn is_plugin_permanent(&mut self, index: usize) -> bool {
         self.driver.read_app(move |app| {
-            app.plugin_state.plugin_chain.get_plugin(index).map(|p| p.permanent).unwrap_or(false)
+            app.plugin_state
+                .plugin_chain
+                .get_plugin(index)
+                .map(|p| p.permanent)
+                .unwrap_or(false)
         })
     }
 
@@ -74,20 +94,27 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
     }
 
     pub fn get_output_channels(&mut self) -> usize {
-        self.driver.read_app(|app| {
-            app.plugin_state.plugin_chain.output_channels()
-        })
+        self.driver
+            .read_app(|app| app.plugin_state.plugin_chain.output_channels())
     }
 
     pub fn find_plugin_index_by_id(&mut self, id: usize) -> Option<usize> {
         self.driver.read_app(move |app| {
-            app.plugin_state.plugin_chain.plugins().iter().position(|p| p.id == id)
+            app.plugin_state
+                .plugin_chain
+                .plugins()
+                .iter()
+                .position(|p| p.id == id)
         })
     }
 
     pub fn plugin_exists(&mut self, id: usize) -> bool {
         self.driver.read_app(move |app| {
-            app.plugin_state.plugin_chain.plugins().iter().any(|p| p.id == id)
+            app.plugin_state
+                .plugin_chain
+                .plugins()
+                .iter()
+                .any(|p| p.id == id)
         })
     }
 
@@ -113,7 +140,11 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
         self.driver.read_app(move |app| {
             if let Some(plugin) = app.plugin_state.plugin_chain.get_plugin(index) {
                 match &plugin.settings {
-                    PluginSettings::Matrix { input_channels, output_channels, .. } => (*input_channels, *output_channels),
+                    PluginSettings::Matrix {
+                        input_channels,
+                        output_channels,
+                        ..
+                    } => (*input_channels, *output_channels),
                     _ => (0, 0),
                 }
             } else {
@@ -123,14 +154,17 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
     }
 
     pub fn has_spectrum_info(&mut self) -> bool {
-        self.driver.read_app(|app| {
-            app.playback.spectrum_info.is_some()
-        })
+        self.driver
+            .read_app(|app| app.playback.spectrum_info.is_some())
     }
 
     pub fn get_spectrum_magnitudes(&mut self) -> Vec<f32> {
         self.driver.read_app(|app| {
-            app.playback.spectrum_info.as_ref().map(|info| info.magnitudes.iter().cloned().collect()).unwrap_or_default()
+            app.playback
+                .spectrum_info
+                .as_ref()
+                .map(|info| info.magnitudes.iter().cloned().collect())
+                .unwrap_or_default()
         })
     }
 
@@ -178,48 +212,63 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
                 dynamic_range: None,
             };
 
-            app.queue.push(sotf_audio_player_gpui::app::types::QueueItem {
-                album,
-                current_track_index: 0,
-            });
+            app.queue
+                .push(sotf_audio_player_gpui::app::types::QueueItem {
+                    album,
+                    current_track_index: 0,
+                });
             app.selected_queue_index = 0;
         });
     }
 
     pub fn toggle_playback(&mut self) {
         use sotf_audio_player_gpui::app::actions::PlayPause;
-        self.driver.view.update(self.driver.cx, |_, _, cx| {
-             cx.dispatch_action(&PlayPause);
-        }).unwrap();
+        self.driver
+            .view
+            .update(self.driver.cx, |_, _, cx| {
+                cx.dispatch_action(&PlayPause);
+            })
+            .unwrap();
     }
 
     /// Start playback from the currently selected queue item.
     /// Unlike toggle_playback (which only pauses/resumes), this actually
     /// loads and starts playing the track from the queue.
     pub fn start_playback_from_queue(&mut self) {
-        self.driver.view.update(self.driver.cx, |view, _, cx| {
-            view.state.update(cx, |state, _cx| {
-                // Get the path of the track to play
-                if let Some(path) = state.app.play_selected_queue_item() {
-                    let sample_rate = 48000.0;
-                    let plugins = state.app.plugin_state.plugin_chain.to_plugin_configs(sample_rate);
-                    let output_channels = state.app.plugin_state.plugin_chain.output_channels();
+        self.driver
+            .view
+            .update(self.driver.cx, |view, _, cx| {
+                view.state.update(cx, |state, _cx| {
+                    // Get the path of the track to play
+                    if let Some(path) = state.app.play_selected_queue_item() {
+                        let sample_rate = 48000.0;
+                        let plugins = state
+                            .app
+                            .plugin_state
+                            .plugin_chain
+                            .to_plugin_configs(sample_rate);
+                        let output_channels = state.app.plugin_state.plugin_chain.output_channels();
 
-                    if let Err(e) = state.player.lock().load_and_play(
-                        path,
-                        plugins,
-                        output_channels,
-                        state.app.audio_device_state.current_output_device_name.clone(),
-                    ) {
-                        log::error!("Failed to start playback: {}", e);
-                        state.app.playback.is_playing = false;
-                    } else {
-                        state.app.playback.is_playing = true;
+                        if let Err(e) = state.player.lock().load_and_play(
+                            path,
+                            plugins,
+                            output_channels,
+                            state
+                                .app
+                                .audio_device_state
+                                .current_output_device_name
+                                .clone(),
+                        ) {
+                            log::error!("Failed to start playback: {}", e);
+                            state.app.playback.is_playing = false;
+                        } else {
+                            state.app.playback.is_playing = true;
+                        }
                     }
-                }
-            });
-            cx.notify();
-        }).unwrap();
+                });
+                cx.notify();
+            })
+            .unwrap();
     }
 
     pub fn wait_for_spectrum(&mut self, duration: std::time::Duration) {

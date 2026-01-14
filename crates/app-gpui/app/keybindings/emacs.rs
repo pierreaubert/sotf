@@ -247,4 +247,3 @@ pub(super) fn emacs_documented_keybindings() -> Vec<DocumentedKeybinding> {
         },
     ]
 }
-

@@ -46,9 +46,9 @@ impl PlayerView {
             crate::app::SettingsTab::AudioDevice => self
                 .render_audio_device_settings_content(cx)
                 .into_any_element(),
-            crate::app::SettingsTab::Plugins => self
-                .render_plugins_settings_content(cx)
-                .into_any_element(),
+            crate::app::SettingsTab::Plugins => {
+                self.render_plugins_settings_content(cx).into_any_element()
+            }
         };
 
         // Tabs are now custom-rendered to avoid context issues

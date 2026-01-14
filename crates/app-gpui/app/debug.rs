@@ -102,24 +102,14 @@ impl StateHistory {
 /// Log an InputMode transition
 pub fn log_input_mode_transition(from: InputMode, to: InputMode, trigger: &str) {
     if from != to {
-        log::info!(
-            "[InputMode] {:?} -> {:?} (trigger: {})",
-            from,
-            to,
-            trigger
-        );
+        log::info!("[InputMode] {:?} -> {:?} (trigger: {})", from, to, trigger);
     }
 }
 
 /// Log a Screen transition
 pub fn log_screen_transition(from: Screen, to: Screen, trigger: &str) {
     if from != to {
-        log::info!(
-            "[Screen] {:?} -> {:?} (trigger: {})",
-            from,
-            to,
-            trigger
-        );
+        log::info!("[Screen] {:?} -> {:?} (trigger: {})", from, to, trigger);
     }
 }
 
@@ -137,7 +127,11 @@ pub fn log_device_change(from: Option<&str>, to: Option<&str>, trigger: &str) {
 
 /// Log action dispatch
 pub fn log_action_dispatch(action_name: &str, handler: &str) {
-    log::debug!("[Action] Dispatched '{}' to handler '{}'", action_name, handler);
+    log::debug!(
+        "[Action] Dispatched '{}' to handler '{}'",
+        action_name,
+        handler
+    );
 }
 
 /// Log blocked action (due to input mode)

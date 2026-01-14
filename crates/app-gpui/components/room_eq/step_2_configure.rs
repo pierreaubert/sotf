@@ -25,21 +25,29 @@ impl PlayerView {
             max_q: config.max_q,
             min_freq: config.min_freq,
             max_freq: config.max_freq,
-            peq_model: "pk".to_string(),
+            peq_model: config.peq_model.clone(),
             algo: match config.algorithm {
                 RoomEqAlgorithm::Cobyla => "nlopt:cobyla",
                 RoomEqAlgorithm::DifferentialEvolution => "autoeq:de",
                 RoomEqAlgorithm::NelderMead => "nlopt:neldermead",
             }
             .to_string(),
-            population: 100,
+            population: config.population,
             maxeval: config.max_iter,
-            de_f: 0.8,
-            de_cr: 0.9,
-            strategy: "currenttobest1bin".to_string(),
-            refine: false,
-            local_algo: "cobyla".to_string(),
-            smooth: false,
+            de_f: config.de_f,
+            de_cr: config.de_cr,
+            strategy: config.strategy.clone(),
+            refine: config.refine,
+            local_algo: config.local_algo.clone(),
+            smooth: config.smooth,
+            smooth_n: config.smooth_n,
+            spacing_weight: config.spacing_weight,
+            min_spacing_oct: config.min_spacing_oct,
+            tolerance: config.tolerance,
+            atolerance: config.atolerance,
+            loss_type: config.loss_type.clone(),
+            target_curve: config.target_curve.clone(),
+            system_type: config.system_type.clone(),
             ..Default::default()
         };
 
@@ -47,8 +55,11 @@ impl PlayerView {
         let autoeq_ui_state = AutoEqFormUiState {
             algo_open: room_eq.dropdowns.algorithm_open,
             peq_model_open: room_eq.dropdowns.peq_model_open,
-            strategy_open: false,
-            local_algo_open: false,
+            strategy_open: room_eq.dropdowns.strategy_open,
+            local_algo_open: room_eq.dropdowns.local_algo_open,
+            loss_type_open: room_eq.dropdowns.loss_type_open,
+            target_curve_open: room_eq.dropdowns.target_curve_open,
+            system_type_open: room_eq.dropdowns.system_type_open,
             ..Default::default()
         };
 
@@ -56,18 +67,28 @@ impl PlayerView {
         let autoeq_form = AutoEqForm::new("room-eq-optimizer-form")
             .config(autoeq_config)
             .ui_state(autoeq_ui_state)
+            .show_optimization_tuning(true) // Show Optimization Fine Tuning section
             .on_algo_change({
                 let state = self.state.clone();
                 move |algo, _window, cx| {
-                    state.update(cx, |state, cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.algorithm = match algo {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .algorithm = match algo {
                             "nlopt:cobyla" => RoomEqAlgorithm::Cobyla,
                             "autoeq:de" => RoomEqAlgorithm::DifferentialEvolution,
                             "nlopt:neldermead" => RoomEqAlgorithm::NelderMead,
                             _ => RoomEqAlgorithm::Cobyla,
                         };
-                        state.app.measurement_state.room_eq_state.dropdowns.algorithm_open = false;
-                        cx.notify();
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .dropdowns
+                            .algorithm_open = false;
                     });
                 }
             })
@@ -75,19 +96,32 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |open, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state.app.measurement_state.room_eq_state.dropdowns.algorithm_open = open;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .dropdowns
+                            .algorithm_open = open;
                         cx.notify();
                     });
                 }
             })
             .on_peq_model_change({
                 let state = self.state.clone();
-                move |_model, _window, cx| {
-                    state.update(cx, |state, cx| {
-                        // PEQ model is stored in autoeq_config.peq_model which is read-only display
-                        // The actual model selection doesn't need to be stored separately
-                        state.app.measurement_state.room_eq_state.dropdowns.peq_model_open = false;
-                        cx.notify();
+                move |model, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .peq_model = model.to_string();
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .dropdowns
+                            .peq_model_open = false;
                     });
                 }
             })
@@ -95,7 +129,12 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |open, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state.app.measurement_state.room_eq_state.dropdowns.peq_model_open = open;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .dropdowns
+                            .peq_model_open = open;
                         cx.notify();
                     });
                 }
@@ -103,71 +142,398 @@ impl PlayerView {
             .on_num_filters_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.num_filters = value;
-                        cx.notify();
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .num_filters = value;
                     });
                 }
             })
             .on_min_q_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.min_q = value;
-                        cx.notify();
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .min_q = value;
                     });
                 }
             })
             .on_max_q_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.max_q = value;
-                        cx.notify();
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .max_q = value;
                     });
                 }
             })
             .on_min_db_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.min_db = value;
-                        cx.notify();
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .min_db = value;
                     });
                 }
             })
             .on_max_db_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.max_db = value;
-                        cx.notify();
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .max_db = value;
                     });
                 }
             })
             .on_min_freq_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.min_freq = value;
-                        cx.notify();
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .min_freq = value;
                     });
                 }
             })
             .on_max_freq_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.max_freq = value;
-                        cx.notify();
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .max_freq = value;
                     });
                 }
             })
             .on_maxeval_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .max_iter = value;
+                    });
+                }
+            })
+            .on_population_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .population = value;
+                    });
+                }
+            })
+            .on_de_f_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .de_f = value;
+                    });
+                }
+            })
+            .on_de_cr_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .de_cr = value;
+                    });
+                }
+            })
+            .on_strategy_change({
+                let state = self.state.clone();
+                move |strategy, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .strategy = strategy.to_string();
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .dropdowns
+                            .strategy_open = false;
+                    });
+                }
+            })
+            .on_strategy_toggle({
+                let state = self.state.clone();
+                move |open, _window, cx| {
                     state.update(cx, |state, cx| {
-                        state.app.measurement_state.room_eq_state.optimizer_config.max_iter = value;
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .dropdowns
+                            .strategy_open = open;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_refine_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .refine = value;
+                    });
+                }
+            })
+            .on_local_algo_change({
+                let state = self.state.clone();
+                move |algo, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .local_algo = algo.to_string();
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .dropdowns
+                            .local_algo_open = false;
+                    });
+                }
+            })
+            .on_local_algo_toggle({
+                let state = self.state.clone();
+                move |open, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .dropdowns
+                            .local_algo_open = open;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_smooth_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .smooth = value;
+                    });
+                }
+            })
+            .on_smooth_n_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .smooth_n = value;
+                    });
+                }
+            })
+            .on_spacing_weight_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .spacing_weight = value;
+                    });
+                }
+            })
+            .on_min_spacing_oct_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .min_spacing_oct = value;
+                    });
+                }
+            })
+            .on_tolerance_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .tolerance = value;
+                    });
+                }
+            })
+            .on_atolerance_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .atolerance = value;
+                    });
+                }
+            })
+            .on_loss_type_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .loss_type = value.to_string();
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .dropdowns
+                            .loss_type_open = false;
+                    });
+                }
+            })
+            .on_loss_type_toggle({
+                let state = self.state.clone();
+                move |open, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .dropdowns
+                            .loss_type_open = open;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_target_curve_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .target_curve = value.to_string();
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .dropdowns
+                            .target_curve_open = false;
+                    });
+                }
+            })
+            .on_target_curve_toggle({
+                let state = self.state.clone();
+                move |open, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .dropdowns
+                            .target_curve_open = open;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_system_type_change({
+                let state = self.state.clone();
+                move |value, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimizer_config
+                            .system_type = value.to_string();
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .dropdowns
+                            .system_type_open = false;
+                    });
+                }
+            })
+            .on_system_type_toggle({
+                let state = self.state.clone();
+                move |open, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .dropdowns
+                            .system_type_open = open;
                         cx.notify();
                     });
                 }
@@ -215,7 +581,12 @@ impl PlayerView {
     fn render_channel_config_list(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let speaker_configs = state.app.measurement_state.room_eq_state.speaker_configs.clone();
+        let speaker_configs = state
+            .app
+            .measurement_state
+            .room_eq_state
+            .speaker_configs
+            .clone();
 
         if speaker_configs.is_empty() {
             return VStack::new()

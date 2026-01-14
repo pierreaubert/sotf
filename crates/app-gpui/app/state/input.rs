@@ -40,7 +40,8 @@ impl InputState {
     /// Select next autocomplete suggestion
     pub fn next_autocomplete(&mut self) {
         if !self.autocomplete_suggestions.is_empty() {
-            self.autocomplete_index = (self.autocomplete_index + 1) % self.autocomplete_suggestions.len();
+            self.autocomplete_index =
+                (self.autocomplete_index + 1) % self.autocomplete_suggestions.len();
         }
     }
 
@@ -57,7 +58,9 @@ impl InputState {
 
     /// Get currently selected autocomplete suggestion
     pub fn selected_suggestion(&self) -> Option<&str> {
-        self.autocomplete_suggestions.get(self.autocomplete_index).map(|s| s.as_str())
+        self.autocomplete_suggestions
+            .get(self.autocomplete_index)
+            .map(|s| s.as_str())
     }
 
     /// Clear the parameter editing state

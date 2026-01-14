@@ -135,8 +135,6 @@ impl SpectrumElement {
         // Assume range is -100 dB to 0 dB
         ((db + 100.0) / 100.0).clamp(0.0, 1.0)
     }
-
-
 }
 
 impl IntoElement for SpectrumElement {
@@ -240,14 +238,14 @@ impl Element for SpectrumElement {
             };
 
             let height_ratio = self.db_to_height(smoothed_mag);
-            // Height ratio 0.0 means bar_height should be small? 
-            // bounds.size.height is max height. 
+            // Height ratio 0.0 means bar_height should be small?
+            // bounds.size.height is max height.
             // y goes down (0 at top).
             // So if height_ratio is 1.0 (max), bar_height is bounds.height.
             // y = bounds.y + bounds.height - bar_height = bounds.y.
             // Correct.
             let bar_height = (bounds.size.height * height_ratio).max(px(0.0));
-            
+
             let x = bounds.origin.x + step_width * i as f32;
             let y = bounds.origin.y + bounds.size.height - bar_height;
 
@@ -257,7 +255,10 @@ impl Element for SpectrumElement {
         }
 
         // Finish at bottom right
-        path.line_to(point(bounds.origin.x + bounds.size.width, bounds.origin.y + bounds.size.height));
+        path.line_to(point(
+            bounds.origin.x + bounds.size.width,
+            bounds.origin.y + bounds.size.height,
+        ));
         // Close shape
         path.line_to(point(bounds.origin.x, bounds.origin.y + bounds.size.height));
 
@@ -265,11 +266,8 @@ impl Element for SpectrumElement {
         // Note: GPUI paint_path currently supports a single color.
         // For gradient support, we would need to use a mask or shader, which is more complex.
         // For now, this resolves the performance bottleneck.
-        window.paint_path(
-            path.build().unwrap(),
-            self.colors.low,
-        );
-        
+        window.paint_path(path.build().unwrap(), self.colors.low);
+
         // Note: 'paint_path' with filled shape works best.
     }
 }
@@ -699,7 +697,7 @@ pub fn render_spectrum_analyzer_plugin(
                         ),
                 ),
         )
-        // .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
+    // .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
 }
 
 impl PlayerView {

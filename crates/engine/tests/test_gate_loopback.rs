@@ -190,7 +190,10 @@ fn test_gate_loopback_verification() {
         }
     }
     let latency_offset = latency_samples as f64 / sample_rate;
-    println!("Detected latency: {:.3}s ({} samples)", latency_offset, latency_samples);
+    println!(
+        "Detected latency: {:.3}s ({} samples)",
+        latency_offset, latency_samples
+    );
 
     // Calculate RMS for first half (should be loud - gate open)
     let first_half_start = ((0.2 + latency_offset) * sample_rate) as usize;

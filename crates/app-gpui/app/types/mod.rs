@@ -110,8 +110,8 @@ pub enum MeterDisplayMode {
 }
 
 // Enums mapped from library
-pub use sotf_audio_player::library::ChannelFilter;
 pub use crate::app::state::library::LibrarySortOrder;
+pub use sotf_audio_player::library::ChannelFilter;
 
 /// Channel group for level meter display
 #[derive(Debug, Clone)]

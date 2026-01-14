@@ -5,9 +5,9 @@
 //! Extracted from inline tests to work around GPUI macro recursion issues.
 
 use sotf_audio_player_gpui::{
-    Config, ImageAccessTracker, PanelLayout, PlaybackDeviceConfig, PlaybackState,
-    RecordingConfigState, RecordingDeviceConfig, RecordingSignalType, ScaleType, TickConfig,
-    WindowGeometry, IconName, IconSize,
+    Config, IconName, IconSize, ImageAccessTracker, PanelLayout, PlaybackDeviceConfig,
+    PlaybackState, RecordingConfigState, RecordingDeviceConfig, RecordingSignalType, ScaleType,
+    TickConfig, WindowGeometry,
 };
 
 use std::collections::HashSet;

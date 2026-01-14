@@ -1,5 +1,5 @@
-use sotf_audio_player::database::MusicDatabase;
 use sotf_audio_player::Album;
+use sotf_audio_player::database::MusicDatabase;
 use std::sync::{Arc, Barrier};
 use std::thread;
 
@@ -8,7 +8,7 @@ mod fixtures;
 #[test]
 fn test_multiple_concurrent_writers() {
     let (_temp_dir, db_path) = fixtures::temp_database();
-    
+
     // Initial database creation to set up schema
     {
         let _db = MusicDatabase::open_for_testing(&db_path).unwrap();
@@ -25,7 +25,7 @@ fn test_multiple_concurrent_writers() {
         let handle = thread::spawn(move || {
             let mut db = MusicDatabase::open_for_testing(&db_path_clone).unwrap();
             barrier_clone.wait();
-            
+
             let mut errors = 0;
             for i in 0..iterations {
                 let album = Album {
@@ -39,7 +39,7 @@ fn test_multiple_concurrent_writers() {
                     edition: None,
                     dynamic_range: None,
                 };
-                
+
                 if let Err(e) = db.save_albums(&[album]) {
                     errors += 1;
                     println!("Writer {} error: {}", w, e);
@@ -58,7 +58,7 @@ fn test_multiple_concurrent_writers() {
     let reader_handle = thread::spawn(move || {
         let db = MusicDatabase::open_for_testing(&db_path_clone).unwrap();
         barrier_clone.wait();
-        
+
         let mut total_albums_seen = 0;
         for _ in 0..100 {
             if let Ok(albums) = db.load_library() {
@@ -71,11 +71,14 @@ fn test_multiple_concurrent_writers() {
 
     let total_errors: i32 = handles.into_iter().map(|h| h.join().unwrap()).sum();
     let max_albums = reader_handle.join().unwrap();
-    
+
     println!("Total writer errors: {}", total_errors);
     println!("Max albums seen by reader: {}", max_albums);
-    
+
     // If we have errors, it's likely due to "database is locked"
     // In a production app, we'd want this to be 0
-    assert_eq!(total_errors, 0, "Should have no writer errors after enabling WAL and busy timeout");
+    assert_eq!(
+        total_errors, 0,
+        "Should have no writer errors after enabling WAL and busy timeout"
+    );
 }

@@ -123,18 +123,25 @@ impl PlayerView {
                     .on_mouse_up(
                         MouseButton::Left,
                         cx.listener(|view, _, _, cx| {
-                            view.state
-                                .update(cx, |state, _| match state.app.measurement_state.room_eq_state.step {
+                            view.state.update(cx, |state, _| {
+                                match state.app.measurement_state.room_eq_state.step {
                                     RoomEqStep::LoadData => {
-                                        state.app.ui_state.current_screen = state.app.ui_state.last_screen;
+                                        state.app.ui_state.current_screen =
+                                            state.app.ui_state.last_screen;
                                     }
                                     _ => {
-                                        if let Some(prev) = state.app.measurement_state.room_eq_state.step.previous()
+                                        if let Some(prev) = state
+                                            .app
+                                            .measurement_state
+                                            .room_eq_state
+                                            .step
+                                            .previous()
                                         {
                                             state.app.measurement_state.room_eq_state.step = prev;
                                         }
                                     }
-                                });
+                                }
+                            });
                             cx.notify();
                         }),
                     ),
@@ -149,17 +156,21 @@ impl PlayerView {
                     .on_mouse_up(
                         MouseButton::Left,
                         cx.listener(|view, _, _, cx| {
-                            view.state
-                                .update(cx, |state, _| match state.app.measurement_state.room_eq_state.step {
+                            view.state.update(cx, |state, _| {
+                                match state.app.measurement_state.room_eq_state.step {
                                     RoomEqStep::Export => {
-                                        state.app.ui_state.current_screen = state.app.ui_state.last_screen;
+                                        state.app.ui_state.current_screen =
+                                            state.app.ui_state.last_screen;
                                     }
                                     _ => {
-                                        if let Some(next) = state.app.measurement_state.room_eq_state.step.next() {
+                                        if let Some(next) =
+                                            state.app.measurement_state.room_eq_state.step.next()
+                                        {
                                             state.app.measurement_state.room_eq_state.step = next;
                                         }
                                     }
-                                });
+                                }
+                            });
                             cx.notify();
                         }),
                     ),

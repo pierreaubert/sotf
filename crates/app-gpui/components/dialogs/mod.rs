@@ -461,7 +461,8 @@ impl PlayerView {
                                                 // Navigate to Settings > Library tab
                                                 state.app.ui_state.input_mode =
                                                     crate::app::InputMode::Normal;
-                                                state.app.ui_state.current_screen = Screen::Settings;
+                                                state.app.ui_state.current_screen =
+                                                    Screen::Settings;
                                                 state.app.ui_state.active_settings_tab =
                                                     crate::app::SettingsTab::Library;
                                             });
@@ -660,7 +661,8 @@ impl PlayerView {
                                                 crate::app::ContextMenuType::QueueItem,
                                                 "Play from Here",
                                             ) => {
-                                                state.app.playback.current_queue_index = Some(item_idx);
+                                                state.app.playback.current_queue_index =
+                                                    Some(item_idx);
                                                 // Play the first track of the queue item
                                                 if let Some(queue_item) =
                                                     state.app.queue.get(item_idx)

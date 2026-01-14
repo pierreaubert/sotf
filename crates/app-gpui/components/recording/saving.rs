@@ -53,7 +53,12 @@ impl PlayerView {
     fn render_save_name_card(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let save_name = state.app.measurement_state.recording_state.save_name.clone();
+        let save_name = state
+            .app
+            .measurement_state
+            .recording_state
+            .save_name
+            .clone();
         let view = cx.entity().clone();
 
         Card::new().content(
@@ -79,12 +84,16 @@ impl PlayerView {
                                 Input::new("save_name_input")
                                     .value(save_name.clone())
                                     .placeholder("Enter recording name")
-                                    .on_text_change({
+                                    .on_change({
                                         let view = view.clone();
-                                        move |value, _, cx| {
+                                        move |value, _window, cx| {
                                             view.update(cx, |this, cx| {
                                                 this.state.update(cx, |state, _| {
-                                                    state.app.measurement_state.recording_state.save_name = value;
+                                                    state
+                                                        .app
+                                                        .measurement_state
+                                                        .recording_state
+                                                        .save_name = value.to_string();
                                                 });
                                                 cx.notify();
                                             });
@@ -174,8 +183,11 @@ impl PlayerView {
                                                         .measurement_state
                                                         .recording_state
                                                         .recording_base_directory = None;
-                                                    state.app.measurement_state.recording_state.recording_directory =
-                                                        None;
+                                                    state
+                                                        .app
+                                                        .measurement_state
+                                                        .recording_state
+                                                        .recording_directory = None;
                                                 });
                                                 cx.notify();
                                             });
@@ -343,7 +355,12 @@ impl PlayerView {
     ) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let status_message = state.app.measurement_state.recording_state.status_message.clone();
+        let status_message = state
+            .app
+            .measurement_state
+            .recording_state
+            .status_message
+            .clone();
         let view = cx.entity().clone();
 
         let can_save = has_recordings && recording_dir.is_some();

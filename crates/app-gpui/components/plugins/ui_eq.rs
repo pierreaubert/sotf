@@ -530,7 +530,11 @@ fn render_eq_visualization(
                 )
                 .on_drag_move::<EqQHandleDrag>({
                     move |event, window, cx| {
-                        let bounds = if let Some(b) = *bounds_ref.borrow() { b } else { return };
+                        let bounds = if let Some(b) = *bounds_ref.borrow() {
+                            b
+                        } else {
+                            return;
+                        };
                         let drag_data = event.drag(cx);
                         let position = event.event.position;
                         // Convert global mouse X to local chart coordinate
@@ -599,7 +603,11 @@ fn render_eq_visualization(
                 )
                 .on_drag_move::<EqQHandleDrag>({
                     move |event, window, cx| {
-                        let bounds = if let Some(b) = *bounds_ref.borrow() { b } else { return };
+                        let bounds = if let Some(b) = *bounds_ref.borrow() {
+                            b
+                        } else {
+                            return;
+                        };
                         let drag_data = event.drag(cx);
                         let position = event.event.position;
                         // Convert global mouse X to local chart coordinate
@@ -687,11 +695,15 @@ fn render_eq_visualization(
             let entity = entity.clone();
             let bounds_ref = bounds_ref.clone();
             move |event, window, cx| {
-                let bounds = if let Some(b) = *bounds_ref.borrow() { b } else { return };
+                let bounds = if let Some(b) = *bounds_ref.borrow() {
+                    b
+                } else {
+                    return;
+                };
                 let drag_data = event.drag(cx);
                 // Position is relative to this container div, which IS the chart area
                 let position = event.event.position;
-                
+
                 // Convert global mouse coordinates to local chart coordinates
                 let x_px: f32 = (position.x - bounds.origin.x).into();
                 let y_px: f32 = (position.y - bounds.origin.y).into();
@@ -883,7 +895,8 @@ pub fn render_eq_plugin(
                                         move |_event, _window, cx| {
                                             cx.stop_propagation();
                                             entity_clone2.update(cx, |state, cx| {
-                                                state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                                                state.app.plugin_state.editing_plugin_index =
+                                                    Some(plugin_idx);
                                                 if let Err(e) =
                                                     state.app.toggle_eq_band_mute(band_idx)
                                                 {
@@ -924,7 +937,8 @@ pub fn render_eq_plugin(
                                         move |_event, _window, cx| {
                                             cx.stop_propagation();
                                             entity_clone3.update(cx, |state, cx| {
-                                                state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                                                state.app.plugin_state.editing_plugin_index =
+                                                    Some(plugin_idx);
                                                 if let Err(e) =
                                                     state.app.toggle_eq_band_solo(band_idx)
                                                 {
@@ -1322,7 +1336,11 @@ mod tests {
         );
 
         // Y after bottom edge should clamp to MIN_GAIN_DB
-        let gain_below = y_to_gain(TEST_CHART_HEIGHT + 100.0, TEST_MIN_GAIN_DB, TEST_MAX_GAIN_DB);
+        let gain_below = y_to_gain(
+            TEST_CHART_HEIGHT + 100.0,
+            TEST_MIN_GAIN_DB,
+            TEST_MAX_GAIN_DB,
+        );
         assert!(
             (gain_below - TEST_MIN_GAIN_DB).abs() < 0.01,
             "y below bottom should clamp to MIN_GAIN_DB: got {}",

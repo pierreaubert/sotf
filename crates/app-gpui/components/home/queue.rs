@@ -767,7 +767,8 @@ impl PlayerView {
                                 let path = track_path.clone();
                                 view.state.update(cx, |state, _cx| {
                                     // Update the track index in the current queue item
-                                    if let Some(queue_idx) = state.app.playback.current_queue_index {
+                                    if let Some(queue_idx) = state.app.playback.current_queue_index
+                                    {
                                         if let Some(item) = state.app.queue.get_mut(queue_idx) {
                                             item.current_track_index = idx;
                                         }

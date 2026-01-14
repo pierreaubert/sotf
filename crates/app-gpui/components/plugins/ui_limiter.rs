@@ -268,5 +268,5 @@ pub fn render_limiter_plugin(
                         .child(render_gr_meter(simulated_gr, -20.0, theme)),
                 ),
         )
-        // .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
+    // .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
 }

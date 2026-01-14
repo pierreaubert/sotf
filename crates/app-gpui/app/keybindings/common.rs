@@ -65,10 +65,25 @@ pub(super) fn common_bindings() -> Vec<KeyBinding> {
         // Plugin parameter adjustment
         KeyBinding::new("=", actions::IncrementPluginParam, Some("PluginRack")),
         KeyBinding::new("-", actions::DecrementPluginParam, Some("PluginRack")),
-        KeyBinding::new("shift-=", actions::IncrementPluginParamLarge, Some("PluginRack")),
-        KeyBinding::new("shift--", actions::DecrementPluginParamLarge, Some("PluginRack")),
-        KeyBinding::new("alt-=", actions::IncrementPluginParamSmall, Some("PluginRack")),
-        KeyBinding::new("alt--", actions::DecrementPluginParamSmall, Some("PluginRack")),
+        KeyBinding::new(
+            "shift-=",
+            actions::IncrementPluginParamLarge,
+            Some("PluginRack"),
+        ),
+        KeyBinding::new(
+            "shift--",
+            actions::DecrementPluginParamLarge,
+            Some("PluginRack"),
+        ),
+        KeyBinding::new(
+            "alt-=",
+            actions::IncrementPluginParamSmall,
+            Some("PluginRack"),
+        ),
+        KeyBinding::new(
+            "alt--",
+            actions::DecrementPluginParamSmall,
+            Some("PluginRack"),
+        ),
     ]
 }
-

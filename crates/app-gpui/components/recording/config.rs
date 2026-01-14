@@ -4,14 +4,14 @@
 
 use crate::app::types::{CalibrationData, ChannelMapping, RecordingState, SpeakerConfiguration};
 use crate::ui::PlayerView;
-use gpui::prelude::*;
-use gpui::*;
 use d3rs::axis::{AxisConfig, DefaultAxisTheme, render_axis};
 use d3rs::color::D3Color;
 use d3rs::grid::{GridConfig, render_grid};
 use d3rs::prelude::LogScale;
 use d3rs::scale::LinearScale;
 use d3rs::shape::{LineConfig, LinePoint, render_line};
+use gpui::prelude::*;
+use gpui::*;
 use gpui_ui_kit::{
     Accordion, AccordionItem, AccordionMode, Badge, BadgeVariant, Button, ButtonSize,
     ButtonVariant, HStack, Input, InputSize, NumberInput, NumberInputSize, Select, SelectOption,
@@ -42,7 +42,12 @@ impl PlayerView {
     /// Render the config step UI
     pub(crate) fn render_recording_config_step(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
-        let expanded_sections = state.app.measurement_state.recording_state.config_accordion_expanded.clone();
+        let expanded_sections = state
+            .app
+            .measurement_state
+            .recording_state
+            .config_accordion_expanded
+            .clone();
         let view = cx.entity().clone();
 
         // Build accordion content for each section (convert to AnyElement to release borrows)
@@ -116,8 +121,18 @@ impl PlayerView {
             let state = self.state.read(cx);
             (
                 state.app.ui_state.theme.clone(),
-                state.app.measurement_state.recording_state.playback_config.num_channels,
-                state.app.measurement_state.recording_state.playback_config.sample_rate,
+                state
+                    .app
+                    .measurement_state
+                    .recording_state
+                    .playback_config
+                    .num_channels,
+                state
+                    .app
+                    .measurement_state
+                    .recording_state
+                    .playback_config
+                    .sample_rate,
                 state
                     .app
                     .measurement_state
@@ -161,8 +176,12 @@ impl PlayerView {
                             move |value, _window, cx| {
                                 view.update(cx, |this, cx| {
                                     this.state.update(cx, |state, _| {
-                                        state.app.measurement_state.recording_state.playback_config.num_channels =
-                                            value as usize;
+                                        state
+                                            .app
+                                            .measurement_state
+                                            .recording_state
+                                            .playback_config
+                                            .num_channels = value as usize;
                                         update_playback_channel_mappings(
                                             &mut state.app.measurement_state.recording_state,
                                         );
@@ -210,8 +229,18 @@ impl PlayerView {
             let state = self.state.read(cx);
             (
                 state.app.ui_state.theme.clone(),
-                state.app.measurement_state.recording_state.recording_config.num_channels,
-                state.app.measurement_state.recording_state.recording_config.sample_rate,
+                state
+                    .app
+                    .measurement_state
+                    .recording_state
+                    .recording_config
+                    .num_channels,
+                state
+                    .app
+                    .measurement_state
+                    .recording_state
+                    .recording_config
+                    .sample_rate,
             )
         };
         let view = cx.entity().clone();
@@ -255,8 +284,12 @@ impl PlayerView {
                         move |value, _window, cx| {
                             view.update(cx, |this, cx| {
                                 this.state.update(cx, |state, _| {
-                                    state.app.measurement_state.recording_state.recording_config.num_channels =
-                                        value as usize;
+                                    state
+                                        .app
+                                        .measurement_state
+                                        .recording_state
+                                        .recording_config
+                                        .num_channels = value as usize;
                                     update_recording_channel_mappings(
                                         &mut state.app.measurement_state.recording_state,
                                     );
@@ -425,8 +458,11 @@ impl PlayerView {
                                                     .measurement_state
                                                     .recording_state
                                                     .recording_base_directory = None;
-                                                state.app.measurement_state.recording_state.recording_directory =
-                                                    None;
+                                                state
+                                                    .app
+                                                    .measurement_state
+                                                    .recording_state
+                                                    .recording_directory = None;
                                             });
                                             cx.notify();
                                         });
@@ -487,8 +523,16 @@ impl PlayerView {
                 log::info!("Created recording directory: {}", full_path);
 
                 let _ = state_entity.update(&mut cx.clone(), |state, _| {
-                    state.app.measurement_state.recording_state.recording_base_directory = Some(base_path);
-                    state.app.measurement_state.recording_state.recording_directory = Some(full_path);
+                    state
+                        .app
+                        .measurement_state
+                        .recording_state
+                        .recording_base_directory = Some(base_path);
+                    state
+                        .app
+                        .measurement_state
+                        .recording_state
+                        .recording_directory = Some(full_path);
                 });
             }
         })
@@ -533,7 +577,11 @@ impl PlayerView {
                 move |is_open, _window, cx| {
                     view.update(cx, |this, cx| {
                         this.state.update(cx, |state, _| {
-                            state.app.measurement_state.recording_state.playback_device_dropdown_open = is_open;
+                            state
+                                .app
+                                .measurement_state
+                                .recording_state
+                                .playback_device_dropdown_open = is_open;
                         });
                         cx.notify();
                     });
@@ -544,9 +592,18 @@ impl PlayerView {
                 move |value, _window, cx| {
                     view.update(cx, |this, cx| {
                         this.state.update(cx, |state, _| {
-                            state.app.measurement_state.recording_state.playback_config.device_name =
-                                value.to_string();
-                            state.app.measurement_state.recording_state.playback_config.device_id = value.to_string();
+                            state
+                                .app
+                                .measurement_state
+                                .recording_state
+                                .playback_config
+                                .device_name = value.to_string();
+                            state
+                                .app
+                                .measurement_state
+                                .recording_state
+                                .playback_config
+                                .device_id = value.to_string();
                             // Update device info from selected device
                             if let Some(device) = state
                                 .app
@@ -569,8 +626,12 @@ impl PlayerView {
                                         .unwrap_or(48000)
                                 };
 
-                                state.app.measurement_state.recording_state.playback_config.sample_rate =
-                                    default_rate;
+                                state
+                                    .app
+                                    .measurement_state
+                                    .recording_state
+                                    .playback_config
+                                    .sample_rate = default_rate;
                                 // Update available sample rates from device
                                 state
                                     .app
@@ -579,7 +640,11 @@ impl PlayerView {
                                     .playback_config
                                     .available_sample_rates = device.available_sample_rates.clone();
                             }
-                            state.app.measurement_state.recording_state.playback_device_dropdown_open = false;
+                            state
+                                .app
+                                .measurement_state
+                                .recording_state
+                                .playback_device_dropdown_open = false;
                         });
                         cx.notify();
                     });
@@ -646,8 +711,12 @@ impl PlayerView {
                                 view.update(cx, |this, cx| {
                                     this.state.update(cx, |state, _| {
                                         if let Ok(rate) = value.parse::<u32>() {
-                                            state.app.measurement_state.recording_state.playback_config.sample_rate =
-                                                rate;
+                                            state
+                                                .app
+                                                .measurement_state
+                                                .recording_state
+                                                .playback_config
+                                                .sample_rate = rate;
                                         }
                                         state
                                             .app
@@ -701,8 +770,11 @@ impl PlayerView {
                             move |is_open, _window, cx| {
                                 view.update(cx, |this, cx| {
                                     this.state.update(cx, |state, _| {
-                                        state.app.measurement_state.recording_state.speaker_config_dropdown_open =
-                                            is_open;
+                                        state
+                                            .app
+                                            .measurement_state
+                                            .recording_state
+                                            .speaker_config_dropdown_open = is_open;
                                     });
                                     cx.notify();
                                 });
@@ -771,8 +843,11 @@ impl PlayerView {
                                                 .collect();
                                         }
 
-                                        state.app.measurement_state.recording_state.speaker_config_dropdown_open =
-                                            false;
+                                        state
+                                            .app
+                                            .measurement_state
+                                            .recording_state
+                                            .speaker_config_dropdown_open = false;
                                     });
                                     cx.notify();
                                 });
@@ -848,7 +923,7 @@ impl PlayerView {
                                         "playback_interface_{}",
                                         idx
                                     )))
-                                    .value(interface_ch as f64)
+                                    .value((interface_ch + 1) as f64)
                                     .min(1.0)
                                     .max(128.0)
                                     .step(1.0)
@@ -962,7 +1037,11 @@ impl PlayerView {
                     move |is_open, _window, cx| {
                         view.update(cx, |this, cx| {
                             this.state.update(cx, |state, _| {
-                                state.app.measurement_state.recording_state.channel_name_dropdown_open =
+                                state
+                                    .app
+                                    .measurement_state
+                                    .recording_state
+                                    .channel_name_dropdown_open =
                                     if is_open { Some(channel_idx) } else { None };
                             });
                             cx.notify();
@@ -984,7 +1063,11 @@ impl PlayerView {
                                 {
                                     mapping.group_name = value.to_string();
                                 }
-                                state.app.measurement_state.recording_state.channel_name_dropdown_open = None;
+                                state
+                                    .app
+                                    .measurement_state
+                                    .recording_state
+                                    .channel_name_dropdown_open = None;
                             });
                             cx.notify();
                         });
@@ -1031,7 +1114,11 @@ impl PlayerView {
                 move |is_open, _window, cx| {
                     view.update(cx, |this, cx| {
                         this.state.update(cx, |state, _| {
-                            state.app.measurement_state.recording_state.recording_device_dropdown_open = is_open;
+                            state
+                                .app
+                                .measurement_state
+                                .recording_state
+                                .recording_device_dropdown_open = is_open;
                         });
                         cx.notify();
                     });
@@ -1042,10 +1129,18 @@ impl PlayerView {
                 move |value, _window, cx| {
                     view.update(cx, |this, cx| {
                         this.state.update(cx, |state, _| {
-                            state.app.measurement_state.recording_state.recording_config.device_name =
-                                value.to_string();
-                            state.app.measurement_state.recording_state.recording_config.device_id =
-                                value.to_string();
+                            state
+                                .app
+                                .measurement_state
+                                .recording_state
+                                .recording_config
+                                .device_name = value.to_string();
+                            state
+                                .app
+                                .measurement_state
+                                .recording_state
+                                .recording_config
+                                .device_id = value.to_string();
                             // Update device info from selected device
                             if let Some(device) = state
                                 .app
@@ -1068,8 +1163,12 @@ impl PlayerView {
                                         .unwrap_or(48000)
                                 };
 
-                                state.app.measurement_state.recording_state.recording_config.sample_rate =
-                                    default_rate;
+                                state
+                                    .app
+                                    .measurement_state
+                                    .recording_state
+                                    .recording_config
+                                    .sample_rate = default_rate;
                                 // Update available sample rates from device
                                 state
                                     .app
@@ -1078,7 +1177,11 @@ impl PlayerView {
                                     .recording_config
                                     .available_sample_rates = device.available_sample_rates.clone();
                             }
-                            state.app.measurement_state.recording_state.recording_device_dropdown_open = false;
+                            state
+                                .app
+                                .measurement_state
+                                .recording_state
+                                .recording_device_dropdown_open = false;
                         });
                         cx.notify();
                     });
@@ -1208,7 +1311,7 @@ impl PlayerView {
                                             "recording_interface_{}",
                                             idx
                                         )))
-                                        .value(interface_ch as f64)
+                                        .value((interface_ch + 1) as f64)
                                         .min(1.0)
                                         .max(128.0)
                                         .step(1.0)
@@ -1272,8 +1375,16 @@ impl PlayerView {
             });
 
         // Add some padding to Y range
-        let y_min = if min_db.is_finite() { min_db - 5.0 } else { -10.0 };
-        let y_max = if max_db.is_finite() { max_db + 5.0 } else { 10.0 };
+        let y_min = if min_db.is_finite() {
+            min_db - 5.0
+        } else {
+            -10.0
+        };
+        let y_max = if max_db.is_finite() {
+            max_db + 5.0
+        } else {
+            10.0
+        };
 
         let y_scale = LinearScale::new()
             .domain(y_min, y_max)
@@ -1282,7 +1393,7 @@ impl PlayerView {
         let freq_ticks: Vec<f64> = vec![
             20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0,
         ];
-        
+
         let mag_range = (y_max - y_min) as i32;
         let mag_step = if mag_range > 40 {
             10
@@ -1298,7 +1409,8 @@ impl PlayerView {
             .collect();
 
         // Build line points
-        let points: Vec<LinePoint> = data.frequencies
+        let points: Vec<LinePoint> = data
+            .frequencies
             .iter()
             .zip(data.spl_db.iter())
             .filter(|&(&f, _)| f >= 20.0 && f <= 20000.0)
@@ -1311,8 +1423,11 @@ impl PlayerView {
         // Use theme primary color for visibility (high contrast)
         // D3Color::from_rgba expects gpui::Rgba. Theme colors are usually Hsla, which implements Into<Rgba>.
         let stroke_color = D3Color::from_rgba(theme.text_primary.into());
-        let line_config = LineConfig::new().stroke_color(stroke_color).stroke_width(2.0);
-        let line_element = render_line(&x_scale, &y_scale, &points, &line_config).into_any_element();
+        let line_config = LineConfig::new()
+            .stroke_color(stroke_color)
+            .stroke_width(2.0);
+        let line_element =
+            render_line(&x_scale, &y_scale, &points, &line_config).into_any_element();
 
         div()
             .mt_4()
@@ -1327,16 +1442,12 @@ impl PlayerView {
                     .h(px(chart_height))
                     .relative()
                     .child(
-                        div()
-                            .absolute()
-                            .top(px(0.0))
-                            .left(px(margin_left))
-                            .child(
-                                Text::new("Microphone Calibration Curve")
-                                    .size(TextSize::Sm)
-                                    .weight(TextWeight::Bold)
-                                    .color(theme.accent)
-                            )
+                        div().absolute().top(px(0.0)).left(px(margin_left)).child(
+                            Text::new("Microphone Calibration Curve")
+                                .size(TextSize::Sm)
+                                .weight(TextWeight::Bold)
+                                .color(theme.accent),
+                        ),
                     )
                     .child(
                         div()
@@ -1357,7 +1468,7 @@ impl PlayerView {
                     )
                     // Y-Axis Label
                     .child(
-                         div()
+                        div()
                             .absolute()
                             .left(px(10.0))
                             .top(px(margin_top + plot_height / 2.0 - 40.0))
@@ -1365,8 +1476,8 @@ impl PlayerView {
                             .child(
                                 Text::new("SPL (dB)")
                                     .size(TextSize::Xs)
-                                    .color(theme.text_secondary)
-                            )
+                                    .color(theme.text_secondary),
+                            ),
                     )
                     .child(
                         div()
@@ -1419,9 +1530,9 @@ impl PlayerView {
                             .child(
                                 Text::new("Frequency (Hz)")
                                     .size(TextSize::Xs)
-                                    .color(theme.text_secondary)
-                            )
-                    )
+                                    .color(theme.text_secondary),
+                            ),
+                    ),
             )
             .into_any_element()
     }
@@ -1464,8 +1575,16 @@ impl PlayerView {
                 }
 
                 let _ = state_entity.update(&mut cx.clone(), |state, _| {
-                    state.app.measurement_state.recording_state.mic_calibration_path = Some(path);
-                    state.app.measurement_state.recording_state.mic_calibration_data = calibration_data;
+                    state
+                        .app
+                        .measurement_state
+                        .recording_state
+                        .mic_calibration_path = Some(path);
+                    state
+                        .app
+                        .measurement_state
+                        .recording_state
+                        .mic_calibration_data = calibration_data;
                 });
             }
         })

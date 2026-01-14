@@ -84,7 +84,8 @@ impl PlayerView {
                                     MouseButton::Left,
                                     move |_: &MouseUpEvent, _window, cx| {
                                         state_clone.update(cx, |state, _cx| {
-                                            state.app.audio_device_state.playback_source = PlaybackSource::File;
+                                            state.app.audio_device_state.playback_source =
+                                                PlaybackSource::File;
                                             // Stop HAL playback if running
                                             if let Err(e) = state.player.lock().stop() {
                                                 log::error!("Failed to stop HAL playback: {}", e);
@@ -164,7 +165,8 @@ impl PlayerView {
                     .iter()
                     .enumerate()
                     .map(|(idx, device)| {
-                        let is_selected = state.app.audio_device_state.selected_output_device_index == idx;
+                        let is_selected =
+                            state.app.audio_device_state.selected_output_device_index == idx;
                         let sample_rate = device
                             .default_config
                             .as_ref()
@@ -260,9 +262,15 @@ impl PlayerView {
                                 MouseButton::Left,
                                 cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                                     view.state.update(cx, |state, _cx| {
-                                        state.app.audio_device_state.selected_output_device_index = idx;
-                                        if let Some(device) = state.app.audio_device_state.output_devices.get(idx) {
-                                            state.app.audio_device_state.current_output_device_name =
+                                        state.app.audio_device_state.selected_output_device_index =
+                                            idx;
+                                        if let Some(device) =
+                                            state.app.audio_device_state.output_devices.get(idx)
+                                        {
+                                            state
+                                                .app
+                                                .audio_device_state
+                                                .current_output_device_name =
                                                 Some(device.name.clone());
 
                                             // If playing, restart track with new device
@@ -309,12 +317,21 @@ impl PlayerView {
             });
 
             // Add plugins from the current plugin chain (48kHz is the HAL default rate)
-            for plugin_config in state.app.plugin_state.plugin_chain.to_plugin_configs(48000.0) {
+            for plugin_config in state
+                .app
+                .plugin_state
+                .plugin_chain
+                .to_plugin_configs(48000.0)
+            {
                 plugins.push(plugin_config);
             }
 
             // Get output device
-            let output_device = state.app.audio_device_state.current_output_device_name.clone();
+            let output_device = state
+                .app
+                .audio_device_state
+                .current_output_device_name
+                .clone();
 
             // Determine output channels from plugin chain
             let output_channels = state.app.plugin_state.plugin_chain.output_channels();
@@ -332,9 +349,11 @@ impl PlayerView {
                 }
                 Err(e) => {
                     log::error!("Failed to start HAL playback: {}", e);
-                    state.app.ui_state.toast_message = Some(crate::app::types::ToastMessage::error(
-                        format!("Failed to start HAL: {}", e),
-                    ));
+                    state.app.ui_state.toast_message =
+                        Some(crate::app::types::ToastMessage::error(format!(
+                            "Failed to start HAL: {}",
+                            e
+                        )));
                 }
             }
         });

@@ -318,5 +318,5 @@ pub fn render_mb_compressor_plugin(
                         )),
                 ),
         )
-        // .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
+    // .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
 }

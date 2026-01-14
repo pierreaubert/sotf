@@ -224,19 +224,13 @@ pub fn param_index_to_engine_param(
                         };
 
                         match field_idx {
-                            0 => Some((
-                                format!("band{}_freq", band_idx),
-                                format!("{}", freq),
-                            )),
+                            0 => Some((format!("band{}_freq", band_idx), format!("{}", freq))),
                             1 => Some((format!("band{}_q", band_idx), format!("{}", q))),
                             2 => Some((
                                 format!("band{}_max_gain", band_idx),
                                 format!("{}", max_gain),
                             )),
-                            3 => Some((
-                                format!("band{}_slope", band_idx),
-                                format!("{}", slope),
-                            )),
+                            3 => Some((format!("band{}_slope", band_idx), format!("{}", slope))),
                             _ => None,
                         }
                     } else {

@@ -78,8 +78,14 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |loss_type, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.headphone_eq_state.loss_type = loss_type.to_string();
-                        state.app.measurement_state.headphone_eq_state.dropdowns.loss_type_open = false;
+                        state.app.measurement_state.headphone_eq_state.loss_type =
+                            loss_type.to_string();
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .dropdowns
+                            .loss_type_open = false;
                     });
                 }
             })
@@ -87,7 +93,12 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |open, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.headphone_eq_state.dropdowns.loss_type_open = open;
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .dropdowns
+                            .loss_type_open = open;
                     });
                 }
             })
@@ -95,8 +106,14 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |target, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.headphone_eq_state.target_preset = target.to_string();
-                        state.app.measurement_state.headphone_eq_state.dropdowns.target_curve_open = false;
+                        state.app.measurement_state.headphone_eq_state.target_preset =
+                            target.to_string();
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .dropdowns
+                            .target_curve_open = false;
                     });
                 }
             })
@@ -104,7 +121,12 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |open, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.headphone_eq_state.dropdowns.target_curve_open = open;
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .dropdowns
+                            .target_curve_open = open;
                     });
                 }
             })
@@ -113,13 +135,23 @@ impl PlayerView {
                 move |algo, _window, cx| {
                     use crate::app::types::RoomEqAlgorithm;
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.headphone_eq_state.optimizer_config.algorithm = match algo {
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .optimizer_config
+                            .algorithm = match algo {
                             "autoeq:de" => RoomEqAlgorithm::DifferentialEvolution,
                             "nlopt:cobyla" => RoomEqAlgorithm::Cobyla,
                             "nlopt:neldermead" => RoomEqAlgorithm::NelderMead,
                             _ => RoomEqAlgorithm::Cobyla,
                         };
-                        state.app.measurement_state.headphone_eq_state.dropdowns.algorithm_open = false;
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .dropdowns
+                            .algorithm_open = false;
                     });
                 }
             })
@@ -127,7 +159,12 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |open, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.headphone_eq_state.dropdowns.algorithm_open = open;
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .dropdowns
+                            .algorithm_open = open;
                     });
                 }
             })
@@ -135,8 +172,18 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |model, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.headphone_eq_state.optimizer_config.peq_model = model.to_string();
-                        state.app.measurement_state.headphone_eq_state.dropdowns.peq_model_open = false;
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .optimizer_config
+                            .peq_model = model.to_string();
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .dropdowns
+                            .peq_model_open = false;
                     });
                 }
             })
@@ -144,7 +191,12 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |open, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.headphone_eq_state.dropdowns.peq_model_open = open;
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .dropdowns
+                            .peq_model_open = open;
                     });
                 }
             })
@@ -152,7 +204,12 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.headphone_eq_state.optimizer_config.population = value;
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .optimizer_config
+                            .population = value;
                     });
                 }
             })
@@ -160,7 +217,12 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.headphone_eq_state.optimizer_config.de_f = value;
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .optimizer_config
+                            .de_f = value;
                     });
                 }
             })
@@ -168,7 +230,12 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.headphone_eq_state.optimizer_config.de_cr = value;
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .optimizer_config
+                            .de_cr = value;
                     });
                 }
             })
@@ -176,9 +243,18 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |strategy, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.headphone_eq_state.optimizer_config.strategy =
-                            strategy.to_string();
-                        state.app.measurement_state.headphone_eq_state.dropdowns.strategy_open = false;
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .optimizer_config
+                            .strategy = strategy.to_string();
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .dropdowns
+                            .strategy_open = false;
                     });
                 }
             })
@@ -186,7 +262,12 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |open, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.headphone_eq_state.dropdowns.strategy_open = open;
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .dropdowns
+                            .strategy_open = open;
                     });
                 }
             })
@@ -194,7 +275,12 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.headphone_eq_state.optimizer_config.tolerance = value;
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .optimizer_config
+                            .tolerance = value;
                     });
                 }
             })
@@ -202,7 +288,12 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.headphone_eq_state.optimizer_config.refine = value;
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .optimizer_config
+                            .refine = value;
                     });
                 }
             })
@@ -210,8 +301,18 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |algo, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.headphone_eq_state.optimizer_config.local_algo = algo.to_string();
-                        state.app.measurement_state.headphone_eq_state.dropdowns.local_algo_open = false;
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .optimizer_config
+                            .local_algo = algo.to_string();
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .dropdowns
+                            .local_algo_open = false;
                     });
                 }
             })
@@ -219,7 +320,12 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |open, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.headphone_eq_state.dropdowns.local_algo_open = open;
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .dropdowns
+                            .local_algo_open = open;
                     });
                 }
             })
@@ -227,7 +333,12 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.headphone_eq_state.optimizer_config.smooth = value;
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .optimizer_config
+                            .smooth = value;
                     });
                 }
             })
@@ -235,7 +346,12 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.headphone_eq_state.optimizer_config.smooth_n = value;
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .optimizer_config
+                            .smooth_n = value;
                     });
                 }
             })
@@ -243,7 +359,12 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.headphone_eq_state.optimizer_config.num_filters = value;
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .optimizer_config
+                            .num_filters = value;
                     });
                 }
             })
@@ -251,7 +372,12 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.headphone_eq_state.optimizer_config.min_q = value;
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .optimizer_config
+                            .min_q = value;
                     });
                 }
             })
@@ -259,7 +385,12 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.headphone_eq_state.optimizer_config.max_q = value;
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .optimizer_config
+                            .max_q = value;
                     });
                 }
             })
@@ -267,7 +398,12 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.headphone_eq_state.optimizer_config.min_db = value;
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .optimizer_config
+                            .min_db = value;
                     });
                 }
             })
@@ -275,7 +411,12 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.headphone_eq_state.optimizer_config.max_db = value;
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .optimizer_config
+                            .max_db = value;
                     });
                 }
             })
@@ -283,7 +424,12 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.headphone_eq_state.optimizer_config.min_freq = value;
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .optimizer_config
+                            .min_freq = value;
                     });
                 }
             })
@@ -291,7 +437,12 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.headphone_eq_state.optimizer_config.max_freq = value;
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .optimizer_config
+                            .max_freq = value;
                     });
                 }
             })
@@ -299,7 +450,12 @@ impl PlayerView {
                 let state = self.state.clone();
                 move |value, _window, cx| {
                     state.update(cx, |state, _cx| {
-                        state.app.measurement_state.headphone_eq_state.optimizer_config.max_iter = value;
+                        state
+                            .app
+                            .measurement_state
+                            .headphone_eq_state
+                            .optimizer_config
+                            .max_iter = value;
                     });
                 }
             });

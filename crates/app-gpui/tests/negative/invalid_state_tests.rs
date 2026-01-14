@@ -7,8 +7,8 @@
 mod common;
 
 use common::state_builder::{
-    create_test_albums, TestAlbum, TestChannelFilter, TestLibrarySortOrder, TestLibraryState,
-    TestPlaybackState, TestQueueItem, TestTrack,
+    TestAlbum, TestChannelFilter, TestLibrarySortOrder, TestLibraryState, TestPlaybackState,
+    TestQueueItem, TestTrack, create_test_albums,
 };
 
 // =============================================================================

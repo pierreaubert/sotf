@@ -27,7 +27,10 @@ impl PlayerView {
     pub(crate) fn render_recording_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let (theme, current_step) = {
             let state = self.state.read(cx);
-            (state.app.ui_state.theme.clone(), state.app.measurement_state.recording_state.step)
+            (
+                state.app.ui_state.theme.clone(),
+                state.app.measurement_state.recording_state.step,
+            )
         };
 
         let step_content = match current_step {
@@ -61,7 +64,11 @@ impl PlayerView {
         let theme = state.app.ui_state.theme.clone();
         let theme_id = state.app.ui_state.theme_id;
         let current_step = state.app.measurement_state.recording_state.step;
-        let all_recorded = state.app.measurement_state.recording_state.all_channels_recorded();
+        let all_recorded = state
+            .app
+            .measurement_state
+            .recording_state
+            .all_channels_recorded();
         let is_recording = state.app.measurement_state.recording_state.is_recording();
 
         // Convert RecordingStep to step index
@@ -97,8 +104,13 @@ impl PlayerView {
         let wizard_theme = WizardTheme::from(&ui_kit_theme);
         let button_theme = ButtonTheme::from(&ui_kit_theme);
 
-        let has_output_dir = state.app.measurement_state.recording_state.recording_directory.is_some();
-        
+        let has_output_dir = state
+            .app
+            .measurement_state
+            .recording_state
+            .recording_directory
+            .is_some();
+
         // Determine if next button should be disabled
         let next_disabled = match current_step {
             RecordingStep::Config => !has_output_dir,
@@ -138,16 +150,20 @@ impl PlayerView {
                             view.state.update(cx, |state, _| {
                                 match state.app.measurement_state.recording_state.step {
                                     RecordingStep::Config => {
-                                        state.app.ui_state.current_screen = state.app.ui_state.last_screen;
+                                        state.app.ui_state.current_screen =
+                                            state.app.ui_state.last_screen;
                                     }
                                     RecordingStep::Capture => {
-                                        state.app.measurement_state.recording_state.step = RecordingStep::Config;
+                                        state.app.measurement_state.recording_state.step =
+                                            RecordingStep::Config;
                                     }
                                     RecordingStep::Evaluating => {
-                                        state.app.measurement_state.recording_state.step = RecordingStep::Capture;
+                                        state.app.measurement_state.recording_state.step =
+                                            RecordingStep::Capture;
                                     }
                                     RecordingStep::Saving => {
-                                        state.app.measurement_state.recording_state.step = RecordingStep::Evaluating;
+                                        state.app.measurement_state.recording_state.step =
+                                            RecordingStep::Evaluating;
                                     }
                                 }
                             });
@@ -168,17 +184,25 @@ impl PlayerView {
                             view.state.update(cx, |state, _| {
                                 match state.app.measurement_state.recording_state.step {
                                     RecordingStep::Config => {
-                                        state.app.measurement_state.recording_state.init_channel_recordings();
-                                        state.app.measurement_state.recording_state.step = RecordingStep::Capture;
+                                        state
+                                            .app
+                                            .measurement_state
+                                            .recording_state
+                                            .init_channel_recordings();
+                                        state.app.measurement_state.recording_state.step =
+                                            RecordingStep::Capture;
                                     }
                                     RecordingStep::Capture => {
-                                        state.app.measurement_state.recording_state.step = RecordingStep::Evaluating;
+                                        state.app.measurement_state.recording_state.step =
+                                            RecordingStep::Evaluating;
                                     }
                                     RecordingStep::Evaluating => {
-                                        state.app.measurement_state.recording_state.step = RecordingStep::Saving;
+                                        state.app.measurement_state.recording_state.step =
+                                            RecordingStep::Saving;
                                     }
                                     RecordingStep::Saving => {
-                                        state.app.ui_state.current_screen = state.app.ui_state.last_screen;
+                                        state.app.ui_state.current_screen =
+                                            state.app.ui_state.last_screen;
                                     }
                                 }
                             });

@@ -25,15 +25,24 @@ impl Modifiers {
     }
 
     pub fn shift() -> Self {
-        Self { shift: true, ..Default::default() }
+        Self {
+            shift: true,
+            ..Default::default()
+        }
     }
 
     pub fn ctrl() -> Self {
-        Self { ctrl: true, ..Default::default() }
+        Self {
+            ctrl: true,
+            ..Default::default()
+        }
     }
 
     pub fn cmd() -> Self {
-        Self { cmd: true, ..Default::default() }
+        Self {
+            cmd: true,
+            ..Default::default()
+        }
     }
 }
 
@@ -263,9 +272,7 @@ mod tests {
 
     #[test]
     fn test_key_event_builder() {
-        let event = KeyEvent::new("a")
-            .with_shift()
-            .with_ctrl();
+        let event = KeyEvent::new("a").with_shift().with_ctrl();
 
         assert_eq!(event.key, "a");
         assert!(event.modifiers.shift);

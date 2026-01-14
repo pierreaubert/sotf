@@ -13,7 +13,11 @@ impl TestScenario for ViewSwitchingStabilityScenario {
         "View Switching Playback Stability"
     }
 
-    fn execute(&self, cx: &mut VisualTestContext, window: WindowHandle<PlayerView>) -> Result<(), Box<dyn Error>> {
+    fn execute(
+        &self,
+        cx: &mut VisualTestContext,
+        window: WindowHandle<PlayerView>,
+    ) -> Result<(), Box<dyn Error>> {
         use crate::driver::AppDriver;
         let mut driver = AppDriver::new(cx, window);
 
@@ -33,23 +37,30 @@ impl TestScenario for ViewSwitchingStabilityScenario {
 
         // Verify initial playing state
         let mut started = false;
-        for _ in 0..20 { // 20 iterations * 50ms = 1 second timeout
+        for _ in 0..20 {
+            // 20 iterations * 50ms = 1 second timeout
             driver.run_until_parked();
-            driver.cx.executor().advance_clock(std::time::Duration::from_millis(50));
+            driver
+                .cx
+                .executor()
+                .advance_clock(std::time::Duration::from_millis(50));
             if driver.read_app(|app| app.playback.is_playing) {
                 started = true;
                 break;
             }
         }
-        assert!(started, "Playback should be started within 1 second timeout");
+        assert!(
+            started,
+            "Playback should be started within 1 second timeout"
+        );
         let initial_position = driver.read_app(|app| app.playback.position_secs);
-        
+
         println!("Initial position: {:.3}s", initial_position);
 
         // 2. Switch to Studio Rack (Screen::Studio)
         println!("Switching to Studio Rack...");
         driver.navigate_to(Screen::Studio);
-        
+
         // Wait for some time to simulate user activity and allow audio engine to process
         // We need to wait long enough for position to advance significantly
         let wait_duration = Duration::from_millis(500);
@@ -59,32 +70,38 @@ impl TestScenario for ViewSwitchingStabilityScenario {
         // 3. Verify Playback Stability
         let studio_position = driver.read_app(|app| app.playback.position_secs);
         let is_playing_studio = driver.read_app(|app| app.playback.is_playing);
-        
+
         println!("Position in Studio Rack: {:.3}s", studio_position);
 
         assert!(is_playing_studio, "Playback should continue in Studio Rack");
-        assert!(studio_position > initial_position + 0.3, 
-            "Position should have advanced by at least 0.3s (expected ~0.5s). Got start={:.3}, current={:.3}", 
-            initial_position, studio_position);
+        assert!(
+            studio_position > initial_position + 0.3,
+            "Position should have advanced by at least 0.3s (expected ~0.5s). Got start={:.3}, current={:.3}",
+            initial_position,
+            studio_position
+        );
 
         // 4. Switch to Queue (Screen::Queue)
         println!("Switching to Queue...");
         driver.navigate_to(Screen::Queue);
-        
+
         driver.cx.executor().advance_clock(wait_duration);
         driver.run_until_parked();
 
         // 5. Verify Playback Stability again
         let queue_position = driver.read_app(|app| app.playback.position_secs);
         let is_playing_queue = driver.read_app(|app| app.playback.is_playing);
-        
+
         println!("Position in Queue: {:.3}s", queue_position);
 
         assert!(is_playing_queue, "Playback should continue in Queue");
-        assert!(queue_position > studio_position + 0.3, 
-            "Position should have advanced further in Queue. Got studio={:.3}, current={:.3}", 
-            studio_position, queue_position);
-            
+        assert!(
+            queue_position > studio_position + 0.3,
+            "Position should have advanced further in Queue. Got studio={:.3}, current={:.3}",
+            studio_position,
+            queue_position
+        );
+
         Ok(())
     }
 }

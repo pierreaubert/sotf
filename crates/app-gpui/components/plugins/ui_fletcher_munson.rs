@@ -62,10 +62,14 @@ pub fn render_fletcher_munson_plugin(
     let volume_delta_db = state.reference_level_db - state.playback_volume_db;
 
     // Calculate current gains for each band
-    let band1_current = calculate_band_gain(state.band1_slope, state.band1_max_gain, volume_delta_db);
-    let band2_current = calculate_band_gain(state.band2_slope, state.band2_max_gain, volume_delta_db);
-    let band3_current = calculate_band_gain(state.band3_slope, state.band3_max_gain, volume_delta_db);
-    let band4_current = calculate_band_gain(state.band4_slope, state.band4_max_gain, volume_delta_db);
+    let band1_current =
+        calculate_band_gain(state.band1_slope, state.band1_max_gain, volume_delta_db);
+    let band2_current =
+        calculate_band_gain(state.band2_slope, state.band2_max_gain, volume_delta_db);
+    let band3_current =
+        calculate_band_gain(state.band3_slope, state.band3_max_gain, volume_delta_db);
+    let band4_current =
+        calculate_band_gain(state.band4_slope, state.band4_max_gain, volume_delta_db);
 
     div()
         .flex()
@@ -293,7 +297,7 @@ pub fn render_fletcher_munson_plugin(
                         )),
                 ),
         )
-        // .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
+    // .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
 }
 
 /// Render a single band section with freq, Q, max gain, slope, and current gain display

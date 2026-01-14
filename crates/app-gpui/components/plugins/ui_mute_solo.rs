@@ -266,5 +266,5 @@ pub fn render_mute_solo_plugin(
                 .child("Shift+M: Solo")
                 .child("x: Clear all"),
         )
-        // .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
+    // .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
 }

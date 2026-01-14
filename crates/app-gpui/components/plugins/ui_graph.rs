@@ -69,7 +69,13 @@ impl Render for PaletteDragData {
 impl PlayerView {
     /// Ensure the WorkflowCanvas entity exists, creating it if needed
     pub(crate) fn ensure_workflow_canvas(&self, cx: &mut Context<Self>) {
-        let has_canvas = self.state.read(cx).app.plugin_state.workflow_canvas.is_some();
+        let has_canvas = self
+            .state
+            .read(cx)
+            .app
+            .plugin_state
+            .workflow_canvas
+            .is_some();
 
         if !has_canvas {
             // Build workflow graph from plugin graph, or create a default graph
@@ -805,30 +811,35 @@ impl PlayerView {
         // Get the node being edited
         let node_id = state.app.plugin_state.editing_plugin_node;
         let node_info = node_id.and_then(|id| {
-            state.app.plugin_state.workflow_canvas.as_ref().and_then(|canvas| {
-                let canvas_read = canvas.read(cx);
-                let graph = canvas_read.graph();
-                graph.nodes.get(&id).map(|node| {
-                    let name = node.title.clone();
-                    let node_type = node
-                        .user_data
-                        .get("node_type")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("unknown")
-                        .to_string();
-                    let plugin_type = node
-                        .user_data
-                        .get("plugin_type")
-                        .and_then(|v| v.as_str())
-                        .map(|s: &str| s.to_string());
-                    let plugin_node_id = node
-                        .user_data
-                        .get("plugin_node_id")
-                        .and_then(|v| v.as_str())
-                        .map(|s: &str| s.to_string());
-                    (name, node_type, plugin_type, plugin_node_id)
+            state
+                .app
+                .plugin_state
+                .workflow_canvas
+                .as_ref()
+                .and_then(|canvas| {
+                    let canvas_read = canvas.read(cx);
+                    let graph = canvas_read.graph();
+                    graph.nodes.get(&id).map(|node| {
+                        let name = node.title.clone();
+                        let node_type = node
+                            .user_data
+                            .get("node_type")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown")
+                            .to_string();
+                        let plugin_type = node
+                            .user_data
+                            .get("plugin_type")
+                            .and_then(|v| v.as_str())
+                            .map(|s: &str| s.to_string());
+                        let plugin_node_id = node
+                            .user_data
+                            .get("plugin_node_id")
+                            .and_then(|v| v.as_str())
+                            .map(|s: &str| s.to_string());
+                        (name, node_type, plugin_type, plugin_node_id)
+                    })
                 })
-            })
         });
 
         let (node_name, node_type, plugin_type, plugin_node_id) =
@@ -967,7 +978,8 @@ impl PlayerView {
                                                 state.update(cx, |state, _cx| {
                                                     state.app.ui_state.input_mode =
                                                         crate::app::InputMode::Normal;
-                                                    state.app.plugin_state.editing_plugin_node = None;
+                                                    state.app.plugin_state.editing_plugin_node =
+                                                        None;
                                                 });
                                             })
                                             .child("Close")

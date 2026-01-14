@@ -17,7 +17,9 @@ fn test_scan_corrupted_audio_file() {
     library.add_directory(music_path.to_path_buf()).unwrap();
 
     // Scan should not crash and should gracefully skip the file
-    library.scan().expect("Scan should handle corrupted files gracefully");
+    library
+        .scan()
+        .expect("Scan should handle corrupted files gracefully");
 
     // Should have no albums since the only file was corrupted
     assert_eq!(library.albums.len(), 0, "Corrupted file should be skipped");
@@ -41,7 +43,9 @@ fn test_scan_mixed_valid_and_corrupted() {
     let mut library = MusicLibrary::with_custom_database_for_testing(&db_path).unwrap();
     library.add_directory(music_path.to_path_buf()).unwrap();
 
-    library.scan().expect("Scan should handle mixed valid/corrupted files");
+    library
+        .scan()
+        .expect("Scan should handle mixed valid/corrupted files");
 
     // Should have found 1 album (from the valid file)
     assert_eq!(library.albums.len(), 1, "Should have found the valid album");

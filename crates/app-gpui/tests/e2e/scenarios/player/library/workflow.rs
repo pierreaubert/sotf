@@ -1102,9 +1102,7 @@ async fn test_search_ignores_album_letter_filter(_cx: &mut TestAppContext) {
         let q = query.to_lowercase();
         albums
             .iter()
-            .filter(|a| {
-                a.title.to_lowercase().contains(&q) || a.artist.to_lowercase().contains(&q)
-            })
+            .filter(|a| a.title.to_lowercase().contains(&q) || a.artist.to_lowercase().contains(&q))
             .cloned()
             .collect()
     }
@@ -1175,9 +1173,7 @@ async fn test_search_ignores_genre_filter(_cx: &mut TestAppContext) {
         let q = query.to_lowercase();
         albums
             .iter()
-            .filter(|a| {
-                a.title.to_lowercase().contains(&q) || a.artist.to_lowercase().contains(&q)
-            })
+            .filter(|a| a.title.to_lowercase().contains(&q) || a.artist.to_lowercase().contains(&q))
             .cloned()
             .collect()
     }

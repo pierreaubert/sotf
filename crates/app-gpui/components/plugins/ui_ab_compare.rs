@@ -438,7 +438,7 @@ pub fn render_ab_compare_plugin(
                         ),
                 ),
         )
-        // .when(state.is_editing, |d: Div| d.child(render_edit_hints(theme)))
+    // .when(state.is_editing, |d: Div| d.child(render_edit_hints(theme)))
 }
 
 /// Render a horizontal slider using gpui-ui-kit Slider

@@ -1,7 +1,8 @@
-
 use gpui::TestAppContext;
 use sotf_audio_player_gpui::app::manager::Manager;
-use sotf_audio_player_gpui::app::state::library::{LibraryEvent, LibraryQuery, LibraryResponse, LibraryState, LibrarySortOrder, ChannelFilter};
+use sotf_audio_player_gpui::app::state::library::{
+    ChannelFilter, LibraryEvent, LibraryQuery, LibraryResponse, LibrarySortOrder, LibraryState,
+};
 
 #[gpui::test]
 fn test_library_workflow(cx: &mut TestAppContext) {
@@ -10,19 +11,25 @@ fn test_library_workflow(cx: &mut TestAppContext) {
     let mut manager = LibraryState::new_for_test();
 
     // 2. Test: Search
-    manager.handle_event(LibraryEvent::SetSearchQuery("Rock".to_string())).unwrap();
+    manager
+        .handle_event(LibraryEvent::SetSearchQuery("Rock".to_string()))
+        .unwrap();
     assert_eq!(manager.search_query, "Rock");
-    
+
     // 3. Test: Clear Search
     manager.handle_event(LibraryEvent::ClearSearch).unwrap();
     assert_eq!(manager.search_query, "");
 
     // 4. Test: Sorting
-    manager.handle_event(LibraryEvent::SetSortOrder(LibrarySortOrder::Artist)).unwrap();
+    manager
+        .handle_event(LibraryEvent::SetSortOrder(LibrarySortOrder::Artist))
+        .unwrap();
     assert_eq!(manager.sort_order, LibrarySortOrder::Artist);
 
     // 5. Test: Filtering
-    manager.handle_event(LibraryEvent::SetFilter(ChannelFilter::Stereo)).unwrap();
+    manager
+        .handle_event(LibraryEvent::SetFilter(ChannelFilter::Stereo))
+        .unwrap();
     assert_eq!(manager.filter, ChannelFilter::Stereo);
 
     // 6. Test: Queries

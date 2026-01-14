@@ -18,4 +18,3 @@ pub(super) fn volume_control_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("m", actions::ToggleMute, Some("volume-control")),
     ]
 }
-

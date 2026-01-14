@@ -280,7 +280,10 @@ impl PlayerView {
 
         // Check if we're in HAL input mode (macOS only)
         #[cfg(all(target_os = "macos", feature = "hal"))]
-        if matches!(state.app.audio_device_state.playback_source, PlaybackSource::HalDevice) {
+        if matches!(
+            state.app.audio_device_state.playback_source,
+            PlaybackSource::HalDevice
+        ) {
             let text_primary = theme.text_primary;
             let text_secondary = theme.text_secondary;
             let accent = theme.accent;
@@ -311,20 +314,21 @@ impl PlayerView {
         }
 
         // Get current track info from queue
-        let (title, album_name, artist) = if let Some(queue_idx) = state.app.playback.current_queue_index {
-            if let Some(item) = state.app.queue.get(queue_idx) {
-                let track_title = item
-                    .current_track()
-                    .and_then(|t| t.title.clone())
-                    .unwrap_or_else(|| "Unknown Track".to_string());
+        let (title, album_name, artist) =
+            if let Some(queue_idx) = state.app.playback.current_queue_index {
+                if let Some(item) = state.app.queue.get(queue_idx) {
+                    let track_title = item
+                        .current_track()
+                        .and_then(|t| t.title.clone())
+                        .unwrap_or_else(|| "Unknown Track".to_string());
 
-                (track_title, item.album.title.clone(), item.album.artist())
+                    (track_title, item.album.title.clone(), item.album.artist())
+                } else {
+                    (String::new(), String::new(), String::new())
+                }
             } else {
                 (String::new(), String::new(), String::new())
-            }
-        } else {
-            (String::new(), String::new(), String::new())
-        };
+            };
 
         let text_primary = theme.text_primary;
         let text_secondary = theme.text_secondary;
@@ -407,7 +411,10 @@ impl PlayerView {
 
         // Check if we're in HAL mode - hide waveform/time display
         #[cfg(all(target_os = "macos", feature = "hal"))]
-        let is_hal_mode = matches!(state.app.audio_device_state.playback_source, PlaybackSource::HalDevice);
+        let is_hal_mode = matches!(
+            state.app.audio_device_state.playback_source,
+            PlaybackSource::HalDevice
+        );
         #[cfg(not(all(target_os = "macos", feature = "hal")))]
         let is_hal_mode = false;
 
@@ -495,7 +502,8 @@ impl PlayerView {
                             .id("transport-seek-back-wrapper")
                             .on_click(cx.listener(|view, _event: &ClickEvent, _window, cx| {
                                 view.state.update(cx, |state, _cx| {
-                                    let new_position = (state.app.playback.position_secs - 30.0).max(0.0);
+                                    let new_position =
+                                        (state.app.playback.position_secs - 30.0).max(0.0);
                                     state.app.playback.position_secs = new_position;
                                     if let Err(e) = state.player.lock().seek(new_position) {
                                         log::error!("Failed to seek backward: {}", e);
@@ -549,7 +557,8 @@ impl PlayerView {
                             .on_click(cx.listener(|view, _event: &ClickEvent, _window, cx| {
                                 view.state.update(cx, |state, _cx| {
                                     let max = state.app.playback.duration_secs;
-                                    let new_position = (state.app.playback.position_secs + 30.0).min(max);
+                                    let new_position =
+                                        (state.app.playback.position_secs + 30.0).min(max);
                                     state.app.playback.position_secs = new_position;
                                     if let Err(e) = state.player.lock().seek(new_position) {
                                         log::error!("Failed to seek forward: {}", e);
@@ -631,8 +640,8 @@ impl PlayerView {
                                                 let ratio = (x / width).clamp(0.0, 1.0);
 
                                                 view.state.update(cx, |state, _cx| {
-                                                    let new_pos =
-                                                        state.app.playback.duration_secs * ratio as f64;
+                                                    let new_pos = state.app.playback.duration_secs
+                                                        * ratio as f64;
                                                     state.app.playback.position_secs = new_pos;
                                                     if let Err(e) =
                                                         state.player.lock().seek(new_pos)
@@ -764,7 +773,8 @@ impl PlayerView {
                             MouseButton::Left,
                             cx.listener(|view, _: &MouseUpEvent, _window, cx| {
                                 view.state.update(cx, |state, _cx| {
-                                    state.app.ui_state.show_studio_menu = !state.app.ui_state.show_studio_menu;
+                                    state.app.ui_state.show_studio_menu =
+                                        !state.app.ui_state.show_studio_menu;
                                 });
                                 cx.notify();
                             }),
@@ -804,7 +814,8 @@ impl PlayerView {
                             MouseButton::Left,
                             cx.listener(|view, _: &MouseUpEvent, _window, cx| {
                                 view.state.update(cx, |state, _cx| {
-                                    state.app.ui_state.show_device_popup = !state.app.ui_state.show_device_popup;
+                                    state.app.ui_state.show_device_popup =
+                                        !state.app.ui_state.show_device_popup;
                                 });
                                 cx.notify();
                             }),
@@ -950,7 +961,8 @@ impl PlayerView {
                         cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                             view.state.update(cx, |state, _cx| {
                                 state.app.audio_device_state.selected_output_device_index = idx;
-                                state.app.audio_device_state.current_output_device_name = Some(device_name.clone());
+                                state.app.audio_device_state.current_output_device_name =
+                                    Some(device_name.clone());
                                 state.app.ui_state.show_device_popup = false;
 
                                 // Apply the device selection to the player
@@ -1036,11 +1048,19 @@ impl PlayerView {
                 match id.as_ref() {
                     "library" => state.app.ui_state.current_screen = crate::app::Screen::Library,
                     "studio" => state.app.ui_state.current_screen = crate::app::Screen::Studio,
-                    "plugingraph" => state.app.ui_state.current_screen = crate::app::Screen::PluginGraph,
-                    "recording" => state.app.ui_state.current_screen = crate::app::Screen::Recording,
+                    "plugingraph" => {
+                        state.app.ui_state.current_screen = crate::app::Screen::PluginGraph
+                    }
+                    "recording" => {
+                        state.app.ui_state.current_screen = crate::app::Screen::Recording
+                    }
                     "roomeq" => state.app.ui_state.current_screen = crate::app::Screen::RoomEq,
-                    "headphoneeq" => state.app.ui_state.current_screen = crate::app::Screen::HeadphoneEq,
-                    "spinorama" => state.app.ui_state.current_screen = crate::app::Screen::Spinorama,
+                    "headphoneeq" => {
+                        state.app.ui_state.current_screen = crate::app::Screen::HeadphoneEq
+                    }
+                    "spinorama" => {
+                        state.app.ui_state.current_screen = crate::app::Screen::Spinorama
+                    }
                     _ => {}
                 }
             });
@@ -1067,7 +1087,7 @@ impl PlayerView {
         let bg_color: gpui::Hsla = theme.surface_hover.into();
         let text_color: gpui::Hsla = theme.text_primary.into();
         let focus_ring_color: gpui::Hsla = theme.accent.into();
-        
+
         let focus_handle = self.volume_focus_handle.clone();
 
         div()
@@ -1084,7 +1104,7 @@ impl PlayerView {
                 MouseButton::Left,
                 cx.listener(move |view, event: &MouseDownEvent, window, cx| {
                     window.focus(&focus_handle, cx);
-                    
+
                     if event.click_count == 2 {
                         // Double click resets volume to 10%
                         view.state.update(cx, |state, _cx| {

@@ -1332,7 +1332,10 @@ impl PlayerView {
     pub fn render_lufs_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let (theme, loudness) = {
             let state = self.state.read(cx);
-            (state.app.ui_state.theme.clone(), state.app.playback.loudness_info.clone())
+            (
+                state.app.ui_state.theme.clone(),
+                state.app.playback.loudness_info.clone(),
+            )
         };
         div()
             .flex()
@@ -1399,7 +1402,11 @@ impl LevelMeterManager for AppState {
         let num_channels = if num_channels == 0 { 2 } else { num_channels };
 
         // Get current speaker config
-        let current_speaker_config = self.plugin_state.plugin_chain.output_speaker_config().map(String::from);
+        let current_speaker_config = self
+            .plugin_state
+            .plugin_chain
+            .output_speaker_config()
+            .map(String::from);
 
         // Skip rebuilding if nothing has changed
         if num_channels == self.level_meter_last_channel_count
@@ -1502,7 +1509,7 @@ impl LevelMeterManager for AppState {
                         soloed: soloed_lr,
                         dimmed: dimmed_lr,
                     });
-                    
+
                     let (muted_sr, soloed_sr, dimmed_sr) = get_previous_state("Surrounds");
                     self.level_meter_groups.push(ChannelGroup {
                         name: "Surrounds".to_string(),
@@ -1635,9 +1642,9 @@ impl LevelMeterManager for AppState {
                 }
             }
         } else {
-             if let Some(group) = self.level_meter_groups.get_mut(group_idx) {
+            if let Some(group) = self.level_meter_groups.get_mut(group_idx) {
                 group.soloed = false;
-             }
+            }
         }
         self.update_matrix_plugin();
     }
@@ -1709,14 +1716,16 @@ impl LevelMeterManager for AppState {
             }
         }
 
-
         // Find and update the LAST Matrix plugin (closest to output)
         for i in (0..self.plugin_state.plugin_chain.len()).rev() {
             if let Some(plugin) = self.plugin_state.plugin_chain.get_plugin_mut(i) {
                 if matches!(&plugin.settings, PluginSettings::Matrix { .. }) {
                     // Update settings in memory
                     match &mut plugin.settings {
-                        PluginSettings::Matrix { channel_states: settings_states, .. } => {
+                        PluginSettings::Matrix {
+                            channel_states: settings_states,
+                            ..
+                        } => {
                             *settings_states = channel_states.clone();
                         }
                         _ => unreachable!(),

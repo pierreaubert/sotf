@@ -466,7 +466,12 @@ mod tests {
             };
 
             sm.transition(InputEvent::PressEscape).unwrap();
-            assert_eq!(sm.state, InputState::Normal, "Escape didn't exit {:?}", mode);
+            assert_eq!(
+                sm.state,
+                InputState::Normal,
+                "Escape didn't exit {:?}",
+                mode
+            );
             assert!(sm.buffer.is_empty(), "Buffer not cleared for {:?}", mode);
         }
     }

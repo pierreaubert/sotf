@@ -1290,8 +1290,8 @@ fn handle_command(
                             return ManagerResponse::Error(e);
                         }
                         _ => {
-                             // Ignore unexpected responses (e.g. from previous timed out requests)
-                             continue;
+                            // Ignore unexpected responses (e.g. from previous timed out requests)
+                            continue;
                         }
                     }
                 }

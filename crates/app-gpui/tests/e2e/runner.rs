@@ -3,7 +3,9 @@
 //! Orchestrates the execution of test scenarios, managing the test context,
 //! window creation, and result collection.
 
-use gpui::{Context, Render, TestAppContext, VisualTestContext, Window, div, prelude::*, WindowHandle};
+use gpui::{
+    Context, Render, TestAppContext, VisualTestContext, Window, WindowHandle, div, prelude::*,
+};
 use std::error::Error;
 
 /// Result of running an E2E test scenario.
@@ -69,7 +71,11 @@ pub trait TestScenario {
 
     /// Execute the test scenario.
     /// This is where interactions and assertions happen.
-    fn execute(&self, cx: &mut VisualTestContext, window: WindowHandle<PlayerView>) -> Result<(), Box<dyn Error>> {
+    fn execute(
+        &self,
+        cx: &mut VisualTestContext,
+        window: WindowHandle<PlayerView>,
+    ) -> Result<(), Box<dyn Error>> {
         let _ = window; // Default implementation ignores window
         Ok(())
     }
@@ -80,10 +86,10 @@ pub trait TestScenario {
     }
 }
 
+use sotf_audio_player::Player;
 use sotf_audio_player_gpui::app::{App, AppState};
 use sotf_audio_player_gpui::ui::PlayerView;
 use std::sync::Arc;
-use sotf_audio_player::Player;
 
 /// Runner for executing E2E test scenarios.
 pub struct E2ERunner<S: TestScenario> {
@@ -120,13 +126,13 @@ impl<S: TestScenario> E2ERunner<S> {
         let window = cx.add_window(|_, cx| {
             let app_state = cx.new(|_cx| {
                 let mut app = App::new();
-                
+
                 // Ensure we don't try to load real audio devices in CI/Test env if possible,
                 // or assume they exist. For E2E we might want to mock them or Use BlackHole.
                 // For now, we follow main.rs logic but skipping config load to ensure deterministic state.
-                
+
                 let player = Player::new();
-                
+
                 AppState {
                     app,
                     player: Arc::new(parking_lot::Mutex::new(player)),
@@ -137,7 +143,7 @@ impl<S: TestScenario> E2ERunner<S> {
         });
 
         let mut visual_cx = VisualTestContext::from_window(window.into(), cx);
-        
+
         // Pump the loop to let the UI settle
         visual_cx.run_until_parked();
 

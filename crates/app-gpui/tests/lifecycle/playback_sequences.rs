@@ -3,9 +3,7 @@
 //! Tests realistic playback scenarios that span multiple tracks and albums,
 //! verifying state preservation throughout the playback lifecycle.
 
-use crate::common::state_builder::{
-    TestAlbum, TestPlaybackState, TestQueueItem, TestTrack,
-};
+use crate::common::state_builder::{TestAlbum, TestPlaybackState, TestQueueItem, TestTrack};
 
 // =============================================================================
 // Helper: Create multi-track albums for testing
@@ -184,7 +182,10 @@ fn test_volume_adjustments_persist_across_tracks() {
 
     // Play next track
     state.next_track();
-    assert_eq!(state.volume, 0.25, "Volume not preserved after track change");
+    assert_eq!(
+        state.volume, 0.25,
+        "Volume not preserved after track change"
+    );
 
     // Change volume again
     state.volume = 0.80;
@@ -217,7 +218,10 @@ fn test_edge_volume_values_persist() {
     // Test with very small volume
     state.volume = 0.001;
     state.next_track();
-    assert!((state.volume - 0.001).abs() < f32::EPSILON, "Small volume not preserved");
+    assert!(
+        (state.volume - 0.001).abs() < f32::EPSILON,
+        "Small volume not preserved"
+    );
 }
 
 // =============================================================================
@@ -264,7 +268,8 @@ fn test_rapid_track_skipping() {
     for i in 0..15 {
         let result = state.next_track();
         assert_eq!(
-            state.volume, 0.55,
+            state.volume,
+            0.55,
             "Volume changed after rapid skip {}",
             i + 1
         );

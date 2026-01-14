@@ -63,8 +63,12 @@ pub(crate) fn render_channel_config_row(
                             move |_, cx| {
                                 view.update(cx, |this, cx| {
                                     this.state.update(cx, |state, _| {
-                                        if let Some(cfg) =
-                                            state.app.measurement_state.room_eq_state.speaker_configs.get_mut(idx)
+                                        if let Some(cfg) = state
+                                            .app
+                                            .measurement_state
+                                            .room_eq_state
+                                            .speaker_configs
+                                            .get_mut(idx)
                                         {
                                             cfg.config_type = SpeakerConfigType::Single;
                                         }
@@ -88,8 +92,12 @@ pub(crate) fn render_channel_config_row(
                             move |_, cx| {
                                 view.update(cx, |this, cx| {
                                     this.state.update(cx, |state, _| {
-                                        if let Some(cfg) =
-                                            state.app.measurement_state.room_eq_state.speaker_configs.get_mut(idx)
+                                        if let Some(cfg) = state
+                                            .app
+                                            .measurement_state
+                                            .room_eq_state
+                                            .speaker_configs
+                                            .get_mut(idx)
                                         {
                                             cfg.config_type = SpeakerConfigType::MultiDriver;
                                         }
@@ -142,7 +150,12 @@ fn render_crossover_dropdown(
         move |_, cx| {
             view.update(cx, |this, cx| {
                 this.state.update(cx, |state, _| {
-                    if let Some(cfg) = state.app.measurement_state.room_eq_state.speaker_configs.get_mut(channel_idx)
+                    if let Some(cfg) = state
+                        .app
+                        .measurement_state
+                        .room_eq_state
+                        .speaker_configs
+                        .get_mut(channel_idx)
                     {
                         // Find current index and cycle to next
                         let current_idx = crossover_types
@@ -165,6 +178,7 @@ fn render_crossover_dropdown(
 pub(crate) fn render_channel_result_card(
     result: &crate::app::types::ChannelOptResult,
     theme: &crate::theme::Theme,
+    smoothing_octaves: f64,
 ) -> impl IntoElement {
     use crate::components::graphs::format_frequency;
 
@@ -178,6 +192,7 @@ pub(crate) fn render_channel_result_card(
         .flex_col()
         .gap_3()
         .p_4()
+        .w_full()
         .bg(theme.surface)
         .rounded_lg()
         .border_1()
@@ -223,7 +238,12 @@ pub(crate) fn render_channel_result_card(
         .when(has_response_data, |div| {
             let original = result.original_response.as_ref().unwrap();
             let corrected = result.corrected_response.as_ref().unwrap();
-            div.child(render_response_comparison_graph(original, corrected, theme))
+            div.child(render_response_comparison_graph(
+                original,
+                corrected,
+                theme,
+                smoothing_octaves,
+            ))
         })
         // EQ Filter details
         .child(
@@ -270,17 +290,59 @@ pub(crate) fn render_channel_result_card(
         })
 }
 
+/// Apply octave smoothing to frequency response data
+fn smooth_response(frequencies: &[f64], values: &[f64], octaves: f64) -> Vec<f64> {
+    if octaves <= 0.0 || frequencies.is_empty() || values.is_empty() {
+        return values.to_vec();
+    }
+
+    let mut smoothed = Vec::with_capacity(values.len());
+
+    for (i, &center_freq) in frequencies.iter().enumerate() {
+        if center_freq <= 0.0 {
+            smoothed.push(values[i]);
+            continue;
+        }
+
+        // Calculate frequency range for smoothing window
+        let ratio = 2.0_f64.powf(octaves / 2.0);
+        let low_freq = center_freq / ratio;
+        let high_freq = center_freq * ratio;
+
+        // Average values within the window
+        let mut sum = 0.0;
+        let mut count = 0;
+
+        for (j, &freq) in frequencies.iter().enumerate() {
+            if freq >= low_freq && freq <= high_freq {
+                sum += values[j];
+                count += 1;
+            }
+        }
+
+        if count > 0 {
+            smoothed.push(sum / count as f64);
+        } else {
+            smoothed.push(values[i]);
+        }
+    }
+
+    smoothed
+}
+
 /// Render the frequency response comparison graph with tonal balance histogram
 fn render_response_comparison_graph(
     original: &[(f64, f64)],
     corrected: &[(f64, f64)],
     theme: &crate::theme::Theme,
+    smoothing_octaves: f64,
 ) -> impl IntoElement {
     use crate::components::graphs::common::theme_to_chart_theme;
     use gpui_px::{BarTheme, LegendPosition, ScaleType, bar, line};
 
-    const GRAPH_WIDTH: f32 = 800.0;
-    const GRAPH_HEIGHT: f32 = 600.0;
+    // Use a large width that will be constrained by the parent container
+    const GRAPH_WIDTH: f32 = 1200.0;
+    const GRAPH_HEIGHT: f32 = 400.0;
 
     // CEA2034 standard colors for consistency
     const BLUE: u32 = 0x1f77b4;
@@ -288,8 +350,12 @@ fn render_response_comparison_graph(
 
     // Convert (freq, db) pairs to separate vectors
     let frequencies: Vec<f64> = original.iter().map(|(f, _)| *f).collect();
-    let original_values: Vec<f64> = original.iter().map(|(_, db)| *db).collect();
-    let corrected_values: Vec<f64> = corrected.iter().map(|(_, db)| *db).collect();
+    let original_values_raw: Vec<f64> = original.iter().map(|(_, db)| *db).collect();
+    let corrected_values_raw: Vec<f64> = corrected.iter().map(|(_, db)| *db).collect();
+
+    // Apply smoothing
+    let original_values = smooth_response(&frequencies, &original_values_raw, smoothing_octaves);
+    let corrected_values = smooth_response(&frequencies, &corrected_values_raw, smoothing_octaves);
 
     if frequencies.is_empty() {
         return div()
@@ -451,7 +517,7 @@ fn render_response_comparison_graph(
     };
 
     div()
-        .w(px(GRAPH_WIDTH))
+        .w_full()
         .flex()
         .flex_col()
         .gap_2()

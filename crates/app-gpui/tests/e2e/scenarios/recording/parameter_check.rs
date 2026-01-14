@@ -48,7 +48,7 @@ impl TestScenario for RecordingParameterCheckScenario {
         let test_config = SpeakerConfiguration::Stereo21;
         page.set_speaker_config(test_config);
         assert_eq!(page.get_speaker_config(), test_config);
-        
+
         assert_eq!(page.get_channel_count(), 3);
 
         // 6. Change Signal Type

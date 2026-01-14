@@ -42,10 +42,10 @@ pub enum LibraryQuery {
 #[derive(Debug)]
 pub enum LibraryResponse {
     Count(usize),
-    Album(Option<Album>), // Return owned clone for isolation? Or reference? 
-                          // The trait response is owned. Album is expensive to clone.
-                          // Ideally we return Arc<Album> or similar.
-                          // For now, let's use what we have.
+    Album(Option<Album>), // Return owned clone for isolation? Or reference?
+    // The trait response is owned. Album is expensive to clone.
+    // Ideally we return Arc<Album> or similar.
+    // For now, let's use what we have.
     None,
 }
 
@@ -571,9 +571,7 @@ impl Manager for LibraryState {
             LibraryEvent::SelectGridUp(cols) => self.select_grid_up(cols),
             LibraryEvent::PageDown(size) => self.page_down(size),
             LibraryEvent::PageUp(size) => self.page_up(size),
-            LibraryEvent::Scan => {
-                self.scan().map_err(|e| ManagerError::from(e.to_string()))?
-            }
+            LibraryEvent::Scan => self.scan().map_err(|e| ManagerError::from(e.to_string()))?,
         }
         Ok(())
     }
@@ -584,7 +582,7 @@ impl Manager for LibraryState {
             LibraryQuery::SelectedAlbum => {
                 // Return a clone for now as Response must be owned
                 LibraryResponse::Album(self.selected_album().cloned())
-            },
+            }
             LibraryQuery::FilteredAlbums => LibraryResponse::None, // Not implemented fully yet
         }
     }

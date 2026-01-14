@@ -257,4 +257,3 @@ pub(super) fn vim_documented_keybindings() -> Vec<DocumentedKeybinding> {
         },
     ]
 }
-

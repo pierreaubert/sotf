@@ -290,7 +290,8 @@ impl PlayerView {
             let state = self.state.read(cx);
             let plugins: Vec<_> = state
                 .app
-                .plugin_state.plugin_chain
+                .plugin_state
+                .plugin_chain
                 .plugins()
                 .iter()
                 .map(|p| {
@@ -1070,7 +1071,8 @@ impl PlayerView {
         // Get list of plugins already in chain
         let present_plugins: Vec<_> = state
             .app
-            .plugin_state.plugin_chain
+            .plugin_state
+            .plugin_chain
             .plugins()
             .iter()
             .map(|p| p.plugin_type().clone())
@@ -1219,7 +1221,8 @@ impl PlayerView {
             let state = self.state.read(cx);
             let plugin = state
                 .app
-                .plugin_state.plugin_chain
+                .plugin_state
+                .plugin_chain
                 .get_plugin(state.app.plugin_state.selected_plugin_index)
                 .cloned();
             (

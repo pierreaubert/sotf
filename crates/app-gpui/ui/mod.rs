@@ -117,7 +117,9 @@ impl PlayerView {
 
                         state.app.playback.compressor_info = playback_state.compressor;
 
-                        if let Some(update_type) = state.app.plugin_state.pending_plugin_update.take() {
+                        if let Some(update_type) =
+                            state.app.plugin_state.pending_plugin_update.take()
+                        {
                             log::warn!("[GPUI] Applying pending plugin update: {:?}", update_type);
                             Self::apply_plugin_update(state, update_type);
                         }
@@ -129,11 +131,26 @@ impl PlayerView {
                         {
                             if let Some(path) = state.app.next_track() {
                                 let sample_rate = 48000.0;
-                                let plugins = state.app.plugin_state.plugin_chain.to_plugin_configs(sample_rate);
-                                let output_channels = state.app.plugin_state.plugin_chain.output_channels();
-                                
-                                let device_name = state.app.audio_device_state.current_output_device_name.clone()
-                                    .or_else(|| state.app.audio_device_state.selected_output_device().map(|d| d.name.clone()));
+                                let plugins = state
+                                    .app
+                                    .plugin_state
+                                    .plugin_chain
+                                    .to_plugin_configs(sample_rate);
+                                let output_channels =
+                                    state.app.plugin_state.plugin_chain.output_channels();
+
+                                let device_name = state
+                                    .app
+                                    .audio_device_state
+                                    .current_output_device_name
+                                    .clone()
+                                    .or_else(|| {
+                                        state
+                                            .app
+                                            .audio_device_state
+                                            .selected_output_device()
+                                            .map(|d| d.name.clone())
+                                    });
 
                                 if let Err(e) = state.player.lock().load_and_play(
                                     path,
@@ -265,7 +282,7 @@ impl PlayerView {
                 should_focus = true;
             }
         });
-        
+
         if should_focus {
             self.search_focus_handle.focus(window, cx);
         }
@@ -434,7 +451,11 @@ impl PlayerView {
 
     pub(crate) fn play_track(state: &mut AppState, path: std::path::PathBuf) {
         let sample_rate = 48000.0;
-        let plugins = state.app.plugin_state.plugin_chain.to_plugin_configs(sample_rate);
+        let plugins = state
+            .app
+            .plugin_state
+            .plugin_chain
+            .to_plugin_configs(sample_rate);
         let output_channels = state.app.plugin_state.plugin_chain.output_channels();
 
         log::warn!(
@@ -443,18 +464,30 @@ impl PlayerView {
             output_channels
         );
 
-        let device_name = state.app.audio_device_state.current_output_device_name.clone()
-            .or_else(|| state.app.audio_device_state.selected_output_device().map(|d| d.name.clone()));
+        let device_name = state
+            .app
+            .audio_device_state
+            .current_output_device_name
+            .clone()
+            .or_else(|| {
+                state
+                    .app
+                    .audio_device_state
+                    .selected_output_device()
+                    .map(|d| d.name.clone())
+            });
 
-        if let Err(e) = state.player.lock().load_and_play(
-            path.clone(),
-            plugins,
-            output_channels,
-            device_name,
-        ) {
+        if let Err(e) =
+            state
+                .player
+                .lock()
+                .load_and_play(path.clone(), plugins, output_channels, device_name)
+        {
             log::error!("Failed to play track: {}", e);
             state.app.playback.is_playing = false;
-            state.app.record_playback_error(format!("Play track failed: {}", e));
+            state
+                .app
+                .record_playback_error(format!("Play track failed: {}", e));
         } else {
             state.app.playback.is_playing = true;
             if let Some(queue_index) = state.app.playback.current_queue_index {

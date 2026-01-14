@@ -209,7 +209,7 @@ pub fn render_loudness_compensation_plugin(
                         }),
                 ),
         )
-        // .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
+    // .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
 }
 
 /// Render the Loudness Monitor plugin (analyzer)

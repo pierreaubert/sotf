@@ -346,6 +346,38 @@ pub struct RoomEqOptimizerConfig {
     pub max_freq: f64,
     /// Maximum number of iterations
     pub max_iter: usize,
+    /// PEQ model (e.g., "pk", "ls-pk-hs")
+    pub peq_model: String,
+    /// Population size for evolutionary algorithms
+    pub population: usize,
+    /// Mutation factor (F) for DE
+    pub de_f: f64,
+    /// Crossover rate (CR) for DE
+    pub de_cr: f64,
+    /// DE strategy (e.g., "currenttobest1bin")
+    pub strategy: String,
+    /// Enable local refinement after global optimization
+    pub refine: bool,
+    /// Local algorithm for refinement
+    pub local_algo: String,
+    /// Enable smoothing
+    pub smooth: bool,
+    /// Smoothing window size (1-24)
+    pub smooth_n: usize,
+    /// Spacing constraint weight (0-1000)
+    pub spacing_weight: f64,
+    /// Minimum spacing between filters in octaves (0.01-1.0)
+    pub min_spacing_oct: f64,
+    /// Relative tolerance for convergence
+    pub tolerance: f64,
+    /// Absolute tolerance for convergence
+    pub atolerance: f64,
+    /// Loss function type (e.g., "flat", "score")
+    pub loss_type: String,
+    /// Target curve (e.g., "flat", "harman")
+    pub target_curve: String,
+    /// System type (e.g., "stereo", "multichannel")
+    pub system_type: String,
 }
 
 impl Default for RoomEqOptimizerConfig {
@@ -360,6 +392,22 @@ impl Default for RoomEqOptimizerConfig {
             min_freq: 20.0,
             max_freq: 16000.0,
             max_iter: 10000,
+            peq_model: "pk".to_string(),
+            population: 40,
+            de_f: 0.8,
+            de_cr: 0.9,
+            strategy: "currenttobest1bin".to_string(),
+            refine: false,
+            local_algo: "cobyla".to_string(),
+            smooth: false,
+            smooth_n: 6,
+            spacing_weight: 1.0,
+            min_spacing_oct: 0.08,
+            tolerance: 0.00001,
+            atolerance: 0.00001,
+            loss_type: "flat".to_string(),
+            target_curve: "flat".to_string(),
+            system_type: "stereo".to_string(),
         }
     }
 }
@@ -477,6 +525,18 @@ pub struct RoomEqDropdowns {
     pub peq_model_open: bool,
     pub crossover_type_open: bool,
     pub export_format_open: bool,
+    /// DE strategy dropdown
+    pub strategy_open: bool,
+    /// Local algorithm dropdown
+    pub local_algo_open: bool,
+    /// Loss type dropdown
+    pub loss_type_open: bool,
+    /// Target curve dropdown
+    pub target_curve_open: bool,
+    /// System type dropdown
+    pub system_type_open: bool,
+    /// Review step smoothing dropdown
+    pub review_smoothing_open: bool,
     /// AutoEQ form editing state
     pub autoeq_editing_field: Option<AutoEqField>,
     /// AutoEQ form edit text
@@ -532,6 +592,8 @@ pub struct RoomEqState {
     pub dropdowns: RoomEqDropdowns,
     pub status_message: String,
     pub error_message: Option<String>,
+    /// Review graph smoothing level in octaves (0 = none, 1 = 1 octave, etc.)
+    pub review_smoothing_octaves: f64,
 }
 
 impl Default for RoomEqState {
@@ -550,6 +612,7 @@ impl Default for RoomEqState {
             dropdowns: RoomEqDropdowns::default(),
             status_message: String::new(),
             error_message: None,
+            review_smoothing_octaves: 1.0, // Default to 1 octave smoothing
         }
     }
 }

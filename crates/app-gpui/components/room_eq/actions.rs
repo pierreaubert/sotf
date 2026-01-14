@@ -9,8 +9,17 @@ impl PlayerView {
                 .measurement_state
                 .room_eq_state
                 .load_from_recording(&state.app.measurement_state.recording_state);
-            state.app.measurement_state.room_eq_state.init_speaker_configs();
-            let channel_count = state.app.measurement_state.room_eq_state.channel_measurements.len();
+            state
+                .app
+                .measurement_state
+                .room_eq_state
+                .init_speaker_configs();
+            let channel_count = state
+                .app
+                .measurement_state
+                .room_eq_state
+                .channel_measurements
+                .len();
             state.app.measurement_state.room_eq_state.status_message = format!(
                 "Successfully loaded {} channel(s) from recording session",
                 channel_count

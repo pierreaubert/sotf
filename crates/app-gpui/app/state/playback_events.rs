@@ -47,39 +47,24 @@ pub enum PlaybackEvent {
         trigger: TrackChangeTrigger,
     },
     /// Volume changed
-    VolumeChanged {
-        from: f32,
-        to: f32,
-    },
+    VolumeChanged { from: f32, to: f32 },
     /// Mute state changed
-    MuteChanged {
-        muted: bool,
-    },
+    MuteChanged { muted: bool },
     /// Seek position changed
     Seeked {
         from_position: f64,
         to_position: f64,
     },
     /// Position updated (periodic, not stored for every frame)
-    PositionUpdated {
-        position: f64,
-    },
+    PositionUpdated { position: f64 },
     /// Track duration set (when new track loads)
-    DurationSet {
-        duration: f64,
-    },
+    DurationSet { duration: f64 },
     /// Queue index changed directly (without track change)
-    QueueIndexSet {
-        index: Option<usize>,
-    },
+    QueueIndexSet { index: Option<usize> },
     /// Playback ended naturally (track finished)
-    TrackEnded {
-        queue_index: usize,
-    },
+    TrackEnded { queue_index: usize },
     /// Error occurred during playback
-    Error {
-        message: String,
-    },
+    Error { message: String },
 }
 
 /// What triggered a track change
@@ -180,10 +165,16 @@ impl PlaybackEventStore {
             PlaybackEvent::Stopped => {
                 log::info!("[PlaybackEvent] Stopped");
             }
-            PlaybackEvent::TrackChanged { from_index, to_index, trigger } => {
+            PlaybackEvent::TrackChanged {
+                from_index,
+                to_index,
+                trigger,
+            } => {
                 log::info!(
                     "[PlaybackEvent] TrackChanged: {:?} -> {} ({:?})",
-                    from_index, to_index, trigger
+                    from_index,
+                    to_index,
+                    trigger
                 );
             }
             PlaybackEvent::VolumeChanged { from, to } => {
@@ -192,10 +183,14 @@ impl PlaybackEventStore {
             PlaybackEvent::MuteChanged { muted } => {
                 log::info!("[PlaybackEvent] Mute: {}", muted);
             }
-            PlaybackEvent::Seeked { from_position, to_position } => {
+            PlaybackEvent::Seeked {
+                from_position,
+                to_position,
+            } => {
                 log::info!(
                     "[PlaybackEvent] Seek: {:.1}s -> {:.1}s",
-                    from_position, to_position
+                    from_position,
+                    to_position
                 );
             }
             PlaybackEvent::TrackEnded { queue_index } => {
@@ -295,7 +290,10 @@ impl PlaybackEventStore {
     /// Enable or disable event recording
     pub fn set_enabled(&mut self, enabled: bool) {
         self.enabled = enabled;
-        log::info!("[PlaybackEventStore] Recording {}", if enabled { "enabled" } else { "disabled" });
+        log::info!(
+            "[PlaybackEventStore] Recording {}",
+            if enabled { "enabled" } else { "disabled" }
+        );
     }
 
     /// Check if recording is enabled
@@ -324,7 +322,10 @@ impl PlaybackEventStore {
             }
 
             match &record.event {
-                PlaybackEvent::Started { queue_index, track_path } => {
+                PlaybackEvent::Started {
+                    queue_index,
+                    track_path,
+                } => {
                     snapshot.is_playing = true;
                     snapshot.queue_index = Some(*queue_index);
                     snapshot.current_track = track_path.clone();
@@ -465,10 +466,16 @@ mod tests {
     fn test_summary() {
         let mut store = PlaybackEventStore::new();
 
-        store.record_event(PlaybackEvent::Started { queue_index: 0, track_path: None });
+        store.record_event(PlaybackEvent::Started {
+            queue_index: 0,
+            track_path: None,
+        });
         store.record_event(PlaybackEvent::Paused);
         store.record_event(PlaybackEvent::Resumed);
-        store.record_event(PlaybackEvent::Seeked { from_position: 0.0, to_position: 30.0 });
+        store.record_event(PlaybackEvent::Seeked {
+            from_position: 0.0,
+            to_position: 30.0,
+        });
         store.record_event(PlaybackEvent::TrackChanged {
             from_index: Some(0),
             to_index: 1,

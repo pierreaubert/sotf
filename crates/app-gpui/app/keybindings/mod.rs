@@ -425,4 +425,3 @@ fn default_documented_keybindings() -> Vec<DocumentedKeybinding> {
         },
     ]
 }
-

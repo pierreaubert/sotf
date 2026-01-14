@@ -23,11 +23,15 @@ pub trait PluginEditingManager {
     fn select_next_param(&mut self);
     fn select_previous_param(&mut self);
     fn adjust_selected_param(&mut self, delta: f64) -> bool;
-    
+
     // Additional methods
     fn set_plugin_param(&mut self, plugin_idx: usize, param_idx: usize, value: f64);
     fn set_plugin_param_string(&mut self, plugin_idx: usize, param_idx: usize, value: String);
-    fn set_spectrum_tilt_correction(&mut self, plugin_idx: usize, correction: SpectralTiltCorrection);
+    fn set_spectrum_tilt_correction(
+        &mut self,
+        plugin_idx: usize,
+        correction: SpectralTiltCorrection,
+    );
     fn set_spectrum_tilt_reference(&mut self, plugin_idx: usize, reference: TiltReferenceFreq);
     fn reset_plugin_param(&mut self, plugin_idx: usize, param_idx: usize);
     fn load_apo_file(&mut self) -> Result<(), String>;
@@ -51,7 +55,10 @@ impl PluginEditingManager for App {
     /// Sync spectrum_visible flag with the actual plugin chain contents.
     /// Should be called whenever the plugin chain changes structurally.
     fn sync_spectrum_visible(&mut self) {
-        self.spectrum_visible = self.plugin_state.plugin_chain.has_enabled_spectrum_analyzer();
+        self.spectrum_visible = self
+            .plugin_state
+            .plugin_chain
+            .has_enabled_spectrum_analyzer();
     }
 
     // Plugin management methods
@@ -59,9 +66,13 @@ impl PluginEditingManager for App {
     fn add_plugin(&mut self, plugin_type: &sotf_audio_player::PluginType) {
         // Insert user plugins before the Matrix (between input monitor and matrix)
         let insert_idx = self.plugin_state.plugin_chain.user_plugin_insert_index();
-        self.plugin_state.plugin_chain.insert_plugin(insert_idx, plugin_type);
+        self.plugin_state
+            .plugin_chain
+            .insert_plugin(insert_idx, plugin_type);
         self.plugin_state.selected_plugin_index = insert_idx;
-        self.plugin_state.plugin_chain.update_channel_dependent_plugins();
+        self.plugin_state
+            .plugin_chain
+            .update_channel_dependent_plugins();
         self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
         self.sync_spectrum_visible();
     }
@@ -69,7 +80,9 @@ impl PluginEditingManager for App {
     fn toggle_plugin(&mut self, index: usize) {
         self.plugin_state.plugin_chain.toggle_plugin(index);
         // Update BinauralDecoder input channels after toggle
-        self.plugin_state.plugin_chain.update_channel_dependent_plugins();
+        self.plugin_state
+            .plugin_chain
+            .update_channel_dependent_plugins();
         self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
         self.sync_spectrum_visible();
     }
@@ -79,7 +92,9 @@ impl PluginEditingManager for App {
             self.plugin_state.plugin_chain.move_plugin(index, index - 1);
             self.plugin_state.selected_plugin_index = index - 1;
             // Update BinauralDecoder input channels after move
-            self.plugin_state.plugin_chain.update_channel_dependent_plugins();
+            self.plugin_state
+                .plugin_chain
+                .update_channel_dependent_plugins();
             self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
         }
     }
@@ -89,14 +104,17 @@ impl PluginEditingManager for App {
             self.plugin_state.plugin_chain.move_plugin(index, index + 1);
             self.plugin_state.selected_plugin_index = index + 1;
             // Update BinauralDecoder input channels after move
-            self.plugin_state.plugin_chain.update_channel_dependent_plugins();
+            self.plugin_state
+                .plugin_chain
+                .update_channel_dependent_plugins();
             self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
         }
     }
 
     fn select_next_plugin(&mut self) {
         if !self.plugin_state.plugin_chain.is_empty() {
-            self.plugin_state.selected_plugin_index = (self.plugin_state.selected_plugin_index + 1) % self.plugin_state.plugin_chain.len();
+            self.plugin_state.selected_plugin_index = (self.plugin_state.selected_plugin_index + 1)
+                % self.plugin_state.plugin_chain.len();
         }
     }
 
@@ -114,7 +132,9 @@ impl PluginEditingManager for App {
         if index < self.plugin_state.plugin_chain.len() {
             self.plugin_state.plugin_chain.remove_plugin(index);
             // Update BinauralDecoder input channels after removal
-            self.plugin_state.plugin_chain.update_channel_dependent_plugins();
+            self.plugin_state
+                .plugin_chain
+                .update_channel_dependent_plugins();
             self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
             self.sync_spectrum_visible();
             // Adjust selection
@@ -129,12 +149,14 @@ impl PluginEditingManager for App {
     // Plugin editing methods
     // Plugin editing methods
     fn get_editing_plugin(&self) -> Option<&sotf_audio_player::Plugin> {
-        self.plugin_state.editing_plugin_index
+        self.plugin_state
+            .editing_plugin_index
             .and_then(|idx| self.plugin_state.plugin_chain.get_plugin(idx))
     }
 
     fn get_editing_plugin_mut(&mut self) -> Option<&mut sotf_audio_player::Plugin> {
-        self.plugin_state.editing_plugin_index
+        self.plugin_state
+            .editing_plugin_index
             .and_then(|idx| self.plugin_state.plugin_chain.get_plugin_mut(idx))
     }
 
@@ -142,7 +164,8 @@ impl PluginEditingManager for App {
         if let Some(plugin) = self.get_editing_plugin() {
             let param_count = get_param_count(&plugin.settings);
             if param_count > 0 {
-                self.plugin_state.plugin_param_selection = (self.plugin_state.plugin_param_selection + 1) % param_count;
+                self.plugin_state.plugin_param_selection =
+                    (self.plugin_state.plugin_param_selection + 1) % param_count;
             }
         }
     }
@@ -1296,7 +1319,8 @@ impl PluginEditingManager for App {
                         true
                     }
                     21 => {
-                        *auto_gain_loudness_type = if *auto_gain_loudness_type == 0 { 1 } else { 0 };
+                        *auto_gain_loudness_type =
+                            if *auto_gain_loudness_type == 0 { 1 } else { 0 };
                         true
                     }
                     _ => false,
@@ -1307,7 +1331,9 @@ impl PluginEditingManager for App {
         };
 
         if result && channel_count_changed {
-            self.plugin_state.plugin_chain.update_channel_dependent_plugins();
+            self.plugin_state
+                .plugin_chain
+                .update_channel_dependent_plugins();
         }
 
         if result {
@@ -2316,10 +2342,8 @@ impl PluginEditingManager for App {
                             update_needed = true;
                         }
                         5 => {
-                            *auto_gain_max_db = value.clamp(
-                                AUTO_GAIN_MAX_DB_MIN as f64,
-                                AUTO_GAIN_MAX_DB_MAX as f64,
-                            );
+                            *auto_gain_max_db = value
+                                .clamp(AUTO_GAIN_MAX_DB_MIN as f64, AUTO_GAIN_MAX_DB_MAX as f64);
                             update_needed = true;
                         }
                         6 => {
@@ -2349,8 +2373,8 @@ impl PluginEditingManager for App {
 
                                 match field_idx {
                                     0 => {
-                                        *freq = value
-                                            .clamp(BAND_FREQ_MIN as f64, BAND_FREQ_MAX as f64);
+                                        *freq =
+                                            value.clamp(BAND_FREQ_MIN as f64, BAND_FREQ_MAX as f64);
                                         update_needed = true;
                                     }
                                     1 => {
@@ -2358,13 +2382,15 @@ impl PluginEditingManager for App {
                                         update_needed = true;
                                     }
                                     2 => {
-                                        *max_gain = value
-                                            .clamp(BAND_MAX_GAIN_MIN as f64, BAND_MAX_GAIN_MAX as f64);
+                                        *max_gain = value.clamp(
+                                            BAND_MAX_GAIN_MIN as f64,
+                                            BAND_MAX_GAIN_MAX as f64,
+                                        );
                                         update_needed = true;
                                     }
                                     3 => {
-                                        *slope =
-                                            value.clamp(BAND_SLOPE_MIN as f64, BAND_SLOPE_MAX as f64);
+                                        *slope = value
+                                            .clamp(BAND_SLOPE_MIN as f64, BAND_SLOPE_MAX as f64);
                                         update_needed = true;
                                     }
                                     _ => {}
@@ -2378,7 +2404,9 @@ impl PluginEditingManager for App {
         }
 
         if channel_count_changed {
-            self.plugin_state.plugin_chain.update_channel_dependent_plugins();
+            self.plugin_state
+                .plugin_chain
+                .update_channel_dependent_plugins();
         }
 
         if update_needed {
@@ -2472,11 +2500,12 @@ impl PluginEditingManager for App {
 
     /// Reset a specific parameter to its default value
     fn reset_plugin_param(&mut self, plugin_idx: usize, param_idx: usize) {
-        let plugin_type = if let Some(plugin) = self.plugin_state.plugin_chain.get_plugin(plugin_idx) {
-            plugin.plugin_type()
-        } else {
-            return;
-        };
+        let plugin_type =
+            if let Some(plugin) = self.plugin_state.plugin_chain.get_plugin(plugin_idx) {
+                plugin.plugin_type()
+            } else {
+                return;
+            };
 
         // Create default settings for this plugin type
         let default_settings = PluginSettings::default_for(&plugin_type);
@@ -2951,7 +2980,8 @@ impl PluginEditingManager for App {
                     && ext == "json"
                     && let Some(filename) = path.file_name()
                 {
-                    self.plugin_state.available_plugin_presets
+                    self.plugin_state
+                        .available_plugin_presets
                         .push(filename.to_string_lossy().to_string());
                 }
             }
@@ -2968,7 +2998,8 @@ impl PluginEditingManager for App {
     /// Save plugin chain to file
     fn save_plugin_chain(&mut self) {
         if self.input_state.plugin_file_input.is_empty() {
-            self.ui_state.toast_message = Some(ToastMessage::error("No filename specified".to_string()));
+            self.ui_state.toast_message =
+                Some(ToastMessage::error("No filename specified".to_string()));
             return;
         }
 
@@ -2992,7 +3023,8 @@ impl PluginEditingManager for App {
 
         // Save using the plugin chain's own save method (handles path, validation, etc.)
         match self
-            .plugin_state.plugin_chain
+            .plugin_state
+            .plugin_chain
             .save_to_file(&presets_dir, &self.input_state.plugin_file_input)
         {
             Ok(_) => {
@@ -3005,7 +3037,8 @@ impl PluginEditingManager for App {
                 self.refresh_plugin_presets();
             }
             Err(e) => {
-                self.ui_state.toast_message = Some(ToastMessage::error(format!("Error saving: {}", e)));
+                self.ui_state.toast_message =
+                    Some(ToastMessage::error(format!("Error saving: {}", e)));
                 log::error!("Failed to save plugin chain: {}", e);
             }
         }
@@ -3014,7 +3047,8 @@ impl PluginEditingManager for App {
     /// Save plugin chain to selected preset file (overwrite)
     fn save_selected_preset(&mut self) {
         if self.plugin_state.available_plugin_presets.is_empty() {
-            self.ui_state.toast_message = Some(ToastMessage::error("No presets available".to_string()));
+            self.ui_state.toast_message =
+                Some(ToastMessage::error("No presets available".to_string()));
             return;
         }
 
@@ -3032,7 +3066,8 @@ impl PluginEditingManager for App {
                 return;
             };
             match self
-                .plugin_state.plugin_chain
+                .plugin_state
+                .plugin_chain
                 .save_to_file(&presets_dir, &preset_filename)
             {
                 Ok(_) => {
@@ -3045,7 +3080,8 @@ impl PluginEditingManager for App {
                     self.refresh_plugin_presets();
                 }
                 Err(e) => {
-                    self.ui_state.toast_message = Some(ToastMessage::error(format!("Error saving: {}", e)));
+                    self.ui_state.toast_message =
+                        Some(ToastMessage::error(format!("Error saving: {}", e)));
                     log::error!("Failed to save plugin chain: {}", e);
                 }
             }
@@ -3055,7 +3091,8 @@ impl PluginEditingManager for App {
     /// Load plugin chain from file
     fn load_plugin_chain(&mut self) {
         if self.input_state.plugin_file_input.is_empty() {
-            self.ui_state.toast_message = Some(ToastMessage::error("No filename specified".to_string()));
+            self.ui_state.toast_message =
+                Some(ToastMessage::error("No filename specified".to_string()));
             return;
         }
 
@@ -3067,12 +3104,15 @@ impl PluginEditingManager for App {
             return;
         };
         match self
-            .plugin_state.plugin_chain
+            .plugin_state
+            .plugin_chain
             .load_from_file(&presets_dir, &self.input_state.plugin_file_input)
         {
             Ok(_) => {
                 // Update BinauralDecoder input channels after loading
-                self.plugin_state.plugin_chain.update_channel_dependent_plugins();
+                self.plugin_state
+                    .plugin_chain
+                    .update_channel_dependent_plugins();
 
                 // Get the final filename (with .json appended if needed)
                 let filename = if self.input_state.plugin_file_input.ends_with(".json") {
@@ -3090,7 +3130,8 @@ impl PluginEditingManager for App {
                 self.plugin_state.last_loaded_preset = Some(filename);
             }
             Err(e) => {
-                self.ui_state.toast_message = Some(ToastMessage::error(format!("Error loading: {}", e)));
+                self.ui_state.toast_message =
+                    Some(ToastMessage::error(format!("Error loading: {}", e)));
                 log::error!("Failed to load plugin chain: {}", e);
             }
         }
@@ -3099,7 +3140,8 @@ impl PluginEditingManager for App {
     /// Load the selected preset from the available presets list
     fn load_selected_preset(&mut self) {
         if self.plugin_state.available_plugin_presets.is_empty() {
-            self.ui_state.toast_message = Some(ToastMessage::error("No presets available".to_string()));
+            self.ui_state.toast_message =
+                Some(ToastMessage::error("No presets available".to_string()));
             return;
         }
 
@@ -3116,12 +3158,15 @@ impl PluginEditingManager for App {
                 return;
             };
             match self
-                .plugin_state.plugin_chain
+                .plugin_state
+                .plugin_chain
                 .load_from_file(&presets_dir, &preset_filename)
             {
                 Ok(_) => {
                     // Update BinauralDecoder input channels after loading
-                    self.plugin_state.plugin_chain.update_channel_dependent_plugins();
+                    self.plugin_state
+                        .plugin_chain
+                        .update_channel_dependent_plugins();
 
                     self.ui_state.toast_message = Some(ToastMessage::success(format!(
                         "Loaded preset: {} ({} plugins)",
@@ -3144,8 +3189,8 @@ impl PluginEditingManager for App {
     /// Select the next preset in the list
     fn select_next_preset(&mut self) {
         if !self.plugin_state.available_plugin_presets.is_empty() {
-            self.plugin_state.selected_preset_index =
-                (self.plugin_state.selected_preset_index + 1) % self.plugin_state.available_plugin_presets.len();
+            self.plugin_state.selected_preset_index = (self.plugin_state.selected_preset_index + 1)
+                % self.plugin_state.available_plugin_presets.len();
         }
     }
 
@@ -3153,7 +3198,8 @@ impl PluginEditingManager for App {
     fn select_previous_preset(&mut self) {
         if !self.plugin_state.available_plugin_presets.is_empty() {
             if self.plugin_state.selected_preset_index == 0 {
-                self.plugin_state.selected_preset_index = self.plugin_state.available_plugin_presets.len() - 1;
+                self.plugin_state.selected_preset_index =
+                    self.plugin_state.available_plugin_presets.len() - 1;
             } else {
                 self.plugin_state.selected_preset_index -= 1;
             }

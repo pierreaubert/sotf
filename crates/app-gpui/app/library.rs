@@ -225,7 +225,8 @@ impl App {
         if self.library_state.items_per_page < total {
             // Add 5 rows worth of items
             let more = self.library_state.library_columns * 5;
-            self.library_state.items_per_page = (self.library_state.items_per_page + more).min(total);
+            self.library_state.items_per_page =
+                (self.library_state.items_per_page + more).min(total);
         }
     }
 
@@ -238,7 +239,8 @@ impl App {
                     self.ui_state.toast_message =
                         Some(ToastMessage::success("Directory added. Press 's' to scan."));
                 } else {
-                    self.ui_state.toast_message = Some(ToastMessage::warning("Directory already exists."));
+                    self.ui_state.toast_message =
+                        Some(ToastMessage::warning("Directory already exists."));
                 }
             }
             Err(msg) => {
@@ -346,7 +348,12 @@ impl App {
                     .iter()
                     .position(|d| d.path == *path)
                 {
-                    if self.library_state.library.remove_directory(dir_index).is_some() {
+                    if self
+                        .library_state
+                        .library
+                        .remove_directory(dir_index)
+                        .is_some()
+                    {
                         // Adjust selected_directory_index if needed
                         let tree_items = self.get_directory_tree_items();
                         if self.selected_directory_index >= tree_items.len()
@@ -361,7 +368,8 @@ impl App {
                     }
                 }
             } else {
-                self.ui_state.toast_message = Some(ToastMessage::error("Cannot remove subdirectory."));
+                self.ui_state.toast_message =
+                    Some(ToastMessage::error("Cannot remove subdirectory."));
             }
         }
     }

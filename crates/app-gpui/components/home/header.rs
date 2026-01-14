@@ -79,7 +79,10 @@ impl PlayerView {
     pub(crate) fn render_menu_dropdowns(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let (theme, active_menu) = {
             let state = self.state.read(cx);
-            (state.app.ui_state.theme.clone(), state.app.ui_state.active_menu)
+            (
+                state.app.ui_state.theme.clone(),
+                state.app.ui_state.active_menu,
+            )
         };
 
         div()

@@ -9,7 +9,8 @@ impl PlayerView {
         let theme = state.app.ui_state.theme.clone();
         let has_eq_in_rack = state
             .app
-            .plugin_state.plugin_chain
+            .plugin_state
+            .plugin_chain
             .find_plugin_index(&sotf_audio_player::PluginType::EQ)
             .is_some();
 
@@ -334,8 +335,10 @@ impl PlayerView {
 
             // Mark that plugin chain was modified and needs sync
             state.app.plugin_state.plugin_chain_modified = true;
-            state.app.plugin_state.pending_plugin_update = Some(crate::app::types::PluginUpdateType::Structural);
-            state.app.measurement_state.room_eq_state.status_message = "Room EQ applied to player!".to_string();
+            state.app.plugin_state.pending_plugin_update =
+                Some(crate::app::types::PluginUpdateType::Structural);
+            state.app.measurement_state.room_eq_state.status_message =
+                "Room EQ applied to player!".to_string();
             state.app.ui_state.toast_message = Some(crate::app::ToastMessage::success(
                 "Room EQ applied successfully",
             ));

@@ -159,9 +159,11 @@ fn test_normal_mode_allows_keybindings() {
     // Actions SHOULD be triggered in normal mode
     assert!(state.triggered_actions.contains(&TestAction::PlayPause));
     assert!(state.triggered_actions.contains(&TestAction::VolumeUp));
-    assert!(state
-        .triggered_actions
-        .contains(&TestAction::SetFilterRating(5)));
+    assert!(
+        state
+            .triggered_actions
+            .contains(&TestAction::SetFilterRating(5))
+    );
 }
 
 /// Test: Slash key enters search mode from normal
@@ -183,9 +185,11 @@ fn test_input_mode_isolation() {
 
     // Normal mode: '5' triggers filter
     state.process_key('5');
-    assert!(state
-        .triggered_actions
-        .contains(&TestAction::SetFilterRating(5)));
+    assert!(
+        state
+            .triggered_actions
+            .contains(&TestAction::SetFilterRating(5))
+    );
 
     // Enter search mode
     state.enter_input_mode(TestInputMode::Search);
@@ -202,9 +206,11 @@ fn test_input_mode_isolation() {
 
     // Normal mode again: '5' triggers filter
     state.process_key('5');
-    assert!(state
-        .triggered_actions
-        .contains(&TestAction::SetFilterRating(5)));
+    assert!(
+        state
+            .triggered_actions
+            .contains(&TestAction::SetFilterRating(5))
+    );
 }
 
 /// Test: All InputMode variants properly isolate input

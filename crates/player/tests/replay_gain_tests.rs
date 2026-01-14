@@ -65,7 +65,6 @@ fn test_update_replay_gain() {
 
     let (_temp_dir, db_path) = fixtures::temp_database();
 
-
     // Add a single track
     let classical_file = fixtures::get_demo_file("classical.wav");
     let album = sotf_audio_player::Album {

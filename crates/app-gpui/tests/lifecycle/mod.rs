@@ -14,7 +14,7 @@
 #[path = "../common/mod.rs"]
 mod common;
 
-mod playback_sequences;
-mod library_sequences;
 mod input_sequences;
+mod library_sequences;
+mod playback_sequences;
 mod queue_sequences;

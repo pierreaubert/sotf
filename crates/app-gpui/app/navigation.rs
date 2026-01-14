@@ -8,7 +8,8 @@ impl App {
     pub fn select_next_album(&mut self) {
         let albums = self.filtered_albums();
         if !albums.is_empty() {
-            self.library_state.selected_index = (self.library_state.selected_index + 1) % albums.len();
+            self.library_state.selected_index =
+                (self.library_state.selected_index + 1) % albums.len();
         }
     }
 

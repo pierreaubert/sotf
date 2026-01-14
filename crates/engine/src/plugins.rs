@@ -2404,9 +2404,10 @@ impl PluginChain {
         }
 
         // Determine if this is the first LoudnessMonitor (input monitor)
-        let first_loudness_idx = self.plugins.iter().position(|p| {
-            p.enabled && matches!(p.plugin_type(), PluginType::LoudnessMonitor)
-        });
+        let first_loudness_idx = self
+            .plugins
+            .iter()
+            .position(|p| p.enabled && matches!(p.plugin_type(), PluginType::LoudnessMonitor));
         let target_is_first_loudness = first_loudness_idx == Some(ui_index)
             && matches!(target_plugin.plugin_type(), PluginType::LoudnessMonitor);
 
@@ -2457,7 +2458,11 @@ impl PluginChain {
                 if i == ui_index {
                     return Some(engine_idx);
                 }
-                if p.enabled && p.plugin_type().is_monitoring() && (found_first_loudness || !matches!(p.plugin_type(), PluginType::LoudnessMonitor)) {
+                if p.enabled
+                    && p.plugin_type().is_monitoring()
+                    && (found_first_loudness
+                        || !matches!(p.plugin_type(), PluginType::LoudnessMonitor))
+                {
                     engine_idx += 1;
                 }
             }

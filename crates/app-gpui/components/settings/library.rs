@@ -21,7 +21,8 @@ impl PlayerView {
         let album_count = state.app.library_state.library.albums.len();
         let track_count: usize = state
             .app
-            .library_state.library
+            .library_state
+            .library
             .albums
             .iter()
             .map(|a| a.tracks.len())

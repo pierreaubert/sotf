@@ -3,9 +3,7 @@
 //! Tests realistic library browsing scenarios including search, filtering,
 //! and navigation sequences that verify state preservation.
 
-use crate::common::state_builder::{
-    TestAlbum, TestChannelFilter, TestLibraryState,
-};
+use crate::common::state_builder::{TestAlbum, TestChannelFilter, TestLibraryState};
 
 // =============================================================================
 // Helper: Create diverse test library
@@ -168,7 +166,10 @@ fn test_filter_then_search_workflow() {
     // Remove channel filter
     state.channel_filter = TestChannelFilter::All;
     let all_albums = state.filtered_albums().len();
-    assert!(all_albums > multichannel, "Should have more albums without filter");
+    assert!(
+        all_albums > multichannel,
+        "Should have more albums without filter"
+    );
 }
 
 /// Test genre filter → decade filter → artist filter workflow
@@ -186,13 +187,22 @@ fn test_cascading_filter_workflow() {
     // Add decade filter
     state.selected_decade = Some((1970, 1979));
     let rock_70s = state.filtered_albums().len();
-    assert_eq!(rock_70s, 3, "Should have 3 Rock albums from 70s (1971, 1973, 1979)");
-    assert!(rock_70s <= rock, "Adding filter should not increase results");
+    assert_eq!(
+        rock_70s, 3,
+        "Should have 3 Rock albums from 70s (1971, 1973, 1979)"
+    );
+    assert!(
+        rock_70s <= rock,
+        "Adding filter should not increase results"
+    );
 
     // Clear genre, keep decade
     state.selected_genre = None;
     let all_70s = state.filtered_albums().len();
-    assert!(all_70s >= rock_70s, "Removing filter should not decrease results");
+    assert!(
+        all_70s >= rock_70s,
+        "Removing filter should not decrease results"
+    );
 
     // Clear all filters
     state.selected_decade = None;
@@ -312,7 +322,10 @@ fn test_pagination_with_filters() {
     state.selected_genre = Some("Jazz".to_string());
     state.recalculate_pagination();
     let jazz_pages = state.total_pages();
-    assert!(jazz_pages <= total_pages, "Filtered should have fewer pages");
+    assert!(
+        jazz_pages <= total_pages,
+        "Filtered should have fewer pages"
+    );
 
     // Set page beyond new limit
     state.current_page = 10;

@@ -194,7 +194,8 @@ impl App {
 
     /// Get the duration of the currently playing track in seconds
     pub fn get_current_track_duration(&self) -> f64 {
-        self.playback.current_queue_index
+        self.playback
+            .current_queue_index
             .and_then(|idx| self.queue.get(idx))
             .and_then(|item| item.current_track())
             .and_then(|track| track.duration_secs)
@@ -282,7 +283,8 @@ impl App {
             // Note: This linear search might be slow for very large libraries.
             // Optimization: Build a map of path -> album_index if needed.
             let found_album = self
-                .library_state.library
+                .library_state
+                .library
                 .albums
                 .iter()
                 .find(|album| album.tracks.iter().any(|t| t.path == path));

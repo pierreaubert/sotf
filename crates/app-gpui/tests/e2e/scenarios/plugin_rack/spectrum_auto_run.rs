@@ -1,6 +1,6 @@
 use crate::driver::AppDriver;
 use crate::pages::plugin_rack::PluginRackPage;
-use crate::runner::{TestScenario, E2ERunner};
+use crate::runner::{E2ERunner, TestScenario};
 use gpui::{TestAppContext, VisualTestContext, WindowHandle};
 use sotf_audio::plugins::PluginType;
 use sotf_audio_player_gpui::ui::PlayerView;
@@ -13,7 +13,11 @@ impl TestScenario for SpectrumAutoRunScenario {
         "Spectrum Analyzer Auto Run"
     }
 
-    fn execute(&self, cx: &mut VisualTestContext, window: WindowHandle<PlayerView>) -> Result<(), Box<dyn Error>> {
+    fn execute(
+        &self,
+        cx: &mut VisualTestContext,
+        window: WindowHandle<PlayerView>,
+    ) -> Result<(), Box<dyn Error>> {
         let mut driver = AppDriver::new(cx, window);
         let mut page = PluginRackPage::new(&mut driver);
 
@@ -52,8 +56,15 @@ impl TestScenario for SpectrumAutoRunScenario {
             page.wait(std::time::Duration::from_millis(50));
             if page.has_spectrum_info() {
                 let magnitudes = page.get_spectrum_magnitudes();
-                println!("Spectrum data received after {} iterations, size: {}", i, magnitudes.len());
-                assert!(!magnitudes.is_empty(), "Spectrum magnitudes should not be empty");
+                println!(
+                    "Spectrum data received after {} iterations, size: {}",
+                    i,
+                    magnitudes.len()
+                );
+                assert!(
+                    !magnitudes.is_empty(),
+                    "Spectrum magnitudes should not be empty"
+                );
                 return Ok(());
             }
         }

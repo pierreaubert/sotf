@@ -208,14 +208,17 @@ impl PlayerView {
                                         move |value, _, cx| {
                                             view.update(cx, |this, cx| {
                                                 this.state.update(cx, |state, _| {
-                                                    state.app.measurement_state.recording_state.plot_smoothing =
-                                                        match value.as_ref() {
-                                                            "1" => PlotSmoothing::Octave1,
-                                                            "3" => PlotSmoothing::Octave3,
-                                                            "6" => PlotSmoothing::Octave6,
-                                                            "24" => PlotSmoothing::Octave24,
-                                                            _ => PlotSmoothing::None,
-                                                        };
+                                                    state
+                                                        .app
+                                                        .measurement_state
+                                                        .recording_state
+                                                        .plot_smoothing = match value.as_ref() {
+                                                        "1" => PlotSmoothing::Octave1,
+                                                        "3" => PlotSmoothing::Octave3,
+                                                        "6" => PlotSmoothing::Octave6,
+                                                        "24" => PlotSmoothing::Octave24,
+                                                        _ => PlotSmoothing::None,
+                                                    };
                                                     state
                                                         .app
                                                         .measurement_state

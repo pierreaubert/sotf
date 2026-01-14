@@ -79,7 +79,8 @@ impl App {
     /// Apply the current autocomplete suggestion to the directory input
     pub fn apply_autocomplete(&mut self) {
         if !self.input_state.autocomplete_suggestions.is_empty() {
-            let suggestion = &self.input_state.autocomplete_suggestions[self.input_state.autocomplete_index];
+            let suggestion =
+                &self.input_state.autocomplete_suggestions[self.input_state.autocomplete_index];
             self.input_state.directory_input = suggestion.clone();
         }
     }
@@ -87,8 +88,8 @@ impl App {
     /// Cycle to the next autocomplete suggestion
     pub fn next_autocomplete(&mut self) {
         if !self.input_state.autocomplete_suggestions.is_empty() {
-            self.input_state.autocomplete_index =
-                (self.input_state.autocomplete_index + 1) % self.input_state.autocomplete_suggestions.len();
+            self.input_state.autocomplete_index = (self.input_state.autocomplete_index + 1)
+                % self.input_state.autocomplete_suggestions.len();
             self.apply_autocomplete();
         }
     }
@@ -110,7 +111,9 @@ impl App {
             // Strip .json extension for suggestion
             let name = preset.strip_suffix(".json").unwrap_or(preset);
             if name.to_lowercase().starts_with(&prefix) {
-                self.input_state.autocomplete_suggestions.push(name.to_string());
+                self.input_state
+                    .autocomplete_suggestions
+                    .push(name.to_string());
             }
         }
 
@@ -144,7 +147,8 @@ impl App {
                     if let Ok(file_name) = entry.file_name().into_string() {
                         if file_name.to_lowercase().starts_with(&prefix.to_lowercase()) {
                             let full_path = search_dir.join(&file_name);
-                            self.input_state.autocomplete_suggestions
+                            self.input_state
+                                .autocomplete_suggestions
                                 .push(full_path.to_string_lossy().to_string());
                         }
                     }
@@ -156,7 +160,9 @@ impl App {
             for preset in &self.plugin_state.available_plugin_presets {
                 let name = preset.strip_suffix(".json").unwrap_or(preset);
                 if name.to_lowercase().starts_with(&prefix) {
-                    self.input_state.autocomplete_suggestions.push(name.to_string());
+                    self.input_state
+                        .autocomplete_suggestions
+                        .push(name.to_string());
                 }
             }
         }
@@ -167,7 +173,8 @@ impl App {
     /// Apply the current autocomplete suggestion to the plugin file input
     pub fn apply_autocomplete_to_plugin_file(&mut self) {
         if !self.input_state.autocomplete_suggestions.is_empty() {
-            let suggestion = &self.input_state.autocomplete_suggestions[self.input_state.autocomplete_index];
+            let suggestion =
+                &self.input_state.autocomplete_suggestions[self.input_state.autocomplete_index];
             self.input_state.plugin_file_input = suggestion.clone();
         }
     }
@@ -175,8 +182,8 @@ impl App {
     /// Cycle to the next autocomplete suggestion for plugin file
     pub fn next_autocomplete_for_plugin_file(&mut self) {
         if !self.input_state.autocomplete_suggestions.is_empty() {
-            self.input_state.autocomplete_index =
-                (self.input_state.autocomplete_index + 1) % self.input_state.autocomplete_suggestions.len();
+            self.input_state.autocomplete_index = (self.input_state.autocomplete_index + 1)
+                % self.input_state.autocomplete_suggestions.len();
             self.apply_autocomplete_to_plugin_file();
         }
     }
@@ -185,13 +192,17 @@ impl App {
 
     /// Generate autocomplete suggestions for APO file input (file paths with .txt extension filter)
     pub fn generate_autocomplete_suggestions_for_apo_file(&mut self) {
-        self.generate_file_autocomplete_suggestions(&self.input_state.apo_file_input.clone(), Some(&["txt"]));
+        self.generate_file_autocomplete_suggestions(
+            &self.input_state.apo_file_input.clone(),
+            Some(&["txt"]),
+        );
     }
 
     /// Apply the current autocomplete suggestion to the APO file input
     pub fn apply_autocomplete_to_apo_file(&mut self) {
         if !self.input_state.autocomplete_suggestions.is_empty() {
-            let suggestion = &self.input_state.autocomplete_suggestions[self.input_state.autocomplete_index];
+            let suggestion =
+                &self.input_state.autocomplete_suggestions[self.input_state.autocomplete_index];
             self.input_state.apo_file_input = suggestion.clone();
         }
     }
@@ -199,8 +210,8 @@ impl App {
     /// Cycle to the next autocomplete suggestion for APO file
     pub fn next_autocomplete_for_apo_file(&mut self) {
         if !self.input_state.autocomplete_suggestions.is_empty() {
-            self.input_state.autocomplete_index =
-                (self.input_state.autocomplete_index + 1) % self.input_state.autocomplete_suggestions.len();
+            self.input_state.autocomplete_index = (self.input_state.autocomplete_index + 1)
+                % self.input_state.autocomplete_suggestions.len();
             self.apply_autocomplete_to_apo_file();
         }
     }
@@ -209,13 +220,17 @@ impl App {
 
     /// Generate autocomplete suggestions for SOFA file input (file paths with .sofa extension filter)
     pub fn generate_autocomplete_suggestions_for_sofa_file(&mut self) {
-        self.generate_file_autocomplete_suggestions(&self.input_state.sofa_file_input.clone(), Some(&["sofa"]));
+        self.generate_file_autocomplete_suggestions(
+            &self.input_state.sofa_file_input.clone(),
+            Some(&["sofa"]),
+        );
     }
 
     /// Apply the current autocomplete suggestion to the SOFA file input
     pub fn apply_autocomplete_to_sofa_file(&mut self) {
         if !self.input_state.autocomplete_suggestions.is_empty() {
-            let suggestion = &self.input_state.autocomplete_suggestions[self.input_state.autocomplete_index];
+            let suggestion =
+                &self.input_state.autocomplete_suggestions[self.input_state.autocomplete_index];
             self.input_state.sofa_file_input = suggestion.clone();
         }
     }
@@ -223,8 +238,8 @@ impl App {
     /// Cycle to the next autocomplete suggestion for SOFA file
     pub fn next_autocomplete_for_sofa_file(&mut self) {
         if !self.input_state.autocomplete_suggestions.is_empty() {
-            self.input_state.autocomplete_index =
-                (self.input_state.autocomplete_index + 1) % self.input_state.autocomplete_suggestions.len();
+            self.input_state.autocomplete_index = (self.input_state.autocomplete_index + 1)
+                % self.input_state.autocomplete_suggestions.len();
             self.apply_autocomplete_to_sofa_file();
         }
     }

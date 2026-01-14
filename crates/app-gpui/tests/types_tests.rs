@@ -3,6 +3,7 @@
 //! These tests verify the behavior of types defined in the app module.
 //! They are extracted from inline tests to work around GPUI macro recursion issues.
 
+use sotf_audio_player::library::{Album, Track};
 use sotf_audio_player_gpui::{
     CalibrationData, ChannelMapping, ChannelRecording, ChannelRecordingState, ContextMenuType,
     CrossoverType, InputMode, LayoutMode, LibraryStats, MeasureState, MeterDisplayMode,
@@ -10,7 +11,6 @@ use sotf_audio_player_gpui::{
     RecordingSignalType, RecordingState, RecordingStep, ReplayGainMode, RoomEqAlgorithm,
     RoomEqOptimizerConfig, RoomEqStep, Screen, SpeakerConfiguration, ToastMessage, ToastType,
 };
-use sotf_audio_player::library::{Album, Track};
 use std::path::PathBuf;
 
 // ============================================================================

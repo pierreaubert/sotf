@@ -6,8 +6,8 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Button, ButtonSize, ButtonVariant, Input, InputSize, TabItem, TabVariant, Tabs, TabsTheme,
-    Spinner, SpinnerSize,
+    Button, ButtonSize, ButtonVariant, Input, InputSize, Spinner, SpinnerSize, TabItem, TabVariant,
+    Tabs, TabsTheme,
 };
 use std::sync::Arc;
 
@@ -206,186 +206,193 @@ impl PlayerView {
             .size_full()
             .p_2()
             .when(state.app.is_loading_initial_data, |el| {
-                el.justify_center().items_center().child(
-                    div().child(
-                        Spinner::new()
-                            .size(SpinnerSize::Xl),
-                    ),
-                )
+                el.justify_center()
+                    .items_center()
+                    .child(div().child(Spinner::new().size(SpinnerSize::Xl)))
             })
             .when(!state.app.is_loading_initial_data, |el| {
                 el.child(
                     div().flex().justify_center().mb_2().child(
-                    Tabs::new("library-sort-tabs")
-                        .tabs(sort_tabs)
-                        .selected_index(sort_tab_index)
-                        .variant(TabVariant::VerticalCard)
-                        .theme(tabs_theme.clone())
-                        .on_change(move |index, _window, cx| {
-                            state_for_tabs.update(cx, |state, _cx| {
-                                // Handle sort order tabs (0-5)
-                                if index <= 5 {
-                                    let sort_order = match index {
-                                        0 => crate::app::LibrarySortOrder::Year,
-                                        1 => crate::app::LibrarySortOrder::Genre,
-                                        2 => crate::app::LibrarySortOrder::Artist,
-                                        3 => crate::app::LibrarySortOrder::Album,
-                                        4 => crate::app::LibrarySortOrder::Tracks,
-                                        5 => crate::app::LibrarySortOrder::Composer,
-                                        _ => crate::app::LibrarySortOrder::Album,
-                                    };
-                                    state.app.set_library_sort_order(sort_order);
-                                    // Close filter/search modes when selecting sort tab
-                                    state.app.ui_state.filter_menu_open = false;
-                                    state.app.ui_state.input_mode = crate::app::InputMode::Normal;
-                                } else if index == 6 {
-                                    // Filter tab
-                                    state.app.ui_state.filter_menu_open = !state.app.ui_state.filter_menu_open;
-                                    state.app.ui_state.input_mode = crate::app::InputMode::Normal;
-                                } else if index == 7 {
-                                    // Search tab
-                                    if state.app.ui_state.input_mode == crate::app::InputMode::Search {
-                                        state.app.ui_state.input_mode = crate::app::InputMode::Normal;
-                                        state.app.library_state.search_query.clear();
-                                    } else {
-                                        state.app.ui_state.input_mode = crate::app::InputMode::Search;
+                        Tabs::new("library-sort-tabs")
+                            .tabs(sort_tabs)
+                            .selected_index(sort_tab_index)
+                            .variant(TabVariant::VerticalCard)
+                            .theme(tabs_theme.clone())
+                            .on_change(move |index, _window, cx| {
+                                state_for_tabs.update(cx, |state, _cx| {
+                                    // Handle sort order tabs (0-5)
+                                    if index <= 5 {
+                                        let sort_order = match index {
+                                            0 => crate::app::LibrarySortOrder::Year,
+                                            1 => crate::app::LibrarySortOrder::Genre,
+                                            2 => crate::app::LibrarySortOrder::Artist,
+                                            3 => crate::app::LibrarySortOrder::Album,
+                                            4 => crate::app::LibrarySortOrder::Tracks,
+                                            5 => crate::app::LibrarySortOrder::Composer,
+                                            _ => crate::app::LibrarySortOrder::Album,
+                                        };
+                                        state.app.set_library_sort_order(sort_order);
+                                        // Close filter/search modes when selecting sort tab
                                         state.app.ui_state.filter_menu_open = false;
+                                        state.app.ui_state.input_mode =
+                                            crate::app::InputMode::Normal;
+                                    } else if index == 6 {
+                                        // Filter tab
+                                        state.app.ui_state.filter_menu_open =
+                                            !state.app.ui_state.filter_menu_open;
+                                        state.app.ui_state.input_mode =
+                                            crate::app::InputMode::Normal;
+                                    } else if index == 7 {
+                                        // Search tab
+                                        if state.app.ui_state.input_mode
+                                            == crate::app::InputMode::Search
+                                        {
+                                            state.app.ui_state.input_mode =
+                                                crate::app::InputMode::Normal;
+                                            state.app.library_state.search_query.clear();
+                                        } else {
+                                            state.app.ui_state.input_mode =
+                                                crate::app::InputMode::Search;
+                                            state.app.ui_state.filter_menu_open = false;
+                                        }
                                     }
-                                }
-                            });
-                        }),
-                ),
-            )
-            // Filter options row (only visible when filter mode is active)
-            .when(is_filter_mode, |el| {
-                el.child(
+                                });
+                            }),
+                    ),
+                )
+                // Filter options row (only visible when filter mode is active)
+                .when(is_filter_mode, |el| {
+                    el.child(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .justify_center()
+                            .gap_2()
+                            .mb_2()
+                            .py_2()
+                            .px_4()
+                            .bg(theme.surface)
+                            .rounded_lg()
+                            .child(self.render_filter_button(
+                                "All",
+                                crate::app::state::library::ChannelFilter::All,
+                                channel_filter,
+                                theme.clone(),
+                                cx,
+                            ))
+                            .child(self.render_filter_button(
+                                &format!("1.0 Mono ({})", mono_count),
+                                crate::app::state::library::ChannelFilter::Mono,
+                                channel_filter,
+                                theme.clone(),
+                                cx,
+                            ))
+                            .child(self.render_filter_button(
+                                &format!("2.0 Stereo ({})", stereo_count),
+                                crate::app::state::library::ChannelFilter::Stereo,
+                                channel_filter,
+                                theme.clone(),
+                                cx,
+                            ))
+                            .child(self.render_filter_button(
+                                &format!("5.x Surround ({})", surround_count),
+                                crate::app::state::library::ChannelFilter::Surround,
+                                channel_filter,
+                                theme.clone(),
+                                cx,
+                            ))
+                            .child(self.render_filter_button(
+                                &format!("7.1 ({})", surround71_count),
+                                crate::app::state::library::ChannelFilter::Surround71,
+                                channel_filter,
+                                theme.clone(),
+                                cx,
+                            ))
+                            .child(self.render_filter_button(
+                                &format!("7.1+ ({})", surround_plus_count),
+                                crate::app::state::library::ChannelFilter::SurroundPlus,
+                                channel_filter,
+                                theme.clone(),
+                                cx,
+                            )),
+                    )
+                })
+                // Search bar row (only visible when in search mode)
+                // Keyboard input is handled at the parent level in ui.rs via handle_search_input
+                .when(is_search_mode, |el| {
+                    el.child(
+                        div().flex().justify_center().mb_2().child(
+                            div().w_96().child(
+                                Input::new("search-input")
+                                    .value(SharedString::from(search_query.clone()))
+                                    .placeholder("Type to search albums, artists, tracks...")
+                                    .icon_left("🔍")
+                                    .size(InputSize::Md)
+                                    .bg_color(theme.surface)
+                                    .text_color(theme.text_primary)
+                                    .placeholder_color(theme.text_muted)
+                                    .focus_handle(self.search_focus_handle.clone())
+                                    .on_text_change({
+                                        let app_state = self.state.clone();
+                                        let view_handle = cx.entity().clone();
+                                        move |text, _window, cx| {
+                                            app_state.update(cx, |state, _| {
+                                                state.app.library_state.search_query = text;
+                                                if state.app.ui_state.input_mode
+                                                    != crate::app::InputMode::Search
+                                                {
+                                                    state.app.ui_state.input_mode =
+                                                        crate::app::InputMode::Search;
+                                                }
+                                            });
+                                            view_handle.update(cx, |_, cx| cx.notify());
+                                        }
+                                    })
+                                    .on_change({
+                                        let view_handle = cx.entity().clone();
+                                        move |_text, _window, cx| {
+                                            log::info!("Search confirmed");
+                                            // Optionally we could trigger something here
+                                            view_handle.update(cx, |_, cx| cx.notify());
+                                        }
+                                    }),
+                            ),
+                        ),
+                    )
+                })
+                .child(
                     div()
-                        .flex()
-                        .flex_wrap()
-                        .justify_center()
-                        .gap_2()
-                        .mb_2()
-                        .py_2()
-                        .px_4()
-                        .bg(theme.surface)
-                        .rounded_lg()
-                        .child(self.render_filter_button(
-                            "All",
-                            crate::app::state::library::ChannelFilter::All,
-                            channel_filter,
+                        .id("library-content-container")
+                        .flex_1()
+                        .min_h_0()
+                        .overflow_hidden()
+                        .child(self.render_library_content(
+                            sort_order,
                             theme.clone(),
-                            cx,
-                        ))
-                        .child(self.render_filter_button(
-                            &format!("1.0 Mono ({})", mono_count),
-                            crate::app::state::library::ChannelFilter::Mono,
-                            channel_filter,
-                            theme.clone(),
-                            cx,
-                        ))
-                        .child(self.render_filter_button(
-                            &format!("2.0 Stereo ({})", stereo_count),
-                            crate::app::state::library::ChannelFilter::Stereo,
-                            channel_filter,
-                            theme.clone(),
-                            cx,
-                        ))
-                        .child(self.render_filter_button(
-                            &format!("5.x Surround ({})", surround_count),
-                            crate::app::state::library::ChannelFilter::Surround,
-                            channel_filter,
-                            theme.clone(),
-                            cx,
-                        ))
-                        .child(self.render_filter_button(
-                            &format!("7.1 ({})", surround71_count),
-                            crate::app::state::library::ChannelFilter::Surround71,
-                            channel_filter,
-                            theme.clone(),
-                            cx,
-                        ))
-                        .child(self.render_filter_button(
-                            &format!("7.1+ ({})", surround_plus_count),
-                            crate::app::state::library::ChannelFilter::SurroundPlus,
-                            channel_filter,
-                            theme.clone(),
+                            // Selection states
+                            selected_genre,
+                            selected_decade,
+                            selected_year,
+                            selected_artist_letter,
+                            selected_artist,
+                            selected_composer_letter,
+                            selected_composer,
+                            selected_album_letter,
+                            selected_track_range,
+                            // Count maps
+                            genre_counts,
+                            decade_counts,
+                            year_counts,
+                            artist_counts,
+                            artist_letter_counts,
+                            composer_counts,
+                            composer_letter_counts,
+                            album_letter_counts,
+                            track_range_counts,
                             cx,
                         )),
                 )
             })
-            // Search bar row (only visible when in search mode)
-            // Keyboard input is handled at the parent level in ui.rs via handle_search_input
-            .when(is_search_mode, |el| {
-                el.child(
-                    div().flex().justify_center().mb_2().child(
-                        div().w_96().child(
-                            Input::new("search-input")
-                                .value(SharedString::from(search_query.clone()))
-                                .placeholder("Type to search albums, artists, tracks...")
-                                .icon_left("🔍")
-                                .size(InputSize::Md)
-                                .bg_color(theme.surface)
-                                .text_color(theme.text_primary)
-                                .placeholder_color(theme.text_muted)
-                                .focus_handle(self.search_focus_handle.clone())
-                                .on_text_change({
-                                    let app_state = self.state.clone();
-                                    let view_handle = cx.entity().clone();
-                                    move |text, _window, cx| {
-                                        app_state.update(cx, |state, _| {
-                                            state.app.library_state.search_query = text;
-                                            if state.app.ui_state.input_mode != crate::app::InputMode::Search {
-                                                state.app.ui_state.input_mode = crate::app::InputMode::Search;
-                                            }
-                                        });
-                                        view_handle.update(cx, |_, cx| cx.notify());
-                                    }
-                                })
-                                .on_change({
-                                    let view_handle = cx.entity().clone();
-                                    move |_text, _window, cx| {
-                                         log::info!("Search confirmed");
-                                         // Optionally we could trigger something here
-                                         view_handle.update(cx, |_, cx| cx.notify());
-                                    }
-                                }),
-                        ),
-                    ),
-                )
-            })
-            .child(
-                div()
-                    .id("library-content-container")
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_hidden()
-                    .child(self.render_library_content(
-                        sort_order,
-                        theme.clone(),
-                        // Selection states
-                        selected_genre,
-                        selected_decade,
-                        selected_year,
-                        selected_artist_letter,
-                        selected_artist,
-                        selected_composer_letter,
-                        selected_composer,
-                        selected_album_letter,
-                        selected_track_range,
-                        // Count maps
-                        genre_counts,
-                        decade_counts,
-                        year_counts,
-                        artist_counts,
-                        artist_letter_counts,
-                        composer_counts,
-                        composer_letter_counts,
-                        album_letter_counts,
-                        track_range_counts,
-                        cx,
-                    )),
-            )
-        })
     }
 
     /// Render library content - either selection UI or album grid based on sort order
@@ -558,12 +565,14 @@ impl PlayerView {
                             MouseButton::Left,
                             cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                                 view.state.update(cx, |state, _cx| {
-                                    if state.app.library_state.selected_decade == Some((start, end)) {
+                                    if state.app.library_state.selected_decade == Some((start, end))
+                                    {
                                         // Deselect if already selected
                                         state.app.library_state.selected_decade = None;
                                         state.app.library_state.selected_year = None;
                                     } else {
-                                        state.app.library_state.selected_decade = Some((start, end));
+                                        state.app.library_state.selected_decade =
+                                            Some((start, end));
                                         state.app.library_state.selected_year = None;
                                     }
                                     state.app.library_state.selected_index = 0;
@@ -827,11 +836,14 @@ impl PlayerView {
                             MouseButton::Left,
                             cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                                 view.state.update(cx, |state, _cx| {
-                                    if state.app.library_state.selected_artist_letter == Some(letter) {
+                                    if state.app.library_state.selected_artist_letter
+                                        == Some(letter)
+                                    {
                                         state.app.library_state.selected_artist_letter = None;
                                         state.app.library_state.selected_artist = None;
                                     } else {
-                                        state.app.library_state.selected_artist_letter = Some(letter);
+                                        state.app.library_state.selected_artist_letter =
+                                            Some(letter);
                                         state.app.library_state.selected_artist = None;
                                     }
                                     state.app.library_state.selected_index = 0;
@@ -878,7 +890,8 @@ impl PlayerView {
                                         {
                                             state.app.library_state.selected_artist = None;
                                         } else {
-                                            state.app.library_state.selected_artist = Some(artist_to_set);
+                                            state.app.library_state.selected_artist =
+                                                Some(artist_to_set);
                                         }
                                         state.app.library_state.selected_index = 0;
                                     });
@@ -1000,11 +1013,14 @@ impl PlayerView {
                             MouseButton::Left,
                             cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                                 view.state.update(cx, |state, _cx| {
-                                    if state.app.library_state.selected_composer_letter == Some(letter) {
+                                    if state.app.library_state.selected_composer_letter
+                                        == Some(letter)
+                                    {
                                         state.app.library_state.selected_composer_letter = None;
                                         state.app.library_state.selected_composer = None;
                                     } else {
-                                        state.app.library_state.selected_composer_letter = Some(letter);
+                                        state.app.library_state.selected_composer_letter =
+                                            Some(letter);
                                         state.app.library_state.selected_composer = None;
                                     }
                                     state.app.library_state.selected_index = 0;
@@ -1051,7 +1067,8 @@ impl PlayerView {
                                         {
                                             state.app.library_state.selected_composer = None;
                                         } else {
-                                            state.app.library_state.selected_composer = Some(composer_to_set);
+                                            state.app.library_state.selected_composer =
+                                                Some(composer_to_set);
                                         }
                                         state.app.library_state.selected_index = 0;
                                     });

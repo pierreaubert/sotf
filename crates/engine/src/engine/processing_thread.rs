@@ -556,13 +556,8 @@ fn create_plugin(
         "fletcher_munson" => {
             use sotf_plugins::FletcherMunsonPlugin;
 
-            let params: FletcherMunsonPluginParams =
-                serde_json::from_value(parameters.clone()).map_err(|e| {
-                    format!(
-                        "Failed to parse Fletcher-Munson plugin parameters: {}",
-                        e
-                    )
-                })?;
+            let params: FletcherMunsonPluginParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| format!("Failed to parse Fletcher-Munson plugin parameters: {}", e))?;
 
             let mut plugin = FletcherMunsonPlugin::from_params(channels, params);
             plugin.initialize(sample_rate)?;
@@ -614,7 +609,10 @@ fn create_plugin(
             };
 
             if let Some(states) = params.channel_states {
-                log::debug!("[Engine] Matrix Plugin created with channel_states: {:?}", states);
+                log::debug!(
+                    "[Engine] Matrix Plugin created with channel_states: {:?}",
+                    states
+                );
                 plugin = plugin.with_channel_states(states);
             } else {
                 log::trace!("[Engine] Matrix Plugin created WITHOUT channel_states");

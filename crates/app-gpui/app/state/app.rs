@@ -15,8 +15,7 @@ use crate::theme::{Theme, ThemeId};
 
 use crate::app::debug::StateHistory;
 use crate::app::types::{
-    ChannelGroup, InputMode,
-    LibraryStats, MeterDisplayMode, OptimizationUiState, QueueItem,
+    ChannelGroup, InputMode, LibraryStats, MeterDisplayMode, OptimizationUiState, QueueItem,
     ToastMessage,
 };
 
@@ -337,7 +336,10 @@ impl App {
 
     /// Set output device with debug logging
     pub fn set_output_device(&mut self, device_name: Option<String>, trigger: &str) {
-        let old_device = self.audio_device_state.current_output_device_name.as_deref();
+        let old_device = self
+            .audio_device_state
+            .current_output_device_name
+            .as_deref();
         let new_device = device_name.as_deref();
         if old_device != new_device {
             crate::app::debug::log_device_change(old_device, new_device, trigger);
@@ -356,9 +358,16 @@ impl App {
     // ─────────────────────────────────────────────────────────────────────────
 
     /// Record playback started event
-    pub fn record_playback_started(&mut self, queue_index: usize, track_path: Option<std::path::PathBuf>) {
+    pub fn record_playback_started(
+        &mut self,
+        queue_index: usize,
+        track_path: Option<std::path::PathBuf>,
+    ) {
         use super::playback_events::PlaybackEvent;
-        self.playback_events.record_event(PlaybackEvent::Started { queue_index, track_path });
+        self.playback_events.record_event(PlaybackEvent::Started {
+            queue_index,
+            track_path,
+        });
     }
 
     /// Record playback paused event
@@ -387,41 +396,50 @@ impl App {
         trigger: super::playback_events::TrackChangeTrigger,
     ) {
         use super::playback_events::PlaybackEvent;
-        self.playback_events.record_event(PlaybackEvent::TrackChanged {
-            from_index,
-            to_index,
-            trigger,
-        });
+        self.playback_events
+            .record_event(PlaybackEvent::TrackChanged {
+                from_index,
+                to_index,
+                trigger,
+            });
     }
 
     /// Record volume change event
     pub fn record_volume_changed(&mut self, from: f32, to: f32) {
         use super::playback_events::PlaybackEvent;
-        self.playback_events.record_event(PlaybackEvent::VolumeChanged { from, to });
+        self.playback_events
+            .record_event(PlaybackEvent::VolumeChanged { from, to });
     }
 
     /// Record mute change event
     pub fn record_mute_changed(&mut self, muted: bool) {
         use super::playback_events::PlaybackEvent;
-        self.playback_events.record_event(PlaybackEvent::MuteChanged { muted });
+        self.playback_events
+            .record_event(PlaybackEvent::MuteChanged { muted });
     }
 
     /// Record seek event
     pub fn record_seek(&mut self, from_position: f64, to_position: f64) {
         use super::playback_events::PlaybackEvent;
-        self.playback_events.record_event(PlaybackEvent::Seeked { from_position, to_position });
+        self.playback_events.record_event(PlaybackEvent::Seeked {
+            from_position,
+            to_position,
+        });
     }
 
     /// Record track ended event
     pub fn record_track_ended(&mut self, queue_index: usize) {
         use super::playback_events::PlaybackEvent;
-        self.playback_events.record_event(PlaybackEvent::TrackEnded { queue_index });
+        self.playback_events
+            .record_event(PlaybackEvent::TrackEnded { queue_index });
     }
 
     /// Record playback error event
     pub fn record_playback_error(&mut self, message: impl Into<String>) {
         use super::playback_events::PlaybackEvent;
-        self.playback_events.record_event(PlaybackEvent::Error { message: message.into() });
+        self.playback_events.record_event(PlaybackEvent::Error {
+            message: message.into(),
+        });
     }
 
     /// Get playback event summary for debugging
@@ -492,21 +510,39 @@ impl App {
                 if let Some(default_idx) = output_devices.iter().position(|d| d.is_default) {
                     self.audio_device_state.selected_output_device_index = default_idx;
                     // Initialize recording state playback device if not already set
-                    if self.measurement_state.recording_state.playback_config.device_name.is_empty() {
+                    if self
+                        .measurement_state
+                        .recording_state
+                        .playback_config
+                        .device_name
+                        .is_empty()
+                    {
                         let device = &output_devices[default_idx];
-                        self.measurement_state.recording_state.playback_config.device_name = device.name.clone();
-                        self.measurement_state.recording_state.playback_config.device_id = device.name.clone();
+                        self.measurement_state
+                            .recording_state
+                            .playback_config
+                            .device_name = device.name.clone();
+                        self.measurement_state
+                            .recording_state
+                            .playback_config
+                            .device_id = device.name.clone();
                         if let Some(ref config) = device.default_config {
-                            self.measurement_state.recording_state.playback_config.num_channels =
-                                config.channels as usize;
+                            self.measurement_state
+                                .recording_state
+                                .playback_config
+                                .num_channels = config.channels as usize;
                         }
-                        self.measurement_state.recording_state.playback_config.available_sample_rates =
-                            device.available_sample_rates.clone();
-                        self.measurement_state.recording_state.playback_config.sample_rate =
-                            Self::select_default_sample_rate(
-                                &device.available_sample_rates,
-                                device.default_config.as_ref().map(|c| c.sample_rate),
-                            );
+                        self.measurement_state
+                            .recording_state
+                            .playback_config
+                            .available_sample_rates = device.available_sample_rates.clone();
+                        self.measurement_state
+                            .recording_state
+                            .playback_config
+                            .sample_rate = Self::select_default_sample_rate(
+                            &device.available_sample_rates,
+                            device.default_config.as_ref().map(|c| c.sample_rate),
+                        );
                     }
                 }
             }
@@ -516,21 +552,39 @@ impl App {
                 if let Some(default_idx) = input_devices.iter().position(|d| d.is_default) {
                     self.audio_device_state.selected_input_device_index = default_idx;
                     // Initialize recording state recording device if not already set
-                    if self.measurement_state.recording_state.recording_config.device_name.is_empty() {
+                    if self
+                        .measurement_state
+                        .recording_state
+                        .recording_config
+                        .device_name
+                        .is_empty()
+                    {
                         let device = &input_devices[default_idx];
-                        self.measurement_state.recording_state.recording_config.device_name = device.name.clone();
-                        self.measurement_state.recording_state.recording_config.device_id = device.name.clone();
+                        self.measurement_state
+                            .recording_state
+                            .recording_config
+                            .device_name = device.name.clone();
+                        self.measurement_state
+                            .recording_state
+                            .recording_config
+                            .device_id = device.name.clone();
                         if let Some(ref config) = device.default_config {
-                            self.measurement_state.recording_state.recording_config.num_channels =
-                                config.channels as usize;
+                            self.measurement_state
+                                .recording_state
+                                .recording_config
+                                .num_channels = config.channels as usize;
                         }
-                        self.measurement_state.recording_state.recording_config.available_sample_rates =
-                            device.available_sample_rates.clone();
-                        self.measurement_state.recording_state.recording_config.sample_rate =
-                            Self::select_default_sample_rate(
-                                &device.available_sample_rates,
-                                device.default_config.as_ref().map(|c| c.sample_rate),
-                            );
+                        self.measurement_state
+                            .recording_state
+                            .recording_config
+                            .available_sample_rates = device.available_sample_rates.clone();
+                        self.measurement_state
+                            .recording_state
+                            .recording_config
+                            .sample_rate = Self::select_default_sample_rate(
+                            &device.available_sample_rates,
+                            device.default_config.as_ref().map(|c| c.sample_rate),
+                        );
                     }
                 }
             }
@@ -567,19 +621,26 @@ impl App {
 
         // Restore recording config
         if !config.recording_config.playback.device_name.is_empty() {
-            self.measurement_state.recording_state.playback_config = config.recording_config.playback;
+            self.measurement_state.recording_state.playback_config =
+                config.recording_config.playback;
         }
         if !config.recording_config.recording.device_name.is_empty() {
-            self.measurement_state.recording_state.recording_config = config.recording_config.recording;
+            self.measurement_state.recording_state.recording_config =
+                config.recording_config.recording;
         }
 
         self.measurement_state.recording_state.signal_type = config.recording_config.signal_type;
-        self.measurement_state.recording_state.signal_duration_secs = config.recording_config.signal_duration_secs;
-        self.measurement_state.recording_state.signal_level_db = config.recording_config.signal_level_db;
-        self.measurement_state.recording_state.mic_calibration_path = config.recording_config.mic_calibration_path;
-        self.measurement_state.recording_state.recording_directory = config.recording_config.recording_directory;
-        self.measurement_state.recording_state.recording_base_directory =
-            config.recording_config.recording_base_directory;
+        self.measurement_state.recording_state.signal_duration_secs =
+            config.recording_config.signal_duration_secs;
+        self.measurement_state.recording_state.signal_level_db =
+            config.recording_config.signal_level_db;
+        self.measurement_state.recording_state.mic_calibration_path =
+            config.recording_config.mic_calibration_path;
+        self.measurement_state.recording_state.recording_directory =
+            config.recording_config.recording_directory;
+        self.measurement_state
+            .recording_state
+            .recording_base_directory = config.recording_config.recording_base_directory;
 
         // Reload calibration data if path exists
         if let Some(ref path) = self.measurement_state.recording_state.mic_calibration_path {
@@ -597,7 +658,11 @@ impl App {
                 log::warn!("Could not find presets directory, skipping preset restore");
                 return Ok(());
             };
-            match self.plugin_state.plugin_chain.load_from_file(&presets_dir, &preset_name) {
+            match self
+                .plugin_state
+                .plugin_chain
+                .load_from_file(&presets_dir, &preset_name)
+            {
                 Ok(_) => {
                     self.plugin_state.pending_plugin_update =
                         Some(crate::app::types::PluginUpdateType::Structural);
@@ -645,14 +710,34 @@ impl App {
             volume: self.playback.volume,
             muted: self.playback.muted,
             recording_config: crate::app::config::RecordingConfigState {
-                playback: self.measurement_state.recording_state.playback_config.clone(),
-                recording: self.measurement_state.recording_state.recording_config.clone(),
+                playback: self
+                    .measurement_state
+                    .recording_state
+                    .playback_config
+                    .clone(),
+                recording: self
+                    .measurement_state
+                    .recording_state
+                    .recording_config
+                    .clone(),
                 signal_type: self.measurement_state.recording_state.signal_type,
                 signal_duration_secs: self.measurement_state.recording_state.signal_duration_secs,
                 signal_level_db: self.measurement_state.recording_state.signal_level_db,
-                mic_calibration_path: self.measurement_state.recording_state.mic_calibration_path.clone(),
-                recording_directory: self.measurement_state.recording_state.recording_directory.clone(),
-                recording_base_directory: self.measurement_state.recording_state.recording_base_directory.clone(),
+                mic_calibration_path: self
+                    .measurement_state
+                    .recording_state
+                    .mic_calibration_path
+                    .clone(),
+                recording_directory: self
+                    .measurement_state
+                    .recording_state
+                    .recording_directory
+                    .clone(),
+                recording_base_directory: self
+                    .measurement_state
+                    .recording_state
+                    .recording_base_directory
+                    .clone(),
             },
         };
         config.save()?;
@@ -660,7 +745,8 @@ impl App {
     }
 
     pub fn get_device_max_channels(&self) -> Option<usize> {
-        self.audio_device_state.output_devices
+        self.audio_device_state
+            .output_devices
             .get(self.audio_device_state.selected_output_device_index)
             .and_then(|device| device.default_config.as_ref())
             .map(|config| config.channels as usize)

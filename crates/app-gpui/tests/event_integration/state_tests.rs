@@ -75,7 +75,8 @@ impl EventHandlerState {
                 let old_mode = format!("{:?}", self.input_mode);
                 self.input_mode = InputMode::Normal;
                 self.search_query.clear();
-                self.trace.record_state_change("input_mode", &old_mode, "Normal");
+                self.trace
+                    .record_state_change("input_mode", &old_mode, "Normal");
                 true
             }
             "backspace" => {
@@ -104,28 +105,32 @@ impl EventHandlerState {
                 self.trace.record_handler("play_pause", true);
                 let old = self.is_playing.to_string();
                 self.is_playing = !self.is_playing;
-                self.trace.record_state_change("is_playing", &old, &self.is_playing.to_string());
+                self.trace
+                    .record_state_change("is_playing", &old, &self.is_playing.to_string());
                 true
             }
             "+" | "=" => {
                 self.trace.record_handler("volume_up", true);
                 let old = self.volume.to_string();
                 self.volume = (self.volume + 0.1).min(1.0);
-                self.trace.record_state_change("volume", &old, &self.volume.to_string());
+                self.trace
+                    .record_state_change("volume", &old, &self.volume.to_string());
                 true
             }
             "-" | "_" => {
                 self.trace.record_handler("volume_down", true);
                 let old = self.volume.to_string();
                 self.volume = (self.volume - 0.1).max(0.0);
-                self.trace.record_state_change("volume", &old, &self.volume.to_string());
+                self.trace
+                    .record_state_change("volume", &old, &self.volume.to_string());
                 true
             }
             "/" => {
                 self.trace.record_handler("toggle_search", true);
                 let old_mode = format!("{:?}", self.input_mode);
                 self.input_mode = InputMode::Search;
-                self.trace.record_state_change("input_mode", &old_mode, "Search");
+                self.trace
+                    .record_state_change("input_mode", &old_mode, "Search");
                 true
             }
             "0" => {
@@ -135,7 +140,8 @@ impl EventHandlerState {
             }
             "1" | "2" | "3" | "4" | "5" => {
                 let rating = key.parse::<u8>().unwrap();
-                self.trace.record_handler(&format!("set_filter_{}", rating), true);
+                self.trace
+                    .record_handler(&format!("set_filter_{}", rating), true);
                 self.filter_rating = Some(rating);
                 true
             }
@@ -397,7 +403,10 @@ mod tests {
         // Space in search mode should NOT toggle playback
         let was_playing = state.is_playing;
         state.process_key(&KeyEvent::new("space"));
-        assert_eq!(state.is_playing, was_playing, "Space shouldn't affect playback in search mode");
+        assert_eq!(
+            state.is_playing, was_playing,
+            "Space shouldn't affect playback in search mode"
+        );
 
         // User types search query
         state.type_text("jazz");
@@ -439,9 +448,18 @@ mod tests {
         }
 
         // State should be COMPLETELY unchanged
-        assert_eq!(state.volume, initial_volume, "Volume changed in search mode");
-        assert_eq!(state.is_playing, initial_playing, "Playback changed in search mode");
-        assert_eq!(state.filter_rating, initial_filter, "Filter changed in search mode");
+        assert_eq!(
+            state.volume, initial_volume,
+            "Volume changed in search mode"
+        );
+        assert_eq!(
+            state.is_playing, initial_playing,
+            "Playback changed in search mode"
+        );
+        assert_eq!(
+            state.filter_rating, initial_filter,
+            "Filter changed in search mode"
+        );
     }
 
     #[test]
