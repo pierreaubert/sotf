@@ -3,6 +3,10 @@ macro_rules! sort_handler {
     ($fn_name:ident, $action:ty, $order:expr) => {
         fn $fn_name(&mut self, _: &$action, _: &mut Window, cx: &mut Context<Self>) {
             self.state.update(cx, |state, _cx| {
+                // Block if in text input mode
+                if Self::is_text_input_mode(state.app.ui_state.input_mode) {
+                    return;
+                }
                 state.app.set_library_sort_order($order);
             });
             cx.notify();
@@ -15,6 +19,10 @@ macro_rules! filter_handler {
     ($fn_name:ident, $action:ty, $filter:expr) => {
         fn $fn_name(&mut self, _: &$action, _: &mut Window, cx: &mut Context<Self>) {
             self.state.update(cx, |state, _cx| {
+                // Block if in text input mode
+                if Self::is_text_input_mode(state.app.ui_state.input_mode) {
+                    return;
+                }
                 state.app.set_channel_filter($filter);
             });
             cx.notify();
@@ -75,19 +83,10 @@ impl PlayerView {
     filter_handler!(set_filter_surround_plus, SetFilterSurroundPlus, crate::app::state::library::ChannelFilter::SurroundPlus);
     filter_handler!(set_filter_mixed, SetFilterMixed, crate::app::state::library::ChannelFilter::Mixed);
 
-    /// Check if we're in a text input mode where actions should be blocked
-    fn is_text_input_mode(input_mode: crate::app::InputMode) -> bool {
-        use crate::app::InputMode;
-        matches!(
-            input_mode,
-            InputMode::Search
-                | InputMode::AddDirectory
-                | InputMode::SavePlugins
-                | InputMode::LoadPlugins
-                | InputMode::LoadApoFile
-                | InputMode::LoadSofaFile
-                | InputMode::SpinoramaSpeakerSearch
-        )
+    /// Check if we're in a text input mode where actions should be blocked.
+    /// Delegates to InputMode::is_text_input() for consistency.
+    pub(crate) fn is_text_input_mode(input_mode: crate::app::InputMode) -> bool {
+        input_mode.is_text_input()
     }
 
     fn handle_search_input(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {

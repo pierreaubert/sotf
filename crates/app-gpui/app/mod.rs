@@ -11,6 +11,7 @@ pub mod actions;
 mod autocomplete;
 pub mod config;
 pub mod constants;
+pub mod debug;
 pub mod i18n;
 pub mod manager;
 pub mod keybindings;

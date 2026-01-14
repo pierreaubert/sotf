@@ -13,6 +13,7 @@ use crate::i18n::{Language, Translations};
 use crate::keybindings::KeymapPreset;
 use crate::theme::{Theme, ThemeId};
 
+use crate::app::debug::StateHistory;
 use crate::app::types::{
     ChannelGroup, InputMode,
     LibraryStats, MeterDisplayMode, OptimizationUiState, QueueItem,
@@ -188,6 +189,12 @@ pub struct App {
 
     /// Shared state across managers
     pub shared_state: Arc<super::SharedState>,
+
+    /// Debug state history tracker
+    pub state_history: StateHistory,
+
+    /// Event sourcing for playback state
+    pub playback_events: super::playback_events::PlaybackEventStore,
 }
 
 /// GPUI-compatible state wrapper
@@ -276,6 +283,8 @@ impl App {
             audio_device_state: super::AudioDeviceState::new(),
             measurement_state: super::MeasurementState::new(),
             shared_state: Arc::new(super::SharedState::new()),
+            state_history: StateHistory::new(),
+            playback_events: super::playback_events::PlaybackEventStore::new(),
         };
 
         // Initialize default stereo meter layout so meters are visible before audio starts
@@ -289,6 +298,135 @@ impl App {
         match msg {
             AppMessage::Library(event) => self.library_state.handle_event(event),
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // State transition methods with debug logging
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Set input mode with debug logging and state history capture
+    pub fn set_input_mode(&mut self, mode: InputMode, trigger: &str) {
+        let old_mode = self.ui_state.input_mode;
+        if old_mode != mode {
+            crate::app::debug::log_input_mode_transition(old_mode, mode, trigger);
+            self.state_history.capture(
+                self.ui_state.current_screen,
+                mode,
+                self.audio_device_state.current_output_device_name.clone(),
+                format!("input_mode: {}", trigger),
+            );
+            self.ui_state.input_mode = mode;
+        }
+    }
+
+    /// Set current screen with debug logging and state history capture
+    pub fn set_screen(&mut self, screen: crate::app::Screen, trigger: &str) {
+        let old_screen = self.ui_state.current_screen;
+        if old_screen != screen {
+            crate::app::debug::log_screen_transition(old_screen, screen, trigger);
+            self.ui_state.last_screen = old_screen;
+            self.state_history.capture(
+                screen,
+                self.ui_state.input_mode,
+                self.audio_device_state.current_output_device_name.clone(),
+                format!("screen: {}", trigger),
+            );
+            self.ui_state.current_screen = screen;
+        }
+    }
+
+    /// Set output device with debug logging
+    pub fn set_output_device(&mut self, device_name: Option<String>, trigger: &str) {
+        let old_device = self.audio_device_state.current_output_device_name.as_deref();
+        let new_device = device_name.as_deref();
+        if old_device != new_device {
+            crate::app::debug::log_device_change(old_device, new_device, trigger);
+            self.state_history.capture(
+                self.ui_state.current_screen,
+                self.ui_state.input_mode,
+                device_name.clone(),
+                format!("device: {}", trigger),
+            );
+            self.audio_device_state.current_output_device_name = device_name;
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Playback event recording methods
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Record playback started event
+    pub fn record_playback_started(&mut self, queue_index: usize, track_path: Option<std::path::PathBuf>) {
+        use super::playback_events::PlaybackEvent;
+        self.playback_events.record_event(PlaybackEvent::Started { queue_index, track_path });
+    }
+
+    /// Record playback paused event
+    pub fn record_playback_paused(&mut self) {
+        use super::playback_events::PlaybackEvent;
+        self.playback_events.record_event(PlaybackEvent::Paused);
+    }
+
+    /// Record playback resumed event
+    pub fn record_playback_resumed(&mut self) {
+        use super::playback_events::PlaybackEvent;
+        self.playback_events.record_event(PlaybackEvent::Resumed);
+    }
+
+    /// Record playback stopped event
+    pub fn record_playback_stopped(&mut self) {
+        use super::playback_events::PlaybackEvent;
+        self.playback_events.record_event(PlaybackEvent::Stopped);
+    }
+
+    /// Record track change event
+    pub fn record_track_changed(
+        &mut self,
+        from_index: Option<usize>,
+        to_index: usize,
+        trigger: super::playback_events::TrackChangeTrigger,
+    ) {
+        use super::playback_events::PlaybackEvent;
+        self.playback_events.record_event(PlaybackEvent::TrackChanged {
+            from_index,
+            to_index,
+            trigger,
+        });
+    }
+
+    /// Record volume change event
+    pub fn record_volume_changed(&mut self, from: f32, to: f32) {
+        use super::playback_events::PlaybackEvent;
+        self.playback_events.record_event(PlaybackEvent::VolumeChanged { from, to });
+    }
+
+    /// Record mute change event
+    pub fn record_mute_changed(&mut self, muted: bool) {
+        use super::playback_events::PlaybackEvent;
+        self.playback_events.record_event(PlaybackEvent::MuteChanged { muted });
+    }
+
+    /// Record seek event
+    pub fn record_seek(&mut self, from_position: f64, to_position: f64) {
+        use super::playback_events::PlaybackEvent;
+        self.playback_events.record_event(PlaybackEvent::Seeked { from_position, to_position });
+    }
+
+    /// Record track ended event
+    pub fn record_track_ended(&mut self, queue_index: usize) {
+        use super::playback_events::PlaybackEvent;
+        self.playback_events.record_event(PlaybackEvent::TrackEnded { queue_index });
+    }
+
+    /// Record playback error event
+    pub fn record_playback_error(&mut self, message: impl Into<String>) {
+        use super::playback_events::PlaybackEvent;
+        self.playback_events.record_event(PlaybackEvent::Error { message: message.into() });
+    }
+
+    /// Get playback event summary for debugging
+    pub fn playback_event_summary(&self) -> super::playback_events::EventStoreSummary {
+        self.playback_events.summary()
     }
 
     /// Load library from database if available

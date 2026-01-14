@@ -6,6 +6,7 @@ pub enum SettingsTab {
     Language,
     Keybindings,
     AudioDevice,
+    Plugins,
 }
 
 /// Type of scan operation that can show a progress modal

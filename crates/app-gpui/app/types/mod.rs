@@ -67,6 +67,23 @@ pub enum InputMode {
     EditingPluginNode,
 }
 
+impl InputMode {
+    /// Check if this mode captures text input (blocking keyboard shortcuts).
+    /// Use this to determine if actions should be blocked when in text entry modes.
+    pub fn is_text_input(&self) -> bool {
+        matches!(
+            self,
+            InputMode::Search
+                | InputMode::AddDirectory
+                | InputMode::SavePlugins
+                | InputMode::LoadPlugins
+                | InputMode::LoadApoFile
+                | InputMode::LoadSofaFile
+                | InputMode::SpinoramaSpeakerSearch
+        )
+    }
+}
+
 /// Active menu dropdown (if any)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActiveMenu {

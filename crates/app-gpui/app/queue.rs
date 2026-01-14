@@ -8,6 +8,19 @@ use super::state::App;
 use super::types::QueueItem;
 
 impl App {
+    /// Debug assertion to verify queue and expanded_queue_items are in sync.
+    /// Call this after any queue modification in debug builds.
+    #[inline]
+    fn assert_queue_consistency(&self) {
+        debug_assert_eq!(
+            self.queue.len(),
+            self.expanded_queue_items.len(),
+            "Queue desync detected: queue.len()={}, expanded_queue_items.len()={}",
+            self.queue.len(),
+            self.expanded_queue_items.len()
+        );
+    }
+
     pub fn add_album_to_queue(&mut self) -> Option<PathBuf> {
         let was_empty = self.queue.is_empty();
         let was_not_playing = !self.playback.is_playing;
@@ -19,6 +32,7 @@ impl App {
         if let Some(album) = selected_album {
             self.queue.push(QueueItem::new(album.clone()));
             self.expanded_queue_items.push(false);
+            self.assert_queue_consistency();
 
             // Auto-play if queue was empty OR if nothing was playing
             if was_empty || was_not_playing {
@@ -39,6 +53,7 @@ impl App {
             // Add to queue
             self.queue.push(QueueItem::new(album.clone()));
             self.expanded_queue_items.push(false);
+            self.assert_queue_consistency();
 
             // Jump to the newly added album (last in queue)
             let new_index = self.queue.len() - 1;
@@ -164,6 +179,7 @@ impl App {
             if self.selected_queue_index >= self.queue.len() && self.selected_queue_index > 0 {
                 self.selected_queue_index = self.queue.len() - 1;
             }
+            self.assert_queue_consistency();
         }
     }
 
@@ -173,6 +189,7 @@ impl App {
         self.playback.current_queue_index = None;
         self.selected_queue_index = 0;
         self.playback.is_playing = false;
+        self.assert_queue_consistency();
     }
 
     /// Get the duration of the currently playing track in seconds
@@ -293,6 +310,7 @@ impl App {
             added_count
         );
 
+        self.assert_queue_consistency();
         Ok(added_count)
     }
 }

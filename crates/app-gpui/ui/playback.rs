@@ -9,9 +9,11 @@ impl PlayerView {
             if state.app.playback.is_playing {
                 let _ = state.player.lock().pause();
                 state.app.playback.is_playing = false;
+                state.app.record_playback_paused();
             } else {
                 let _ = state.player.lock().resume();
                 state.app.playback.is_playing = true;
+                state.app.record_playback_resumed();
             }
         });
         cx.notify();
@@ -22,6 +24,7 @@ impl PlayerView {
             let _ = state.player.lock().stop();
             state.app.playback.is_playing = false;
             state.app.playback.current_queue_index = None;
+            state.app.record_playback_stopped();
         });
         cx.notify();
     }
@@ -32,19 +35,30 @@ impl PlayerView {
             if Self::is_text_input_mode(state.app.ui_state.input_mode) {
                 return;
             }
+            let from_index = state.app.playback.current_queue_index;
             if let Some(path) = state.app.next_track() {
                 let sample_rate = 48000.0;
                 let plugins = state.app.plugin_state.plugin_chain.to_plugin_configs(sample_rate);
                 let output_channels = state.app.plugin_state.plugin_chain.output_channels();
 
+                let device_name = state.app.audio_device_state.current_output_device_name.clone()
+                    .or_else(|| state.app.audio_device_state.selected_output_device().map(|d| d.name.clone()));
+
                 if let Err(e) = state.player.lock().load_and_play(
-                    path,
+                    path.clone(),
                     plugins,
                     output_channels,
-                    state.app.audio_device_state.current_output_device_name.clone(),
+                    device_name,
                 ) {
                     log::error!("Failed to play next track: {}", e);
                     state.app.playback.is_playing = false;
+                    state.app.record_playback_error(format!("Next track failed: {}", e));
+                } else if let Some(to_index) = state.app.playback.current_queue_index {
+                    state.app.record_track_changed(
+                        from_index,
+                        to_index,
+                        crate::app::state::TrackChangeTrigger::NextTrack,
+                    );
                 }
             } else {
                 state.app.playback.is_playing = false;
@@ -59,19 +73,30 @@ impl PlayerView {
             if Self::is_text_input_mode(state.app.ui_state.input_mode) {
                 return;
             }
+            let from_index = state.app.playback.current_queue_index;
             if let Some(path) = state.app.previous_track() {
                 let sample_rate = 48000.0;
                 let plugins = state.app.plugin_state.plugin_chain.to_plugin_configs(sample_rate);
                 let output_channels = state.app.plugin_state.plugin_chain.output_channels();
 
+                let device_name = state.app.audio_device_state.current_output_device_name.clone()
+                    .or_else(|| state.app.audio_device_state.selected_output_device().map(|d| d.name.clone()));
+
                 if let Err(e) = state.player.lock().load_and_play(
-                    path,
+                    path.clone(),
                     plugins,
                     output_channels,
-                    state.app.audio_device_state.current_output_device_name.clone(),
+                    device_name,
                 ) {
                     log::error!("Failed to play previous track: {}", e);
                     state.app.playback.is_playing = false;
+                    state.app.record_playback_error(format!("Previous track failed: {}", e));
+                } else if let Some(to_index) = state.app.playback.current_queue_index {
+                    state.app.record_track_changed(
+                        from_index,
+                        to_index,
+                        crate::app::state::TrackChangeTrigger::PrevTrack,
+                    );
                 }
             } else {
                 state.app.playback.is_playing = false;
