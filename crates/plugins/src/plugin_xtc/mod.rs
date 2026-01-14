@@ -1,10 +1,36 @@
-// ============================================================================ // Crosstalk Cancellation (XTC) Plugin // ============================================================================ // // Implements crosstalk cancellation for stereo playback over speakers. // This plugin removes acoustic crosstalk to create a binaural-like experience // from conventional stereo speakers. // // Algorithm: // 1. Signal Windowing & FFT: Convert to frequency domain (1024 samples, 75% overlap, Hann window) // 2. Transfer Functions: Model ipsilateral (direct) and contralateral (crosstalk) paths // 3. Inverse with smoothing: Compute regularized inverse filter matrix // 4. Apply Filter: Process stereo signal with crosstalk cancellation // 5. IFFT & Overlap-Add: Reconstruct time-domain signal // // Geometry: // - d: Distance to speakers (m) // - θ: Speaker angle (degrees, typically 30°) // - a: Head radius (m, typically 0.0875m) // // Physical Model: // - l_ipsi: Same-side path length // - l_contra: Opposite-side path length // - Δt: Time difference between paths // - g(f): Head shadowing filter (low-pass)
+//! ============================================================================
+//! Crosstalk Cancellation (XTC) Plugin
+//! ============================================================================
+//!
+//! Implements crosstalk cancellation for stereo playback over speakers.
+//! This plugin removes acoustic crosstalk to create a binaural-like experience
+//! from conventional stereo speakers.
+//!
+//! Algorithm:
+//! 1. Signal Windowing & FFT: Convert to frequency domain (1024 samples, 75% overlap, Hann window)
+//! 2. Transfer Functions: Model ipsilateral (direct) and contralateral (crosstalk) paths
+//! 3. Inverse with smoothing: Compute regularized inverse filter matrix
+//! 4. Apply Filter: Process stereo signal with crosstalk cancellation
+//! 5. IFFT & Overlap-Add: Reconstruct time-domain signal
+//!
+//! Geometry:
+//! - d: Distance to speakers (m)
+//! - θ: Speaker angle (degrees, typically 30°)
+//! - a: Head radius (m, typically 0.0875m)
+//!
+//! Physical Model:
+//! - l_ipsi: Same-side path length
+//! - l_contra: Opposite-side path length
+//! - Δt: Time difference between paths
+//! - g(f): Head shadowing filter (low-pass)
+
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use super::simd::{
     complex_mul_add_simd, complex_mul_simd, deinterleave_stereo, window_mul_add_simd,
     window_mul_simd,
 };
+use super::smoothing::Smoother;
 use parking_lot::RwLock;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
@@ -12,7 +38,20 @@ use serde::{Deserialize, Serialize};
 use std::f32::consts::PI;
 use std::sync::Arc;
 
-// ============================================================================ // Configuration // ============================================================================
+
+// ============================================================================
+// Configuration
+// ============================================================================
+
+/// Smoothing mode for head tracking parameter updates
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum SmoothingMode {
+    /// Per-block filter crossfade (efficient, default)
+    #[default]
+    Block,
+    /// Per-sample coefficient interpolation (precise but higher CPU)
+    Sample,
+}
 
 /// XTC plugin configuration parameters
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,9 +101,17 @@ pub struct XtcPluginParams {
     #[serde(default)]
     pub head_offset_z: f32,
 
+    /// Head tracking: yaw angle in degrees (-90 to +90, 0 = facing forward)
+    #[serde(default)]
+    pub head_yaw_deg: f32,
+
     /// Smoothing time constant for head tracking updates in seconds (default: 0.1s)
     #[serde(default = "default_head_tracking_smooth")]
     pub head_tracking_smooth_s: f32,
+
+    /// Smoothing mode for head tracking (Block or Sample)
+    #[serde(default)]
+    pub head_tracking_smoothing_mode: SmoothingMode,
 
     /// Enable plugin (default: true)
     #[serde(default = "default_enabled")]
@@ -119,23 +166,32 @@ impl Default for XtcPluginParams {
             head_shadow_slope_db_per_octave: default_head_shadow_slope(),
             head_offset_x: 0.0,
             head_offset_z: 0.0,
+            head_yaw_deg: 0.0,
             head_tracking_smooth_s: default_head_tracking_smooth(),
+            head_tracking_smoothing_mode: SmoothingMode::default(),
             enabled: default_enabled(),
         }
     }
 }
 
-// ============================================================================ // Plugin Implementation // ============================================================================
+
+// ============================================================================
+// Plugin Implementation
+// ============================================================================
 
 /// Crosstalk cancellation filters in frequency domain
 struct XtcFilters {
-    /// Diagonal filter (direct path processing)
+    /// Diagonal filter for left output (L_out += filter_ll * L_in)
     filter_ll: Vec<Complex<f32>>,
-    /// Cross filter (crosstalk cancellation)
+    /// Cross filter for left output (L_out += filter_lr * R_in)
     filter_lr: Vec<Complex<f32>>,
+    /// Cross filter for right output (R_out += filter_rl * L_in), None if symmetric
+    filter_rl: Option<Vec<Complex<f32>>>,
+    /// Diagonal filter for right output (R_out += filter_rr * R_in), None if symmetric
+    filter_rr: Option<Vec<Complex<f32>>>,
 }
 
-/// BACCH-style Crosstalk Cancellation plugin
+/// Crosstalk Cancellation plugin
 ///
 /// Optimized with:
 /// - Block-based I/O processing (no sample-by-sample loops)
@@ -197,11 +253,25 @@ pub struct XtcPlugin {
     /// Thread-safe crosstalk cancellation filters
     filters: Arc<RwLock<XtcFilters>>,
 
-    /// Smoothed head tracking parameters (for interpolation, future use)
-    #[allow(dead_code)]
-    smooth_offset_x: f32,
-    #[allow(dead_code)]
-    smooth_offset_z: f32,
+    /// Previous filter set for crossfading (Block mode)
+    prev_filters: Option<Arc<RwLock<XtcFilters>>>,
+
+    /// Crossfade progress (0.0 = prev, 1.0 = current)
+    crossfade_progress: f32,
+
+    /// Smoother for head offset X (Sample mode)
+    smoother_offset_x: Smoother,
+
+    /// Smoother for head offset Z (Sample mode)
+    smoother_offset_z: Smoother,
+
+    /// Smoother for head yaw angle (Sample mode)
+    smoother_yaw: Smoother,
+
+    /// Current smoothed position for Sample mode
+    current_offset_x: f32,
+    current_offset_z: f32,
+    current_yaw_deg: f32,
 
     /// Parameters for dynamic updates
     param_enabled: ParameterId,
@@ -209,6 +279,7 @@ pub struct XtcPlugin {
     param_speaker_angle: ParameterId,
     param_head_offset_x: ParameterId,
     param_head_offset_z: ParameterId,
+    param_head_yaw: ParameterId,
 }
 
 impl XtcPlugin {
@@ -248,13 +319,13 @@ impl XtcPlugin {
         // Combined scale factor: COLA normalization (2/3) / FFT size
         let output_scale = (2.0 / 3.0) / fft_size as f32;
 
-        // Compute frequency-domain filters (only need 2 due to symmetry)
+        // Compute frequency-domain filters
         let num_bins = fft_size / 2 + 1;
-        let (filter_ll, filter_lr) = compute_xtc_filters_symmetric(&params, sample_rate, num_bins);
-        let filters = Arc::new(RwLock::new(XtcFilters {
-            filter_ll,
-            filter_lr,
-        }));
+        let filters = compute_xtc_filters_full(&params, sample_rate, num_bins);
+        let filters = Arc::new(RwLock::new(filters));
+
+        // Initialize smoothers with the smoothing time constant (convert s to ms)
+        let smooth_time_ms = params.head_tracking_smooth_s * 1000.0;
 
         Ok(Self {
             fft_size,
@@ -280,13 +351,20 @@ impl XtcPlugin {
             ifft_input: vec![Complex::new(0.0, 0.0); num_bins],
             ifft_output: vec![0.0; fft_size],
             filters,
-            smooth_offset_x: params.head_offset_x,
-            smooth_offset_z: params.head_offset_z,
+            prev_filters: None,
+            crossfade_progress: 1.0, // Start fully faded to current
+            smoother_offset_x: Smoother::new(params.head_offset_x, smooth_time_ms, sample_rate),
+            smoother_offset_z: Smoother::new(params.head_offset_z, smooth_time_ms, sample_rate),
+            smoother_yaw: Smoother::new(params.head_yaw_deg, smooth_time_ms, sample_rate),
+            current_offset_x: params.head_offset_x,
+            current_offset_z: params.head_offset_z,
+            current_yaw_deg: params.head_yaw_deg,
             param_enabled: ParameterId::from("enabled"),
             param_distance: ParameterId::from("distance_m"),
             param_speaker_angle: ParameterId::from("speaker_angle_deg"),
             param_head_offset_x: ParameterId::from("head_offset_x"),
             param_head_offset_z: ParameterId::from("head_offset_z"),
+            param_head_yaw: ParameterId::from("head_yaw_deg"),
         })
     }
 
@@ -295,27 +373,32 @@ impl XtcPlugin {
         Self::new(params, sample_rate)
     }
 
-    /// Recompute filters when parameters change (Asynchronous)
+    /// Recompute filters when parameters change
+    /// In Block mode: stores old filters for crossfade
+    /// In Sample mode: updates immediately (should only be called when threshold exceeded)
     fn update_filters(&mut self, sync: bool) {
         let num_bins = self.fft_size / 2 + 1;
         let params = self.params.clone();
         let sample_rate = self.sample_rate;
+
+        // In Block mode, store old filters for crossfading
+        if self.params.head_tracking_smoothing_mode == SmoothingMode::Block && self.crossfade_progress >= 1.0 {
+            self.prev_filters = Some(self.filters.clone());
+            self.crossfade_progress = 0.0;
+        }
+
         let shared_filters = self.filters.clone();
 
         if sync {
-            let (filter_ll, filter_lr) =
-                compute_xtc_filters_symmetric(&params, sample_rate, num_bins);
+            let new_filters = compute_xtc_filters_full(&params, sample_rate, num_bins);
             let mut lock = shared_filters.write();
-            lock.filter_ll = filter_ll;
-            lock.filter_lr = filter_lr;
+            *lock = new_filters;
         } else {
             // Asynchronous update using rayon
             rayon::spawn(move || {
-                let (filter_ll, filter_lr) =
-                    compute_xtc_filters_symmetric(&params, sample_rate, num_bins);
+                let new_filters = compute_xtc_filters_full(&params, sample_rate, num_bins);
                 let mut lock = shared_filters.write();
-                lock.filter_ll = filter_ll;
-                lock.filter_lr = filter_lr;
+                *lock = new_filters;
             });
         }
     }
@@ -346,6 +429,10 @@ impl XtcPlugin {
             .process(&mut self.fft_buffer, &mut self.fft_output_r)
             .expect("FFT processing failed");
 
+        // Get filters for right channel (use symmetric if not asymmetric)
+        let filter_rl = filters.filter_rl.as_ref().unwrap_or(&filters.filter_lr);
+        let filter_rr = filters.filter_rr.as_ref().unwrap_or(&filters.filter_ll);
+
         // Apply XTC filter for LEFT output using SIMD:
         // L_out = filter_ll * L_in + filter_lr * R_in
         complex_mul_simd(&mut self.ifft_input, &self.fft_output_l, &filters.filter_ll);
@@ -362,17 +449,19 @@ impl XtcPlugin {
             .expect("IFFT processing failed");
 
         // Overlap-add to left accumulator (SIMD optimized)
+        // Apply crossfade if in transition
+        let scale = self.output_scale;
         window_mul_add_simd(
             &mut self.output_accum_l[..self.fft_size],
             &self.ifft_output,
             &self.analysis_window,
-            self.output_scale,
+            scale,
         );
 
         // Apply XTC filter for RIGHT output using SIMD:
-        // R_out = filter_lr * L_in + filter_ll * R_in (symmetric)
-        complex_mul_simd(&mut self.ifft_input, &self.fft_output_l, &filters.filter_lr);
-        complex_mul_add_simd(&mut self.ifft_input, &self.fft_output_r, &filters.filter_ll);
+        // R_out = filter_rl * L_in + filter_rr * R_in
+        complex_mul_simd(&mut self.ifft_input, &self.fft_output_l, filter_rl);
+        complex_mul_add_simd(&mut self.ifft_input, &self.fft_output_r, filter_rr);
 
         // Ensure DC and Nyquist bins are real
         self.ifft_input[0].im = 0.0;
@@ -388,8 +477,21 @@ impl XtcPlugin {
             &mut self.output_accum_r[..self.fft_size],
             &self.ifft_output,
             &self.analysis_window,
-            self.output_scale,
+            scale,
         );
+
+        // Drop filter lock before updating crossfade
+        drop(filters);
+
+        // Update crossfade progress (Block mode)
+        if self.crossfade_progress < 1.0 {
+            let smooth_samples = self.params.head_tracking_smooth_s * self.sample_rate as f32;
+            let progress_per_hop = self.hop_size as f32 / smooth_samples;
+            self.crossfade_progress = (self.crossfade_progress + progress_per_hop).min(1.0);
+            if self.crossfade_progress >= 1.0 {
+                self.prev_filters = None; // Release old filters
+            }
+        }
 
         // Mark hop_size more samples as available
         self.output_available += self.hop_size;
@@ -421,8 +523,8 @@ impl XtcPlugin {
 
 impl Plugin for XtcPlugin {
     fn info(&self) -> PluginInfo {
-        PluginInfo::new("Crosstalk Cancellation (XTC)", "1.1.0", "SotF").with_description(format!(
-            "BACCH-style crosstalk cancellation (Async) - FFT size: {}, speakers at {}° and {}m",
+        PluginInfo::new("Crosstalk Cancellation (XTC)", "1.2.0", "SotF").with_description(format!(
+            "Crosstalk cancellation (Async) - FFT size: {}, speakers at {}° and {}m",
             self.fft_size, self.params.speaker_angle_deg, self.params.distance_m
         ))
     }
@@ -476,6 +578,15 @@ impl Plugin for XtcPlugin {
             )
             .with_group("Head Tracking")
             .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "head_yaw_deg",
+                "Head Yaw (deg)",
+                self.params.head_yaw_deg,
+                -90.0,
+                90.0,
+            )
+            .with_group("Head Tracking")
+            .with_importance(ParameterImportance::Useful),
         ]
     }
 
@@ -516,6 +627,13 @@ impl Plugin for XtcPlugin {
             } else {
                 return Err("head_offset_z parameter must be float".to_string());
             }
+        } else if id == self.param_head_yaw {
+            if let ParameterValue::Float(v) = value {
+                self.params.head_yaw_deg = v.max(-90.0).min(90.0);
+                needs_filter_update = true;
+            } else {
+                return Err("head_yaw_deg parameter must be float".to_string());
+            }
         } else {
             return Err(format!("Unknown parameter: {:?}", id));
         }
@@ -538,6 +656,8 @@ impl Plugin for XtcPlugin {
             Some(ParameterValue::Float(self.params.head_offset_x))
         } else if id == &self.param_head_offset_z {
             Some(ParameterValue::Float(self.params.head_offset_z))
+        } else if id == &self.param_head_yaw {
+            Some(ParameterValue::Float(self.params.head_yaw_deg))
         } else {
             None
         }
@@ -557,6 +677,18 @@ impl Plugin for XtcPlugin {
         self.output_accum_r.fill(0.0);
         self.input_fill = 0;
         self.output_available = 0;
+
+        // Reset smoothers to current parameter values
+        self.smoother_offset_x.reset(self.params.head_offset_x);
+        self.smoother_offset_z.reset(self.params.head_offset_z);
+        self.smoother_yaw.reset(self.params.head_yaw_deg);
+        self.current_offset_x = self.params.head_offset_x;
+        self.current_offset_z = self.params.head_offset_z;
+        self.current_yaw_deg = self.params.head_yaw_deg;
+
+        // Reset crossfade state
+        self.prev_filters = None;
+        self.crossfade_progress = 1.0;
     }
 
     fn process(
@@ -629,10 +761,21 @@ impl Plugin for XtcPlugin {
             // Copy available output to output buffer
             let samples_to_output = self.output_available.min(num_frames - out_pos);
             if samples_to_output > 0 {
-                // Interleave output directly
+                // Interleave output directly with denormal flushing
                 for i in 0..samples_to_output {
-                    output[(out_pos + i) * 2] = self.output_accum_l[i];
-                    output[(out_pos + i) * 2 + 1] = self.output_accum_r[i];
+                    let mut sample_l = self.output_accum_l[i];
+                    let mut sample_r = self.output_accum_r[i];
+
+                    // Flush denormals to zero to prevent CPU spikes and audio glitches
+                    if sample_l.abs() < 1e-30 {
+                        sample_l = 0.0;
+                    }
+                    if sample_r.abs() < 1e-30 {
+                        sample_r = 0.0;
+                    }
+
+                    output[(out_pos + i) * 2] = sample_l;
+                    output[(out_pos + i) * 2 + 1] = sample_r;
                 }
                 out_pos += samples_to_output;
 
@@ -678,7 +821,212 @@ impl Plugin for XtcPlugin {
     }
 }
 
-// ============================================================================ // Crosstalk Cancellation Filter Computation // ============================================================================
+
+// ============================================================================
+// Crosstalk Cancellation Filter Computation
+// ============================================================================
+
+/// Speed of sound at 20°C in m/s
+const SPEED_OF_SOUND: f32 = 343.0;
+
+/// Compute crosstalk cancellation filters in frequency domain
+///
+/// This is the main filter computation function that handles:
+/// - Symmetric case (yaw = 0): returns None for filter_rl/filter_rr
+/// - Asymmetric case (yaw != 0): returns full 4-filter matrix
+///
+/// Uses improved Woodworth head shadowing model for better accuracy.
+fn compute_xtc_filters_full(
+    params: &XtcPluginParams,
+    sample_rate: u32,
+    num_bins: usize,
+) -> XtcFilters {
+    let yaw_rad = params.head_yaw_deg * PI / 180.0;
+    let is_symmetric = yaw_rad.abs() < 0.001; // ~0.06 degrees threshold
+
+    if is_symmetric {
+        // Use optimized symmetric computation
+        let (filter_ll, filter_lr) = compute_xtc_filters_symmetric(params, sample_rate, num_bins);
+        XtcFilters {
+            filter_ll,
+            filter_lr,
+            filter_rl: None,
+            filter_rr: None,
+        }
+    } else {
+        // Full asymmetric computation for yaw != 0
+        compute_xtc_filters_asymmetric(params, sample_rate, num_bins)
+    }
+}
+
+/// Compute asymmetric filters for non-zero yaw angle
+fn compute_xtc_filters_asymmetric(
+    params: &XtcPluginParams,
+    sample_rate: u32,
+    num_bins: usize,
+) -> XtcFilters {
+    let mut filter_ll = Vec::with_capacity(num_bins);
+    let mut filter_lr = Vec::with_capacity(num_bins);
+    let mut filter_rl = Vec::with_capacity(num_bins);
+    let mut filter_rr = Vec::with_capacity(num_bins);
+
+    // Geometry
+    let d = params.distance_m + params.head_offset_z;
+    let theta_rad = params.speaker_angle_deg * PI / 180.0;
+    let yaw_rad = params.head_yaw_deg * PI / 180.0;
+    let a = params.head_radius_m;
+    let x_offset = params.head_offset_x;
+
+    // Effective speaker angles relative to rotated head
+    let theta_left = theta_rad + yaw_rad;  // Left speaker angle
+    let theta_right = theta_rad - yaw_rad; // Right speaker angle
+
+    // Left ear paths
+    let l_left_ipsi = compute_path_length(d, theta_left, -x_offset);
+    let l_left_contra = compute_path_length(d, theta_right, -x_offset) + PI * a;
+
+    // Right ear paths
+    let r_right_ipsi = compute_path_length(d, theta_right, x_offset);
+    let r_right_contra = compute_path_length(d, theta_left, x_offset) + PI * a;
+
+    // Time differences
+    let delta_t_left = (l_left_contra - l_left_ipsi) / SPEED_OF_SOUND;
+    let delta_t_right = (r_right_contra - r_right_ipsi) / SPEED_OF_SOUND;
+
+    // Angles for head shadowing (contralateral path)
+    let angle_left_contra = theta_right.abs();
+    let angle_right_contra = theta_left.abs();
+
+    for bin in 0..num_bins {
+        let freq = bin as f32 * sample_rate as f32 / (2.0 * (num_bins - 1) as f32);
+
+        // Left ear transfer functions
+        let h_ll_ipsi = Complex::new(1.0, 0.0);
+        let g_ll = head_shadowing_woodworth(freq, angle_left_contra, a);
+        let phase_ll = -2.0 * PI * freq * delta_t_left;
+        let h_ll_contra = Complex::new(g_ll * phase_ll.cos(), g_ll * phase_ll.sin());
+
+        // Right ear transfer functions
+        let h_rr_ipsi = Complex::new(1.0, 0.0);
+        let g_rr = head_shadowing_woodworth(freq, angle_right_contra, a);
+        let phase_rr = -2.0 * PI * freq * delta_t_right;
+        let h_rr_contra = Complex::new(g_rr * phase_rr.cos(), g_rr * phase_rr.sin());
+
+        let beta = compute_beta_smooth(freq, params);
+
+        // Compute 2x2 filter matrices for each ear independently
+        // Left ear: L_out = w_ll * L_in + w_lr * R_in
+        let (w_ll, w_lr) = compute_2x2_inverse(h_ll_ipsi, h_ll_contra, beta);
+        // Right ear: R_out = w_rl * L_in + w_rr * R_in
+        let (w_rr, w_rl) = compute_2x2_inverse(h_rr_ipsi, h_rr_contra, beta);
+
+        filter_ll.push(w_ll);
+        filter_lr.push(w_lr);
+        filter_rl.push(w_rl);
+        filter_rr.push(w_rr);
+    }
+
+    XtcFilters {
+        filter_ll,
+        filter_lr,
+        filter_rl: Some(filter_rl),
+        filter_rr: Some(filter_rr),
+    }
+}
+
+/// Compute path length from speaker at angle theta to ear with offset
+#[inline]
+fn compute_path_length(distance: f32, theta: f32, ear_offset: f32) -> f32 {
+    ((distance * theta.sin() + ear_offset).powi(2) + (distance * theta.cos()).powi(2)).sqrt()
+}
+
+/// Compute 2x2 inverse filter for one ear
+/// Returns (w_ipsi, w_contra) filter coefficients
+#[inline]
+fn compute_2x2_inverse(
+    h_ipsi: Complex<f32>,
+    h_contra: Complex<f32>,
+    beta: f32,
+) -> (Complex<f32>, Complex<f32>) {
+    let h_ipsi_mag_sq = h_ipsi.norm_sqr();
+    let h_contra_mag_sq = h_contra.norm_sqr();
+    let cross_term = (h_ipsi * h_contra.conj()).re * 2.0;
+
+    let diag = h_ipsi_mag_sq + h_contra_mag_sq + beta;
+    let off_diag = cross_term;
+
+    let det = diag * diag - off_diag * off_diag;
+
+    if det.abs() < 1e-10 {
+        return (Complex::new(1.0, 0.0), Complex::new(0.0, 0.0));
+    }
+
+    let inv_diag = diag / det;
+    let inv_off_diag = -off_diag / det;
+
+    let h_ipsi_conj = h_ipsi.conj();
+    let h_contra_conj = h_contra.conj();
+
+    let w_ipsi = h_ipsi_conj * inv_diag + h_contra_conj * inv_off_diag;
+    let w_contra = h_ipsi_conj * inv_off_diag + h_contra_conj * inv_diag;
+
+    (w_ipsi, w_contra)
+}
+
+/// Woodworth-Schlosberg head shadowing model
+///
+/// Provides frequency and angle dependent interaural level difference (ILD)
+/// based on spherical head acoustics.
+fn head_shadowing_woodworth(freq: f32, angle_rad: f32, head_radius: f32) -> f32 {
+    if freq <= 0.0 {
+        return 1.0;
+    }
+
+    // Wave number times head radius (ka)
+    // This determines the diffraction regime
+    let ka = 2.0 * PI * freq * head_radius / SPEED_OF_SOUND;
+    let theta = angle_rad.abs();
+
+    if ka < 0.5 {
+        // Low frequency: sound diffracts fully around head
+        // Minimal ILD, slight angle dependence
+        1.0 - 0.05 * ka * theta.sin()
+    } else if ka < 2.0 {
+        // Transition region: gradual shadowing
+        let t = (ka - 0.5) / 1.5; // 0 to 1 over transition
+        let shadow_factor = (1.0 + theta.cos()) / 2.0;
+        let low_freq = 1.0 - 0.05 * ka * theta.sin();
+        let high_freq = shadow_factor.powf(0.5 + t);
+        low_freq * (1.0 - t) + high_freq * t
+    } else {
+        // High frequency: significant head shadow
+        // Shadow increases with angle from direct path
+        let shadow_factor = (1.0 + theta.cos()) / 2.0; // 1 at 0°, 0 at 180°
+        let exponent = (ka / 4.0).min(3.0); // Cap exponent for stability
+        shadow_factor.powf(exponent)
+    }
+}
+
+/// Compute frequency-dependent regularization with smooth sigmoid transitions
+fn compute_beta_smooth(freq: f32, params: &XtcPluginParams) -> f32 {
+    let base = params.beta_base;
+    let low_boost = params.beta_low_freq_boost;
+    let high_boost = params.beta_high_freq_boost;
+
+    // Smooth low-frequency boost (sigmoid transition around 200Hz)
+    let low_freq_factor = 1.0 + (low_boost - 1.0) * sigmoid_smooth(200.0 - freq, 50.0);
+
+    // Smooth high-frequency boost (sigmoid transition around 8kHz)
+    let high_freq_factor = 1.0 + (high_boost - 1.0) * sigmoid_smooth(freq - 8000.0, 1000.0);
+
+    base * low_freq_factor * high_freq_factor
+}
+
+/// Smooth sigmoid function for gradual transitions
+#[inline]
+fn sigmoid_smooth(x: f32, width: f32) -> f32 {
+    1.0 / (1.0 + (-x / width).exp())
+}
 
 /// Compute crosstalk cancellation filters in frequency domain (symmetric version)
 ///
@@ -696,9 +1044,6 @@ fn compute_xtc_filters_symmetric(
     let mut filter_ll = Vec::with_capacity(num_bins);
     let mut filter_lr = Vec::with_capacity(num_bins);
 
-    // Constants
-    let speed_of_sound = 343.0; // m/s at 20°C
-
     // Geometry with head tracking offsets
     let d = params.distance_m + params.head_offset_z;
     let theta_rad = params.speaker_angle_deg * PI / 180.0;
@@ -706,12 +1051,11 @@ fn compute_xtc_filters_symmetric(
     let x_offset = params.head_offset_x;
 
     // Compute path lengths (considering head offset)
-    let l_ipsi = ((d * theta_rad.sin() - x_offset).powi(2) + (d * theta_rad.cos()).powi(2)).sqrt();
-    let l_contra =
-        ((d * theta_rad.sin() + x_offset).powi(2) + (d * theta_rad.cos()).powi(2)).sqrt() + PI * a; // Add head shadow path
+    let l_ipsi = compute_path_length(d, theta_rad, -x_offset);
+    let l_contra = compute_path_length(d, theta_rad, x_offset) + PI * a; // Add head shadow path
 
     // Time difference
-    let delta_t = (l_contra - l_ipsi) / speed_of_sound;
+    let delta_t = (l_contra - l_ipsi) / SPEED_OF_SOUND;
 
     // Process each frequency bin
     for bin in 0..num_bins {
@@ -720,42 +1064,16 @@ fn compute_xtc_filters_symmetric(
         // Transfer function for ipsilateral path (reference = 1)
         let h_ipsi = Complex::new(1.0, 0.0);
 
-        // Transfer function for contralateral path
-        let g = head_shadowing_filter(freq, params);
+        // Transfer function for contralateral path using Woodworth model
+        let g = head_shadowing_woodworth(freq, theta_rad, a);
         let phase = -2.0 * PI * freq * delta_t;
         let h_contra = Complex::new(g * phase.cos(), g * phase.sin());
 
-        // Frequency-dependent regularization
-        let beta = compute_beta(freq, params);
+        // Frequency-dependent regularization with smooth transitions
+        let beta = compute_beta_smooth(freq, params);
 
-        // C^H * C for symmetric case
-        let h_ipsi_mag_sq = h_ipsi.norm_sqr();
-        let h_contra_mag_sq = h_contra.norm_sqr();
-        let cross_term = (h_ipsi * h_contra.conj()).re * 2.0;
-
-        let diag = h_ipsi_mag_sq + h_contra_mag_sq + beta;
-        let off_diag = cross_term;
-
-        // Determinant of (C^H * C + β*I)
-        let det = diag * diag - off_diag * off_diag;
-
-        if det.abs() < 1e-10 {
-            // Singular matrix - use identity (bypass)
-            filter_ll.push(Complex::new(1.0, 0.0));
-            filter_lr.push(Complex::new(0.0, 0.0));
-            continue;
-        }
-
-        // Inverse of (C^H * C + β*I)
-        let inv_diag = diag / det;
-        let inv_off_diag = -off_diag / det;
-
-        // Compute W matrix elements
-        let h_ipsi_conj = h_ipsi.conj();
-        let h_contra_conj = h_contra.conj();
-
-        let w_ll = h_ipsi_conj * inv_diag + h_contra_conj * inv_off_diag;
-        let w_lr = h_ipsi_conj * inv_off_diag + h_contra_conj * inv_diag;
+        // Use shared 2x2 inverse computation
+        let (w_ll, w_lr) = compute_2x2_inverse(h_ipsi, h_contra, beta);
 
         filter_ll.push(w_ll);
         filter_lr.push(w_lr);
@@ -924,7 +1242,10 @@ fn compute_beta(freq: f32, params: &XtcPluginParams) -> f32 {
     beta_base * low_freq_factor * high_freq_factor
 }
 
-// ============================================================================ // Tests // ============================================================================
+
+// ============================================================================
+// Tests
+// ============================================================================
 
 #[cfg(test)]
 mod tests {
@@ -1240,6 +1561,166 @@ mod tests {
             mag_rl < 1.5,
             "filter_rl magnitude {} at 1kHz is too large",
             mag_rl
+        );
+    }
+
+    /// Test that denormal numbers are flushed to zero
+    #[test]
+    fn test_xtc_denormal_flushing() {
+        let params = XtcPluginParams::default();
+        let mut plugin = XtcPlugin::new(params, 48000).unwrap();
+        plugin.initialize(48000).unwrap();
+
+        // Create very low amplitude input (near denormal range)
+        let num_frames = 4096;
+        let mut input = vec![1e-35_f32; num_frames * 2];
+        // Add a tiny bit of signal variation
+        for i in 0..num_frames {
+            input[i * 2] = 1e-35 * ((i as f32 * 0.01).sin() + 1.0);
+            input[i * 2 + 1] = 1e-35 * ((i as f32 * 0.01).cos() + 1.0);
+        }
+        let mut output = vec![0.0_f32; num_frames * 2];
+
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+
+        plugin.process(&input, &mut output, &context).unwrap();
+
+        // Count denormal samples (non-zero but below normalized threshold)
+        let mut denormal_count = 0;
+        for sample in output.iter() {
+            let abs_val = sample.abs();
+            if abs_val > 0.0 && abs_val < 1e-30 {
+                denormal_count += 1;
+            }
+        }
+
+        // With proper denormal flushing, there should be NO denormal samples
+        assert_eq!(
+            denormal_count, 0,
+            "Found {} denormal samples. Denormal flushing is not working correctly.",
+            denormal_count
+        );
+    }
+
+    /// Test yaw angle creates asymmetric filters
+    #[test]
+    fn test_yaw_angle_asymmetry() {
+        let mut params = XtcPluginParams::default();
+        params.head_yaw_deg = 15.0; // 15 degrees yaw
+        let num_bins = 513;
+
+        let filters = compute_xtc_filters_full(&params, 48000, num_bins);
+
+        // With yaw != 0, we should have asymmetric filters (filter_rl and filter_rr are Some)
+        assert!(
+            filters.filter_rl.is_some(),
+            "filter_rl should be Some when yaw != 0"
+        );
+        assert!(
+            filters.filter_rr.is_some(),
+            "filter_rr should be Some when yaw != 0"
+        );
+
+        let filter_rl = filters.filter_rl.as_ref().unwrap();
+        let filter_rr = filters.filter_rr.as_ref().unwrap();
+
+        // Check that filters are actually asymmetric at mid frequencies
+        let bin_1khz = (1000.0 * 1024.0 / 48000.0) as usize;
+
+        // filter_lr and filter_rl should be different with yaw
+        let diff_cross = (filters.filter_lr[bin_1khz] - filter_rl[bin_1khz]).norm();
+        assert!(
+            diff_cross > 0.001,
+            "Cross filters should be asymmetric with yaw, diff = {}",
+            diff_cross
+        );
+
+        // filter_ll and filter_rr should also be different with yaw
+        let diff_diag = (filters.filter_ll[bin_1khz] - filter_rr[bin_1khz]).norm();
+        assert!(
+            diff_diag > 0.001,
+            "Diagonal filters should be asymmetric with yaw, diff = {}",
+            diff_diag
+        );
+    }
+
+    /// Test symmetric case (yaw = 0) uses optimized 2-filter version
+    #[test]
+    fn test_yaw_zero_symmetric() {
+        let params = XtcPluginParams::default(); // yaw = 0
+        let num_bins = 513;
+
+        let filters = compute_xtc_filters_full(&params, 48000, num_bins);
+
+        // With yaw = 0, filters should be symmetric (filter_rl and filter_rr are None)
+        assert!(
+            filters.filter_rl.is_none(),
+            "filter_rl should be None when yaw = 0"
+        );
+        assert!(
+            filters.filter_rr.is_none(),
+            "filter_rr should be None when yaw = 0"
+        );
+    }
+
+    /// Test Woodworth head shadowing model
+    #[test]
+    fn test_woodworth_head_shadowing() {
+        let head_radius = 0.0875;
+
+        // At low frequencies, shadowing should be minimal
+        let g_low = head_shadowing_woodworth(100.0, 0.5, head_radius);
+        assert!(
+            g_low > 0.95,
+            "Low frequency shadowing should be minimal, got {}",
+            g_low
+        );
+
+        // At high frequencies, shadowing should be significant
+        let g_high = head_shadowing_woodworth(8000.0, 0.5, head_radius);
+        assert!(
+            g_high < 0.9,
+            "High frequency shadowing should be significant, got {}",
+            g_high
+        );
+
+        // At 0 angle, shadowing should be minimal even at high frequencies
+        let g_frontal = head_shadowing_woodworth(8000.0, 0.0, head_radius);
+        assert!(
+            g_frontal > g_high,
+            "Frontal angle should have less shadowing than side"
+        );
+    }
+
+    /// Test smooth beta transitions
+    #[test]
+    fn test_smooth_beta_transitions() {
+        let params = XtcPluginParams::default();
+
+        // Test transition around 200Hz is smooth
+        let beta_150 = compute_beta_smooth(150.0, &params);
+        let beta_200 = compute_beta_smooth(200.0, &params);
+        let beta_250 = compute_beta_smooth(250.0, &params);
+
+        // Should be monotonically decreasing
+        assert!(
+            beta_150 > beta_200,
+            "Beta should decrease from 150Hz to 200Hz"
+        );
+        assert!(
+            beta_200 > beta_250,
+            "Beta should decrease from 200Hz to 250Hz"
+        );
+
+        // Transition should be smooth (no large jumps)
+        let ratio_1 = beta_150 / beta_200;
+        let ratio_2 = beta_200 / beta_250;
+        assert!(
+            (ratio_1 - ratio_2).abs() < 1.0,
+            "Beta transition should be smooth around 200Hz"
         );
     }
 }
