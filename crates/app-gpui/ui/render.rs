@@ -33,6 +33,38 @@ impl Render for PlayerView {
                         crate::app::LayoutMode::Compact
                     };
 
+                    // Update 3-panel layout orientation based on aspect ratio
+                    state.app.layout_orientation = if window_width > window_height {
+                        crate::app::LayoutOrientation::Horizontal
+                    } else {
+                        crate::app::LayoutOrientation::Vertical
+                    };
+
+                    // Determine rack display mode based on available space
+                    let rack_dimension = match state.app.layout_orientation {
+                        crate::app::LayoutOrientation::Horizontal => {
+                            window_width * state.app.rack_h_ratio
+                        }
+                        crate::app::LayoutOrientation::Vertical => {
+                            window_height * state.app.rack_v_ratio
+                        }
+                    };
+                    state.app.rack_display_mode = if state.app.rack_panel_collapsed {
+                        crate::app::RackDisplayMode::Collapsed
+                    } else if rack_dimension < 100.0 {
+                        crate::app::RackDisplayMode::Collapsed
+                    } else if rack_dimension < 200.0 {
+                        crate::app::RackDisplayMode::Mini
+                    } else {
+                        crate::app::RackDisplayMode::Full
+                    };
+
+                    // Hide queue meters when rack is visible to avoid duplicate meters
+                    state.app.hide_queue_meters_for_rack = matches!(
+                        state.app.rack_display_mode,
+                        crate::app::RackDisplayMode::Full | crate::app::RackDisplayMode::Mini
+                    );
+
                     // Recalculate pagination based on new window size
                     state.app.recalculate_pagination(false);
                 });
@@ -72,7 +104,7 @@ impl Render for PlayerView {
             self.last_saved_window_bounds = Some(window_bounds);
         }
 
-        let (current_screen, input_mode, theme, layout_mode, active_menu) = {
+        let (current_screen, input_mode, theme, layout_mode, active_menu, font_scale) = {
             let state = self.state.read(cx);
             (
                 state.app.ui_state.current_screen,
@@ -80,8 +112,13 @@ impl Render for PlayerView {
                 state.app.ui_state.theme.clone(),
                 state.app.ui_state.layout_mode,
                 state.app.ui_state.active_menu,
+                state.app.ui_state.font_scale,
             )
         };
+
+        // Apply font scale to the window's rem size
+        // Default rem size is 16px, scale it based on user preference
+        window.set_rem_size(px(16.0 * font_scale));
 
         // Keep gpui-ui-kit global theme in sync with app theme so components get consistent defaults.
         // This allows builder overrides but ensures out-of-the-box colors match the app theme.
@@ -132,6 +169,10 @@ impl Render for PlayerView {
             .on_action(cx.listener(Self::quit_app))
             .on_action(cx.listener(Self::cycle_theme))
             .on_action(cx.listener(Self::cycle_language))
+            // Font size actions
+            .on_action(cx.listener(Self::increase_font_size))
+            .on_action(cx.listener(Self::decrease_font_size))
+            .on_action(cx.listener(Self::reset_font_size))
             .on_action(cx.listener(Self::toggle_search))
             .on_action(cx.listener(Self::toggle_library_view))
             .on_action(cx.listener(Self::toggle_help))
@@ -370,17 +411,27 @@ impl PlayerView {
             Screen::HeadphoneEq => self.render_headphone_eq_screen(cx).into_any_element(),
             Screen::Spinorama => self.render_spinorama_eq_screen(cx).into_any_element(),
             Screen::PluginGraph => self.render_plugin_graph_screen(cx).into_any_element(),
-            // Library/Queue differ based on layout mode
-            Screen::Library | Screen::Queue => match layout_mode {
-                crate::app::LayoutMode::Expanded => self.render_split_view(cx).into_any_element(),
-                crate::app::LayoutMode::Compact => {
-                    if screen == Screen::Library {
-                        self.render_library_screen(cx).into_any_element()
-                    } else {
-                        self.render_queue_screen(cx).into_any_element()
+            // Library/Queue use 3-panel layout in Expanded mode, individual screens in Compact
+            Screen::Library | Screen::Queue => {
+                let layout_orientation = self.state.read(cx).app.layout_orientation;
+                match layout_mode {
+                    crate::app::LayoutMode::Expanded => match layout_orientation {
+                        crate::app::LayoutOrientation::Horizontal => {
+                            self.render_horizontal_3panel(cx).into_any_element()
+                        }
+                        crate::app::LayoutOrientation::Vertical => {
+                            self.render_vertical_3panel(cx).into_any_element()
+                        }
+                    },
+                    crate::app::LayoutMode::Compact => {
+                        if screen == Screen::Library {
+                            self.render_library_screen(cx).into_any_element()
+                        } else {
+                            self.render_queue_screen(cx).into_any_element()
+                        }
                     }
                 }
-            },
+            }
         }
     }
 }

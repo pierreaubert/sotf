@@ -218,6 +218,7 @@ pub struct SpeakerOptimizationResult {
     pub filter_response: Vec<f64>,
     pub error_curve: Vec<f64>,
     pub corrected_curve: Vec<f64>,
+    pub normalized_curve: Vec<f64>,
     pub individual_filter_responses: Vec<Vec<f64>>,
     pub output_path: String,
 
@@ -270,12 +271,13 @@ impl From<SpeakerOptResult> for SpeakerOptimizationResult {
         Self {
             biquads: result.biquads,
             frequencies: result.curves.frequencies,
-            input_curve: result.curves.input_curve,
+            input_curve: result.curves.input_curve.clone(),
             target_curve: result.curves.target_curve,
             deviation_curve: result.curves.deviation_curve,
             filter_response: result.curves.filter_response,
             error_curve: result.curves.error_curve,
             corrected_curve: result.curves.corrected_curve,
+            normalized_curve: result.curves.input_curve.clone(),
             individual_filter_responses: result.curves.individual_filter_responses,
             output_path: String::new(),
             on_axis_curve: on_axis,
@@ -567,12 +569,13 @@ fn optimize_from_curve(
     Ok(SpeakerOptimizationResult {
         biquads,
         frequencies: curves.frequencies,
-        input_curve: curves.input_curve,
+        input_curve: curves.input_curve.clone(),
         target_curve: curves.target_curve,
         deviation_curve: curves.deviation_curve,
         filter_response: curves.filter_response,
         error_curve: curves.error_curve,
         corrected_curve: curves.corrected_curve,
+        normalized_curve: curves.input_curve,
         individual_filter_responses: curves.individual_filter_responses,
         output_path: String::new(),
         on_axis_curve: vec![0.0; frequencies.len()],
@@ -690,6 +693,7 @@ fn optimize_multidriver(
         filter_response: vec![0.0; n],
         error_curve: vec![0.0; n],
         corrected_curve: vec![0.0; n],
+        normalized_curve: vec![0.0; n],
         individual_filter_responses: Vec::new(),
         output_path: String::new(),
         on_axis_curve: vec![0.0; n],
@@ -766,6 +770,7 @@ fn optimize_multisub(
         filter_response: vec![0.0; n],
         error_curve: vec![0.0; n],
         corrected_curve: vec![0.0; n],
+        normalized_curve: vec![0.0; n],
         individual_filter_responses: Vec::new(),
         output_path: String::new(),
         on_axis_curve: vec![0.0; n],
@@ -778,7 +783,7 @@ fn optimize_multisub(
         optimization_history: vec![(0, result.pre_objective), (max_iter, result.post_objective)],
         initial_loss: result.pre_objective,
         final_loss: result.post_objective,
-        crossover_freqs: None, // Multi-sub doesn't have crossovers
+        crossover_freqs: None,
         driver_gains: Some(result.gains),
         driver_delays: Some(result.delays),
     })
@@ -862,6 +867,7 @@ fn optimize_dba(
         filter_response: vec![0.0; n],
         error_curve: vec![0.0; n],
         corrected_curve: vec![0.0; n],
+        normalized_curve: vec![0.0; n],
         individual_filter_responses: Vec::new(),
         output_path: String::new(),
         on_axis_curve: vec![0.0; n],
@@ -978,6 +984,7 @@ fn generate_dummy_result() -> SpeakerOptimizationResult {
         filter_response: vec![0.0; n],
         error_curve: input_curve.clone(),
         corrected_curve: input_curve.clone(),
+        normalized_curve: input_curve.clone(),
         individual_filter_responses: Vec::new(),
         output_path: "/tmp/speaker_eq.txt".to_string(),
         on_axis_curve: input_curve.clone(),
@@ -1262,6 +1269,8 @@ mod tests {
         let result = generate_dummy_result();
         assert_eq!(result.frequencies.len(), 200);
         assert_eq!(result.input_curve.len(), 200);
+        assert_eq!(result.normalized_curve.len(), 200);
+        assert_eq!(result.input_curve, result.normalized_curve);
         assert_eq!(result.target_curve.len(), 200);
         assert!(!result.optimization_history.is_empty());
         assert!(result.initial_loss > result.final_loss);
@@ -1290,6 +1299,8 @@ mod tests {
         };
         let result = SpeakerOptimizationResult::from(autoeq_result);
         assert_eq!(result.frequencies.len(), 3);
+        assert_eq!(result.normalized_curve.len(), 3);
+        assert_eq!(result.input_curve, result.normalized_curve);
         assert!((result.initial_loss - 1.0).abs() < 0.001);
         assert!((result.final_loss - 0.1).abs() < 0.001);
     }

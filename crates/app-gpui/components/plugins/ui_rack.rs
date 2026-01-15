@@ -735,7 +735,7 @@ impl PlayerView {
                                                 } else {
                                                     theme_c.error
                                                 })
-                                                .text_size(px(8.0))
+                                                .text_size(rems(0.5))
                                                 .text_color(theme_c.text_on_accent)
                                                 .child(if enabled { "●" } else { "○" }),
                                         )
@@ -866,7 +866,7 @@ impl PlayerView {
 
     /// Render a side level meter group for the detail panel
     /// Matches the style of the queue screen meters with vertical dB legend
-    fn render_side_meter(
+    pub fn render_side_meter(
         &self,
         cx: &mut Context<Self>,
         channels: usize,
@@ -1028,7 +1028,7 @@ impl PlayerView {
                         };
 
                         let label = div()
-                            .text_size(px(9.0))
+                            .text_size(rems(0.5625))
                             .text_color(theme.text_muted)
                             .mt(label_offset)
                             .child(format!("{}", db));

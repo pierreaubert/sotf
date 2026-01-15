@@ -1138,11 +1138,19 @@ impl PlayerView {
         let plugin_idx = 0; // Modal doesn't need actual index for display
 
         match settings {
-            PluginSettings::EQ { filters, .. } => render_eq_plugin(
+            PluginSettings::EQ {
+                channels,
+                filters,
+                channel_filters,
+                per_channel_mode,
+            } => render_eq_plugin(
                 entity,
                 plugin_idx,
                 ui_eq::EqRenderState {
+                    channels: *channels,
                     filters,
+                    channel_filters,
+                    per_channel_mode: *per_channel_mode,
                     is_editing: false,
                     selected_param: 0,
                     selected_band_idx: 0,

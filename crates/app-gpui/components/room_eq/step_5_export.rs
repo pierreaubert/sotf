@@ -247,47 +247,63 @@ impl PlayerView {
             return;
         };
 
-        // Collect all EQ filters from the optimization results
-        let mut eq_filters: Vec<EQFilter> = Vec::new();
-        for (_channel_name, channel_dsp) in dsp_output.channels.iter() {
-            for plugin in &channel_dsp.plugins {
-                if plugin.plugin_type == "EQ" {
-                    // Extract filters from the parameters
-                    if let Some(filters) =
-                        plugin.parameters.get("filters").and_then(|f| f.as_array())
-                    {
-                        for filter in filters {
-                            let filter_type_str = filter
-                                .get("filter_type")
-                                .and_then(|t| t.as_str())
-                                .unwrap_or("peak");
-                            let filter_type = match filter_type_str.to_lowercase().as_str() {
-                                "peak" | "pk" => BiquadFilterType::Peak,
-                                "lowshelf" | "ls" => BiquadFilterType::Lowshelf,
-                                "highshelf" | "hs" => BiquadFilterType::Highshelf,
-                                "lowpass" | "lp" => BiquadFilterType::Lowpass,
-                                "highpass" | "hp" => BiquadFilterType::Highpass,
-                                "notch" => BiquadFilterType::Notch,
-                                _ => BiquadFilterType::Peak,
-                            };
-                            let frequency = filter
-                                .get("frequency")
-                                .and_then(|f| f.as_f64())
-                                .unwrap_or(1000.0);
-                            let q = filter.get("q").and_then(|q| q.as_f64()).unwrap_or(1.0);
-                            let gain_db = filter
-                                .get("gain_db")
-                                .and_then(|g| g.as_f64())
-                                .unwrap_or(0.0);
+        // Helper to parse filters from JSON
+        let parse_filters = |filters_json: &[serde_json::Value]| -> Vec<EQFilter> {
+            filters_json
+                .iter()
+                .map(|filter| {
+                    let filter_type_str = filter
+                        .get("filter_type")
+                        .and_then(|t| t.as_str())
+                        .unwrap_or("peak");
+                    let filter_type = match filter_type_str.to_lowercase().as_str() {
+                        "peak" | "pk" => BiquadFilterType::Peak,
+                        "lowshelf" | "ls" => BiquadFilterType::Lowshelf,
+                        "highshelf" | "hs" => BiquadFilterType::Highshelf,
+                        "lowpass" | "lp" => BiquadFilterType::Lowpass,
+                        "highpass" | "hp" => BiquadFilterType::Highpass,
+                        "notch" => BiquadFilterType::Notch,
+                        _ => BiquadFilterType::Peak,
+                    };
+                    let frequency = filter
+                        .get("frequency")
+                        .and_then(|f| f.as_f64())
+                        .unwrap_or(1000.0);
+                    let q = filter.get("q").and_then(|q| q.as_f64()).unwrap_or(1.0);
+                    let gain_db = filter
+                        .get("gain_db")
+                        .and_then(|g| g.as_f64())
+                        .unwrap_or(0.0);
+                    EQFilter::new(filter_type, frequency, q, gain_db)
+                })
+                .collect()
+        };
 
-                            eq_filters.push(EQFilter::new(filter_type, frequency, q, gain_db));
+        // Collect EQ filters per channel for proper per-channel room correction
+        // Sort channel names to ensure consistent ordering (L, R, C, etc.)
+        let mut channel_names: Vec<_> = dsp_output.channels.keys().cloned().collect();
+        channel_names.sort();
+
+        let mut per_channel_filters: Vec<Vec<EQFilter>> = Vec::new();
+        for channel_name in &channel_names {
+            if let Some(channel_dsp) = dsp_output.channels.get(channel_name) {
+                let mut channel_eq_filters: Vec<EQFilter> = Vec::new();
+                for plugin in &channel_dsp.plugins {
+                    if plugin.plugin_type == "EQ" {
+                        if let Some(filters) =
+                            plugin.parameters.get("filters").and_then(|f| f.as_array())
+                        {
+                            channel_eq_filters.extend(parse_filters(filters));
                         }
                     }
                 }
+                per_channel_filters.push(channel_eq_filters);
             }
         }
 
-        if eq_filters.is_empty() {
+        // Check if we have any filters at all
+        let total_filters: usize = per_channel_filters.iter().map(|f| f.len()).sum();
+        if total_filters == 0 {
             log::warn!("No EQ filters found in optimization results");
             self.state.update(cx, |state, _| {
                 state.app.measurement_state.room_eq_state.error_message =
@@ -296,7 +312,15 @@ impl PlayerView {
             return;
         }
 
-        log::info!("Applying {} EQ filters from room EQ", eq_filters.len());
+        let num_channels = per_channel_filters.len();
+        // Use first channel's filters as the global fallback
+        let global_filters = per_channel_filters.first().cloned().unwrap_or_default();
+
+        log::info!(
+            "Applying room EQ with {} channels, {} total filters (per-channel mode)",
+            num_channels,
+            total_filters
+        );
 
         // Update the plugin chain
         self.state.update(cx, |state, _| {
@@ -306,31 +330,35 @@ impl PlayerView {
             if let Some(eq_idx) = plugin_chain.find_plugin_index(&PluginType::EQ) {
                 // Update existing EQ plugin
                 if let Some(eq_plugin) = plugin_chain.get_plugin_mut(eq_idx) {
-                    let channels = if let PluginSettings::EQ { channels, .. } = &eq_plugin.settings
-                    {
-                        *channels
-                    } else {
-                        2
-                    };
                     eq_plugin.settings = PluginSettings::EQ {
-                        channels,
-                        filters: eq_filters.clone(),
+                        channels: num_channels,
+                        filters: global_filters.clone(),
+                        channel_filters: Some(per_channel_filters.clone()),
+                        per_channel_mode: true,
                     };
-                    log::info!("Updated existing EQ plugin at index {}", eq_idx);
+                    log::info!(
+                        "Updated existing EQ plugin at index {} with per-channel room EQ",
+                        eq_idx
+                    );
                 }
             } else {
                 // No EQ plugin exists, add one before monitoring plugins
                 let insert_idx = plugin_chain.find_processing_insert_index();
                 plugin_chain.insert_plugin(insert_idx, &PluginType::EQ);
 
-                // Configure the newly inserted plugin
+                // Configure the newly inserted plugin with per-channel room EQ
                 if let Some(eq_plugin) = plugin_chain.get_plugin_mut(insert_idx) {
                     eq_plugin.settings = PluginSettings::EQ {
-                        channels: 2,
-                        filters: eq_filters.clone(),
+                        channels: num_channels,
+                        filters: global_filters.clone(),
+                        channel_filters: Some(per_channel_filters.clone()),
+                        per_channel_mode: true,
                     };
                 }
-                log::info!("Inserted new EQ plugin at index {}", insert_idx);
+                log::info!(
+                    "Inserted new EQ plugin at index {} with per-channel room EQ",
+                    insert_idx
+                );
             }
 
             // Mark that plugin chain was modified and needs sync

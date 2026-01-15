@@ -197,6 +197,7 @@ struct ChannelOptResult {
     pre_score: f64,
     post_score: f64,
     eq_filters: Vec<EqFilter>,
+    normalized_response: Option<Vec<(f64, f64)>>,
 }
 
 /// EQ filter
@@ -627,12 +628,14 @@ async fn test_channel_results_collection(_cx: &mut TestAppContext) {
                 q: 2.0,
                 gain_db: -5.0,
             }],
+            normalized_response: None,
         },
         ChannelOptResult {
             channel_name: "R".to_string(),
             pre_score: 8.0,
             post_score: 1.5,
             eq_filters: Vec::new(),
+            normalized_response: None,
         },
     ];
 
@@ -649,12 +652,14 @@ async fn test_average_score_calculation(_cx: &mut TestAppContext) {
             pre_score: 10.0,
             post_score: 2.0,
             eq_filters: Vec::new(),
+            normalized_response: None,
         },
         ChannelOptResult {
             channel_name: "R".to_string(),
             pre_score: 8.0,
             post_score: 2.0,
             eq_filters: Vec::new(),
+            normalized_response: None,
         },
     ];
 
@@ -677,6 +682,7 @@ async fn test_optimization_reset(_cx: &mut TestAppContext) {
         pre_score: 10.0,
         post_score: 2.0,
         eq_filters: Vec::new(),
+        normalized_response: None,
     });
 
     state.borrow_mut().reset_optimization();
@@ -728,6 +734,7 @@ async fn test_review_step_with_results(_cx: &mut TestAppContext) {
                 gain_db: 3.0,
             },
         ],
+        normalized_response: None,
     }];
 
     let result = &state.borrow().channel_results[0];
@@ -827,12 +834,14 @@ async fn test_complete_wizard_flow(_cx: &mut TestAppContext) {
             pre_score: 10.0,
             post_score: 2.0,
             eq_filters: Vec::new(),
+            normalized_response: None,
         },
         ChannelOptResult {
             channel_name: "R".to_string(),
             pre_score: 8.0,
             post_score: 1.5,
             eq_filters: Vec::new(),
+            normalized_response: None,
         },
     ];
     assert!(state.borrow().is_optimization_complete());

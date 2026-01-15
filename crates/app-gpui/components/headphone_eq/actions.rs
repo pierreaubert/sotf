@@ -240,6 +240,8 @@ impl PlayerView {
                 let settings = PluginSettings::EQ {
                     channels: 2,
                     filters,
+                    channel_filters: None,
+                    per_channel_mode: false,
                 };
 
                 // Add to chain (insert before Matrix for proper ordering)

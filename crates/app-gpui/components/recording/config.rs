@@ -968,32 +968,40 @@ impl PlayerView {
         let view = cx.entity().clone();
         let current_name = current_name.to_string();
 
-        div().w(px(160.0)).child(
-            Input::new(SharedString::from(format!("channel_name_{}", channel_idx)))
-                .placeholder("Channel name")
-                .value(current_name)
-                .size(InputSize::Sm)
-                .on_change({
-                    let view = view.clone();
-                    move |value, _window, cx| {
-                        view.update(cx, |this, cx| {
-                            this.state.update(cx, |state, _| {
-                                if let Some(mapping) = state
-                                    .app
-                                    .measurement_state
-                                    .recording_state
-                                    .playback_config
-                                    .channel_mappings
-                                    .get_mut(channel_idx)
-                                {
-                                    mapping.group_name = value.to_string();
-                                }
+        // Wrap input in a div that captures key events to prevent global shortcuts
+        // (e.g., 'm' for mute) from triggering while typing
+        div()
+            .w(px(160.0))
+            .on_key_down(|_event, _window, cx| {
+                // Stop propagation to prevent global shortcuts from firing while typing
+                cx.stop_propagation();
+            })
+            .child(
+                Input::new(SharedString::from(format!("channel_name_{}", channel_idx)))
+                    .placeholder("Channel name")
+                    .value(current_name)
+                    .size(InputSize::Sm)
+                    .on_change({
+                        let view = view.clone();
+                        move |value, _window, cx| {
+                            view.update(cx, |this, cx| {
+                                this.state.update(cx, |state, _| {
+                                    if let Some(mapping) = state
+                                        .app
+                                        .measurement_state
+                                        .recording_state
+                                        .playback_config
+                                        .channel_mappings
+                                        .get_mut(channel_idx)
+                                    {
+                                        mapping.group_name = value.to_string();
+                                    }
+                                });
+                                cx.notify();
                             });
-                            cx.notify();
-                        });
-                    }
-                }),
-        )
+                        }
+                    }),
+            )
     }
 
     /// Render channel group dropdown for a specific channel (playback only)
@@ -1473,11 +1481,9 @@ impl PlayerView {
                             .left(px(10.0))
                             .top(px(margin_top + plot_height / 2.0 - 40.0))
                             .w(px(20.0))
-                            .child(
-                                Text::new("SPL (dB)")
-                                    .size(TextSize::Xs)
-                                    .color(theme.text_secondary),
-                            ),
+                            .text_size(px(11.0))
+                            .text_color(theme.text_secondary)
+                            .child("SPL (dB)"),
                     )
                     .child(
                         div()
@@ -1527,11 +1533,9 @@ impl PlayerView {
                             .absolute()
                             .left(px(margin_left + plot_width / 2.0 - 40.0))
                             .bottom(px(5.0))
-                            .child(
-                                Text::new("Frequency (Hz)")
-                                    .size(TextSize::Xs)
-                                    .color(theme.text_secondary),
-                            ),
+                            .text_size(px(11.0))
+                            .text_color(theme.text_secondary)
+                            .child("Frequency (Hz)"),
                     ),
             )
             .into_any_element()

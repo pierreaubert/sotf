@@ -4,6 +4,22 @@ use gpui::prelude::*;
 impl PlayerView {
     pub(crate) fn load_room_eq_from_recording(&mut self, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
+            // Check if there are valid recordings first
+            let has_valid_recordings = state
+                .app
+                .measurement_state
+                .recording_state
+                .channel_recordings
+                .iter()
+                .any(|r| r.state == crate::app::types::ChannelRecordingState::Done);
+
+            if !has_valid_recordings {
+                state.app.measurement_state.room_eq_state.error_message =
+                    Some("No completed recordings found. Please record measurements first.".to_string());
+                state.app.measurement_state.room_eq_state.status_message.clear();
+                return;
+            }
+
             state
                 .app
                 .measurement_state
@@ -14,17 +30,25 @@ impl PlayerView {
                 .measurement_state
                 .room_eq_state
                 .init_speaker_configs();
+
             let channel_count = state
                 .app
                 .measurement_state
                 .room_eq_state
                 .channel_measurements
                 .len();
-            state.app.measurement_state.room_eq_state.status_message = format!(
-                "Successfully loaded {} channel(s) from recording session",
-                channel_count
-            );
-            state.app.measurement_state.room_eq_state.error_message = None;
+
+            if channel_count == 0 {
+                state.app.measurement_state.room_eq_state.error_message =
+                    Some("Failed to load measurements: no valid channel data found.".to_string());
+                state.app.measurement_state.room_eq_state.status_message.clear();
+            } else {
+                state.app.measurement_state.room_eq_state.status_message = format!(
+                    "Successfully loaded {} channel(s) from recording session",
+                    channel_count
+                );
+                state.app.measurement_state.room_eq_state.error_message = None;
+            }
         });
     }
 

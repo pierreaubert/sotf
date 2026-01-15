@@ -51,6 +51,12 @@ fn test_panel_layout_serialization() {
         meters_ratio: 0.3,
         queue_list_ratio: 0.4,
         lufs_ratio: 0.2,
+        library_h_ratio: 0.3,
+        queue_h_ratio: 0.4,
+        rack_h_ratio: 0.3,
+        library_v_ratio: 0.4,
+        queue_v_ratio: 0.35,
+        rack_v_ratio: 0.25,
     };
     let json = serde_json::to_string(&layout).unwrap();
     let deserialized: PanelLayout = serde_json::from_str(&json).unwrap();

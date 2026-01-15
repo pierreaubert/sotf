@@ -97,5 +97,9 @@ actions!(
         DecrementPluginParamLarge,
         IncrementPluginParamSmall,
         DecrementPluginParamSmall,
+        // Font size actions
+        IncreaseFontSize,
+        DecreaseFontSize,
+        ResetFontSize,
     ]
 );

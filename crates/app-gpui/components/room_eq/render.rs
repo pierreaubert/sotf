@@ -175,17 +175,20 @@ fn render_crossover_dropdown(
 // === Review Step UI Free Functions ===
 
 /// Render a single channel result card with plots and filter details
+/// If interactive_state is provided, the chart will support pan/zoom interactions
 pub(crate) fn render_channel_result_card(
     result: &crate::app::types::ChannelOptResult,
     theme: &crate::theme::Theme,
     smoothing_octaves: f64,
+    interactive_state: Option<&gpui_px::interaction::InteractiveChartState>,
 ) -> impl IntoElement {
     use crate::components::graphs::format_frequency;
 
     let channel_name = result.channel_name.clone();
     let score_improvement = result.pre_score - result.post_score;
+    // Use normalized_response as the primary display (level-normalized optimized result)
     let has_response_data =
-        result.original_response.is_some() && result.corrected_response.is_some();
+        result.original_response.is_some() && result.normalized_response.is_some();
 
     div()
         .flex()
@@ -236,13 +239,16 @@ pub(crate) fn render_channel_result_card(
         )
         // Frequency response plot (if available)
         .when(has_response_data, |div| {
+            // Use original response and normalized response (the level-normalized corrected output)
             let original = result.original_response.as_ref().unwrap();
-            let corrected = result.corrected_response.as_ref().unwrap();
+            let normalized = result.normalized_response.as_ref().unwrap();
             div.child(render_response_comparison_graph(
                 original,
-                corrected,
+                normalized,
+                &result.eq_filters,
                 theme,
                 smoothing_octaves,
+                interactive_state,
             ))
         })
         // EQ Filter details
@@ -331,31 +337,58 @@ fn smooth_response(frequencies: &[f64], values: &[f64], octaves: f64) -> Vec<f64
 }
 
 /// Render the frequency response comparison graph with tonal balance histogram
+/// If interactive_state is provided, the chart will support pan/zoom interactions
 fn render_response_comparison_graph(
     original: &[(f64, f64)],
-    corrected: &[(f64, f64)],
+    normalized: &[(f64, f64)],
+    eq_filters: &[crate::app::types::EqFilterConfig],
     theme: &crate::theme::Theme,
     smoothing_octaves: f64,
+    interactive_state: Option<&gpui_px::interaction::InteractiveChartState>,
 ) -> impl IntoElement {
     use crate::components::graphs::common::theme_to_chart_theme;
     use gpui_px::{BarTheme, LegendPosition, ScaleType, bar, line};
+    use math_audio_iir_fir::{Biquad, BiquadFilterType};
 
     // Use a large width that will be constrained by the parent container
     const GRAPH_WIDTH: f32 = 1200.0;
     const GRAPH_HEIGHT: f32 = 400.0;
+    const SAMPLE_RATE: f64 = 48000.0;
 
     // CEA2034 standard colors for consistency
     const BLUE: u32 = 0x1f77b4;
     const ORANGE: u32 = 0xff7f0e;
+    const GREEN: u32 = 0x2ca02c;
 
     // Convert (freq, db) pairs to separate vectors
     let frequencies: Vec<f64> = original.iter().map(|(f, _)| *f).collect();
     let original_values_raw: Vec<f64> = original.iter().map(|(_, db)| *db).collect();
-    let corrected_values_raw: Vec<f64> = corrected.iter().map(|(_, db)| *db).collect();
+    let normalized_values_raw: Vec<f64> = normalized.iter().map(|(_, db)| *db).collect();
 
     // Apply smoothing
     let original_values = smooth_response(&frequencies, &original_values_raw, smoothing_octaves);
-    let corrected_values = smooth_response(&frequencies, &corrected_values_raw, smoothing_octaves);
+    let normalized_values = smooth_response(&frequencies, &normalized_values_raw, smoothing_octaves);
+
+    // Compute Y-axis range from data (include all curves: original, normalized, and EQ response)
+    let all_values = original_values.iter().chain(normalized_values.iter());
+    let (data_min, data_max) = all_values
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(min, max), &v| {
+            (min.min(v), max.max(v))
+        });
+
+    // Round to nearest multiple of 5, ensuring bounds exceed data range
+    // y_max: round up to next multiple of 5
+    // y_min: round down to previous multiple of 5
+    let y_max = if data_max.is_finite() {
+        ((data_max / 5.0).ceil() * 5.0).max(5.0)
+    } else {
+        5.0
+    };
+    let y_min = if data_min.is_finite() {
+        (data_min / 5.0).floor() * 5.0
+    } else {
+        -15.0
+    };
 
     if frequencies.is_empty() {
         return div()
@@ -411,14 +444,62 @@ fn render_response_comparison_graph(
     };
 
     let orig_trend = calculate_trend(&frequencies, &original_values);
-    let corr_trend = calculate_trend(&frequencies, &corrected_values);
+    let corr_trend = calculate_trend(&frequencies, &normalized_values);
+
+    // Compute EQ response curve from filters
+    let eq_response: Vec<f64> = if eq_filters.is_empty() {
+        vec![0.0; frequencies.len()]
+    } else {
+        frequencies
+            .iter()
+            .map(|&freq| {
+                eq_filters
+                    .iter()
+                    .map(|f| {
+                        let filter_type = match f.filter_type.as_str() {
+                            "peak" | "pk" => BiquadFilterType::Peak,
+                            "lowshelf" | "ls" => BiquadFilterType::Lowshelf,
+                            "highshelf" | "hs" => BiquadFilterType::Highshelf,
+                            "lowpass" | "lp" => BiquadFilterType::Lowpass,
+                            "highpass" | "hp" => BiquadFilterType::Highpass,
+                            _ => BiquadFilterType::Peak,
+                        };
+                        let biquad =
+                            Biquad::new(filter_type, f.frequency, SAMPLE_RATE, f.q, f.gain_db);
+                        biquad.log_result(freq)
+                    })
+                    .sum::<f64>()
+            })
+            .collect()
+    };
+
+    // Compute Y2 range for EQ response
+    let (eq_min, eq_max) = eq_response
+        .iter()
+        .fold((0.0_f64, 0.0_f64), |(min, max), &v| {
+            (min.min(v), max.max(v))
+        });
+    let eq_y_min = (eq_min.floor() - 2.0).min(-12.0);
+    let eq_y_max = (eq_max.ceil() + 2.0).max(6.0);
+
+    // Get domain bounds - use interactive state only when zoomed, otherwise use computed/default
+    let (x_min, x_max) = interactive_state
+        .filter(|s| s.is_zoomed())
+        .map(|s| s.x_domain())
+        .unwrap_or((20.0, 20000.0));
+    let (y_min_domain, y_max_domain) = interactive_state
+        .filter(|s| s.is_zoomed())
+        .map(|s| s.y_domain())
+        .unwrap_or((y_min, y_max));
 
     // Build line chart
     let mut chart_builder = line(&frequencies, &original_values)
         .x_scale(ScaleType::Log)
-        .x_range(20.0, 20000.0)
-        .y_range(-15.0, 5.0)
+        .x_range(x_min, x_max)
+        .y_range(y_min_domain, y_max_domain)
         .y_label("SPL (dB)")
+        .y2_label("EQ (dB)")
+        .y2_range(eq_y_min, eq_y_max)
         .label("Original")
         .legend_position(LegendPosition::Bottom)
         .color(BLUE)
@@ -426,7 +507,8 @@ fn render_response_comparison_graph(
         .opacity(1.0)
         .theme(chart_theme.clone())
         .size(GRAPH_WIDTH, GRAPH_HEIGHT)
-        .add_series(&corrected_values, Some("Corrected"), ORANGE, 2.0, 1.0);
+        .add_series(&normalized_values, Some("Normalized"), ORANGE, 2.0, 1.0)
+        .add_series_y2(&eq_response, Some("EQ"), GREEN, 2.0, 0.8);
 
     // Add trend lines if calculated
     if let Some((slope, intercept)) = orig_trend {
@@ -489,7 +571,7 @@ fn render_response_comparison_graph(
             };
 
         let hist_orig = calculate_histogram(&frequencies, &original_values, slope_orig, int_orig);
-        let hist_corr = calculate_histogram(&frequencies, &corrected_values, slope_corr, int_corr);
+        let hist_corr = calculate_histogram(&frequencies, &normalized_values, slope_corr, int_corr);
 
         let labels = vec![
             "0-0.5", "0.5-1", "1-1.5", "1.5-2", "2-2.5", "2.5-3", "3-3.5", "3.5-4", ">4",
@@ -509,19 +591,30 @@ fn render_response_comparison_graph(
             .bar_gap(4.0)
             .opacity(0.8)
             .legend_position(LegendPosition::Bottom)
-            .add_series(&hist_corr, Some("Corrected"), ORANGE, 0.8)
+            .add_series(&hist_corr, Some("Normalized"), ORANGE, 0.8)
             .build()
             .ok()
     } else {
         None
     };
 
+    // Build the main chart element, wrapping with interactive if state is provided
+    let line_chart_element: Option<gpui::AnyElement> = line_chart.ok().map(|chart| {
+        if let Some(state) = interactive_state {
+            gpui_px::interaction::interactive("room-eq-response-chart", chart, state.clone())
+                .build()
+                .into_any_element()
+        } else {
+            chart.into_any_element()
+        }
+    });
+
     div()
         .w_full()
         .flex()
         .flex_col()
         .gap_2()
-        .when_some(line_chart.ok(), |el, c| el.child(c))
+        .when_some(line_chart_element, |el, c| el.child(c))
         .when_some(hist_chart, |el, c| el.child(c))
         .into_any_element()
 }

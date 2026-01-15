@@ -170,7 +170,14 @@ impl Render for EqQHandleDrag {
 
 /// State for rendering the EQ plugin
 pub struct EqRenderState<'a> {
+    /// Number of channels
+    pub channels: usize,
+    /// Global filters (used when per_channel_mode is false)
     pub filters: &'a [EQFilter],
+    /// Per-channel filters (used when per_channel_mode is true)
+    pub channel_filters: &'a Option<Vec<Vec<EQFilter>>>,
+    /// Whether to use per-channel mode
+    pub per_channel_mode: bool,
     pub is_editing: bool,
     pub selected_param: usize,
     pub selected_band_idx: usize,
@@ -654,11 +661,32 @@ fn render_eq_visualization(
             .hover(|s| s.size(px(CONTROL_POINT_RADIUS * 2.5)))
             .on_mouse_down(MouseButton::Left, {
                 let entity_click = entity.clone();
-                move |_event, _window, cx| {
-                    // Select this band when clicking on it
-                    entity_click.update(cx, |state, _| {
-                        state.app.plugin_state.selected_eq_band = band_idx;
-                    });
+                move |event, _window, cx| {
+                    if event.click_count >= 2 {
+                        // Double-click: reset band to default values
+                        entity_click.update(cx, |state, cx| {
+                            state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
+                            state.app.plugin_state.selected_eq_band = band_idx;
+                            // Reset frequency to 1000 Hz
+                            state
+                                .app
+                                .set_plugin_param(plugin_idx, band_idx * 4, FREQUENCY_DEFAULT);
+                            // Reset Q to 1.0
+                            state
+                                .app
+                                .set_plugin_param(plugin_idx, band_idx * 4 + 1, Q_DEFAULT);
+                            // Reset gain to 0.0 dB
+                            state
+                                .app
+                                .set_plugin_param(plugin_idx, band_idx * 4 + 2, GAIN_DB_DEFAULT);
+                            cx.notify();
+                        });
+                    } else {
+                        // Single click: select this band
+                        entity_click.update(cx, |state, _| {
+                            state.app.plugin_state.selected_eq_band = band_idx;
+                        });
+                    }
                 }
             })
             .on_drag(
@@ -743,11 +771,36 @@ pub fn render_eq_plugin(
     theme: &Theme,
     cx: &mut Context<PlayerView>,
 ) -> impl IntoElement {
+    // Read selected channel from AppState
+    let app_state = entity.read(cx);
+    let selected_eq_channel = app_state.app.plugin_state.selected_eq_channel;
+    drop(app_state);
+
+    // Determine which filters to display based on mode
+    let display_filters: &[EQFilter] = if state.per_channel_mode {
+        // Per-channel mode: get filters for selected channel
+        if let Some(ch_filters) = state.channel_filters {
+            let ch_idx = selected_eq_channel.min(ch_filters.len().saturating_sub(1));
+            if ch_idx < ch_filters.len() {
+                &ch_filters[ch_idx]
+            } else {
+                // Fallback to global filters
+                state.filters
+            }
+        } else {
+            // No channel filters available, fall back to global
+            state.filters
+        }
+    } else {
+        // Global mode: use the global filters
+        state.filters
+    };
+
     // Clamp selected band to valid range
     let selected_band_idx = state
         .selected_band_idx
-        .min(state.filters.len().saturating_sub(1));
-    let num_bands = state.filters.len();
+        .min(display_filters.len().saturating_sub(1));
+    let num_bands = display_filters.len();
 
     // Determine layout mode based on available width
     // For now, we'll default to vertical layout
@@ -755,7 +808,7 @@ pub fn render_eq_plugin(
 
     // Get the selected filter
     let selected_filter = if num_bands > 0 {
-        Some(&state.filters[selected_band_idx])
+        Some(&display_filters[selected_band_idx])
     } else {
         None
     };
@@ -786,11 +839,15 @@ pub fn render_eq_plugin(
         .child(render_eq_visualization(
             entity.clone(),
             plugin_idx,
-            state.filters,
+            display_filters,
             highlight_band_idx,
             theme,
             graph_width,
         ));
+
+    // Clone values needed for closures
+    let channels = state.channels;
+    let per_channel_mode = state.per_channel_mode;
 
     let controls_section = div()
         .flex()
@@ -799,6 +856,136 @@ pub fn render_eq_plugin(
         .gap_4()
         .when(use_horizontal_layout, |d| d.min_w(px(300.0)))
         .when(!use_horizontal_layout, |d| d.w_full())
+        // Channel Mode Toggle and Channel Selector
+        .child({
+            let entity_clone = entity.clone();
+            let entity_clone2 = entity.clone();
+            let accent = theme.accent;
+            let text_on_accent = theme.text_on_accent;
+            let text_secondary = theme.text_secondary;
+            let bg_secondary = theme.background_secondary;
+            let surface_hover = theme.surface_hover;
+            let border = theme.border;
+
+            div()
+                .flex()
+                .items_center()
+                .justify_center()
+                .gap_4()
+                .p_2()
+                .bg(theme.surface)
+                .rounded_lg()
+                // Mode toggle buttons
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_1()
+                        // All Channels button
+                        .child({
+                            let is_selected = !per_channel_mode;
+                            div()
+                                .id("eq-mode-all")
+                                .px_3()
+                                .py_1()
+                                .text_sm()
+                                .rounded_md()
+                                .cursor_pointer()
+                                .when(is_selected, |d| {
+                                    d.bg(accent)
+                                        .text_color(text_on_accent)
+                                        .font_weight(FontWeight::SEMIBOLD)
+                                })
+                                .when(!is_selected, |d| {
+                                    d.bg(bg_secondary)
+                                        .text_color(text_secondary)
+                                        .hover(move |s| s.bg(surface_hover))
+                                })
+                                .on_mouse_down(MouseButton::Left, {
+                                    let entity = entity_clone.clone();
+                                    move |_event, _window, cx| {
+                                        entity.update(cx, |state, cx| {
+                                            state.app.set_eq_per_channel_mode(plugin_idx, false);
+                                            cx.notify();
+                                        });
+                                    }
+                                })
+                                .child("All Channels")
+                        })
+                        // Per Channel button
+                        .child({
+                            let is_selected = per_channel_mode;
+                            div()
+                                .id("eq-mode-per-channel")
+                                .px_3()
+                                .py_1()
+                                .text_sm()
+                                .rounded_md()
+                                .cursor_pointer()
+                                .when(is_selected, |d| {
+                                    d.bg(accent)
+                                        .text_color(text_on_accent)
+                                        .font_weight(FontWeight::SEMIBOLD)
+                                })
+                                .when(!is_selected, |d| {
+                                    d.bg(bg_secondary)
+                                        .text_color(text_secondary)
+                                        .hover(move |s| s.bg(surface_hover))
+                                })
+                                .on_mouse_down(MouseButton::Left, {
+                                    let entity = entity_clone2.clone();
+                                    move |_event, _window, cx| {
+                                        entity.update(cx, |state, cx| {
+                                            state.app.set_eq_per_channel_mode(plugin_idx, true);
+                                            cx.notify();
+                                        });
+                                    }
+                                })
+                                .child("Per Channel")
+                        }),
+                )
+                // Channel selector (only shown in per-channel mode)
+                .when(per_channel_mode, |d| {
+                    d.child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .border(px(1.0))
+                            .border_color(border)
+                            .rounded_md()
+                            .px_2()
+                            .children((0..channels).map(|ch| {
+                                let entity = entity.clone();
+                                let is_selected = ch == selected_eq_channel;
+                                let ch_name = get_channel_name(ch, channels);
+                                div()
+                                    .id(("eq-channel", ch))
+                                    .px_2()
+                                    .py_1()
+                                    .text_sm()
+                                    .rounded_sm()
+                                    .cursor_pointer()
+                                    .when(is_selected, |d| {
+                                        d.bg(accent)
+                                            .text_color(text_on_accent)
+                                            .font_weight(FontWeight::SEMIBOLD)
+                                    })
+                                    .when(!is_selected, |d| {
+                                        d.bg(bg_secondary)
+                                            .text_color(text_secondary)
+                                            .hover(move |s| s.bg(surface_hover))
+                                    })
+                                    .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
+                                        entity.update(cx, |state, _| {
+                                            state.app.plugin_state.selected_eq_channel = ch;
+                                        });
+                                    })
+                                    .child(ch_name)
+                            })),
+                    )
+                })
+        })
         // Band selector tabs (custom rendering to avoid context issues)
         .child({
             let mut tabs_container = div()
@@ -813,7 +1000,7 @@ pub fn render_eq_plugin(
             // Build each band tab manually
             for band_idx in 0..num_bands {
                 let is_selected = band_idx == selected_band_idx;
-                let filter = state.filters.get(band_idx);
+                let filter = display_filters.get(band_idx);
                 let is_muted = filter.map(|f| f.muted).unwrap_or(false);
                 let is_soloed = filter.map(|f| f.solo).unwrap_or(false);
                 let filter_short_name = filter.map(|f| f.filter_type.short_name()).unwrap_or("PK");
@@ -1191,6 +1378,41 @@ fn render_filter_type_selector(
                 })
                 .child(abbrev)
         }))
+}
+
+/// Get a human-readable channel name based on channel index and total count
+fn get_channel_name(channel_idx: usize, total_channels: usize) -> String {
+    match total_channels {
+        1 => "Mono".to_string(),
+        2 => match channel_idx {
+            0 => "L".to_string(),
+            1 => "R".to_string(),
+            _ => format!("Ch {}", channel_idx + 1),
+        },
+        5 | 6 => match channel_idx {
+            // 5.0 or 5.1
+            0 => "L".to_string(),
+            1 => "R".to_string(),
+            2 => "C".to_string(),
+            3 => "LFE".to_string(),
+            4 => "Ls".to_string(),
+            5 => "Rs".to_string(),
+            _ => format!("Ch {}", channel_idx + 1),
+        },
+        7 | 8 => match channel_idx {
+            // 7.0 or 7.1
+            0 => "L".to_string(),
+            1 => "R".to_string(),
+            2 => "C".to_string(),
+            3 => "LFE".to_string(),
+            4 => "Ls".to_string(),
+            5 => "Rs".to_string(),
+            6 => "Lb".to_string(),
+            7 => "Rb".to_string(),
+            _ => format!("Ch {}", channel_idx + 1),
+        },
+        _ => format!("Ch {}", channel_idx + 1),
+    }
 }
 
 #[cfg(test)]

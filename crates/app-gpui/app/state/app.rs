@@ -15,8 +15,8 @@ use crate::theme::{Theme, ThemeId};
 
 use crate::app::debug::StateHistory;
 use crate::app::types::{
-    ChannelGroup, InputMode, LibraryStats, MeterDisplayMode, OptimizationUiState, QueueItem,
-    ToastMessage,
+    ChannelGroup, InputMode, LayoutOrientation, LibraryStats, MeterDisplayMode,
+    OptimizationUiState, QueueItem, RackDisplayMode, ToastMessage,
 };
 
 use super::{InputState, LibraryState, PlaybackState, PluginState, UIState};
@@ -118,6 +118,27 @@ pub struct App {
     pub is_dragging_meters_divider: bool,
     pub is_dragging_lufs_divider: bool,
     pub divider_click_start: Option<std::time::Instant>,
+
+    // 3-Panel Layout (Library | Queue | Rack)
+    pub layout_orientation: LayoutOrientation,
+    pub rack_display_mode: RackDisplayMode,
+    // Panel ratios for horizontal layout (side-by-side)
+    pub library_h_ratio: f32,
+    pub queue_h_ratio: f32,
+    pub rack_h_ratio: f32,
+    // Panel ratios for vertical layout (stacked)
+    pub library_v_ratio: f32,
+    pub queue_v_ratio: f32,
+    pub rack_v_ratio: f32,
+    // Panel visibility (user can collapse via dividers)
+    pub library_panel_collapsed: bool,
+    pub queue_panel_collapsed: bool,
+    pub rack_panel_collapsed: bool,
+    // Hide queue meters when rack is visible in 3-panel layout
+    pub hide_queue_meters_for_rack: bool,
+    // Divider drag states for 3-panel layout
+    pub is_dragging_library_queue_divider: bool,
+    pub is_dragging_queue_rack_divider: bool,
 
     // Scan progress for threaded scanning
     pub scan_total_files: usize,
@@ -246,6 +267,21 @@ impl App {
             is_dragging_meters_divider: false,
             is_dragging_lufs_divider: false,
             divider_click_start: None,
+            // 3-Panel Layout defaults
+            layout_orientation: LayoutOrientation::default(),
+            rack_display_mode: RackDisplayMode::default(),
+            library_h_ratio: 0.30,
+            queue_h_ratio: 0.40,
+            rack_h_ratio: 0.30,
+            library_v_ratio: 0.40,
+            queue_v_ratio: 0.35,
+            rack_v_ratio: 0.25,
+            library_panel_collapsed: false,
+            queue_panel_collapsed: false,
+            rack_panel_collapsed: false,
+            hide_queue_meters_for_rack: false,
+            is_dragging_library_queue_divider: false,
+            is_dragging_queue_rack_divider: false,
             scan_total_files: 0,
             is_dragging_volume: false,
             volume_drag_start_y: None,
@@ -609,11 +645,21 @@ impl App {
         // Restore keymap preset
         self.ui_state.keymap_preset = config.keymap_preset;
 
+        // Restore font scale
+        self.ui_state.font_scale = config.font_scale;
+
         // Restore panel layout
         self.queue_panel_ratio = config.panel_layout.queue_ratio;
         self.meters_panel_ratio = config.panel_layout.meters_ratio;
         self.queue_list_ratio = config.panel_layout.queue_list_ratio;
         self.lufs_panel_ratio = config.panel_layout.lufs_ratio;
+        // Restore 3-panel layout ratios
+        self.library_h_ratio = config.panel_layout.library_h_ratio;
+        self.queue_h_ratio = config.panel_layout.queue_h_ratio;
+        self.rack_h_ratio = config.panel_layout.rack_h_ratio;
+        self.library_v_ratio = config.panel_layout.library_v_ratio;
+        self.queue_v_ratio = config.panel_layout.queue_v_ratio;
+        self.rack_v_ratio = config.panel_layout.rack_v_ratio;
 
         // Restore volume and muted state
         // self.playback.volume = config.volume; // Always start at default (10%) per requirement
@@ -699,6 +745,13 @@ impl App {
                 meters_ratio: self.meters_panel_ratio,
                 queue_list_ratio: self.queue_list_ratio,
                 lufs_ratio: self.lufs_panel_ratio,
+                // 3-Panel Layout ratios
+                library_h_ratio: self.library_h_ratio,
+                queue_h_ratio: self.queue_h_ratio,
+                rack_h_ratio: self.rack_h_ratio,
+                library_v_ratio: self.library_v_ratio,
+                queue_v_ratio: self.queue_v_ratio,
+                rack_v_ratio: self.rack_v_ratio,
             },
             window_geometry: window_geometry.unwrap_or_else(|| {
                 // If no geometry provided, use current saved value or default
@@ -739,6 +792,7 @@ impl App {
                     .recording_base_directory
                     .clone(),
             },
+            font_scale: self.ui_state.font_scale,
         };
         config.save()?;
         Ok(())

@@ -96,6 +96,20 @@ pub struct PanelLayout {
     /// LUFS panel width ratio (0.0-1.0), default 0.25
     #[serde(default = "default_lufs_ratio")]
     pub lufs_ratio: f32,
+    // 3-Panel Layout ratios (horizontal mode)
+    #[serde(default = "default_library_h_ratio")]
+    pub library_h_ratio: f32,
+    #[serde(default = "default_queue_h_ratio")]
+    pub queue_h_ratio: f32,
+    #[serde(default = "default_rack_h_ratio")]
+    pub rack_h_ratio: f32,
+    // 3-Panel Layout ratios (vertical mode)
+    #[serde(default = "default_library_v_ratio")]
+    pub library_v_ratio: f32,
+    #[serde(default = "default_queue_v_ratio")]
+    pub queue_v_ratio: f32,
+    #[serde(default = "default_rack_v_ratio")]
+    pub rack_v_ratio: f32,
 }
 
 fn default_queue_ratio() -> f32 {
@@ -114,6 +128,30 @@ fn default_queue_list_ratio() -> f32 {
     0.30
 }
 
+fn default_library_h_ratio() -> f32 {
+    0.30
+}
+
+fn default_queue_h_ratio() -> f32 {
+    0.40
+}
+
+fn default_rack_h_ratio() -> f32 {
+    0.30
+}
+
+fn default_library_v_ratio() -> f32 {
+    0.40
+}
+
+fn default_queue_v_ratio() -> f32 {
+    0.35
+}
+
+fn default_rack_v_ratio() -> f32 {
+    0.25
+}
+
 impl Default for PanelLayout {
     fn default() -> Self {
         Self {
@@ -121,6 +159,12 @@ impl Default for PanelLayout {
             meters_ratio: default_meters_ratio(),
             queue_list_ratio: default_queue_list_ratio(),
             lufs_ratio: default_lufs_ratio(),
+            library_h_ratio: default_library_h_ratio(),
+            queue_h_ratio: default_queue_h_ratio(),
+            rack_h_ratio: default_rack_h_ratio(),
+            library_v_ratio: default_library_v_ratio(),
+            queue_v_ratio: default_queue_v_ratio(),
+            rack_v_ratio: default_rack_v_ratio(),
         }
     }
 }
@@ -157,6 +201,13 @@ pub struct Config {
     /// Recording screen configuration
     #[serde(default)]
     pub recording_config: RecordingConfigState,
+    /// Font scale factor (1.0 = normal)
+    #[serde(default = "default_font_scale")]
+    pub font_scale: f32,
+}
+
+fn default_font_scale() -> f32 {
+    1.0
 }
 
 fn default_volume() -> f32 {
@@ -180,6 +231,7 @@ impl Config {
                 volume: default_volume(),
                 muted: false,
                 recording_config: RecordingConfigState::default(),
+                font_scale: default_font_scale(),
             });
         }
 
@@ -247,6 +299,12 @@ mod tests {
             meters_ratio: 0.3,
             queue_list_ratio: 0.4,
             lufs_ratio: 0.2,
+            library_h_ratio: 0.30,
+            queue_h_ratio: 0.40,
+            rack_h_ratio: 0.30,
+            library_v_ratio: 0.40,
+            queue_v_ratio: 0.35,
+            rack_v_ratio: 0.25,
         };
         let json = serde_json::to_string(&layout).unwrap();
         let deserialized: PanelLayout = serde_json::from_str(&json).unwrap();
@@ -267,6 +325,7 @@ mod tests {
             volume: 0.75,
             muted: true,
             recording_config: RecordingConfigState::default(),
+            font_scale: 1.0,
         };
         let json = serde_json::to_string(&config).unwrap();
         let deserialized: Config = serde_json::from_str(&json).unwrap();

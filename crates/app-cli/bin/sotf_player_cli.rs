@@ -1219,6 +1219,8 @@ fn play_stream(
                         plugin.settings = PluginSettings::EQ {
                             channels,
                             filters: eq_filters,
+                            channel_filters: None,
+                            per_channel_mode: false,
                         };
                     }
                     log::info!("Rack: Added EQ plugin with {} filters", filters.len());

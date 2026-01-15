@@ -31,6 +31,9 @@ pub struct ABCompareRenderState<'a> {
     pub path_b_config: &'a str,
     pub is_editing: bool,
     pub selected_param: usize,
+    /// Dropdown open states
+    pub path_a_select_open: bool,
+    pub path_b_select_open: bool,
 }
 
 /// Path config presets
@@ -271,6 +274,7 @@ pub fn render_ab_compare_plugin(
                                             "a",
                                             path_a_preset,
                                             9,
+                                            state.path_a_select_open,
                                             theme,
                                         )),
                                 )
@@ -292,6 +296,7 @@ pub fn render_ab_compare_plugin(
                                             "b",
                                             path_b_preset,
                                             10,
+                                            state.path_b_select_open,
                                             theme,
                                         )),
                                 ),
@@ -480,6 +485,7 @@ fn render_path_selector(
     path_id: &str,
     current_preset: &str,
     param_idx: usize,
+    is_open: bool,
     theme: &Theme,
 ) -> impl IntoElement {
     let options: Vec<SelectOption> = PATH_PRESETS
@@ -495,13 +501,27 @@ fn render_path_selector(
     };
 
     let selected: SharedString = current_preset.to_string().into();
+    let is_path_a = path_id == "a";
 
     Select::new(("path-select", select_id))
         .options(options)
         .selected(selected)
         .size(SelectSize::Sm)
         .placeholder("Select config...")
+        .is_open(is_open)
         .theme(theme.to_select_theme())
+        .on_toggle({
+            let entity = entity.clone();
+            move |open, _, cx| {
+                entity.update(cx, |state, _| {
+                    if is_path_a {
+                        state.app.plugin_state.ab_compare_dropdowns.path_a_open = open;
+                    } else {
+                        state.app.plugin_state.ab_compare_dropdowns.path_b_open = open;
+                    }
+                });
+            }
+        })
         .on_change({
             let entity = entity.clone();
             move |value, _, cx| {
@@ -510,6 +530,12 @@ fn render_path_selector(
                     PATH_PRESETS.iter().find(|(v, _, _)| *v == value.as_ref())
                 {
                     entity.update(cx, |state, _| {
+                        // Close dropdown after selection
+                        if is_path_a {
+                            state.app.plugin_state.ab_compare_dropdowns.path_a_open = false;
+                        } else {
+                            state.app.plugin_state.ab_compare_dropdowns.path_b_open = false;
+                        }
                         // Set the path config as a string parameter
                         // The param system will need to handle this specially
                         state

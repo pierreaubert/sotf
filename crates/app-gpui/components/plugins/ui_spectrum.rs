@@ -132,8 +132,8 @@ impl SpectrumElement {
 
     /// Convert dB value to normalized height (0.0 to 1.0)
     fn db_to_height(&self, db: f32) -> f32 {
-        // Assume range is -100 dB to 0 dB
-        ((db + 100.0) / 100.0).clamp(0.0, 1.0)
+        // Range is -100 dB to +3 dB (103 dB total)
+        ((db + 100.0) / 103.0).clamp(0.0, 1.0)
     }
 }
 
@@ -212,63 +212,133 @@ impl Element for SpectrumElement {
             border_style: Default::default(),
         });
 
-        // Optimization: For high bin counts, drawing thousands of quads is slow.
-        // Use a single Path to draw the spectrum shape.
-        // If bin count is low (< 100), bars look nice. If high, a filled curve/histogram is better.
-        // We switch to Path rendering always for consistent performance.
-
-        // Build the path points
-        let mut path = PathBuilder::fill();
-        // Start at bottom left
-        path.move_to(point(bounds.origin.x, bounds.origin.y + bounds.size.height));
+        // Color thresholds matching level meters:
+        // - Green: below -6 dB (safe zone)
+        // - Yellow: -6 dB to -1 dB (caution zone)
+        // - Red: above -1 dB (danger/clipping zone)
+        let yellow_threshold = self.db_to_height(-6.0); // ~0.94
+        let red_threshold = self.db_to_height(-1.0); // ~0.99
 
         let total_width = bounds.size.width;
         let step_width = total_width / bar_count as f32;
+        let meter_height = bounds.size.height;
 
-        for (i, &mag) in self.magnitudes.iter().enumerate() {
-            // Apply smoothing
-            let smoothed_mag = if let Some(ref prev) = self.previous_magnitudes {
-                if i < prev.len() {
-                    prev[i] * self.smoothing + mag * (1.0 - self.smoothing)
+        // Pre-compute smoothed magnitudes and heights
+        let smoothed_heights: Vec<f32> = self
+            .magnitudes
+            .iter()
+            .enumerate()
+            .map(|(i, &mag)| {
+                let smoothed_mag = if let Some(ref prev) = self.previous_magnitudes {
+                    if i < prev.len() {
+                        prev[i] * self.smoothing + mag * (1.0 - self.smoothing)
+                    } else {
+                        mag
+                    }
                 } else {
                     mag
-                }
-            } else {
-                mag
-            };
+                };
+                self.db_to_height(smoothed_mag)
+            })
+            .collect();
 
-            let height_ratio = self.db_to_height(smoothed_mag);
-            // Height ratio 0.0 means bar_height should be small?
-            // bounds.size.height is max height.
-            // y goes down (0 at top).
-            // So if height_ratio is 1.0 (max), bar_height is bounds.height.
-            // y = bounds.y + bounds.height - bar_height = bounds.y.
-            // Correct.
-            let bar_height = (bounds.size.height * height_ratio).max(px(0.0));
+        // Build three paths for green, yellow, and red zones
+        // Green zone: from bottom to min(height, yellow_threshold)
+        let mut green_path = PathBuilder::fill();
+        green_path.move_to(point(bounds.origin.x, bounds.origin.y + meter_height));
 
+        // Yellow zone: from yellow_threshold to min(height, red_threshold)
+        let mut yellow_path = PathBuilder::fill();
+        let mut has_yellow = false;
+
+        // Red zone: from red_threshold to height
+        let mut red_path = PathBuilder::fill();
+        let mut has_red = false;
+
+        for (i, &height_ratio) in smoothed_heights.iter().enumerate() {
             let x = bounds.origin.x + step_width * i as f32;
-            let y = bounds.origin.y + bounds.size.height - bar_height;
 
-            // Add points for "stepped" look (histogram style)
-            path.line_to(point(x, y)); // Move up/down to new height
-            path.line_to(point(x + step_width, y)); // Move right across bar width
+            // Green segment (always present up to yellow_threshold)
+            let green_height = height_ratio.min(yellow_threshold);
+            let green_y = bounds.origin.y + meter_height - (meter_height * green_height);
+            green_path.line_to(point(x, green_y));
+            green_path.line_to(point(x + step_width, green_y));
+
+            // Yellow segment (only if above yellow_threshold)
+            if height_ratio > yellow_threshold {
+                if !has_yellow {
+                    has_yellow = true;
+                    yellow_path.move_to(point(
+                        bounds.origin.x,
+                        bounds.origin.y + meter_height - (meter_height * yellow_threshold),
+                    ));
+                }
+                let yellow_height = (height_ratio - yellow_threshold).min(red_threshold - yellow_threshold);
+                let yellow_top = yellow_threshold + yellow_height;
+                let yellow_y = bounds.origin.y + meter_height - (meter_height * yellow_top);
+                let yellow_bottom_y = bounds.origin.y + meter_height - (meter_height * yellow_threshold);
+                yellow_path.line_to(point(x, yellow_y));
+                yellow_path.line_to(point(x + step_width, yellow_y));
+            } else if has_yellow {
+                // Close off any yellow at the threshold level
+                let yellow_bottom_y = bounds.origin.y + meter_height - (meter_height * yellow_threshold);
+                yellow_path.line_to(point(x, yellow_bottom_y));
+                yellow_path.line_to(point(x + step_width, yellow_bottom_y));
+            }
+
+            // Red segment (only if above red_threshold)
+            if height_ratio > red_threshold {
+                if !has_red {
+                    has_red = true;
+                    red_path.move_to(point(
+                        bounds.origin.x,
+                        bounds.origin.y + meter_height - (meter_height * red_threshold),
+                    ));
+                }
+                let red_height = height_ratio - red_threshold;
+                let red_top = red_threshold + red_height;
+                let red_y = bounds.origin.y + meter_height - (meter_height * red_top);
+                red_path.line_to(point(x, red_y));
+                red_path.line_to(point(x + step_width, red_y));
+            } else if has_red {
+                // Close off any red at the threshold level
+                let red_bottom_y = bounds.origin.y + meter_height - (meter_height * red_threshold);
+                red_path.line_to(point(x, red_bottom_y));
+                red_path.line_to(point(x + step_width, red_bottom_y));
+            }
         }
 
-        // Finish at bottom right
-        path.line_to(point(
+        // Close green path
+        green_path.line_to(point(
             bounds.origin.x + bounds.size.width,
-            bounds.origin.y + bounds.size.height,
+            bounds.origin.y + meter_height,
         ));
-        // Close shape
-        path.line_to(point(bounds.origin.x, bounds.origin.y + bounds.size.height));
+        green_path.line_to(point(bounds.origin.x, bounds.origin.y + meter_height));
 
-        // Use a solid color for the filled path (e.g., Green/Low color)
-        // Note: GPUI paint_path currently supports a single color.
-        // For gradient support, we would need to use a mask or shader, which is more complex.
-        // For now, this resolves the performance bottleneck.
-        window.paint_path(path.build().unwrap(), self.colors.low);
+        // Paint green (always)
+        if let Ok(path) = green_path.build() {
+            window.paint_path(path, self.colors.low);
+        }
 
-        // Note: 'paint_path' with filled shape works best.
+        // Close and paint yellow if present
+        if has_yellow {
+            let yellow_bottom_y = bounds.origin.y + meter_height - (meter_height * yellow_threshold);
+            yellow_path.line_to(point(bounds.origin.x + bounds.size.width, yellow_bottom_y));
+            yellow_path.line_to(point(bounds.origin.x, yellow_bottom_y));
+            if let Ok(path) = yellow_path.build() {
+                window.paint_path(path, self.colors.mid);
+            }
+        }
+
+        // Close and paint red if present
+        if has_red {
+            let red_bottom_y = bounds.origin.y + meter_height - (meter_height * red_threshold);
+            red_path.line_to(point(bounds.origin.x + bounds.size.width, red_bottom_y));
+            red_path.line_to(point(bounds.origin.x, red_bottom_y));
+            if let Ok(path) = red_path.build() {
+                window.paint_path(path, self.colors.high);
+            }
+        }
     }
 }
 
@@ -403,9 +473,17 @@ fn render_frequency_axis(min_freq: f32, max_freq: f32, theme: &Theme) -> impl In
         }))
 }
 
-/// Render vertical dB axis (-60dB to 0dB)
+/// Render vertical dB axis (-60dB to +3dB)
 fn render_db_axis(theme: &Theme) -> impl IntoElement {
-    let db_labels = [("0", 0.0), ("-20", 0.333), ("-40", 0.666), ("-60", 1.0)];
+    // Range: -100 dB to +3 dB (103 dB total)
+    // Position = (3 - db) / 103
+    let db_labels = [
+        ("+3", 0.0),           // (3 - 3) / 103 = 0.0
+        ("0", 0.029),          // (3 - 0) / 103 ≈ 0.029
+        ("-20", 0.223),        // (3 - (-20)) / 103 ≈ 0.223
+        ("-40", 0.417),        // (3 - (-40)) / 103 ≈ 0.417
+        ("-60", 0.612),        // (3 - (-60)) / 103 ≈ 0.612
+    ];
 
     div()
         .w(px(32.0))

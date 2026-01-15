@@ -29,9 +29,11 @@ impl PlayerView {
         let queue_list_ratio = state.app.queue_list_ratio;
         let meters_ratio = state.app.meters_panel_ratio;
         let meter_display_mode = state.app.meter_display_mode;
+        let hide_meters_for_rack = state.app.hide_queue_meters_for_rack;
 
         let queue_collapsed = queue_list_ratio < 0.05;
-        let meters_collapsed = meters_ratio < 0.05;
+        // Hide meters when: explicitly collapsed, OR rack is visible in 3-panel layout
+        let meters_collapsed = meters_ratio < 0.05 || hide_meters_for_rack;
 
         // Home button for navigation back to Library
         let state_for_home = self.state.clone();

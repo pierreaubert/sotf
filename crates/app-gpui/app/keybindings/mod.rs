@@ -423,5 +423,20 @@ fn default_documented_keybindings() -> Vec<DocumentedKeybinding> {
             description: "Quit",
             category: KeybindingCategory::System,
         },
+        DocumentedKeybinding {
+            key: "Cmd++",
+            description: "Increase font size",
+            category: KeybindingCategory::System,
+        },
+        DocumentedKeybinding {
+            key: "Cmd+-",
+            description: "Decrease font size",
+            category: KeybindingCategory::System,
+        },
+        DocumentedKeybinding {
+            key: "Cmd+Shift+0",
+            description: "Reset font size",
+            category: KeybindingCategory::System,
+        },
     ]
 }

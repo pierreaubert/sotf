@@ -1526,6 +1526,8 @@ impl PlayerView {
                     eq_plugin.settings = sotf_audio_player::PluginSettings::EQ {
                         channels,
                         filters: eq_filters.clone(),
+                        channel_filters: None,
+                        per_channel_mode: false,
                     };
                     log::info!("Updated existing EQ plugin at index {}", eq_idx);
                 }
@@ -1539,6 +1541,8 @@ impl PlayerView {
                     eq_plugin.settings = sotf_audio_player::PluginSettings::EQ {
                         channels: 2,
                         filters: eq_filters.clone(),
+                        channel_filters: None,
+                        per_channel_mode: false,
                     };
                 }
                 log::info!("Inserted new EQ plugin at index {}", insert_idx);

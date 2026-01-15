@@ -1,23 +1,31 @@
+use crate::app::types::room_eq::InteractiveChartStateWrapper;
+use crate::components::graphs::common::{rgba_to_u32, theme_to_chart_theme};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_px::line;
 use gpui_ui_kit::{
-    Button, ButtonVariant, Card, HStack, StackAlign, StackSpacing, Text, TextSize, TextWeight,
-    VStack,
+    Badge, BadgeVariant, Button, ButtonVariant, Card, HStack, Progress, ProgressSize,
+    ProgressVariant, StackAlign, StackSpacing, Text, TextSize, TextWeight, VStack,
 };
 
 impl PlayerView {
     pub(crate) fn render_room_eq_optimize(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let progress = state.app.measurement_state.room_eq_state.overall_progress;
-        let status_msg = &state.app.measurement_state.room_eq_state.status_message;
-        let is_running = state.app.measurement_state.room_eq_state.is_optimizing();
-        let is_completed = state
-            .app
-            .measurement_state
-            .room_eq_state
-            .is_optimization_complete();
+        let room_eq = &state.app.measurement_state.room_eq_state;
+
+        let progress = room_eq.overall_progress;
+        let status_msg = room_eq.status_message.clone();
+        let error_msg = room_eq.error_message.clone();
+        let is_running = room_eq.is_optimizing();
+        let is_completed = room_eq.is_optimization_complete();
+        let is_failed = room_eq.optimization_status == crate::app::types::OptimizationStatus::Failed;
+        let show_progress = is_running || is_completed || is_failed;
+        let progress_history = room_eq.progress_history.clone();
+        let current_channel = room_eq.current_channel.clone();
+        let current_iteration = room_eq.current_iteration;
+        let current_loss = room_eq.current_loss;
 
         VStack::new()
             .spacing(StackSpacing::Lg)
@@ -80,54 +88,24 @@ impl PlayerView {
                     .header_background(theme.background_secondary)
                     .border(theme.border)
                     .header(
-                        Text::new("Optimization Progress")
-                            .color(theme.text_primary)
-                            .weight(TextWeight::Semibold),
+                        HStack::new()
+                            .spacing(StackSpacing::Lg)
+                            .child(
+                                Text::new("Optimization Progress")
+                                    .color(theme.text_primary)
+                                    .weight(TextWeight::Semibold),
+                            )
+                            .when_some(current_channel.clone(), |hstack, ch| {
+                                hstack.child(
+                                    Text::new(format!("Channel: {}", ch))
+                                        .size(TextSize::Sm)
+                                        .color(theme.accent),
+                                )
+                            }),
                     )
                     .content(
                         VStack::new()
                             .spacing(StackSpacing::Md)
-                            .child(
-                                HStack::new()
-                                    .spacing(StackSpacing::Sm)
-                                    .align(StackAlign::Center)
-                                    .child(
-                                        Text::new(format!("Progress: {:.0}%", progress * 100.0))
-                                            .size(TextSize::Sm)
-                                            .weight(TextWeight::Semibold),
-                                    )
-                                    .when(is_running, |stack| {
-                                        stack.child(
-                                            Text::new("●").size(TextSize::Sm).color(theme.info),
-                                        )
-                                    })
-                                    .when(is_completed, |stack| {
-                                        stack.child(
-                                            Text::new("✓").size(TextSize::Sm).color(theme.success),
-                                        )
-                                    }),
-                            )
-                            .child(
-                                // Progress bar
-                                div()
-                                    .w_full()
-                                    .h(px(8.0))
-                                    .bg(theme.background_secondary)
-                                    .rounded_md()
-                                    .overflow_hidden()
-                                    .child(div().w(relative(progress)).h_full().bg(
-                                        if is_completed {
-                                            theme.success
-                                        } else {
-                                            theme.info
-                                        },
-                                    )),
-                            )
-                            .child(
-                                Text::new(status_msg.clone())
-                                    .size(TextSize::Sm)
-                                    .color(theme.text_secondary),
-                            )
                             .child(
                                 Button::new(
                                     "start_optimization",
@@ -137,19 +115,193 @@ impl PlayerView {
                                         "Start Optimization"
                                     },
                                 )
-                                .variant(ButtonVariant::Secondary)
+                                .variant(ButtonVariant::Primary)
+                                .full_width(true)
                                 .theme(theme.to_button_theme())
                                 .disabled(is_running)
                                 .build()
-                                .on_mouse_up(
-                                    MouseButton::Left,
-                                    cx.listener(|view, _, _, cx| {
-                                        view.start_room_eq_optimization(cx);
-                                    }),
-                                ),
-                            ),
+                                .when(!is_running, |btn| {
+                                    btn.on_mouse_up(
+                                        MouseButton::Left,
+                                        cx.listener(|view, _, _, cx| {
+                                            view.start_room_eq_optimization(cx);
+                                        }),
+                                    )
+                                }),
+                            )
+                            .when(show_progress, |vstack| {
+                                let display_progress = if is_completed {
+                                    100.0
+                                } else if is_running {
+                                    (progress * 100.0).max(5.0)
+                                } else {
+                                    progress * 100.0
+                                };
+
+                                vstack
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .flex_row()
+                                            .items_center()
+                                            .gap_2()
+                                            .child(
+                                                Text::new(if is_running {
+                                                    format!(
+                                                        "Iteration: {} | Loss: {:.4}",
+                                                        current_iteration, current_loss
+                                                    )
+                                                } else {
+                                                    format!("Progress: {:.0}%", display_progress)
+                                                })
+                                                .size(TextSize::Sm)
+                                                .color(theme.text_primary),
+                                            )
+                                            .when(is_completed, |el| {
+                                                el.child(
+                                                    Badge::new("Success")
+                                                        .variant(BadgeVariant::Success),
+                                                )
+                                            })
+                                            .when(is_failed, |el| {
+                                                el.child(
+                                                    Badge::new("Failed").variant(BadgeVariant::Error),
+                                                )
+                                            }),
+                                    )
+                                    .child(
+                                        Progress::new(display_progress)
+                                            .size(ProgressSize::Md)
+                                            .variant(if is_completed {
+                                                ProgressVariant::Success
+                                            } else if is_failed {
+                                                ProgressVariant::Error
+                                            } else {
+                                                ProgressVariant::Default
+                                            }),
+                                    )
+                                    .child(Text::new(status_msg.clone()).size(TextSize::Sm).color(
+                                        if is_completed {
+                                            theme.success
+                                        } else if is_failed {
+                                            theme.error
+                                        } else {
+                                            theme.text_secondary
+                                        },
+                                    ))
+                            })
+                            .when_some(error_msg, |vstack, err| {
+                                vstack.child(Text::new(err).size(TextSize::Sm).color(theme.error))
+                            }),
                     ),
             )
+            // Optimization Process graph (shown when progress history is available)
+            .when(!progress_history.is_empty(), |vstack| {
+                // Initialize interactive chart state if needed
+                {
+                    let state = self.state.read(cx);
+                    if state.app.measurement_state.room_eq_state.progress_chart_state.is_none() {
+                        drop(state);
+                        self.state.update(cx, |state, _| {
+                            // X: iteration range (0 to max), Y: loss range (auto-scale)
+                            // We use linear scale for iteration, and auto-fit y based on loss values
+                            let max_iter = state.app.measurement_state.room_eq_state.optimizer_config.max_iter as f64;
+                            state.app.measurement_state.room_eq_state.progress_chart_state =
+                                Some(InteractiveChartStateWrapper::new(0.0, max_iter.max(100.0), 0.0, 1.0)
+                                    .with_log_x(false)
+                                    .with_size(700.0, 250.0));
+                        });
+                    }
+                }
+
+                let state = self.state.read(cx);
+                let room_eq = &state.app.measurement_state.room_eq_state;
+                let theme = state.app.ui_state.theme.clone();
+                let history = room_eq.progress_history.clone();
+                let chart_state = room_eq.progress_chart_state.as_ref().map(|w| w.inner());
+                let chart_theme = theme_to_chart_theme(&theme);
+
+                let iterations: Vec<f64> = history.iter().map(|&(i, _, _)| i as f64).collect();
+                let losses: Vec<f64> = history.iter().map(|&(_, loss, _)| loss).collect();
+
+                let current_loss_val = losses.last().copied().unwrap_or(0.0);
+                let best_loss = losses.iter().copied().fold(f64::INFINITY, f64::min);
+
+                // Calculate Y range from data
+                let (loss_min, loss_max) = losses.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(min, max), &v| {
+                    (min.min(v), max.max(v))
+                });
+                let y_min = if loss_min.is_finite() { (loss_min * 0.95).max(0.0) } else { 0.0 };
+                let y_max = if loss_max.is_finite() { loss_max * 1.05 } else { 1.0 };
+
+                // Get domain bounds - use interactive state only when zoomed, otherwise use computed range
+                let x_max_data = iterations.last().copied().unwrap_or(100.0);
+                let (x_min, x_max) = chart_state
+                    .filter(|s| s.is_zoomed())
+                    .map(|s| s.x_domain())
+                    .unwrap_or((0.0, x_max_data));
+                let (y_min_domain, y_max_domain) = chart_state
+                    .filter(|s| s.is_zoomed())
+                    .map(|s| s.y_domain())
+                    .unwrap_or((y_min, y_max));
+
+                let chart = line(&iterations, &losses)
+                    .title("Optimization Process")
+                    .x_label("Iteration")
+                    .y_label("Loss")
+                    .label("Loss")
+                    .x_range(x_min, x_max)
+                    .y_range(y_min_domain, y_max_domain)
+                    .color(rgba_to_u32(theme.graph_colors.filter_response))
+                    .stroke_width(2.0)
+                    .theme(chart_theme)
+                    .size(700.0, 250.0)
+                    .build();
+
+                // Build the chart element, wrapping with interactive if state is available
+                let chart_element: Option<gpui::AnyElement> = chart.ok().map(|c| {
+                    if let Some(state) = chart_state {
+                        gpui_px::interaction::interactive("room-eq-progress-chart", c, state.clone())
+                            .build()
+                            .into_any_element()
+                    } else {
+                        c.into_any_element()
+                    }
+                });
+
+                vstack.child(
+                    Card::new()
+                        .background(theme.surface)
+                        .header_background(theme.background_secondary)
+                        .border(theme.border)
+                        .header(
+                            HStack::new()
+                                .spacing(StackSpacing::Lg)
+                                .child(
+                                    Text::new("Optimization Process")
+                                        .color(theme.text_primary)
+                                        .weight(TextWeight::Semibold),
+                                )
+                                .child(
+                                    Text::new(format!("Current: {:.4}", current_loss_val))
+                                        .size(TextSize::Sm)
+                                        .color(theme.text_secondary),
+                                )
+                                .child(
+                                    Text::new(format!("Best: {:.4}", best_loss))
+                                        .size(TextSize::Sm)
+                                        .color(theme.success),
+                                ),
+                        )
+                        .content(
+                            div()
+                                .w(px(700.0))
+                                .flex()
+                                .flex_col()
+                                .when_some(chart_element, |el, c| el.child(c)),
+                        ),
+                )
+            })
     }
 
     fn start_room_eq_optimization(&mut self, cx: &mut Context<Self>) {
@@ -306,7 +458,7 @@ impl PlayerView {
             (configs, opt_params)
         };
 
-        // Update state to running
+        // Update state to running and clear progress history
         self.state.update(cx, |state, _cx| {
             state
                 .app
@@ -322,6 +474,9 @@ impl PlayerView {
                 .channel_results
                 .clear();
             state.app.measurement_state.room_eq_state.overall_progress = 0.0;
+            state.app.measurement_state.room_eq_state.progress_history.clear();
+            state.app.measurement_state.room_eq_state.current_iteration = 0;
+            state.app.measurement_state.room_eq_state.current_loss = 0.0;
         });
 
         if channel_configs.is_empty() {
@@ -341,11 +496,37 @@ impl PlayerView {
         let total_channels = channel_configs.len();
         let state_clone = self.state.clone();
 
+        // Create async channel for progress updates from blocking thread
+        let (progress_tx, progress_rx) = smol::channel::bounded::<(usize, f64, f32)>(100);
+
+        // Clone state for progress receiver task
+        let state_for_progress = self.state.clone();
+
+        // Spawn a task to receive progress updates and update UI
+        cx.spawn({
+            async move |_, cx| {
+                while let Ok((iteration, loss, overall_progress)) = progress_rx.recv().await {
+                    let _ = state_for_progress.update(&mut cx.clone(), |state, cx| {
+                        state.app.measurement_state.room_eq_state.current_iteration = iteration;
+                        state.app.measurement_state.room_eq_state.current_loss = loss;
+                        state.app.measurement_state.room_eq_state.overall_progress = overall_progress;
+                        // Add to progress history (limit to avoid memory issues)
+                        if state.app.measurement_state.room_eq_state.progress_history.len() < 10000 {
+                            state.app.measurement_state.room_eq_state.progress_history.push((iteration, loss, None));
+                        }
+                        cx.notify();
+                    });
+                }
+            }
+        })
+        .detach();
+
         // Spawn the optimization task
         cx.spawn(async move |_, cx| {
             let mut all_results: Vec<ChannelOptResult> = Vec::new();
             let mut total_pre_score = 0.0;
             let mut total_post_score = 0.0;
+            let mut global_iteration_offset = 0usize;
 
             for (channel_idx, (channel_name, config, _ui_config_type)) in
                 channel_configs.into_iter().enumerate()
@@ -368,8 +549,10 @@ impl PlayerView {
                 let channel_idx_f = channel_idx as f32;
                 let total_channels_f = total_channels as f32;
                 let channel_name_cb = channel_name.clone();
+                let progress_tx_clone = progress_tx.clone();
+                let iteration_offset = global_iteration_offset;
 
-                // Create callback that updates UI with real-time progress
+                // Create callback that sends progress to UI via channel
                 let callback: sotf_audio_player::room_eq::SpeakerOptimizationCallback =
                     Box::new(move |progress: &SpeakerOptimizationProgress| {
                         let iteration = progress.iteration;
@@ -384,7 +567,7 @@ impl PlayerView {
                         } else {
                             0.0
                         };
-                        let _overall = (channel_idx_f + channel_progress) / total_channels_f;
+                        let overall = (channel_idx_f + channel_progress) / total_channels_f;
 
                         let stage_str = match stage {
                             sotf_audio_player::room_eq::OptimizationStage::Crossover => "crossover",
@@ -394,8 +577,6 @@ impl PlayerView {
                             }
                         };
 
-                        // Update UI state (note: this is sync context, so we can't use async update)
-                        // The callback runs in a blocking thread, so we log progress instead
                         log::debug!(
                             "Channel {}: iter {}/{} ({}) loss={:.4} filters={}",
                             channel_name_cb,
@@ -406,15 +587,22 @@ impl PlayerView {
                             num_biquads
                         );
 
+                        // Send progress update to UI (ignore errors if channel full or receiver dropped)
+                        let _ = progress_tx_clone.try_send((iteration_offset + iteration, loss, overall));
+
                         CallbackAction::Continue
                     });
 
                 // Run optimization in blocking task (optimization is CPU-bound)
                 let config_clone = config.clone();
+                let max_iter = config.args.maxeval;
                 let result = smol::unblock(move || {
                     run_speaker_optimization_with_callback(&config_clone, Some(callback))
                 })
                 .await;
+
+                // Update iteration offset for next channel
+                global_iteration_offset += max_iter;
 
                 match result {
                     Ok(speaker_result) => {
@@ -461,6 +649,14 @@ impl PlayerView {
                                     .map(|(&f, &db)| (f, db))
                                     .collect(),
                             ),
+                            normalized_response: Some(
+                                speaker_result
+                                    .frequencies
+                                    .iter()
+                                    .zip(speaker_result.normalized_curve.iter())
+                                    .map(|(&f, &db)| (f, db))
+                                    .collect(),
+                            ),
                         };
 
                         all_results.push(channel_result);
@@ -494,6 +690,9 @@ impl PlayerView {
                     }
                 }
             }
+
+            // Drop the progress sender to signal the receiver task to stop
+            drop(progress_tx);
 
             // All channels completed - update final state
             let avg_pre = if !all_results.is_empty() {

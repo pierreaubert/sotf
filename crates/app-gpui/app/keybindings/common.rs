@@ -4,6 +4,11 @@ use gpui::KeyBinding;
 /// Bindings common to all presets (playback, screen switching, etc.)
 pub(super) fn common_bindings() -> Vec<KeyBinding> {
     vec![
+        // Font size controls (global) - cmd-+ (or cmd-=), cmd--, cmd-0 to reset
+        KeyBinding::new("cmd-=", actions::IncreaseFontSize, None),
+        KeyBinding::new("cmd-+", actions::IncreaseFontSize, None),
+        KeyBinding::new("cmd--", actions::DecreaseFontSize, None),
+        KeyBinding::new("cmd-shift-0", actions::ResetFontSize, None),
         // Screen navigation with Cmd + number (Show menu shortcuts) - keep global
         KeyBinding::new("cmd-0", actions::SwitchToLibrary, None),
         KeyBinding::new("cmd-`", actions::SwitchToLibrary, None), // cmd-§ on macOS
@@ -19,13 +24,19 @@ pub(super) fn common_bindings() -> Vec<KeyBinding> {
         // Cancel/Escape is universal - keep global
         KeyBinding::new("escape", actions::Cancel, None),
         // Media keys - global scope (work from anywhere)
+        KeyBinding::new("f8", actions::PlayPause, None),
         KeyBinding::new("mediaplaypause", actions::PlayPause, None),
+        KeyBinding::new("f9", actions::NextTrack, None),
         KeyBinding::new("medianexttrack", actions::NextTrack, None),
+        KeyBinding::new("f7", actions::PrevTrack, None),
         KeyBinding::new("mediaprevioustrack", actions::PrevTrack, None),
         KeyBinding::new("mediastop", actions::Stop, None),
         KeyBinding::new("audiovolumeup", actions::VolumeUp, None),
         KeyBinding::new("audiovolumedown", actions::VolumeDown, None),
         KeyBinding::new("audiovolumemute", actions::ToggleMute, None),
+        KeyBinding::new("f12", actions::VolumeUp, None),
+        KeyBinding::new("f11", actions::VolumeDown, None),
+        KeyBinding::new("f10", actions::ToggleMute, None),
         // Playback controls - PlayerView context to allow typing space in search
         KeyBinding::new("space", actions::PlayPause, Some("PlayerView")),
         // Direct sort selection (number keys) - PlayerView context to allow typing numbers in search

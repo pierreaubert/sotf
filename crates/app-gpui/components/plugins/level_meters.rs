@@ -893,7 +893,7 @@ impl PlayerView {
                                 };
 
                                 let label = div()
-                                    .text_size(px(9.0))
+                                    .text_size(rems(0.5625))
                                     .text_color(theme.text_muted)
                                     .mt(label_offset)
                                     .child(format!("{}", db));

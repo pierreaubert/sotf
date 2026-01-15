@@ -269,6 +269,38 @@ impl PlayerView {
         cx.notify();
     }
 
+    fn increase_font_size(&mut self, _: &IncreaseFontSize, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            // Increase by 10%, max 2.0 (200%)
+            state.app.ui_state.font_scale = (state.app.ui_state.font_scale * 1.1).min(2.0);
+            if let Err(e) = state.app.save_config() {
+                log::error!("Failed to save config: {}", e);
+            }
+        });
+        cx.notify();
+    }
+
+    fn decrease_font_size(&mut self, _: &DecreaseFontSize, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            // Decrease by 10%, min 0.5 (50%)
+            state.app.ui_state.font_scale = (state.app.ui_state.font_scale / 1.1).max(0.5);
+            if let Err(e) = state.app.save_config() {
+                log::error!("Failed to save config: {}", e);
+            }
+        });
+        cx.notify();
+    }
+
+    fn reset_font_size(&mut self, _: &ResetFontSize, _: &mut Window, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            state.app.ui_state.font_scale = 1.0;
+            if let Err(e) = state.app.save_config() {
+                log::error!("Failed to save config: {}", e);
+            }
+        });
+        cx.notify();
+    }
+
     fn toggle_search(&mut self, _: &ToggleSearch, window: &mut Window, cx: &mut Context<Self>) {
         let mut should_focus = false;
         self.state.update(cx, |state, _cx| {
@@ -565,4 +597,5 @@ include!("search.rs");
 include!("select.rs");
 include!("split_view.rs");
 include!("switch.rs");
+include!("three_panel_layout.rs");
 include!("volume.rs");

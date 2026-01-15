@@ -116,85 +116,93 @@ impl PlayerView {
                 )
             })
             .child(
-                Card::new()
-                    .background(theme.surface)
-                    .header_background(theme.background_secondary)
-                    .border(theme.border)
-                    .header(
-                        Text::new("From Recording Session")
-                            .color(theme.text_primary)
-                            .weight(TextWeight::Semibold),
+                HStack::new()
+                    .spacing(StackSpacing::Lg)
+                    .child(
+                        div().flex_1().child(
+                            Card::new()
+                                .background(theme.surface)
+                                .header_background(theme.background_secondary)
+                                .border(theme.border)
+                                .header(
+                                    Text::new("From Recording Session")
+                                        .color(theme.text_primary)
+                                        .weight(TextWeight::Semibold),
+                                )
+                                .content(
+                                    VStack::new()
+                                        .spacing(StackSpacing::Md)
+                                        .child(
+                                            Text::new(if has_recording_session_data {
+                                                "Use measurements from the Recording screen."
+                                            } else {
+                                                "No recordings found. Go to the Recording screen to measure your speakers."
+                                            })
+                                            .size(TextSize::Sm)
+                                            .color(theme.text_secondary),
+                                        )
+                                        .child(if has_recording_session_data {
+                                            Button::new("load_from_recording", "Load from Recording")
+                                                .variant(ButtonVariant::Primary)
+                                                .size(ButtonSize::Md)
+                                                .theme(theme.to_button_theme())
+                                                .build()
+                                                .on_mouse_up(
+                                                    MouseButton::Left,
+                                                    cx.listener(|view, _, _, cx| {
+                                                        view.load_room_eq_from_recording(cx);
+                                                    }),
+                                                )
+                                        } else {
+                                            Button::new("go_to_recording", "Go to Recording")
+                                                .variant(ButtonVariant::Primary)
+                                                .size(ButtonSize::Md)
+                                                .theme(theme.to_button_theme())
+                                                .build()
+                                                .on_mouse_up(
+                                                    MouseButton::Left,
+                                                    cx.listener(|view, _, _, cx| {
+                                                        view.switch_screen(crate::app::Screen::Recording, cx);
+                                                    }),
+                                                )
+                                        }),
+                                ),
+                        ),
                     )
-                    .content(
-                        VStack::new()
-                            .spacing(StackSpacing::Md)
-                            .child(
-                                Text::new(if has_recording_session_data {
-                                    "Use measurements from the Recording screen."
-                                } else {
-                                    "No recordings found. Go to the Recording screen to measure your speakers."
-                                })
-                                .size(TextSize::Sm)
-                                .color(theme.text_secondary),
-                            )
-                            .child(if has_recording_session_data {
-                                Button::new("load_from_recording", "Load from Recording")
-                                    .variant(ButtonVariant::Primary)
-                                    .size(ButtonSize::Lg)
-                                    .theme(theme.to_button_theme())
-                                    .build()
-                                    .on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(|view, _, _, cx| {
-                                            view.load_room_eq_from_recording(cx);
-                                        }),
-                                    )
-                            } else {
-                                Button::new("go_to_recording", "Go to Recording")
-                                    .variant(ButtonVariant::Primary)
-                                    .size(ButtonSize::Lg)
-                                    .theme(theme.to_button_theme())
-                                    .build()
-                                    .on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(|view, _, _, cx| {
-                                            view.switch_screen(crate::app::Screen::Recording, cx);
-                                        }),
-                                    )
-                            }),
-                    ),
-            )
-            .child(
-                Card::new()
-                    .background(theme.surface)
-                    .header_background(theme.background_secondary)
-                    .border(theme.border)
-                    .header(
-                        Text::new("From JSON File")
-                            .color(theme.text_primary)
-                            .weight(TextWeight::Semibold),
-                    )
-                    .content(
-                        VStack::new()
-                            .spacing(StackSpacing::Md)
-                            .child(
-                                Text::new("Import measurements from a previously saved JSON file.")
-                                    .size(TextSize::Sm)
-                                    .color(theme.text_secondary),
-                            )
-                            .child(
-                                Button::new("load_from_file", "Import from File")
-                                    .variant(ButtonVariant::Primary)
-                                    .size(ButtonSize::Lg)
-                                    .theme(theme.to_button_theme())
-                                    .build()
-                                    .on_mouse_up(
-                                        MouseButton::Left,
-                                        cx.listener(|view, _, _, cx| {
-                                            view.load_room_eq_from_file(cx);
-                                        }),
-                                    ),
-                            ),
+                    .child(
+                        div().flex_1().child(
+                            Card::new()
+                                .background(theme.surface)
+                                .header_background(theme.background_secondary)
+                                .border(theme.border)
+                                .header(
+                                    Text::new("From JSON File")
+                                        .color(theme.text_primary)
+                                        .weight(TextWeight::Semibold),
+                                )
+                                .content(
+                                    VStack::new()
+                                        .spacing(StackSpacing::Md)
+                                        .child(
+                                            Text::new("Import measurements from a previously saved JSON file.")
+                                                .size(TextSize::Sm)
+                                                .color(theme.text_secondary),
+                                        )
+                                        .child(
+                                            Button::new("load_from_file", "Import from File")
+                                                .variant(ButtonVariant::Primary)
+                                                .size(ButtonSize::Md)
+                                                .theme(theme.to_button_theme())
+                                                .build()
+                                                .on_mouse_up(
+                                                    MouseButton::Left,
+                                                    cx.listener(|view, _, _, cx| {
+                                                        view.load_room_eq_from_file(cx);
+                                                    }),
+                                                ),
+                                        ),
+                                ),
+                        ),
                     ),
             )
     }

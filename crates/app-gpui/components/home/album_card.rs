@@ -249,7 +249,7 @@ impl AlbumCard {
                     .child(
                         div()
                             .w_full()
-                            .text_size(px(10.0))
+                            .text_size(rems(0.625))
                             .text_color(theme.text_secondary)
                             .overflow_hidden()
                             .text_ellipsis()
@@ -262,7 +262,7 @@ impl AlbumCard {
                             .flex()
                             .items_center()
                             .gap_1()
-                            .text_size(px(9.0))
+                            .text_size(rems(0.5625))
                             .text_color(theme.text_muted)
                             // Format (e.g., FLAC) - pass string directly, no wrapper div
                             .when_some(format, |d, fmt| d.child(fmt))

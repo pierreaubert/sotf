@@ -6,6 +6,38 @@ use serde::{Deserialize, Serialize};
 
 use super::recording::{RecordingResult, RecordingState};
 
+/// Wrapper for InteractiveChartState that implements Debug
+#[derive(Clone)]
+pub struct InteractiveChartStateWrapper(pub gpui_px::interaction::InteractiveChartState);
+
+impl std::fmt::Debug for InteractiveChartStateWrapper {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("InteractiveChartStateWrapper")
+            .field("is_zoomed", &self.0.is_zoomed())
+            .finish()
+    }
+}
+
+impl InteractiveChartStateWrapper {
+    pub fn new(x_min: f64, x_max: f64, y_min: f64, y_max: f64) -> Self {
+        Self(gpui_px::interaction::InteractiveChartState::new(x_min, x_max, y_min, y_max))
+    }
+
+    pub fn with_log_x(mut self, is_log: bool) -> Self {
+        self.0 = self.0.with_log_x(is_log);
+        self
+    }
+
+    pub fn with_size(mut self, width: f32, height: f32) -> Self {
+        self.0 = self.0.with_size(width, height);
+        self
+    }
+
+    pub fn inner(&self) -> &gpui_px::interaction::InteractiveChartState {
+        &self.0
+    }
+}
+
 /// Room EQ workflow step
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RoomEqStep {
@@ -460,6 +492,8 @@ pub struct ChannelOptResult {
     pub original_response: Option<Vec<(f64, f64)>>,
     /// Corrected frequency response
     pub corrected_response: Option<Vec<(f64, f64)>>,
+    /// Normalized frequency response
+    pub normalized_response: Option<Vec<(f64, f64)>>,
 }
 
 /// DSP chain output format (matches roomeq output)
@@ -517,6 +551,176 @@ pub struct DspChainMetadata {
     pub timestamp: String,
 }
 
+/// A control point for custom target curve editing
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct TargetCurveControlPoint {
+    /// Frequency in Hz (20-20000)
+    pub frequency: f64,
+    /// Level in dB
+    pub level_db: f64,
+}
+
+impl TargetCurveControlPoint {
+    pub fn new(frequency: f64, level_db: f64) -> Self {
+        Self { frequency, level_db }
+    }
+}
+
+/// Custom target curve defined by control points
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct CustomTargetCurve {
+    /// Control points sorted by frequency
+    pub control_points: Vec<TargetCurveControlPoint>,
+}
+
+impl CustomTargetCurve {
+    /// Create a new flat custom curve with default points at 20Hz and 20kHz
+    pub fn new_flat() -> Self {
+        Self {
+            control_points: vec![
+                TargetCurveControlPoint::new(20.0, 0.0),
+                TargetCurveControlPoint::new(20000.0, 0.0),
+            ],
+        }
+    }
+
+    /// Create Near-field target: Flat 20-1000Hz, then down to -1dB at 20kHz
+    pub fn new_near_field() -> Self {
+        Self {
+            control_points: vec![
+                TargetCurveControlPoint::new(20.0, 0.0),
+                TargetCurveControlPoint::new(1000.0, 0.0),
+                TargetCurveControlPoint::new(20000.0, -1.0),
+            ],
+        }
+    }
+
+    /// Create Mid-field target: +4dB at 40Hz, down to -3dB at 20kHz
+    pub fn new_mid_field() -> Self {
+        Self {
+            control_points: vec![
+                TargetCurveControlPoint::new(20.0, 4.0),
+                TargetCurveControlPoint::new(40.0, 4.0),
+                TargetCurveControlPoint::new(160.0, 0.5), // Transition to near flat
+                TargetCurveControlPoint::new(20000.0, -3.0),
+            ],
+        }
+    }
+
+    /// Create Far-field target: Flat up to 2kHz, then rolloff 3dB/oct
+    pub fn new_far_field() -> Self {
+        Self {
+            control_points: vec![
+                TargetCurveControlPoint::new(20.0, 0.0),
+                TargetCurveControlPoint::new(2000.0, 0.0),
+                TargetCurveControlPoint::new(4000.0, -3.0),
+                TargetCurveControlPoint::new(8000.0, -6.0),
+                TargetCurveControlPoint::new(16000.0, -9.0),
+                TargetCurveControlPoint::new(20000.0, -9.96),
+            ],
+        }
+    }
+
+    /// Add a control point and keep sorted by frequency
+    pub fn add_point(&mut self, point: TargetCurveControlPoint) {
+        self.control_points.push(point);
+        self.control_points
+            .sort_by(|a, b| a.frequency.partial_cmp(&b.frequency).unwrap());
+    }
+
+    /// Remove a control point by index (keeps at least 2 points)
+    pub fn remove_point(&mut self, index: usize) {
+        if self.control_points.len() > 2 && index < self.control_points.len() {
+            self.control_points.remove(index);
+        }
+    }
+
+    /// Update a control point position
+    pub fn update_point(&mut self, index: usize, frequency: f64, level_db: f64) {
+        if let Some(point) = self.control_points.get_mut(index) {
+            point.frequency = frequency.clamp(20.0, 20000.0);
+            point.level_db = level_db.clamp(-24.0, 24.0);
+        }
+        // Re-sort after update
+        self.control_points
+            .sort_by(|a, b| a.frequency.partial_cmp(&b.frequency).unwrap());
+    }
+
+    /// Generate the target curve as 200 log-spaced points
+    /// Returns Vec<(frequency_hz, level_db)>
+    pub fn generate_curve(&self) -> Vec<(f64, f64)> {
+        const NUM_POINTS: usize = 200;
+        const MIN_FREQ: f64 = 20.0;
+        const MAX_FREQ: f64 = 20000.0;
+
+        if self.control_points.len() < 2 {
+            // Return flat curve if not enough points
+            return (0..NUM_POINTS)
+                .map(|i| {
+                    let t = i as f64 / (NUM_POINTS - 1) as f64;
+                    let freq = (MIN_FREQ.ln() + t * (MAX_FREQ.ln() - MIN_FREQ.ln())).exp();
+                    (freq, 0.0)
+                })
+                .collect();
+        }
+
+        // Generate log-spaced frequencies
+        let frequencies: Vec<f64> = (0..NUM_POINTS)
+            .map(|i| {
+                let t = i as f64 / (NUM_POINTS - 1) as f64;
+                (MIN_FREQ.ln() + t * (MAX_FREQ.ln() - MIN_FREQ.ln())).exp()
+            })
+            .collect();
+
+        // Interpolate values at each frequency
+        frequencies
+            .iter()
+            .map(|&freq| {
+                let level = self.interpolate_at(freq);
+                (freq, level)
+            })
+            .collect()
+    }
+
+    /// Linear interpolation between control points (in log-frequency space)
+    fn interpolate_at(&self, freq: f64) -> f64 {
+        if self.control_points.is_empty() {
+            return 0.0;
+        }
+
+        // Find surrounding control points
+        let mut lower_idx = 0;
+        for (i, point) in self.control_points.iter().enumerate() {
+            if point.frequency <= freq {
+                lower_idx = i;
+            } else {
+                break;
+            }
+        }
+
+        let upper_idx = (lower_idx + 1).min(self.control_points.len() - 1);
+
+        if lower_idx == upper_idx {
+            return self.control_points[lower_idx].level_db;
+        }
+
+        let lower = &self.control_points[lower_idx];
+        let upper = &self.control_points[upper_idx];
+
+        // Linear interpolation in log-frequency space
+        let log_freq = freq.ln();
+        let log_lower = lower.frequency.ln();
+        let log_upper = upper.frequency.ln();
+
+        if (log_upper - log_lower).abs() < 1e-10 {
+            return lower.level_db;
+        }
+
+        let t = (log_freq - log_lower) / (log_upper - log_lower);
+        lower.level_db + t * (upper.level_db - lower.level_db)
+    }
+}
+
 /// UI state for Room EQ dropdowns
 #[derive(Debug, Clone, Default)]
 pub struct RoomEqDropdowns {
@@ -541,6 +745,12 @@ pub struct RoomEqDropdowns {
     pub autoeq_editing_field: Option<AutoEqField>,
     /// AutoEQ form edit text
     pub autoeq_edit_text: String,
+    /// Custom target curve editor modal open
+    pub custom_target_modal_open: bool,
+    /// Custom target presets dropdown open
+    pub custom_target_presets_open: bool,
+    /// Currently dragging control point index (None if not dragging)
+    pub dragging_control_point: Option<usize>,
 }
 
 /// Field identifiers for AutoEQ form editing (legacy compatibility)
@@ -583,6 +793,12 @@ pub struct RoomEqState {
     pub channel_results: Vec<ChannelOptResult>,
     /// Overall progress (0.0 - 1.0)
     pub overall_progress: f32,
+    /// Progress history for visualization: (iteration, loss, optional_score)
+    pub progress_history: Vec<(usize, f64, Option<f64>)>,
+    /// Current iteration number
+    pub current_iteration: usize,
+    /// Current loss value
+    pub current_loss: f64,
 
     // === Step 5: Export ===
     /// Generated DSP chain output
@@ -594,6 +810,14 @@ pub struct RoomEqState {
     pub error_message: Option<String>,
     /// Review graph smoothing level in octaves (0 = none, 1 = 1 octave, etc.)
     pub review_smoothing_octaves: f64,
+    /// Selected channel index for review (0-based)
+    pub review_selected_channel: usize,
+    /// Interactive chart state for review graph (zoom/pan) - initialized lazily
+    pub review_chart_state: Option<InteractiveChartStateWrapper>,
+    /// Interactive chart state for progress chart (zoom/pan) - initialized lazily
+    pub progress_chart_state: Option<InteractiveChartStateWrapper>,
+    /// Custom target curve for manual entry mode
+    pub custom_target_curve: CustomTargetCurve,
 }
 
 impl Default for RoomEqState {
@@ -608,11 +832,18 @@ impl Default for RoomEqState {
             current_channel: None,
             channel_results: Vec::new(),
             overall_progress: 0.0,
+            progress_history: Vec::new(),
+            current_iteration: 0,
+            current_loss: 0.0,
             dsp_output: None,
             dropdowns: RoomEqDropdowns::default(),
             status_message: String::new(),
             error_message: None,
             review_smoothing_octaves: 1.0, // Default to 1 octave smoothing
+            review_selected_channel: 0,
+            review_chart_state: None,
+            progress_chart_state: None,
+            custom_target_curve: CustomTargetCurve::new_flat(),
         }
     }
 }
@@ -690,6 +921,9 @@ impl RoomEqState {
         self.current_channel = None;
         self.channel_results.clear();
         self.overall_progress = 0.0;
+        self.progress_history.clear();
+        self.current_iteration = 0;
+        self.current_loss = 0.0;
         self.error_message = None;
     }
 

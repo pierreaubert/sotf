@@ -94,11 +94,29 @@ pub enum ActiveMenu {
     AddPlugin, // Plugin rack "Add" menu
 }
 
-/// Layout mode based on window height
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Layout mode based on window height (legacy - kept for compatibility)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LayoutMode {
-    Compact,  // Below 800px - tabs bar visible
+    Compact, // Below 800px - tabs bar visible
+    #[default]
     Expanded, // Above 800px - split Library/Queue view
+}
+
+/// Layout orientation based on window aspect ratio
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum LayoutOrientation {
+    #[default]
+    Horizontal, // width > height: panels side-by-side (Library | Queue | Rack)
+    Vertical, // height >= width: panels stacked vertically
+}
+
+/// Rack display mode based on available space
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RackDisplayMode {
+    #[default]
+    Full, // Full rack with all controls
+    Mini,      // Compact mode with output level meters only
+    Collapsed, // Hidden
 }
 
 /// Meter display mode for Queue screen
@@ -242,10 +260,11 @@ pub use recording::{
     SpeakerConfiguration,
 };
 pub use room_eq::{
-    ChannelDspChain, ChannelMeasurement, ChannelOptResult, CrossoverType, DriverDspChain,
-    DspChainMetadata, DspChainOutput, DspPluginConfig, EqFilterConfig, OptimizationStatus,
-    RecordingConfiguration, RoomEqAlgorithm, RoomEqDataSource, RoomEqMeasurementsFile,
-    RoomEqOptimizerConfig, RoomEqSpeakerConfig, RoomEqState, RoomEqStep, SpeakerConfigType,
+    ChannelDspChain, ChannelMeasurement, ChannelOptResult, CrossoverType, CustomTargetCurve,
+    DriverDspChain, DspChainMetadata, DspChainOutput, DspPluginConfig, EqFilterConfig,
+    OptimizationStatus, RecordingConfiguration, RoomEqAlgorithm, RoomEqDataSource,
+    RoomEqMeasurementsFile, RoomEqOptimizerConfig, RoomEqSpeakerConfig, RoomEqState, RoomEqStep,
+    SpeakerConfigType, TargetCurveControlPoint,
 };
 pub use settings::{ScanProgressModal, ScanType, SettingsTab};
 pub use spinorama_eq::{

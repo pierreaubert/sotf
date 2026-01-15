@@ -2857,7 +2857,12 @@ impl App {
         if let Some(plugin) = self.plugin_chain.get_plugin_mut(self.selected_plugin_index) {
             if let PluginSettings::EQ { channels, .. } = &plugin.settings {
                 let channels = *channels;
-                plugin.settings = PluginSettings::EQ { channels, filters };
+                plugin.settings = PluginSettings::EQ {
+                    channels,
+                    filters,
+                    channel_filters: None,
+                    per_channel_mode: false,
+                };
                 Ok(())
             } else {
                 Err("Selected plugin is not an EQ".to_string())

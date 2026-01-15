@@ -94,13 +94,21 @@ pub fn render_plugin_content(
     cx: &mut Context<PlayerView>,
 ) -> AnyElement {
     match settings {
-        PluginSettings::EQ { filters, .. } => {
+        PluginSettings::EQ {
+            channels,
+            filters,
+            channel_filters,
+            per_channel_mode,
+        } => {
             let selected_band_idx = selected_band_idx.min(filters.len().saturating_sub(1));
             render_eq_plugin(
                 entity.clone(),
                 plugin_idx,
                 ui_eq::EqRenderState {
+                    channels: *channels,
                     filters,
+                    channel_filters,
+                    per_channel_mode: *per_channel_mode,
                     is_editing,
                     selected_param,
                     selected_band_idx,
@@ -674,26 +682,35 @@ pub fn render_plugin_content(
             mix_transition_ms,
             path_a_config,
             path_b_config,
-        } => render_ab_compare_plugin(
-            entity.clone(),
-            plugin_idx,
-            ui_ab_compare::ABCompareRenderState {
-                mix: *mix,
-                mix_mode: *mix_mode,
-                selected_path: *selected_path,
-                bypass: *bypass,
-                auto_gain_enabled: *auto_gain_enabled,
-                loudness_type: *loudness_type,
-                max_auto_gain_db: *max_auto_gain_db,
-                gain_smoothing_ms: *gain_smoothing_ms,
-                mix_transition_ms: *mix_transition_ms,
-                path_a_config,
-                path_b_config,
-                is_editing,
-                selected_param,
-            },
-            theme,
-        )
-        .into_any_element(),
+        } => {
+            // Read dropdown states from plugin state
+            let app_state = entity.read(cx);
+            let ab_dropdowns = app_state.app.plugin_state.ab_compare_dropdowns;
+            drop(app_state);
+
+            render_ab_compare_plugin(
+                entity.clone(),
+                plugin_idx,
+                ui_ab_compare::ABCompareRenderState {
+                    mix: *mix,
+                    mix_mode: *mix_mode,
+                    selected_path: *selected_path,
+                    bypass: *bypass,
+                    auto_gain_enabled: *auto_gain_enabled,
+                    loudness_type: *loudness_type,
+                    max_auto_gain_db: *max_auto_gain_db,
+                    gain_smoothing_ms: *gain_smoothing_ms,
+                    mix_transition_ms: *mix_transition_ms,
+                    path_a_config,
+                    path_b_config,
+                    is_editing,
+                    selected_param,
+                    path_a_select_open: ab_dropdowns.path_a_open,
+                    path_b_select_open: ab_dropdowns.path_b_open,
+                },
+                theme,
+            )
+            .into_any_element()
+        }
     }
 }

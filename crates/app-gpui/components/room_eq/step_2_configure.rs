@@ -475,7 +475,7 @@ impl PlayerView {
             .on_target_curve_change({
                 let state = self.state.clone();
                 move |value, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
@@ -488,6 +488,17 @@ impl PlayerView {
                             .room_eq_state
                             .dropdowns
                             .target_curve_open = false;
+
+                        // Open custom target curve modal when "custom" is selected
+                        if value == "custom" {
+                            state
+                                .app
+                                .measurement_state
+                                .room_eq_state
+                                .dropdowns
+                                .custom_target_modal_open = true;
+                        }
+                        cx.notify();
                     });
                 }
             })

@@ -40,6 +40,7 @@ pub trait PluginEditingManager {
     fn remove_eq_band(&mut self, band_idx: usize) -> Result<(), String>;
     fn toggle_eq_band_mute(&mut self, band_idx: usize) -> Result<(), String>;
     fn toggle_eq_band_solo(&mut self, band_idx: usize) -> Result<(), String>;
+    fn set_eq_per_channel_mode(&mut self, plugin_idx: usize, per_channel: bool);
     fn refresh_plugin_presets(&mut self);
     fn save_plugin_chain(&mut self);
     fn save_selected_preset(&mut self);
@@ -2781,9 +2782,22 @@ impl PluginEditingManager for App {
 
         // Update the currently editing plugin
         if let Some(plugin) = self.get_editing_plugin_mut() {
-            if let PluginSettings::EQ { channels, .. } = &plugin.settings {
+            if let PluginSettings::EQ {
+                channels,
+                channel_filters,
+                per_channel_mode,
+                ..
+            } = &plugin.settings
+            {
                 let channels = *channels;
-                plugin.settings = PluginSettings::EQ { channels, filters };
+                let channel_filters = channel_filters.clone();
+                let per_channel_mode = *per_channel_mode;
+                plugin.settings = PluginSettings::EQ {
+                    channels,
+                    filters,
+                    channel_filters,
+                    per_channel_mode,
+                };
                 self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
                 Ok(())
             } else {
@@ -2842,7 +2856,13 @@ impl PluginEditingManager for App {
 
         // Add a new filter to the currently editing plugin
         if let Some(plugin) = self.get_editing_plugin_mut() {
-            if let PluginSettings::EQ { channels, filters } = &mut plugin.settings {
+            if let PluginSettings::EQ {
+                channels,
+                filters,
+                channel_filters,
+                per_channel_mode,
+            } = &mut plugin.settings
+            {
                 // Create a new default peak filter at 1kHz
                 let new_filter = EQFilter::new(BiquadFilterType::Peak, 1000.0, 1.0, 0.0);
                 filters.push(new_filter);
@@ -2850,7 +2870,14 @@ impl PluginEditingManager for App {
                 // Clone values for reassignment (borrow checker)
                 let channels = *channels;
                 let filters = filters.clone();
-                plugin.settings = PluginSettings::EQ { channels, filters };
+                let channel_filters = channel_filters.clone();
+                let per_channel_mode = *per_channel_mode;
+                plugin.settings = PluginSettings::EQ {
+                    channels,
+                    filters,
+                    channel_filters,
+                    per_channel_mode,
+                };
 
                 self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
                 Ok(())
@@ -2876,7 +2903,13 @@ impl PluginEditingManager for App {
 
         // Remove the filter from the currently editing plugin
         if let Some(plugin) = self.get_editing_plugin_mut() {
-            if let PluginSettings::EQ { channels, filters } = &mut plugin.settings {
+            if let PluginSettings::EQ {
+                channels,
+                filters,
+                channel_filters,
+                per_channel_mode,
+            } = &mut plugin.settings
+            {
                 if band_idx >= filters.len() {
                     return Err("Invalid band index".to_string());
                 }
@@ -2886,7 +2919,14 @@ impl PluginEditingManager for App {
                 // Clone values for reassignment (borrow checker)
                 let channels = *channels;
                 let filters = filters.clone();
-                plugin.settings = PluginSettings::EQ { channels, filters };
+                let channel_filters = channel_filters.clone();
+                let per_channel_mode = *per_channel_mode;
+                plugin.settings = PluginSettings::EQ {
+                    channels,
+                    filters,
+                    channel_filters,
+                    per_channel_mode,
+                };
 
                 self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
                 Ok(())
@@ -2909,7 +2949,13 @@ impl PluginEditingManager for App {
         }
 
         if let Some(plugin) = self.get_editing_plugin_mut() {
-            if let PluginSettings::EQ { channels, filters } = &mut plugin.settings {
+            if let PluginSettings::EQ {
+                channels,
+                filters,
+                channel_filters,
+                per_channel_mode,
+            } = &mut plugin.settings
+            {
                 if band_idx >= filters.len() {
                     return Err("Invalid band index".to_string());
                 }
@@ -2918,7 +2964,14 @@ impl PluginEditingManager for App {
 
                 let channels = *channels;
                 let filters = filters.clone();
-                plugin.settings = PluginSettings::EQ { channels, filters };
+                let channel_filters = channel_filters.clone();
+                let per_channel_mode = *per_channel_mode;
+                plugin.settings = PluginSettings::EQ {
+                    channels,
+                    filters,
+                    channel_filters,
+                    per_channel_mode,
+                };
 
                 self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
                 Ok(())
@@ -2942,7 +2995,13 @@ impl PluginEditingManager for App {
         }
 
         if let Some(plugin) = self.get_editing_plugin_mut() {
-            if let PluginSettings::EQ { channels, filters } = &mut plugin.settings {
+            if let PluginSettings::EQ {
+                channels,
+                filters,
+                channel_filters,
+                per_channel_mode,
+            } = &mut plugin.settings
+            {
                 if band_idx >= filters.len() {
                     return Err("Invalid band index".to_string());
                 }
@@ -2951,7 +3010,14 @@ impl PluginEditingManager for App {
 
                 let channels = *channels;
                 let filters = filters.clone();
-                plugin.settings = PluginSettings::EQ { channels, filters };
+                let channel_filters = channel_filters.clone();
+                let per_channel_mode = *per_channel_mode;
+                plugin.settings = PluginSettings::EQ {
+                    channels,
+                    filters,
+                    channel_filters,
+                    per_channel_mode,
+                };
 
                 self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
                 Ok(())
@@ -2960,6 +3026,33 @@ impl PluginEditingManager for App {
             }
         } else {
             Err("No plugin being edited".to_string())
+        }
+    }
+
+    /// Set the EQ plugin to per-channel mode or global mode
+    fn set_eq_per_channel_mode(&mut self, plugin_idx: usize, per_channel: bool) {
+        if let Some(plugin) = self.plugin_state.plugin_chain.get_plugin_mut(plugin_idx) {
+            if let PluginSettings::EQ {
+                channels,
+                filters,
+                channel_filters,
+                per_channel_mode,
+            } = &mut plugin.settings
+            {
+                // When switching to per-channel mode, initialize channel_filters if needed
+                if per_channel && channel_filters.is_none() {
+                    // Initialize with copies of the global filters for each channel
+                    let num_channels = *channels;
+                    let mut ch_filters = Vec::with_capacity(num_channels);
+                    for _ in 0..num_channels {
+                        ch_filters.push(filters.clone());
+                    }
+                    *channel_filters = Some(ch_filters);
+                }
+
+                *per_channel_mode = per_channel;
+                self.plugin_state.pending_plugin_update = Some(PluginUpdateType::Structural);
+            }
         }
     }
 

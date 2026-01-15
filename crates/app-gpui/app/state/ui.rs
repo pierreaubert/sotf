@@ -33,6 +33,8 @@ pub struct UIState {
     pub pending_studio_close: bool,
     pub should_quit: bool,
     pub startup_db_check_done: bool,
+    /// Font scale factor (1.0 = normal, >1.0 = larger, <1.0 = smaller)
+    pub font_scale: f32,
 }
 
 impl Default for UIState {
@@ -59,6 +61,7 @@ impl Default for UIState {
             pending_studio_close: false,
             should_quit: false,
             startup_db_check_done: false,
+            font_scale: 1.0,
         }
     }
 }

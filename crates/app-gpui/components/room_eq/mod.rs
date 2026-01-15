@@ -18,6 +18,7 @@ use gpui_ui_kit::{
 };
 
 mod actions;
+mod custom_target_modal;
 mod render;
 mod step_1_load;
 mod step_2_configure;
@@ -55,6 +56,8 @@ impl PlayerView {
                     .p_4()
                     .child(content),
             )
+            // Custom target curve editor modal
+            .child(self.render_custom_target_modal(cx))
     }
 
     /// Render the room EQ screen header with step indicators using WizardHeader

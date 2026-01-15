@@ -1,7 +1,9 @@
 use crate::ui::PlayerView;
 use gpui::prelude::*;
+use gpui::*;
 use gpui_ui_kit::{
-    Card, HStack, Select, SelectOption, StackSpacing, Text, TextSize, TextWeight, VStack,
+    Button, ButtonSize, ButtonVariant, Card, HStack, Select, SelectOption, StackSpacing, Text,
+    TextSize, TextWeight, VStack,
 };
 
 use super::render::render_channel_result_card;
@@ -10,27 +12,14 @@ impl PlayerView {
     pub(crate) fn render_room_eq_review(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let pre_score = state
-            .app
-            .measurement_state
-            .room_eq_state
-            .average_pre_score();
-        let post_score = state
-            .app
-            .measurement_state
-            .room_eq_state
-            .average_post_score();
-        let smoothing_octaves = state
-            .app
-            .measurement_state
-            .room_eq_state
-            .review_smoothing_octaves;
-        let smoothing_dropdown_open = state
-            .app
-            .measurement_state
-            .room_eq_state
-            .dropdowns
-            .review_smoothing_open;
+        let room_eq = &state.app.measurement_state.room_eq_state;
+
+        let pre_score = room_eq.average_pre_score();
+        let post_score = room_eq.average_post_score();
+        let smoothing_octaves = room_eq.review_smoothing_octaves;
+        let smoothing_dropdown_open = room_eq.dropdowns.review_smoothing_open;
+        let selected_channel_idx = room_eq.review_selected_channel;
+        let channel_results = room_eq.channel_results.clone();
 
         let view = cx.entity().clone();
 
@@ -58,6 +47,54 @@ impl PlayerView {
                     .size(TextSize::Sm)
                     .color(theme.text_secondary),
             )
+            // Channel selection buttons
+            .when(channel_results.len() > 1, |vstack| {
+                vstack.child(
+                    Card::new()
+                        .background(theme.surface)
+                        .header_background(theme.background_secondary)
+                        .border(theme.border)
+                        .header(
+                            Text::new("Select Channel")
+                                .color(theme.text_primary)
+                                .weight(TextWeight::Semibold),
+                        )
+                        .content(
+                            HStack::new()
+                                .spacing(StackSpacing::Sm)
+                                .children(channel_results.iter().enumerate().map(|(idx, result)| {
+                                    let is_selected = idx == selected_channel_idx;
+                                    let channel_name = result.channel_name.clone();
+
+                                    Button::new(
+                                        SharedString::from(format!("channel_select_{}", idx)),
+                                        channel_name,
+                                    )
+                                    .variant(if is_selected {
+                                        ButtonVariant::Primary
+                                    } else {
+                                        ButtonVariant::Secondary
+                                    })
+                                    .size(ButtonSize::Md)
+                                    .theme(theme.to_button_theme())
+                                    .build()
+                                    .on_mouse_up(
+                                        MouseButton::Left,
+                                        cx.listener(move |view, _, _, cx| {
+                                            view.state.update(cx, |state, _| {
+                                                state
+                                                    .app
+                                                    .measurement_state
+                                                    .room_eq_state
+                                                    .review_selected_channel = idx;
+                                            });
+                                            cx.notify();
+                                        }),
+                                    )
+                                })),
+                        ),
+                )
+            })
             // Graph settings card
             .child(
                 Card::new()
@@ -166,54 +203,65 @@ impl PlayerView {
                         ),
                     ),
             )
-            .child(
-                Card::new()
-                    .background(theme.surface)
-                    .header_background(theme.background_secondary)
-                    .border(theme.border)
-                    .header(
-                        Text::new("Per-Channel Results")
-                            .color(theme.text_primary)
-                            .weight(TextWeight::Semibold),
-                    )
-                    .content(self.render_channel_results(cx)),
-            )
+            // Selected channel result
+            .child(self.render_selected_channel_result(cx))
     }
 
-    /// Render per-channel optimization results
-    fn render_channel_results(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    /// Render the selected channel's optimization result
+    fn render_selected_channel_result(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        use crate::app::types::room_eq::InteractiveChartStateWrapper;
+
+        // Initialize interactive chart state if needed
+        {
+            let state = self.state.read(cx);
+            if state.app.measurement_state.room_eq_state.review_chart_state.is_none() {
+                // Drop read borrow before update
+                drop(state);
+                self.state.update(cx, |state, _| {
+                    // Create interactive state for frequency response chart
+                    // X: 20 Hz to 20 kHz (log scale), Y: -20 to +5 dB (typical range)
+                    state.app.measurement_state.room_eq_state.review_chart_state =
+                        Some(InteractiveChartStateWrapper::new(20.0, 20000.0, -20.0, 5.0)
+                            .with_log_x(true)
+                            .with_size(1200.0, 400.0));
+                });
+            }
+        }
+
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
-        let channel_results = state
-            .app
-            .measurement_state
-            .room_eq_state
-            .channel_results
-            .clone();
-        let smoothing_octaves = state
-            .app
-            .measurement_state
-            .room_eq_state
-            .review_smoothing_octaves;
+        let room_eq = &state.app.measurement_state.room_eq_state;
+        let channel_results = &room_eq.channel_results;
+        let selected_idx = room_eq.review_selected_channel;
+        let smoothing_octaves = room_eq.review_smoothing_octaves;
+        let chart_state = room_eq.review_chart_state.as_ref().map(|w| w.inner());
 
         if channel_results.is_empty() {
             return VStack::new()
                 .spacing(StackSpacing::Md)
                 .child(
-                    Text::new("No optimization results yet. Run optimization first.")
-                        .size(TextSize::Sm)
-                        .color(theme.text_muted),
+                    Card::new()
+                        .background(theme.surface)
+                        .header_background(theme.background_secondary)
+                        .border(theme.border)
+                        .header(
+                            Text::new("Channel Result")
+                                .color(theme.text_primary)
+                                .weight(TextWeight::Semibold),
+                        )
+                        .content(
+                            Text::new("No optimization results yet. Run optimization first.")
+                                .size(TextSize::Sm)
+                                .color(theme.text_muted),
+                        ),
                 )
                 .into_any_element();
         }
 
-        VStack::new()
-            .spacing(StackSpacing::Lg)
-            .children(
-                channel_results
-                    .iter()
-                    .map(|result| render_channel_result_card(result, &theme, smoothing_octaves)),
-            )
-            .into_any_element()
+        // Clamp selected index to valid range
+        let idx = selected_idx.min(channel_results.len().saturating_sub(1));
+        let result = &channel_results[idx];
+
+        render_channel_result_card(result, &theme, smoothing_octaves, chart_state).into_any_element()
     }
 }

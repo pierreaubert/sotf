@@ -18,6 +18,8 @@ pub struct PluginState {
     pub plugin_param_selection: usize,
     pub selected_plugin_index: usize,
     pub selected_eq_band: usize,
+    /// Selected channel for per-channel EQ mode (0 = first channel)
+    pub selected_eq_channel: usize,
     pub matrix_selected_cell: Option<(usize, usize)>,
     pub plugin_view_mode: PluginViewMode,
     pub plugin_graph: Option<PluginGraph>,
@@ -30,6 +32,15 @@ pub struct PluginState {
     pub available_plugin_presets: Vec<String>,
     pub selected_preset_index: usize,
     pub last_loaded_preset: Option<String>,
+    /// Dropdown states for AB Compare plugin
+    pub ab_compare_dropdowns: ABCompareDropdowns,
+}
+
+/// Dropdown open states for AB Compare plugin UI
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ABCompareDropdowns {
+    pub path_a_open: bool,
+    pub path_b_open: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -60,6 +71,7 @@ impl Default for PluginState {
             plugin_param_selection: 0,
             selected_plugin_index: 0,
             selected_eq_band: 0,
+            selected_eq_channel: 0,
             matrix_selected_cell: None,
             plugin_view_mode: PluginViewMode::Rack,
             plugin_graph: None,
@@ -72,6 +84,7 @@ impl Default for PluginState {
             available_plugin_presets: Vec::new(),
             selected_preset_index: 0,
             last_loaded_preset: None,
+            ab_compare_dropdowns: ABCompareDropdowns::default(),
         }
     }
 }
