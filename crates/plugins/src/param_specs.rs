@@ -421,6 +421,7 @@ pub mod eq {
     // EQ filters are dynamic, but we can define common ranges for filter parameters
     pub const FREQUENCY_MIN: f64 = 20.0;
     pub const FREQUENCY_MAX: f64 = 20000.0;
+    pub const FREQUENCY_DEFAULT: f64 = 1000.0;
 
     pub const Q_MIN: f64 = 0.1;
     pub const Q_MAX: f64 = 10.0;

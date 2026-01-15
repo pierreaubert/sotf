@@ -105,7 +105,7 @@ pub fn default_surround_direct_bleed() -> f32 {
 }
 
 pub fn default_rear_ambient_boost() -> f32 {
-    1.5
+    1.2
 }
 
 pub fn default_rear_late_reflection() -> f32 {
@@ -114,7 +114,7 @@ pub fn default_rear_late_reflection() -> f32 {
 
 // Ambient gain boost (sqrt(1-coherence) multiplier)
 pub fn default_ambient_boost() -> f32 {
-    1.2
+    1.0
 }
 
 // Dialogue detection defaults

@@ -314,15 +314,15 @@ impl InPlacePlugin for LimiterPlugin {
     ) -> PluginResult<()> {
         let num_frames = context.num_frames;
 
-        // Update smoothers per sample for smooth parameter transitions
-        let _ = self.threshold_smoother.next();
-        let _ = self.mix_smoother.next();
-        let threshold_linear = self.threshold_smoother.current();
-        let smoothed_mix = self.mix_smoother.current();
-        let dry_mix = 1.0 - smoothed_mix;
-        let wet_mix = smoothed_mix;
-
         for frame in 0..num_frames {
+            // Update smoothers per sample for smooth parameter transitions
+            let _ = self.threshold_smoother.next();
+            let _ = self.mix_smoother.next();
+            let threshold_linear = self.threshold_smoother.current();
+            let smoothed_mix = self.mix_smoother.current();
+            let dry_mix = 1.0 - smoothed_mix;
+            let wet_mix = smoothed_mix;
+
             // Process all channels for this frame
             for ch in 0..self.channels {
                 let sample_idx = frame * self.channels + ch;

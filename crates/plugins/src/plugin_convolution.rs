@@ -94,6 +94,10 @@ pub struct ConvolutionPlugin {
     // Processing buffers (reused to avoid allocations, resized as needed)
     fft_buffer: Vec<Complex<f32>>,
     conv_result: Vec<Complex<f32>>,
+
+    // Scratch buffers for de-interleaving (per channel)
+    scratch_input: Vec<Vec<f32>>,
+    scratch_output: Vec<Vec<f32>>,
 }
 
 impl ConvolutionPlugin {
@@ -125,6 +129,9 @@ impl ConvolutionPlugin {
 
             fft_buffer: vec![Complex::new(0.0, 0.0); fft_size],
             conv_result: vec![Complex::new(0.0, 0.0); fft_size],
+
+            scratch_input: vec![Vec::with_capacity(1024); channels],
+            scratch_output: vec![Vec::with_capacity(1024); channels],
         }
     }
 
@@ -559,11 +566,7 @@ impl Plugin for ConvolutionPlugin {
             ));
         }
 
-        // Tick smoothers
-        let mix = self.mix.next();
-        let gain = self.gain_linear.next();
-        let wet_gain = mix * gain;
-        let dry_gain = 1.0 - mix;
+        let num_frames = input.len() / self.channels;
 
         // 1. Check for resize requirements without holding lock for long
         let resize_fft_size = {
@@ -584,30 +587,38 @@ impl Plugin for ConvolutionPlugin {
             self.resize_buffers(size);
         }
 
+        // Resize scratch buffers if needed
+        if self.scratch_input[0].capacity() < num_frames {
+            for ch in 0..self.channels {
+                self.scratch_input[ch] = Vec::with_capacity(num_frames);
+                self.scratch_output[ch] = Vec::with_capacity(num_frames);
+            }
+        }
+        for ch in 0..self.channels {
+            self.scratch_input[ch].resize(num_frames, 0.0);
+            self.scratch_output[ch].resize(num_frames, 0.0);
+        }
+
         // 3. Process
         let state_guard = self.state.read();
 
-        if let Some(ref state) = *state_guard {
-            let num_frames = input.len() / self.channels;
+        // Check if we have active IR state
+        let has_state = state_guard.is_some();
 
+        if let Some(ref state) = *state_guard {
             // Process each channel
             for ch in 0..self.channels {
-                // Extract channel samples (allocation here is acceptable for safety refactor,
-                // typically we'd use pre-allocated buffers but process is mut self so we can't easily iterate)
-                // Actually, we can iterate indices.
-                // Let's create temp vectors for this frame.
-                let mut channel_input = vec![0.0; num_frames];
-                let mut channel_output = vec![0.0; num_frames];
-
+                // De-interleave input to scratch buffer
                 for frame in 0..num_frames {
-                    channel_input[frame] = input[frame * self.channels + ch];
+                    self.scratch_input[ch][frame] = input[frame * self.channels + ch];
                 }
 
                 // Process (pass disjoint borrows)
+                // Generate pure wet signal (dry=0.0, wet=1.0) into scratch_output
                 Self::process_channel_internal(
                     ch,
-                    &channel_input,
-                    &mut channel_output,
+                    &self.scratch_input[ch],
+                    &mut self.scratch_output[ch],
                     state,
                     &mut self.input_buffer[ch],
                     &mut self.input_buffer_fill[ch],
@@ -615,18 +626,35 @@ impl Plugin for ConvolutionPlugin {
                     &mut self.output_accumulator_fill,
                     &mut self.fft_buffer,
                     &mut self.conv_result,
-                    dry_gain,
-                    wet_gain,
+                    0.0, // dry gain (we want pure wet here)
+                    1.0, // wet gain
                 );
+            }
+        }
 
-                // Interleave back
-                for frame in 0..num_frames {
-                    output[frame * self.channels + ch] = channel_output[frame];
+        // 4. Mix Dry/Wet to Output
+        // If state exists, we mix dry input with wet scratch_output.
+        // If no state, we just pass through dry input (mix parameter still applies effectively as gain=1.0)
+        
+        for frame in 0..num_frames {
+            // Tick smoothers per frame
+            let mix = self.mix.next();
+            let gain = self.gain_linear.next();
+            let wet_gain = mix * gain;
+            let dry_gain = 1.0 - mix;
+
+            for ch in 0..self.channels {
+                let idx = frame * self.channels + ch;
+                let dry_sample = input[idx];
+                
+                if has_state {
+                    let wet_sample = self.scratch_output[ch][frame];
+                    output[idx] = dry_sample * dry_gain + wet_sample * wet_gain;
+                } else {
+                    // Passthrough behavior when no IR loaded: effectively just dry
+                    output[idx] = dry_sample; 
                 }
             }
-        } else {
-            // Passthrough
-            output.copy_from_slice(input);
         }
 
         // Flush denormals to prevent CPU performance spikes and audio crackle

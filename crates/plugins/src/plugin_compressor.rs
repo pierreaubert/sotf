@@ -493,20 +493,20 @@ impl InPlacePlugin for CompressorPlugin {
         let dry_mix = 1.0 - self.mix;
         let wet_mix = self.mix;
 
-        // Tick smoothers for the block
-        let threshold = self.threshold_smoother.next();
-        let makeup_gain = self.makeup_gain_smoother.next();
-
-        let auto_makeup_db = if self.auto_makeup {
-            let avg_overshoot = (-threshold).max(0.0) * 0.5;
-            avg_overshoot * compression_slope
-        } else {
-            0.0
-        };
-        let makeup_gain_linear = 10.0_f32.powf((makeup_gain + auto_makeup_db) / 20.0);
-
         if self.link_channels && self.channels > 1 {
             for frame in 0..num_frames {
+                // Tick smoothers per sample for artifact-free parameter changes
+                let threshold = self.threshold_smoother.next();
+                let makeup_gain = self.makeup_gain_smoother.next();
+
+                let auto_makeup_db = if self.auto_makeup {
+                    let avg_overshoot = (-threshold).max(0.0) * 0.5;
+                    avg_overshoot * compression_slope
+                } else {
+                    0.0
+                };
+                let makeup_gain_linear = 10.0_f32.powf((makeup_gain + auto_makeup_db) / 20.0);
+
                 let mut detection_level = 0.0_f32;
 
                 for ch in 0..self.channels {
@@ -537,6 +537,18 @@ impl InPlacePlugin for CompressorPlugin {
             }
         } else {
             for frame in 0..num_frames {
+                // Tick smoothers per sample for artifact-free parameter changes
+                let threshold = self.threshold_smoother.next();
+                let makeup_gain = self.makeup_gain_smoother.next();
+
+                let auto_makeup_db = if self.auto_makeup {
+                    let avg_overshoot = (-threshold).max(0.0) * 0.5;
+                    avg_overshoot * compression_slope
+                } else {
+                    0.0
+                };
+                let makeup_gain_linear = 10.0_f32.powf((makeup_gain + auto_makeup_db) / 20.0);
+
                 for ch in 0..self.channels {
                     let sample_idx = frame * self.channels + ch;
                     let input_sample = buffer[sample_idx];
