@@ -16,6 +16,35 @@ use sotf_hal::HalInputReader;
 
 const SPIN_MS_SLEEP_DECODER: u64 = 10;
 
+/// Action returned by decode loop
+enum DecoderLoopAction {
+    Continue,
+    Stop,
+    Interrupted(DecoderCommand),
+}
+
+/// Helper to send a message with backpressure handling and interruption support
+fn send_or_interrupt<T>(
+    tx: &SyncSender<T>,
+    rx: &Receiver<DecoderCommand>,
+    mut msg: T,
+) -> Result<Option<DecoderCommand>, String> {
+    loop {
+        match tx.try_send(msg) {
+            Ok(_) => return Ok(None),
+            Err(std::sync::mpsc::TrySendError::Full(returned_msg)) => {
+                // Buffer full - check for interruption
+                if let Ok(cmd) = rx.try_recv() {
+                    return Ok(Some(cmd));
+                }
+                msg = returned_msg;
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            Err(e) => return Err(format!("Channel disconnected: {}", e)),
+        }
+    }
+}
+
 /// Decoder thread handle
 pub struct DecoderThread {
     command_tx: Sender<DecoderCommand>,
@@ -169,10 +198,11 @@ impl DecoderState {
     fn decode_chunk(
         &mut self,
         message_tx: &SyncSender<DecoderMessage>,
+        command_rx: &Receiver<DecoderCommand>,
         event_tx: &Sender<ThreadEvent>,
         frame_size: usize,
         target_sample_rate: u32,
-    ) -> Result<bool, String> {
+    ) -> Result<DecoderLoopAction, String> {
         let decoder = self.decoder.as_mut().ok_or("No decoder")?;
         let spec = self.spec.as_ref().ok_or("No spec")?;
 
@@ -204,7 +234,8 @@ impl DecoderState {
                     // If resampling, we need enough input samples for one output frame
                     // But here we simplify: just process fixed input chunks
 
-                    if let Some(resampler) = &mut self.resampler {
+                    let s_start = Instant::now();
+                    let frame_to_send = if let Some(resampler) = &mut self.resampler {
                         let chunk: Vec<f32> = self
                             .resampler_buffer
                             .drain(..frame_size * channels)
@@ -237,18 +268,12 @@ impl DecoderState {
                         let frame_data =
                             self.resample_output_buffer[..expected_frames * channels].to_vec();
 
-                        let frame = AudioFrame::new(
+                        AudioFrame::new(
                             frame_data,
                             expected_frames,
                             channels,
                             target_sample_rate,
-                        );
-
-                        let s_start = Instant::now();
-                        message_tx
-                            .send(DecoderMessage::Frame(frame))
-                            .map_err(|_| "Failed to send frame")?;
-                        total_send_time += s_start.elapsed();
+                        )
                     } else {
                         // No resampling - just take a chunk
                         let chunk: Vec<f32> = self
@@ -256,15 +281,18 @@ impl DecoderState {
                             .drain(..frame_size * channels)
                             .collect();
 
-                        let frame =
-                            AudioFrame::new(chunk, frame_size, channels, source_sample_rate);
+                        AudioFrame::new(chunk, frame_size, channels, source_sample_rate)
+                    };
 
-                        let s_start = Instant::now();
-                        message_tx
-                            .send(DecoderMessage::Frame(frame))
-                            .map_err(|_| "Failed to send frame")?;
-                        total_send_time += s_start.elapsed();
+                    // Send with interruption support
+                    if let Some(cmd) = send_or_interrupt(
+                        message_tx,
+                        command_rx,
+                        DecoderMessage::Frame(frame_to_send),
+                    )? {
+                        return Ok(DecoderLoopAction::Interrupted(cmd));
                     }
+                    total_send_time += s_start.elapsed();
                 }
 
                 let processing_time = decode_time + total_resample_time;
@@ -279,22 +307,13 @@ impl DecoderState {
                     );
                 }
 
-                // Log backpressure at debug level
-                /*
-                                if total_send_time > Duration::from_millis(10) {
-                                    log::debug!(
-                                        "[Decoder Thread] Backpressure (channel full): {:?} wait time",
-                                        total_send_time
-                                    );
-                                }
-                */
                 // Update position
                 let position_sec = decoder.position() as f64 / source_sample_rate as f64;
                 event_tx
                     .send(ThreadEvent::PositionUpdate(position_sec))
                     .ok();
 
-                Ok(true)
+                Ok(DecoderLoopAction::Continue)
             }
             Ok(0) => {
                 // End of stream
@@ -348,7 +367,16 @@ impl DecoderState {
                                 channels,
                                 target_sample_rate,
                             );
-                            message_tx.send(DecoderMessage::Frame(frame)).ok();
+                            
+                            // Send with interruption support
+                            if let Some(cmd) = send_or_interrupt(
+                                message_tx,
+                                command_rx,
+                                DecoderMessage::Frame(frame),
+                            )? {
+                                return Ok(DecoderLoopAction::Interrupted(cmd));
+                            }
+                            
                             log::debug!(
                                 "[Decoder Thread] Flushed {} frames through resampler",
                                 expected_frames
@@ -361,11 +389,16 @@ impl DecoderState {
                     self.resampler_buffer.clear();
                 }
 
-                message_tx
-                    .send(DecoderMessage::EndOfStream)
-                    .map_err(|_| "Failed to send EOS")?;
+                if let Some(cmd) = send_or_interrupt(
+                    message_tx,
+                    command_rx,
+                    DecoderMessage::EndOfStream,
+                )? {
+                    return Ok(DecoderLoopAction::Interrupted(cmd));
+                }
+                
                 event_tx.send(ThreadEvent::DecoderEndOfStream).ok();
-                Ok(false)
+                Ok(DecoderLoopAction::Stop)
             }
             Err(e) => {
                 let err_msg = format!("Decode error: {:?}", e);
@@ -566,13 +599,59 @@ fn run_decoder_thread(
             std::thread::sleep(std::time::Duration::from_millis(frame_duration_ms));
         } else if state.decoder.is_some() && !state.paused {
             // File playback mode: decode from file
-            match state.decode_chunk(&message_tx, &event_tx, frame_size, target_sample_rate) {
-                Ok(true) => {
+            match state.decode_chunk(
+                &message_tx,
+                &command_rx,
+                &event_tx,
+                frame_size,
+                target_sample_rate,
+            ) {
+                Ok(DecoderLoopAction::Continue) => {
                     // Continue
                 }
-                Ok(false) => {
+                Ok(DecoderLoopAction::Stop) => {
                     // End of stream - stop
                     state.stop();
+                }
+                Ok(DecoderLoopAction::Interrupted(cmd)) => {
+                    // Handle interruption command immediately
+                    match cmd {
+                        DecoderCommand::Play(path) => {
+                            state.stop();
+                            if let Err(e) = state.play(path, target_sample_rate, frame_size) {
+                                log::debug!("[Decoder Thread] Play failed: {}", e);
+                                event_tx.send(ThreadEvent::DecoderError(e)).ok();
+                            }
+                        }
+                        DecoderCommand::StartSilentSource => {
+                            state.start_silent_source();
+                        }
+                        DecoderCommand::Pause => {
+                            state.paused = true;
+                            log::debug!("[Decoder Thread] Paused");
+                        }
+                        DecoderCommand::Resume => {
+                            state.paused = false;
+                            log::debug!("[Decoder Thread] Resumed");
+                        }
+                        DecoderCommand::Seek(position) => {
+                            message_tx.send(DecoderMessage::Flush).ok();
+                            if let Err(e) = state.seek(position) {
+                                log::debug!("[Decoder Thread] Seek failed: {}", e);
+                            } else {
+                                event_tx.send(ThreadEvent::SeekComplete).ok();
+                            }
+                        }
+                        DecoderCommand::Stop => {
+                            state.stop();
+                            message_tx.send(DecoderMessage::Flush).ok();
+                            log::debug!("[Decoder Thread] Stopped");
+                        }
+                        DecoderCommand::Shutdown => {
+                            log::debug!("[Decoder Thread] Shutting down");
+                            break;
+                        }
+                    }
                 }
                 Err(e) => {
                     log::debug!("[Decoder Thread] Error: {}", e);

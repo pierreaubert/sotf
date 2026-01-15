@@ -18,8 +18,31 @@ use sotf_plugins::{
 };
 
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
+use std::time::Duration;
 
 const SPIN_MS_SIGNAL: u64 = 10;
+
+/// Helper to send a message with backpressure handling and interruption support
+fn send_or_interrupt<T>(
+    tx: &SyncSender<T>,
+    rx: &Receiver<ProcessingCommand>,
+    mut msg: T,
+) -> Result<Option<ProcessingCommand>, String> {
+    loop {
+        match tx.try_send(msg) {
+            Ok(_) => return Ok(None),
+            Err(std::sync::mpsc::TrySendError::Full(returned_msg)) => {
+                // Buffer full - check for interruption
+                if let Ok(cmd) = rx.try_recv() {
+                    return Ok(Some(cmd));
+                }
+                msg = returned_msg;
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            Err(e) => return Err(format!("Channel disconnected: {}", e)),
+        }
+    }
+}
 
 /// Processing thread handle
 pub struct ProcessingThread {
@@ -161,6 +184,101 @@ impl ProcessingState {
     }
 }
 
+/// Handle a processing command
+/// Returns true if shutdown requested
+fn handle_processing_command(
+    command: ProcessingCommand,
+    state: &mut ProcessingState,
+    response_tx: &Sender<ProcessingResponse>,
+) -> bool {
+    match command {
+        ProcessingCommand::UpdateHost(new_host) => {
+            let output_channels = new_host.output_channels();
+            log::trace!(
+                "[Processing Thread] UpdateHost: Plugin host updated, output_channels={}",
+                output_channels
+            );
+
+            // Swap host
+            state.host = new_host;
+            state.channels = output_channels;
+
+            response_tx
+                .send(ProcessingResponse::PluginChainUpdated { output_channels })
+                .ok();
+        }
+        ProcessingCommand::SetParameter {
+            plugin_index,
+            param_id,
+            value,
+        } => {
+            log::info!(
+                "[Processing Thread] Set parameter: plugin {} param {} = {}",
+                plugin_index,
+                param_id,
+                value
+            );
+
+            // Parse string value to ParameterValue
+            let param_value = parse_parameter_value(&value);
+
+            match state
+                .host
+                .set_plugin_parameter(plugin_index, &param_id, param_value)
+            {
+                Ok(_) => {
+                    log::debug!(
+                        "[Processing Thread] Parameter set successfully on plugin {}",
+                        plugin_index
+                    );
+                    response_tx.send(ProcessingResponse::Ok).ok();
+                }
+                Err(e) => {
+                    log::warn!(
+                        "[Processing Thread] Failed to set parameter on plugin {}: {}",
+                        plugin_index,
+                        e
+                    );
+                    response_tx
+                        .send(ProcessingResponse::Error(format!(
+                            "Failed to set parameter: {}",
+                            e
+                        )))
+                        .ok();
+                }
+            }
+        }
+        ProcessingCommand::Bypass(bypass) => {
+            state.bypassed = bypass;
+            log::debug!("[Processing Thread] Bypass: {}", bypass);
+            response_tx.send(ProcessingResponse::Ok).ok();
+        }
+        ProcessingCommand::GetPluginData(index) => {
+            match state.host.get_plugin_data(index) {
+                Some(data) => {
+                    response_tx.send(ProcessingResponse::PluginData(data)).ok();
+                }
+                None => {
+                    response_tx
+                        .send(ProcessingResponse::Error(format!(
+                            "Plugin {} data not available",
+                            index
+                        )))
+                        .ok();
+                }
+            }
+        }
+        ProcessingCommand::Stop => {
+            log::debug!("[Processing Thread] Stopped");
+        }
+        ProcessingCommand::Shutdown => {
+            log::debug!("[Processing Thread] Shutting down");
+            return true;
+        }
+    }
+    false
+}
+
 /// Main processing thread function
 fn run_processing_thread(
     decoder_rx: Receiver<DecoderMessage>,
@@ -182,90 +300,8 @@ fn run_processing_thread(
     loop {
         // Check for commands (non-blocking)
         if let Ok(command) = command_rx.try_recv() {
-            match command {
-                ProcessingCommand::UpdateHost(new_host) => {
-                    let output_channels = new_host.output_channels();
-                    log::trace!(
-                        "[Processing Thread] UpdateHost: Plugin host updated, output_channels={}",
-                        output_channels
-                    );
-
-                    // Swap host
-                    state.host = new_host;
-                    state.channels = output_channels;
-
-                    response_tx
-                        .send(ProcessingResponse::PluginChainUpdated { output_channels })
-                        .ok();
-                }
-                ProcessingCommand::SetParameter {
-                    plugin_index,
-                    param_id,
-                    value,
-                } => {
-                    log::info!(
-                        "[Processing Thread] Set parameter: plugin {} param {} = {}",
-                        plugin_index,
-                        param_id,
-                        value
-                    );
-
-                    // Parse string value to ParameterValue
-                    let param_value = parse_parameter_value(&value);
-
-                    match state
-                        .host
-                        .set_plugin_parameter(plugin_index, &param_id, param_value)
-                    {
-                        Ok(_) => {
-                            log::debug!(
-                                "[Processing Thread] Parameter set successfully on plugin {}",
-                                plugin_index
-                            );
-                            response_tx.send(ProcessingResponse::Ok).ok();
-                        }
-                        Err(e) => {
-                            log::warn!(
-                                "[Processing Thread] Failed to set parameter on plugin {}: {}",
-                                plugin_index,
-                                e
-                            );
-                            response_tx
-                                .send(ProcessingResponse::Error(format!(
-                                    "Failed to set parameter: {}",
-                                    e
-                                )))
-                                .ok();
-                        }
-                    }
-                }
-                ProcessingCommand::Bypass(bypass) => {
-                    state.bypassed = bypass;
-                    log::debug!("[Processing Thread] Bypass: {}", bypass);
-                    response_tx.send(ProcessingResponse::Ok).ok();
-                }
-                ProcessingCommand::GetPluginData(index) => {
-                    match state.host.get_plugin_data(index) {
-                        Some(data) => {
-                            response_tx.send(ProcessingResponse::PluginData(data)).ok();
-                        }
-                        None => {
-                            response_tx
-                                .send(ProcessingResponse::Error(format!(
-                                    "Plugin {} data not available",
-                                    index
-                                )))
-                                .ok();
-                        }
-                    }
-                }
-                ProcessingCommand::Stop => {
-                    log::debug!("[Processing Thread] Stopped");
-                }
-                ProcessingCommand::Shutdown => {
-                    log::debug!("[Processing Thread] Shutting down");
-                    break;
-                }
+            if handle_processing_command(command, &mut state, &response_tx) {
+                break;
             }
         }
 
@@ -298,9 +334,19 @@ fn run_processing_thread(
                             output_channels,
                             frame.sample_rate,
                         );
-                        message_tx
-                            .send(ProcessingMessage::Frame(processed_frame))
-                            .ok();
+                        
+                        match send_or_interrupt(&message_tx, &command_rx, ProcessingMessage::Frame(processed_frame)) {
+                            Ok(Some(cmd)) => {
+                                if handle_processing_command(cmd, &mut state, &response_tx) {
+                                    break;
+                                }
+                            }
+                            Ok(None) => {}
+                            Err(e) => {
+                                log::debug!("[Processing Thread] Send error: {}", e);
+                                break;
+                            }
+                        }
                     }
                     Err(e) => {
                         log::debug!("[Processing Thread] Processing error: {}", e);
@@ -310,10 +356,26 @@ fn run_processing_thread(
                 state.process_buffer = process_buffer;
             }
             Ok(DecoderMessage::EndOfStream) => {
-                message_tx.send(ProcessingMessage::EndOfStream).ok();
+                match send_or_interrupt(&message_tx, &command_rx, ProcessingMessage::EndOfStream) {
+                    Ok(Some(cmd)) => {
+                        if handle_processing_command(cmd, &mut state, &response_tx) {
+                            break;
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(_) => break,
+                }
             }
             Ok(DecoderMessage::Flush) => {
-                message_tx.send(ProcessingMessage::Flush).ok();
+                match send_or_interrupt(&message_tx, &command_rx, ProcessingMessage::Flush) {
+                    Ok(Some(cmd)) => {
+                        if handle_processing_command(cmd, &mut state, &response_tx) {
+                            break;
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(_) => break,
+                }
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
