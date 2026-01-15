@@ -27,8 +27,7 @@
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use super::simd::{
-    complex_mul_add_simd, complex_mul_simd, deinterleave_stereo, scale_add_simd,
-    window_mul_simd,
+    complex_mul_add_simd, complex_mul_simd, deinterleave_stereo, scale_add_simd, window_mul_simd,
 };
 use super::smoothing::Smoother;
 use parking_lot::RwLock;

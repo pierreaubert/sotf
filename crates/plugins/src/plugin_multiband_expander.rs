@@ -994,6 +994,60 @@ impl InPlacePlugin for MultibandExpanderPlugin {
             self.crossover_frequencies[3] = value.as_float().ok_or("Invalid frequency")?;
             self.crossover_preset = 0;
             self.build_crossovers();
+        } else if id.as_str().starts_with("band_") {
+            let parts: Vec<&str> = id.as_str().split('_').collect();
+            if parts.len() >= 3 {
+                if let Ok(band_idx) = parts[1].parse::<usize>() {
+                    if band_idx < self.band_params.len() {
+                        let param_name = parts[2..].join("_");
+                        let band = &mut self.band_params[band_idx];
+
+                        match param_name.as_str() {
+                            "threshold" => {
+                                band.threshold_db =
+                                    Some(value.as_float().ok_or("Invalid threshold")?);
+                            }
+                            "ratio" => {
+                                band.ratio =
+                                    Some(value.as_float().ok_or("Invalid ratio")?.max(1.0));
+                            }
+                            "attack" => {
+                                band.attack_ms = Some(value.as_float().ok_or("Invalid attack")?);
+                                self.update_coefficients();
+                            }
+                            "release" => {
+                                band.release_ms = Some(value.as_float().ok_or("Invalid release")?);
+                                self.update_coefficients();
+                            }
+                            "knee" => {
+                                band.knee_db =
+                                    Some(value.as_float().ok_or("Invalid knee")?.max(0.0));
+                            }
+                            "range" => {
+                                band.range_db =
+                                    Some(value.as_float().ok_or("Invalid range")?.max(0.0));
+                            }
+                            "hysteresis" => {
+                                band.hysteresis_db =
+                                    Some(value.as_float().ok_or("Invalid hysteresis")?.max(0.0));
+                            }
+                            "hold" => {
+                                band.hold_ms =
+                                    Some(value.as_float().ok_or("Invalid hold")?.max(0.0));
+                            }
+                            "bypass" => {
+                                band.bypass = value.as_bool().ok_or("Invalid bypass")?;
+                            }
+                            "solo" => {
+                                band.solo = value.as_bool().ok_or("Invalid solo")?;
+                            }
+                            _ => return Err(format!("Unknown band parameter: {}", param_name)),
+                        }
+                        return Ok(());
+                    }
+                }
+            }
+            return Err(format!("Invalid band parameter ID: {}", id));
         } else if id == self.param_threshold {
             let val = value.as_float().ok_or("Invalid threshold")?;
             self.threshold_db = val;
@@ -1025,6 +1079,49 @@ impl InPlacePlugin for MultibandExpanderPlugin {
     }
 
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
+        if id.as_str().starts_with("band_") {
+            let parts: Vec<&str> = id.as_str().split('_').collect();
+            if parts.len() >= 3 {
+                if let Ok(band_idx) = parts[1].parse::<usize>() {
+                    if band_idx < self.band_params.len() {
+                        let param_name = parts[2..].join("_");
+                        let band = &self.band_params[band_idx];
+
+                        return match param_name.as_str() {
+                            "threshold" => Some(ParameterValue::Float(
+                                band.threshold_db.unwrap_or(self.threshold_db),
+                            )),
+                            "ratio" => {
+                                Some(ParameterValue::Float(band.ratio.unwrap_or(self.ratio)))
+                            }
+                            "attack" => Some(ParameterValue::Float(
+                                band.attack_ms.unwrap_or(self.attack_ms),
+                            )),
+                            "release" => Some(ParameterValue::Float(
+                                band.release_ms.unwrap_or(self.release_ms),
+                            )),
+                            "knee" => {
+                                Some(ParameterValue::Float(band.knee_db.unwrap_or(self.knee_db)))
+                            }
+                            "range" => Some(ParameterValue::Float(
+                                band.range_db.unwrap_or(self.range_db),
+                            )),
+                            "hysteresis" => Some(ParameterValue::Float(
+                                band.hysteresis_db.unwrap_or(self.hysteresis_db),
+                            )),
+                            "hold" => {
+                                Some(ParameterValue::Float(band.hold_ms.unwrap_or(self.hold_ms)))
+                            }
+                            "bypass" => Some(ParameterValue::Bool(band.bypass)),
+                            "solo" => Some(ParameterValue::Bool(band.solo)),
+                            _ => None,
+                        };
+                    }
+                }
+            }
+            return None;
+        }
+
         if id == &self.param_num_bands {
             Some(ParameterValue::Int(self.num_bands as i32))
         } else if id == &self.param_crossover_preset {

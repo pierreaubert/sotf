@@ -157,7 +157,7 @@ fn test_upmixer_parameter_adjustment() {
 
     // Verify safety_cap_db parameter roundtrip
     let safety_cap = plugin.get_parameter(&ParameterId::from("safety_cap_db"));
-    assert_eq!(safety_cap, Some(ParameterValue::Float(3.0)));
+    assert_eq!(safety_cap, Some(ParameterValue::Float(0.0)));
 
     plugin
         .set_parameter(

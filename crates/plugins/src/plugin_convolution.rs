@@ -633,7 +633,7 @@ impl Plugin for ConvolutionPlugin {
         // 4. Mix Dry/Wet to Output
         // If state exists, we mix dry input with wet scratch_output.
         // If no state, we just pass through dry input (mix parameter still applies effectively as gain=1.0)
-        
+
         for frame in 0..num_frames {
             // Tick smoothers per frame
             let mix = self.mix.next();
@@ -644,13 +644,13 @@ impl Plugin for ConvolutionPlugin {
             for ch in 0..self.channels {
                 let idx = frame * self.channels + ch;
                 let dry_sample = input[idx];
-                
+
                 if has_state {
                     let wet_sample = self.scratch_output[ch][frame];
                     output[idx] = dry_sample * dry_gain + wet_sample * wet_gain;
                 } else {
                     // Passthrough behavior when no IR loaded: effectively just dry
-                    output[idx] = dry_sample; 
+                    output[idx] = dry_sample;
                 }
             }
         }

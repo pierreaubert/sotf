@@ -47,17 +47,17 @@ impl UpmixerPlugin {
         } else {
             release_coeff // Going up (restoring gain) - slow
         };
-        
+
         // Calculate the target scale for the end of this block
         let end_scale =
             self.prev_safety_scale + smoothing * (target_safety_scale - self.prev_safety_scale);
-        
+
         let start_scale = self.prev_safety_scale;
         self.prev_safety_scale = end_scale;
 
         for i in 0..self.fft_size {
             let idx = i * self.num_output_channels;
-            
+
             // Interpolate safety scale across the block to prevent zipper noise
             let t = i as f32 / self.fft_size as f32;
             let current_safety_scale = start_scale + t * (end_scale - start_scale);

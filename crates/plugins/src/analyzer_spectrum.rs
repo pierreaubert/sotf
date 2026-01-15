@@ -418,7 +418,11 @@ impl SpectrumAnalyzer {
         }
 
         // Find peak
-        let peak_magnitude = self.magnitudes.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        let peak_magnitude = self
+            .magnitudes
+            .iter()
+            .copied()
+            .fold(f32::NEG_INFINITY, f32::max);
 
         // Update shared state
         {

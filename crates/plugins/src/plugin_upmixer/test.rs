@@ -61,11 +61,54 @@ mod upmixer_tests {
             .unwrap();
         assert!((plugin.center_spread - 0.7).abs() < 1e-6);
 
+        // Values outside [0.0, 1.0] are clamped
         let res = plugin.set_parameter(
             ParameterId::from("center_spread"),
             ParameterValue::Float(1.5),
         );
-        assert!(res.is_err());
+        assert!(res.is_ok());
+        assert!((plugin.center_spread - 1.0).abs() < 1e-6);
+
+        // Test lower bound clamping
+        let res = plugin.set_parameter(
+            ParameterId::from("center_spread"),
+            ParameterValue::Float(-0.5),
+        );
+        assert!(res.is_ok());
+        assert!((plugin.center_spread - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_stereo_width_parameter() {
+        let mut plugin = UpmixerPlugin::new(
+            2048, "5.1", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
+        );
+
+        assert!((plugin.stereo_width - 0.5).abs() < 1e-6);
+
+        plugin
+            .set_parameter(
+                ParameterId::from("stereo_width"),
+                ParameterValue::Float(0.3),
+            )
+            .unwrap();
+        assert!((plugin.stereo_width - 0.3).abs() < 1e-6);
+
+        // Values outside [0.0, 1.0] are clamped
+        let res = plugin.set_parameter(
+            ParameterId::from("stereo_width"),
+            ParameterValue::Float(2.0),
+        );
+        assert!(res.is_ok());
+        assert!((plugin.stereo_width - 1.0).abs() < 1e-6);
+
+        // Test lower bound clamping
+        let res = plugin.set_parameter(
+            ParameterId::from("stereo_width"),
+            ParameterValue::Float(-1.0),
+        );
+        assert!(res.is_ok());
+        assert!((plugin.stereo_width - 0.0).abs() < 1e-6);
     }
 
     #[test]

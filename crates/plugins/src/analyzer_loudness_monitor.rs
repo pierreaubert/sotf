@@ -175,7 +175,7 @@ impl LoudnessMonitor {
         // Calculate per-channel peaks from the current buffer with decay
         let num_frames = samples.len() / self.channels as usize;
         let mut peak = 0.0f64;
-        
+
         let mut new_channel_peaks_guard = self.channel_peaks_scratch.lock().unwrap();
         let new_channel_peaks = &mut *new_channel_peaks_guard;
         new_channel_peaks.fill(0.0);

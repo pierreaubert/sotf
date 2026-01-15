@@ -110,8 +110,8 @@ impl UpmixerPlugin {
                             ambient_component += late_reflection;
                         }
 
-                        // Height mask
-                        let height_mask = self.height_band_gains[i];
+                        // Height mask with bounds check
+                        let height_mask = self.height_band_gains.get(i).copied().unwrap_or(0.0);
 
                         self.temp_freq_out[i] = (direct_component * direct_gain
                             + ambient_component * ambient_gain)

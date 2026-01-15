@@ -20,7 +20,11 @@ impl UpmixerPlugin {
         assert_eq!(input.len(), self.fft_size * 2); // stereo interleaved
         assert_eq!(output.len(), self.fft_size * self.num_output_channels); // variable channels
 
-        // (Bypass logic moved to UpmixerPlugin::process)
+        // Defensive check: ensure plugin has been initialized
+        debug_assert!(
+            self.sample_rate > 0 && self.fft_size > 0,
+            "process_fft_block called before initialize()"
+        );
 
         /*
                 log::trace!(

@@ -1217,19 +1217,13 @@ Upper bound for dialogue detection analysis.",
         } else if id == self.param_stereo_width
             && let Some(width) = value.as_float()
         {
-            if (0.0..=1.0).contains(&width) {
-                self.stereo_width = width;
-                return Ok(());
-            }
-            return Err("Stereo width must be between 0.0 and 1.0".to_string());
+            self.stereo_width = width.clamp(0.0, 1.0);
+            return Ok(());
         } else if id == self.param_center_spread
             && let Some(spread) = value.as_float()
         {
-            if (0.0..=1.0).contains(&spread) {
-                self.center_spread = spread;
-                return Ok(());
-            }
-            return Err("Center spread must be between 0.0 and 1.0".to_string());
+            self.center_spread = spread.clamp(0.0, 1.0);
+            return Ok(());
         } else if id == self.param_bandpass_hz
             && let Some(freq) = value.as_float()
         {
@@ -1385,6 +1379,7 @@ Upper bound for dialogue detection analysis.",
         } else if id == self.param_bypass_decorrelation {
             if let Some(enable) = value.as_bool() {
                 self.bypass_decorrelation = enable;
+                self.generate_decorrelation_filters();
                 return Ok(());
             }
         } else if id == self.param_bypass_transient_detection {
