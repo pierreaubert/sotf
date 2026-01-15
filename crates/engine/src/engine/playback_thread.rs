@@ -10,7 +10,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, Stream, StreamConfig};
 use rtrb::{Consumer, RingBuffer};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
 
 #[cfg(all(target_os = "macos", feature = "hal"))]
@@ -97,7 +97,7 @@ struct PlaybackState {
     // Capacity of the ring buffer (for metrics)
     capacity: usize,
 
-    volume: Arc<parking_lot::RwLock<f32>>,
+    volume: Arc<AtomicU32>, // Atomic f32 stored as u32 bits
     muted: Arc<AtomicBool>,
     underrun_count: Arc<AtomicU64>,
     last_buffer_level: Arc<AtomicU64>, // For tracking buffer fill percentage
@@ -119,7 +119,7 @@ impl PlaybackState {
         Self {
             ring_buffer_consumer: parking_lot::Mutex::new(Some(consumer)),
             capacity,
-            volume: Arc::new(parking_lot::RwLock::new(1.0)),
+            volume: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             muted: Arc::new(AtomicBool::new(false)),
             underrun_count: Arc::new(AtomicU64::new(0)),
             last_buffer_level: Arc::new(AtomicU64::new(100)), // Start at 100%
@@ -237,6 +237,9 @@ fn run_playback_thread(
     let (mut producer, consumer) = RingBuffer::<f32>::new(buffer_capacity);
     let mut state = Arc::new(PlaybackState::new(consumer, buffer_capacity));
 
+    // Pre-allocate buffer for channel conversions (fallback downmix/upmix)
+    let mut conversion_buffer = Vec::with_capacity(4096);
+
     // Build cpal stream
     let mut stream = build_output_stream(&device, &config, Arc::clone(&state), event_tx.clone())?;
 
@@ -257,7 +260,7 @@ fn run_playback_thread(
         if let Ok(command) = command_rx.try_recv() {
             match command {
                 PlaybackCommand::SetVolume(vol) => {
-                    *state.volume.write() = vol;
+                    state.volume.store(vol.to_bits(), Ordering::Relaxed);
                 }
                 PlaybackCommand::Mute(muted) => {
                     state.muted.store(muted, Ordering::Relaxed);
@@ -445,7 +448,7 @@ fn run_playback_thread(
                 static CHANNEL_MISMATCH_COUNT: std::sync::atomic::AtomicU32 =
                     std::sync::atomic::AtomicU32::new(0);
 
-                // Handle channel count mismatch with fallback downmix
+                // Handle channel count mismatch with robust conversion
                 if frame.num_channels != channels {
                     let count =
                         CHANNEL_MISMATCH_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -453,42 +456,73 @@ fn run_playback_thread(
                     if count < 10 || count.is_multiple_of(1000) {
                         log::warn!(
                             "[Playback Thread] Channel mismatch #{}: frame has {} channels, \
-                             output device expects {} - downmixing",
+                             output device expects {} - converting",
                             count + 1,
                             frame.num_channels,
                             channels
                         );
                     }
 
-                    if frame.num_channels > channels && channels == 2 {
-                        let mut downmixed = Vec::with_capacity(frame.num_frames * 2);
-                        for i in 0..frame.num_frames {
-                            let base = i * frame.num_channels;
-                            let left = frame.data.get(base).copied().unwrap_or(0.0);
-                            let right = frame.data.get(base + 1).copied().unwrap_or(0.0);
-                            let center = if frame.num_channels > 2 {
-                                frame.data.get(base + 2).copied().unwrap_or(0.0) * 0.707
-                            } else {
-                                0.0
-                            };
-                            downmixed.push(left + center);
-                            downmixed.push(right + center);
-                        }
+                    conversion_buffer.clear();
+                    let num_frames = frame.num_frames;
+                    let target_len = num_frames * channels;
+                    conversion_buffer.resize(target_len, 0.0);
 
-                        // Write downmixed audio
-                        let chunk = match producer.write_chunk_uninit(downmixed.len()) {
-                            Ok(chunk) => chunk,
-                            Err(_) => {
-                                // Not enough space, wait a bit
-                                std::thread::sleep(std::time::Duration::from_millis(
-                                    SPIN_MS_RINGBUFFER,
-                                ));
-                                continue;
+                    if frame.num_channels > channels && channels == 2 {
+                        // High-quality N -> 2 Downmix
+                        // 0:L, 1:R, 2:C, 3:LFE, 4:SL, 5:SR, 6:BL, 7:BR, 8:TFL, 9:TFR...
+                        for i in 0..num_frames {
+                            let base = i * frame.num_channels;
+                            let src = &frame.data[base..base + frame.num_channels];
+
+                            let l = src.get(0).copied().unwrap_or(0.0);
+                            let r = src.get(1).copied().unwrap_or(0.0);
+                            let c = src.get(2).copied().unwrap_or(0.0) * 0.707;
+                            // Surrounds
+                            let sl = src.get(4).copied().unwrap_or(0.0) * 0.707;
+                            let sr = src.get(5).copied().unwrap_or(0.0) * 0.707;
+                            // Back surrounds
+                            let bl = src.get(6).copied().unwrap_or(0.0) * 0.5;
+                            let br = src.get(7).copied().unwrap_or(0.0) * 0.5;
+                            // Heights
+                            let tfl = src.get(8).copied().unwrap_or(0.0) * 0.5;
+                            let tfr = src.get(9).copied().unwrap_or(0.0) * 0.5;
+
+                            conversion_buffer[i * 2] = l + c + sl + bl + tfl;
+                            conversion_buffer[i * 2 + 1] = r + c + sr + br + tfr;
+                        }
+                    } else if frame.num_channels == 2 && channels > 2 {
+                        // 2 -> N Upmix (L/R to fronts, rest silent)
+                        for i in 0..num_frames {
+                            let src_base = i * 2;
+                            let dst_base = i * channels;
+                            conversion_buffer[dst_base] = frame.data[src_base];
+                            conversion_buffer[dst_base + 1] = frame.data[src_base + 1];
+                        }
+                    } else {
+                        // General fallback: copy shared channels, zero the rest
+                        let shared_channels = frame.num_channels.min(channels);
+                        for i in 0..num_frames {
+                            let src_base = i * frame.num_channels;
+                            let dst_base = i * channels;
+                            for ch in 0..shared_channels {
+                                conversion_buffer[dst_base + ch] = frame.data[src_base + ch];
                             }
-                        };
-                        chunk.fill_from_iter(downmixed.into_iter());
-                        continue;
+                        }
                     }
+
+                    // Write converted audio
+                    let chunk = match producer.write_chunk_uninit(conversion_buffer.len()) {
+                        Ok(chunk) => chunk,
+                        Err(_) => {
+                            // Not enough space, wait a bit
+                            std::thread::sleep(std::time::Duration::from_millis(
+                                SPIN_MS_RINGBUFFER,
+                            ));
+                            continue;
+                        }
+                    };
+                    chunk.fill_from_iter(conversion_buffer.iter().copied());
                     continue;
                 }
 
@@ -592,23 +626,10 @@ fn build_output_stream(
                     }
 
                     // Log underrun
-                    let fill_percent = if capacity > 0 {
-                        (available * 100) / capacity
-                    } else {
-                        0
-                    };
-
                     let current_underruns =
                         state_clone.underrun_count.fetch_add(1, Ordering::Relaxed);
                     if current_underruns % 100 == 0 {
                         event_tx_data.send(ThreadEvent::PlaybackUnderrun).ok();
-                        log::warn!(
-                            "[Playback] UNDERRUN #{}: buffer has {} samples but need {} ({}% full)",
-                            current_underruns + 1,
-                            available,
-                            requested,
-                            fill_percent
-                        );
                     }
                 }
 
@@ -624,7 +645,7 @@ fn build_output_stream(
                     .store(fill_percent as u64, Ordering::Relaxed);
 
                 // Apply volume and mute
-                let volume = *state_clone.volume.read();
+                let volume = f32::from_bits(state_clone.volume.load(Ordering::Relaxed));
                 let muted = state_clone.muted.load(Ordering::Relaxed);
 
                 if muted {

@@ -745,7 +745,15 @@ pub enum PluginSettings {
     EQ {
         #[serde(default = "default_channels")]
         channels: usize,
+        /// Global filters applied to all channels (used when per_channel_mode is false)
         filters: Vec<EQFilter>,
+        /// Per-channel filters (used when per_channel_mode is true)
+        /// Index corresponds to channel index
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        channel_filters: Option<Vec<Vec<EQFilter>>>,
+        /// Whether to use per-channel mode (default: false = all channels share same EQ)
+        #[serde(default)]
+        per_channel_mode: bool,
     },
     Gain {
         #[serde(default = "default_channels")]
@@ -1171,42 +1179,73 @@ impl PluginSettings {
 
     pub fn to_plugin_config(&self, sample_rate: f64) -> PluginConfig {
         match self {
-            Self::EQ { channels, filters } => {
-                // Check if any band is soloed
-                let any_soloed = filters.iter().any(|f| f.solo);
-
-                // Filter based on mute/solo state:
-                // - If any band is soloed, only include soloed (and not muted) bands
-                // - If no band is soloed, include all non-muted bands
-                let filter_configs: Vec<_> = filters
-                    .iter()
-                    .filter(|f| {
-                        if f.muted {
-                            return false;
-                        }
-                        if any_soloed && !f.solo {
-                            return false;
-                        }
-                        true
-                    })
-                    .map(|f| {
-                        let bq = f.to_biquad(sample_rate);
-                        json!({
-                            "filter_type": bq.filter_type.long_name().to_lowercase(),
-                            "freq": bq.freq,
-                            "q": bq.q,
-                            "db_gain": bq.db_gain,
+            Self::EQ {
+                channels,
+                filters,
+                channel_filters,
+                per_channel_mode,
+            } => {
+                // Helper to convert filters with mute/solo logic
+                let convert_filters = |filters: &[EQFilter]| -> Vec<serde_json::Value> {
+                    let any_soloed = filters.iter().any(|f| f.solo);
+                    filters
+                        .iter()
+                        .filter(|f| {
+                            if f.muted {
+                                return false;
+                            }
+                            if any_soloed && !f.solo {
+                                return false;
+                            }
+                            true
                         })
-                    })
-                    .collect();
+                        .map(|f| {
+                            let bq = f.to_biquad(sample_rate);
+                            json!({
+                                "filter_type": bq.filter_type.long_name().to_lowercase(),
+                                "freq": bq.freq,
+                                "q": bq.q,
+                                "db_gain": bq.db_gain,
+                            })
+                        })
+                        .collect()
+                };
 
-                PluginConfig::new(
-                    "eq",
-                    json!({
-                        "channels": channels,
-                        "filters": filter_configs,
-                    }),
-                )
+                if *per_channel_mode {
+                    // Per-channel mode: send channel_filters to the plugin
+                    if let Some(ch_filters) = channel_filters {
+                        let channel_filter_configs: Vec<Vec<serde_json::Value>> =
+                            ch_filters.iter().map(|f| convert_filters(f)).collect();
+
+                        PluginConfig::new(
+                            "eq",
+                            json!({
+                                "channels": channels,
+                                "channel_filters": channel_filter_configs,
+                            }),
+                        )
+                    } else {
+                        // Fallback to global filters if channel_filters is None
+                        let filter_configs = convert_filters(filters);
+                        PluginConfig::new(
+                            "eq",
+                            json!({
+                                "channels": channels,
+                                "filters": filter_configs,
+                            }),
+                        )
+                    }
+                } else {
+                    // Global mode: all channels share same EQ
+                    let filter_configs = convert_filters(filters);
+                    PluginConfig::new(
+                        "eq",
+                        json!({
+                            "channels": channels,
+                            "filters": filter_configs,
+                        }),
+                    )
+                }
             }
             Self::Gain { channels, gain_db } => PluginConfig::new(
                 "gain",
@@ -1704,6 +1743,8 @@ impl PluginSettings {
                     EQFilter::new(BiquadFilterType::Peak, 3000.0, 1.4, 0.0),
                     EQFilter::new(BiquadFilterType::Peak, 10000.0, 1.4, 0.0),
                 ],
+                channel_filters: None,
+                per_channel_mode: false,
             },
             PluginType::Gain => Self::Gain {
                 channels: default_channels(),
@@ -2774,11 +2815,18 @@ impl PluginChain {
             let mut updated_settings = None;
 
             match &self.plugins[i].settings {
-                PluginSettings::EQ { channels, filters } => {
+                PluginSettings::EQ {
+                    channels,
+                    filters,
+                    channel_filters,
+                    per_channel_mode,
+                } => {
                     if *channels != current_channels {
                         updated_settings = Some(PluginSettings::EQ {
                             channels: current_channels,
                             filters: filters.clone(),
+                            channel_filters: channel_filters.clone(),
+                            per_channel_mode: *per_channel_mode,
                         });
                     }
                 }

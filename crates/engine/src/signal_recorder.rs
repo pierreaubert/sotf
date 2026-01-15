@@ -248,7 +248,7 @@ pub fn record_and_analyze(
     output_device_name: Option<&str>,
     input_device_name: Option<&str>,
     microphone_compensation_path: Option<&str>,
-) -> Result<(), String> {
+) -> Result<crate::signal_analysis::AnalysisResult, String> {
     use crate::AudioEngineManager;
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     use parking_lot::Mutex;
@@ -596,7 +596,7 @@ pub fn record_and_analyze(
         output_csv_path
     );
 
-    Ok(())
+    Ok(analysis)
 }
 
 /// Parse comma-separated channel list (0-based indices)
