@@ -309,6 +309,12 @@ impl PlayerView {
             .measurement_state
             .recording_state
             .recording_progress;
+        let noise_floor_warning = state
+            .app
+            .measurement_state
+            .recording_state
+            .noise_floor_warning
+            .clone();
         let _ = state;
 
         let view = cx.entity().clone();
@@ -371,6 +377,34 @@ impl PlayerView {
                 .child(self.render_channel_list(cx))
                 .when(!status_message.is_empty(), |stack| {
                     stack.child(Text::new(status_message.clone()).size(TextSize::Sm))
+                })
+                .when(noise_floor_warning.is_some(), |stack| {
+                    let warning_msg = noise_floor_warning.clone().unwrap_or_default();
+                    // Use a semi-transparent amber/warning background (HSL: ~45deg hue for amber)
+                    let warning_bg = gpui::hsla(0.125, 0.8, 0.5, 0.15);
+                    stack.child(
+                        div()
+                            .p_3()
+                            .rounded_md()
+                            .bg(warning_bg)
+                            .border_1()
+                            .border_color(theme.warning)
+                            .child(
+                                HStack::new()
+                                    .spacing(StackSpacing::Sm)
+                                    .align(StackAlign::Center)
+                                    .child(
+                                        Text::new("⚠")
+                                            .size(TextSize::Md)
+                                            .color(theme.warning),
+                                    )
+                                    .child(
+                                        Text::new(warning_msg)
+                                            .size(TextSize::Sm)
+                                            .color(theme.warning),
+                                    ),
+                            ),
+                    )
                 })
                 .when(is_recording, |stack| {
                     stack.child(
@@ -585,20 +619,20 @@ impl PlayerView {
                 RecordingSignalType::PinkNoise => SignalType::PinkNoise,
             };
 
-            // Get output channel from playback config (1-indexed in UI, convert to 0-indexed for cpal)
+            // Get output channel from playback config (stored as 0-based index)
             let output_ch = rec_state
                 .playback_config
                 .channel_mappings
                 .get(channel_idx)
-                .map(|m| m.interface_channel.saturating_sub(1))
+                .map(|m| m.interface_channel)
                 .unwrap_or(0);
 
-            // Get input channel from recording config (1-indexed in UI, convert to 0-indexed for cpal)
+            // Get input channel from recording config (stored as 0-based index)
             let input_ch = rec_state
                 .recording_config
                 .channel_mappings
                 .first()
-                .map(|ch| ch.saturating_sub(1))
+                .copied()
                 .unwrap_or(0);
 
             (
@@ -795,6 +829,54 @@ impl PlayerView {
                 state_entity.update(&mut cx.clone(), |state, _| {
                     let should_continue = match result {
                         Ok(analysis_result) => {
+                            // Check for noise floor warning (signal too weak)
+                            // Compute average SPL in 100 Hz - 10 kHz range
+                            const NOISE_FLOOR_THRESHOLD_DB: f32 = -50.0;
+                            let avg_spl = {
+                                let mut sum = 0.0_f32;
+                                let mut count = 0;
+                                for (&freq, &mag) in analysis_result
+                                    .frequencies
+                                    .iter()
+                                    .zip(analysis_result.spl_db.iter())
+                                {
+                                    if freq >= 100.0 && freq <= 10000.0 {
+                                        sum += mag;
+                                        count += 1;
+                                    }
+                                }
+                                if count > 0 {
+                                    sum / count as f32
+                                } else {
+                                    0.0
+                                }
+                            };
+
+                            // Set noise floor warning if signal is too weak
+                            if avg_spl < NOISE_FLOOR_THRESHOLD_DB {
+                                state
+                                    .app
+                                    .measurement_state
+                                    .recording_state
+                                    .noise_floor_warning = Some(format!(
+                                    "Channel '{}' has very low signal level ({:.1} dB). Check microphone connection or increase signal level.",
+                                    channel_name, avg_spl
+                                ));
+                                log::warn!(
+                                    "Noise floor warning: Channel '{}' avg SPL = {:.1} dB (threshold: {} dB)",
+                                    channel_name,
+                                    avg_spl,
+                                    NOISE_FLOOR_THRESHOLD_DB
+                                );
+                            } else {
+                                // Clear any previous warning
+                                state
+                                    .app
+                                    .measurement_state
+                                    .recording_state
+                                    .noise_floor_warning = None;
+                            }
+
                             if let Some(recording) = state
                                 .app
                                 .measurement_state
@@ -805,13 +887,20 @@ impl PlayerView {
                                 recording.state = ChannelRecordingState::Done;
                                 recording.result = Some(RecordingResult {
                                     channel: channel_idx,
-                                    wav_path: Some(
-                                        recorded_wav_path.to_string_lossy().to_string(),
-                                    ),
+                                    wav_path: Some(recorded_wav_path.to_string_lossy().to_string()),
                                     csv_path: Some(csv_path.to_string_lossy().to_string()),
                                     frequencies: analysis_result.frequencies,
                                     magnitude_db: analysis_result.spl_db, // Use spl_db from AnalysisResult
                                     phase_deg: analysis_result.phase_deg,
+                                    impulse_response: Some(analysis_result.impulse_response),
+                                    impulse_time_ms: Some(analysis_result.impulse_time_ms),
+                                    excess_group_delay_ms: Some(analysis_result.excess_group_delay_ms),
+                                    thd_percent: Some(analysis_result.thd_percent),
+                                    harmonic_distortion_db: None,
+                                    rt60_ms: None,
+                                    clarity_c50_db: None,
+                                    clarity_c80_db: None,
+                                    spectrogram_db: None,
                                 });
                             }
                             state.app.measurement_state.recording_state.status_message =
@@ -1061,6 +1150,15 @@ impl PlayerView {
                                 frequencies: result.frequencies.clone(),
                                 magnitude_db: result.magnitude_db.clone(),
                                 phase_deg: result.phase_deg.clone(),
+                                impulse_response: result.impulse_response.clone(),
+                                impulse_time_ms: result.impulse_time_ms.clone(),
+                                excess_group_delay_ms: result.excess_group_delay_ms.clone(),
+                                thd_percent: result.thd_percent.clone(),
+                                harmonic_distortion_db: result.harmonic_distortion_db.clone(),
+                                rt60_ms: result.rt60_ms.clone(),
+                                clarity_c50_db: result.clarity_c50_db.clone(),
+                                clarity_c80_db: result.clarity_c80_db.clone(),
+                                spectrogram_db: result.spectrogram_db.clone(),
                             },
                             is_group: false,
                             group_drivers: Vec::new(),

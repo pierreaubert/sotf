@@ -853,6 +853,7 @@ impl PluginEditingManager for App {
                     knee_db,
                     mix,
                     link_channels,
+                    ..
                 } => {
                     use sotf_audio_player::param_specs::multiband_compressor::*;
                     match param_idx {
@@ -941,6 +942,7 @@ impl PluginEditingManager for App {
                     hold_ms,
                     mix,
                     link_channels,
+                    ..
                 } => {
                     use sotf_audio_player::param_specs::multiband_expander::*;
                     match param_idx {
@@ -1958,6 +1960,7 @@ impl PluginEditingManager for App {
                     knee_db,
                     mix,
                     link_channels,
+                    ..
                 } => {
                     use sotf_audio_player::param_specs::multiband_compressor::*;
                     match param_idx {
@@ -2038,6 +2041,7 @@ impl PluginEditingManager for App {
                     hold_ms,
                     mix,
                     link_channels,
+                    ..
                 } => {
                     use sotf_audio_player::param_specs::multiband_expander::*;
                     match param_idx {

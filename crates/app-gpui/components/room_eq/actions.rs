@@ -14,9 +14,15 @@ impl PlayerView {
                 .any(|r| r.state == crate::app::types::ChannelRecordingState::Done);
 
             if !has_valid_recordings {
-                state.app.measurement_state.room_eq_state.error_message =
-                    Some("No completed recordings found. Please record measurements first.".to_string());
-                state.app.measurement_state.room_eq_state.status_message.clear();
+                state.app.measurement_state.room_eq_state.error_message = Some(
+                    "No completed recordings found. Please record measurements first.".to_string(),
+                );
+                state
+                    .app
+                    .measurement_state
+                    .room_eq_state
+                    .status_message
+                    .clear();
                 return;
             }
 
@@ -41,7 +47,12 @@ impl PlayerView {
             if channel_count == 0 {
                 state.app.measurement_state.room_eq_state.error_message =
                     Some("Failed to load measurements: no valid channel data found.".to_string());
-                state.app.measurement_state.room_eq_state.status_message.clear();
+                state
+                    .app
+                    .measurement_state
+                    .room_eq_state
+                    .status_message
+                    .clear();
             } else {
                 state.app.measurement_state.room_eq_state.status_message = format!(
                     "Successfully loaded {} channel(s) from recording session",

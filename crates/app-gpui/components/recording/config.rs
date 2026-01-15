@@ -800,6 +800,7 @@ impl PlayerView {
                                             .speaker_configuration = new_config;
 
                                         // Update channel count and mappings based on configuration
+                                        // Note: interface_channel is 1-indexed (UI convention)
                                         if new_config == SpeakerConfiguration::Custom {
                                             // For custom config, keep current channel count but use generic names
                                             let num_channels = state
@@ -815,7 +816,7 @@ impl PlayerView {
                                                 .playback_config
                                                 .channel_mappings = (0..num_channels)
                                                 .map(|i| ChannelMapping {
-                                                    interface_channel: i,
+                                                    interface_channel: i + 1, // 1-indexed
                                                     group_name: format!("Ch{}", i + 1),
                                                 })
                                                 .collect();
@@ -837,7 +838,7 @@ impl PlayerView {
                                                 .iter()
                                                 .enumerate()
                                                 .map(|(i, name)| ChannelMapping {
-                                                    interface_channel: i,
+                                                    interface_channel: i, // 0-indexed
                                                     group_name: name.to_string(),
                                                 })
                                                 .collect();
@@ -1481,9 +1482,6 @@ impl PlayerView {
                             .left(px(10.0))
                             .top(px(margin_top + plot_height / 2.0 - 40.0))
                             .w(px(20.0))
-                            .text_size(px(11.0))
-                            .text_color(theme.text_secondary)
-                            .child("SPL (dB)"),
                     )
                     .child(
                         div()
@@ -1533,9 +1531,6 @@ impl PlayerView {
                             .absolute()
                             .left(px(margin_left + plot_width / 2.0 - 40.0))
                             .bottom(px(5.0))
-                            .text_size(px(11.0))
-                            .text_color(theme.text_secondary)
-                            .child("Frequency (Hz)"),
                     ),
             )
             .into_any_element()

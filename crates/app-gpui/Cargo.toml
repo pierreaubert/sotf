@@ -89,6 +89,8 @@ image = { workspace = true }
 # Memory allocator
 mimalloc = { workspace = true }
 
+rustfft = { workspace = true }
+
 # HAL dependency (macOS only, optional)
 [target.'cfg(target_os = "macos")'.dependencies]
 driver-hal = { workspace = true, optional = true }

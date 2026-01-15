@@ -3,13 +3,15 @@
 //! Provides a modal dialog for defining custom target curves via draggable control points.
 //! The curve is defined by control points connected by lines, displayed on a log-frequency graph.
 
-use crate::app::types::{CustomTargetCurve, TargetCurveControlPoint};
 use crate::app::AppState;
+use crate::app::types::{CustomTargetCurve, TargetCurveControlPoint};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_px::{ChartTheme, ScaleType, line};
-use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, Dialog, DialogSize, Text, TextSize};
+use gpui_ui_kit::{
+    Button, ButtonSize, ButtonVariant, Dialog, DialogSize, Text, TextSize, TextWeight,
+};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -174,8 +176,11 @@ impl PlayerView {
                     Ok(json) => match serde_json::from_str::<CustomTargetCurve>(&json) {
                         Ok(curve) => {
                             let _ = state_entity.update(cx, |state, cx| {
-                                state.app.measurement_state.room_eq_state.custom_target_curve =
-                                    curve;
+                                state
+                                    .app
+                                    .measurement_state
+                                    .room_eq_state
+                                    .custom_target_curve = curve;
                                 cx.notify();
                             });
                         }
@@ -286,9 +291,101 @@ impl PlayerView {
             })
             .content(
                 div()
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| {
+                        cx.stop_propagation();
+                    })
                     .flex()
                     .flex_col()
                     .gap_4()
+                    // Header row with title and presets on right
+                    .child(
+                        div()
+                            .flex()
+                            .justify_between()
+                            .items_center()
+                            .child(
+                                Text::new("Custom Target Curve Editor")
+                                    .size(TextSize::Lg)
+                                    .weight(TextWeight::Semibold)
+                                    .color(theme.text_primary),
+                            )
+                            .child(
+                                div()
+                                    .relative()
+                                    .child(
+                                        Button::new("presets-curve", "Presets ▾")
+                                            .variant(ButtonVariant::Secondary)
+                                            .size(ButtonSize::Md)
+                                            .theme(theme.to_button_theme())
+                                            .on_click({
+                                                let state = state_entity.clone();
+                                                move |_event, cx| {
+                                                    state.update(cx, |state, cx| {
+                                                        let open = !state
+                                                            .app
+                                                            .measurement_state
+                                                            .room_eq_state
+                                                            .dropdowns
+                                                            .custom_target_presets_open;
+                                                        state
+                                                            .app
+                                                            .measurement_state
+                                                            .room_eq_state
+                                                            .dropdowns
+                                                            .custom_target_presets_open = open;
+                                                        cx.notify();
+                                                    });
+                                                }
+                                            }),
+                                    )
+                                    .when(is_presets_open, |parent| {
+                                        parent.child(
+                                            div()
+                                                .absolute()
+                                                .top_full()
+                                                .right_0()
+                                                .mt_1()
+                                                .w_40()
+                                                .bg(theme.surface)
+                                                .border_1()
+                                                .border_color(theme.border)
+                                                .shadow_lg()
+                                                .rounded_md()
+                                                .p_1()
+                                                .flex()
+                                                .flex_col()
+                                                .gap_1()
+                                                .on_mouse_down(MouseButton::Left, |_, _, cx| {
+                                                    cx.stop_propagation();
+                                                })
+                                                .child(render_preset_option(
+                                                    "Flat",
+                                                    CustomTargetCurve::new_flat(),
+                                                    &state_entity,
+                                                    &theme,
+                                                ))
+                                                .child(render_preset_option(
+                                                    "Near-field",
+                                                    CustomTargetCurve::new_near_field(),
+                                                    &state_entity,
+                                                    &theme,
+                                                ))
+                                                .child(render_preset_option(
+                                                    "Mid-field",
+                                                    CustomTargetCurve::new_mid_field(),
+                                                    &state_entity,
+                                                    &theme,
+                                                ))
+                                                .child(render_preset_option(
+                                                    "Far-field",
+                                                    CustomTargetCurve::new_far_field(),
+                                                    &state_entity,
+                                                    &theme,
+                                                )),
+                                        )
+                                    }),
+                            ),
+                    )
                     .child(
                         Text::new("Click on the graph to add control points. Drag points to adjust. Double-click a point to remove it.")
                             .size(TextSize::Sm)
@@ -333,79 +430,6 @@ impl PlayerView {
                                     }),
                             )
                             .child(
-                                div()
-                                    .relative()
-                                    .child(
-                                        Button::new("presets-curve", "Presets ▾")
-                                            .variant(ButtonVariant::Secondary)
-                                            .size(ButtonSize::Md)
-                                            .theme(theme.to_button_theme())
-                                            .on_click({
-                                                let state = state_entity.clone();
-                                                move |_event, cx| {
-                                                    state.update(cx, |state, cx| {
-                                                        let open = !state
-                                                            .app
-                                                            .measurement_state
-                                                            .room_eq_state
-                                                            .dropdowns
-                                                            .custom_target_presets_open;
-                                                        state
-                                                            .app
-                                                            .measurement_state
-                                                            .room_eq_state
-                                                            .dropdowns
-                                                            .custom_target_presets_open = open;
-                                                        cx.notify();
-                                                    });
-                                                }
-                                            }),
-                                    )
-                                    .when(is_presets_open, |parent| {
-                                        parent.child(
-                                            div()
-                                                .absolute()
-                                                .bottom_full() // Show above the button
-                                                .left_0()
-                                                .mb_2()
-                                                .w_40()
-                                                .bg(theme.surface)
-                                                .border_1()
-                                                .border_color(theme.border)
-                                                .shadow_lg()
-                                                .rounded_md()
-                                                .p_1()
-                                                .flex()
-                                                .flex_col()
-                                                .gap_1()
-                                                .child(render_preset_option(
-                                                    "Flat",
-                                                    CustomTargetCurve::new_flat(),
-                                                    &state_entity,
-                                                    &theme,
-                                                ))
-                                                .child(render_preset_option(
-                                                    "Near-field",
-                                                    CustomTargetCurve::new_near_field(),
-                                                    &state_entity,
-                                                    &theme,
-                                                ))
-                                                .child(render_preset_option(
-                                                    "Mid-field",
-                                                    CustomTargetCurve::new_mid_field(),
-                                                    &state_entity,
-                                                    &theme,
-                                                ))
-                                                .child(render_preset_option(
-                                                    "Far-field",
-                                                    CustomTargetCurve::new_far_field(),
-                                                    &state_entity,
-                                                    &theme,
-                                                )),
-                                        )
-                                    }),
-                            )
-                            .child(
                                 Button::new("done-curve", "Done")
                                     .variant(ButtonVariant::Primary)
                                     .size(ButtonSize::Md)
@@ -443,10 +467,18 @@ fn render_preset_option(
         .rounded_sm()
         .hover(|s| s.bg(theme.surface_hover))
         .cursor_pointer()
-        .child(Text::new(name.to_string()).size(TextSize::Sm).color(theme.text_primary))
+        .child(
+            Text::new(name.to_string())
+                .size(TextSize::Sm)
+                .color(theme.text_primary),
+        )
         .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
             state.update(cx, |state, cx| {
-                state.app.measurement_state.room_eq_state.custom_target_curve = curve.clone();
+                state
+                    .app
+                    .measurement_state
+                    .room_eq_state
+                    .custom_target_curve = curve.clone();
                 state
                     .app
                     .measurement_state
@@ -624,8 +656,10 @@ fn render_target_curve_graph(
                 let y_px: f32 = (event.position.y - bounds.origin.y).into();
 
                 // Check if click is within the plot area
-                let x_in_range = (CHART_LEFT_MARGIN..=CHART_LEFT_MARGIN + plot_width).contains(&x_px);
-                let y_in_range = (CHART_TOP_MARGIN..=CHART_HEIGHT - CHART_BOTTOM_MARGIN).contains(&y_px);
+                let x_in_range =
+                    (CHART_LEFT_MARGIN..=CHART_LEFT_MARGIN + plot_width).contains(&x_px);
+                let y_in_range =
+                    (CHART_TOP_MARGIN..=CHART_HEIGHT - CHART_BOTTOM_MARGIN).contains(&y_px);
                 if x_in_range && y_in_range {
                     let new_freq = x_to_freq(x_px, plot_width).clamp(MIN_FREQ, MAX_FREQ);
                     let new_level = y_to_level(y_px).clamp(MIN_DB, MAX_DB);

@@ -10,7 +10,18 @@
 pub mod common;
 
 pub mod headphone_graphs;
+
+pub mod response_graphs;
+
 pub mod speaker_graphs;
+
+pub mod spectrum_graphs;
+
+
+
+
+
+
 
 /// Format a frequency value for display (e.g., "1.5 kHz", "200 Hz")
 pub fn format_frequency(freq: f64) -> String {

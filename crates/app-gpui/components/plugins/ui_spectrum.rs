@@ -273,15 +273,18 @@ impl Element for SpectrumElement {
                         bounds.origin.y + meter_height - (meter_height * yellow_threshold),
                     ));
                 }
-                let yellow_height = (height_ratio - yellow_threshold).min(red_threshold - yellow_threshold);
+                let yellow_height =
+                    (height_ratio - yellow_threshold).min(red_threshold - yellow_threshold);
                 let yellow_top = yellow_threshold + yellow_height;
                 let yellow_y = bounds.origin.y + meter_height - (meter_height * yellow_top);
-                let yellow_bottom_y = bounds.origin.y + meter_height - (meter_height * yellow_threshold);
+                let yellow_bottom_y =
+                    bounds.origin.y + meter_height - (meter_height * yellow_threshold);
                 yellow_path.line_to(point(x, yellow_y));
                 yellow_path.line_to(point(x + step_width, yellow_y));
             } else if has_yellow {
                 // Close off any yellow at the threshold level
-                let yellow_bottom_y = bounds.origin.y + meter_height - (meter_height * yellow_threshold);
+                let yellow_bottom_y =
+                    bounds.origin.y + meter_height - (meter_height * yellow_threshold);
                 yellow_path.line_to(point(x, yellow_bottom_y));
                 yellow_path.line_to(point(x + step_width, yellow_bottom_y));
             }
@@ -322,7 +325,8 @@ impl Element for SpectrumElement {
 
         // Close and paint yellow if present
         if has_yellow {
-            let yellow_bottom_y = bounds.origin.y + meter_height - (meter_height * yellow_threshold);
+            let yellow_bottom_y =
+                bounds.origin.y + meter_height - (meter_height * yellow_threshold);
             yellow_path.line_to(point(bounds.origin.x + bounds.size.width, yellow_bottom_y));
             yellow_path.line_to(point(bounds.origin.x, yellow_bottom_y));
             if let Ok(path) = yellow_path.build() {
@@ -478,11 +482,11 @@ fn render_db_axis(theme: &Theme) -> impl IntoElement {
     // Range: -100 dB to +3 dB (103 dB total)
     // Position = (3 - db) / 103
     let db_labels = [
-        ("+3", 0.0),           // (3 - 3) / 103 = 0.0
-        ("0", 0.029),          // (3 - 0) / 103 ≈ 0.029
-        ("-20", 0.223),        // (3 - (-20)) / 103 ≈ 0.223
-        ("-40", 0.417),        // (3 - (-40)) / 103 ≈ 0.417
-        ("-60", 0.612),        // (3 - (-60)) / 103 ≈ 0.612
+        ("+3", 0.0),    // (3 - 3) / 103 = 0.0
+        ("0", 0.029),   // (3 - 0) / 103 ≈ 0.029
+        ("-20", 0.223), // (3 - (-20)) / 103 ≈ 0.223
+        ("-40", 0.417), // (3 - (-40)) / 103 ≈ 0.417
+        ("-60", 0.612), // (3 - (-60)) / 103 ≈ 0.612
     ];
 
     div()

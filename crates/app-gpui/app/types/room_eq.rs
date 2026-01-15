@@ -20,7 +20,9 @@ impl std::fmt::Debug for InteractiveChartStateWrapper {
 
 impl InteractiveChartStateWrapper {
     pub fn new(x_min: f64, x_max: f64, y_min: f64, y_max: f64) -> Self {
-        Self(gpui_px::interaction::InteractiveChartState::new(x_min, x_max, y_min, y_max))
+        Self(gpui_px::interaction::InteractiveChartState::new(
+            x_min, x_max, y_min, y_max,
+        ))
     }
 
     pub fn with_log_x(mut self, is_log: bool) -> Self {
@@ -562,7 +564,10 @@ pub struct TargetCurveControlPoint {
 
 impl TargetCurveControlPoint {
     pub fn new(frequency: f64, level_db: f64) -> Self {
-        Self { frequency, level_db }
+        Self {
+            frequency,
+            level_db,
+        }
     }
 }
 
@@ -814,6 +819,8 @@ pub struct RoomEqState {
     pub review_selected_channel: usize,
     /// Interactive chart state for review graph (zoom/pan) - initialized lazily
     pub review_chart_state: Option<InteractiveChartStateWrapper>,
+    /// Whether to auto-scale Y axis for review graph (if false, uses fixed range)
+    pub review_y_axis_auto: bool,
     /// Interactive chart state for progress chart (zoom/pan) - initialized lazily
     pub progress_chart_state: Option<InteractiveChartStateWrapper>,
     /// Custom target curve for manual entry mode
@@ -842,6 +849,7 @@ impl Default for RoomEqState {
             review_smoothing_octaves: 1.0, // Default to 1 octave smoothing
             review_selected_channel: 0,
             review_chart_state: None,
+            review_y_axis_auto: true,
             progress_chart_state: None,
             custom_target_curve: CustomTargetCurve::new_flat(),
         }

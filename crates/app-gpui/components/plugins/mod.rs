@@ -535,29 +535,34 @@ pub fn render_plugin_content(
             knee_db,
             mix,
             link_channels,
-        } => render_mb_compressor_plugin(
-            entity.clone(),
-            plugin_idx,
-            ui_mb_compressor::MbCompressorRenderState {
-                num_bands: *num_bands,
-                crossover_preset: *crossover_preset,
-                crossover_freq_1: *crossover_freq_1,
-                crossover_freq_2: *crossover_freq_2,
-                crossover_freq_3: *crossover_freq_3,
-                crossover_freq_4: *crossover_freq_4,
-                threshold_db: *threshold_db,
-                ratio: *ratio,
-                attack_ms: *attack_ms,
-                release_ms: *release_ms,
-                knee_db: *knee_db,
-                mix: *mix,
-                link_channels: *link_channels,
-                is_editing,
-                selected_param,
-            },
-            theme,
-        )
-        .into_any_element(),
+            ..
+        } => {
+            let selected_band_idx = selected_band_idx.min(*num_bands);
+            render_mb_compressor_plugin(
+                entity.clone(),
+                plugin_idx,
+                ui_mb_compressor::MbCompressorRenderState {
+                    num_bands: *num_bands,
+                    crossover_preset: *crossover_preset,
+                    crossover_freq_1: *crossover_freq_1,
+                    crossover_freq_2: *crossover_freq_2,
+                    crossover_freq_3: *crossover_freq_3,
+                    crossover_freq_4: *crossover_freq_4,
+                    threshold_db: *threshold_db,
+                    ratio: *ratio,
+                    attack_ms: *attack_ms,
+                    release_ms: *release_ms,
+                    knee_db: *knee_db,
+                    mix: *mix,
+                    link_channels: *link_channels,
+                    is_editing,
+                    selected_param,
+                    selected_band_idx,
+                },
+                theme,
+            )
+            .into_any_element()
+        }
         PluginSettings::MultibandExpander {
             num_bands,
             crossover_preset,
@@ -575,32 +580,37 @@ pub fn render_plugin_content(
             hold_ms,
             mix,
             link_channels,
-        } => render_mb_expander_plugin(
-            entity.clone(),
-            plugin_idx,
-            ui_mb_expander::MbExpanderRenderState {
-                num_bands: *num_bands,
-                crossover_preset: *crossover_preset,
-                crossover_freq_1: *crossover_freq_1,
-                crossover_freq_2: *crossover_freq_2,
-                crossover_freq_3: *crossover_freq_3,
-                crossover_freq_4: *crossover_freq_4,
-                threshold_db: *threshold_db,
-                ratio: *ratio,
-                attack_ms: *attack_ms,
-                release_ms: *release_ms,
-                range_db: *range_db,
-                knee_db: *knee_db,
-                hysteresis_db: *hysteresis_db,
-                hold_ms: *hold_ms,
-                mix: *mix,
-                link_channels: *link_channels,
-                is_editing,
-                selected_param,
-            },
-            theme,
-        )
-        .into_any_element(),
+            ..
+        } => {
+            let selected_band_idx = selected_band_idx.min(*num_bands);
+            render_mb_expander_plugin(
+                entity.clone(),
+                plugin_idx,
+                ui_mb_expander::MbExpanderRenderState {
+                    num_bands: *num_bands,
+                    crossover_preset: *crossover_preset,
+                    crossover_freq_1: *crossover_freq_1,
+                    crossover_freq_2: *crossover_freq_2,
+                    crossover_freq_3: *crossover_freq_3,
+                    crossover_freq_4: *crossover_freq_4,
+                    threshold_db: *threshold_db,
+                    ratio: *ratio,
+                    attack_ms: *attack_ms,
+                    release_ms: *release_ms,
+                    range_db: *range_db,
+                    knee_db: *knee_db,
+                    hysteresis_db: *hysteresis_db,
+                    hold_ms: *hold_ms,
+                    mix: *mix,
+                    link_channels: *link_channels,
+                    is_editing,
+                    selected_param,
+                    selected_band_idx,
+                },
+                theme,
+            )
+            .into_any_element()
+        }
         PluginSettings::XTC {
             distance_m,
             speaker_angle_deg,

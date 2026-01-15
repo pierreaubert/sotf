@@ -20,7 +20,8 @@ impl PlayerView {
         let error_msg = room_eq.error_message.clone();
         let is_running = room_eq.is_optimizing();
         let is_completed = room_eq.is_optimization_complete();
-        let is_failed = room_eq.optimization_status == crate::app::types::OptimizationStatus::Failed;
+        let is_failed =
+            room_eq.optimization_status == crate::app::types::OptimizationStatus::Failed;
         let show_progress = is_running || is_completed || is_failed;
         let progress_history = room_eq.progress_history.clone();
         let current_channel = room_eq.current_channel.clone();
@@ -165,7 +166,8 @@ impl PlayerView {
                                             })
                                             .when(is_failed, |el| {
                                                 el.child(
-                                                    Badge::new("Failed").variant(BadgeVariant::Error),
+                                                    Badge::new("Failed")
+                                                        .variant(BadgeVariant::Error),
                                                 )
                                             }),
                                     )
@@ -200,16 +202,37 @@ impl PlayerView {
                 // Initialize interactive chart state if needed
                 {
                     let state = self.state.read(cx);
-                    if state.app.measurement_state.room_eq_state.progress_chart_state.is_none() {
-                        drop(state);
+                    if state
+                        .app
+                        .measurement_state
+                        .room_eq_state
+                        .progress_chart_state
+                        .is_none()
+                    {
+                        let _ = state;
                         self.state.update(cx, |state, _| {
                             // X: iteration range (0 to max), Y: loss range (auto-scale)
                             // We use linear scale for iteration, and auto-fit y based on loss values
-                            let max_iter = state.app.measurement_state.room_eq_state.optimizer_config.max_iter as f64;
-                            state.app.measurement_state.room_eq_state.progress_chart_state =
-                                Some(InteractiveChartStateWrapper::new(0.0, max_iter.max(100.0), 0.0, 1.0)
-                                    .with_log_x(false)
-                                    .with_size(700.0, 250.0));
+                            let max_iter = state
+                                .app
+                                .measurement_state
+                                .room_eq_state
+                                .optimizer_config
+                                .max_iter as f64;
+                            state
+                                .app
+                                .measurement_state
+                                .room_eq_state
+                                .progress_chart_state = Some(
+                                InteractiveChartStateWrapper::new(
+                                    0.0,
+                                    max_iter.max(100.0),
+                                    0.0,
+                                    1.0,
+                                )
+                                .with_log_x(false)
+                                .with_size(700.0, 250.0),
+                            );
                         });
                     }
                 }
@@ -228,11 +251,21 @@ impl PlayerView {
                 let best_loss = losses.iter().copied().fold(f64::INFINITY, f64::min);
 
                 // Calculate Y range from data
-                let (loss_min, loss_max) = losses.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(min, max), &v| {
-                    (min.min(v), max.max(v))
-                });
-                let y_min = if loss_min.is_finite() { (loss_min * 0.95).max(0.0) } else { 0.0 };
-                let y_max = if loss_max.is_finite() { loss_max * 1.05 } else { 1.0 };
+                let (loss_min, loss_max) = losses
+                    .iter()
+                    .fold((f64::INFINITY, f64::NEG_INFINITY), |(min, max), &v| {
+                        (min.min(v), max.max(v))
+                    });
+                let y_min = if loss_min.is_finite() {
+                    (loss_min * 0.95).max(0.0)
+                } else {
+                    0.0
+                };
+                let y_max = if loss_max.is_finite() {
+                    loss_max * 1.05
+                } else {
+                    1.0
+                };
 
                 // Get domain bounds - use interactive state only when zoomed, otherwise use computed range
                 let x_max_data = iterations.last().copied().unwrap_or(100.0);
@@ -261,9 +294,13 @@ impl PlayerView {
                 // Build the chart element, wrapping with interactive if state is available
                 let chart_element: Option<gpui::AnyElement> = chart.ok().map(|c| {
                     if let Some(state) = chart_state {
-                        gpui_px::interaction::interactive("room-eq-progress-chart", c, state.clone())
-                            .build()
-                            .into_any_element()
+                        gpui_px::interaction::interactive(
+                            "room-eq-progress-chart",
+                            c,
+                            state.clone(),
+                        )
+                        .build()
+                        .into_any_element()
                     } else {
                         c.into_any_element()
                     }
@@ -474,7 +511,12 @@ impl PlayerView {
                 .channel_results
                 .clear();
             state.app.measurement_state.room_eq_state.overall_progress = 0.0;
-            state.app.measurement_state.room_eq_state.progress_history.clear();
+            state
+                .app
+                .measurement_state
+                .room_eq_state
+                .progress_history
+                .clear();
             state.app.measurement_state.room_eq_state.current_iteration = 0;
             state.app.measurement_state.room_eq_state.current_loss = 0.0;
         });
@@ -509,10 +551,23 @@ impl PlayerView {
                     let _ = state_for_progress.update(&mut cx.clone(), |state, cx| {
                         state.app.measurement_state.room_eq_state.current_iteration = iteration;
                         state.app.measurement_state.room_eq_state.current_loss = loss;
-                        state.app.measurement_state.room_eq_state.overall_progress = overall_progress;
+                        state.app.measurement_state.room_eq_state.overall_progress =
+                            overall_progress;
                         // Add to progress history (limit to avoid memory issues)
-                        if state.app.measurement_state.room_eq_state.progress_history.len() < 10000 {
-                            state.app.measurement_state.room_eq_state.progress_history.push((iteration, loss, None));
+                        if state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .progress_history
+                            .len()
+                            < 10000
+                        {
+                            state
+                                .app
+                                .measurement_state
+                                .room_eq_state
+                                .progress_history
+                                .push((iteration, loss, None));
                         }
                         cx.notify();
                     });
@@ -588,7 +643,11 @@ impl PlayerView {
                         );
 
                         // Send progress update to UI (ignore errors if channel full or receiver dropped)
-                        let _ = progress_tx_clone.try_send((iteration_offset + iteration, loss, overall));
+                        let _ = progress_tx_clone.try_send((
+                            iteration_offset + iteration,
+                            loss,
+                            overall,
+                        ));
 
                         CallbackAction::Continue
                     });

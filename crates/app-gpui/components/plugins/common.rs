@@ -239,6 +239,136 @@ pub fn param_index_to_engine_param(
                 }
             }
         }
+        PluginSettings::MultibandCompressor {
+            threshold_db,
+            ratio,
+            attack_ms,
+            release_ms,
+            knee_db,
+            mix,
+            link_channels,
+            bands,
+            ..
+        } => {
+            if param_idx < 100 {
+                match param_idx {
+                    6 => Some(("threshold".to_string(), format!("{}", threshold_db))),
+                    7 => Some(("ratio".to_string(), format!("{}", ratio))),
+                    8 => Some(("attack".to_string(), format!("{}", attack_ms))),
+                    9 => Some(("release".to_string(), format!("{}", release_ms))),
+                    10 => Some(("knee".to_string(), format!("{}", knee_db))),
+                    11 => Some(("mix".to_string(), format!("{}", mix))),
+                    12 => Some(("link_channels".to_string(), link_channels.to_string())),
+                    _ => None,
+                }
+            } else {
+                let band_idx = param_idx / 100;
+                let local_idx = param_idx % 100;
+                let band_zero_based = band_idx - 1;
+
+                let param_name = match local_idx {
+                    6 => "threshold",
+                    7 => "ratio",
+                    8 => "attack",
+                    9 => "release",
+                    10 => "knee",
+                    13 => "makeup_gain",
+                    14 => "bypass",
+                    15 => "solo",
+                    _ => return None,
+                };
+
+                let id = format!("band_{}_{}", band_zero_based, param_name);
+
+                let val_str = if let Some(band) = bands.get(band_zero_based) {
+                    match local_idx {
+                        6 => format!("{}", band.threshold_db.unwrap_or(*threshold_db as f32)),
+                        7 => format!("{}", band.ratio.unwrap_or(*ratio as f32)),
+                        8 => format!("{}", band.attack_ms.unwrap_or(*attack_ms as f32)),
+                        9 => format!("{}", band.release_ms.unwrap_or(*release_ms as f32)),
+                        10 => format!("{}", band.knee_db.unwrap_or(*knee_db as f32)),
+                        13 => format!("{}", band.makeup_gain_db),
+                        14 => format!("{}", band.bypass),
+                        15 => format!("{}", band.solo),
+                        _ => "?".to_string(),
+                    }
+                } else {
+                    "?".to_string()
+                };
+
+                Some((id, val_str))
+            }
+        }
+        PluginSettings::MultibandExpander {
+            threshold_db,
+            ratio,
+            attack_ms,
+            release_ms,
+            range_db,
+            knee_db,
+            hysteresis_db,
+            hold_ms,
+            mix,
+            link_channels,
+            bands,
+            ..
+        } => {
+            if param_idx < 100 {
+                match param_idx {
+                    6 => Some(("threshold".to_string(), format!("{}", threshold_db))),
+                    7 => Some(("ratio".to_string(), format!("{}", ratio))),
+                    8 => Some(("attack".to_string(), format!("{}", attack_ms))),
+                    9 => Some(("release".to_string(), format!("{}", release_ms))),
+                    10 => Some(("range".to_string(), format!("{}", range_db))),
+                    11 => Some(("knee".to_string(), format!("{}", knee_db))),
+                    12 => Some(("hysteresis".to_string(), format!("{}", hysteresis_db))),
+                    13 => Some(("hold".to_string(), format!("{}", hold_ms))),
+                    14 => Some(("mix".to_string(), format!("{}", mix))),
+                    15 => Some(("link_channels".to_string(), link_channels.to_string())),
+                    _ => None,
+                }
+            } else {
+                let band_idx = param_idx / 100;
+                let local_idx = param_idx % 100;
+                let band_zero_based = band_idx - 1;
+
+                let param_name = match local_idx {
+                    6 => "threshold",
+                    7 => "ratio",
+                    8 => "attack",
+                    9 => "release",
+                    10 => "range",
+                    11 => "knee",
+                    12 => "hysteresis",
+                    13 => "hold",
+                    14 => "bypass",
+                    15 => "solo",
+                    _ => return None,
+                };
+
+                let id = format!("band_{}_{}", band_zero_based, param_name);
+
+                let val_str = if let Some(band) = bands.get(band_zero_based) {
+                    match local_idx {
+                        6 => format!("{}", band.threshold_db.unwrap_or(*threshold_db as f32)),
+                        7 => format!("{}", band.ratio.unwrap_or(*ratio as f32)),
+                        8 => format!("{}", band.attack_ms.unwrap_or(*attack_ms as f32)),
+                        9 => format!("{}", band.release_ms.unwrap_or(*release_ms as f32)),
+                        10 => format!("{}", band.range_db.unwrap_or(*range_db as f32)),
+                        11 => format!("{}", band.knee_db.unwrap_or(*knee_db as f32)),
+                        12 => format!("{}", band.hysteresis_db.unwrap_or(*hysteresis_db as f32)),
+                        13 => format!("{}", band.hold_ms.unwrap_or(*hold_ms as f32)),
+                        14 => format!("{}", band.bypass),
+                        15 => format!("{}", band.solo),
+                        _ => "?".to_string(),
+                    }
+                } else {
+                    "?".to_string()
+                };
+
+                Some((id, val_str))
+            }
+        }
         // Other plugins: use Structural for now
         _ => None,
     }

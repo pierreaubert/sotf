@@ -676,9 +676,11 @@ fn render_eq_visualization(
                                 .app
                                 .set_plugin_param(plugin_idx, band_idx * 4 + 1, Q_DEFAULT);
                             // Reset gain to 0.0 dB
-                            state
-                                .app
-                                .set_plugin_param(plugin_idx, band_idx * 4 + 2, GAIN_DB_DEFAULT);
+                            state.app.set_plugin_param(
+                                plugin_idx,
+                                band_idx * 4 + 2,
+                                GAIN_DB_DEFAULT,
+                            );
                             cx.notify();
                         });
                     } else {
@@ -774,7 +776,7 @@ pub fn render_eq_plugin(
     // Read selected channel from AppState
     let app_state = entity.read(cx);
     let selected_eq_channel = app_state.app.plugin_state.selected_eq_channel;
-    drop(app_state);
+    let _ = app_state;
 
     // Determine which filters to display based on mode
     let display_filters: &[EQFilter] = if state.per_channel_mode {

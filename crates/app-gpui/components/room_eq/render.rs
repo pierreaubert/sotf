@@ -4,6 +4,7 @@ use gpui::*;
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, StackSpacing, Text, TextSize, TextWeight, VStack,
 };
+use sotf_audio::signal_analysis as dsp;
 
 // === Free functions for channel configuration UI ===
 
@@ -180,7 +181,9 @@ pub(crate) fn render_channel_result_card(
     result: &crate::app::types::ChannelOptResult,
     theme: &crate::theme::Theme,
     smoothing_octaves: f64,
+    y_axis_auto: bool,
     interactive_state: Option<&gpui_px::interaction::InteractiveChartState>,
+    target_curve: Option<&[(f64, f64)]>,
 ) -> impl IntoElement {
     use crate::components::graphs::format_frequency;
 
@@ -248,7 +251,9 @@ pub(crate) fn render_channel_result_card(
                 &result.eq_filters,
                 theme,
                 smoothing_octaves,
+                y_axis_auto,
                 interactive_state,
+                target_curve,
             ))
         })
         // EQ Filter details
@@ -296,55 +301,18 @@ pub(crate) fn render_channel_result_card(
         })
 }
 
-/// Apply octave smoothing to frequency response data
-fn smooth_response(frequencies: &[f64], values: &[f64], octaves: f64) -> Vec<f64> {
-    if octaves <= 0.0 || frequencies.is_empty() || values.is_empty() {
-        return values.to_vec();
-    }
-
-    let mut smoothed = Vec::with_capacity(values.len());
-
-    for (i, &center_freq) in frequencies.iter().enumerate() {
-        if center_freq <= 0.0 {
-            smoothed.push(values[i]);
-            continue;
-        }
-
-        // Calculate frequency range for smoothing window
-        let ratio = 2.0_f64.powf(octaves / 2.0);
-        let low_freq = center_freq / ratio;
-        let high_freq = center_freq * ratio;
-
-        // Average values within the window
-        let mut sum = 0.0;
-        let mut count = 0;
-
-        for (j, &freq) in frequencies.iter().enumerate() {
-            if freq >= low_freq && freq <= high_freq {
-                sum += values[j];
-                count += 1;
-            }
-        }
-
-        if count > 0 {
-            smoothed.push(sum / count as f64);
-        } else {
-            smoothed.push(values[i]);
-        }
-    }
-
-    smoothed
-}
 
 /// Render the frequency response comparison graph with tonal balance histogram
 /// If interactive_state is provided, the chart will support pan/zoom interactions
 fn render_response_comparison_graph(
     original: &[(f64, f64)],
-    normalized: &[(f64, f64)],
+    _normalized: &[(f64, f64)],
     eq_filters: &[crate::app::types::EqFilterConfig],
     theme: &crate::theme::Theme,
     smoothing_octaves: f64,
+    y_axis_auto: bool,
     interactive_state: Option<&gpui_px::interaction::InteractiveChartState>,
+    target_curve: Option<&[(f64, f64)]>,
 ) -> impl IntoElement {
     use crate::components::graphs::common::theme_to_chart_theme;
     use gpui_px::{BarTheme, LegendPosition, ScaleType, bar, line};
@@ -359,35 +327,113 @@ fn render_response_comparison_graph(
     const BLUE: u32 = 0x1f77b4;
     const ORANGE: u32 = 0xff7f0e;
     const GREEN: u32 = 0x2ca02c;
+    const RED: u32 = 0xd62728; // Color for target curve
 
     // Convert (freq, db) pairs to separate vectors
     let frequencies: Vec<f64> = original.iter().map(|(f, _)| *f).collect();
     let original_values_raw: Vec<f64> = original.iter().map(|(_, db)| *db).collect();
-    let normalized_values_raw: Vec<f64> = normalized.iter().map(|(_, db)| *db).collect();
+    // We'll ignore the passed normalized curve if it's flat/broken, and compute our own corrected curve
+    // let normalized_values_raw: Vec<f64> = normalized.iter().map(|(_, db)| *db).collect();
+
+    // Compute EQ response curve from filters
+    let eq_response: Vec<f64> = if eq_filters.is_empty() {
+        vec![0.0; frequencies.len()]
+    } else {
+        frequencies
+            .iter()
+            .map(|&freq| {
+                eq_filters
+                    .iter()
+                    .map(|f| {
+                        let filter_type = match f.filter_type.as_str() {
+                            "peak" | "pk" => BiquadFilterType::Peak,
+                            "lowshelf" | "ls" => BiquadFilterType::Lowshelf,
+                            "highshelf" | "hs" => BiquadFilterType::Highshelf,
+                            "lowpass" | "lp" => BiquadFilterType::Lowpass,
+                            "highpass" | "hp" => BiquadFilterType::Highpass,
+                            _ => BiquadFilterType::Peak,
+                        };
+                        let biquad =
+                            Biquad::new(filter_type, f.frequency, SAMPLE_RATE, f.q, f.gain_db);
+                        biquad.log_result(freq)
+                    })
+                    .sum::<f64>()
+            })
+            .collect()
+    };
 
     // Apply smoothing
-    let original_values = smooth_response(&frequencies, &original_values_raw, smoothing_octaves);
-    let normalized_values = smooth_response(&frequencies, &normalized_values_raw, smoothing_octaves);
+    let original_values = dsp::smooth_response_f64(&frequencies, &original_values_raw, smoothing_octaves);
 
-    // Compute Y-axis range from data (include all curves: original, normalized, and EQ response)
-    let all_values = original_values.iter().chain(normalized_values.iter());
-    let (data_min, data_max) = all_values
-        .fold((f64::INFINITY, f64::NEG_INFINITY), |(min, max), &v| {
-            (min.min(v), max.max(v))
-        });
+    // Compute Corrected = Original (smoothed) + EQ
+    // We use smoothed original for the display curve so it looks clean
+    let corrected_values: Vec<f64> = original_values
+        .iter()
+        .zip(eq_response.iter())
+        .map(|(orig, eq)| orig + eq)
+        .collect();
 
-    // Round to nearest multiple of 5, ensuring bounds exceed data range
-    // y_max: round up to next multiple of 5
-    // y_min: round down to previous multiple of 5
-    let y_max = if data_max.is_finite() {
-        ((data_max / 5.0).ceil() * 5.0).max(5.0)
+    // Compute Y-axis range
+    // If auto: include all curves
+    // If fixed: use -40 to +10 dB (relative to target/average?)
+    // Usually fixed range is absolute dB SPL, but here normalized might be around 0?
+    // Wait, original measurement is usually absolute SPL (e.g. 70-80dB).
+    // If we want fixed range [-40, 10], that implies normalized data (around 0dB).
+    // The "normalized_response" passed in was likely centered around 0.
+    // Our "corrected_values" are (Original + EQ). If Original is 75dB, Corrected is ~75dB.
+    // A fixed range of [-40, 10] only makes sense for Relative/Normalized curves.
+    // For absolute SPL, we probably want [Mean - 40, Mean + 10] or similar.
+    // Or maybe the user means "Window of 50dB range".
+
+    // Let's check the data range of original.
+    let mean_spl = if !original_values.is_empty() {
+        original_values.iter().sum::<f64>() / original_values.len() as f64
     } else {
-        5.0
+        0.0
     };
-    let y_min = if data_min.is_finite() {
-        (data_min / 5.0).floor() * 5.0
+
+    let (y_min_auto, y_max_auto) = {
+        let mut min_val = f64::INFINITY;
+        let mut max_val = f64::NEG_INFINITY;
+
+        for &v in original_values.iter().chain(corrected_values.iter()) {
+            min_val = min_val.min(v);
+            max_val = max_val.max(v);
+        }
+
+        if let Some(target) = target_curve {
+            for &(_, db) in target {
+                min_val = min_val.min(db);
+                max_val = max_val.max(db);
+            }
+        }
+
+        // Round to nearest multiple of 5
+        let max = if max_val.is_finite() {
+            ((max_val / 5.0).ceil() * 5.0).max(5.0)
+        } else {
+            5.0
+        };
+        let min = if min_val.is_finite() {
+            (min_val / 5.0).floor() * 5.0
+        } else {
+            -15.0
+        };
+        (min, max)
+    };
+
+    let (y_min_fixed, y_max_fixed) = if mean_spl > 30.0 {
+        // Absolute SPL: Center around mean
+        (mean_spl - 40.0, mean_spl + 10.0)
     } else {
-        -15.0
+        // Relative dB: -40 to +10
+        (-40.0, 10.0)
+    };
+
+    let (y_min, y_max) = if y_axis_auto {
+        (y_min_auto, y_max_auto)
+    } else {
+        (y_min_fixed, y_max_fixed)
     };
 
     if frequencies.is_empty() {
@@ -444,34 +490,8 @@ fn render_response_comparison_graph(
     };
 
     let orig_trend = calculate_trend(&frequencies, &original_values);
-    let corr_trend = calculate_trend(&frequencies, &normalized_values);
-
-    // Compute EQ response curve from filters
-    let eq_response: Vec<f64> = if eq_filters.is_empty() {
-        vec![0.0; frequencies.len()]
-    } else {
-        frequencies
-            .iter()
-            .map(|&freq| {
-                eq_filters
-                    .iter()
-                    .map(|f| {
-                        let filter_type = match f.filter_type.as_str() {
-                            "peak" | "pk" => BiquadFilterType::Peak,
-                            "lowshelf" | "ls" => BiquadFilterType::Lowshelf,
-                            "highshelf" | "hs" => BiquadFilterType::Highshelf,
-                            "lowpass" | "lp" => BiquadFilterType::Lowpass,
-                            "highpass" | "hp" => BiquadFilterType::Highpass,
-                            _ => BiquadFilterType::Peak,
-                        };
-                        let biquad =
-                            Biquad::new(filter_type, f.frequency, SAMPLE_RATE, f.q, f.gain_db);
-                        biquad.log_result(freq)
-                    })
-                    .sum::<f64>()
-            })
-            .collect()
-    };
+    // Use corrected values for trend
+    let corr_trend = calculate_trend(&frequencies, &corrected_values);
 
     // Compute Y2 range for EQ response
     let (eq_min, eq_max) = eq_response
@@ -507,8 +527,53 @@ fn render_response_comparison_graph(
         .opacity(1.0)
         .theme(chart_theme.clone())
         .size(GRAPH_WIDTH, GRAPH_HEIGHT)
-        .add_series(&normalized_values, Some("Normalized"), ORANGE, 2.0, 1.0)
+        // Use corrected_values (Original + EQ) instead of normalized_values
+        .add_series(&corrected_values, Some("Corrected"), ORANGE, 2.0, 1.0)
         .add_series_y2(&eq_response, Some("EQ"), GREEN, 2.0, 0.8);
+
+    // Add target curve if available
+    if let Some(target) = target_curve {
+        // Interpolate target curve to match frequencies if needed, but line chart handles different x points?
+        // gpui_px line chart expects x and y arrays. `add_series` takes y array and assumes same x array as primary.
+        // `line` builder uses the primary series x array.
+        // So we need to interpolate target curve to `frequencies`.
+
+        let target_values: Vec<f64> = frequencies
+            .iter()
+            .map(|&f| {
+                // Linear interpolation of target curve
+                // Find surrounding points in target
+                let mut lower = (20.0, 0.0);
+                let mut upper = (20000.0, 0.0);
+
+                // Assume target is sorted by freq
+                if let Some(first) = target.first() {
+                    if f < first.0 {
+                        return first.1;
+                    }
+                }
+                if let Some(last) = target.last() {
+                    if f > last.0 {
+                        return last.1;
+                    }
+                }
+
+                for win in target.windows(2) {
+                    if f >= win[0].0 && f <= win[1].0 {
+                        lower = win[0];
+                        upper = win[1];
+                        break;
+                    }
+                }
+
+                // Log-linear interpolation
+                let t = (f.ln() - lower.0.ln()) / (upper.0.ln() - lower.0.ln());
+                lower.1 + t * (upper.1 - lower.1)
+            })
+            .collect();
+
+        chart_builder = chart_builder.add_series(&target_values, Some("Target"), RED, 2.0, 0.8);
+    }
 
     // Add trend lines if calculated
     if let Some((slope, intercept)) = orig_trend {
@@ -571,7 +636,7 @@ fn render_response_comparison_graph(
             };
 
         let hist_orig = calculate_histogram(&frequencies, &original_values, slope_orig, int_orig);
-        let hist_corr = calculate_histogram(&frequencies, &normalized_values, slope_corr, int_corr);
+        let hist_corr = calculate_histogram(&frequencies, &corrected_values, slope_corr, int_corr);
 
         let labels = vec![
             "0-0.5", "0.5-1", "1-1.5", "1.5-2", "2-2.5", "2.5-3", "3-3.5", "3.5-4", ">4",
@@ -591,7 +656,7 @@ fn render_response_comparison_graph(
             .bar_gap(4.0)
             .opacity(0.8)
             .legend_position(LegendPosition::Bottom)
-            .add_series(&hist_corr, Some("Normalized"), ORANGE, 0.8)
+            .add_series(&hist_corr, Some("Corrected"), ORANGE, 0.8)
             .build()
             .ok()
     } else {

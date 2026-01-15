@@ -160,6 +160,16 @@ pub struct RecordingResult {
     pub frequencies: Vec<f32>,
     pub magnitude_db: Vec<f32>,
     pub phase_deg: Vec<f32>,
+    // Advanced metrics
+    pub impulse_response: Option<Vec<f32>>,
+    pub impulse_time_ms: Option<Vec<f32>>,
+    pub thd_percent: Option<Vec<f32>>,
+    pub harmonic_distortion_db: Option<Vec<Vec<f32>>>, // [2nd, 3rd, 4th...]
+    pub excess_group_delay_ms: Option<Vec<f32>>,
+    pub rt60_ms: Option<Vec<f32>>,
+    pub clarity_c50_db: Option<Vec<f32>>,
+    pub clarity_c80_db: Option<Vec<f32>>,
+    pub spectrogram_db: Option<Vec<Vec<f32>>>,
 }
 
 /// Signal type for test signal generation
@@ -375,6 +385,10 @@ pub struct RecordingState {
     // === Saving Step State ===
     /// Name for the recording session (used as subdirectory name)
     pub save_name: String,
+
+    // === Noise Floor Warning ===
+    /// Warning message when recording level is close to noise floor
+    pub noise_floor_warning: Option<String>,
 }
 
 impl Default for RecordingState {
@@ -411,6 +425,7 @@ impl Default for RecordingState {
             plot_channel_dropdown_open: false,
             plot_smoothing_dropdown_open: false,
             save_name: "recording".to_string(),
+            noise_floor_warning: None,
         }
     }
 }

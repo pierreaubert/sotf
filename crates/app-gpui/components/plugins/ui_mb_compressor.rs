@@ -33,6 +33,7 @@ pub struct MbCompressorRenderState {
     pub link_channels: bool,
     pub is_editing: bool,
     pub selected_param: usize,
+    pub selected_band_idx: usize,
 }
 
 // Layout constants
@@ -45,6 +46,16 @@ pub fn render_mb_compressor_plugin(
     state: MbCompressorRenderState,
     theme: &Theme,
 ) -> impl IntoElement {
+    // Helper to get parameter index based on selected band
+    // Global: 0-99, Band 1: 100-199, Band 2: 200-299, etc.
+    let get_param_idx = |base_idx: usize| -> usize {
+        if state.selected_band_idx > 0 {
+            state.selected_band_idx * 100 + base_idx
+        } else {
+            base_idx
+        }
+    };
+
     div()
         .flex()
         .flex_col()
@@ -174,6 +185,49 @@ pub fn render_mb_compressor_plugin(
                         .flex_col()
                         .gap_2()
                         .child(render_section_title("DYNAMICS", theme))
+                        // Band Selector
+                        .child(div().flex().gap_1().justify_center().children(
+                            (0..=state.num_bands).map(|i| {
+                                let is_selected = state.selected_band_idx == i;
+                                let label = if i == 0 {
+                                    "Global".to_string()
+                                } else {
+                                    format!("{}", i)
+                                };
+                                div()
+                                    .px_2()
+                                    .py_0p5()
+                                    .rounded_sm()
+                                    .text_xs()
+                                    .font_weight(if is_selected {
+                                        FontWeight::BOLD
+                                    } else {
+                                        FontWeight::NORMAL
+                                    })
+                                    .bg(if is_selected {
+                                        theme.accent
+                                    } else {
+                                        theme.background_secondary
+                                    })
+                                    .text_color(if is_selected {
+                                        theme.text_on_accent
+                                    } else {
+                                        theme.text_secondary
+                                    })
+                                    .cursor_pointer()
+                                    .id(("mb-band", i))
+                                    .on_mouse_down(MouseButton::Left, {
+                                        let entity = entity.clone();
+                                        move |_, _window, cx| {
+                                            entity.update(cx, |state, _| {
+                                                // Reusing selected_eq_band for general band selection
+                                                state.app.plugin_state.selected_eq_band = i;
+                                            });
+                                        }
+                                    })
+                                    .child(label)
+                            }),
+                        ))
                         .child(
                             div()
                                 .flex()
@@ -186,7 +240,7 @@ pub fn render_mb_compressor_plugin(
                                     THRESHOLD_MIN as f64,
                                     THRESHOLD_MAX as f64,
                                     "dB",
-                                    6,
+                                    get_param_idx(6),
                                     state.selected_param,
                                     state.is_editing,
                                     Some('t'),
@@ -201,7 +255,7 @@ pub fn render_mb_compressor_plugin(
                                     RATIO_MIN as f64,
                                     RATIO_MAX as f64,
                                     ":1",
-                                    7,
+                                    get_param_idx(7),
                                     state.selected_param,
                                     state.is_editing,
                                     Some('r'),
@@ -216,7 +270,7 @@ pub fn render_mb_compressor_plugin(
                                     KNEE_MIN as f64,
                                     KNEE_MAX as f64,
                                     "dB",
-                                    10,
+                                    get_param_idx(10),
                                     state.selected_param,
                                     state.is_editing,
                                     Some('k'),
@@ -225,7 +279,7 @@ pub fn render_mb_compressor_plugin(
                                 )),
                         ),
                 )
-                // Column 4: Timing (Attack, Release)
+                // Column 4: Timing (Attack, Release) + Makeup/Solo/Bypass (Band only)
                 .child(
                     div()
                         .flex()
@@ -244,7 +298,7 @@ pub fn render_mb_compressor_plugin(
                                     ATTACK_MIN as f64,
                                     ATTACK_MAX as f64,
                                     "ms",
-                                    8,
+                                    get_param_idx(8),
                                     state.selected_param,
                                     state.is_editing,
                                     Some('a'),
@@ -259,14 +313,71 @@ pub fn render_mb_compressor_plugin(
                                     RELEASE_MIN as f64,
                                     RELEASE_MAX as f64,
                                     "ms",
-                                    9,
+                                    get_param_idx(9),
                                     state.selected_param,
                                     state.is_editing,
                                     Some('e'),
                                     Some(SLIDER_HEIGHT),
                                     theme,
-                                )),
-                        ),
+                                ))
+                                .when(state.selected_band_idx > 0, |d| {
+                                    d.child(render_vertical_slider_sized(
+                                        entity.clone(),
+                                        plugin_idx,
+                                        "Makeup",
+                                        0.0, // TODO: Bind to makeup gain
+                                        -24.0,
+                                        24.0,
+                                        "dB",
+                                        get_param_idx(13),
+                                        state.selected_param,
+                                        state.is_editing,
+                                        Some('g'),
+                                        Some(SLIDER_HEIGHT),
+                                        theme,
+                                    ))
+                                }),
+                        )
+                        // Band controls (Solo/Bypass)
+                        .when(state.selected_band_idx > 0, |d| {
+                            d.child(
+                                div()
+                                    .flex()
+                                    .gap_2()
+                                    .justify_center()
+                                    .mt_2()
+                                    .child(render_toggle_button(
+                                        entity.clone(),
+                                        plugin_idx,
+                                        false, // TODO: Bind to Solo
+                                        get_param_idx(15),
+                                        state.selected_param,
+                                        state.is_editing,
+                                        theme,
+                                    ))
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(theme.text_secondary)
+                                            .child("Solo"),
+                                    )
+                                    .child(render_toggle_button(
+                                        entity.clone(),
+                                        plugin_idx,
+                                        false, // TODO: Bind to Bypass
+                                        get_param_idx(14),
+                                        state.selected_param,
+                                        state.is_editing,
+                                        theme,
+                                    ))
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(theme.text_secondary)
+                                            .child("Bypass"),
+                                    ),
+                            )
+                        }),
                 )
                 // Column 5: Output (Link, Mix)
                 .child(

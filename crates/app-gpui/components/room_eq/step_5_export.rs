@@ -92,7 +92,7 @@ impl PlayerView {
                                 Text::new(if has_eq_in_rack {
                                     "An EQ plugin exists in your rack. It will be updated with the new filters."
                                 } else {
-                                    "No EQ plugin in rack. A new EQ will be added before any monitoring plugins."
+                                    "No EQ plugin in rack. A new EQ will be added at the end of the processing chain."
                                 })
                                 .size(TextSize::Sm)
                                 .color(theme.text_secondary),
@@ -342,8 +342,8 @@ impl PlayerView {
                     );
                 }
             } else {
-                // No EQ plugin exists, add one before monitoring plugins
-                let insert_idx = plugin_chain.find_processing_insert_index();
+                // No EQ plugin exists, add one at the end before Matrix and Output Monitor
+                let insert_idx = plugin_chain.user_plugin_insert_index();
                 plugin_chain.insert_plugin(insert_idx, &PluginType::EQ);
 
                 // Configure the newly inserted plugin with per-channel room EQ
