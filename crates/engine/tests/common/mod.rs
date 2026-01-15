@@ -17,7 +17,7 @@ const BLACKHOLE_DEVICES: &[&str] = &["BlackHole 2ch", "BlackHole 16ch", "BlackHo
 static BLACKHOLE_DEVICE: OnceLock<Option<String>> = OnceLock::new();
 
 /// Find an available BlackHole device
-fn find_blackhole_device() -> Option<String> {
+pub fn find_blackhole_device() -> Option<String> {
     use cpal::traits::{DeviceTrait, HostTrait};
 
     let host = cpal::default_host();

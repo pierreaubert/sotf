@@ -2,7 +2,9 @@ use crate::engine::PluginConfig;
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sotf_plugins::{SpectralTiltCorrection, TiltReferenceFreq};
+use sotf_plugins::{
+    BandCompressorParams, BandExpanderParams, SpectralTiltCorrection, TiltReferenceFreq,
+};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum PluginType {
@@ -921,6 +923,8 @@ pub enum PluginSettings {
         mix: f64,
         #[serde(default = "default_mb_compressor_link_channels")]
         link_channels: bool,
+        #[serde(default)]
+        bands: Vec<BandCompressorParams>,
     },
     MultibandExpander {
         #[serde(default = "default_mb_expander_num_bands")]
@@ -955,6 +959,8 @@ pub enum PluginSettings {
         mix: f64,
         #[serde(default = "default_mb_expander_link_channels")]
         link_channels: bool,
+        #[serde(default)]
+        bands: Vec<BandExpanderParams>,
     },
     LoudnessCompensation {
         low_freq: f64,
@@ -1436,6 +1442,7 @@ impl PluginSettings {
                 knee_db,
                 mix,
                 link_channels,
+                bands,
             } => PluginConfig::new(
                 "multiband_compressor",
                 json!({
@@ -1452,6 +1459,7 @@ impl PluginSettings {
                     "knee_db": knee_db,
                     "mix": mix,
                     "link_channels": link_channels,
+                    "bands": bands,
                 }),
             ),
             Self::MultibandExpander {
@@ -1471,6 +1479,7 @@ impl PluginSettings {
                 hold_ms,
                 mix,
                 link_channels,
+                bands,
             } => PluginConfig::new(
                 "multiband_expander",
                 json!({
@@ -1490,6 +1499,7 @@ impl PluginSettings {
                     "hold_ms": hold_ms,
                     "mix": mix,
                     "link_channels": link_channels,
+                    "bands": bands,
                 }),
             ),
             Self::LoudnessCompensation {
@@ -1852,6 +1862,7 @@ impl PluginSettings {
                 knee_db: default_mb_compressor_knee_db(),
                 mix: default_mb_compressor_mix(),
                 link_channels: default_mb_compressor_link_channels(),
+                bands: Vec::new(),
             },
             PluginType::MultibandExpander => Self::MultibandExpander {
                 num_bands: default_mb_expander_num_bands(),
@@ -1870,6 +1881,7 @@ impl PluginSettings {
                 hold_ms: default_mb_expander_hold_ms(),
                 mix: default_mb_expander_mix(),
                 link_channels: default_mb_expander_link_channels(),
+                bands: Vec::new(),
             },
             PluginType::LoudnessCompensation => Self::LoudnessCompensation {
                 low_freq: 100.0,    // param_specs::loudness_compensation::LOW_FREQ_DEFAULT

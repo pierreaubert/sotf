@@ -253,21 +253,19 @@ fn handle_processing_command(
             log::debug!("[Processing Thread] Bypass: {}", bypass);
             response_tx.send(ProcessingResponse::Ok).ok();
         }
-        ProcessingCommand::GetPluginData(index) => {
-            match state.host.get_plugin_data(index) {
-                Some(data) => {
-                    response_tx.send(ProcessingResponse::PluginData(data)).ok();
-                }
-                None => {
-                    response_tx
-                        .send(ProcessingResponse::Error(format!(
-                            "Plugin {} data not available",
-                            index
-                        )))
-                        .ok();
-                }
+        ProcessingCommand::GetPluginData(index) => match state.host.get_plugin_data(index) {
+            Some(data) => {
+                response_tx.send(ProcessingResponse::PluginData(data)).ok();
             }
-        }
+            None => {
+                response_tx
+                    .send(ProcessingResponse::Error(format!(
+                        "Plugin {} data not available",
+                        index
+                    )))
+                    .ok();
+            }
+        },
         ProcessingCommand::Stop => {
             log::debug!("[Processing Thread] Stopped");
         }
@@ -334,8 +332,12 @@ fn run_processing_thread(
                             output_channels,
                             frame.sample_rate,
                         );
-                        
-                        match send_or_interrupt(&message_tx, &command_rx, ProcessingMessage::Frame(processed_frame)) {
+
+                        match send_or_interrupt(
+                            &message_tx,
+                            &command_rx,
+                            ProcessingMessage::Frame(processed_frame),
+                        ) {
                             Ok(Some(cmd)) => {
                                 if handle_processing_command(cmd, &mut state, &response_tx) {
                                     break;

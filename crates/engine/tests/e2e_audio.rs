@@ -15,12 +15,20 @@ use sotf_audio::signals::{gen_log_sweep, gen_pink_noise, gen_tone};
 use std::env;
 use std::path::PathBuf;
 
+mod common;
+
 // ============================================================================
 // Test Configuration
 // ============================================================================
 
 fn should_run_e2e_tests() -> bool {
     env::var("AEQ_E2E").ok().as_deref() == Some("1")
+}
+
+fn get_test_device() -> Option<String> {
+    env::var("AEQ_E2E_DEVICE")
+        .ok()
+        .or_else(common::find_blackhole_device)
 }
 
 fn get_test_config() -> TestConfig {
@@ -113,8 +121,8 @@ fn test_loopback_tone() {
         &csv_file,
         config.send_channel,
         config.record_channel,
-        None,
-        None,
+        get_test_device().as_deref(), // Output device
+        get_test_device().as_deref(), // Input device
         None, // No microphone compensation
     )
     .expect("Failed to record and analyze");
@@ -226,8 +234,8 @@ fn test_loopback_sweep_accuracy() {
         &csv_file,
         config.send_channel,
         config.record_channel,
-        None,
-        None,
+        get_test_device().as_deref(), // Output device
+        get_test_device().as_deref(), // Input device
         None, // No microphone compensation
     )
     .expect("Failed to record and analyze");
@@ -352,8 +360,8 @@ fn test_loopback_pink_noise() {
         &csv_file,
         config.send_channel,
         config.record_channel,
-        None,
-        None,
+        get_test_device().as_deref(), // Output device
+        get_test_device().as_deref(), // Input device
         None, // No microphone compensation
     )
     .expect("Failed to record and analyze");

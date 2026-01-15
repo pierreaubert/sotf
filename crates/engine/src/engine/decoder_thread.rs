@@ -268,12 +268,7 @@ impl DecoderState {
                         let frame_data =
                             self.resample_output_buffer[..expected_frames * channels].to_vec();
 
-                        AudioFrame::new(
-                            frame_data,
-                            expected_frames,
-                            channels,
-                            target_sample_rate,
-                        )
+                        AudioFrame::new(frame_data, expected_frames, channels, target_sample_rate)
                     } else {
                         // No resampling - just take a chunk
                         let chunk: Vec<f32> = self
@@ -367,7 +362,7 @@ impl DecoderState {
                                 channels,
                                 target_sample_rate,
                             );
-                            
+
                             // Send with interruption support
                             if let Some(cmd) = send_or_interrupt(
                                 message_tx,
@@ -376,7 +371,7 @@ impl DecoderState {
                             )? {
                                 return Ok(DecoderLoopAction::Interrupted(cmd));
                             }
-                            
+
                             log::debug!(
                                 "[Decoder Thread] Flushed {} frames through resampler",
                                 expected_frames
@@ -389,14 +384,12 @@ impl DecoderState {
                     self.resampler_buffer.clear();
                 }
 
-                if let Some(cmd) = send_or_interrupt(
-                    message_tx,
-                    command_rx,
-                    DecoderMessage::EndOfStream,
-                )? {
+                if let Some(cmd) =
+                    send_or_interrupt(message_tx, command_rx, DecoderMessage::EndOfStream)?
+                {
                     return Ok(DecoderLoopAction::Interrupted(cmd));
                 }
-                
+
                 event_tx.send(ThreadEvent::DecoderEndOfStream).ok();
                 Ok(DecoderLoopAction::Stop)
             }

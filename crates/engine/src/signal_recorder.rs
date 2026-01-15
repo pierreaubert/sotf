@@ -518,8 +518,10 @@ pub fn record_and_analyze(
         }
     }
 
-    // Add a small buffer after playback finishes to capture any tail
-    sleep(Duration::from_millis(100));
+    // Add a buffer after playback finishes to capture any tail/latency
+    // 1 second is generous but ensures we don't cut off the end of the sweep
+    // on high-latency systems (e.g. large buffers, wireless, or complex routing)
+    sleep(Duration::from_millis(1000));
 
     // Stop playback
     manager
