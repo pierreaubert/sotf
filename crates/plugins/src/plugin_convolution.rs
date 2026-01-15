@@ -410,10 +410,8 @@ impl ConvolutionPlugin {
                 // Forward FFT
                 state.fft_forward.process(fft_buffer);
 
-                // Complex multiply with IR
-                for i in 0..state.fft_size {
-                    conv_result[i] = fft_buffer[i] * state.ir_fft[ir_channel][i];
-                }
+                // Complex multiply with IR using SIMD optimization
+                super::simd::complex_mul_simd(conv_result, fft_buffer, &state.ir_fft[ir_channel]);
 
                 // Inverse FFT
                 state.fft_inverse.process(conv_result);

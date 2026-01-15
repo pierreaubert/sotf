@@ -127,6 +127,8 @@ pub(crate) struct SpectrumAnalyzer {
     current_spectrum: Arc<Mutex<SpectrumInfo>>,
     /// Previous spectrum values (for smoothing)
     prev_magnitudes: Vec<f32>,
+    /// Pre-allocated magnitudes buffer for current calculation
+    magnitudes: Vec<f32>,
     /// Pre-computed tilt correction values for each bin (in dB)
     tilt_corrections: Vec<f32>,
 }
@@ -200,6 +202,7 @@ impl SpectrumAnalyzer {
             bin_centers,
             current_spectrum,
             prev_magnitudes: vec![f32::NEG_INFINITY; num_bins],
+            magnitudes: vec![f32::NEG_INFINITY; num_bins],
             tilt_corrections,
         })
     }
@@ -314,7 +317,7 @@ impl SpectrumAnalyzer {
         // Index 0 = DC, Index 1 = 11.7 Hz, etc.
 
         let fft_bin_size = self.sample_rate as f32 / self.fft_size as f32;
-        let mut magnitudes = vec![f32::NEG_INFINITY; self.config.num_bins]; // Init with silence (-inf dB)
+        self.magnitudes.fill(f32::NEG_INFINITY); // Reset pre-allocated buffer
 
         // Iterate over log bins and average energy from FFT bins
         // Optimization: iterate FFT bins and accumulate into target log bins
@@ -380,8 +383,8 @@ impl SpectrumAnalyzer {
             let target_bin = (relative_pos * num_log_bins as f32).floor() as usize;
 
             if target_bin < num_log_bins {
-                if mag_db > magnitudes[target_bin] {
-                    magnitudes[target_bin] = mag_db;
+                if mag_db > self.magnitudes[target_bin] {
+                    self.magnitudes[target_bin] = mag_db;
                 }
             }
         }
@@ -392,7 +395,7 @@ impl SpectrumAnalyzer {
         // Better: linear interpolation from nearest non-inf bins.
         // For simplicity/perf: forward fill then backward fill
         let mut last_val = -100.0;
-        for mag in magnitudes.iter_mut() {
+        for mag in self.magnitudes.iter_mut() {
             if *mag == f32::NEG_INFINITY {
                 *mag = last_val;
             } else {
@@ -401,26 +404,26 @@ impl SpectrumAnalyzer {
         }
 
         // Apply smoothing (exponential moving average)
-        for (i, val) in magnitudes.iter_mut().enumerate() {
+        for (i, val) in self.magnitudes.iter_mut().enumerate() {
             if self.prev_magnitudes[i].is_finite() {
                 *val = self.config.smoothing * self.prev_magnitudes[i]
                     + (1.0 - self.config.smoothing) * *val;
             }
         }
-        self.prev_magnitudes = magnitudes.clone();
+        self.prev_magnitudes = self.magnitudes.clone();
 
         // Apply tilt correction
-        for (i, val) in magnitudes.iter_mut().enumerate() {
+        for (i, val) in self.magnitudes.iter_mut().enumerate() {
             *val += self.tilt_corrections[i];
         }
 
         // Find peak
-        let peak_magnitude = magnitudes.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        let peak_magnitude = self.magnitudes.iter().copied().fold(f32::NEG_INFINITY, f32::max);
 
         // Update shared state
         {
             let mut spectrum = self.current_spectrum.lock().unwrap();
-            spectrum.magnitudes = magnitudes;
+            spectrum.magnitudes = self.magnitudes.clone();
             spectrum.peak_magnitude = peak_magnitude;
         }
 

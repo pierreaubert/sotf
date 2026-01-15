@@ -24,11 +24,11 @@ impl UpmixerPlugin {
         // Larger windows over-blur and lose frequency resolution
         let window_radius = 1_usize;
 
-        // Temporary buffer for spectral smoothing result
-        let mut smoothed = vec![0.0_f32; spectrum_size];
+        // Use pre-allocated temporary buffer for spectral smoothing result
+        let mut smoothed = std::mem::take(&mut self.height_band_gains_temp);
 
         // 1. Spectral smoothing: moving average across adjacent bins
-        for (i, smoothed_val) in smoothed.iter_mut().enumerate() {
+        for (i, smoothed_val) in smoothed.iter_mut().enumerate().take(spectrum_size) {
             let start = i.saturating_sub(window_radius);
             let end = (i + window_radius + 1).min(spectrum_size);
 
@@ -48,7 +48,7 @@ impl UpmixerPlugin {
         }
 
         // 2. Temporal smoothing: blend with previous frame
-        for (i, current) in smoothed.iter().enumerate() {
+        for (i, current) in smoothed.iter().enumerate().take(spectrum_size) {
             let previous = self.height_band_gains_prev[i];
 
             // Exponential moving average
@@ -57,5 +57,8 @@ impl UpmixerPlugin {
             self.height_band_gains[i] = blended;
             self.height_band_gains_prev[i] = blended;
         }
+
+        // Restore pre-allocated buffer
+        self.height_band_gains_temp = smoothed;
     }
 }

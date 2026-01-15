@@ -17,7 +17,7 @@ pub fn default_gain_front_ambient() -> f32 {
 }
 
 pub fn default_gain_rear_ambient() -> f32 {
-    1.1 // Boosted from 1.0 (10% increase) for better rear/height envelopment
+    1.0 // Normalized from 1.1 to maintain energy balance
 }
 
 pub fn default_lfe_cutoff_hz() -> f32 {
@@ -57,7 +57,7 @@ pub fn default_hr_sharpen() -> f32 {
 }
 
 pub fn default_safety_cap_db() -> f32 {
-    3.0
+    0.0 // Set to 0.0dB to strictly prevent clipping by default
 }
 
 // Sub-harmonic synthesis defaults
@@ -105,7 +105,7 @@ pub fn default_surround_direct_bleed() -> f32 {
 }
 
 pub fn default_rear_ambient_boost() -> f32 {
-    1.2
+    1.0 // Normalized from 1.2 to prevent excessive surround levels
 }
 
 pub fn default_rear_late_reflection() -> f32 {
@@ -244,7 +244,7 @@ pub struct UpmixerPluginParams {
     #[serde(default = "default_surround_direct_bleed")]
     pub surround_direct_bleed: f32,
 
-    /// Rear ambient gain boost multiplier (1.0-3.0, default 1.5)
+    /// Rear ambient gain boost multiplier (1.0-3.0, default 1.0)
     #[serde(default = "default_rear_ambient_boost")]
     pub rear_ambient_boost: f32,
 
@@ -253,7 +253,7 @@ pub struct UpmixerPluginParams {
     pub rear_late_reflection: f32,
 
     // Ambient/coherence parameters
-    /// Ambient gain boost factor (0.5-2.0, default 1.2)
+    /// Ambient gain boost factor (0.5-2.0, default 1.0)
     #[serde(default = "default_ambient_boost")]
     pub ambient_boost: f32,
 

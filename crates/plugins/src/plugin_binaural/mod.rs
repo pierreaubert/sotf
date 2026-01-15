@@ -96,6 +96,16 @@ pub struct BinauralDecoderPlugin {
     temp_time_buffer: Vec<f32>,
     temp_fft_scratch: Vec<Complex<f32>>,
 
+    // Working buffers for process_audio_block (RT safety)
+    sum_left: Vec<Complex<f32>>,
+    sum_right: Vec<Complex<f32>>,
+    left_output: Vec<f32>,
+    right_output: Vec<f32>,
+    channel_output: Vec<f32>,
+    lfe_time: Vec<f32>,
+    lfe_freq: Vec<Complex<f32>>,
+    lfe_output: Vec<f32>,
+
     // Parameters
     param_enable_optimization: ParameterId,
     enable_optimization: bool,
@@ -223,6 +233,15 @@ impl BinauralDecoderPlugin {
             temp_freq_buffer: vec![Complex::new(0.0, 0.0); freq_size],
             temp_time_buffer: vec![0.0; fft_size],
             temp_fft_scratch: vec![Complex::new(0.0, 0.0); scratch_len],
+
+            sum_left: vec![Complex::new(0.0, 0.0); freq_size],
+            sum_right: vec![Complex::new(0.0, 0.0); freq_size],
+            left_output: vec![0.0; fft_size],
+            right_output: vec![0.0; fft_size],
+            channel_output: vec![0.0; fft_size],
+            lfe_time: vec![0.0; fft_size],
+            lfe_freq: vec![Complex::new(0.0, 0.0); freq_size],
+            lfe_output: vec![0.0; fft_size],
 
             param_enable_optimization: ParameterId::from("enable_optimization"),
             enable_optimization,
@@ -511,9 +530,11 @@ impl BinauralDecoderPlugin {
         freq_buffer.fill(Complex::new(0.0, 0.0));
 
         if self.enable_optimization {
-            // Sum-Before-IFFT optimization
-            let mut sum_left = vec![Complex::new(0.0, 0.0); self.freq_size];
-            let mut sum_right = vec![Complex::new(0.0, 0.0); self.freq_size];
+            // Sum-Before-IFFT optimization - use pre-allocated buffers
+            let mut sum_left = std::mem::take(&mut self.sum_left);
+            let mut sum_right = std::mem::take(&mut self.sum_right);
+            sum_left.fill(Complex::new(0.0, 0.0));
+            sum_right.fill(Complex::new(0.0, 0.0));
 
             for ch in 0..self.input_channels {
                 if self.lfe_channels.contains(&ch) {
@@ -552,13 +573,13 @@ impl BinauralDecoderPlugin {
             sum_right[self.freq_size - 1].im = 0.0;
 
             // Inverse FFT for left ear
-            let mut left_output = vec![0.0f32; self.fft_size];
+            let mut left_output = std::mem::take(&mut self.left_output);
             self.fft_c2r
                 .process_with_scratch(&mut sum_left, &mut left_output, &mut scratch)
                 .expect("FFT inverse failed");
 
             // Inverse FFT for right ear
-            let mut right_output = vec![0.0f32; self.fft_size];
+            let mut right_output = std::mem::take(&mut self.right_output);
             self.fft_c2r
                 .process_with_scratch(&mut sum_right, &mut right_output, &mut scratch)
                 .expect("FFT inverse failed");
@@ -569,10 +590,16 @@ impl BinauralDecoderPlugin {
                 output_block[i * 2] = left_output[i] * scale;
                 output_block[i * 2 + 1] = right_output[i] * scale;
             }
+
+            // Restore buffers
+            self.sum_left = sum_left;
+            self.sum_right = sum_right;
+            self.left_output = left_output;
+            self.right_output = right_output;
         } else {
             // Non-optimized path
             output_block.fill(0.0);
-            let mut channel_output = vec![0.0f32; self.fft_size];
+            let mut channel_output = std::mem::take(&mut self.channel_output);
 
             for ch in 0..self.input_channels {
                 if self.lfe_channels.contains(&ch) {
@@ -591,7 +618,8 @@ impl BinauralDecoderPlugin {
                     .expect("FFT forward failed");
 
                 // Process left ear
-                let mut left_freq = vec![Complex::new(0.0, 0.0); self.freq_size];
+                let mut left_freq = std::mem::take(&mut self.sum_left); // reuse sum_left as temp freq
+                left_freq.fill(Complex::new(0.0, 0.0));
                 complex_mul_simd(
                     &mut left_freq,
                     &freq_buffer,
@@ -617,7 +645,8 @@ impl BinauralDecoderPlugin {
                 }
 
                 // Process right ear
-                let mut right_freq = vec![Complex::new(0.0, 0.0); self.freq_size];
+                let mut right_freq = left_freq; // reuse
+                right_freq.fill(Complex::new(0.0, 0.0));
                 complex_mul_simd(
                     &mut right_freq,
                     &freq_buffer,
@@ -640,7 +669,9 @@ impl BinauralDecoderPlugin {
                 for i in 0..self.fft_size {
                     output_block[i * 2 + 1] += channel_output[i] * scale;
                 }
+                self.sum_left = right_freq; // restore
             }
+            self.channel_output = channel_output;
         }
 
         // Release lock
@@ -654,9 +685,9 @@ impl BinauralDecoderPlugin {
 
         // Process LFE channels (mixed to both ears with lowpass filter)
         if !self.lfe_channels.is_empty() {
-            let mut lfe_time = vec![0.0f32; self.fft_size];
-            let mut lfe_freq = vec![Complex::new(0.0, 0.0); self.freq_size];
-            let mut lfe_output = vec![0.0f32; self.fft_size];
+            let mut lfe_time = std::mem::take(&mut self.lfe_time);
+            let mut lfe_freq = std::mem::take(&mut self.lfe_freq);
+            let mut lfe_output = std::mem::take(&mut self.lfe_output);
 
             for &lfe_ch in &self.lfe_channels {
                 // Extract LFE channel data
@@ -696,6 +727,9 @@ impl BinauralDecoderPlugin {
                     self.temp_output_block[i * 2 + 1] += lfe_sample;
                 }
             }
+            self.lfe_time = lfe_time;
+            self.lfe_freq = lfe_freq;
+            self.lfe_output = lfe_output;
         }
 
         let externalization = self.externalization.next();
@@ -1019,7 +1053,7 @@ impl Plugin for BinauralDecoderPlugin {
             return Ok(());
         }
 
-        let start_time = std::time::Instant::now();
+        // let start_time = std::time::Instant::now();
 
         let mut input_pos = 0;
         let mut output_pos = 0;
@@ -1052,14 +1086,14 @@ impl Plugin for BinauralDecoderPlugin {
             }
         }
 
-        let elapsed = start_time.elapsed();
-        if elapsed > std::time::Duration::from_millis(3) {
-            log::warn!(
-                "[BinauralDecoder] Slow processing: {:.2}ms for {} input frames",
-                elapsed.as_secs_f64() * 1000.0,
-                context.num_frames
-            );
-        }
+        // let elapsed = start_time.elapsed();
+        // if elapsed > std::time::Duration::from_millis(3) {
+        //     log::warn!(
+        //         "[BinauralDecoder] Slow processing: {:.2}ms for {} input frames",
+        //         elapsed.as_secs_f64() * 1000.0,
+        //         context.num_frames
+        //     );
+        // }
 
         Ok(())
     }

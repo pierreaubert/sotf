@@ -227,6 +227,8 @@ pub struct UpmixerPlugin {
     height_band_gains: Vec<f32>,
     // Temporal smoothing buffer for height gains (previous frame)
     height_band_gains_prev: Vec<f32>,
+    // Temporary buffer for height gain smoothing (avoid real-time allocation)
+    height_band_gains_temp: Vec<f32>,
 
     /// Panning gains for left source (pre-calculated for each speaker)
     panning_gains_left: Vec<f32>,
@@ -301,6 +303,8 @@ pub struct UpmixerPlugin {
     hr_freq_domain_right: Vec<Complex<f32>>,
     /// Per-channel HR output buffers in frequency/time domain
     hr_time_out_channels: Vec<Vec<f32>>,
+    /// Temporary block buffer for HR output mixing
+    hr_output_block: Vec<f32>,
     /// Next position to add a HR block in the shared accumulator (reserved)
     hr_next_add_position: usize,
 
@@ -543,6 +547,7 @@ impl UpmixerPlugin {
 
             height_band_gains: vec![0.0; spectrum_size],
             height_band_gains_prev: vec![0.0; spectrum_size],
+            height_band_gains_temp: vec![0.0; spectrum_size],
 
             panning_gains_left,
             panning_gains_right,
@@ -583,6 +588,7 @@ impl UpmixerPlugin {
             hr_freq_domain_left: vec![zero_complex; hr_spectrum_size],
             hr_freq_domain_right: vec![zero_complex; hr_spectrum_size],
             hr_time_out_channels: vec![vec![0.0; hr_fft_size]; num_output_channels],
+            hr_output_block: vec![0.0; hr_fft_size * num_output_channels],
             hr_next_add_position: 0,
 
             hr_transient_env: 0.0,
@@ -1696,20 +1702,20 @@ Upper bound for dialogue detection analysis.",
         loop {
             iteration += 1;
             if iteration > 1000 {
-                log::error!("[UPMIXER] ERROR: Infinite loop detected after 1000 iterations!");
-                log::info!(
-                    "[UPMIXER] State: input_pos={}/{}, output_pos={}/{}",
-                    input_pos / 2,
-                    input.len() / 2,
-                    output_pos / self.num_output_channels,
-                    output.len() / 5
-                );
-                log::info!(
-                    "[UPMIXER] input_buffer_fill={}, output_accumulator_fill={}, next_add_pos={}",
-                    self.input_buffer_fill,
-                    self.output_accumulator_fill,
-                    self.next_add_position
-                );
+                // log::error!("[UPMIXER] ERROR: Infinite loop detected after 1000 iterations!");
+                // log::info!(
+                //     "[UPMIXER] State: input_pos={}/{}, output_pos={}/{}",
+                //     input_pos / 2,
+                //     input.len() / 2,
+                //     output_pos / self.num_output_channels,
+                //     output.len() / 5
+                // );
+                // log::info!(
+                //     "[UPMIXER] input_buffer_fill={}, output_accumulator_fill={}, next_add_pos={}",
+                //     self.input_buffer_fill,
+                //     self.output_accumulator_fill,
+                //     self.next_add_position
+                // );
                 break;
             }
             // Step 1: Drain output accumulator if we have data and space
@@ -1810,8 +1816,8 @@ Upper bound for dialogue detection analysis.",
 
                     if end <= temp_input.len() {
                         let hr_input = &temp_input[start..end];
-                        let mut hr_output =
-                            vec![0.0_f32; self.hr_fft_size * self.num_output_channels];
+                        // Use pre-allocated buffer instead of local Vec::new()
+                        let mut hr_output = std::mem::take(&mut self.hr_output_block);
                         self.process_hr_block(hr_input, &mut hr_output);
 
                         // Overlay HR contribution onto the low-res output block
@@ -1831,19 +1837,19 @@ Upper bound for dialogue detection analysis.",
                                 }
                             }
                         }
+                        self.hr_output_block = hr_output;
                     }
                 }
 
                 self.temp_input_block = temp_input;
 
                 // Accumulate output (overlap-add) at next_add_position
-                // Apply synthesis window for proper COLA with Hann window at 50% overlap
-                // This ensures perfect reconstruction and prevents discontinuities
+                // Note: Window was already applied during analysis. With Hann window at 50% overlap,
+                // we should NOT apply it again during synthesis, otherwise we get amplitude modulation.
                 for i in 0..self.fft_size {
-                    let window_val = self.window[i];
                     for ch in 0..self.num_output_channels {
                         self.output_accumulator[ch][self.next_add_position + i] +=
-                            output_block[i * self.num_output_channels + ch] * window_val;
+                            output_block[i * self.num_output_channels + ch];
                     }
                 }
 

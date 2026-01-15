@@ -75,6 +75,10 @@ pub(crate) struct LoudnessMonitor {
     correlation_buffer_r: Arc<Mutex<Vec<f32>>>,
     /// Maximum correlation buffer size (e.g., 1 second of audio)
     correlation_buffer_size: usize,
+    /// Scratch buffer for true peaks calculation
+    true_peaks_scratch: Arc<Mutex<Vec<f64>>>,
+    /// Scratch buffer for new channel peaks calculation
+    channel_peaks_scratch: Arc<Mutex<Vec<f64>>>,
 }
 
 impl LoudnessMonitor {
@@ -116,6 +120,8 @@ impl LoudnessMonitor {
             correlation_buffer_l: Arc::new(Mutex::new(Vec::with_capacity(correlation_buffer_size))),
             correlation_buffer_r: Arc::new(Mutex::new(Vec::with_capacity(correlation_buffer_size))),
             correlation_buffer_size,
+            true_peaks_scratch: Arc::new(Mutex::new(vec![f64::NEG_INFINITY; channels as usize])),
+            channel_peaks_scratch: Arc::new(Mutex::new(vec![0.0; channels as usize])),
         })
     }
 
@@ -138,8 +144,11 @@ impl LoudnessMonitor {
         let shortterm_lufs = ebur.loudness_shortterm().unwrap_or(f64::NEG_INFINITY);
         let integrated_lufs = ebur.loudness_global().unwrap_or(f64::NEG_INFINITY);
 
-        // Get true peaks per channel from ebur128
-        let mut true_peaks_dbtp = vec![f64::NEG_INFINITY; self.channels as usize];
+        // Get true peaks per channel from ebur128 - use scratch buffer
+        let mut true_peaks_dbtp_guard = self.true_peaks_scratch.lock().unwrap();
+        let true_peaks_dbtp = &mut *true_peaks_dbtp_guard;
+        true_peaks_dbtp.fill(f64::NEG_INFINITY);
+
         for (ch, peak_db) in true_peaks_dbtp
             .iter_mut()
             .enumerate()
@@ -157,9 +166,8 @@ impl LoudnessMonitor {
                         *peak_db = f64::NEG_INFINITY;
                     }
                 }
-                Err(e) => {
-                    // Log error but continue - channel might not be available yet
-                    log::trace!("Failed to get true peak for channel {}: {:?}", ch, e);
+                Err(_e) => {
+                    // Channel might not be available yet - ignore error in RT callback
                 }
             }
         }
@@ -167,7 +175,10 @@ impl LoudnessMonitor {
         // Calculate per-channel peaks from the current buffer with decay
         let num_frames = samples.len() / self.channels as usize;
         let mut peak = 0.0f64;
-        let mut new_channel_peaks = vec![0.0; self.channels as usize];
+        
+        let mut new_channel_peaks_guard = self.channel_peaks_scratch.lock().unwrap();
+        let new_channel_peaks = &mut *new_channel_peaks_guard;
+        new_channel_peaks.fill(0.0);
 
         // Get current peak levels by scanning the buffer
         for frame_idx in 0..num_frames {
@@ -215,7 +226,7 @@ impl LoudnessMonitor {
             info.integrated_lufs = integrated_lufs;
             info.peak = peak;
             info.channel_peaks = channel_peaks;
-            info.true_peaks_dbtp = true_peaks_dbtp;
+            info.true_peaks_dbtp = true_peaks_dbtp.clone();
             info.correlation_lr = correlation_lr;
         }
 
@@ -350,6 +361,8 @@ impl Clone for LoudnessMonitor {
             correlation_buffer_l: Arc::clone(&self.correlation_buffer_l),
             correlation_buffer_r: Arc::clone(&self.correlation_buffer_r),
             correlation_buffer_size: self.correlation_buffer_size,
+            true_peaks_scratch: Arc::clone(&self.true_peaks_scratch),
+            channel_peaks_scratch: Arc::clone(&self.channel_peaks_scratch),
         }
     }
 }

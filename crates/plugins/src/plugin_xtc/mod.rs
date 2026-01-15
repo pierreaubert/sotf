@@ -27,7 +27,7 @@
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use super::simd::{
-    complex_mul_add_simd, complex_mul_simd, deinterleave_stereo, window_mul_add_simd,
+    complex_mul_add_simd, complex_mul_simd, deinterleave_stereo, scale_add_simd,
     window_mul_simd,
 };
 use super::smoothing::Smoother;
@@ -314,8 +314,10 @@ impl XtcPlugin {
             })
             .collect();
 
-        // Combined scale factor: COLA normalization (2/3) / FFT size
-        let output_scale = (2.0 / 3.0) / fft_size as f32;
+        // Combined scale factor: COLA normalization (0.5) / FFT size
+        // Hann analysis window (sum=0.5*N) + No synthesis window + 75% overlap (hop=N/4)
+        // Gain = hop / sum(w) = (N/4) / (0.5*N) = 0.25 / 0.5 = 0.5
+        let output_scale = 0.5 / fft_size as f32;
 
         // Compute frequency-domain filters
         let num_bins = fft_size / 2 + 1;
@@ -451,10 +453,9 @@ impl XtcPlugin {
         // Overlap-add to left accumulator (SIMD optimized)
         // Apply crossfade if in transition
         let scale = self.output_scale;
-        window_mul_add_simd(
+        scale_add_simd(
             &mut self.output_accum_l[..self.fft_size],
             &self.ifft_output,
-            &self.analysis_window,
             scale,
         );
 
@@ -473,10 +474,9 @@ impl XtcPlugin {
             .expect("IFFT processing failed");
 
         // Overlap-add to right accumulator (SIMD optimized)
-        window_mul_add_simd(
+        scale_add_simd(
             &mut self.output_accum_r[..self.fft_size],
             &self.ifft_output,
-            &self.analysis_window,
             scale,
         );
 

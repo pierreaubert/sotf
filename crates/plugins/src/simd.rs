@@ -311,15 +311,12 @@ pub fn complex_mul_inplace_simd(dst: &mut [Complex<f32>], hrtf: &[Complex<f32>])
 // Real-valued SIMD operations for windowing and overlap-add
 // ============================================================================
 
-/// SIMD-optimized windowed multiply-accumulate for overlap-add synthesis
+/// SIMD-optimized multiply-accumulate for overlap-add synthesis (no window)
 ///
-/// Computes: dst[i] += src[i] * window[i] * scale for all i
-///
-/// This is the core operation for STFT overlap-add reconstruction.
+/// Computes: dst[i] += src[i] * scale for all i
 #[inline]
-pub fn window_mul_add_simd(dst: &mut [f32], src: &[f32], window: &[f32], scale: f32) {
+pub fn scale_add_simd(dst: &mut [f32], src: &[f32], scale: f32) {
     debug_assert_eq!(dst.len(), src.len());
-    debug_assert_eq!(dst.len(), window.len());
     let len = dst.len();
 
     #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
@@ -332,17 +329,14 @@ pub fn window_mul_add_simd(dst: &mut [f32], src: &[f32], window: &[f32], scale: 
         for i in (0..simd_len).step_by(8) {
             unsafe {
                 let src_ptr = src.as_ptr().add(i);
-                let win_ptr = window.as_ptr().add(i);
                 let dst_ptr = dst.as_mut_ptr().add(i);
 
                 let s = _mm256_loadu_ps(src_ptr);
-                let w = _mm256_loadu_ps(win_ptr);
                 let d = _mm256_loadu_ps(dst_ptr);
 
-                // src * window * scale + dst
-                let sw = _mm256_mul_ps(s, w);
-                let sws = _mm256_mul_ps(sw, scale_vec);
-                let result = _mm256_add_ps(d, sws);
+                // src * scale + dst
+                let ss = _mm256_mul_ps(s, scale_vec);
+                let result = _mm256_add_ps(d, ss);
 
                 _mm256_storeu_ps(dst_ptr, result);
             }
@@ -350,7 +344,7 @@ pub fn window_mul_add_simd(dst: &mut [f32], src: &[f32], window: &[f32], scale: 
 
         // Scalar remainder
         for i in simd_len..len {
-            dst[i] += src[i] * window[i] * scale;
+            dst[i] += src[i] * scale;
         }
     }
 
@@ -364,17 +358,14 @@ pub fn window_mul_add_simd(dst: &mut [f32], src: &[f32], window: &[f32], scale: 
         for i in (0..simd_len).step_by(4) {
             unsafe {
                 let src_ptr = src.as_ptr().add(i);
-                let win_ptr = window.as_ptr().add(i);
                 let dst_ptr = dst.as_mut_ptr().add(i);
 
                 let s = vld1q_f32(src_ptr);
-                let w = vld1q_f32(win_ptr);
                 let d = vld1q_f32(dst_ptr);
 
-                // src * window * scale + dst
-                let sw = vmulq_f32(s, w);
-                let sws = vmulq_f32(sw, scale_vec);
-                let result = vaddq_f32(d, sws);
+                // src * scale + dst
+                let ss = vmulq_f32(s, scale_vec);
+                let result = vaddq_f32(d, ss);
 
                 vst1q_f32(dst_ptr, result);
             }
@@ -382,7 +373,7 @@ pub fn window_mul_add_simd(dst: &mut [f32], src: &[f32], window: &[f32], scale: 
 
         // Scalar remainder
         for i in simd_len..len {
-            dst[i] += src[i] * window[i] * scale;
+            dst[i] += src[i] * scale;
         }
     }
 
@@ -392,7 +383,7 @@ pub fn window_mul_add_simd(dst: &mut [f32], src: &[f32], window: &[f32], scale: 
     )))]
     {
         for i in 0..len {
-            dst[i] += src[i] * window[i] * scale;
+            dst[i] += src[i] * scale;
         }
     }
 }

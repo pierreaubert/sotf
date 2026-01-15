@@ -124,6 +124,7 @@ pub struct DenoiserPlugin {
     // Overlap-add buffers
     input_buffer: Vec<f32>, // Interleaved input accumulator
     input_buffer_fill: usize,
+    temp_input_block: Vec<f32>,        // Pre-allocated block for FFT input
     output_accumulator: Vec<Vec<f32>>, // Per-channel output overlap-add
     output_accumulator_fill: usize,
     next_add_position: usize,
@@ -237,6 +238,7 @@ impl DenoiserPlugin {
 
             input_buffer,
             input_buffer_fill: 0,
+            temp_input_block: vec![0.0_f32; fft_size * channels],
             output_accumulator,
             output_accumulator_fill: 0,
             next_add_position: 0,
@@ -289,8 +291,11 @@ impl DenoiserPlugin {
 
         // Phase 1: Apply window and forward FFT (must happen before shifting)
         // Copy the block to avoid borrow conflicts with the shift operation
-        let input_block: Vec<f32> = self.input_buffer[..block_samples].to_vec();
+        // Use pre-allocated buffer instead of local Vec::new() / to_vec()
+        let mut input_block = std::mem::take(&mut self.temp_input_block);
+        input_block[..block_samples].copy_from_slice(&self.input_buffer[..block_samples]);
         self.apply_window_and_forward_fft(&input_block);
+        self.temp_input_block = input_block; // Restore buffer
 
         // Shift input buffer (remove processed samples, keeping hop_size overlap)
         let shift_samples = self.hop_size * self.channels;
