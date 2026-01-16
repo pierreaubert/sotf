@@ -19,7 +19,7 @@ use super::auto_gain::{AutoGain, AutoGainData, AutoGainLoudnessType, AutoGainPar
 use super::param_specs::loudness_compensation::*;
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
-use super::simd::flush_denormals_inplace;
+use super::simd::{enable_ftz_daz, flush_denormals_inplace};
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use serde::{Deserialize, Serialize};
 
@@ -205,8 +205,27 @@ pub struct LoudnessCompensationPlugin {
     /// 2-3: High-shelf stages (2 for 12dB/oct)
     filters: Vec<Vec<Biquad>>,
 
-    /// Compensation gains per channel to prevent clipping
-    compensation_gains: Vec<f32>,
+    /// Filters being built during transition (for smooth crossfade)
+    /// None when not in transition, Some(vec) during transition
+    new_filters: Option<Vec<Vec<Biquad>>>,
+
+    /// Transition crossfade counter (frames remaining)
+    transition_frames_remaining: usize,
+
+    /// Crossfade duration in frames (~5ms at 48kHz)
+    crossfade_frames: usize,
+
+    /// Compensation gains per channel to prevent clipping (in dB)
+    compensation_gains_db: Vec<f32>,
+
+    /// Previous compensation gains (for smooth transitions)
+    prev_compensation_gains_db: Vec<f32>,
+
+    /// Current smoothed compensation gains linear
+    current_compensation_gains_linear: Vec<f32>,
+
+    /// Compensation gain smoothing coefficient (one-pole filter)
+    compensation_smoothing_coeff: f32,
 
     /// Auto-gain compensation for loudness matching
     auto_gain: Option<AutoGain>,
@@ -237,6 +256,9 @@ impl LoudnessCompensationPlugin {
         high_freq: f32,
         high_gain: f32,
     ) -> Self {
+        let crossfade_frames = (0.005 * 48000.0) as usize; // 5ms crossfade
+        let smoothing_coeff = (-1.0_f32 / (5.0 * 0.001 * 48000.0)).exp(); // 5ms time constant
+
         let mut plugin = Self {
             num_channels,
             param_low_freq: ParameterId::from("low_freq"),
@@ -250,7 +272,13 @@ impl LoudnessCompensationPlugin {
             channel_params: Vec::new(),
             sample_rate: 48000,
             filters: Vec::new(),
-            compensation_gains: Vec::new(),
+            new_filters: None,
+            transition_frames_remaining: 0,
+            crossfade_frames,
+            compensation_gains_db: Vec::new(),
+            prev_compensation_gains_db: Vec::new(),
+            current_compensation_gains_linear: Vec::new(),
+            compensation_smoothing_coeff: smoothing_coeff,
             auto_gain: None,
             auto_gain_enabled: default_auto_gain_enabled(),
             auto_gain_max_db: default_auto_gain_max_db(),
@@ -274,6 +302,9 @@ impl LoudnessCompensationPlugin {
         }
 
         let num_channels = channel_params.len();
+        let crossfade_frames = (0.005 * 48000.0) as usize; // 5ms crossfade
+        let smoothing_coeff = (-1.0_f32 / (5.0 * 0.001 * 48000.0)).exp(); // 5ms time constant
+
         let mut plugin = Self {
             num_channels,
             param_low_freq: ParameterId::from("low_freq"),
@@ -287,7 +318,13 @@ impl LoudnessCompensationPlugin {
             channel_params,
             sample_rate: 48000,
             filters: Vec::new(),
-            compensation_gains: Vec::new(),
+            new_filters: None,
+            transition_frames_remaining: 0,
+            crossfade_frames,
+            compensation_gains_db: Vec::new(),
+            prev_compensation_gains_db: Vec::new(),
+            current_compensation_gains_linear: Vec::new(),
+            compensation_smoothing_coeff: smoothing_coeff,
             auto_gain: None,
             auto_gain_enabled: default_auto_gain_enabled(),
             auto_gain_max_db: default_auto_gain_max_db(),
@@ -412,25 +449,106 @@ impl LoudnessCompensationPlugin {
     }
 
     /// Rebuild or update all filters based on current parameters
+    /// Uses smooth crossfade when updating existing filters
     fn rebuild_filters(&mut self) {
         // Q factor for shelving filters (0.707 = Butterworth response)
         let q = 0.707;
+
+        // Check if this is initial creation (filters empty) or update
+        let is_initial_creation = self.filters.iter().all(|ch| ch.is_empty());
 
         // Ensure vectors are sized correctly
         if self.filters.len() != self.num_channels {
             self.filters.clear();
             self.filters.resize(self.num_channels, Vec::new());
         }
-        if self.compensation_gains.len() != self.num_channels {
-            self.compensation_gains.resize(self.num_channels, 0.0);
+        if self.compensation_gains_db.len() != self.num_channels {
+            self.compensation_gains_db.resize(self.num_channels, 0.0);
         }
+        if self.prev_compensation_gains_db.len() != self.num_channels {
+            self.prev_compensation_gains_db
+                .resize(self.num_channels, 0.0);
+        }
+        if self.current_compensation_gains_linear.len() != self.num_channels {
+            self.current_compensation_gains_linear
+                .resize(self.num_channels, 1.0);
+        }
+
+        // For initial creation, populate filters directly
+        if is_initial_creation {
+            for ch in 0..self.num_channels {
+                let params = self.get_channel_params(ch);
+
+                // Calculate compensation gain for this channel: -max(low_gain, high_gain)
+                let comp_gain_db = -params.low_gain.max(params.high_gain);
+                self.compensation_gains_db[ch] = comp_gain_db;
+                self.current_compensation_gains_linear[ch] = 10.0_f32.powf(comp_gain_db / 20.0);
+
+                // For 12dB/octave slope, we need 2 cascaded biquads (each is 6dB/oct)
+                let low_gain_per_stage = params.low_gain / 2.0;
+                let high_gain_per_stage = params.high_gain / 2.0;
+
+                let target_configs = [
+                    // Low-shelf stage 1
+                    (
+                        BiquadFilterType::Lowshelf,
+                        params.low_freq,
+                        low_gain_per_stage,
+                    ),
+                    // Low-shelf stage 2
+                    (
+                        BiquadFilterType::Lowshelf,
+                        params.low_freq,
+                        low_gain_per_stage,
+                    ),
+                    // High-shelf stage 1
+                    (
+                        BiquadFilterType::Highshelf,
+                        params.high_freq,
+                        high_gain_per_stage,
+                    ),
+                    // High-shelf stage 2
+                    (
+                        BiquadFilterType::Highshelf,
+                        params.high_freq,
+                        high_gain_per_stage,
+                    ),
+                ];
+
+                // Create filters directly for this channel
+                self.filters[ch] = target_configs
+                    .iter()
+                    .map(|(ft, freq, gain)| {
+                        Biquad::new(*ft, *freq as f64, self.sample_rate as f64, q, *gain as f64)
+                    })
+                    .collect();
+            }
+            return;
+        }
+
+        // For updates, use smooth crossfade transition
+        let mut new_filters = Vec::with_capacity(self.num_channels);
 
         for ch in 0..self.num_channels {
             let params = self.get_channel_params(ch);
 
             // Calculate compensation gain for this channel: -max(low_gain, high_gain)
-            let comp_gain = -params.low_gain.max(params.high_gain);
-            self.compensation_gains[ch] = comp_gain;
+            let comp_gain_db = -params.low_gain.max(params.high_gain);
+
+            // Store previous gain for smooth transition
+            self.prev_compensation_gains_db[ch] =
+                self.compensation_gains_db.get(ch).copied().unwrap_or(0.0);
+            self.compensation_gains_db[ch] = comp_gain_db;
+            // Precompute linear gain to avoid expensive powf per-sample
+            let new_linear = 10.0_f32.powf(comp_gain_db / 20.0);
+            // Initialize smoothed value to previous linear gain if starting transition
+            if self.transition_frames_remaining > 0
+                && self.current_compensation_gains_linear.len() > ch
+            {
+                // Keep current value, will smooth to new value
+            } else {
+                self.current_compensation_gains_linear[ch] = new_linear;
+            }
 
             // For 12dB/octave slope, we need 2 cascaded biquads (each is 6dB/oct)
             // Split the gain between the two stages
@@ -464,24 +582,19 @@ impl LoudnessCompensationPlugin {
                 ),
             ];
 
-            // Initialize or update filters
-            if self.filters[ch].len() != 4 {
-                // Initialize from scratch (resets state)
-                self.filters[ch] = target_configs
-                    .iter()
-                    .map(|(ft, freq, gain)| {
-                        Biquad::new(*ft, *freq as f64, self.sample_rate as f64, q, *gain as f64)
-                    })
-                    .collect();
-            } else {
-                // Recreate filters with new coefficients
-                // Note: This resets filter state which may cause brief transients
-                for (i, (ft, freq, gain)) in target_configs.iter().enumerate() {
-                    self.filters[ch][i] =
-                        Biquad::new(*ft, *freq as f64, self.sample_rate as f64, q, *gain as f64);
-                }
-            }
+            // Create new filter instances for crossfade
+            let channel_filters: Vec<Biquad> = target_configs
+                .iter()
+                .map(|(ft, freq, gain)| {
+                    Biquad::new(*ft, *freq as f64, self.sample_rate as f64, q, *gain as f64)
+                })
+                .collect();
+            new_filters.push(channel_filters);
         }
+
+        // Start transition: old filters continue running, new filters start
+        self.new_filters = Some(new_filters);
+        self.transition_frames_remaining = self.crossfade_frames;
     }
 
     /// Update a global parameter and rebuild filters if needed
@@ -802,17 +915,32 @@ impl Plugin for LoudnessCompensationPlugin {
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        // Enable FTZ/DAZ to prevent denormal numbers in biquad filter state
+        // from causing CPU performance issues and audio crackling
+        enable_ftz_daz();
+
         self.sample_rate = sample_rate;
+        self.crossfade_frames = (0.005 * sample_rate as f64) as usize; // 5ms crossfade
+        self.compensation_smoothing_coeff = (-1.0 / (5.0 * 0.001 * sample_rate as f32)).exp(); // 5ms time constant
         self.rebuild_filters();
         self.rebuild_auto_gain()?;
         Ok(())
     }
 
     fn reset(&mut self) {
+        // Cancel any ongoing transition
+        self.new_filters = None;
+        self.transition_frames_remaining = 0;
+
         // Reset all filter states
         // Force full rebuild to reset state
         self.filters.clear();
         self.rebuild_filters();
+        // Reset compensation gain smoothing
+        for ch in 0..self.num_channels {
+            self.current_compensation_gains_linear[ch] =
+                10.0_f32.powf(self.compensation_gains_db[ch] / 20.0);
+        }
         // Reset auto-gain state
         if let Some(ag) = &mut self.auto_gain {
             ag.reset();
@@ -849,20 +977,79 @@ impl Plugin for LoudnessCompensationPlugin {
             let _ = ag.measure_input(input);
         }
 
+        // Check if we're in a transition
+        let in_transition = self.transition_frames_remaining > 0;
+
         // Process each frame
         for frame_idx in 0..context.num_frames {
+            // Calculate crossfade factor for this frame if in transition
+            let crossfade_factor = if in_transition {
+                let t = self.transition_frames_remaining as f32 / self.crossfade_frames as f32;
+                // Smoothstep-like curve for natural transition
+                t * t * (3.0 - 2.0 * t)
+            } else {
+                1.0
+            };
+
+            // Get mutable reference to new_filters only when needed
+            let mut new_filters_ref = if in_transition {
+                self.new_filters.as_mut()
+            } else {
+                None
+            };
+
             for ch in 0..self.num_channels {
                 let sample_idx = frame_idx * self.num_channels + ch;
                 let mut sample = input[sample_idx] as f64;
 
                 // Apply all 4 filters in series (2 low-shelf + 2 high-shelf)
-                for filter in &mut self.filters[ch] {
-                    sample = filter.process(sample);
+                // If in transition, process both old and new filters and crossfade
+                if let Some(ref mut new_filters) = new_filters_ref {
+                    // Process through old filters
+                    let mut old_sample = sample;
+                    for filter in &mut self.filters[ch] {
+                        old_sample = filter.process(old_sample);
+                    }
+
+                    // Process through new filters
+                    let mut new_sample = sample;
+                    for filter in &mut new_filters[ch] {
+                        new_sample = filter.process(new_sample);
+                    }
+
+                    // Crossfade between old and new filter outputs
+                    let old_linear = old_sample as f32;
+                    let new_linear = new_sample as f32;
+                    sample = (old_linear * (1.0 - crossfade_factor) + new_linear * crossfade_factor)
+                        as f64;
+                } else {
+                    // Normal processing - just old filters
+                    for filter in &mut self.filters[ch] {
+                        sample = filter.process(sample);
+                    }
                 }
 
-                // Apply per-channel compensation gain
-                let comp_gain_linear = 10.0_f32.powf(self.compensation_gains[ch] / 20.0);
-                output[sample_idx] = (sample as f32) * comp_gain_linear;
+                // Smooth compensation gain transition
+                let target_linear = 10.0_f32.powf(self.compensation_gains_db[ch] / 20.0);
+                let current = self.current_compensation_gains_linear[ch];
+                // One-pole smoothing
+                self.current_compensation_gains_linear[ch] =
+                    target_linear + self.compensation_smoothing_coeff * (current - target_linear);
+
+                // Apply per-channel compensation gain (smoothed)
+                output[sample_idx] = (sample as f32) * self.current_compensation_gains_linear[ch];
+            }
+
+            // Decrement transition counter
+            if in_transition {
+                self.transition_frames_remaining =
+                    self.transition_frames_remaining.saturating_sub(1);
+                if self.transition_frames_remaining == 0 {
+                    // Transition complete - replace old filters with new ones
+                    if let Some(new_filters) = self.new_filters.take() {
+                        self.filters = new_filters;
+                    }
+                }
             }
         }
 
@@ -905,8 +1092,8 @@ mod tests {
         let plugin = LoudnessCompensationPlugin::new(2, 100.0, 10.0, 10000.0, 8.0);
 
         // Compensation gain should be -max(10, 8) = -10dB for both channels
-        assert_eq!(plugin.compensation_gains[0], -10.0);
-        assert_eq!(plugin.compensation_gains[1], -10.0);
+        assert_eq!(plugin.compensation_gains_db[0], -10.0);
+        assert_eq!(plugin.compensation_gains_db[1], -10.0);
     }
 
     #[test]
@@ -998,7 +1185,7 @@ mod tests {
 
         assert_eq!(plugin.low_gain, 12.0);
         // Compensation gain should update to -max(12, 6) = -12dB
-        assert_eq!(plugin.compensation_gains[0], -12.0);
+        assert_eq!(plugin.compensation_gains_db[0], -12.0);
 
         // Get parameter
         let val = plugin.get_parameter(&ParameterId::from("low_freq"));
@@ -1063,8 +1250,8 @@ mod tests {
         assert_eq!(plugin.num_channels, 2);
 
         // Check per-channel compensation gains
-        assert_eq!(plugin.compensation_gains[0], -6.0); // -max(6, 3)
-        assert_eq!(plugin.compensation_gains[1], -9.0); // -max(9, 6)
+        assert_eq!(plugin.compensation_gains_db[0], -6.0); // -max(6, 3)
+        assert_eq!(plugin.compensation_gains_db[1], -9.0); // -max(9, 6)
     }
 
     #[test]

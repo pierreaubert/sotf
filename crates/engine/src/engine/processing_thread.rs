@@ -287,6 +287,10 @@ fn run_processing_thread(
     sample_rate: u32,
     channels: usize,
 ) -> Result<(), String> {
+    // Enable FTZ/DAZ CPU flags to prevent denormal numbers from causing
+    // performance issues in IIR filters and other DSP code
+    sotf_plugins::enable_ftz_daz();
+
     let mut state = ProcessingState::new(channels, sample_rate);
 
     log::info!(

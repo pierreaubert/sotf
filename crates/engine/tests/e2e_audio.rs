@@ -123,7 +123,7 @@ fn test_loopback_tone() {
         config.record_channel,
         get_test_device().as_deref(), // Output device
         get_test_device().as_deref(), // Input device
-        None, // No microphone compensation
+        None,                         // No microphone compensation
     )
     .expect("Failed to record and analyze");
 
@@ -160,8 +160,8 @@ fn test_loopback_tone() {
 
     assert_eq!(
         csv_lines.len(),
-        201,
-        "CSV should have 201 lines (1 header + 200 data)"
+        2001,
+        "CSV should have 2001 lines (1 header + 2000 data)"
     );
     assert_eq!(
         csv_lines[0], "frequency_hz,spl_db,phase_deg",
@@ -236,7 +236,7 @@ fn test_loopback_sweep_accuracy() {
         config.record_channel,
         get_test_device().as_deref(), // Output device
         get_test_device().as_deref(), // Input device
-        None, // No microphone compensation
+        None,                         // No microphone compensation
     )
     .expect("Failed to record and analyze");
 
@@ -251,8 +251,8 @@ fn test_loopback_sweep_accuracy() {
 
     assert_eq!(
         csv_lines.len(),
-        201,
-        "CSV should have 201 lines (1 header + 200 data)"
+        2001,
+        "CSV should have 2001 lines (1 header + 2000 data)"
     );
     assert_eq!(
         csv_lines[0], "frequency_hz,spl_db,phase_deg",
@@ -362,7 +362,7 @@ fn test_loopback_pink_noise() {
         config.record_channel,
         get_test_device().as_deref(), // Output device
         get_test_device().as_deref(), // Input device
-        None, // No microphone compensation
+        None,                         // No microphone compensation
     )
     .expect("Failed to record and analyze");
 

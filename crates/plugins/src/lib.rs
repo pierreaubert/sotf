@@ -74,6 +74,7 @@ pub use host::{DawHost, GraphEdge as DawGraphEdge, Host, NodeId as DawNodeId};
 pub use parameters::{Parameter, ParameterId, ParameterValue};
 pub use plugin::{InPlacePlugin, InPlacePluginAdapter, Plugin, PluginInfo, ProcessContext};
 pub use serialization::{PluginPreset, PresetBank, PresetMetadata, SerializablePlugin};
+pub use simd::enable_ftz_daz;
 
 pub use plugin_ab_compare::{ABComparePlugin, ABComparePluginParams};
 pub use plugin_binaural::{

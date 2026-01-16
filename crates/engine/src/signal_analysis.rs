@@ -281,7 +281,7 @@ impl MicrophoneCompensation {
 /// Configuration for standalone WAV buffer analysis
 #[derive(Debug, Clone)]
 pub struct WavAnalysisConfig {
-    /// Number of output frequency points (default: 200)
+    /// Number of output frequency points (default: 2000)
     pub num_points: usize,
     /// Minimum frequency in Hz (default: 20)
     pub min_freq: f32,
@@ -302,7 +302,7 @@ pub struct WavAnalysisConfig {
 impl Default for WavAnalysisConfig {
     fn default() -> Self {
         Self {
-            num_points: 200,
+            num_points: 2000,
             min_freq: 20.0,
             max_freq: 20000.0,
             fft_size: None,
@@ -875,8 +875,8 @@ pub fn analyze_recording(
     let ref_spectrum = compute_fft(aligned_ref, fft_size, WindowType::Tukey(0.1))?;
     let rec_spectrum = compute_fft(aligned_rec, fft_size, WindowType::Tukey(0.1))?;
 
-    // Generate 200 log-spaced frequency points between 20 Hz and 20 kHz
-    let num_output_points = 200;
+    // Generate 2000 log-spaced frequency points between 20 Hz and 20 kHz
+    let num_output_points = 2000;
     let log_start = 20.0_f32.ln();
     let log_end = 20000.0_f32.ln();
 
@@ -1024,10 +1024,7 @@ pub fn analyze_recording(
     // Standard IFFT definition: sum(X[k] * exp(...)) / N?
     // RustFFT inverse is unnormalized sum. So we divide by N.
     let norm = 1.0 / fft_size as f32;
-    let impulse_response: Vec<f32> = transfer_function
-        .iter()
-        .map(|c| c.re * norm)
-        .collect();
+    let impulse_response: Vec<f32> = transfer_function.iter().map(|c| c.re * norm).collect();
 
     // Generate time vector for IR (0 to duration)
     let ir_duration_sec = fft_size as f32 / sample_rate as f32;
@@ -1049,15 +1046,17 @@ pub fn analyze_recording(
     // 6. Excess GD = -diff(Excess Phase)
 
     // --- Compute Acoustic Metrics ---
-    let (rt60_val, c50_val, c80_val) = compute_acoustic_metrics_broadband(&impulse_response, sample_rate);
-    
+    let (rt60_val, c50_val, c80_val) =
+        compute_acoustic_metrics_broadband(&impulse_response, sample_rate);
+
     // Replicate broadband values for now (placeholder for frequency-dependent analysis)
     let rt60_ms = vec![rt60_val; frequencies.len()];
     let clarity_c50_db = vec![c50_val; frequencies.len()];
     let clarity_c80_db = vec![c80_val; frequencies.len()];
-    
+
     // Compute Spectrogram
-    let (spectrogram_db, _, _) = compute_spectrogram(&impulse_response, sample_rate as f32, 512, 128);
+    let (spectrogram_db, _, _) =
+        compute_spectrogram(&impulse_response, sample_rate as f32, 512, 128);
 
     // Simplified for now: Placeholder
     let excess_group_delay_ms = vec![0.0; frequencies.len()];
@@ -1249,32 +1248,31 @@ fn compute_fft_padded(signal: &[f32], fft_size: usize) -> Result<Vec<Complex<f32
     Ok(buffer)
 }
 
-
 /// Compute Schroeder Decay and Acoustic Metrics
 /// Returns (rt60_ms, c50_db, c80_db) broadband
 fn compute_acoustic_metrics_broadband(impulse: &[f32], sample_rate: u32) -> (f32, f32, f32) {
     // Schroeder Integration
     let mut energy = 0.0;
     let mut decay = vec![0.0; impulse.len()];
-    
+
     for i in (0..impulse.len()).rev() {
         energy += impulse[i] * impulse[i];
         decay[i] = energy;
     }
-    
+
     let max_energy = decay.first().copied().unwrap_or(1.0);
     if max_energy > 0.0 {
         for v in &mut decay {
             *v /= max_energy;
         }
     }
-    
+
     let decay_db: Vec<f32> = decay.iter().map(|&v| 10.0 * v.max(1e-9).log10()).collect();
-    
+
     // RT60 (T20 extrapolation)
     let t_minus_5 = decay_db.iter().position(|&v| v < -5.0);
     let t_minus_25 = decay_db.iter().position(|&v| v < -25.0);
-    
+
     let rt60 = match (t_minus_5, t_minus_25) {
         (Some(start), Some(end)) => {
             if end > start {
@@ -1284,13 +1282,13 @@ fn compute_acoustic_metrics_broadband(impulse: &[f32], sample_rate: u32) -> (f32
                 0.0
             }
         }
-        _ => 0.0
+        _ => 0.0,
     };
-    
+
     // Clarity
     let samp_50ms = (0.050 * sample_rate as f32) as usize;
     let samp_80ms = (0.080 * sample_rate as f32) as usize;
-    
+
     let e_total = energy; // Total energy from start (approx)
     // Actually we need energy from 0 to t
     // Schroeder is energy from t to inf.
@@ -1299,7 +1297,7 @@ fn compute_acoustic_metrics_broadband(impulse: &[f32], sample_rate: u32) -> (f32
     // ratio = E(0..t) / E(t..inf) = (decay[0] - decay[t]) / decay[t]
     // Since decay is normalized, decay[0]=1.
     // ratio = (1 - decay[t]) / decay[t]
-    
+
     let c50 = if samp_50ms < decay.len() {
         let e_late = decay[samp_50ms];
         let e_early = 1.0 - e_late;
@@ -1311,7 +1309,7 @@ fn compute_acoustic_metrics_broadband(impulse: &[f32], sample_rate: u32) -> (f32
     } else {
         0.0
     };
-    
+
     let c80 = if samp_80ms < decay.len() {
         let e_late = decay[samp_80ms];
         let e_early = 1.0 - e_late;
@@ -1323,7 +1321,7 @@ fn compute_acoustic_metrics_broadband(impulse: &[f32], sample_rate: u32) -> (f32
     } else {
         0.0
     };
-    
+
     (rt60, c50, c80)
 }
 
@@ -1641,13 +1639,13 @@ pub fn compute_impulse_response_from_fr(
 fn compute_schroeder_decay(impulse: &[f32]) -> Vec<f32> {
     let mut energy = 0.0;
     let mut decay = vec![0.0; impulse.len()];
-    
+
     // Backward integration
     for i in (0..impulse.len()).rev() {
         energy += impulse[i] * impulse[i];
         decay[i] = energy;
     }
-    
+
     // Normalize to 0dB max (1.0 linear)
     let max_energy = decay.first().copied().unwrap_or(1.0);
     if max_energy > 0.0 {
@@ -1655,7 +1653,7 @@ fn compute_schroeder_decay(impulse: &[f32]) -> Vec<f32> {
             *v /= max_energy;
         }
     }
-    
+
     decay
 }
 
@@ -1664,11 +1662,11 @@ fn compute_schroeder_decay(impulse: &[f32]) -> Vec<f32> {
 pub fn compute_rt60_broadband(impulse: &[f32], sample_rate: f32) -> f32 {
     let decay = compute_schroeder_decay(impulse);
     let decay_db: Vec<f32> = decay.iter().map(|&v| 10.0 * v.max(1e-9).log10()).collect();
-    
+
     // Find -5dB and -25dB points
     let t_minus_5 = decay_db.iter().position(|&v| v < -5.0);
     let t_minus_25 = decay_db.iter().position(|&v| v < -25.0);
-    
+
     match (t_minus_5, t_minus_25) {
         (Some(start), Some(end)) => {
             if end > start {
@@ -1678,7 +1676,7 @@ pub fn compute_rt60_broadband(impulse: &[f32], sample_rate: f32) -> f32 {
                 0.0
             }
         }
-        _ => 0.0
+        _ => 0.0,
     }
 }
 
@@ -1689,38 +1687,38 @@ pub fn compute_clarity_broadband(impulse: &[f32], sample_rate: f32) -> (f32, f32
     let mut energy_50_inf = 0.0;
     let mut energy_0_80 = 0.0;
     let mut energy_80_inf = 0.0;
-    
+
     let samp_50ms = (0.050 * sample_rate) as usize;
     let samp_80ms = (0.080 * sample_rate) as usize;
-    
+
     for (i, &samp) in impulse.iter().enumerate() {
         let sq = samp * samp;
-        
+
         if i < samp_50ms {
             energy_0_50 += sq;
         } else {
             energy_50_inf += sq;
         }
-        
+
         if i < samp_80ms {
             energy_0_80 += sq;
         } else {
             energy_80_inf += sq;
         }
     }
-    
+
     let c50 = if energy_50_inf > 1e-9 {
         10.0 * (energy_0_50 / energy_50_inf).log10()
     } else {
         0.0
     };
-    
+
     let c80 = if energy_80_inf > 1e-9 {
         10.0 * (energy_0_80 / energy_80_inf).log10()
     } else {
         0.0
     };
-    
+
     (c50, c80)
 }
 
@@ -1732,7 +1730,11 @@ pub fn compute_rt60_spectrum(impulse: &[f32], sample_rate: f32, frequencies: &[f
 
 /// Compute Clarity spectrum (interpolated broadband for now)
 /// Returns (C50_vec, C80_vec)
-pub fn compute_clarity_spectrum(impulse: &[f32], sample_rate: f32, frequencies: &[f32]) -> (Vec<f32>, Vec<f32>) {
+pub fn compute_clarity_spectrum(
+    impulse: &[f32],
+    sample_rate: f32,
+    frequencies: &[f32],
+) -> (Vec<f32>, Vec<f32>) {
     let (c50, c80) = compute_clarity_broadband(impulse, sample_rate);
     (vec![c50; frequencies.len()], vec![c80; frequencies.len()])
 }
@@ -1746,8 +1748,8 @@ pub fn compute_spectrogram(
     window_size: usize,
     hop_size: usize,
 ) -> (Vec<Vec<f32>>, Vec<f32>, Vec<f32>) {
-    use rustfft::num_complex::Complex;
     use rustfft::FftPlanner;
+    use rustfft::num_complex::Complex;
 
     if impulse.len() < window_size {
         return (Vec::new(), Vec::new(), Vec::new());
@@ -1756,16 +1758,16 @@ pub fn compute_spectrogram(
     let num_frames = (impulse.len() - window_size) / hop_size;
     let mut spectrogram = Vec::with_capacity(num_frames);
     let mut times = Vec::with_capacity(num_frames);
-    
+
     // Precompute Hann window
     let window: Vec<f32> = (0..window_size)
         .map(|i| 0.5 * (1.0 - (2.0 * PI * i as f32 / (window_size as f32 - 1.0)).cos()))
         .collect();
-    
+
     // Setup FFT
     let mut planner = FftPlanner::new();
     let fft = planner.plan_fft_forward(window_size);
-    
+
     for i in 0..num_frames {
         let start = i * hop_size;
         let time_ms = (start as f32 / sample_rate) * 1000.0;
@@ -1777,12 +1779,12 @@ pub fn compute_spectrogram(
                 Complex::new(sample * window[j], 0.0)
             })
             .collect();
-            
+
         fft.process(&mut buffer);
-        
+
         // Take magnitude of first half (up to Nyquist)
         // Store as dB
-        let magnitude_db: Vec<f32> = buffer[..window_size/2]
+        let magnitude_db: Vec<f32> = buffer[..window_size / 2]
             .iter()
             .map(|c| {
                 let mag = c.norm();
@@ -1793,7 +1795,7 @@ pub fn compute_spectrogram(
                 }
             })
             .collect();
-            
+
         spectrogram.push(magnitude_db);
     }
 
@@ -1801,7 +1803,7 @@ pub fn compute_spectrogram(
     let num_bins = window_size / 2;
     let freq_step = sample_rate / window_size as f32;
     let freqs: Vec<f32> = (0..num_bins).map(|i| i as f32 * freq_step).collect();
-    
+
     (spectrogram, freqs, times)
 }
 

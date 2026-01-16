@@ -622,6 +622,52 @@ pub fn flush_denormals_inplace(samples: &mut [f32]) {
     }
 }
 
+/// Enable FTZ (Flush To Zero) and DAZ (Denormals Are Zero) CPU flags.
+///
+/// When enabled, denormal floating-point numbers are automatically flushed to zero
+/// by the CPU hardware. This prevents the severe performance degradation that occurs
+/// when IIR filter state variables (like biquad y1/y2) contain denormals.
+///
+/// This function is idempotent and should be called once per audio processing thread.
+/// On unsupported platforms, this is a no-op.
+///
+/// Returns true if the flags were successfully set, false otherwise (e.g., unsupported platform).
+#[inline]
+pub fn enable_ftz_daz() -> bool {
+    #[cfg(target_arch = "x86_64")]
+    {
+        // MXCSR register bits:
+        // Bit 15: FTZ (Flush To Zero) - flush denormal results to zero
+        // Bit 6: DAZ (Denormals Are Zero) - treat denormal inputs as zero
+        use std::arch::x86_64::*;
+        unsafe {
+            let mut mxcsr = _mm_getcsr();
+            mxcsr |= (1 << 15) | (1 << 6); // FTZ | DAZ
+            _mm_setcsr(mxcsr);
+        }
+        true
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        // On AArch64, use the FPCR register
+        // Bit 24: FZ (Flush-to-Zero)
+        // Note: AArch64 always treats denormal inputs as zero in FZ mode
+        unsafe {
+            let mut fpcr: u64;
+            std::arch::asm!("mrs {}, fpcr", out(reg) fpcr);
+            fpcr |= 1 << 24; // FZ bit
+            std::arch::asm!("msr fpcr, {}", in(reg) fpcr);
+        }
+        true
+    }
+
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    {
+        false
+    }
+}
+
 /// Flush denormals in complex buffer (applies to both real and imaginary parts)
 #[inline]
 pub fn flush_denormals_complex_inplace(samples: &mut [Complex<f32>]) {
