@@ -26,7 +26,7 @@ pub mod utils;
 
 // Re-exports for easier use
 pub use api::{BufferStats, HalAudioHandle, HalInputReader, HalOutputWriter};
-pub use audio_buffer::{AudioBuffer, AudioBufferConfig, AudioBufferConsumer, AudioBufferProducer};
+pub use audio_buffer::{AudioBuffer, AudioBufferConfig};
 pub use hal_driver::HALDriver;
 
 // Error types

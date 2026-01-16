@@ -712,7 +712,15 @@ impl PlayerView {
                     )
                 },
             )
-            .child(autoeq_form)
+            // Wrap in div to capture key events and prevent global shortcuts
+            // from firing while typing in input fields
+            .child(
+                div()
+                    .on_key_down(|_event, _window, cx| {
+                        cx.stop_propagation();
+                    })
+                    .child(autoeq_form),
+            )
             // Generate Speaker EQ card with progress
             .child(
                 Card::new()

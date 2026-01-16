@@ -20,9 +20,9 @@ struct Cli {
     #[arg(short, long)]
     output: Option<PathBuf>,
 
-    /// Number of frequency points (default: 200)
-    #[arg(short, long, default_value = "200")]
-    num_points: usize,
+    /// Number of frequency points (default: 2000)
+    #[arg(short, long, default_value = "2000")]
+    pub num_points: usize,
 
     /// Minimum frequency in Hz (default: 20)
     #[arg(long, default_value = "20.0")]

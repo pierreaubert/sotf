@@ -199,6 +199,90 @@ impl RoomEqMeasurementsFile {
             configuration: Some(configuration),
         }
     }
+
+    /// Deserialize from JSON string with automatic version migration
+    pub fn from_json_str(json: &str) -> Result<Self, serde_json::Error> {
+        let mut value: serde_json::Value = serde_json::from_str(json)?;
+
+        // Check version (default to 1 if missing)
+        let version = value.get("version").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
+
+        if version < Self::CURRENT_VERSION {
+            log::info!(
+                "Migrating recordings.json from version {} to {}",
+                version,
+                Self::CURRENT_VERSION
+            );
+            value = Self::convert_v1_to_v2(value);
+        }
+
+        serde_json::from_value(value)
+    }
+
+    /// Convert V1 (no version field) to V2
+    fn convert_v1_to_v2(mut value: serde_json::Value) -> serde_json::Value {
+        if let Some(obj) = value.as_object_mut() {
+            // Add version field
+            obj.insert("version".to_string(), serde_json::json!(2));
+
+            // Ensure channels field exists (if it was flat array, this would be different,
+            // but assuming V1 was RoomEqMeasurementsFile struct without version)
+            if !obj.contains_key("channels") {
+                // If it looks like the root was just the fields of ChannelMeasurement? No.
+                // Assuming standard struct serialization.
+                // If legacy format was different, handle it here.
+                // For now, we assume V1 was just missing 'version'.
+            }
+        }
+        value
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::types::recording::RecordingResult;
+
+    #[test]
+    fn test_migration_v1_to_v2() {
+        // V1 JSON (missing version)
+        let v1_json = r#"{
+            "channels": [
+                {
+                    "channel_name": "L",
+                    "measurement": {
+                        "channel": 0,
+                        "wav_path": "test.wav",
+                        "frequencies": [],
+                        "magnitude_db": [],
+                        "phase_deg": []
+                    },
+                    "is_group": false,
+                    "group_drivers": []
+                }
+            ],
+            "configuration": null
+        }"#;
+
+        let result = RoomEqMeasurementsFile::from_json_str(v1_json).expect("Migration failed");
+
+        assert_eq!(result.version, 2);
+        assert_eq!(result.channels.len(), 1);
+        assert_eq!(result.channels[0].channel_name, "L");
+    }
+
+    #[test]
+    fn test_load_v2() {
+        // V2 JSON (with version)
+        let v2_json = r#"{
+            "version": 2,
+            "channels": [],
+            "configuration": null
+        }"#;
+
+        let result = RoomEqMeasurementsFile::from_json_str(v2_json).expect("Loading V2 failed");
+        assert_eq!(result.version, 2);
+    }
 }
 
 /// Measurement data for a single channel (may have multiple drivers)

@@ -2500,11 +2500,10 @@ dependencies = [
  "core-foundation 0.10.0",
  "core-foundation-sys",
  "coreaudio-sys",
- "crossbeam",
  "env_logger",
  "libc",
  "log",
- "rb",
+ "rtrb",
  "tempfile",
  "thiserror 2.0.17",
 ]
@@ -7239,12 +7238,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rb"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56cf8381505b60ae18a4097f1d0be093287ca3bf4fbb23d36ac5ad3bba335daa"
-
-[[package]]
 name = "rcue"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8299,7 +8292,6 @@ dependencies = [
  "engine",
  "env_logger",
  "gpui",
- "gpui-d3rs",
  "gpui-px",
  "gpui-ui-kit",
  "hound",

@@ -12,6 +12,7 @@ use crate::audio_buffer::AudioBuffer;
 use crate::utils::AudioObjectIDGenerator;
 use crate::{AudioDriverError, Result};
 use coreaudio_sys::*;
+use rtrb::{Consumer, Producer};
 use std::collections::HashMap;
 use std::os::raw::c_void;
 use std::sync::Arc;
@@ -124,8 +125,9 @@ pub struct HALDriver {
     /// Buffer size in frames
     buffer_size: u32,
 
-    /// Bidirectional audio buffer (shared with audio player)
-    audio_buffer: Option<Arc<AudioBuffer>>,
+    /// Bidirectional audio buffer handles
+    input_producer: Option<Producer<f32>>,
+    output_consumer: Option<Consumer<f32>>,
 }
 
 // SAFETY: HALDriver contains raw pointers from Core Audio which are thread-safe.
@@ -181,7 +183,8 @@ impl HALDriver {
             devices: HashMap::new(),
             sample_rate: 48000.0,
             buffer_size: 512,
-            audio_buffer: None,
+            input_producer: None,
+            output_consumer: None,
         };
         log::info!(
             "✅ HAL driver instance created - sample_rate: {}, buffer_size: {}",
@@ -211,16 +214,18 @@ impl HALDriver {
         log::info!("🔊 Initializing audio buffer...");
         let channels = 2; // Stereo by default
         let capacity_ms = 500; // 500ms buffer
-        let buffer = Arc::new(AudioBuffer::new(
-            capacity_ms,
-            self.sample_rate as u32,
-            channels,
-        ));
-        self.audio_buffer = Some(buffer.clone());
 
-        // Also set as global buffer for easy access from audio player
+        // Initialize the global buffer first
         crate::audio_buffer::init_global_buffer(capacity_ms, self.sample_rate as u32, channels);
-        log::info!("✅ Audio buffer initialized");
+
+        // Then get access to it and take our handles
+        if let Some(buffer) = crate::audio_buffer::get_global_buffer() {
+            self.input_producer = buffer.take_input_producer();
+            self.output_consumer = buffer.take_output_consumer();
+            log::info!("✅ Audio buffer initialized and handles acquired");
+        } else {
+            log::error!("❌ Failed to get global audio buffer");
+        }
 
         // Create the default virtual device
         log::info!("📦 Creating default virtual device...");
@@ -728,35 +733,58 @@ impl HALDriver {
         input_data: Option<&[f32]>,
         output_data: Option<&mut [f32]>,
     ) -> Result<()> {
-        let buffer = self
-            .audio_buffer
-            .as_ref()
-            .ok_or_else(|| AudioDriverError::Buffer("Audio buffer not initialized".to_string()))?;
-
-        // Write input audio (from macOS apps) to input buffer
+        // Write input audio (from macOS apps) to input buffer (our producer)
         if let Some(input) = input_data {
-            let mut producer = buffer.input_producer();
-            let written = producer.write(input);
-            if written < input.len() {
-                log::warn!(
-                    "Input buffer overflow: wrote {}/{} samples",
-                    written,
-                    input.len()
-                );
+            if let Some(producer) = &mut self.input_producer {
+                if let Ok(chunk) = producer.write_chunk_uninit(input.len()) {
+                    chunk.fill_from_iter(input.iter().copied());
+                } else {
+                    // Buffer full
+                    log::warn!("Input buffer full ({} samples)", input.len());
+                }
             }
         }
 
         // Read from output buffer (loopback from audio player) to send back to macOS
         if let Some(output) = output_data {
-            let mut consumer = buffer.output_consumer();
-            let read = consumer.read(output);
-            if read < output.len() {
-                // Not enough data in loopback buffer, rest is already filled with zeros
-                log::trace!(
-                    "Output buffer underrun: read {}/{} samples",
-                    read,
-                    output.len()
-                );
+            if let Some(consumer) = &mut self.output_consumer {
+                if let Ok(chunk) = consumer.read_chunk(output.len()) {
+                    let (s1, s2) = chunk.as_slices();
+                    let len1 = s1.len();
+
+                    if len1 > 0 {
+                        output[..len1].copy_from_slice(s1);
+                    }
+                    if s2.len() > 0 {
+                        output[len1..len1 + s2.len()].copy_from_slice(s2);
+                    }
+                    chunk.commit_all();
+                } else {
+                    // Not enough data - read what's available
+                    let available = consumer.slots();
+                    if available > 0 {
+                        if let Ok(chunk) = consumer.read_chunk(available) {
+                            let (s1, s2) = chunk.as_slices();
+                            let len1 = s1.len();
+                            output[..len1].copy_from_slice(s1);
+                            if s2.len() > 0 {
+                                output[len1..len1 + s2.len()].copy_from_slice(s2);
+                            }
+                            chunk.commit_all();
+
+                            // Fill rest with zeros
+                            if available < output.len() {
+                                output[available..].fill(0.0);
+                            }
+                        }
+                    } else {
+                        // No data
+                        output.fill(0.0);
+                    }
+                }
+            } else {
+                // No consumer available
+                output.fill(0.0);
             }
         }
 
@@ -765,7 +793,7 @@ impl HALDriver {
 
     /// Get the audio buffer for external access (e.g., from audio player)
     pub fn get_audio_buffer(&self) -> Option<Arc<AudioBuffer>> {
-        self.audio_buffer.clone()
+        crate::audio_buffer::get_global_buffer()
     }
 }
 

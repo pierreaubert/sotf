@@ -393,11 +393,7 @@ impl PlayerView {
                                 HStack::new()
                                     .spacing(StackSpacing::Sm)
                                     .align(StackAlign::Center)
-                                    .child(
-                                        Text::new("⚠")
-                                            .size(TextSize::Md)
-                                            .color(theme.warning),
-                                    )
+                                    .child(Text::new("⚠").size(TextSize::Md).color(theme.warning))
                                     .child(
                                         Text::new(warning_msg)
                                             .size(TextSize::Sm)
@@ -599,6 +595,20 @@ impl PlayerView {
             mic_calibration,
             channel_name,
             recording_directory,
+        ): (
+            _,              // signal_type
+            f32,            // duration_secs
+            f32,            // level_db
+            f32,            // sweep_start_freq
+            f32,            // sweep_end_freq
+            String,         // output_device
+            String,         // input_device
+            u16,            // output_channel
+            u16,            // input_channel
+            u32,            // sample_rate
+            Option<String>, // mic_calibration
+            String,         // channel_name
+            Option<String>, // recording_directory
         ) = {
             let state = self.state.read(cx);
             let rec_state = &state.app.measurement_state.recording_state;
@@ -620,11 +630,12 @@ impl PlayerView {
             };
 
             // Get output channel from playback config (stored as 0-based index)
+            // For multi-channel speakers, use the first interface channel
             let output_ch = rec_state
                 .playback_config
                 .channel_mappings
                 .get(channel_idx)
-                .map(|m| m.interface_channel)
+                .map(|m| m.interface_channel())
                 .unwrap_or(0);
 
             // Get input channel from recording config (stored as 0-based index)
@@ -896,11 +907,11 @@ impl PlayerView {
                                     impulse_time_ms: Some(analysis_result.impulse_time_ms),
                                     excess_group_delay_ms: Some(analysis_result.excess_group_delay_ms),
                                     thd_percent: Some(analysis_result.thd_percent),
-                                    harmonic_distortion_db: None,
-                                    rt60_ms: None,
-                                    clarity_c50_db: None,
-                                    clarity_c80_db: None,
-                                    spectrogram_db: None,
+                                    harmonic_distortion_db: Some(analysis_result.harmonic_distortion_db),
+                                    rt60_ms: Some(analysis_result.rt60_ms),
+                                    clarity_c50_db: Some(analysis_result.clarity_c50_db),
+                                    clarity_c80_db: Some(analysis_result.clarity_c80_db),
+                                    spectrogram_db: Some(analysis_result.spectrogram_db),
                                 });
                             }
                             state.app.measurement_state.recording_state.status_message =
@@ -1230,8 +1241,8 @@ impl PlayerView {
                 // Read file content
                 match std::fs::read_to_string(&file_path) {
                     Ok(json) => {
-                        // Deserialize as RoomEqMeasurementsFile
-                        match serde_json::from_str::<RoomEqMeasurementsFile>(&json) {
+                        // Deserialize as RoomEqMeasurementsFile with migration
+                        match RoomEqMeasurementsFile::from_json_str(&json) {
                             Ok(measurements_file) => {
                                 log::info!(
                                     "Loaded {} channel measurements from {:?}",

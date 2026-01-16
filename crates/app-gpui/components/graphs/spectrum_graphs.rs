@@ -4,17 +4,13 @@
 
 use crate::theme::Theme;
 
-
 use gpui::prelude::*;
 
 use gpui::*;
 
-use gpui_px::{heatmap, ColorScale, ScaleType};
-
-
+use gpui_px::{ColorScale, ScaleType, heatmap};
 
 /// Data grid for spectrum plotting (Frequency x Y-Axis)
-
 
 /// Y-Axis can be Time (Spectrogram) or Angle (Directivity)
 #[derive(Clone)]
@@ -83,7 +79,7 @@ pub fn render_spectrum_heatmap(
 
     // Verify z_values size matches x * y
     if data.z_values.len() != width_samples * height_samples {
-         return div()
+        return div()
             .flex()
             .items_center()
             .justify_center()
@@ -103,14 +99,14 @@ pub fn render_spectrum_heatmap(
     if let Some(title) = &config.title {
         chart = chart.title(title.clone());
     }
-    
+
     // Axis labels are not directly supported by HeatmapChart builder in this version.
     // They should be rendered outside the chart if needed.
 
     if let Some(cs) = config.color_scale {
         chart = chart.color_scale(cs);
     }
-    
+
     // Apply ranges if specified
     if let Some((min, max)) = config.x_range {
         chart = chart.x_range(min, max);
@@ -123,15 +119,18 @@ pub fn render_spectrum_heatmap(
     match chart.build() {
         Ok(element) => {
             if let Some(state) = interactive_state {
-                 gpui_px::interaction::interactive("spectrum-heatmap", element.into_any_element(), state.clone())
-                    .build()
-                    .into_any_element()
+                gpui_px::interaction::interactive(
+                    "spectrum-heatmap",
+                    element.into_any_element(),
+                    state.clone(),
+                )
+                .build()
+                .into_any_element()
             } else {
                 element.into_any_element()
             }
         }
-        Err(e) => {
-             div()
+        Err(e) => div()
             .flex()
             .items_center()
             .justify_center()
@@ -139,7 +138,6 @@ pub fn render_spectrum_heatmap(
             .h(px(config.height))
             .text_color(gpui::rgb(0xFF0000))
             .child(format!("Error building chart: {}", e))
-            .into_any_element()
-        }
+            .into_any_element(),
     }
 }

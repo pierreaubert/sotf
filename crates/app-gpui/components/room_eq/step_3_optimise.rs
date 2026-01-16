@@ -377,6 +377,22 @@ impl PlayerView {
                         .map(|&db| db as f64)
                         .collect();
 
+                    // Calculate average level of input curve between 20Hz and 1000Hz
+                    // This is used to normalize the target curve to the input level
+                    let input_indices: Vec<usize> = frequencies
+                        .iter()
+                        .enumerate()
+                        .filter(|&(_, &f)| f >= 20.0 && f <= 1000.0)
+                        .map(|(i, _)| i)
+                        .collect();
+
+                    let input_avg = if !input_indices.is_empty() {
+                        input_indices.iter().map(|&i| magnitude_db[i]).sum::<f64>()
+                            / input_indices.len() as f64
+                    } else {
+                        0.0
+                    };
+
                     let main_curve = autoeq::Curve {
                         freq: ndarray::Array1::from_vec(frequencies),
                         spl: ndarray::Array1::from_vec(magnitude_db),
@@ -428,6 +444,60 @@ impl PlayerView {
                         }
                     };
 
+                    // Generate target curve points based on configuration
+                    let target_curve_points = match room_eq.optimizer_config.target_curve.as_str() {
+                        "custom" => room_eq.custom_target_curve.generate_curve(),
+                        "flat" => crate::app::types::CustomTargetCurve::new_flat().generate_curve(),
+                        "near_field" => {
+                            crate::app::types::CustomTargetCurve::new_near_field().generate_curve()
+                        }
+                        "mid_field" => {
+                            crate::app::types::CustomTargetCurve::new_mid_field().generate_curve()
+                        }
+                        "far_field" => {
+                            crate::app::types::CustomTargetCurve::new_far_field().generate_curve()
+                        }
+                        _ => crate::app::types::CustomTargetCurve::new_flat().generate_curve(),
+                    };
+
+                    // Calculate target average (20-1000Hz)
+                    let target_indices: Vec<usize> = target_curve_points
+                        .iter()
+                        .enumerate()
+                        .filter(|&(_, &(f, _))| f >= 20.0 && f <= 1000.0)
+                        .map(|(i, _)| i)
+                        .collect();
+
+                    let target_avg = if !target_indices.is_empty() {
+                        target_indices
+                            .iter()
+                            .map(|&i| target_curve_points[i].1)
+                            .sum::<f64>()
+                            / target_indices.len() as f64
+                    } else {
+                        0.0
+                    };
+
+                    // Calculate offset to align target with input
+                    let offset = input_avg - target_avg;
+
+                    // Normalize target curve
+                    let normalized_target: Vec<(f64, f64)> = target_curve_points
+                        .into_iter()
+                        .map(|(f, db)| (f, db + offset))
+                        .collect();
+
+                    // Convert to autoeq::Curve for optimizer
+                    let target_curve = autoeq::Curve {
+                        freq: ndarray::Array1::from_vec(
+                            normalized_target.iter().map(|(f, _)| *f).collect(),
+                        ),
+                        spl: ndarray::Array1::from_vec(
+                            normalized_target.iter().map(|(_, db)| *db).collect(),
+                        ),
+                        phase: None,
+                    };
+
                     // Build args using library defaults
                     let mut args = autoeq::Args::speaker_defaults();
                     args.num_filters = room_eq.optimizer_config.num_filters;
@@ -462,7 +532,7 @@ impl PlayerView {
                             include_biquads: true,
                             include_filter_response: true,
                         }),
-                        target: None,
+                        target: Some(MeasurementInput::Curve(target_curve)),
                     };
 
                     (

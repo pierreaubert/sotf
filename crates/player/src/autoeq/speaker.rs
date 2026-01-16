@@ -5,6 +5,7 @@
 
 use super::types::{CrossoverType, SpeakerConfigType};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 // Re-export types from autoeq for convenience
 pub use autoeq::de::CallbackAction;
@@ -482,10 +483,8 @@ fn optimize_from_curve(
     config: &SpeakerOptimizationConfig,
     mut callback: Option<SpeakerOptimizationCallback>,
 ) -> Result<SpeakerOptimizationResult, String> {
-    use std::sync::{Arc, Mutex};
-
     // Create standard frequency grid
-    let standard_freq = autoeq::read::create_log_frequency_grid(200, 20.0, 20000.0);
+    let standard_freq = autoeq::read::create_log_frequency_grid(2000, 20.0, 20000.0);
     let input_normalized = autoeq::normalize_and_interpolate_response(&standard_freq, curve);
 
     // Build target curve
@@ -679,7 +678,7 @@ fn optimize_multidriver(
     .map_err(|e| e.to_string())?;
 
     // Create visualization curves from the optimized result
-    let n = 200;
+    let n = 2000;
     let frequencies = autoeq::read::create_log_frequency_grid(n, min_freq, max_freq);
     let freq_vec: Vec<f64> = frequencies.iter().copied().collect();
 
@@ -756,7 +755,7 @@ fn optimize_multisub(
     .map_err(|e| e.to_string())?;
 
     // Create visualization curves
-    let n = 200;
+    let n = 2000;
     let frequencies = autoeq::read::create_log_frequency_grid(n, min_freq, max_freq);
     let freq_vec: Vec<f64> = frequencies.iter().copied().collect();
 

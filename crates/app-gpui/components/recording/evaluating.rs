@@ -5,10 +5,10 @@
 
 use crate::app::types::{PlotSmoothing, RecordingResult};
 use crate::components::graphs::response_graphs::{
-    render_line_chart, ChartConfig, Series, CHANNEL_COLORS,
+    CHANNEL_COLORS, ChartConfig, Series, render_line_chart,
 };
 use crate::components::graphs::spectrum_graphs::{
-    render_spectrum_heatmap, SpectrumConfig, SpectrumGrid,
+    SpectrumConfig, SpectrumGrid, render_spectrum_heatmap,
 };
 use crate::ui::PlayerView;
 use gpui::prelude::*;
@@ -503,7 +503,7 @@ impl PlayerView {
                 }
             }
         }
-        
+
         div()
             .h(px(300.0))
             .w_full()
@@ -514,8 +514,8 @@ impl PlayerView {
             .justify_center()
             .child(
                 Text::new("Spectrogram not available")
-                .size(TextSize::Sm)
-                .color(theme.text_muted),
+                    .size(TextSize::Sm)
+                    .color(theme.text_muted),
             )
             .into_any_element()
     }
@@ -573,7 +573,7 @@ impl PlayerView {
 
         render_spectrum_heatmap(grid, config, theme, None).into_any_element()
     }
-    
+
     fn render_no_data_placeholder(&self, theme: &crate::theme::Theme) -> impl IntoElement {
         div()
             .h(px(200.0))
@@ -642,11 +642,16 @@ impl PlayerView {
                     .map(|&mag| -(mag - normalization_offset))
                     .collect();
                 let smoothed = Self::apply_smoothing(&result.frequencies, &normalized, smoothing);
-                
+
                 let freqs_f64: Vec<f64> = result.frequencies.iter().map(|&v| v as f64).collect();
                 let mags_f64: Vec<f64> = smoothed.iter().map(|&v| v as f64).collect();
-                
-                Series::new(name.clone(), CHANNEL_COLORS[*idx % CHANNEL_COLORS.len()], freqs_f64, mags_f64)
+
+                Series::new(
+                    name.clone(),
+                    CHANNEL_COLORS[*idx % CHANNEL_COLORS.len()],
+                    freqs_f64,
+                    mags_f64,
+                )
             })
             .collect();
 
@@ -695,11 +700,16 @@ impl PlayerView {
             .map(|(name, idx, result)| {
                 let smoothed =
                     Self::apply_smoothing(&result.frequencies, &result.phase_deg, smoothing);
-                
+
                 let freqs_f64: Vec<f64> = result.frequencies.iter().map(|&v| v as f64).collect();
                 let phases_f64: Vec<f64> = smoothed.iter().map(|&v| v as f64).collect();
-                
-                Series::new(name.clone(), CHANNEL_COLORS[*idx % CHANNEL_COLORS.len()], freqs_f64, phases_f64)
+
+                Series::new(
+                    name.clone(),
+                    CHANNEL_COLORS[*idx % CHANNEL_COLORS.len()],
+                    freqs_f64,
+                    phases_f64,
+                )
             })
             .collect();
 
@@ -716,7 +726,6 @@ impl PlayerView {
         render_line_chart(series, config, theme, None)
     }
 
-
     /// Render group delay chart
     fn render_group_delay_chart(
         &self,
@@ -726,28 +735,38 @@ impl PlayerView {
     ) -> impl IntoElement {
         // Compute group delay for each result
         let mut series = Vec::new();
-        
+
         for (name, idx, result) in results {
             let gd = dsp::compute_group_delay(&result.frequencies, &result.phase_deg);
             let smoothed_gd = Self::apply_smoothing(&result.frequencies, &gd, smoothing);
-            
+
             let freqs_f64: Vec<f64> = result.frequencies.iter().map(|&v| v as f64).collect();
             let gd_f64: Vec<f64> = smoothed_gd.iter().map(|&v| v as f64).collect();
-            
-            series.push(Series::new(name.clone(), CHANNEL_COLORS[*idx % CHANNEL_COLORS.len()], freqs_f64.clone(), gd_f64));
-            
+
+            series.push(Series::new(
+                name.clone(),
+                CHANNEL_COLORS[*idx % CHANNEL_COLORS.len()],
+                freqs_f64.clone(),
+                gd_f64,
+            ));
+
             if let Some(excess) = &result.excess_group_delay_ms {
                 let smoothed_excess = Self::apply_smoothing(&result.frequencies, excess, smoothing);
                 let excess_f64: Vec<f64> = smoothed_excess.iter().map(|&v| v as f64).collect();
-                
+
                 // Add excess as semi-transparent series
                 // Note: Labeling it might clutter legend, maybe skip label or append "(Excess)"?
                 // gpui_px legend uses labels. If we want it hidden from legend we might need a feature in Shared chart or just empty label?
                 // But let's keep it simple.
                 series.push(
-                    Series::new(format!("{} (Excess)", name), CHANNEL_COLORS[*idx % CHANNEL_COLORS.len()], freqs_f64, excess_f64)
-                        .with_opacity(0.5)
-                        .with_width(1.0)
+                    Series::new(
+                        format!("{} (Excess)", name),
+                        CHANNEL_COLORS[*idx % CHANNEL_COLORS.len()],
+                        freqs_f64,
+                        excess_f64,
+                    )
+                    .with_opacity(0.5)
+                    .with_width(1.0),
                 );
             }
         }
@@ -798,11 +817,17 @@ impl PlayerView {
             .filter_map(|(name, idx, result)| {
                 result.thd_percent.as_ref().map(|thd| {
                     let smoothed = Self::apply_smoothing(&result.frequencies, thd, smoothing);
-                    
-                    let freqs_f64: Vec<f64> = result.frequencies.iter().map(|&v| v as f64).collect();
+
+                    let freqs_f64: Vec<f64> =
+                        result.frequencies.iter().map(|&v| v as f64).collect();
                     let thd_f64: Vec<f64> = smoothed.iter().map(|&v| v as f64).collect();
-                    
-                    Series::new(name.clone(), CHANNEL_COLORS[*idx % CHANNEL_COLORS.len()], freqs_f64, thd_f64)
+
+                    Series::new(
+                        name.clone(),
+                        CHANNEL_COLORS[*idx % CHANNEL_COLORS.len()],
+                        freqs_f64,
+                        thd_f64,
+                    )
                 })
             })
             .collect();
@@ -812,7 +837,7 @@ impl PlayerView {
             .iter()
             .flat_map(|s| s.y_values.iter())
             .fold(0.0_f64, |max, &v| max.max(v));
-        
+
         let y_max = if max_thd > 10.0 {
             max_thd.ceil()
         } else if max_thd > 1.0 {
@@ -848,20 +873,27 @@ impl PlayerView {
             .iter()
             .map(|(name, idx, result)| {
                 let rt60 = result.rt60_ms.clone().or_else(|| {
-                    result.impulse_response.as_ref().map(|ir| {
-                        dsp::compute_rt60_spectrum(ir, sample_rate, &result.frequencies)
-                    })
+                    result
+                        .impulse_response
+                        .as_ref()
+                        .map(|ir| dsp::compute_rt60_spectrum(ir, sample_rate, &result.frequencies))
                 });
                 (name, idx, result, rt60)
             })
             .filter_map(|(name, idx, result, rt60_opt)| {
                 rt60_opt.map(|rt60| {
                     let smoothed = Self::apply_smoothing(&result.frequencies, &rt60, smoothing);
-                    
-                    let freqs_f64: Vec<f64> = result.frequencies.iter().map(|&v| v as f64).collect();
+
+                    let freqs_f64: Vec<f64> =
+                        result.frequencies.iter().map(|&v| v as f64).collect();
                     let rt60_f64: Vec<f64> = smoothed.iter().map(|&v| v as f64).collect();
-                    
-                    Series::new(name.clone(), CHANNEL_COLORS[*idx % CHANNEL_COLORS.len()], freqs_f64, rt60_f64)
+
+                    Series::new(
+                        name.clone(),
+                        CHANNEL_COLORS[*idx % CHANNEL_COLORS.len()],
+                        freqs_f64,
+                        rt60_f64,
+                    )
                 })
             })
             .collect();
@@ -871,7 +903,7 @@ impl PlayerView {
             .iter()
             .flat_map(|s| s.y_values.iter())
             .fold(0.0_f64, |max, &v| max.max(v));
-        
+
         let y_max = ((max_rt60 / 100.0).ceil() * 100.0).max(500.0);
 
         let config = ChartConfig {
@@ -911,11 +943,17 @@ impl PlayerView {
             .filter_map(|(name, idx, result, c50_opt)| {
                 c50_opt.map(|c50| {
                     let smoothed = Self::apply_smoothing(&result.frequencies, &c50, smoothing);
-                    
-                    let freqs_f64: Vec<f64> = result.frequencies.iter().map(|&v| v as f64).collect();
+
+                    let freqs_f64: Vec<f64> =
+                        result.frequencies.iter().map(|&v| v as f64).collect();
                     let c50_f64: Vec<f64> = smoothed.iter().map(|&v| v as f64).collect();
-                    
-                    Series::new(name.clone(), CHANNEL_COLORS[*idx % CHANNEL_COLORS.len()], freqs_f64, c50_f64)
+
+                    Series::new(
+                        name.clone(),
+                        CHANNEL_COLORS[*idx % CHANNEL_COLORS.len()],
+                        freqs_f64,
+                        c50_f64,
+                    )
                 })
             })
             .collect();
@@ -933,13 +971,16 @@ impl PlayerView {
         render_line_chart(series, config, theme, None)
     }
 
-
     /// Find the peak time in an impulse response
     fn find_ir_peak_time(times: &[f32], impulse: &[f32]) -> f32 {
         impulse
             .iter()
             .enumerate()
-            .max_by(|(_, a), (_, b)| a.abs().partial_cmp(&b.abs()).unwrap_or(std::cmp::Ordering::Equal))
+            .max_by(|(_, a), (_, b)| {
+                a.abs()
+                    .partial_cmp(&b.abs())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .map(|(i, _)| times.get(i).copied().unwrap_or(0.0))
             .unwrap_or(0.0)
     }
@@ -981,10 +1022,8 @@ impl PlayerView {
             .map(|(name, idx, times, impulse, peak_time)| {
                 // Shift time so first channel's peak is at t=0, others show relative delay
                 let time_offset = peak_time - reference_time;
-                let adjusted_times: Vec<f64> = times
-                    .iter()
-                    .map(|&t| (t - time_offset) as f64)
-                    .collect();
+                let adjusted_times: Vec<f64> =
+                    times.iter().map(|&t| (t - time_offset) as f64).collect();
                 let impulse_f64: Vec<f64> = impulse.iter().map(|&v| v as f64).collect();
 
                 Series::new(

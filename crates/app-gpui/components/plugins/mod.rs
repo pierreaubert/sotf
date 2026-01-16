@@ -696,7 +696,7 @@ pub fn render_plugin_content(
             // Read dropdown states from plugin state
             let app_state = entity.read(cx);
             let ab_dropdowns = app_state.app.plugin_state.ab_compare_dropdowns;
-            drop(app_state);
+            let _ = app_state;
 
             render_ab_compare_plugin(
                 entity.clone(),

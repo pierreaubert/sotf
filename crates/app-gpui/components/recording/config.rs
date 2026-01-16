@@ -3,15 +3,11 @@
 //! Device selection, channel routing, and microphone calibration.
 
 use crate::app::types::{CalibrationData, ChannelMapping, RecordingState, SpeakerConfiguration};
+use crate::components::graphs::common::{rgba_to_u32, theme_to_chart_theme};
 use crate::ui::PlayerView;
-use d3rs::axis::{AxisConfig, DefaultAxisTheme, render_axis};
-use d3rs::color::D3Color;
-use d3rs::grid::{GridConfig, render_grid};
-use d3rs::prelude::LogScale;
-use d3rs::scale::LinearScale;
-use d3rs::shape::{LineConfig, LinePoint, render_line};
 use gpui::prelude::*;
 use gpui::*;
+use gpui_px::{ScaleType, line};
 use gpui_ui_kit::{
     Accordion, AccordionItem, AccordionMode, Badge, BadgeVariant, Button, ButtonSize,
     ButtonVariant, HStack, Input, InputSize, NumberInput, NumberInputSize, Select, SelectOption,
@@ -117,32 +113,6 @@ impl PlayerView {
 
     /// Render playback device content for accordion
     fn render_playback_device_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let (theme, num_channels, sample_rate, speaker_config) = {
-            let state = self.state.read(cx);
-            (
-                state.app.ui_state.theme.clone(),
-                state
-                    .app
-                    .measurement_state
-                    .recording_state
-                    .playback_config
-                    .num_channels,
-                state
-                    .app
-                    .measurement_state
-                    .recording_state
-                    .playback_config
-                    .sample_rate,
-                state
-                    .app
-                    .measurement_state
-                    .recording_state
-                    .playback_config
-                    .speaker_configuration,
-            )
-        };
-        let view = cx.entity().clone();
-
         let device_label = VStack::new().spacing(StackSpacing::Sm).child(
             Text::new("Output Device")
                 .size(TextSize::Sm)
@@ -157,58 +127,6 @@ impl PlayerView {
         // Speaker configuration dropdown row
         let speaker_config_row = self.render_speaker_config_dropdown(cx).into_any_element();
 
-        // Channel count row - only show for Custom configuration
-        let channel_count_row = if speaker_config == SpeakerConfiguration::Custom {
-            HStack::new()
-                .spacing(StackSpacing::Md)
-                .align(StackAlign::Center)
-                .child(Text::new("Number of channels:").size(TextSize::Sm))
-                .child({
-                    let view = view.clone();
-                    NumberInput::new("playback_channel_count")
-                        .value(num_channels as f64)
-                        .min(1.0)
-                        .max(128.0)
-                        .step(1.0)
-                        .size(NumberInputSize::Sm)
-                        .on_change({
-                            let view = view.clone();
-                            move |value, _window, cx| {
-                                view.update(cx, |this, cx| {
-                                    this.state.update(cx, |state, _| {
-                                        state
-                                            .app
-                                            .measurement_state
-                                            .recording_state
-                                            .playback_config
-                                            .num_channels = value as usize;
-                                        update_playback_channel_mappings(
-                                            &mut state.app.measurement_state.recording_state,
-                                        );
-                                    });
-                                    cx.notify();
-                                });
-                            }
-                        })
-                })
-                .into_any_element()
-        } else {
-            // Show info badge for preset configurations
-            HStack::new()
-                .spacing(StackSpacing::Md)
-                .align(StackAlign::Center)
-                .child(
-                    Text::new("Channels:")
-                        .size(TextSize::Sm)
-                        .color(theme.text_secondary),
-                )
-                .child(Badge::new(format!("{}", num_channels)).variant(BadgeVariant::Info))
-                .child(
-                    Badge::new(format!("{} kHz", sample_rate / 1000)).variant(BadgeVariant::Info),
-                )
-                .into_any_element()
-        };
-
         // Render device dropdown first, converting to AnyElement to release borrow
         let device_dropdown = self.render_playback_device_dropdown(cx).into_any_element();
         // Render channel mapping second (after first borrow is released)
@@ -219,7 +137,6 @@ impl PlayerView {
             .child(device_label.child(device_dropdown))
             .child(sample_rate_row)
             .child(speaker_config_row)
-            .child(channel_count_row)
             .child(channel_mapping)
     }
 
@@ -683,7 +600,7 @@ impl PlayerView {
                     .color(theme.text_secondary),
             )
             .child(
-                div().w(px(120.0)).child(
+                div().w(px(100.0)).child(
                     Select::new("playback_sample_rate")
                         .options(options)
                         .selected(selected_value)
@@ -732,11 +649,13 @@ impl PlayerView {
             )
     }
 
-    /// Render speaker configuration dropdown
+    /// Render speaker configuration dropdown with channel count and sample rate badges
     fn render_speaker_config_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let recording_state = &state.app.measurement_state.recording_state;
+        let num_channels = recording_state.playback_config.num_channels;
+        let sample_rate = recording_state.playback_config.sample_rate;
         let view = cx.entity().clone();
 
         let options: Vec<SelectOption> = SpeakerConfiguration::all()
@@ -758,7 +677,7 @@ impl PlayerView {
                     .color(theme.text_secondary),
             )
             .child(
-                div().w(px(120.0)).child(
+                div().w(px(100.0)).child(
                     Select::new("speaker_config")
                         .options(options)
                         .selected(selected_value)
@@ -800,33 +719,29 @@ impl PlayerView {
                                             .speaker_configuration = new_config;
 
                                         // Update channel count and mappings based on configuration
-                                        // Note: interface_channel is 1-indexed (UI convention)
                                         if new_config == SpeakerConfiguration::Custom {
-                                            // For custom config, keep current channel count but use generic names
-                                            let num_channels = state
+                                            // For custom config, keep current speaker count but use generic names
+                                            let num_speakers = state
                                                 .app
                                                 .measurement_state
                                                 .recording_state
                                                 .playback_config
-                                                .num_channels;
+                                                .channel_mappings
+                                                .len();
                                             state
                                                 .app
                                                 .measurement_state
                                                 .recording_state
                                                 .playback_config
-                                                .channel_mappings = (0..num_channels)
-                                                .map(|i| ChannelMapping {
-                                                    interface_channel: i + 1, // 1-indexed
-                                                    group_name: format!("Ch{}", i + 1),
+                                                .channel_mappings = (0..num_speakers)
+                                                .map(|i| {
+                                                    ChannelMapping::single(
+                                                        i,
+                                                        format!("Ch{}", i + 1),
+                                                    )
                                                 })
                                                 .collect();
                                         } else {
-                                            state
-                                                .app
-                                                .measurement_state
-                                                .recording_state
-                                                .playback_config
-                                                .num_channels = new_config.channel_count();
                                             // Set default channel names for the configuration
                                             let channel_names = new_config.default_channel_names();
                                             state
@@ -837,12 +752,16 @@ impl PlayerView {
                                                 .channel_mappings = channel_names
                                                 .iter()
                                                 .enumerate()
-                                                .map(|(i, name)| ChannelMapping {
-                                                    interface_channel: i, // 0-indexed
-                                                    group_name: name.to_string(),
-                                                })
+                                                .map(|(i, name)| ChannelMapping::single(i, *name))
                                                 .collect();
                                         }
+                                        // Sync total channel count
+                                        state
+                                            .app
+                                            .measurement_state
+                                            .recording_state
+                                            .playback_config
+                                            .sync_channel_count();
 
                                         state
                                             .app
@@ -856,12 +775,21 @@ impl PlayerView {
                         }),
                 ),
             )
+            // Spacer to separate dropdown from badges
+            .child(div().w(px(20.0)))
+            .child(
+                Text::new("Channels:")
+                    .size(TextSize::Sm)
+                    .color(theme.text_secondary),
+            )
+            .child(Badge::new(format!("{}", num_channels)).variant(BadgeVariant::Info))
+            .child(Badge::new(format!("{} kHz", sample_rate / 1000)).variant(BadgeVariant::Info))
     }
 
-    /// Render playback channel mapping table
+    /// Render playback channel mapping table (speaker-centric view)
     fn render_playback_channel_mapping(&self, cx: &mut Context<Self>) -> impl IntoElement {
         // Extract all needed data upfront, then release the borrow
-        let (theme, channel_data, is_custom) = {
+        let (theme, speaker_data, is_custom) = {
             let state = self.state.read(cx);
             let mappings: Vec<_> = state
                 .app
@@ -870,7 +798,7 @@ impl PlayerView {
                 .playback_config
                 .channel_mappings
                 .iter()
-                .map(|m| (m.interface_channel, m.group_name.clone()))
+                .map(|m| (m.interface_channels.clone(), m.group_name.clone()))
                 .collect();
             let is_custom = state
                 .app
@@ -883,84 +811,407 @@ impl PlayerView {
         };
         let view = cx.entity().clone();
 
+        // Fixed widths for consistent layout
+        const LABEL_WIDTH: f32 = 80.0;
+        const NAME_WIDTH: f32 = 140.0;
+
         VStack::new()
             .spacing(StackSpacing::Sm)
-            .children(channel_data.iter().enumerate().map(
-                |(idx, (interface_channel, group_name))| {
+            .children(speaker_data.iter().enumerate().map(
+                |(speaker_idx, (interface_channels, group_name))| {
                     let view = view.clone();
                     let theme = theme.clone();
-                    let interface_ch = *interface_channel;
+                    let interface_channels = interface_channels.clone();
                     let group_name = group_name.clone();
+                    let is_multi = interface_channels.len() > 1;
 
                     // For custom config, show text input; otherwise show dropdown
                     let name_widget = if is_custom {
-                        self.render_channel_name_input(cx, idx, &group_name)
+                        div()
+                            .w(px(NAME_WIDTH))
+                            .child(self.render_channel_name_input_raw(cx, speaker_idx, &group_name))
                             .into_any_element()
                     } else {
-                        self.render_channel_group_dropdown(cx, idx, &group_name)
+                        self.render_channel_group_dropdown(cx, speaker_idx, &group_name)
                             .into_any_element()
                     };
 
-                    HStack::new()
-                        .spacing(StackSpacing::Md)
-                        .align(StackAlign::Center)
-                        .child(
-                            Text::new(format!("Channel {}:", idx + 1))
-                                .size(TextSize::Sm)
-                                .color(theme.text_secondary),
-                        )
-                        .child(
-                            HStack::new()
-                                .spacing(StackSpacing::Sm)
-                                .align(StackAlign::Center)
-                                .child(
-                                    Text::new("Interface")
-                                        .size(TextSize::Xs)
-                                        .color(theme.text_muted),
+                    // Build the speaker row content
+                    let speaker_content = if is_multi {
+                        // Multi mode: show header row + channel list below
+                        VStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .child(
+                                // Header row with speaker name, group, and mode toggle
+                                HStack::new()
+                                    .spacing(StackSpacing::Sm)
+                                    .align(StackAlign::Center)
+                                    .child(
+                                        div().w(px(LABEL_WIDTH)).child(
+                                            Text::new(format!("Speaker {}:", speaker_idx + 1))
+                                                .size(TextSize::Sm)
+                                                .color(theme.text_secondary),
+                                        ),
+                                    )
+                                    .child(name_widget)
+                                    .child(
+                                        self.render_speaker_mode_toggle(cx, speaker_idx, is_multi)
+                                            .into_any_element(),
+                                    ),
+                            )
+                            .child(
+                                // Channel list for multi mode
+                                self.render_multi_channel_list(
+                                    cx,
+                                    speaker_idx,
+                                    &interface_channels,
+                                    &theme,
                                 )
-                                .child({
+                                .into_any_element(),
+                            )
+                            .into_any_element()
+                    } else {
+                        // Single mode: inline interface channel input on same row
+                        let interface_ch = interface_channels.first().copied().unwrap_or(0);
+                        HStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .align(StackAlign::Center)
+                            .child(
+                                div().w(px(LABEL_WIDTH)).child(
+                                    Text::new(format!("Speaker {}:", speaker_idx + 1))
+                                        .size(TextSize::Sm)
+                                        .color(theme.text_secondary),
+                                ),
+                            )
+                            .child(name_widget)
+                            .child(
+                                self.render_speaker_mode_toggle(cx, speaker_idx, is_multi)
+                                    .into_any_element(),
+                            )
+                            .child(div().w(px(70.0)))
+                            .child(Text::new("Ch").size(TextSize::Sm).color(theme.text_muted))
+                            .child(div().w(px(30.0)))
+                            .child({
+                                let view = view.clone();
+                                NumberInput::new(SharedString::from(format!(
+                                    "speaker_{}_ch_0",
+                                    speaker_idx
+                                )))
+                                .value((interface_ch + 1) as f64)
+                                .min(1.0)
+                                .max(128.0)
+                                .step(1.0)
+                                .size(NumberInputSize::Lg)
+                                .on_change({
                                     let view = view.clone();
-                                    NumberInput::new(SharedString::from(format!(
-                                        "playback_interface_{}",
-                                        idx
-                                    )))
-                                    .value((interface_ch + 1) as f64)
-                                    .min(1.0)
-                                    .max(128.0)
-                                    .step(1.0)
-                                    .size(NumberInputSize::Sm)
-                                    .on_change({
-                                        let view = view.clone();
-                                        move |value, _window, cx| {
-                                            view.update(cx, |this, cx| {
-                                                this.state.update(cx, |state, _| {
-                                                    if let Some(m) = state
-                                                        .app
-                                                        .measurement_state
-                                                        .recording_state
-                                                        .playback_config
-                                                        .channel_mappings
-                                                        .get_mut(idx)
+                                    move |value, _window, cx| {
+                                        view.update(cx, |this, cx| {
+                                            this.state.update(cx, |state, _| {
+                                                if let Some(m) = state
+                                                    .app
+                                                    .measurement_state
+                                                    .recording_state
+                                                    .playback_config
+                                                    .channel_mappings
+                                                    .get_mut(speaker_idx)
+                                                {
+                                                    if let Some(ch) =
+                                                        m.interface_channels.get_mut(0)
                                                     {
-                                                        m.interface_channel =
-                                                            (value as usize).saturating_sub(1);
+                                                        *ch = (value as usize).saturating_sub(1);
                                                     }
-                                                });
-                                                cx.notify();
+                                                }
+                                                // Sync total channel count
+                                                state
+                                                    .app
+                                                    .measurement_state
+                                                    .recording_state
+                                                    .playback_config
+                                                    .sync_channel_count();
                                             });
-                                        }
-                                    })
-                                }),
-                        )
-                        .child(name_widget)
-                        .into_any_element()
+                                            cx.notify();
+                                        });
+                                    }
+                                })
+                            })
+                            .into_any_element()
+                    };
+
+                    speaker_content
                 },
             ))
             .into_any_element()
     }
 
-    /// Render custom text input for channel name (used when Custom speaker configuration is selected)
-    fn render_channel_name_input(
+    /// Render the single/multi mode toggle for a speaker
+    fn render_speaker_mode_toggle(
+        &self,
+        cx: &mut Context<Self>,
+        speaker_idx: usize,
+        is_multi: bool,
+    ) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let theme = state.app.ui_state.theme.clone();
+        let is_open = state
+            .app
+            .measurement_state
+            .recording_state
+            .speaker_mode_dropdown_open
+            == Some(speaker_idx);
+        let view = cx.entity().clone();
+
+        let options = vec![
+            SelectOption::new("single", "Single"),
+            SelectOption::new("multi", "Multi"),
+        ];
+
+        let selected = if is_multi { "multi" } else { "single" };
+
+        div().w(px(80.0)).child(
+            Select::new(SharedString::from(format!("speaker_mode_{}", speaker_idx)))
+                .options(options)
+                .selected(selected)
+                .is_open(is_open)
+                .theme(theme.to_select_theme())
+                .on_toggle({
+                    let view = view.clone();
+                    move |open, _window, cx| {
+                        view.update(cx, |this, cx| {
+                            this.state.update(cx, |state, _| {
+                                state
+                                    .app
+                                    .measurement_state
+                                    .recording_state
+                                    .speaker_mode_dropdown_open =
+                                    if open { Some(speaker_idx) } else { None };
+                            });
+                            cx.notify();
+                        });
+                    }
+                })
+                .on_change({
+                    let view = view.clone();
+                    move |value, _window, cx| {
+                        view.update(cx, |this, cx| {
+                            this.state.update(cx, |state, _| {
+                                if let Some(mapping) = state
+                                    .app
+                                    .measurement_state
+                                    .recording_state
+                                    .playback_config
+                                    .channel_mappings
+                                    .get_mut(speaker_idx)
+                                {
+                                    if value == "multi" && mapping.interface_channels.len() == 1 {
+                                        // Switch to multi: add a second channel
+                                        let next_ch = mapping.interface_channels[0] + 1;
+                                        mapping.interface_channels.push(next_ch);
+                                    } else if value == "single"
+                                        && mapping.interface_channels.len() > 1
+                                    {
+                                        // Switch to single: keep only first channel
+                                        mapping.interface_channels.truncate(1);
+                                    }
+                                }
+                                // Renumber all channels sequentially
+                                renumber_interface_channels(
+                                    &mut state.app.measurement_state.recording_state,
+                                );
+                                // Close dropdown and sync channel count
+                                state
+                                    .app
+                                    .measurement_state
+                                    .recording_state
+                                    .speaker_mode_dropdown_open = None;
+                                state
+                                    .app
+                                    .measurement_state
+                                    .recording_state
+                                    .playback_config
+                                    .sync_channel_count();
+                            });
+                            cx.notify();
+                        });
+                    }
+                }),
+        )
+    }
+
+    /// Render the channel list for a multi-channel speaker
+    fn render_multi_channel_list(
+        &self,
+        cx: &mut Context<Self>,
+        speaker_idx: usize,
+        interface_channels: &[usize],
+        theme: &crate::theme::Theme,
+    ) -> impl IntoElement {
+        let view = cx.entity().clone();
+        let theme = theme.clone();
+
+        // Fixed widths matching the speaker row layout
+        const LABEL_WIDTH: f32 = 80.0;
+        const CH_LABEL_WIDTH: f32 = 60.0;
+
+        VStack::new()
+            .spacing(StackSpacing::Xs)
+            .children(
+                interface_channels
+                    .iter()
+                    .enumerate()
+                    .map(|(ch_idx, &interface_ch)| {
+                        let view = view.clone();
+                        let theme = theme.clone();
+
+                        HStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .align(StackAlign::Center)
+                            // Indent to align under the name column
+                            .child(div().w(px(LABEL_WIDTH)))
+                            .child(
+                                div().w(px(CH_LABEL_WIDTH)).child(
+                                    Text::new(format!("Ch {}:", ch_idx + 1))
+                                        .size(TextSize::Xs)
+                                        .color(theme.text_muted),
+                                ),
+                            )
+                            .child(div().w(px(70.0)).child({
+                                let view = view.clone();
+                                NumberInput::new(SharedString::from(format!(
+                                    "speaker_{}_ch_{}",
+                                    speaker_idx, ch_idx
+                                )))
+                                .value((interface_ch + 1) as f64)
+                                .min(1.0)
+                                .max(128.0)
+                                .step(1.0)
+                                .size(NumberInputSize::Sm)
+                                .on_change({
+                                    let view = view.clone();
+                                    move |value, _window, cx| {
+                                        view.update(cx, |this, cx| {
+                                            this.state.update(cx, |state, _| {
+                                                if let Some(mapping) = state
+                                                    .app
+                                                    .measurement_state
+                                                    .recording_state
+                                                    .playback_config
+                                                    .channel_mappings
+                                                    .get_mut(speaker_idx)
+                                                {
+                                                    if let Some(ch) =
+                                                        mapping.interface_channels.get_mut(ch_idx)
+                                                    {
+                                                        *ch = (value as usize).saturating_sub(1);
+                                                    }
+                                                }
+                                            });
+                                            cx.notify();
+                                        });
+                                    }
+                                })
+                            }))
+                            .child({
+                                // Remove button
+                                let view = view.clone();
+                                let can_remove = interface_channels.len() > 2;
+                                Button::new(
+                                    SharedString::from(format!(
+                                        "remove_ch_{}_{}",
+                                        speaker_idx, ch_idx
+                                    )),
+                                    "x",
+                                )
+                                .variant(ButtonVariant::Ghost)
+                                .size(ButtonSize::Xs)
+                                .theme(theme.to_button_theme())
+                                .disabled(!can_remove)
+                                .on_click({
+                                    move |_, cx| {
+                                        view.update(cx, |this, cx| {
+                                            this.state.update(cx, |state, _| {
+                                                if let Some(mapping) = state
+                                                    .app
+                                                    .measurement_state
+                                                    .recording_state
+                                                    .playback_config
+                                                    .channel_mappings
+                                                    .get_mut(speaker_idx)
+                                                {
+                                                    mapping.remove_channel(ch_idx);
+                                                }
+                                                // Renumber all channels sequentially
+                                                renumber_interface_channels(
+                                                    &mut state
+                                                        .app
+                                                        .measurement_state
+                                                        .recording_state,
+                                                );
+                                                state
+                                                    .app
+                                                    .measurement_state
+                                                    .recording_state
+                                                    .playback_config
+                                                    .sync_channel_count();
+                                            });
+                                            cx.notify();
+                                        });
+                                    }
+                                })
+                            })
+                            .into_any_element()
+                    }),
+            )
+            .child({
+                // Add channel button - indent to align with channel rows
+                let view = view.clone();
+                let theme = theme.clone();
+                HStack::new()
+                    .spacing(StackSpacing::Sm)
+                    .child(div().w(px(LABEL_WIDTH)))
+                    .child(
+                        Button::new(
+                            SharedString::from(format!("add_ch_{}", speaker_idx)),
+                            "+ Add",
+                        )
+                        .variant(ButtonVariant::Ghost)
+                        .size(ButtonSize::Xs)
+                        .theme(theme.to_button_theme())
+                        .on_click({
+                            move |_, cx| {
+                                view.update(cx, |this, cx| {
+                                    this.state.update(cx, |state, _| {
+                                        if let Some(mapping) = state
+                                            .app
+                                            .measurement_state
+                                            .recording_state
+                                            .playback_config
+                                            .channel_mappings
+                                            .get_mut(speaker_idx)
+                                        {
+                                            // Add a placeholder channel (will be renumbered)
+                                            mapping.add_channel(0);
+                                        }
+                                        // Renumber all channels sequentially
+                                        renumber_interface_channels(
+                                            &mut state.app.measurement_state.recording_state,
+                                        );
+                                        state
+                                            .app
+                                            .measurement_state
+                                            .recording_state
+                                            .playback_config
+                                            .sync_channel_count();
+                                    });
+                                    cx.notify();
+                                });
+                            }
+                        }),
+                    )
+            })
+    }
+
+    /// Render custom text input for channel name (raw, without wrapper div)
+    fn render_channel_name_input_raw(
         &self,
         cx: &mut Context<Self>,
         channel_idx: usize,
@@ -969,17 +1220,15 @@ impl PlayerView {
         let view = cx.entity().clone();
         let current_name = current_name.to_string();
 
-        // Wrap input in a div that captures key events to prevent global shortcuts
-        // (e.g., 'm' for mute) from triggering while typing
+        // Capture key events to prevent global shortcuts while typing
         div()
-            .w(px(160.0))
+            .size_full()
             .on_key_down(|_event, _window, cx| {
-                // Stop propagation to prevent global shortcuts from firing while typing
                 cx.stop_propagation();
             })
             .child(
                 Input::new(SharedString::from(format!("channel_name_{}", channel_idx)))
-                    .placeholder("Channel name")
+                    .placeholder("Name")
                     .value(current_name)
                     .size(InputSize::Sm)
                     .on_change({
@@ -1034,7 +1283,7 @@ impl PlayerView {
             .map(|(_, name)| SharedString::from(*name))
             .unwrap_or_else(|| SharedString::from(current_group.clone()));
 
-        div().w(px(160.0)).child(
+        div().w(px(140.0)).child(
             Select::new(SharedString::from(format!("channel_name_{}", channel_idx)))
                 .options(options)
                 .selected(current_group.clone())
@@ -1229,7 +1478,7 @@ impl PlayerView {
                     .color(theme.text_secondary),
             )
             .child(
-                div().w(px(120.0)).child(
+                div().w(px(100.0)).child(
                     Select::new("recording_sample_rate")
                         .options(options)
                         .selected(selected_value)
@@ -1353,27 +1602,13 @@ impl PlayerView {
             .into_any_element()
     }
 
-    /// Render calibration data as a frequency response graph
+    /// Render calibration data as a frequency response graph using gpui-px
     fn render_calibration_graph(
         data: &CalibrationData,
         theme: &crate::theme::Theme,
     ) -> impl IntoElement {
         let chart_width: f32 = 500.0;
         let chart_height: f32 = 200.0;
-        let margin_left: f32 = 60.0;
-        let margin_right: f32 = 20.0;
-        let margin_top: f32 = 20.0;
-        let margin_bottom: f32 = 40.0;
-
-        let plot_width = chart_width - margin_left - margin_right;
-        let plot_height = chart_height - margin_top - margin_bottom;
-
-        let axis_theme = DefaultAxisTheme;
-
-        // Create log scale for frequency (20Hz - 20kHz)
-        let x_scale = LogScale::new()
-            .domain(20.0, 20000.0)
-            .range(0.0, plot_width as f64);
 
         // Find y-axis range (spl_db is f64)
         let (min_db, max_db) = data
@@ -1395,48 +1630,22 @@ impl PlayerView {
             10.0
         };
 
-        let y_scale = LinearScale::new()
-            .domain(y_min, y_max)
-            .range(plot_height as f64, 0.0);
+        let chart_theme = theme_to_chart_theme(theme);
+        let stroke_color = rgba_to_u32(theme.text_primary.into());
 
-        let freq_ticks: Vec<f64> = vec![
-            20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0,
-        ];
-
-        let mag_range = (y_max - y_min) as i32;
-        let mag_step = if mag_range > 40 {
-            10
-        } else if mag_range > 20 {
-            5
-        } else {
-            2
-        };
-        let mag_ticks: Vec<f64> = ((y_min as i32 / mag_step * mag_step)
-            ..=(y_max as i32 / mag_step * mag_step + mag_step))
-            .step_by(mag_step as usize)
-            .map(|v| v as f64)
-            .collect();
-
-        // Build line points
-        let points: Vec<LinePoint> = data
-            .frequencies
-            .iter()
-            .zip(data.spl_db.iter())
-            .filter(|&(&f, _)| f >= 20.0 && f <= 20000.0)
-            .map(|(&f, &m)| LinePoint {
-                x: f as f64,
-                y: m as f64,
-            })
-            .collect();
-
-        // Use theme primary color for visibility (high contrast)
-        // D3Color::from_rgba expects gpui::Rgba. Theme colors are usually Hsla, which implements Into<Rgba>.
-        let stroke_color = D3Color::from_rgba(theme.text_primary.into());
-        let line_config = LineConfig::new()
-            .stroke_color(stroke_color)
-            .stroke_width(2.0);
-        let line_element =
-            render_line(&x_scale, &y_scale, &points, &line_config).into_any_element();
+        let chart_element = line(&data.frequencies, &data.spl_db)
+            .x_scale(ScaleType::Log)
+            .y_scale(ScaleType::Linear)
+            .x_label("Frequency (Hz)")
+            .y_label("SPL (dB)")
+            .x_range(20.0, 20000.0)
+            .y_range(y_min, y_max)
+            .size(chart_width, chart_height)
+            .color(stroke_color)
+            .stroke_width(2.0)
+            .label("Calibration")
+            .theme(chart_theme)
+            .build();
 
         div()
             .mt_4()
@@ -1445,94 +1654,19 @@ impl PlayerView {
             .rounded_md()
             .border_1()
             .border_color(theme.border)
-            .child(
-                div()
+            .child(match chart_element {
+                Ok(chart) => chart.into_any_element(),
+                Err(_) => div()
                     .w(px(chart_width))
                     .h(px(chart_height))
-                    .relative()
+                    .flex()
+                    .items_center()
+                    .justify_center()
                     .child(
-                        div().absolute().top(px(0.0)).left(px(margin_left)).child(
-                            Text::new("Microphone Calibration Curve")
-                                .size(TextSize::Sm)
-                                .weight(TextWeight::Bold)
-                                .color(theme.accent),
-                        ),
+                        Text::new("Unable to render calibration graph").color(theme.text_secondary),
                     )
-                    .child(
-                        div()
-                            .absolute()
-                            .left(px(0.0))
-                            .top(px(margin_top))
-                            .w(px(margin_left))
-                            .h(px(plot_height))
-                            .child(render_axis(
-                                &y_scale,
-                                &AxisConfig::left()
-                                    .with_tick_values(mag_ticks.clone())
-                                    // LABEL: SPL (dB) - Exact casing as requested, ensuring correctness
-                                    .with_formatter(|v| format!("{:.0} dB", v)),
-                                plot_height,
-                                &axis_theme,
-                            )),
-                    )
-                    // Y-Axis Label
-                    .child(
-                        div()
-                            .absolute()
-                            .left(px(10.0))
-                            .top(px(margin_top + plot_height / 2.0 - 40.0))
-                            .w(px(20.0))
-                    )
-                    .child(
-                        div()
-                            .absolute()
-                            .left(px(margin_left))
-                            .top(px(margin_top))
-                            .w(px(plot_width))
-                            .h(px(plot_height))
-                            .overflow_hidden()
-                            .child(render_grid(
-                                &x_scale,
-                                &y_scale,
-                                &GridConfig::with_lines()
-                                    .with_vertical_values(freq_ticks.clone())
-                                    .with_horizontal_values(mag_ticks),
-                                plot_width,
-                                plot_height,
-                                &axis_theme,
-                            ))
-                            .child(line_element),
-                    )
-                    .child(
-                        div()
-                            .absolute()
-                            .left(px(margin_left))
-                            .top(px(margin_top + plot_height))
-                            .w(px(plot_width))
-                            .h(px(margin_bottom))
-                            .child(render_axis(
-                                &x_scale,
-                                &AxisConfig::bottom()
-                                    .with_tick_values(freq_ticks)
-                                    .with_formatter(|f| {
-                                        if f >= 1000.0 {
-                                            format!("{:.0}k", f / 1000.0)
-                                        } else {
-                                            format!("{:.0}", f)
-                                        }
-                                    }),
-                                plot_width,
-                                &axis_theme,
-                            )),
-                    )
-                    // X-Axis Label
-                    .child(
-                        div()
-                            .absolute()
-                            .left(px(margin_left + plot_width / 2.0 - 40.0))
-                            .bottom(px(5.0))
-                    ),
-            )
+                    .into_any_element(),
+            })
             .into_any_element()
     }
 
@@ -1591,38 +1725,6 @@ impl PlayerView {
     }
 }
 
-/// Update playback channel mappings when channel count changes
-fn update_playback_channel_mappings(state: &mut RecordingState) {
-    let target_count = state.playback_config.num_channels;
-    let current_count = state.playback_config.channel_mappings.len();
-    let is_custom = state.playback_config.speaker_configuration == SpeakerConfiguration::Custom;
-
-    if target_count > current_count {
-        // Add new mappings
-        for i in current_count..target_count {
-            let group = if is_custom {
-                // Use generic channel names for custom config
-                format!("Ch{}", i + 1)
-            } else {
-                CHANNEL_GROUPS
-                    .get(i)
-                    .map(|(id, _)| id.to_string())
-                    .unwrap_or_else(|| format!("Ch{}", i + 1))
-            };
-            state.playback_config.channel_mappings.push(ChannelMapping {
-                interface_channel: i, // 0-indexed internally
-                group_name: group,
-            });
-        }
-    } else if target_count < current_count {
-        // Remove extra mappings
-        state
-            .playback_config
-            .channel_mappings
-            .truncate(target_count);
-    }
-}
-
 /// Update recording channel mappings when channel count changes
 fn update_recording_channel_mappings(state: &mut RecordingState) {
     let target_count = state.recording_config.num_channels;
@@ -1639,5 +1741,21 @@ fn update_recording_channel_mappings(state: &mut RecordingState) {
             .recording_config
             .channel_mappings
             .truncate(target_count);
+    }
+}
+
+/// Renumber all interface channels sequentially across all speakers.
+/// This ensures that when a speaker switches to multi mode, subsequent
+/// speakers have their channel numbers updated accordingly.
+/// Example: Stereo L=0, R=1. If L becomes multi with channels 0,1,
+/// then R should become channel 2.
+fn renumber_interface_channels(state: &mut RecordingState) {
+    let mut next_channel = 0usize;
+    for mapping in &mut state.playback_config.channel_mappings {
+        // Renumber each channel in this speaker sequentially
+        for ch in &mut mapping.interface_channels {
+            *ch = next_channel;
+            next_channel += 1;
+        }
     }
 }

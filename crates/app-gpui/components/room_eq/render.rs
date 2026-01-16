@@ -301,7 +301,6 @@ pub(crate) fn render_channel_result_card(
         })
 }
 
-
 /// Render the frequency response comparison graph with tonal balance histogram
 /// If interactive_state is provided, the chart will support pan/zoom interactions
 fn render_response_comparison_graph(
@@ -363,7 +362,8 @@ fn render_response_comparison_graph(
     };
 
     // Apply smoothing
-    let original_values = dsp::smooth_response_f64(&frequencies, &original_values_raw, smoothing_octaves);
+    let original_values =
+        dsp::smooth_response_f64(&frequencies, &original_values_raw, smoothing_octaves);
 
     // Compute Corrected = Original (smoothed) + EQ
     // We use smoothed original for the display curve so it looks clean

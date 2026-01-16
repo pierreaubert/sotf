@@ -27,9 +27,14 @@ fn main() {
     let buffer = sotf_hal::audio_buffer::get_global_buffer().expect("Failed to get buffer");
 
     // Simulate HAL driver writing to input buffer (from macOS app)
-    let mut input_producer = buffer.input_producer();
+    let mut input_producer = buffer
+        .take_input_producer()
+        .expect("Failed to take input producer");
     let test_input = vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8];
-    let written = input_producer.write(&test_input);
+    let written = input_producer
+        .write_chunk_uninit(test_input.len())
+        .unwrap()
+        .fill_from_iter(test_input.iter().copied());
     println!("  ✅ HAL wrote {} samples to input buffer", written);
 
     // Audio player reads from input buffer
@@ -55,9 +60,23 @@ fn main() {
     );
 
     // HAL driver reads from output buffer to send to macOS
-    let mut output_consumer = buffer.output_consumer();
+    let mut output_consumer = buffer
+        .take_output_consumer()
+        .expect("Failed to take output consumer");
     let mut hal_output = vec![0.0f32; 8];
-    let read = output_consumer.read(&mut hal_output);
+    let read = if let Ok(chunk) = output_consumer.read_chunk(hal_output.len()) {
+        let (s1, s2) = chunk.as_slices();
+        let len1 = s1.len();
+        hal_output[..len1].copy_from_slice(s1);
+        if s2.len() > 0 {
+            hal_output[len1..len1 + s2.len()].copy_from_slice(s2);
+        }
+        let len = chunk.len();
+        chunk.commit_all();
+        len
+    } else {
+        0
+    };
     println!("  ✅ HAL read {} samples from output buffer", read);
     println!("  📊 Data: {:?}", &hal_output[..read]);
 
@@ -77,7 +96,10 @@ fn main() {
     println!("  🎵 Generated {} sample test signal", test_signal.len());
 
     // 1. HAL receives from macOS
-    let written = input_producer.write(&test_signal);
+    let written = input_producer
+        .write_chunk_uninit(test_signal.len())
+        .unwrap()
+        .fill_from_iter(test_signal.iter().copied());
     println!("  ✅ HAL input: {} samples written", written);
 
     // 2. Audio player reads
@@ -96,7 +118,19 @@ fn main() {
 
     // 5. HAL reads to send back to macOS
     let mut hal_loopback = vec![0.0f32; 100];
-    let read = output_consumer.read(&mut hal_loopback);
+    let read = if let Ok(chunk) = output_consumer.read_chunk(hal_loopback.len()) {
+        let (s1, s2) = chunk.as_slices();
+        let len1 = s1.len();
+        hal_loopback[..len1].copy_from_slice(s1);
+        if s2.len() > 0 {
+            hal_loopback[len1..len1 + s2.len()].copy_from_slice(s2);
+        }
+        let len = chunk.len();
+        chunk.commit_all();
+        len
+    } else {
+        0
+    };
     println!("  ✅ HAL output: {} samples read for loopback", read);
 
     // Verify processing

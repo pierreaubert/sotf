@@ -19,16 +19,13 @@ path = "bin/test_loopback.rs"
 libc = { workspace = true }
 
 # Lock-free ring buffer
-rb = { workspace = true }
+rtrb = { workspace = true }
 
 # Logging and error handling
 log = { workspace = true }
 env_logger = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
-
-# Audio
-crossbeam = { workspace = true }
 
 # Core Audio integration
 coreaudio-sys = { workspace = true }

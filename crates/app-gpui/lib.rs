@@ -31,8 +31,8 @@ pub use app::types::{
     CalibrationData, ChannelMapping, ChannelRecording, ChannelRecordingState, CrossoverType,
     HeadphoneEqStep, LibraryStats, MeasureState, MeterDisplayMode, PlaybackDeviceConfig,
     PlotSmoothing, PluginViewMode, RecordingDeviceConfig, RecordingSignalType, RecordingState,
-    RecordingStep, ReplayGainMode, RoomEqAlgorithm, RoomEqOptimizerConfig, RoomEqState, RoomEqStep,
-    SpeakerConfiguration,
+    RecordingStep, ReplayGainMode, RoomEqAlgorithm, RoomEqMeasurementsFile, RoomEqOptimizerConfig,
+    RoomEqState, RoomEqStep, SpeakerConfiguration,
 };
 
 // Re-export config types for testing

@@ -3,11 +3,11 @@
 //! Shared plotting functions for Frequency Response, Phase, etc.
 //! Used by Recording Evaluation and Room EQ Review.
 
-use crate::theme::Theme;
 use crate::components::graphs::common::theme_to_chart_theme;
+use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_px::{line, LegendPosition, ScaleType};
+use gpui_px::{LegendPosition, ScaleType, line};
 
 /// Channel colors for plotting (standard CEA2034 / common convention)
 pub const CHANNEL_COLORS: [u32; 6] = [
@@ -101,7 +101,7 @@ pub fn render_line_chart(
         .filter(|s| s.is_zoomed())
         .map(|s| s.x_domain())
         .unwrap_or(config.x_range);
-    
+
     let (y_min, y_max) = interactive_state
         .filter(|s| s.is_zoomed())
         .map(|s| s.y_domain())
@@ -129,7 +129,7 @@ pub fn render_line_chart(
     if let Some(label) = &config.y_label {
         chart = chart.y_label(label);
     }
-    
+
     // First series label
     chart = chart.label(&first.label);
 

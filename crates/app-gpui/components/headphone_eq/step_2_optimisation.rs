@@ -473,17 +473,14 @@ impl PlayerView {
                     .size(TextSize::Sm)
                     .color(theme.text_secondary),
             )
+            // Wrap in div to capture key events and prevent global shortcuts
+            // from firing while typing in input fields
             .child(
-                Card::new()
-                    .background(theme.surface)
-                    .header_background(theme.background_secondary)
-                    .border(theme.border)
-                    .header(
-                        Text::new("EQ Parameters")
-                            .color(theme.text_primary)
-                            .weight(TextWeight::Semibold),
-                    )
-                    .content(autoeq_form),
+                div()
+                    .on_key_down(|_event, _window, cx| {
+                        cx.stop_propagation();
+                    })
+                    .child(autoeq_form),
             )
             // Generate EQ section
             .child(

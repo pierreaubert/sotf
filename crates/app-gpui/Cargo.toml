@@ -16,7 +16,6 @@ hal = ["engine/hal", "player/hal", "driver-hal"]
 gpui = { workspace = true }
 gpui-ui-kit = { workspace = true }
 gpui-px = { workspace = true }
-gpui-d3rs = { workspace = true }
 
 # Shared audio player library (provides business logic, database, plugins, etc.)
 player = { workspace = true }
@@ -151,3 +150,7 @@ path = "tests/types_tests.rs"
 [[test]]
 name = "config_tests"
 path = "tests/config_tests.rs"
+
+[[test]]
+name = "migration_tests"
+path = "tests/migration_tests.rs"

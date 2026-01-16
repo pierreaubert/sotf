@@ -71,13 +71,69 @@ pub enum ChannelRecordingState {
     Error,
 }
 
-/// Configuration for a single channel mapping
+/// Configuration for a single speaker's channel mapping
+/// Supports both single-channel (1 interface channel per speaker) and
+/// multi-channel (multiple interface channels for multi-way speakers) modes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChannelMapping {
-    /// Physical channel index on the interface
-    pub interface_channel: usize,
+    /// Physical channel indices on the interface (1+ channels)
+    /// Single mode: exactly 1 element
+    /// Multi mode: 2+ elements
+    pub interface_channels: Vec<usize>,
     /// Channel group name (e.g., "L", "R", "C", "LFE", "SL", "SR")
     pub group_name: String,
+}
+
+impl ChannelMapping {
+    /// Create a new single-channel mapping
+    pub fn single(interface_channel: usize, group_name: impl Into<String>) -> Self {
+        Self {
+            interface_channels: vec![interface_channel],
+            group_name: group_name.into(),
+        }
+    }
+
+    /// Create a new multi-channel mapping
+    pub fn multi(interface_channels: Vec<usize>, group_name: impl Into<String>) -> Self {
+        Self {
+            interface_channels,
+            group_name: group_name.into(),
+        }
+    }
+
+    /// Check if this speaker is in multi-channel mode
+    pub fn is_multi(&self) -> bool {
+        self.interface_channels.len() > 1
+    }
+
+    /// Get the primary interface channel (first channel in the list)
+    pub fn interface_channel(&self) -> usize {
+        self.interface_channels.first().copied().unwrap_or(0)
+    }
+
+    /// Get the number of channels for this speaker
+    pub fn channel_count(&self) -> usize {
+        self.interface_channels.len()
+    }
+
+    /// Add a channel to this speaker (converts to multi mode if needed)
+    pub fn add_channel(&mut self, interface_channel: usize) {
+        self.interface_channels.push(interface_channel);
+    }
+
+    /// Remove a channel from this speaker by index
+    /// Returns true if removed, false if it would leave 0 channels
+    pub fn remove_channel(&mut self, channel_index: usize) -> bool {
+        if self.interface_channels.len() <= 1 {
+            return false;
+        }
+        if channel_index < self.interface_channels.len() {
+            self.interface_channels.remove(channel_index);
+            true
+        } else {
+            false
+        }
+    }
 }
 
 /// Playback device configuration
@@ -101,18 +157,27 @@ impl Default for PlaybackDeviceConfig {
             sample_rate: 48000,
             available_sample_rates: vec![44100, 48000, 88200, 96000, 176400, 192000],
             speaker_configuration: SpeakerConfiguration::Stereo,
-            // Channel numbers are 1-indexed for display (Channel 1, Channel 2, etc.)
+            // Channel numbers are 0-indexed internally, displayed as 1-indexed
             channel_mappings: vec![
-                ChannelMapping {
-                    interface_channel: 1,
-                    group_name: "L".to_string(),
-                },
-                ChannelMapping {
-                    interface_channel: 2,
-                    group_name: "R".to_string(),
-                },
+                ChannelMapping::single(0, "L"),
+                ChannelMapping::single(1, "R"),
             ],
         }
+    }
+}
+
+impl PlaybackDeviceConfig {
+    /// Calculate total number of interface channels from all speaker mappings
+    pub fn total_interface_channels(&self) -> usize {
+        self.channel_mappings
+            .iter()
+            .map(|m| m.channel_count())
+            .sum()
+    }
+
+    /// Update num_channels to match total interface channels
+    pub fn sync_channel_count(&mut self) {
+        self.num_channels = self.total_interface_channels();
     }
 }
 
@@ -369,6 +434,8 @@ pub struct RecordingState {
     pub duration_dropdown_open: bool,
     /// Track which channel name dropdown is open (by channel index)
     pub channel_name_dropdown_open: Option<usize>,
+    /// Track which speaker mode dropdown is open (by speaker index)
+    pub speaker_mode_dropdown_open: Option<usize>,
     /// Expanded accordion sections in config step
     pub config_accordion_expanded: Vec<gpui::SharedString>,
 
@@ -419,6 +486,7 @@ impl Default for RecordingState {
             signal_type_dropdown_open: false,
             duration_dropdown_open: false,
             channel_name_dropdown_open: None,
+            speaker_mode_dropdown_open: None,
             config_accordion_expanded: vec!["playback".into(), "output_dir".into()], // Playback and output directory sections open by default
             plot_selected_channel: None,                                             // All channels
             plot_smoothing: PlotSmoothing::None,
