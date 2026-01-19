@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>org.spinorama.sotf.configbar</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Applications/AutoEQMenuBar.app/Contents/MacOS/AutoEQMenuBar</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+	<key>ProcessType</key>
+	<string>Interactive</string>
+	<key>LimitLoadToSessionType</key>
+	<array>
+		<string>Aqua</string>
+	</array>
+	<key>StandardOutPath</key>
+	<string>/tmp/autoeq-menubar.log</string>
+	<key>StandardErrorPath</key>
+	<string>/tmp/autoeq-menubar.error.log</string>
+</dict>
+</plist>

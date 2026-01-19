@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>1D Wave Propagation - BEM Validation</title>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f7fa;
+            padding: 20px;
+        }
+
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .back-link {
+            display: inline-block;
+            color: #667eea;
+            text-decoration: none;
+            margin-bottom: 10px;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+
+        .controls {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #555;
+        }
+
+        select, input[type="file"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: background 0.3s;
+        }
+
+        button:hover {
+            background: #5568d3;
+        }
+
+        .plot-container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .metrics {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .metric-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            border-left: 4px solid #667eea;
+        }
+
+        .metric-label {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .metric-value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid #f5c6cb;
+            margin: 20px 0;
+        }
+
+        .info-box {
+            background: #d1ecf1;
+            color: #0c5460;
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid #bee5eb;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <a href="index.html" class="back-link">← Back to main menu</a>
+        <h1>📈 1D Wave Propagation</h1>
+        <p>Analytical validation of plane waves, standing waves, and damped propagation</p>
+    </div>
+
+    <div class="controls">
+        <div class="control-group">
+            <label for="testSelect">Select Test:</label>
+            <select id="testSelect">
+                <option value="">-- Choose a test --</option>
+                <optgroup label="Plane Waves">
+                    <option value="1d/viz_plane_wave_k0.5.json">Plane Wave (k=0.5)</option>
+                    <option value="1d/viz_plane_wave_k1.0.json">Plane Wave (k=1.0)</option>
+                    <option value="1d/viz_plane_wave_k2.0.json">Plane Wave (k=2.0)</option>
+                    <option value="1d/viz_plane_wave_k5.0.json">Plane Wave (k=5.0)</option>
+                    <option value="1d/viz_plane_wave_k10.0.json">Plane Wave (k=10.0)</option>
+                </optgroup>
+                <optgroup label="Standing Waves">
+                    <option value="1d/viz_standing_wave_k1.0.json">Standing Wave (k=1.0)</option>
+                    <option value="1d/viz_standing_wave_k2.0.json">Standing Wave (k=2.0)</option>
+                    <option value="1d/viz_standing_wave_k3.0.json">Standing Wave (k=3.0)</option>
+                </optgroup>
+                <optgroup label="Damped Waves">
+                    <option value="1d/viz_damped_alpha0.05.json">Damped (α=0.05)</option>
+                    <option value="1d/viz_damped_alpha0.10.json">Damped (α=0.10)</option>
+                    <option value="1d/viz_damped_alpha0.20.json">Damped (α=0.20)</option>
+                    <option value="1d/viz_damped_alpha0.50.json">Damped (α=0.50)</option>
+                </optgroup>
+            </select>
+        </div>
+
+        <div class="control-group">
+            <label for="fileInput">Or load custom JSON file:</label>
+            <input type="file" id="fileInput" accept=".json">
+        </div>
+
+        <button onclick="loadSelectedTest()">Load Test</button>
+    </div>
+
+    <div id="metricsDiv" class="metrics" style="display: none;">
+        <h3>📊 Error Metrics</h3>
+        <div class="metric-grid">
+            <div class="metric-card">
+                <div class="metric-label">L2 Relative Error</div>
+                <div class="metric-value" id="l2Relative">-</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">L∞ Error</div>
+                <div class="metric-value" id="lInf">-</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Mean Abs Error</div>
+                <div class="metric-value" id="meanAbs">-</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">RMS Error</div>
+                <div class="metric-value" id="rms">-</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Correlation</div>
+                <div class="metric-value" id="correlation">-</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Max Relative</div>
+                <div class="metric-value" id="maxRelative">-</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="plotMagnitude" class="plot-container"></div>
+    <div id="plotPhase" class="plot-container"></div>
+    <div id="plotError" class="plot-container"></div>
+    <div id="plotReal" class="plot-container"></div>
+    <div id="plotImag" class="plot-container"></div>
+
+    <script>
+        let currentData = null;
+
+        document.getElementById('testSelect').addEventListener('change', function() {
+            if (this.value) {
+                document.getElementById('fileInput').value = '';
+            }
+        });
+
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            if (e.target.files.length > 0) {
+                document.getElementById('testSelect').value = '';
+                const file = e.target.files[0];
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    try {
+                        currentData = JSON.parse(event.target.textContent);
+                        plotData(currentData);
+                    } catch (error) {
+                        alert('Error parsing JSON file: ' + error.message);
+                    }
+                };
+                reader.readAsText(file);
+            }
+        });
+
+        function loadSelectedTest() {
+            const select = document.getElementById('testSelect');
+            const fileInput = document.getElementById('fileInput');
+
+            if (select.value) {
+                fetch(select.value)
+                    .then(response => response.json())
+                    .then(data => {
+                        currentData = data;
+                        plotData(data);
+                    })
+                    .catch(error => {
+                        alert('Error loading test: ' + error.message);
+                    });
+            } else if (fileInput.files.length > 0) {
+                // Already handled by file input change event
+            } else {
+                alert('Please select a test or choose a file');
+            }
+        }
+
+        function plotData(data) {
+            const positions = data.analytical.positions.map(p => p[0]);  // x coordinate
+
+            // Plot 1: Magnitude
+            const traceMagAnalytical = {
+                x: positions,
+                y: data.analytical.magnitude,
+                type: 'scatter',
+                mode: 'lines',
+                name: 'Analytical',
+                line: { color: '#667eea', width: 2 }
+            };
+
+            const traceMagBEM = {
+                x: positions,
+                y: data.bem.magnitude,
+                type: 'scatter',
+                mode: 'markers',
+                name: 'BEM',
+                marker: { color: '#f093fb', size: 4 }
+            };
+
+            Plotly.newPlot('plotMagnitude', [traceMagAnalytical, traceMagBEM], {
+                title: 'Pressure Magnitude |p(x)|',
+                xaxis: { title: 'Position x (m)' },
+                yaxis: { title: 'Magnitude' },
+                hovermode: 'closest',
+                width: 1000,
+                height: 500
+            });
+
+            // Plot 2: Phase
+            const tracePhaseAnalytical = {
+                x: positions,
+                y: data.analytical.phase.map(p => p * 180 / Math.PI),
+                type: 'scatter',
+                mode: 'lines',
+                name: 'Analytical',
+                line: { color: '#667eea', width: 2 }
+            };
+
+            const tracePhaseBEM = {
+                x: positions,
+                y: data.bem.phase.map(p => p * 180 / Math.PI),
+                type: 'scatter',
+                mode: 'markers',
+                name: 'BEM',
+                marker: { color: '#f093fb', size: 4 }
+            };
+
+            Plotly.newPlot('plotPhase', [tracePhaseAnalytical, tracePhaseBEM], {
+                title: 'Pressure Phase arg(p)',
+                xaxis: { title: 'Position x (m)' },
+                yaxis: { title: 'Phase (degrees)' },
+                hovermode: 'closest',
+                width: 1000,
+                height: 500
+            });
+
+            // Plot 3: Pointwise Error
+            const traceError = {
+                x: positions,
+                y: data.errors.pointwise_errors,
+                type: 'scatter',
+                mode: 'lines+markers',
+                name: 'Error',
+                line: { color: '#ff6b6b', width: 2 },
+                marker: { size: 4 }
+            };
+
+            Plotly.newPlot('plotError', [traceError], {
+                title: 'Pointwise Error |p_BEM - p_analytical|',
+                xaxis: { title: 'Position x (m)' },
+                yaxis: { title: 'Absolute Error', type: 'log' },
+                hovermode: 'closest',
+                width: 1000,
+                height: 500
+            });
+
+            // Plot 4: Real Part
+            const traceRealAnalytical = {
+                x: positions,
+                y: data.analytical.pressure_real,
+                type: 'scatter',
+                mode: 'lines',
+                name: 'Analytical',
+                line: { color: '#667eea', width: 2 }
+            };
+
+            const traceRealBEM = {
+                x: positions,
+                y: data.bem.pressure_real,
+                type: 'scatter',
+                mode: 'markers',
+                name: 'BEM',
+                marker: { color: '#f093fb', size: 4 }
+            };
+
+            Plotly.newPlot('plotReal', [traceRealAnalytical, traceRealBEM], {
+                title: 'Real Part Re(p)',
+                xaxis: { title: 'Position x (m)' },
+                yaxis: { title: 'Real(p)' },
+                hovermode: 'closest',
+                width: 1000,
+                height: 500
+            });
+
+            // Plot 5: Imaginary Part
+            const traceImagAnalytical = {
+                x: positions,
+                y: data.analytical.pressure_imag,
+                type: 'scatter',
+                mode: 'lines',
+                name: 'Analytical',
+                line: { color: '#667eea', width: 2 }
+            };
+
+            const traceImagBEM = {
+                x: positions,
+                y: data.bem.pressure_imag,
+                type: 'scatter',
+                mode: 'markers',
+                name: 'BEM',
+                marker: { color: '#f093fb', size: 4 }
+            };
+
+            Plotly.newPlot('plotImag', [traceImagAnalytical, traceImagBEM], {
+                title: 'Imaginary Part Im(p)',
+                xaxis: { title: 'Position x (m)' },
+                yaxis: { title: 'Imag(p)' },
+                hovermode: 'closest',
+                width: 1000,
+                height: 500
+            });
+
+            // Update metrics
+            document.getElementById('metricsDiv').style.display = 'block';
+            document.getElementById('l2Relative').textContent = data.errors.l2_relative.toExponential(2);
+            document.getElementById('lInf').textContent = data.errors.linf.toExponential(2);
+            document.getElementById('meanAbs').textContent = data.errors.mean_absolute.toExponential(2);
+            document.getElementById('rms').textContent = data.errors.rms.toExponential(2);
+            document.getElementById('correlation').textContent = data.errors.correlation.toFixed(6);
+            document.getElementById('maxRelative').textContent = data.errors.max_relative.toExponential(2);
+        }
+    </script>
+</body>
+</html>

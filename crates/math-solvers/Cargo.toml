@@ -1,0 +1,66 @@
+[package]
+name = "math-solvers"
+version = "0.3.4"
+description = "High-performance linear solvers for BEM and FEM"
+edition = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+keywords = ["linear-algebra", "solvers", "gmres", "preconditionner"]
+categories = ["science", "mathematics"]
+
+[lib]
+name = "math_audio_solvers"
+path = "src/lib.rs"
+
+[dependencies]
+# Core numerical computing
+ndarray = { version = "0.17", default-features = false, features = ["rayon", "serde"] }
+num-complex = { workspace = true, features = ["serde"] }
+num-traits = { workspace = true }
+
+# BLAS/LAPACK (native only)
+ndarray-linalg = { workspace = true, optional = true }
+
+# Parallel processing
+rayon = { workspace = true, optional = true }
+
+# Error handling
+thiserror = { workspace = true }
+
+# Logging
+log = { workspace = true }
+
+# WASM feature: enables parallel processing via wasm-bindgen-rayon
+# WASM-specific dependencies
+wasm-bindgen = { workspace = true, optional = true }
+wasm-bindgen-rayon = { workspace = true, optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+ndarray-linalg = { workspace = true, optional = true, features = ["openblas-system"] }
+
+[target.'cfg(any(target_os = "linux", target_os = "windows"))'.dependencies]
+ndarray-linalg = { workspace = true, optional = true, features = ["openblas-system"] }
+
+[dev-dependencies]
+approx = { workspace = true }
+
+[features]
+default = ["native"]
+
+# Native feature: enables BLAS/LAPACK and rayon
+native = [
+    "ndarray/blas",
+    "ndarray/rayon",
+    "ndarray-linalg",
+    "rayon",
+]
+
+# Parallel processing (works with both native and wasm)
+parallel = ["rayon"]
+
+wasm = [
+    "rayon",
+    "wasm-bindgen",
+    "wasm-bindgen-rayon",
+]

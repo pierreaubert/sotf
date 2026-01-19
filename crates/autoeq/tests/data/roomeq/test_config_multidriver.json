@@ -1,0 +1,29 @@
+{
+  "speakers": {
+    "left": {
+      "name": "Left Speaker (2-way)",
+      "measurements": [
+        "tests/data/roomeq/test_woofer.csv",
+        "tests/data/roomeq/test_tweeter.csv"
+      ],
+      "crossover": "default_lr24"
+    }
+  },
+  "crossovers": {
+    "default_lr24": {
+      "type": "LR24"
+    }
+  },
+  "optimizer": {
+    "num_filters": 3,
+    "algorithm": "nlopt:cobyla",
+    "max_iter": 100,
+    "min_freq": 100.0,
+    "max_freq": 10000.0,
+    "min_q": 0.5,
+    "max_q": 10.0,
+    "min_db": -12.0,
+    "max_db": 12.0,
+    "loss_type": "flat"
+  }
+}

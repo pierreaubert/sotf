@@ -12,11 +12,6 @@ path = "src/lib.rs"
 default = []
 hal = ["driver-hal", "plugins/hal"]
 
-[[bin]]
-name = "sotf-daemon"
-path = "bin/sotf_daemon.rs"
-required-features = ["hal"]
-
 [dependencies]
 tokio = { workspace = true }
 ndarray = { workspace = true }

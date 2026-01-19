@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2D Cylinder Scattering - BEM Validation</title>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f7fa;
+            padding: 20px;
+        }
+
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .back-link {
+            display: inline-block;
+            color: #667eea;
+            text-decoration: none;
+            margin-bottom: 10px;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+
+        .controls {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #555;
+        }
+
+        select, input[type="file"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: background 0.3s;
+            margin-right: 10px;
+        }
+
+        button:hover {
+            background: #5568d3;
+        }
+
+        .plot-container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .metrics {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .metric-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            border-left: 4px solid #667eea;
+        }
+
+        .metric-label {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .metric-value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .info-badge {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            margin: 5px 5px 5px 0;
+        }
+
+        .plot-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 40px;
+            margin-bottom: 30px;
+        }
+
+        @media (max-width: 1400px) {
+            .plot-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        #plotPolar, #plotPolarDB, #plotField, #plotCrossSection {
+            min-height: 600px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <a href="index.html" class="back-link">← Back to main menu</a>
+        <h1>🔵 2D Cylinder Scattering</h1>
+        <p>Analytical validation using Bessel/Hankel function series</p>
+        <div id="testInfo" style="margin-top: 15px; display: none;">
+            <span id="kaValue" class="info-badge">ka = -</span>
+            <span id="regimeValue" class="info-badge">Regime: -</span>
+            <span id="numTerms" class="info-badge">Terms: -</span>
+        </div>
+    </div>
+
+    <div class="controls">
+        <div class="control-group">
+            <label for="testSelect">Select Test:</label>
+            <select id="testSelect">
+                <option value="">-- Choose a test --</option>
+                <optgroup label="Directivity Patterns">
+                    <option value="2d/viz_directivity_ka0.5.json">Directivity (ka=0.5 - Rayleigh)</option>
+                    <option value="2d/viz_directivity_ka1.0.json">Directivity (ka=1.0 - Mie)</option>
+                    <option value="2d/viz_directivity_ka2.0.json">Directivity (ka=2.0)</option>
+                    <option value="2d/viz_directivity_ka5.0.json">Directivity (ka=5.0)</option>
+                    <option value="2d/viz_directivity_ka10.0.json">Directivity (ka=10.0 - Geometric)</option>
+                </optgroup>
+                <optgroup label="Pressure Fields">
+                    <option value="2d/viz_field_ka0.5.json">Field Map (ka=0.5)</option>
+                    <option value="2d/viz_field_ka1.0.json">Field Map (ka=1.0)</option>
+                    <option value="2d/viz_field_ka2.0.json">Field Map (ka=2.0)</option>
+                    <option value="2d/viz_field_ka5.0.json">Field Map (ka=5.0)</option>
+                    <option value="2d/viz_field_ka10.0.json">Field Map (ka=10.0)</option>
+                </optgroup>
+                <optgroup label="Validation Tests">
+                    <option value="2d/cylinder_rayleigh_ka0.1.json">Rayleigh Validation</option>
+                    <option value="2d/cylinder_mie_ka1.0.json">Mie Validation</option>
+                    <option value="2d/cylinder_high_freq_ka10.json">High Freq Validation</option>
+                </optgroup>
+            </select>
+        </div>
+
+        <div class="control-group">
+            <label for="fileInput">Or load custom JSON file:</label>
+            <input type="file" id="fileInput" accept=".json">
+        </div>
+
+        <button onclick="loadSelectedTest()">Load Test</button>
+        <button onclick="loadCrossSection()">Load Cross-Section Data</button>
+    </div>
+
+    <div id="metricsDiv" class="metrics" style="display: none;">
+        <h3>📊 Error Metrics</h3>
+        <div class="metric-grid">
+            <div class="metric-card">
+                <div class="metric-label">L2 Relative Error</div>
+                <div class="metric-value" id="l2Relative">-</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">L∞ Error</div>
+                <div class="metric-value" id="lInf">-</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Mean Abs Error</div>
+                <div class="metric-value" id="meanAbs">-</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">RMS Error</div>
+                <div class="metric-value" id="rms">-</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Correlation</div>
+                <div class="metric-value" id="correlation">-</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="plot-grid">
+        <div id="plotPolar" class="plot-container" style="display: none;"></div>
+        <div id="plotPolarDB" class="plot-container" style="display: none;"></div>
+    </div>
+
+    <div id="plotField" class="plot-container" style="display: none;"></div>
+    <div id="plotCrossSection" class="plot-container" style="display: none;"></div>
+
+    <script>
+        let currentData = null;
+
+        document.getElementById('testSelect').addEventListener('change', function() {
+            if (this.value) {
+                document.getElementById('fileInput').value = '';
+            }
+        });
+
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            if (e.target.files.length > 0) {
+                document.getElementById('testSelect').value = '';
+                const file = e.target.files[0];
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    try {
+                        currentData = JSON.parse(event.target.result);
+                        plotData(currentData);
+                    } catch (error) {
+                        alert('Error parsing JSON file: ' + error.message);
+                    }
+                };
+                reader.readAsText(file);
+            }
+        });
+
+        function loadSelectedTest() {
+            const select = document.getElementById('testSelect');
+
+            if (select.value) {
+                fetch(select.value)
+                    .then(response => response.json())
+                    .then(data => {
+                        currentData = data;
+                        plotData(data);
+                    })
+                    .catch(error => {
+                        alert('Error loading test: ' + error.message + '\nMake sure to run tests first: cargo test --release generate_2d_visualization_suite');
+                    });
+            } else {
+                alert('Please select a test');
+            }
+        }
+
+        function loadCrossSection() {
+            fetch('2d/cylinder_cross_section.json')
+                .then(response => response.json())
+                .then(data => plotCrossSectionData(data))
+                .catch(error => alert('Error loading cross-section: ' + error.message));
+        }
+
+        function plotData(data) {
+            // Update test info
+            document.getElementById('testInfo').style.display = 'block';
+
+            if (data.ka !== undefined) {
+                document.getElementById('kaValue').textContent = `ka = ${data.ka.toFixed(2)}`;
+
+                let regime = 'Unknown';
+                if (data.ka < 0.3) regime = 'Rayleigh';
+                else if (data.ka < 3.0) regime = 'Mie';
+                else regime = 'Geometric';
+
+                if (data.regime) regime = data.regime;
+                document.getElementById('regimeValue').textContent = `Regime: ${regime}`;
+            }
+
+            // Check if this is directivity data or full field data
+            if (data.theta_degrees && data.magnitude) {
+                plotDirectivity(data);
+            } else if (data.field_points) {
+                plotFieldMap(data);
+            } else if (data.analytical) {
+                plotValidationData(data);
+            }
+        }
+
+        function plotDirectivity(data) {
+            // Polar plot (linear scale)
+            const tracePolar = {
+                type: 'scatterpolar',
+                r: data.magnitude,
+                theta: data.theta_degrees,
+                mode: 'lines',
+                name: 'Directivity',
+                line: {
+                    color: '#667eea',
+                    width: 3
+                }
+            };
+
+            const layoutPolar = {
+                title: `Directivity Pattern (ka=${data.ka.toFixed(2)})`,
+                polar: {
+                    radialaxis: {
+                        visible: true,
+                        title: 'Magnitude'
+                    },
+                    angularaxis: {
+                        direction: 'counterclockwise',
+                        period: 360
+                    }
+                },
+                width: 650,
+                height: 650,
+                autosize: false,
+                margin: { l: 80, r: 80, t: 80, b: 80 }
+            };
+            document.getElementById('plotPolar').style.display = 'block';
+            Plotly.newPlot('plotPolar', [tracePolar], layoutPolar);
+
+            // Polar plot (dB scale)
+            const tracePolarDB = {
+                type: 'scatterpolar',
+                r: data.magnitude_db,
+                theta: data.theta_degrees,
+                mode: 'lines',
+                name: 'Directivity (dB)',
+                line: {
+                    color: '#f093fb',
+                    width: 3
+                }
+            };
+
+            const layoutPolarDB = {
+                title: `Directivity Pattern - dB Scale (ka=${data.ka.toFixed(2)})`,
+                polar: {
+                    radialaxis: {
+                        visible: true,
+                        title: 'Magnitude (dB)'
+                    },
+                    angularaxis: {
+                        direction: 'counterclockwise',
+                        period: 360
+                    }
+                },
+                width: 650,
+                height: 650,
+                autosize: false,
+                margin: { l: 80, r: 80, t: 80, b: 80 }
+            };
+            document.getElementById('plotPolarDB').style.display = 'block';
+            Plotly.newPlot('plotPolarDB', [tracePolarDB], layoutPolarDB);
+
+            // Clear other plots
+            document.getElementById('plotField').style.display = 'none';
+            document.getElementById('plotCrossSection').style.display = 'none';
+            document.getElementById('metricsDiv').style.display = 'none';
+        }
+
+        function plotFieldMap(data) {
+            // Extract x, y, magnitude for contour plot
+            const points = data.field_points;
+
+            // Try to detect if data is on a regular grid
+            const xVals = points.map(p => p.x);
+            const yVals = points.map(p => p.y);
+            const magVals = points.map(p => p.magnitude);
+
+            // Get unique sorted values
+            const xUnique = [...new Set(xVals)].sort((a, b) => a - b);
+            const yUnique = [...new Set(yVals)].sort((a, b) => a - b);
+
+            console.log(`Grid dimensions: ${xUnique.length} x ${yUnique.length} = ${xUnique.length * yUnique.length}, points: ${points.length}`);
+
+            let fieldTrace;
+
+            // Check if data forms a regular grid
+            if (xUnique.length * yUnique.length === points.length) {
+                // Regular grid - use contour plot directly
+                const z = Array(yUnique.length).fill(null).map(() => Array(xUnique.length).fill(null));
+
+                // Build lookup map for faster access
+                const pointMap = new Map();
+                points.forEach(p => {
+                    const key = `${p.x},${p.y}`;
+                    pointMap.set(key, p.magnitude);
+                });
+
+                // Fill z matrix
+                for (let j = 0; j < yUnique.length; j++) {
+                    for (let i = 0; i < xUnique.length; i++) {
+                        const key = `${xUnique[i]},${yUnique[j]}`;
+                        z[j][i] = pointMap.get(key) || 0;
+                    }
+                }
+
+                fieldTrace = {
+                    x: xUnique,
+                    y: yUnique,
+                    z: z,
+                    type: 'contour',
+                    colorscale: 'Viridis',
+                    showscale: true,
+                    colorbar: {
+                        title: '|p|',
+                        titleside: 'right'
+                    },
+                    contours: {
+                        coloring: 'heatmap'
+                    },
+                    hovertemplate: 'x: %{x:.3f}<br>y: %{y:.3f}<br>|p|: %{z:.3f}<extra></extra>',
+                    name: 'Field'
+                };
+            } else {
+                // Irregular grid - interpolate to regular grid
+                console.log('Irregular grid detected, interpolating to regular grid');
+
+                // Create regular grid for interpolation
+                const xMin = Math.min(...xVals);
+                const xMax = Math.max(...xVals);
+                const yMin = Math.min(...yVals);
+                const yMax = Math.max(...yVals);
+
+                // Use 100x100 grid for interpolation
+                const gridSize = 100;
+                const xGrid = Array.from({length: gridSize}, (_, i) => xMin + (xMax - xMin) * i / (gridSize - 1));
+                const yGrid = Array.from({length: gridSize}, (_, i) => yMin + (yMax - yMin) * i / (gridSize - 1));
+
+                // Get cylinder radius from data or estimate from field points
+                // The radius should be constant - ka = k * a where k is wavenumber
+                // Try to infer radius from minimum distance of field points from origin
+                let radius = 1.0; // default
+                if (points.length > 0) {
+                    const radii = points.map(p => Math.sqrt(p.x * p.x + p.y * p.y));
+                    const minRadius = Math.min(...radii);
+                    // Assume field points start just outside cylinder
+                    radius = minRadius * 0.95;
+                }
+                console.log(`Estimated cylinder radius: ${radius.toFixed(3)} m`);
+
+                // Interpolate using inverse distance weighting (IDW) in polar coordinates
+                const z = Array(gridSize).fill(null).map(() => Array(gridSize).fill(0));
+
+                for (let j = 0; j < gridSize; j++) {
+                    for (let i = 0; i < gridSize; i++) {
+                        const xi = xGrid[i];
+                        const yi = yGrid[j];
+                        const r = Math.sqrt(xi * xi + yi * yi);
+
+                        // Inside cylinder: set to 0 (rigid boundary)
+                        if (r < radius * 0.99) {
+                            z[j][i] = 0;
+                            continue;
+                        }
+
+                        // Outside cylinder: interpolate using angular-aware weighting
+                        const theta = Math.atan2(yi, xi);
+
+                        // IDW interpolation with angular distance consideration
+                        let weightSum = 0;
+                        let valueSum = 0;
+                        const power = 2;
+                        const epsilon = 1e-10;
+
+                        for (let k = 0; k < points.length; k++) {
+                            const px = points[k].x;
+                            const py = points[k].y;
+                            const pr = Math.sqrt(px * px + py * py);
+                            const ptheta = Math.atan2(py, px);
+
+                            // Compute distance in polar coordinates
+                            // dr: radial distance
+                            const dr = Math.abs(r - pr);
+
+                            // dtheta: angular distance (handle wrapping at ±π)
+                            let dtheta = Math.abs(theta - ptheta);
+                            if (dtheta > Math.PI) dtheta = 2 * Math.PI - dtheta;
+
+                            // Scale angular distance by average radius
+                            const rAvg = (r + pr) / 2;
+                            const angularDist = rAvg * dtheta;
+
+                            // Combined distance in polar space
+                            const dist = Math.sqrt(dr * dr + angularDist * angularDist) + epsilon;
+
+                            // If very close to a data point, use exact value
+                            if (dist < 1e-6) {
+                                valueSum = points[k].magnitude;
+                                weightSum = 1;
+                                break;
+                            }
+
+                            const weight = 1 / Math.pow(dist, power);
+                            weightSum += weight;
+                            valueSum += weight * points[k].magnitude;
+                        }
+
+                        z[j][i] = valueSum / weightSum;
+                    }
+                }
+
+                fieldTrace = {
+                    x: xGrid,
+                    y: yGrid,
+                    z: z,
+                    type: 'contour',
+                    colorscale: 'Viridis',
+                    showscale: true,
+                    colorbar: {
+                        title: '|p|',
+                        titleside: 'right'
+                    },
+                    contours: {
+                        coloring: 'heatmap'
+                    },
+                    hovertemplate: 'x: %{x:.3f}<br>y: %{y:.3f}<br>|p|: %{z:.3f}<extra></extra>',
+                    name: 'Field (Interpolated)'
+                };
+            }
+
+            // Add cylinder outline
+            const theta = Array.from({length: 100}, (_, i) => i * 2 * Math.PI / 99);
+
+            // Get cylinder radius from data or estimate from field points
+            let radius = 1.0; // default
+            if (points.length > 0) {
+                const radii = points.map(p => Math.sqrt(p.x * p.x + p.y * p.y));
+                const minRadius = Math.min(...radii);
+                // Assume field points start just outside cylinder
+                radius = minRadius * 0.95;
+            }
+
+            const cylinder = {
+                x: theta.map(t => radius * Math.cos(t)),
+                y: theta.map(t => radius * Math.sin(t)),
+                type: 'scatter',
+                mode: 'lines',
+                name: 'Cylinder',
+                line: {
+                    color: 'white',
+                    width: 3,
+                    dash: 'dash'
+                },
+                showlegend: true,
+                hoverinfo: 'skip'
+            };
+
+            document.getElementById('plotField').style.display = 'block';
+            Plotly.newPlot('plotField', [fieldTrace, cylinder], {
+                title: `Pressure Field Magnitude (ka=${data.ka ? data.ka.toFixed(2) : '?'})`,
+                xaxis: {
+                    title: 'x (m)',
+                    scaleanchor: 'y',
+                    scaleratio: 1
+                },
+                yaxis: {
+                    title: 'y (m)'
+                },
+                hovermode: 'closest',
+                width: 1000,
+                height: 900,
+                autosize: false
+            });
+
+            // Clear polar plots
+            document.getElementById('plotPolar').style.display = 'none';
+            document.getElementById('plotPolarDB').style.display = 'none';
+            document.getElementById('plotCrossSection').style.display = 'none';
+            document.getElementById('metricsDiv').style.display = 'none';
+        }
+
+        function plotValidationData(data) {
+            // This is a full ValidationResult
+            document.getElementById('metricsDiv').style.display = 'block';
+            document.getElementById('l2Relative').textContent = data.errors.l2_relative.toExponential(2);
+            document.getElementById('lInf').textContent = data.errors.linf.toExponential(2);
+            document.getElementById('meanAbs').textContent = data.errors.mean_absolute.toExponential(2);
+            document.getElementById('rms').textContent = data.errors.rms.toExponential(2);
+            document.getElementById('correlation').textContent = data.errors.correlation.toFixed(6);
+
+            // Extract polar coordinates from positions
+            const positions = data.analytical.positions;
+            const theta_rad = positions.map(p => Math.atan2(p[1], p[0]));
+            const theta_deg = theta_rad.map(t => t * 180 / Math.PI);
+            const magnitude_analytical = data.analytical.magnitude;
+            const magnitude_bem = data.bem.magnitude;
+
+            // Polar plot comparison
+            const traceAnalytical = {
+                type: 'scatterpolar',
+                r: magnitude_analytical,
+                theta: theta_deg,
+                mode: 'lines',
+                name: 'Analytical',
+                line: { color: '#667eea', width: 2 }
+            };
+
+            const traceBEM = {
+                type: 'scatterpolar',
+                r: magnitude_bem,
+                theta: theta_deg,
+                mode: 'markers',
+                name: 'BEM',
+                marker: { color: '#f093fb', size: 6 }
+            };
+
+            const layoutValidation = {
+                title: data.test_name,
+                polar: {
+                    radialaxis: { visible: true, title: 'Magnitude' },
+                    angularaxis: { direction: 'counterclockwise', period: 360 }
+                },
+                width: 650,
+                height: 650,
+                autosize: false,
+                margin: { l: 80, r: 150, t: 80, b: 80 }
+            };
+            document.getElementById('plotPolar').style.display = 'block';
+            Plotly.newPlot('plotPolar', [traceAnalytical, traceBEM], layoutValidation);
+
+            // Cartesian comparison
+            const traceCart1 = {
+                x: theta_deg,
+                y: magnitude_analytical,
+                type: 'scatter',
+                mode: 'lines',
+                name: 'Analytical',
+                line: { color: '#667eea', width: 2 }
+            };
+
+            const traceCart2 = {
+                x: theta_deg,
+                y: magnitude_bem,
+                type: 'scatter',
+                mode: 'markers',
+                name: 'BEM',
+                marker: { color: '#f093fb', size: 4 }
+            };
+
+            document.getElementById('plotPolarDB').style.display = 'block';
+            Plotly.newPlot('plotPolarDB', [traceCart1, traceCart2], {
+                title: 'Magnitude vs Angle (Cartesian)',
+                xaxis: { title: 'Angle (degrees)' },
+                yaxis: { title: 'Magnitude' },
+                width: 650,
+                height: 500,
+                autosize: false,
+                margin: { l: 80, r: 150, t: 80, b: 80 }
+            });
+
+            // Hide unused plots
+            document.getElementById('plotField').style.display = 'none';
+            document.getElementById('plotCrossSection').style.display = 'none';
+        }
+
+        function plotCrossSectionData(data) {
+            const trace = {
+                x: data.ka_values,
+                y: data.normalized_cs,
+                type: 'scatter',
+                mode: 'lines+markers',
+                name: 'σ / (2a)',
+                line: { color: '#667eea', width: 3 },
+                marker: { size: 6 }
+            };
+
+            document.getElementById('plotCrossSection').style.display = 'block';
+            Plotly.newPlot('plotCrossSection', [trace], {
+                title: '2D Cylinder Scattering Cross-Section vs Frequency',
+                xaxis: {
+                    title: 'ka (dimensionless frequency)',
+                    type: 'log'
+                },
+                yaxis: {
+                    title: 'Normalized Cross-Section σ/(2a)',
+                    type: 'log'
+                },
+                hovermode: 'closest',
+                width: 1000,
+                height: 500
+            });
+
+            // Hide other plots
+            document.getElementById('plotPolar').style.display = 'none';
+            document.getElementById('plotPolarDB').style.display = 'none';
+            document.getElementById('plotField').style.display = 'none';
+        }
+    </script>
+</body>
+</html>

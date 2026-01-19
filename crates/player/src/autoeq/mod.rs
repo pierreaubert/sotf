@@ -38,6 +38,7 @@ pub mod types;
 
 // Modules
 pub mod headphone;
+pub mod multi_speaker;
 pub mod params;
 pub mod speaker;
 
@@ -66,4 +67,46 @@ pub use speaker::{
     SpeakerOptimizationConfigExt, SpeakerOptimizationProgress, SpeakerOptimizationResult,
     load_preview_curves, load_preview_curves_async, run_speaker_optimization,
     run_speaker_optimization_extended, run_speaker_optimization_with_callback,
+};
+
+// Re-export multi-speaker types (legacy)
+pub use multi_speaker::{
+    MultiSpeakerOptimizationCallback, MultiSpeakerOptimizationConfig,
+    MultiSpeakerOptimizationResult, MultiSpeakerProgress, SingleSpeakerResult,
+    SpeakerMeasurementData, run_multi_speaker_optimization, to_speaker_results,
+};
+
+// Re-export roomeq types (new API)
+pub use multi_speaker::{
+    ChannelDspChain,
+    ChannelOptimizationResult,
+    CrossoverConfig,
+    CurveData,
+    DBAConfig,
+    DriverDspChain,
+    DspChainOutput,
+    FirConfig,
+    GroupDelayConfig,
+    MeasurementSource,
+    MultiSubGroup,
+    OptimizationMetadata,
+    OptimizerConfig,
+    PluginConfigWrapper,
+    // Core types
+    RoomConfig,
+    RoomOptimizationCallback,
+    RoomOptimizationProgress,
+    RoomOptimizationResult,
+    SpeakerConfig,
+    // Extended types
+    SpeakerGroup,
+    TargetCurveConfig,
+    build_room_config_from_curves,
+    optimize_room,
+    optimize_speaker,
+    optimizer_config_from_args,
+    // Functions
+    run_room_optimization,
+    save_dsp_chain,
+    to_single_speaker_results,
 };

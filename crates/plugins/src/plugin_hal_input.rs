@@ -2,7 +2,7 @@
 // HAL Input Plugin - Reads audio from macOS HAL driver
 // ============================================================================
 
-use super::parameters::{Parameter, ParameterId, ParameterValue};
+use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use serde::{Deserialize, Serialize};
 

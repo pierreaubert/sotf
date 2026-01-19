@@ -1,0 +1,19 @@
+[package]
+name = "math-convex-hull"
+version = "0.3.2"
+authors.workspace = true
+description = "3D Convex Hull and Computational Geometry library"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+thiserror = { workspace = true }
+rand = { workspace = true }
+rayon = { workspace = true }
+log = "0.4"
+
+[dev-dependencies]
+directories = { workspace = true }
+

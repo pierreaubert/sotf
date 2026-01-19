@@ -1027,7 +1027,7 @@ pub fn analyze_recording(
     let impulse_response: Vec<f32> = transfer_function.iter().map(|c| c.re * norm).collect();
 
     // Generate time vector for IR (0 to duration)
-    let ir_duration_sec = fft_size as f32 / sample_rate as f32;
+    let _ir_duration_sec = fft_size as f32 / sample_rate as f32;
     let impulse_time_ms: Vec<f32> = (0..fft_size)
         .map(|i| i as f32 / sample_rate as f32 * 1000.0)
         .collect();
@@ -1289,7 +1289,7 @@ fn compute_acoustic_metrics_broadband(impulse: &[f32], sample_rate: u32) -> (f32
     let samp_50ms = (0.050 * sample_rate as f32) as usize;
     let samp_80ms = (0.080 * sample_rate as f32) as usize;
 
-    let e_total = energy; // Total energy from start (approx)
+    let _e_total = energy; // Total energy from start (approx)
     // Actually we need energy from 0 to t
     // Schroeder is energy from t to inf.
     // E_total = decay[0] * max_energy.

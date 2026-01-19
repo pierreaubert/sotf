@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Interactive Test Function Plots</title>
+    <script src="https://cdn.plot.ly/plotly-3.1.0.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        .navigation {
+            display: flex;
+            justify-content: space-between;
+            padding: 20px;
+            background-color: #fafafa;
+            border-bottom: 1px solid #eee;
+        }
+        .letter-navigation {
+            flex: 1;
+        }
+        .letter-btn {
+            padding: 8px 12px;
+            margin: 2px;
+            border: none;
+            background-color: #e9ecef;
+            color: #495057;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: all 0.3s ease;
+        }
+        .letter-btn:hover, .letter-btn.active {
+            background-color: #007bff;
+            color: white;
+        }
+        .function-panel {
+            width: 300px;
+            padding: 20px;
+            border-right: 1px solid #eee;
+        }
+        .function-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .function-item {
+            padding: 10px;
+            margin: 5px 0;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .function-item:hover {
+            background-color: #e9ecef;
+        }
+        .function-item.active {
+            background-color: #007bff;
+            color: white;
+        }
+        .main-content {
+            display: flex;
+        }
+        .plot-container {
+            flex: 1;
+            padding: 20px;
+            min-height: 600px;
+        }
+        .loading {
+            text-align: center;
+            padding: 50px;
+            color: #6c757d;
+        }
+        .error {
+            text-align: center;
+            padding: 50px;
+            color: #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Interactive Test Function Plots</h1>
+            <p>Click on a letter to browse functions, then click on a function name to view its plot</p>
+        </div>
+
+        <div class="navigation">
+            <div class="letter-navigation">
+                <button class="letter-btn" onclick="showLetter('A')">A</button><button class="letter-btn" onclick="showLetter('B')">B</button><button class="letter-btn" onclick="showLetter('C')">C</button><button class="letter-btn" onclick="showLetter('D')">D</button><button class="letter-btn" onclick="showLetter('E')">E</button><button class="letter-btn" onclick="showLetter('F')">F</button><button class="letter-btn" onclick="showLetter('G')">G</button><button class="letter-btn" onclick="showLetter('H')">H</button><button class="letter-btn" onclick="showLetter('K')">K</button><button class="letter-btn" onclick="showLetter('L')">L</button><button class="letter-btn" onclick="showLetter('M')">M</button><button class="letter-btn" onclick="showLetter('P')">P</button><button class="letter-btn" onclick="showLetter('Q')">Q</button><button class="letter-btn" onclick="showLetter('R')">R</button><button class="letter-btn" onclick="showLetter('S')">S</button><button class="letter-btn" onclick="showLetter('T')">T</button><button class="letter-btn" onclick="showLetter('V')">V</button><button class="letter-btn" onclick="showLetter('W')">W</button><button class="letter-btn" onclick="showLetter('X')">X</button><button class="letter-btn" onclick="showLetter('Z')">Z</button>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="function-panel">
+                <div id="functions-A" class="function-list" style="display: none;">
+  <div class="function-item" onclick="loadFunction('ackley')">ackley</div>
+  <div class="function-item" onclick="loadFunction('ackley_n2')">ackley_n2</div>
+  <div class="function-item" onclick="loadFunction('ackley_n3')">ackley_n3</div>
+  <div class="function-item" onclick="loadFunction('alpine_n1')">alpine_n1</div>
+  <div class="function-item" onclick="loadFunction('alpine_n2')">alpine_n2</div>
+</div>
+<div id="functions-B" class="function-list" style="display: none;">
+  <div class="function-item" onclick="loadFunction('beale')">beale</div>
+  <div class="function-item" onclick="loadFunction('bent_cigar')">bent_cigar</div>
+  <div class="function-item" onclick="loadFunction('bent_cigar_alt')">bent_cigar_alt</div>
+  <div class="function-item" onclick="loadFunction('binh_korn_constraint1')">binh_korn_constraint1</div>
+  <div class="function-item" onclick="loadFunction('binh_korn_constraint2')">binh_korn_constraint2</div>
+  <div class="function-item" onclick="loadFunction('binh_korn_weighted')">binh_korn_weighted</div>
+  <div class="function-item" onclick="loadFunction('bird')">bird</div>
+  <div class="function-item" onclick="loadFunction('bohachevsky1')">bohachevsky1</div>
+  <div class="function-item" onclick="loadFunction('bohachevsky2')">bohachevsky2</div>
+  <div class="function-item" onclick="loadFunction('bohachevsky3')">bohachevsky3</div>
+  <div class="function-item" onclick="loadFunction('booth')">booth</div>
+  <div class="function-item" onclick="loadFunction('branin')">branin</div>
+  <div class="function-item" onclick="loadFunction('brown')">brown</div>
+  <div class="function-item" onclick="loadFunction('bukin_n6')">bukin_n6</div>
+</div>
+<div id="functions-C" class="function-list" style="display: none;">
+  <div class="function-item" onclick="loadFunction('chung_reynolds')">chung_reynolds</div>
+  <div class="function-item" onclick="loadFunction('cigar')">cigar</div>
+  <div class="function-item" onclick="loadFunction('cosine_mixture')">cosine_mixture</div>
+  <div class="function-item" onclick="loadFunction('cross_in_tray')">cross_in_tray</div>
+</div>
+<div id="functions-D" class="function-list" style="display: none;">
+  <div class="function-item" onclick="loadFunction('de_jong_step2')">de_jong_step2</div>
+  <div class="function-item" onclick="loadFunction('dejong_f5_foxholes')">dejong_f5_foxholes</div>
+  <div class="function-item" onclick="loadFunction('different_powers')">different_powers</div>
+  <div class="function-item" onclick="loadFunction('discus')">discus</div>
+  <div class="function-item" onclick="loadFunction('dixons_price')">dixons_price</div>
+  <div class="function-item" onclick="loadFunction('drop_wave')">drop_wave</div>
+</div>
+<div id="functions-E" class="function-list" style="display: none;">
+  <div class="function-item" onclick="loadFunction('easom')">easom</div>
+  <div class="function-item" onclick="loadFunction('eggholder')">eggholder</div>
+  <div class="function-item" onclick="loadFunction('elliptic')">elliptic</div>
+  <div class="function-item" onclick="loadFunction('epistatic_michalewicz')">epistatic_michalewicz</div>
+  <div class="function-item" onclick="loadFunction('expanded_griewank_rosenbrock')">expanded_griewank_rosenbrock</div>
+  <div class="function-item" onclick="loadFunction('exponential')">exponential</div>
+</div>
+<div id="functions-F" class="function-list" style="display: none;">
+  <div class="function-item" onclick="loadFunction('forrester_2008')">forrester_2008</div>
+  <div class="function-item" onclick="loadFunction('freudenstein_roth')">freudenstein_roth</div>
+</div>
+<div id="functions-G" class="function-list" style="display: none;">
+  <div class="function-item" onclick="loadFunction('goldstein_price')">goldstein_price</div>
+  <div class="function-item" onclick="loadFunction('gramacy_lee_2012')">gramacy_lee_2012</div>
+  <div class="function-item" onclick="loadFunction('gramacy_lee_function')">gramacy_lee_function</div>
+  <div class="function-item" onclick="loadFunction('griewank')">griewank</div>
+  <div class="function-item" onclick="loadFunction('griewank2')">griewank2</div>
+</div>
+<div id="functions-H" class="function-list" style="display: none;">
+  <div class="function-item" onclick="loadFunction('happy_cat')">happy_cat</div>
+  <div class="function-item" onclick="loadFunction('happycat')">happycat</div>
+  <div class="function-item" onclick="loadFunction('himmelblau')">himmelblau</div>
+  <div class="function-item" onclick="loadFunction('holder_table')">holder_table</div>
+</div>
+<div id="functions-K" class="function-list" style="display: none;">
+  <div class="function-item" onclick="loadFunction('katsuura')">katsuura</div>
+  <div class="function-item" onclick="loadFunction('keanes_bump_constraint1')">keanes_bump_constraint1</div>
+  <div class="function-item" onclick="loadFunction('keanes_bump_constraint2')">keanes_bump_constraint2</div>
+  <div class="function-item" onclick="loadFunction('keanes_bump_objective')">keanes_bump_objective</div>
+</div>
+<div id="functions-L" class="function-list" style="display: none;">
+  <div class="function-item" onclick="loadFunction('lampinen_simplified')">lampinen_simplified</div>
+  <div class="function-item" onclick="loadFunction('langermann')">langermann</div>
+  <div class="function-item" onclick="loadFunction('levi13')">levi13</div>
+  <div class="function-item" onclick="loadFunction('levy')">levy</div>
+  <div class="function-item" onclick="loadFunction('levy_n13')">levy_n13</div>
+</div>
+<div id="functions-M" class="function-list" style="display: none;">
+  <div class="function-item" onclick="loadFunction('matyas')">matyas</div>
+  <div class="function-item" onclick="loadFunction('mccormick')">mccormick</div>
+  <div class="function-item" onclick="loadFunction('michalewicz')">michalewicz</div>
+  <div class="function-item" onclick="loadFunction('mishras_bird_constraint')">mishras_bird_constraint</div>
+  <div class="function-item" onclick="loadFunction('mishras_bird_objective')">mishras_bird_objective</div>
+</div>
+<div id="functions-P" class="function-list" style="display: none;">
+  <div class="function-item" onclick="loadFunction('periodic')">periodic</div>
+  <div class="function-item" onclick="loadFunction('perm_0_d_beta')">perm_0_d_beta</div>
+  <div class="function-item" onclick="loadFunction('perm_d_beta')">perm_d_beta</div>
+  <div class="function-item" onclick="loadFunction('pinter')">pinter</div>
+</div>
+<div id="functions-Q" class="function-list" style="display: none;">
+  <div class="function-item" onclick="loadFunction('qing')">qing</div>
+  <div class="function-item" onclick="loadFunction('quadratic')">quadratic</div>
+  <div class="function-item" onclick="loadFunction('quartic')">quartic</div>
+</div>
+<div id="functions-R" class="function-list" style="display: none;">
+  <div class="function-item" onclick="loadFunction('rastrigin')">rastrigin</div>
+  <div class="function-item" onclick="loadFunction('ridge')">ridge</div>
+  <div class="function-item" onclick="loadFunction('rosenbrock')">rosenbrock</div>
+  <div class="function-item" onclick="loadFunction('rosenbrock_disk_constraint')">rosenbrock_disk_constraint</div>
+  <div class="function-item" onclick="loadFunction('rosenbrock_objective')">rosenbrock_objective</div>
+  <div class="function-item" onclick="loadFunction('rotated_hyper_ellipsoid')">rotated_hyper_ellipsoid</div>
+</div>
+<div id="functions-S" class="function-list" style="display: none;">
+  <div class="function-item" onclick="loadFunction('salomon')">salomon</div>
+  <div class="function-item" onclick="loadFunction('salomon_corrected')">salomon_corrected</div>
+  <div class="function-item" onclick="loadFunction('schaffer_n2')">schaffer_n2</div>
+  <div class="function-item" onclick="loadFunction('schaffer_n4')">schaffer_n4</div>
+  <div class="function-item" onclick="loadFunction('schwefel')">schwefel</div>
+  <div class="function-item" onclick="loadFunction('schwefel2')">schwefel2</div>
+  <div class="function-item" onclick="loadFunction('sharp_ridge')">sharp_ridge</div>
+  <div class="function-item" onclick="loadFunction('shubert')">shubert</div>
+  <div class="function-item" onclick="loadFunction('six_hump_camel')">six_hump_camel</div>
+  <div class="function-item" onclick="loadFunction('sphere')">sphere</div>
+  <div class="function-item" onclick="loadFunction('step')">step</div>
+  <div class="function-item" onclick="loadFunction('styblinski_tang2')">styblinski_tang2</div>
+  <div class="function-item" onclick="loadFunction('sum_of_different_powers')">sum_of_different_powers</div>
+  <div class="function-item" onclick="loadFunction('sum_squares')">sum_squares</div>
+</div>
+<div id="functions-T" class="function-list" style="display: none;">
+  <div class="function-item" onclick="loadFunction('tablet')">tablet</div>
+  <div class="function-item" onclick="loadFunction('three_hump_camel')">three_hump_camel</div>
+  <div class="function-item" onclick="loadFunction('trid')">trid</div>
+</div>
+<div id="functions-V" class="function-list" style="display: none;">
+  <div class="function-item" onclick="loadFunction('vincent')">vincent</div>
+</div>
+<div id="functions-W" class="function-list" style="display: none;">
+  <div class="function-item" onclick="loadFunction('whitley')">whitley</div>
+</div>
+<div id="functions-X" class="function-list" style="display: none;">
+  <div class="function-item" onclick="loadFunction('xin_she_yang_n1')">xin_she_yang_n1</div>
+  <div class="function-item" onclick="loadFunction('xin_she_yang_n2')">xin_she_yang_n2</div>
+  <div class="function-item" onclick="loadFunction('xin_she_yang_n3')">xin_she_yang_n3</div>
+  <div class="function-item" onclick="loadFunction('xin_she_yang_n4')">xin_she_yang_n4</div>
+</div>
+<div id="functions-Z" class="function-list" style="display: none;">
+  <div class="function-item" onclick="loadFunction('zakharov')">zakharov</div>
+  <div class="function-item" onclick="loadFunction('zakharov2')">zakharov2</div>
+</div>
+
+            </div>
+
+            <div class="plot-container">
+                <div id="plot-display" class="loading">
+                    <h3>Select a function to view its plot</h3>
+                    <p>Choose a letter from the navigation above, then click on a function name.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentLetter = null;
+        let currentFunction = null;
+
+        function showLetter(letter) {
+            /* Hide all function lists */
+            const allLists = document.querySelectorAll('.function-list');
+            allLists.forEach(list => list.style.display = 'none');
+
+            /* Show the selected letter's function list */
+            const targetList = document.getElementById('functions-' + letter);
+            if (targetList) {
+                targetList.style.display = 'block';
+            }
+
+            /* Update button states */
+            document.querySelectorAll('.letter-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+
+            /* Clear the plot when changing letters */
+            const plotDisplay = document.getElementById('plot-display');
+            plotDisplay.innerHTML = '<div class="loading"><h3>Select a function to view its plot</h3><p>Choose a function from the list below.</p></div>';
+
+            /* Clear function item selection states */
+            document.querySelectorAll('.function-item').forEach(item => item.classList.remove('active'));
+
+            currentLetter = letter;
+            currentFunction = null;
+        }
+
+        async function loadFunction(functionName) {
+            const plotDisplay = document.getElementById('plot-display');
+
+            /* Show loading state */
+            plotDisplay.innerHTML = '<div class="loading"><h3>Loading plot...</h3></div>';
+
+            /* Update function item states */
+            document.querySelectorAll('.function-item').forEach(item => item.classList.remove('active'));
+            event.target.classList.add('active');
+
+            try {
+                /* Load the JSON file for this function */
+                const response = await fetch('https://raw.githubusercontent.com/pierreaubert/autoEQ/refs/heads/master/src-testfunctions/docs/' + functionName + '.json');
+
+                if (!response.ok) {
+                    throw new Error('Failed to load plot data: ' + response.statusText);
+                }
+
+                const plotData = await response.text();
+                const plot = JSON.parse(plotData);
+
+                /* Clear the plot display and render the new plot */
+                plotDisplay.innerHTML = '';
+                await Plotly.newPlot('plot-display', plot.data, plot.layout);
+
+                currentFunction = functionName;
+
+            } catch (error) {
+                console.error('Error loading function plot:', error);
+                plotDisplay.innerHTML = '<div class="error"><h3>Error Loading Plot</h3><p>Failed to load plot for function: ' + functionName.replace('_', ' ') + '</p><p>Error: ' + error.message + '</p></div>';
+            }
+        }
+
+        /* Initialize by showing the first letter */
+        const firstLetter = document.querySelector('.letter-btn');
+        if (firstLetter) {
+            firstLetter.click();
+        }
+    </script>
+</body>
+</html>

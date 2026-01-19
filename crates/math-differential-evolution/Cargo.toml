@@ -1,0 +1,60 @@
+[package]
+name = "math-differential-evolution"
+version = "0.3.2"
+description = "Non linear optimisation library with own DE solvers and interface to NLOpt and MetaHeuristics"
+edition = { workspace = true }
+repository = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+
+[dependencies]
+# Core numerical computing
+ndarray = { workspace = true }
+rand = { workspace = true }
+rayon = { workspace = true }
+clap = { workspace = true }
+thiserror = { workspace = true }
+directories = { workspace = true }
+plotly = { workspace = true }
+math-test-functions = { workspace = true }
+plotly_static = { workspace = true, optional = true }
+
+[features]
+default = []
+plotly_static = ["dep:plotly_static"]
+
+[dev-dependencies]
+
+[target.'cfg(target_os = "macos")'.dependencies]
+
+[target.'cfg(all(any(target_os = "ios", target_os="ios_sim"), target_arch = "aarch64"))'.dependencies]
+
+[target.'cfg(all(target_os = "linux", target_arch="x86_64"))'.dependencies]
+
+[target.'cfg(all(target_os = "linux", target_arch="aarch64"))'.dependencies]
+
+# Linux x86_64 musl configuration (static linking)
+[target.'cfg(all(target_os = "linux", target_arch="x86_64", target_env="musl"))'.dependencies]
+
+# Linux ARM64 musl configuration (static linking)
+[target.'cfg(all(target_os = "linux", target_arch="aarch64", target_env="musl"))'.dependencies]
+
+[target.'cfg(all(target_os = "windows", target_arch="x86_64"))'.dependencies]
+
+[target.'cfg(all(target_os = "windows", target_arch="aarch64"))'.dependencies]
+
+[[bin]]
+name = "plot_de"
+path = "bin/plot_de.rs"
+
+[[bin]]
+name = "benchmark_convergence"
+path = "bench/benchmark_convergence.rs"
+
+[[bin]]
+name = "run-de"
+path = "bin/run_de.rs"
+
+[lib]
+name = "math_audio_differential_evolution"
+path = "src/mod.rs"

@@ -12,6 +12,7 @@ members = [
     "crates/plugins-gpui",
     "crates/driver-hal",
     "crates/head-tracker",
+    "crates/daemon",
 ]
 resolver = "3"
 
@@ -30,11 +31,13 @@ repository = "https://github.com/pierreaubert/sotf"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
+schemars = "1.2"
+build_html = "2.7"
 
 # Async and networking
 # ideally we would use only threads or only tokio
 anyhow = { version = "1.0" }
-tokio = { version = "1", features = ["rt-multi-thread"] }
+tokio = { version = "1", features = ["rt-multi-thread", "fs", "macros", "io-util", "process", "signal"] }
 # tokio-tungstenite = "0.21"
 signal-hook = "0.4"
 # signal-hook-tokio = { version = "0.3", features = ["futures-v0_3"] }
@@ -45,12 +48,12 @@ urlencoding = "2.1"
 parking_lot = { version = "0.12", features = ["deadlock_detection"] }
 
 # CLI and system
-# base64 = "0.22"
-# byteorder = "1.5"
+base64 = "0.22"
+byteorder = "1.5"
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.5", features = ["derive"] }
 # console_error_panic_hook = { version = "0.1" }
-# csv = "1.4"
+csv = "1.4"
 ctrlc = "3.5"
 directories = "6"
 # env = "1"
@@ -61,7 +64,7 @@ log = "0.4"
 mimalloc = { version = "0.1" }
 notify = { version = "8.2" }
 num_cpus = "1.17"
-# regex = "1.12"
+regex = "1.12"
 rfd = "0.16"
 rusqlite = { version = "0.38", features = ["bundled"] }
 rust-embed = "8"
@@ -83,19 +86,29 @@ num-traits = "0.2"
 rayon = "1.11"
 rustfft = "6.4"
 realfft = "3.5"
+metaheuristics-nature = "10.1"
+nlopt = "0.8"
 
 # using crates version
-math-iir-fir = { version = "0.3" }
-math-differential-evolution = { version = "0.3" }
-autoeq-env = { version = "0.3" }
-autoeq-cea2034 = { version = "0.3" }
-autoeq = { version = ">=0.3.10" }
+math-test-functions = { path = "crates/math-test-functions", version = "0.3", default-features = false }
+math-solvers = { path = "crates/math-solvers", version = "0.3", default-features = false }
+math-wave = { path = "crates/math-wave", version = "0.3" }
+math-xem-common = { path = "crates/math-xem-common", version = "0.3" }
+math-iir-fir = { path = "crates/math-iir-fir", version = "0.3" }
+math-convex-hull = { path = "crates/math-convex-hull", version = "0.3" }
+math-differential-evolution = { path = "crates/math-differential-evolution", version = "0.3" }
+
+autoeq-env = { version = "0.3", path = "crates/autoeq-env" }
+autoeq-cea2034 = { version = "0.3", path = "crates/autoeq-cea2034" }
+autoeq = { version = ">=0.3.12", path = "crates/autoeq" }
+autoeq-roomsim = { version = "0.3", path = "crates/autoeq-roomsim" }
 
 # using git version
-gpui-d3rs = { version = "0.6", path = "../gpui-toolkit/gpui-d3rs" }
-gpui-px = { version = "0.6", path = "../gpui-toolkit/gpui-px" }
-gpui-themes = { version = "0.6", path = "../gpui-toolkit/gpui-themes" }
-gpui-ui-kit = { version = "0.6", path = "../gpui-toolkit/gpui-ui-kit" }
+gpui-d3rs = { version = "0.6", path = "crates/gpui-d3rs" }
+gpui-px = { version = "0.6", path = "crates/gpui-px" }
+gpui-themes = { version = "0.6", path = "crates/gpui-themes" }
+gpui-ui-kit = { version = "0.6", path = "crates/gpui-ui-kit" }
+gpui-ui-kit-macros = { version = "0.6", path = "crates/gpui-ui-kit-macros" }
 
 engine = { path = "crates/engine", default-features = false }
 midi = { path = "crates/midi" }
@@ -149,7 +162,7 @@ dirs = "6"
 crossbeam = "0.8"
 
 # Utilities
-# approx = "0.5"
+approx = "0.5"
 proptest = "1.9"
 unicode-normalization = "0.1"
 # toml = "0.8"
@@ -158,18 +171,20 @@ lazy_static = "1.4"
 bincode = { version = "2.0.1", features = ["serde"] }
 
 # Proc macro dependencies
-# proc-macro2 = "1"
+proc-macro2 = "1"
 quote = "1"
-# syn = { version = "2", features = ["full", "parsing", "extra-traits"] }
+syn = { version = "2", features = ["full", "parsing", "extra-traits"] }
 
 # Graphics and visualization
-# wgpu = "25"
-# bytemuck = { version = "1.14", features = ["derive"] }
-# glam = "0.30"
-# pollster = "0.4"
+plotly = "0.13"
+plotly_static = { version = "0.1", features = ["chromedriver", "webdriver_download"] }
+wgpu = "25"
+bytemuck = { version = "1.14", features = ["derive"] }
+glam = "0.30"
+pollster = "0.4"
 image = "0.25"
-# fontdue = "0.9"
-# delaunator = "1.0"
+fontdue = "0.9"
+delaunator = "1.0"
 
 # GPU and macOS graphics
 metal = "0.33"
@@ -258,3 +273,6 @@ codegen-units = 256
 lto = true
 codegen-units = 1
 panic = "unwind"  # Changed from "abort" to allow tests to run
+
+[patch.'https://github.com/zed-industries/font-kit']
+zed-font-kit = { path = "crates/zed-font-kit" }

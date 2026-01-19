@@ -373,6 +373,38 @@ impl Default for RoomEqSpeakerConfig {
     }
 }
 
+/// Multi-speaker optimization mode
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum MultiSpeakerMode {
+    /// Optimize each speaker sequentially (legacy mode)
+    #[default]
+    Sequential,
+    /// Optimize all speakers together in a single optimizer call
+    Combined,
+}
+
+impl MultiSpeakerMode {
+    pub fn all() -> &'static [MultiSpeakerMode] {
+        &[MultiSpeakerMode::Sequential, MultiSpeakerMode::Combined]
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            MultiSpeakerMode::Sequential => "Sequential (per-channel)",
+            MultiSpeakerMode::Combined => "Combined (all channels)",
+        }
+    }
+
+    pub fn description(&self) -> &'static str {
+        match self {
+            MultiSpeakerMode::Sequential => "Optimize each speaker independently, one at a time",
+            MultiSpeakerMode::Combined => {
+                "Optimize all speakers together for globally optimal solution"
+            }
+        }
+    }
+}
+
 /// Optimization algorithm selection
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum RoomEqAlgorithm {
@@ -446,6 +478,8 @@ impl From<CrossoverType> for sotf_audio_player::room_eq::CrossoverType {
 /// Optimizer configuration for Room EQ
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoomEqOptimizerConfig {
+    /// Multi-speaker optimization mode
+    pub multi_speaker_mode: MultiSpeakerMode,
     /// Optimization algorithm
     pub algorithm: RoomEqAlgorithm,
     /// Number of PEQ filters per channel
@@ -501,6 +535,7 @@ pub struct RoomEqOptimizerConfig {
 impl Default for RoomEqOptimizerConfig {
     fn default() -> Self {
         Self {
+            multi_speaker_mode: MultiSpeakerMode::Combined,
             algorithm: RoomEqAlgorithm::DifferentialEvolution,
             num_filters: 5,
             min_q: 0.5,

@@ -2,7 +2,7 @@
 // HAL Output Plugin - Writes audio to macOS HAL driver (loopback)
 // ============================================================================
 
-use super::parameters::{Parameter, ParameterId, ParameterValue};
+use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use serde::{Deserialize, Serialize};
 

@@ -1,0 +1,27 @@
+[package]
+name = "math-test-functions"
+version = "0.3.0"
+description = "A collection of non linear functions for testing optimisation algorithms"
+edition = { workspace = true }
+repository = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+
+[dependencies]
+ndarray = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+plotly = { workspace = true}
+directories = { workspace = true}
+plotly_static = { workspace = true, features = ["chromedriver", "webdriver_download"], optional = true }
+
+[features]
+default = []
+plotly_static = ["dep:plotly_static"]
+
+[lib]
+name = "math_audio_test_functions"
+path = "src/lib.rs"
+
+[[bin]]
+name = "plot-functions"
+path = "bin/plot_functions.rs"

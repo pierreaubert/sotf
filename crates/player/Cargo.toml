@@ -24,6 +24,7 @@ path = "src/bin/bliss_scan.rs"
 
 [dependencies]
 math-iir-fir = { workspace = true }
+math-differential-evolution = { workspace = true }
 autoeq-env = { workspace = true }
 autoeq-cea2034 = { workspace = true }
 autoeq = { workspace = true }

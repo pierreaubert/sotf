@@ -1,0 +1,72 @@
+{
+  "room": {
+    "type": "rectangular",
+    "width": 5.0,
+    "depth": 4.0,
+    "height": 2.5
+  },
+  "sources": [
+    {
+      "name": "Left Speaker",
+      "position": { "x": 0.8, "y": 0.5, "z": 1.0 },
+      "amplitude": 1.0,
+      "directivity": { "type": "omnidirectional" },
+      "crossover": {
+        "type": "highpass",
+        "cutoff_freq": 80.0,
+        "order": 4
+      }
+    },
+    {
+      "name": "Right Speaker",
+      "position": { "x": 4.2, "y": 0.5, "z": 1.0 },
+      "amplitude": 1.0,
+      "directivity": { "type": "omnidirectional" },
+      "crossover": {
+        "type": "highpass",
+        "cutoff_freq": 80.0,
+        "order": 4
+      }
+    },
+    {
+      "name": "Subwoofer",
+      "position": { "x": 2.5, "y": 0.3, "z": 0.3 },
+      "amplitude": 1.0,
+      "directivity": { "type": "omnidirectional" },
+      "crossover": {
+        "type": "lowpass",
+        "cutoff_freq": 80.0,
+        "order": 4
+      }
+    }
+  ],
+  "listening_positions": [
+    { "x": 2.5, "y": 2.0, "z": 1.0 }
+  ],
+  "frequencies": {
+    "min_freq": 20.0,
+    "max_freq": 800.0,
+    "num_points": 100,
+    "spacing": "logarithmic"
+  },
+  "boundaries": {
+    "floor": { "type": "absorption", "coefficient": 0.1 },
+    "ceiling": { "type": "absorption", "coefficient": 0.05 },
+    "walls": { "type": "absorption", "coefficient": 0.03 },
+    "front_wall": { "type": "absorption", "coefficient": 0.05 },
+    "back_wall": { "type": "absorption", "coefficient": 0.08 }
+  },
+  "solver": {
+    "method": "gmres",
+    "mesh_resolution": 5,
+    "gmres": {
+      "max_iter": 500,
+      "restart": 100,
+      "tolerance": 1e-5
+    }
+  },
+  "metadata": {
+    "description": "Stereo 2.1 speaker setup (20-800 Hz) - use with --adaptive-mesh flag",
+    "author": "FEM Room Simulator Example"
+  }
+}

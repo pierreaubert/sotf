@@ -342,228 +342,176 @@ impl PlayerView {
     }
 
     fn start_room_eq_optimization(&mut self, cx: &mut Context<Self>) {
-        use crate::app::types::{
-            ChannelOptResult, EqFilterConfig, OptimizationStatus, SpeakerConfigType,
+        use crate::app::types::{ChannelOptResult, EqFilterConfig, OptimizationStatus, SpeakerConfigType};
+        use autoeq::roomeq::CallbackAction;
+        use sotf_audio_player::autoeq::{
+            CrossoverConfig, MeasurementSource, OptimizerConfig, RoomConfig,
+            RoomOptimizationCallback, RoomOptimizationProgress, SpeakerConfig, SpeakerGroup,
+            run_room_optimization,
         };
-        use sotf_audio_player::room_eq::{
-            CallbackAction, CallbackConfig, MeasurementInput, SpeakerOptimizationConfig,
-            SpeakerOptimizationProgress, run_speaker_optimization_with_callback,
-        };
+        use std::collections::HashMap;
 
-        log::info!("Starting room EQ optimization with new speaker optimization");
+        log::info!("Starting room EQ optimization using roomeq");
 
-        // Collect configurations from state
-        let (channel_configs, _optimizer_params) = {
+        // Build RoomConfig from state
+        let (room_config, channel_names, max_iter) = {
             let state = self.state.read(cx);
             let room_eq = &state.app.measurement_state.room_eq_state;
 
-            // Build speaker optimization configs for each channel
-            let configs: Vec<(String, SpeakerOptimizationConfig, SpeakerConfigType)> = room_eq
+            // Build speakers map and crossover map
+            let mut speakers: HashMap<String, SpeakerConfig> = HashMap::new();
+            let mut crossovers: HashMap<String, CrossoverConfig> = HashMap::new();
+
+            // Helper to convert measurement to curve
+            let to_curve = |meas: &crate::app::types::ChannelMeasurement| -> autoeq::Curve {
+                let frequencies: Vec<f64> = meas
+                    .measurement
+                    .frequencies
+                    .iter()
+                    .map(|&f| f as f64)
+                    .collect();
+                let magnitude_db: Vec<f64> = meas
+                    .measurement
+                    .magnitude_db
+                    .iter()
+                    .map(|&db| db as f64)
+                    .collect();
+
+                autoeq::Curve {
+                    freq: ndarray::Array1::from_vec(frequencies),
+                    spl: ndarray::Array1::from_vec(magnitude_db),
+                    phase: None,
+                }
+            };
+
+            // Helper to convert recording result to curve
+            let result_to_curve = |res: &crate::app::types::recording::RecordingResult| -> autoeq::Curve {
+                let frequencies: Vec<f64> = res.frequencies.iter().map(|&f| f as f64).collect();
+                let magnitude_db: Vec<f64> = res.magnitude_db.iter().map(|&db| db as f64).collect();
+
+                autoeq::Curve {
+                    freq: ndarray::Array1::from_vec(frequencies),
+                    spl: ndarray::Array1::from_vec(magnitude_db),
+                    phase: None,
+                }
+            };
+
+            // Iterate over configured speakers
+            for speaker_config in &room_eq.speaker_configs {
+                let channel_name = &speaker_config.channel_name;
+                
+                // Find corresponding measurement
+                if let Some(meas) = room_eq.channel_measurements.iter().find(|m| &m.channel_name == channel_name) {
+                    match speaker_config.config_type {
+                        SpeakerConfigType::Single => {
+                            let curve = to_curve(meas);
+                            speakers.insert(
+                                channel_name.clone(),
+                                SpeakerConfig::Single(MeasurementSource::InMemory(curve)),
+                            );
+                        }
+                        SpeakerConfigType::MultiDriver => {
+                            // Collect driver measurements
+                            let mut driver_measurements = Vec::new();
+                            
+                            // If measurement has group drivers, use them
+                            if meas.is_group && !meas.group_drivers.is_empty() {
+                                for driver_res in &meas.group_drivers {
+                                    driver_measurements.push(MeasurementSource::InMemory(result_to_curve(driver_res)));
+                                }
+                            } else {
+                                // Fallback if no individual drivers found (should not happen if configured correctly)
+                                log::warn!("Multi-driver config for {} but no driver measurements found, using main measurement", channel_name);
+                                driver_measurements.push(MeasurementSource::InMemory(to_curve(meas)));
+                            }
+
+                            // Create crossover config
+                            let xover_id = format!("xover_{}", channel_name);
+                            let xover_type = match speaker_config.crossover_type {
+                                crate::app::types::CrossoverType::LR12 => "LR12",
+                                crate::app::types::CrossoverType::LR24 => "LR24",
+                                crate::app::types::CrossoverType::LR48 => "LR48",
+                                crate::app::types::CrossoverType::Butterworth12 => "Butterworth12",
+                                crate::app::types::CrossoverType::Butterworth24 => "Butterworth24",
+                            };
+
+                            crossovers.insert(xover_id.clone(), CrossoverConfig {
+                                crossover_type: xover_type.to_string(),
+                                frequency: None, // Auto-detect
+                                frequencies: None, // Auto-detect
+                                frequency_range: None,
+                            });
+
+                            speakers.insert(
+                                channel_name.clone(),
+                                SpeakerConfig::Group(SpeakerGroup {
+                                    name: channel_name.clone(),
+                                    measurements: driver_measurements,
+                                    crossover: Some(xover_id),
+                                }),
+                            );
+                        }
+                    }
+                }
+            }
+
+            let channel_names: Vec<String> = room_eq
                 .channel_measurements
                 .iter()
-                .zip(room_eq.speaker_configs.iter())
-                .map(|(meas, speaker_cfg)| {
-                    // Convert measurement data to autoeq::Curve
-                    let frequencies: Vec<f64> = meas
-                        .measurement
-                        .frequencies
-                        .iter()
-                        .map(|&f| f as f64)
-                        .collect();
-                    let magnitude_db: Vec<f64> = meas
-                        .measurement
-                        .magnitude_db
-                        .iter()
-                        .map(|&db| db as f64)
-                        .collect();
-
-                    // Calculate average level of input curve between 20Hz and 1000Hz
-                    // This is used to normalize the target curve to the input level
-                    let input_indices: Vec<usize> = frequencies
-                        .iter()
-                        .enumerate()
-                        .filter(|&(_, &f)| f >= 20.0 && f <= 1000.0)
-                        .map(|(i, _)| i)
-                        .collect();
-
-                    let input_avg = if !input_indices.is_empty() {
-                        input_indices.iter().map(|&i| magnitude_db[i]).sum::<f64>()
-                            / input_indices.len() as f64
-                    } else {
-                        0.0
-                    };
-
-                    let main_curve = autoeq::Curve {
-                        freq: ndarray::Array1::from_vec(frequencies),
-                        spl: ndarray::Array1::from_vec(magnitude_db),
-                        phase: None,
-                    };
-
-                    // Build driver curves for multi-driver config
-                    let driver_measurements: Vec<MeasurementInput> =
-                        if meas.is_group && !meas.group_drivers.is_empty() {
-                            meas.group_drivers
-                                .iter()
-                                .map(|driver| {
-                                    let freq: Vec<f64> =
-                                        driver.frequencies.iter().map(|&f| f as f64).collect();
-                                    let spl: Vec<f64> =
-                                        driver.magnitude_db.iter().map(|&db| db as f64).collect();
-                                    MeasurementInput::Curve(autoeq::Curve {
-                                        freq: ndarray::Array1::from_vec(freq),
-                                        spl: ndarray::Array1::from_vec(spl),
-                                        phase: None,
-                                    })
-                                })
-                                .collect()
-                        } else {
-                            Vec::new()
-                        };
-
-                    let config_type = if meas.is_group && !meas.group_drivers.is_empty() {
-                        sotf_audio_player::room_eq::SpeakerConfigType::MultiDriver
-                    } else {
-                        sotf_audio_player::room_eq::SpeakerConfigType::Single
-                    };
-
-                    let crossover_type = match speaker_cfg.crossover_type {
-                        crate::app::types::CrossoverType::Butterworth12 => {
-                            sotf_audio_player::room_eq::CrossoverType::Butterworth12
-                        }
-                        crate::app::types::CrossoverType::Butterworth24 => {
-                            sotf_audio_player::room_eq::CrossoverType::LR24
-                        } // Fallback to LR24
-                        crate::app::types::CrossoverType::LR12 => {
-                            sotf_audio_player::room_eq::CrossoverType::LR12
-                        }
-                        crate::app::types::CrossoverType::LR24 => {
-                            sotf_audio_player::room_eq::CrossoverType::LR24
-                        }
-                        crate::app::types::CrossoverType::LR48 => {
-                            sotf_audio_player::room_eq::CrossoverType::LR48
-                        }
-                    };
-
-                    // Generate target curve points based on configuration
-                    let target_curve_points = match room_eq.optimizer_config.target_curve.as_str() {
-                        "custom" => room_eq.custom_target_curve.generate_curve(),
-                        "flat" => crate::app::types::CustomTargetCurve::new_flat().generate_curve(),
-                        "near_field" => {
-                            crate::app::types::CustomTargetCurve::new_near_field().generate_curve()
-                        }
-                        "mid_field" => {
-                            crate::app::types::CustomTargetCurve::new_mid_field().generate_curve()
-                        }
-                        "far_field" => {
-                            crate::app::types::CustomTargetCurve::new_far_field().generate_curve()
-                        }
-                        _ => crate::app::types::CustomTargetCurve::new_flat().generate_curve(),
-                    };
-
-                    // Calculate target average (20-1000Hz)
-                    let target_indices: Vec<usize> = target_curve_points
-                        .iter()
-                        .enumerate()
-                        .filter(|&(_, &(f, _))| f >= 20.0 && f <= 1000.0)
-                        .map(|(i, _)| i)
-                        .collect();
-
-                    let target_avg = if !target_indices.is_empty() {
-                        target_indices
-                            .iter()
-                            .map(|&i| target_curve_points[i].1)
-                            .sum::<f64>()
-                            / target_indices.len() as f64
-                    } else {
-                        0.0
-                    };
-
-                    // Calculate offset to align target with input
-                    let offset = input_avg - target_avg;
-
-                    // Normalize target curve
-                    let normalized_target: Vec<(f64, f64)> = target_curve_points
-                        .into_iter()
-                        .map(|(f, db)| (f, db + offset))
-                        .collect();
-
-                    // Convert to autoeq::Curve for optimizer
-                    let target_curve = autoeq::Curve {
-                        freq: ndarray::Array1::from_vec(
-                            normalized_target.iter().map(|(f, _)| *f).collect(),
-                        ),
-                        spl: ndarray::Array1::from_vec(
-                            normalized_target.iter().map(|(_, db)| *db).collect(),
-                        ),
-                        phase: None,
-                    };
-
-                    // Build args using library defaults
-                    let mut args = autoeq::Args::speaker_defaults();
-                    args.num_filters = room_eq.optimizer_config.num_filters;
-                    args.sample_rate = 48000.0;
-                    args.min_db = room_eq.optimizer_config.min_db;
-                    args.max_db = room_eq.optimizer_config.max_db;
-                    args.min_q = room_eq.optimizer_config.min_q;
-                    args.max_q = room_eq.optimizer_config.max_q;
-                    args.min_freq = room_eq.optimizer_config.min_freq;
-                    args.max_freq = room_eq.optimizer_config.max_freq;
-                    args.algo = match room_eq.optimizer_config.algorithm {
-                        crate::app::types::RoomEqAlgorithm::Cobyla => "nlopt:cobyla".to_string(),
-                        crate::app::types::RoomEqAlgorithm::DifferentialEvolution => {
-                            "autoeq:de".to_string()
-                        }
-                        crate::app::types::RoomEqAlgorithm::NelderMead => {
-                            "nlopt:neldermead".to_string()
-                        }
-                    };
-                    args.maxeval = room_eq.optimizer_config.max_iter;
-                    args.loss = autoeq::LossType::SpeakerFlat;
-
-                    let speaker_config = SpeakerOptimizationConfig {
-                        config_type,
-                        main_measurement: Some(MeasurementInput::Curve(main_curve)),
-                        driver_measurements,
-                        crossover_type: Some(crossover_type),
-                        crossover_freq_hints: Vec::new(),
-                        args,
-                        callback_config: Some(CallbackConfig {
-                            interval: 25, // Report every 25 iterations
-                            include_biquads: true,
-                            include_filter_response: true,
-                        }),
-                        target: Some(MeasurementInput::Curve(target_curve)),
-                    };
-
-                    (
-                        meas.channel_name.clone(),
-                        speaker_config,
-                        speaker_cfg.config_type,
-                    )
-                })
+                .map(|m| m.channel_name.clone())
                 .collect();
 
-            let mut opt_params = autoeq::Args::speaker_defaults();
-            opt_params.num_filters = room_eq.optimizer_config.num_filters;
-            opt_params.sample_rate = 48000.0;
-            opt_params.min_db = room_eq.optimizer_config.min_db;
-            opt_params.max_db = room_eq.optimizer_config.max_db;
-            opt_params.min_q = room_eq.optimizer_config.min_q;
-            opt_params.max_q = room_eq.optimizer_config.max_q;
-            opt_params.min_freq = room_eq.optimizer_config.min_freq;
-            opt_params.max_freq = room_eq.optimizer_config.max_freq;
-            opt_params.algo = match room_eq.optimizer_config.algorithm {
+            // Build optimizer config
+            let algorithm = match room_eq.optimizer_config.algorithm {
                 crate::app::types::RoomEqAlgorithm::Cobyla => "nlopt:cobyla".to_string(),
                 crate::app::types::RoomEqAlgorithm::DifferentialEvolution => {
                     "autoeq:de".to_string()
                 }
                 crate::app::types::RoomEqAlgorithm::NelderMead => "nlopt:neldermead".to_string(),
             };
-            opt_params.maxeval = room_eq.optimizer_config.max_iter;
-            opt_params.loss = autoeq::LossType::SpeakerFlat;
 
-            (configs, opt_params)
+            let optimizer = OptimizerConfig {
+                loss_type: "flat".to_string(),
+                algorithm,
+                num_filters: room_eq.optimizer_config.num_filters,
+                min_q: room_eq.optimizer_config.min_q,
+                max_q: room_eq.optimizer_config.max_q,
+                min_db: room_eq.optimizer_config.min_db,
+                max_db: room_eq.optimizer_config.max_db,
+                min_freq: room_eq.optimizer_config.min_freq,
+                max_freq: room_eq.optimizer_config.max_freq,
+                max_iter: room_eq.optimizer_config.max_iter,
+                peq_model: "pk".to_string(),
+                mode: "iir".to_string(),
+                fir: None,
+                seed: None,
+            };
+
+            let config = RoomConfig {
+                version: autoeq::roomeq::default_config_version(),
+                speakers,
+                crossovers: Some(crossovers),
+                target_curve: None,
+                group_delay: None,
+                optimizer,
+            };
+
+            (config, channel_names, room_eq.optimizer_config.max_iter)
         };
+
+        if channel_names.is_empty() {
+            log::warn!("No channels to optimize");
+            self.state.update(cx, |state, _cx| {
+                state
+                    .app
+                    .measurement_state
+                    .room_eq_state
+                    .optimization_status = OptimizationStatus::Failed;
+                state.app.measurement_state.room_eq_state.error_message =
+                    Some("No channels to optimize".to_string());
+            });
+            return;
+        }
 
         // Update state to running and clear progress history
         self.state.update(cx, |state, _cx| {
@@ -589,23 +537,20 @@ impl PlayerView {
                 .clear();
             state.app.measurement_state.room_eq_state.current_iteration = 0;
             state.app.measurement_state.room_eq_state.current_loss = 0.0;
+
+            // Initialize progress chart state immediately
+            state.app.measurement_state.room_eq_state.progress_chart_state = Some(
+                InteractiveChartStateWrapper::new(
+                    0.0,
+                    max_iter.max(100) as f64,
+                    0.0,
+                    1.0,
+                )
+                .with_log_x(false)
+                .with_size(700.0, 250.0),
+            );
         });
 
-        if channel_configs.is_empty() {
-            log::warn!("No channels to optimize");
-            self.state.update(cx, |state, _cx| {
-                state
-                    .app
-                    .measurement_state
-                    .room_eq_state
-                    .optimization_status = OptimizationStatus::Failed;
-                state.app.measurement_state.room_eq_state.error_message =
-                    Some("No channels to optimize".to_string());
-            });
-            return;
-        }
-
-        let total_channels = channel_configs.len();
         let state_clone = self.state.clone();
 
         // Create async channel for progress updates from blocking thread
@@ -623,6 +568,7 @@ impl PlayerView {
                         state.app.measurement_state.room_eq_state.current_loss = loss;
                         state.app.measurement_state.room_eq_state.overall_progress =
                             overall_progress;
+                        
                         // Add to progress history (limit to avoid memory issues)
                         if state
                             .app
@@ -642,275 +588,191 @@ impl PlayerView {
                         cx.notify();
                     });
                 }
+                log::info!("Progress receiver loop finished");
             }
         })
         .detach();
 
         // Spawn the optimization task
         cx.spawn(async move |_, cx| {
-            let mut all_results: Vec<ChannelOptResult> = Vec::new();
-            let mut total_pre_score = 0.0;
-            let mut total_post_score = 0.0;
-            let mut global_iteration_offset = 0usize;
-
-            for (channel_idx, (channel_name, config, _ui_config_type)) in
-                channel_configs.into_iter().enumerate()
-            {
-                // Update status for current channel
-                let channel_name_for_status = channel_name.clone();
-                let _ = state_clone.update(&mut cx.clone(), |state, cx| {
-                    state.app.measurement_state.room_eq_state.current_channel =
-                        Some(channel_name_for_status.clone());
-                    state.app.measurement_state.room_eq_state.status_message = format!(
-                        "Optimizing {} ({}/{})",
-                        channel_name_for_status,
-                        channel_idx + 1,
-                        total_channels
-                    );
-                    cx.notify();
-                });
-
-                // Create progress tracking for this channel
-                let channel_idx_f = channel_idx as f32;
-                let total_channels_f = total_channels as f32;
-                let channel_name_cb = channel_name.clone();
-                let progress_tx_clone = progress_tx.clone();
-                let iteration_offset = global_iteration_offset;
-
-                // Create callback that sends progress to UI via channel
-                let callback: sotf_audio_player::room_eq::SpeakerOptimizationCallback =
-                    Box::new(move |progress: &SpeakerOptimizationProgress| {
-                        let iteration = progress.iteration;
-                        let loss = progress.loss;
-                        let max_iter = progress.max_iterations;
-                        let stage = progress.stage;
-                        let num_biquads = progress.current_biquads.len();
-
-                        // Calculate overall progress
-                        let channel_progress = if max_iter > 0 {
-                            iteration as f32 / max_iter as f32
-                        } else {
-                            0.0
-                        };
-                        let overall = (channel_idx_f + channel_progress) / total_channels_f;
-
-                        let stage_str = match stage {
-                            sotf_audio_player::room_eq::OptimizationStage::Crossover => "crossover",
-                            sotf_audio_player::room_eq::OptimizationStage::Eq => "EQ",
-                            sotf_audio_player::room_eq::OptimizationStage::Refinement => {
-                                "refinement"
-                            }
-                        };
-
-                        log::debug!(
-                            "Channel {}: iter {}/{} ({}) loss={:.4} filters={}",
-                            channel_name_cb,
-                            iteration,
-                            max_iter,
-                            stage_str,
-                            loss,
-                            num_biquads
-                        );
-
-                        // Send progress update to UI (ignore errors if channel full or receiver dropped)
-                        let _ = progress_tx_clone.try_send((
-                            iteration_offset + iteration,
-                            loss,
-                            overall,
-                        ));
-
-                        CallbackAction::Continue
-                    });
-
-                // Run optimization in blocking task (optimization is CPU-bound)
-                let config_clone = config.clone();
-                let max_iter = config.args.maxeval;
-                let result = smol::unblock(move || {
-                    run_speaker_optimization_with_callback(&config_clone, Some(callback))
-                })
-                .await;
-
-                // Update iteration offset for next channel
-                global_iteration_offset += max_iter;
-
-                match result {
-                    Ok(speaker_result) => {
-                        log::info!(
-                            "Channel {} optimized: {:.4} -> {:.4}",
-                            channel_name,
-                            speaker_result.initial_loss,
-                            speaker_result.final_loss
-                        );
-
-                        total_pre_score += speaker_result.initial_loss;
-                        total_post_score += speaker_result.final_loss;
-
-                        // Convert to UI result format
-                        let channel_result = ChannelOptResult {
-                            channel_name: channel_name.clone(),
-                            pre_score: speaker_result.initial_loss,
-                            post_score: speaker_result.final_loss,
-                            eq_filters: speaker_result
-                                .biquads
-                                .iter()
-                                .map(|b| EqFilterConfig {
-                                    filter_type: format!("{:?}", b.filter_type),
-                                    frequency: b.freq,
-                                    q: b.q,
-                                    gain_db: b.db_gain,
-                                })
-                                .collect(),
-                            crossover_freqs: speaker_result.crossover_freqs.clone(),
-                            driver_gains: speaker_result.driver_gains.clone(),
-                            original_response: Some(
-                                speaker_result
-                                    .frequencies
-                                    .iter()
-                                    .zip(speaker_result.input_curve.iter())
-                                    .map(|(&f, &db)| (f, db))
-                                    .collect(),
-                            ),
-                            corrected_response: Some(
-                                speaker_result
-                                    .frequencies
-                                    .iter()
-                                    .zip(speaker_result.corrected_curve.iter())
-                                    .map(|(&f, &db)| (f, db))
-                                    .collect(),
-                            ),
-                            normalized_response: Some(
-                                speaker_result
-                                    .frequencies
-                                    .iter()
-                                    .zip(speaker_result.normalized_curve.iter())
-                                    .map(|(&f, &db)| (f, db))
-                                    .collect(),
-                            ),
-                        };
-
-                        all_results.push(channel_result);
-
-                        // Update progress
-                        let progress = (channel_idx + 1) as f32 / total_channels as f32;
-                        let _ = state_clone.update(&mut cx.clone(), |state, cx| {
-                            state.app.measurement_state.room_eq_state.overall_progress = progress;
-                            state.app.measurement_state.room_eq_state.status_message = format!(
-                                "Completed {} ({}/{})",
-                                channel_name,
-                                channel_idx + 1,
-                                total_channels
-                            );
-                            cx.notify();
-                        });
-                    }
-                    Err(e) => {
-                        log::error!("Channel {} optimization failed: {}", channel_name, e);
-                        let _ = state_clone.update(&mut cx.clone(), |state, cx| {
-                            state
-                                .app
-                                .measurement_state
-                                .room_eq_state
-                                .optimization_status = OptimizationStatus::Failed;
-                            state.app.measurement_state.room_eq_state.error_message =
-                                Some(format!("Task error for {}: {}", channel_name, e));
-                            cx.notify();
-                        });
-                        return;
-                    }
-                }
-            }
-
-            // Drop the progress sender to signal the receiver task to stop
-            drop(progress_tx);
-
-            // All channels completed - update final state
-            let avg_pre = if !all_results.is_empty() {
-                total_pre_score / all_results.len() as f64
-            } else {
-                0.0
-            };
-            let avg_post = if !all_results.is_empty() {
-                total_post_score / all_results.len() as f64
-            } else {
-                0.0
-            };
-
-            log::info!(
-                "Room EQ optimization completed: avg score {:.4} -> {:.4}",
-                avg_pre,
-                avg_post
-            );
-
+            // Update status
             let _ = state_clone.update(&mut cx.clone(), |state, cx| {
-                state
-                    .app
-                    .measurement_state
-                    .room_eq_state
-                    .optimization_status = OptimizationStatus::Completed;
-                state.app.measurement_state.room_eq_state.status_message = format!(
-                    "Optimization complete! Score: {:.2} -> {:.2}",
-                    avg_pre, avg_post
-                );
-                state.app.measurement_state.room_eq_state.channel_results = all_results;
-                state.app.measurement_state.room_eq_state.overall_progress = 1.0;
-                state.app.measurement_state.room_eq_state.current_channel = None;
-
-                // Build DSP output from results
-                let mut dsp_channels = std::collections::HashMap::new();
-                for result in &state.app.measurement_state.room_eq_state.channel_results {
-                    let eq_params = serde_json::json!({
-                        "filters": result.eq_filters.iter().map(|f| {
-                            serde_json::json!({
-                                "filter_type": f.filter_type.to_lowercase(),
-                                "frequency": f.frequency,
-                                "q": f.q,
-                                "gain_db": f.gain_db
-                            })
-                        }).collect::<Vec<_>>()
-                    });
-
-                    dsp_channels.insert(
-                        result.channel_name.clone(),
-                        crate::app::types::ChannelDspChain {
-                            channel: result.channel_name.clone(),
-                            plugins: vec![crate::app::types::DspPluginConfig {
-                                plugin_type: "EQ".to_string(),
-                                parameters: eq_params,
-                            }],
-                            drivers: None,
-                        },
-                    );
-                }
-
-                state.app.measurement_state.room_eq_state.dsp_output =
-                    Some(crate::app::types::DspChainOutput {
-                        channels: dsp_channels,
-                        metadata: Some(crate::app::types::DspChainMetadata {
-                            pre_score: avg_pre,
-                            post_score: avg_post,
-                            algorithm: state
-                                .app
-                                .measurement_state
-                                .room_eq_state
-                                .optimizer_config
-                                .algorithm
-                                .as_str()
-                                .to_string(),
-                            iterations: state
-                                .app
-                                .measurement_state
-                                .room_eq_state
-                                .optimizer_config
-                                .max_iter,
-                            timestamp: chrono::Utc::now().to_rfc3339(),
-                        }),
-                    });
-
-                // Advance to review step
-                state.app.measurement_state.room_eq_state.step =
-                    crate::app::types::RoomEqStep::Review;
+                state.app.measurement_state.room_eq_state.status_message =
+                    "Optimizing all channels (parallel)...".to_string();
                 cx.notify();
             });
+
+            // Create progress callback
+            let progress_tx_clone = progress_tx.clone();
+            let callback: RoomOptimizationCallback =
+                Box::new(move |progress: &RoomOptimizationProgress| {
+                    let iteration = progress.iteration;
+                    let loss = progress.loss;
+                    let max_iterations = progress.max_iterations;
+
+                    let overall = if max_iterations > 0 {
+                        iteration as f32 / max_iterations as f32
+                    } else {
+                        0.0
+                    };
+
+                    // Send progress update (non-blocking)
+                    let _ = progress_tx_clone.try_send((iteration, loss, overall));
+                    CallbackAction::Continue
+                });
+
+            // Run room optimization (parallel via rayon internally)
+            let result =
+                smol::unblock(move || run_room_optimization(&room_config, 48000.0, Some(callback)))
+                    .await;
+
+            // Drop progress sender to close channel and stop receiver
+            drop(progress_tx);
+
+            match result {
+                Ok(room_result) => {
+                    log::info!(
+                        "Room optimization completed: {:.4} -> {:.4}",
+                        room_result.combined_pre_score,
+                        room_result.combined_post_score
+                    );
+
+                    // Build UI results from RoomOptimizationResult
+                    let all_results: Vec<ChannelOptResult> = channel_names
+                        .iter()
+                        .filter_map(|name| {
+                            room_result.channel_results.get(name).map(|channel_res| {
+                                ChannelOptResult {
+                                    channel_name: name.clone(),
+                                    pre_score: channel_res.pre_score,
+                                    post_score: channel_res.post_score,
+                                    eq_filters: channel_res
+                                        .biquads
+                                        .iter()
+                                        .map(|b| EqFilterConfig {
+                                            filter_type: format!("{:?}", b.filter_type),
+                                            frequency: b.freq,
+                                            q: b.q,
+                                            gain_db: b.db_gain,
+                                        })
+                                        .collect(),
+                                    crossover_freqs: None,
+                                    driver_gains: None,
+                                    original_response: Some(
+                                        channel_res
+                                            .initial_curve
+                                            .freq
+                                            .iter()
+                                            .zip(channel_res.initial_curve.spl.iter())
+                                            .map(|(&f, &db)| (f, db))
+                                            .collect(),
+                                    ),
+                                    corrected_response: Some(
+                                        channel_res
+                                            .final_curve
+                                            .freq
+                                            .iter()
+                                            .zip(channel_res.final_curve.spl.iter())
+                                            .map(|(&f, &db)| (f, db))
+                                            .collect(),
+                                    ),
+                                    normalized_response: Some(
+                                        channel_res
+                                            .final_curve
+                                            .freq
+                                            .iter()
+                                            .zip(channel_res.final_curve.spl.iter())
+                                            .map(|(&f, &db)| (f, db))
+                                            .collect(),
+                                    ),
+                                }
+                            })
+                        })
+                        .collect();
+
+                    let avg_pre = room_result.combined_pre_score;
+                    let avg_post = room_result.combined_post_score;
+
+                    // Update final state
+                    let _ = state_clone.update(&mut cx.clone(), |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimization_status = OptimizationStatus::Completed;
+                        state.app.measurement_state.room_eq_state.status_message = format!(
+                            "Optimization complete! Score: {:.2} -> {:.2}",
+                            avg_pre, avg_post
+                        );
+                        state.app.measurement_state.room_eq_state.channel_results = all_results;
+                        state.app.measurement_state.room_eq_state.overall_progress = 1.0;
+                        state.app.measurement_state.room_eq_state.current_channel = None;
+
+                        // Build DSP output
+                        let mut dsp_channels = std::collections::HashMap::new();
+                        for result in &state.app.measurement_state.room_eq_state.channel_results {
+                            let eq_params = serde_json::json!({
+                                "filters": result.eq_filters.iter().map(|f| {
+                                    serde_json::json!({
+                                        "filter_type": f.filter_type.to_lowercase(),
+                                        "frequency": f.frequency,
+                                        "q": f.q,
+                                        "gain_db": f.gain_db
+                                    })
+                                }).collect::<Vec<_>>()
+                            });
+
+                            dsp_channels.insert(
+                                result.channel_name.clone(),
+                                crate::app::types::ChannelDspChain {
+                                    channel: result.channel_name.clone(),
+                                    plugins: vec![crate::app::types::DspPluginConfig {
+                                        plugin_type: "EQ".to_string(),
+                                        parameters: eq_params,
+                                    }],
+                                    drivers: None,
+                                },
+                            );
+                        }
+
+                        state.app.measurement_state.room_eq_state.dsp_output =
+                            Some(crate::app::types::DspChainOutput {
+                                channels: dsp_channels,
+                                metadata: Some(crate::app::types::DspChainMetadata {
+                                    pre_score: avg_pre,
+                                    post_score: avg_post,
+                                    algorithm: state
+                                        .app
+                                        .measurement_state
+                                        .room_eq_state
+                                        .optimizer_config
+                                        .algorithm
+                                        .as_str()
+                                        .to_string(),
+                                    iterations: max_iter,
+                                    timestamp: chrono::Utc::now().to_rfc3339(),
+                                }),
+                            });
+
+                        state.app.measurement_state.room_eq_state.step =
+                            crate::app::types::RoomEqStep::Review;
+                        cx.notify();
+                    });
+                }
+                Err(e) => {
+                    log::error!("Room optimization failed: {}", e);
+                    let _ = state_clone.update(&mut cx.clone(), |state, cx| {
+                        state
+                            .app
+                            .measurement_state
+                            .room_eq_state
+                            .optimization_status = OptimizationStatus::Failed;
+                        state.app.measurement_state.room_eq_state.error_message =
+                            Some(format!("Room optimization error: {}", e));
+                        cx.notify();
+                    });
+                }
+            }
         })
         .detach();
     }

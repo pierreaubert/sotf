@@ -1,0 +1,29 @@
+[package]
+name = "sotf-daemon"
+description = "an audio player and recorder that support audio plugins"
+version.workspace = true
+edition.workspace = true
+
+[features]
+default = []
+hal = ["driver-hal", "plugins/hal"]
+
+[[bin]]
+name = "sotf-daemon"
+path = "bin/sotf_daemon.rs"
+required-features = ["hal"]
+
+[dependencies]
+parking_lot = { workspace = true }
+plugins = { workspace = true }
+engine = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+ctrlc = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+cpal = { workspace = true }
+tokio = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+driver-hal = { workspace = true, optional = true }

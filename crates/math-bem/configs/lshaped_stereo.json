@@ -1,0 +1,81 @@
+{
+  "room": {
+    "type": "lshaped",
+    "width1": 5.0,
+    "depth1": 4.0,
+    "width2": 3.0,
+    "depth2": 3.0,
+    "height": 2.6
+  },
+  "sources": [
+    {
+      "name": "Left Speaker",
+      "position": {
+        "x": 0.8,
+        "y": 4.3,
+        "z": 1.1
+      },
+      "amplitude": 1.0,
+      "directivity": {
+        "type": "omnidirectional"
+      },
+      "crossover": {
+        "type": "fullrange"
+      }
+    },
+    {
+      "name": "Right Speaker",
+      "position": {
+        "x": 2.2,
+        "y": 4.3,
+        "z": 1.1
+      },
+      "amplitude": 1.0,
+      "directivity": {
+        "type": "omnidirectional"
+      },
+      "crossover": {
+        "type": "fullrange"
+      }
+    }
+  ],
+  "listening_positions": [
+    {
+      "x": 1.5,
+      "y": 5.5,
+      "z": 1.2
+    }
+  ],
+  "frequencies": {
+    "min_freq": 40.0,
+    "max_freq": 500.0,
+    "num_points": 100,
+    "spacing": "logarithmic"
+  },
+  "solver": {
+    "method": "gmres+ilu",
+    "mesh_resolution": 10,
+    "gmres": {
+      "max_iter": 10000,
+      "restart": 300,
+      "tolerance": 1e-12
+    },
+    "ilu": {
+      "method": "tbem",
+      "scanning_degree": "fine"
+    },
+    "adaptive_integration": true,
+    "adaptive_meshing": true
+  },
+  "visualization": {
+    "generate_slices": true,
+    "slice_resolution": 50,
+    "slice_frequency_indices": []
+  },
+  "metadata": {
+    "description": "L-shaped room with stereo speakers at the top of the L",
+    "author": "Room Simulator",
+    "date": "2025-11-28",
+    "notes": "Main section: 5m × 4m, Extension: 3m × 3m (upper part of L). Speakers at y=4.3m (top of main section), listener at y=5.5m (middle of extension). Tests asymmetric room geometry."
+  }
+}

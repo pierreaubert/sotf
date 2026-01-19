@@ -9,8 +9,8 @@ impl UpmixerPlugin {
     #[inline]
     pub(super) fn apply_window_and_forward_fft(&mut self, input: &[f32]) {
         // Copy input to time domain buffers and apply ANALYSIS window
-        // Apply -3dB attenuation (0.707) to provide headroom for hot mixes
-        let headroom_scale = 0.70710678;
+        // Apply -3dB attenuation (1/sqrt(2)) to provide headroom for hot mixes
+        let headroom_scale = std::f32::consts::FRAC_1_SQRT_2;
         for i in 0..self.fft_size {
             let idx = i * 2;
             let window_val = self.window[i] * headroom_scale;

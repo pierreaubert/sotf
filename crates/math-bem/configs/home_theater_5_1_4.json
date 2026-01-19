@@ -1,0 +1,219 @@
+{
+  "room": {
+    "type": "rectangular",
+    "width": 5.5,
+    "depth": 7.0,
+    "height": 2.6
+  },
+  "sources": [
+    {
+      "name": "Front Left",
+      "position": {
+        "x": 1.2,
+        "y": 0.3,
+        "z": 1.1
+      },
+      "amplitude": 0.8,
+      "directivity": {
+        "type": "omnidirectional"
+      },
+      "crossover": {
+        "type": "highpass",
+        "cutoff_freq": 80.0,
+        "order": 4
+      }
+    },
+    {
+      "name": "Center",
+      "position": {
+        "x": 2.75,
+        "y": 0.3,
+        "z": 0.9
+      },
+      "amplitude": 0.8,
+      "directivity": {
+        "type": "omnidirectional"
+      },
+      "crossover": {
+        "type": "highpass",
+        "cutoff_freq": 80.0,
+        "order": 4
+      }
+    },
+    {
+      "name": "Front Right",
+      "position": {
+        "x": 4.3,
+        "y": 0.3,
+        "z": 1.1
+      },
+      "amplitude": 0.8,
+      "directivity": {
+        "type": "omnidirectional"
+      },
+      "crossover": {
+        "type": "highpass",
+        "cutoff_freq": 80.0,
+        "order": 4
+      }
+    },
+    {
+      "name": "Surround Left",
+      "position": {
+        "x": 0.8,
+        "y": 4.5,
+        "z": 1.5
+      },
+      "amplitude": 0.7,
+      "directivity": {
+        "type": "omnidirectional"
+      },
+      "crossover": {
+        "type": "highpass",
+        "cutoff_freq": 80.0,
+        "order": 4
+      }
+    },
+    {
+      "name": "Surround Right",
+      "position": {
+        "x": 4.7,
+        "y": 4.5,
+        "z": 1.5
+      },
+      "amplitude": 0.7,
+      "directivity": {
+        "type": "omnidirectional"
+      },
+      "crossover": {
+        "type": "highpass",
+        "cutoff_freq": 80.0,
+        "order": 4
+      }
+    },
+    {
+      "name": "Subwoofer",
+      "position": {
+        "x": 0.5,
+        "y": 0.5,
+        "z": 0.3
+      },
+      "amplitude": 1.2,
+      "directivity": {
+        "type": "omnidirectional"
+      },
+      "crossover": {
+        "type": "lowpass",
+        "cutoff_freq": 80.0,
+        "order": 4
+      }
+    },
+    {
+      "name": "Height Front Left",
+      "position": {
+        "x": 1.5,
+        "y": 1.0,
+        "z": 2.4
+      },
+      "amplitude": 0.6,
+      "directivity": {
+        "type": "omnidirectional"
+      },
+      "crossover": {
+        "type": "highpass",
+        "cutoff_freq": 100.0,
+        "order": 4
+      }
+    },
+    {
+      "name": "Height Front Right",
+      "position": {
+        "x": 4.0,
+        "y": 1.0,
+        "z": 2.4
+      },
+      "amplitude": 0.6,
+      "directivity": {
+        "type": "omnidirectional"
+      },
+      "crossover": {
+        "type": "highpass",
+        "cutoff_freq": 100.0,
+        "order": 4
+      }
+    },
+    {
+      "name": "Height Rear Left",
+      "position": {
+        "x": 1.5,
+        "y": 5.5,
+        "z": 2.4
+      },
+      "amplitude": 0.6,
+      "directivity": {
+        "type": "omnidirectional"
+      },
+      "crossover": {
+        "type": "highpass",
+        "cutoff_freq": 100.0,
+        "order": 4
+      }
+    },
+    {
+      "name": "Height Rear Right",
+      "position": {
+        "x": 4.0,
+        "y": 5.5,
+        "z": 2.4
+      },
+      "amplitude": 0.6,
+      "directivity": {
+        "type": "omnidirectional"
+      },
+      "crossover": {
+        "type": "highpass",
+        "cutoff_freq": 100.0,
+        "order": 4
+      }
+    }
+  ],
+  "listening_positions": [
+    {
+      "x": 2.75,
+      "y": 4.0,
+      "z": 1.2
+    }
+  ],
+  "frequencies": {
+    "min_freq": 20.0,
+    "max_freq": 1000.0,
+    "num_points": 250,
+    "spacing": "logarithmic"
+  },
+  "solver": {
+    "method": "gmres+ilu",
+    "mesh_resolution": 5,
+    "gmres": {
+      "max_iter": 10000,
+      "restart": 300,
+      "tolerance": 1e-12
+    },
+    "ilu": {
+      "method": "tbem",
+      "scanning_degree": "fine"
+    },
+    "adaptive_integration": true,
+    "adaptive_meshing": true
+  },
+  "visualization": {
+    "generate_slices": true,
+    "slice_resolution": 250,
+    "slice_frequency_indices": []
+  },
+  "metadata": {
+    "description": "5.1.4 Dolby Atmos home theater setup",
+    "author": "Room Simulator",
+    "date": "2025-01-28",
+    "notes": "Medium-sized dedicated home theater room (5.5m x 7.0m x 2.6m). Features: 3 front channels (L/C/R), 2 surround channels, 1 subwoofer (80Hz crossover), 4 height channels (100Hz crossover). Listening position at optimal 3m from screen. Bass management with 80Hz LR4 crossover for mains, 100Hz for heights."
+  }
+}

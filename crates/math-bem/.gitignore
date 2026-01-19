@@ -1,0 +1,7 @@
+/target
+/Cargo.lock
+/tests/output/*.json
+/results
+/output
+/data_generated
+/*.json

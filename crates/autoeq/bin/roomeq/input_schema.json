@@ -1,0 +1,373 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/pierreaubert/autoeq/roomeq/input_schema.json",
+  "title": "RoomEQ Input Configuration",
+  "description": "Configuration schema for the roomeq room equalization optimizer",
+  "type": "object",
+  "required": ["speakers"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Configuration version (semantic versioning)",
+      "default": "1.1.0",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "speakers": {
+      "type": "object",
+      "description": "Map of channel names to speaker configurations",
+      "additionalProperties": {
+        "$ref": "#/$defs/SpeakerConfig"
+      },
+      "minProperties": 1
+    },
+    "crossovers": {
+      "type": "object",
+      "description": "Crossover configurations referenced by multi-driver speakers",
+      "additionalProperties": {
+        "$ref": "#/$defs/CrossoverConfig"
+      }
+    },
+    "target_curve": {
+      "$ref": "#/$defs/TargetCurveConfig",
+      "description": "Target frequency response curve"
+    },
+    "optimizer": {
+      "$ref": "#/$defs/OptimizerConfig",
+      "description": "Optimization parameters"
+    },
+    "group_delay": {
+      "type": "array",
+      "description": "Group delay optimization configurations for aligning subwoofers with speakers",
+      "items": {
+        "$ref": "#/$defs/GroupDelayConfig"
+      }
+    }
+  },
+  "$defs": {
+    "SpeakerConfig": {
+      "description": "Speaker configuration (single, multi-driver group, multi-sub, or DBA)",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/MeasurementSource",
+          "description": "Single speaker measurement"
+        },
+        {
+          "$ref": "#/$defs/SpeakerGroup",
+          "description": "Multi-driver speaker group"
+        },
+        {
+          "$ref": "#/$defs/MultiSubGroup",
+          "description": "Multiple subwoofers"
+        },
+        {
+          "$ref": "#/$defs/DBAConfig",
+          "description": "Double Bass Array"
+        }
+      ]
+    },
+    "MeasurementSource": {
+      "description": "Source of measurements (single file or multiple for averaging)",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/MeasurementRef"
+        },
+        {
+          "type": "array",
+          "description": "Multiple measurements to be averaged",
+          "items": {
+            "$ref": "#/$defs/MeasurementRef"
+          },
+          "minItems": 1
+        }
+      ]
+    },
+    "MeasurementRef": {
+      "description": "Reference to a measurement file",
+      "oneOf": [
+        {
+          "type": "string",
+          "description": "Path to CSV measurement file"
+        },
+        {
+          "type": "object",
+          "description": "Measurement with optional name",
+          "required": ["path"],
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Path to CSV measurement file"
+            },
+            "name": {
+              "type": "string",
+              "description": "Optional display name for the measurement"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "SpeakerGroup": {
+      "type": "object",
+      "description": "Multi-driver speaker group with crossover",
+      "required": ["name", "measurements"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the speaker group"
+        },
+        "measurements": {
+          "type": "array",
+          "description": "Measurements for each driver (ordered from lowest to highest frequency)",
+          "items": {
+            "$ref": "#/$defs/MeasurementSource"
+          },
+          "minItems": 2
+        },
+        "crossover": {
+          "type": "string",
+          "description": "Key referencing a crossover in the crossovers map"
+        }
+      },
+      "additionalProperties": false
+    },
+    "MultiSubGroup": {
+      "type": "object",
+      "description": "Multiple subwoofers with gain/delay optimization",
+      "required": ["name", "subwoofers"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the subwoofer group"
+        },
+        "subwoofers": {
+          "type": "array",
+          "description": "Measurements for each subwoofer",
+          "items": {
+            "$ref": "#/$defs/MeasurementSource"
+          },
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false
+    },
+    "DBAConfig": {
+      "type": "object",
+      "description": "Double Bass Array with front and rear arrays",
+      "required": ["name", "front", "rear"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the DBA system"
+        },
+        "front": {
+          "type": "array",
+          "description": "Measurements for the front array",
+          "items": {
+            "$ref": "#/$defs/MeasurementSource"
+          },
+          "minItems": 1
+        },
+        "rear": {
+          "type": "array",
+          "description": "Measurements for the rear array (will be phase-inverted)",
+          "items": {
+            "$ref": "#/$defs/MeasurementSource"
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "CrossoverConfig": {
+      "type": "object",
+      "description": "Crossover configuration",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Crossover type",
+          "enum": ["LR24", "LR4", "LR48", "LR8", "Butterworth12", "BW12", "Butterworth24", "BW24"]
+        },
+        "frequency": {
+          "type": "number",
+          "description": "Fixed crossover frequency in Hz (for 2-way speakers)",
+          "minimum": 20,
+          "maximum": 20000
+        },
+        "frequencies": {
+          "type": "array",
+          "description": "Fixed crossover frequencies in Hz (for 3-way and above, e.g., [500, 3000] for woofer/mid at 500Hz, mid/tweeter at 3000Hz)",
+          "items": {
+            "type": "number",
+            "minimum": 20,
+            "maximum": 20000
+          },
+          "minItems": 1
+        },
+        "frequency_range": {
+          "type": "array",
+          "description": "Frequency range [min, max] in Hz for automatic optimization",
+          "items": {
+            "type": "number",
+            "minimum": 20,
+            "maximum": 20000
+          },
+          "minItems": 2,
+          "maxItems": 2
+        }
+      },
+      "additionalProperties": false
+    },
+    "TargetCurveConfig": {
+      "description": "Target frequency response curve",
+      "oneOf": [
+        {
+          "type": "string",
+          "description": "Predefined target or path to CSV file",
+          "examples": ["flat", "harman", "targets/custom.csv"]
+        }
+      ]
+    },
+    "GroupDelayConfig": {
+      "type": "object",
+      "description": "Configuration for group delay optimization between subwoofer and speakers",
+      "required": ["subwoofer", "speakers"],
+      "properties": {
+        "subwoofer": {
+          "type": "string",
+          "description": "Name of the subwoofer channel"
+        },
+        "speakers": {
+          "type": "array",
+          "description": "Names of speaker channels to align",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "min_freq": {
+          "type": "number",
+          "description": "Minimum frequency for optimization in Hz",
+          "default": 30.0
+        },
+        "max_freq": {
+          "type": "number",
+          "description": "Maximum frequency for optimization in Hz",
+          "default": 120.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "OptimizerConfig": {
+      "type": "object",
+      "description": "Optimization parameters",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "description": "Optimization mode",
+          "enum": ["iir", "fir", "mixed"],
+          "default": "iir"
+        },
+        "fir": {
+          "$ref": "#/$defs/FirConfig",
+          "description": "FIR configuration (when mode is 'fir' or 'mixed')"
+        },
+        "loss_type": {
+          "type": "string",
+          "description": "Loss function type",
+          "enum": ["flat", "score"],
+          "default": "flat"
+        },
+        "algorithm": {
+          "type": "string",
+          "description": "Optimization algorithm",
+          "default": "cobyla",
+          "examples": ["cobyla", "nlopt:cobyla", "autoeq:de", "nlopt:isres"]
+        },
+        "num_filters": {
+          "type": "integer",
+          "description": "Number of PEQ filters per channel",
+          "minimum": 1,
+          "maximum": 50,
+          "default": 10
+        },
+        "min_q": {
+          "type": "number",
+          "description": "Minimum Q factor",
+          "minimum": 0.1,
+          "maximum": 20,
+          "default": 0.5
+        },
+        "max_q": {
+          "type": "number",
+          "description": "Maximum Q factor",
+          "minimum": 0.1,
+          "maximum": 50,
+          "default": 10.0
+        },
+        "min_db": {
+          "type": "number",
+          "description": "Minimum gain in dB",
+          "minimum": -30,
+          "maximum": 0,
+          "default": -12.0
+        },
+        "max_db": {
+          "type": "number",
+          "description": "Maximum gain in dB",
+          "minimum": 0,
+          "maximum": 30,
+          "default": 12.0
+        },
+        "min_freq": {
+          "type": "number",
+          "description": "Minimum frequency in Hz",
+          "minimum": 1,
+          "maximum": 20000,
+          "default": 20.0
+        },
+        "max_freq": {
+          "type": "number",
+          "description": "Maximum frequency in Hz",
+          "minimum": 20,
+          "maximum": 48000,
+          "default": 20000.0
+        },
+        "max_iter": {
+          "type": "integer",
+          "description": "Maximum number of optimization iterations",
+          "minimum": 100,
+          "maximum": 1000000,
+          "default": 10000
+        },
+        "peq_model": {
+          "type": "string",
+          "description": "PEQ model type",
+          "enum": ["pk", "ls-pk-hs", "free"],
+          "default": "pk"
+        }
+      },
+      "additionalProperties": false
+    },
+    "FirConfig": {
+      "type": "object",
+      "description": "FIR filter configuration",
+      "properties": {
+        "taps": {
+          "type": "integer",
+          "description": "Number of FIR filter taps (coefficients)",
+          "minimum": 64,
+          "maximum": 65536,
+          "default": 4096
+        },
+        "phase": {
+          "type": "string",
+          "description": "Phase response type",
+          "enum": ["linear", "kirkeby"],
+          "default": "kirkeby"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

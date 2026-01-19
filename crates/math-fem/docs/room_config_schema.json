@@ -1,0 +1,155 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Room Acoustics FEM Configuration",
+  "description": "Configuration file for the Finite Element Method room acoustics simulator",
+  "type": "object",
+  "required": ["room", "sources", "listening_positions", "frequencies"],
+  "properties": {
+    "room": {
+      "description": "Room geometry specification",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["type", "width", "depth", "height"],
+          "properties": {
+            "type": { "const": "rectangular" },
+            "width": { "type": "number", "minimum": 0.1, "description": "Room width in meters (x-axis)" },
+            "depth": { "type": "number", "minimum": 0.1, "description": "Room depth in meters (y-axis)" },
+            "height": { "type": "number", "minimum": 0.1, "description": "Room height in meters (z-axis)" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "width1", "depth1", "width2", "depth2", "height"],
+          "properties": {
+            "type": { "const": "lshaped" },
+            "width1": { "type": "number", "minimum": 0.1, "description": "Width of main section" },
+            "depth1": { "type": "number", "minimum": 0.1, "description": "Depth of main section" },
+            "width2": { "type": "number", "minimum": 0.1, "description": "Width of extension section" },
+            "depth2": { "type": "number", "minimum": 0.1, "description": "Depth of extension section" },
+            "height": { "type": "number", "minimum": 0.1, "description": "Room height" }
+          }
+        }
+      ]
+    },
+    "boundaries": {
+      "description": "Boundary conditions for room surfaces",
+      "type": "object",
+      "properties": {
+        "walls": { "$ref": "#/definitions/SurfaceConfig", "description": "Default condition for all vertical walls" },
+        "floor": { "$ref": "#/definitions/SurfaceConfig", "description": "Floor condition (z=0)" },
+        "ceiling": { "$ref": "#/definitions/SurfaceConfig", "description": "Ceiling condition (z=height)" },
+        "front_wall": { "$ref": "#/definitions/SurfaceConfig", "description": "Override for front wall (y=0)" },
+        "back_wall": { "$ref": "#/definitions/SurfaceConfig", "description": "Override for back wall (y=depth)" },
+        "left_wall": { "$ref": "#/definitions/SurfaceConfig", "description": "Override for left wall (x=0)" },
+        "right_wall": { "$ref": "#/definitions/SurfaceConfig", "description": "Override for right wall (x=width)" }
+      }
+    },
+    "sources": {
+      "type": "array",
+      "description": "List of sound sources",
+      "items": {
+        "type": "object",
+        "required": ["name", "position"],
+        "properties": {
+          "name": { "type": "string" },
+          "position": { "$ref": "#/definitions/Point3D" },
+          "amplitude": { "type": "number", "default": 1.0 },
+          "directivity": {
+            "type": "object",
+            "properties": {
+              "type": { "enum": ["omnidirectional", "custom"], "default": "omnidirectional" }
+            }
+          },
+          "crossover": {
+            "type": "object",
+            "properties": {
+              "type": { "enum": ["fullrange", "lowpass", "highpass", "bandpass"], "default": "fullrange" },
+              "cutoff_freq": { "type": "number" },
+              "low_cutoff": { "type": "number" },
+              "high_cutoff": { "type": "number" },
+              "order": { "type": "integer", "minimum": 1 }
+            }
+          }
+        }
+      }
+    },
+    "listening_positions": {
+      "type": "array",
+      "description": "List of listening positions (microphones)",
+      "items": { "$ref": "#/definitions/Point3D" }
+    },
+    "frequencies": {
+      "type": "object",
+      "required": ["min_freq", "max_freq", "num_points"],
+      "properties": {
+        "min_freq": { "type": "number", "minimum": 0.1 },
+        "max_freq": { "type": "number", "minimum": 0.1 },
+        "num_points": { "type": "integer", "minimum": 1 },
+        "spacing": { "enum": ["linear", "logarithmic"], "default": "logarithmic" }
+      }
+    },
+    "solver": {
+      "type": "object",
+      "properties": {
+        "method": { "type": "string", "default": "gmres" },
+        "mesh_resolution": { "type": "integer", "default": 2, "description": "Elements per meter (affects max frequency accuracy)" },
+        "gmres": {
+          "type": "object",
+          "properties": {
+            "max_iter": { "type": "integer", "default": 1000 },
+            "restart": { "type": "integer", "default": 50 },
+            "tolerance": { "type": "number", "default": 1e-6 }
+          }
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "description": { "type": "string" },
+        "author": { "type": "string" },
+        "date": { "type": "string" }
+      }
+    }
+  },
+  "definitions": {
+    "Point3D": {
+      "type": "object",
+      "required": ["x", "y", "z"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "z": { "type": "number" }
+      }
+    },
+    "SurfaceConfig": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "rigid" }
+          },
+          "required": ["type"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "absorption" },
+            "coefficient": { "type": "number", "minimum": 0.0, "maximum": 1.0, "description": "Energy absorption coefficient alpha (0=rigid, 1=fully absorbing)" }
+          },
+          "required": ["type", "coefficient"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "impedance" },
+            "real": { "type": "number", "description": "Real part of specific acoustic impedance (normalized or Rayls? Code assumes raw Z)" },
+            "imag": { "type": "number", "description": "Imaginary part of specific acoustic impedance" }
+          },
+          "required": ["type", "real", "imag"]
+        }
+      ]
+    }
+  }
+}

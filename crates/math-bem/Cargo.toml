@@ -1,0 +1,112 @@
+[package]
+name = "math-bem"
+version = "0.3.2"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "High-performance Boundary Element Method library for acoustic scattering"
+license = { workspace = true }
+repository = { workspace = true }
+keywords = ["bem", "boundary-element", "acoustics", "numerical", "hrtf"]
+categories = ["science", "mathematics", "simulation"]
+
+[lib]
+name = "math_audio_bem"
+path = "src/lib.rs"
+
+[[bin]]
+name = "roomsim"
+path = "bin/room_simulator_bem.rs"
+required-features = ["cli", "native", "parallel", "memory-optimized", "out-of-core"]
+
+[[bin]]
+name = "qa-suite"
+path = "bin/qa_suite.rs"
+required-features = ["native", "cli", "parallel"]
+
+[dependencies]
+# Common types shared with FEM
+math-xem-common = { workspace = true }
+
+# Shared solver infrastructure (AMG preconditioner, etc.)
+math-solvers = { workspace = true, default-features = false }
+math-wave = { workspace = true }
+
+# Core numerical computing
+ndarray = { version = "0.17", default-features = false, features = ["rayon", "serde"] }
+num-complex = { workspace = true, features = ["serde"] }
+
+# BLAS/LAPACK (native only - not portable to WASM)
+ndarray-linalg = { workspace = true, optional = true }
+
+# Parallel processing
+rayon = { workspace = true }
+
+# WASM-specific dependencies
+wasm-bindgen = { workspace = true, optional = true }
+wasm-bindgen-rayon = { workspace = true, optional = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Serialization (for JSON/TOML output)
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+
+# Logging
+log = { workspace = true }
+env_logger = { workspace = true, optional = true }
+
+# Time/date for metadata
+chrono = { workspace = true }
+
+# CLI (optional, native only)
+clap = { workspace = true, optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+ndarray-linalg = { workspace = true, optional = true, features = ["openblas-system"] }
+
+[target.'cfg(any(target_os = "linux", target_os = "windows"))'.dependencies]
+ndarray-linalg = { workspace = true, optional = true, features = ["openblas-system"] }
+
+[dev-dependencies]
+directories = { workspace = true }
+
+[features]
+default = ["native", "cli"]
+
+# Native feature: enables all BLAS/LAPACK and system-specific functionality
+# Disable this feature for WASM builds
+native = [
+    "ndarray/blas",
+    "ndarray/rayon",
+    "ndarray-linalg",
+    "dep:env_logger",
+]
+
+# CLI requires native features
+cli = ["native", "dep:clap"]
+
+# Parallel assembly - works with both native and wasm via rayon
+# Note: Previously required "native", but rayon works in WASM via wasm-bindgen-rayon
+parallel = []
+
+# Memory optimization features
+memory-optimized = []
+out-of-core = []  # Stream data from disk for very large problems
+
+# WASM feature: enables parallel processing via wasm-bindgen-rayon
+# This requires the browser to support SharedArrayBuffer and Web Workers
+wasm = [
+    "dep:wasm-bindgen",
+    "dep:wasm-bindgen-rayon",
+]
+
+# Alias for native - used by examples that need ndarray-linalg
+pure-rust = ["native"]
+
+# Examples that require specific features
+[[example]]
+name = "simple_sphere_test"
+required-features = ["native"]

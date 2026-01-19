@@ -1,4 +1,4 @@
-# --------------------------------------------------------- -*- just -*-
+# --------------------------------------------------------- -*- just -*- 
 # How to install Just?
 #	  cargo install just
 # ----------------------------------------------------------------------
@@ -13,12 +13,15 @@ default:
 # Downloads
 # ----------------------------------------------------------------------
 
-download-once: download-sofa generate-audio-tests
+download-once: download-sofa download-speakers generate-audio-tests
 
 download-sofa:
 	mkdir -p data_cached/org.sofacoustics/mit
 	wget -O data_cached/org.sofacoustics/mit/kemar_normal_pinna.sofa https://sofacoustics.org/data/database/mit/mit_kemar_normal_pinna.sofa
 	wget -O data_cached/org.sofacoustics/mit/kemar_large.sofa https://sofacoustics.org/data/database/mit/mit_kemar_large_pinna.sofa
+
+download-speakers:
+	cargo run --bin autoeq-download-speakers --release
 
 convert-sofa-to-sqlite:
 	@for sofa in data_cached/org.sofacoustics/mit/*.sofa; do \
@@ -41,6 +44,7 @@ generate-audio-tests: prod-generate-audio-tests
 test:
 	# Exclude GPUI crates from check - they cause stack overflow in syn during test/example mode compilation
 	RUST_MIN_STACK=16777216 cargo check --workspace --all-targets
+	cargo test --workspace --lib
 
 # Build gpui-ui-kit examples to verify they compile (doesn't run them)
 test-examples:
@@ -57,7 +61,7 @@ test-proptest:
 # Note: --lib is intentionally omitted to respect `test = false` in crates like sotf-gpui
 # which have deeply nested GPUI macros that cause stack overflow in syn
 ntest:
-    RUST_MIN_STACK=16777216 cargo nextest run --release --no-fail-fast --workspace
+    RUST_MIN_STACK=16777216 cargo nextest run --release --no-fail-fast --workspace --lib
 
 # ----------------------------------------------------------------------
 # RUN
@@ -104,7 +108,7 @@ fmt:
 
 alias build := prod
 
-prod: prod-workspace prod-sotf-player prod-sotf-recorder prod-generate-audio-tests
+prod: prod-workspace prod-sotf-player prod-sotf-recorder prod-generate-audio-tests prod-autoeq prod-roomeq prod-math
 
 prod-generate-audio-tests:
 	cargo build --release --bin generate-audio-tests -p tools
@@ -122,6 +126,19 @@ prod-sotf-tui:
 
 prod-sotf-recorder:
 	cargo build --release --bin sotf-recorder-cli -p app-cli
+
+prod-autoeq:
+	cargo build --release --bin autoeq
+	cargo build --release --bin benchmark-autoeq-speaker
+
+prod-roomeq:
+	cargo build --release --bin roomeq
+	cargo build --release --bin roomeq-fuzzer
+
+prod-math:
+	cargo build --release --bin plot_functions
+	cargo build --release --bin plot-autoeq-de
+	cargo build --release --bin run-autoeq-de
 
 prod-hal:
 	cargo build --release -p driver-hal
@@ -225,10 +242,25 @@ build-au: build-au-rust build-au-swift
 # BENCH
 # ----------------------------------------------------------------------
 
-bench:
+bench: bench-plugins bench-autoeq bench-math
+
+bench-plugins:
 	cargo bench -p plugins --bench binaural-decoder-benchmark
 	cargo bench -p plugins --bench upmixer-benchmark
 	cargo bench -p plugins --bench compressor-benchmark
+
+bench-autoeq: bench-convergence bench-autoeq-speaker
+
+bench-convergence:
+	cargo run --release --bin benchmark-convergence
+
+bench-autoeq-speaker:
+	# either jobs=1 or --no-parallel ; or a mix if you have a lot of
+	# CPU cores
+	cargo run --release --bin benchmark-autoeq-speaker -- --qa --jobs 1
+
+bench-math:
+	cargo run --release --bin benchmark-convergence
 
 # ----------------------------------------------------------------------
 # CLEAN
@@ -245,6 +277,10 @@ clean:
 
 dev:
 	cargo build --workspace
+	cargo build --bin autoeq
+	cargo build --bin plot-functions
+	cargo build --bin benchmark-convergence
+	cargo build --bin benchmark-autoeq-speaker
 
 # ----------------------------------------------------------------------
 # UPDATE
@@ -263,7 +299,7 @@ update-pre-commit:
 # DEMO
 # ----------------------------------------------------------------------
 
-demo: demo-d3rs demo-px demo-ui-kit
+demo: demo-d3rs demo-px demo-ui-kit demo-headphone-loss
 
 demo-ui-kit:
 	cargo build --release --example showcase -p gpui-ui-kit
@@ -275,6 +311,36 @@ demo-d3rs:
 demo-px:
 	cargo build --release --bin px-showcase -p gpui-px
 	cargo build --release --bin px-spinorama -p gpui-px --features="autoeq,tokio,reqwest,urlencoding"
+
+demo-headphone-loss:
+	cargo run --release --example headphone_loss_demo -- \
+	--spl "./data_tests/headphones/asr/bowerwilkins_p7/Bowers & Wilkins P7.csv" \
+	--target "./data_tests/targets/harman-over-ear-2018.csv"
+
+# ----------------------------------------------------------------------
+# EXAMPLES
+# ----------------------------------------------------------------------
+
+examples: examples-autoeq examples-math
+
+examples-autoeq:
+	cargo run --release --example headphone_loss_validation
+
+examples-math: examples-iir examples-de examples-testfunctions
+
+examples-iir :
+	cargo run --release --example format_demo
+	cargo run --release --example readme_example
+
+examples-de :
+	cargo run --release --example optde_basic
+	cargo run --release --example optde_adaptive_demo
+	cargo run --release --example optde_linear_constraints
+	cargo run --release --example optde_nonlinear_constraints
+	cargo run --release --example optde_parallel
+
+examples-testfunctions:
+	cargo run --release --example test_hartman_4d
 
 # ----------------------------------------------------------------------
 # CROSS
@@ -396,6 +462,11 @@ install-rustup:
 	./scripts/install-rustup -y
 	~/.cargo/bin/rustup default stable
 	~/.cargo/bin/cargo install just
+	~/.cargo/bin/cargo install cargo-wizard
+	~/.cargo/bin/cargo install cargo-llvm-cov
+	~/.cargo/bin/cargo install cross
+	~/.cargo/bin/cargo install cargo-binstall
+	~/.cargo/bin/cargo binstall cargo-nextest --secure
 
 # ----------------------------------------------------------------------
 # Install macos
@@ -476,6 +547,115 @@ install-ubuntu-x86: install-ubuntu-common install-ubuntu-x86-driver
 install-ubuntu-arm64: install-ubuntu-common install-ubuntu-arm64-driver
 
 # ----------------------------------------------------------------------
+# PUBLISH
+# ----------------------------------------------------------------------
+
+publish: publish-autoeq publish-math
+
+publish-autoeq:
+	cd crates/autoeq-cea2034 && cargo publish
+	cd crates/autoeq && cargo publish
+	cd crates/autoeq-roomsim && cargo publish
+
+publish-math:
+	cd crates/math-test-functions && cargo publish
+	cd crates/math-differential-evolution && cargo publish
+	cd crates/math-iir-fir && cargo publish
+	cd crates/math-solvers && cargo publish
+	cd crates/math-wave && cargo publish
+	cd crates/math-convex-hull && cargo publish
+	cd crates/math-xem-common && cargo publish
+	cd crates/math-bem && cargo publish
+	cd crates/math-fem && cargo publish
+
+# ----------------------------------------------------------------------
+# QA
+# ----------------------------------------------------------------------
+
+qa: qa-autoeq qa-math
+
+qa-autoeq: prod-autoeq \
+	qa-ascilab-6b \
+	qa-jbl-m2-flat qa-jbl-m2-score \
+	qa-beyerdynamic-dt1990pro \
+	qa-edifierw830nb
+
+qa-ascilab-6b:
+	./target/release/autoeq --speaker="AsciLab F6B" --version asr --measurement CEA2034 \
+	--algo autoeq:de --loss speaker-score -n 7 --min-freq=30 --max-q=6 \
+	--qa 0.5
+
+qa-jbl-m2-flat:
+	./target/release/autoeq --speaker="JBL M2" --version eac --measurement CEA2034 \
+	--algo autoeq:de --loss speaker-flat -n 7 --min-freq=20 --max-q=6 --peq-model hp-pk \
+	--qa 0.5
+
+qa-jbl-m2-score:
+	./target/release/autoeq --speaker="JBL M2" --version eac --measurement CEA2034 \
+	--algo autoeq:de --loss speaker-score -n 7 --min-freq=20 --max-q=6 --peq-model hp-pk \
+	--qa 0.5
+
+qa-beyerdynamic-dt1990pro: qa-beyerdynamic-dt1990pro-flat qa-beyerdynamic-dt1990pro-score	qa-beyerdynamic-dt1990pro-score2
+
+qa-beyerdynamic-dt1990pro-score:
+	./target/release/autoeq -n 5 \
+	--curve ./data_tests/headphones/asr/beyerdynamic_dt1990pro/Beyerdynamic\ DT1990\ Pro\ Headphone\ Frequency\ Response\ Measurement.csv \
+	--target ./data_tests/targets/harman-over-ear-2018.csv --loss headphone-score  \
+	--qa 3.0
+
+qa-beyerdynamic-dt1990pro-score2:
+	./target/release/autoeq -n 7 \
+	--curve ./data_tests/headphones/asr/beyerdynamic_dt1990pro/Beyerdynamic\ DT1990\ Pro\ Headphone\ Frequency\ Response\ Measurement.csv \
+	--target ./data_tests/targets/harman-over-ear-2018.csv \
+	--loss headphone-score	--max-db 6 --max-q 6 --algo mh:rga --maxeval 20000 --min-freq=20 --max-freq 10000 --peq-model hp-pk-lp --min-q 0.6 --min-db 0.25 \
+	--qa 1.5
+
+qa-beyerdynamic-dt1990pro-flat:
+	./target/release/autoeq -n 5 \
+	--curve ./data_tests/headphones/asr/beyerdynamic_dt1990pro/Beyerdynamic\ DT1990\ Pro\ Headphone\ Frequency\ Response\ Measurement.csv \
+	--target ./data_tests/targets/harman-over-ear-2018.csv \
+	--loss headphone-flat  --max-db 6 --max-q 6 --maxeval 20000 --algo mh:pso --min-freq=20 --max-freq 10000 --peq-model pk \
+	--qa 0.5
+
+qa-edifierw830nb: qa-edifierw830nb-autoeqde qa-edifierw830nb-mhrga qa-edifierw830nb-mhfirefly
+
+qa-edifierw830nb-autoeqde:
+	./target/release/autoeq -n 9 \
+	--curve data_tests/headphones/asr/edifierw830nb/Edifier\ W830NB.csv \
+	--target ./data_tests/targets/harman-over-ear-2018.csv \
+	--min-freq 50 --max-freq 16000 --max-q 8 --max-db 8 \
+	--loss headphone-score 
+	--min-spacing-oct 0.08 \
+	--algo autoeq:de --population 70 --maxeval 8000 --seed 42 \
+	--qa 14.0
+
+qa-edifierw830nb-mhrga:
+	./target/release/autoeq -n 5 \
+	--curve data_tests/headphones/asr/edifierw830nb/Edifier\ W830NB.csv \
+	--target ./data_tests/targets/harman-over-ear-2018.csv \
+	--min-freq 50 --max-freq 16000 --max-q 8 --max-db 8 \
+	--loss headphone-score \
+	--min-spacing-oct 0.04 --atolerance 0.00000001 --tolerance 0.0000001 --algo mh:rga --population 100 --maxeval 30000 \
+	--qa 2.5
+
+qa-edifierw830nb-mhfirefly:
+	./target/release/autoeq -n 5 \
+	--curve data_tests/headphones/asr/edifierw830nb/Edifier\ W830NB.csv \
+	--target ./data_tests/targets/harman-over-ear-2018.csv \
+	--min-freq 50 --max-freq 16000 --max-q 8 --max-db 8 \
+	--loss headphone-score \
+	--min-spacing-oct 0.04 --atolerance 0.00000001 --tolerance 0.000000001 --algo mh:rga --population 80 --maxeval 30000 \
+	--qa 2.5
+
+qa-math: qa-fem qa-bem
+
+qa-fem:
+	cargo run --release --bin qa-suite -p math-fem --features="cli native parallel"
+
+qa-bem:
+	cargo run --release --bin qa-suite -p math-bem --features="native cli parallel"
+
+# ----------------------------------------------------------------------
 # POST
 # ----------------------------------------------------------------------
 
@@ -491,8 +671,25 @@ post-install:
 	$HOME/.cargo/bin/cargo check
 
 # ----------------------------------------------------------------------
-# SIGNING
+# MACOS INSTALLER
 # ----------------------------------------------------------------------
 
+# Build macOS installer package (unsigned)
+build-installer:
+	./scripts/build-installer.sh
 
+# Build macOS installer package without HAL driver
+build-installer-no-hal:
+	./scripts/build-installer.sh --no-hal
 
+# Build signed macOS installer package
+build-installer-signed:
+	./scripts/build-installer.sh --sign
+
+# Build signed and notarized macOS installer package
+build-installer-notarized:
+	./scripts/build-installer.sh --sign --notarize
+
+# Uninstall SotF components
+uninstall-sotf:
+	./scripts/uninstall-sotf.sh
