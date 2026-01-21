@@ -1423,9 +1423,8 @@ impl PlayerView {
     }
 
     /// Render the migration confirmation modal
+    /// Using a simple manual modal instead of Dialog component to debug click issues
     pub(crate) fn render_migration_modal(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        use gpui_ui_kit::{Dialog, DialogSize};
-
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let rec_state = &state.app.measurement_state.recording_state;
@@ -1443,152 +1442,191 @@ impl PlayerView {
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| file_path.clone());
 
-        Dialog::new("migration-modal")
-            .title("Convert Recording Format")
-            .size(DialogSize::Md)
-            .on_close({
-                let state = self.state.clone();
-                move |_window, cx| {
-                    let state = state.clone();
-                    cx.defer(move |cx| {
-                        state.update(cx, |state, _| {
-                            let rec_state = &mut state.app.measurement_state.recording_state;
-                            rec_state.migration_modal_open = false;
-                            rec_state.migration_pending_json = None;
-                        });
-                    });
-                }
-            })
-            .content(
-                VStack::new()
-                    .spacing(StackSpacing::Lg)
+        let view = cx.entity().clone();
+        let view2 = view.clone();
+
+        // Simple modal implementation (not using Dialog component)
+        // Use a backdrop that only closes on direct clicks (not on child elements)
+        div()
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(
+                // Backdrop layer - clickable to close
+                div()
+                    .id("migration-backdrop")
+                    .absolute()
+                    .inset_0()
+                    .bg(theme.overlay_bg)
+                    .on_click({
+                        let view = view.clone();
+                        move |_event, _window, cx| {
+                            log::info!("Backdrop clicked - closing modal");
+                            view.update(cx, |this, cx| {
+                                this.state.update(cx, |state, _| {
+                                    let rec_state = &mut state.app.measurement_state.recording_state;
+                                    rec_state.migration_modal_open = false;
+                                    rec_state.migration_pending_json = None;
+                                });
+                                cx.notify();
+                            });
+                        }
+                    }),
+            )
+            .child(
+                // Modal container - positioned above backdrop
+                div()
+                    .id("migration-modal-container")
+                    .relative()
+                    .w(px(480.0))
+                    .bg(theme.surface)
+                    .border_1()
+                    .border_color(theme.accent)
+                    .rounded_lg()
+                    .shadow_lg()
+                    .overflow_hidden()
+                    // Header
                     .child(
-                        VStack::new()
-                            .spacing(StackSpacing::Sm)
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .px_4()
+                            .py_3()
+                            .border_b_1()
+                            .border_color(theme.border)
                             .child(
-                                Text::new("This recording file uses an older format with embedded data.")
-                                    .size(TextSize::Md)
-                                    .color(theme.text_primary),
-                            )
-                            .child(
-                                Text::new("Converting will:")
-                                    .size(TextSize::Sm)
-                                    .color(theme.text_secondary),
-                            )
+                                div()
+                                    .text_lg()
+                                    .font_weight(FontWeight::BOLD)
+                                    .text_color(theme.text_primary)
+                                    .child("Convert Recording Format"),
+                            ),
+                    )
+                    // Content
+                    .child(
+                        div()
+                            .px_4()
+                            .py_4()
                             .child(
                                 VStack::new()
-                                    .spacing(StackSpacing::Xs)
+                                    .spacing(StackSpacing::Lg)
                                     .child(
-                                        Text::new("  - Extract analysis data to separate CSV files")
-                                            .size(TextSize::Sm)
-                                            .color(theme.text_secondary),
+                                        Text::new("This recording file uses an older format.")
+                                            .size(TextSize::Md)
+                                            .color(theme.text_primary),
                                     )
                                     .child(
-                                        Text::new("  - Create a lightweight session.json file")
-                                            .size(TextSize::Sm)
-                                            .color(theme.text_secondary),
-                                    )
-                                    .child(
-                                        Text::new("  - Reduce file size significantly")
-                                            .size(TextSize::Sm)
-                                            .color(theme.text_secondary),
+                                        VStack::new()
+                                            .spacing(StackSpacing::Sm)
+                                            .child(
+                                                HStack::new()
+                                                    .spacing(StackSpacing::Md)
+                                                    .child(Text::new("File:").size(TextSize::Sm).color(theme.text_secondary))
+                                                    .child(Text::new(file_name).size(TextSize::Sm).color(theme.text_primary)),
+                                            )
+                                            .child(
+                                                HStack::new()
+                                                    .spacing(StackSpacing::Md)
+                                                    .child(Text::new("Size:").size(TextSize::Sm).color(theme.text_secondary))
+                                                    .child(Text::new(format!("{:.2} MB", file_size_mb)).size(TextSize::Sm).color(theme.warning)),
+                                            )
+                                            .child(
+                                                HStack::new()
+                                                    .spacing(StackSpacing::Md)
+                                                    .child(Text::new("Channels:").size(TextSize::Sm).color(theme.text_secondary))
+                                                    .child(Text::new(format!("{}", channel_count)).size(TextSize::Sm).color(theme.text_primary)),
+                                            ),
                                     ),
                             ),
                     )
-                    .child(div().w_full().h(px(1.0)).bg(theme.border))
+                    // Footer with buttons
                     .child(
-                        VStack::new()
-                            .spacing(StackSpacing::Sm)
+                        div()
+                            .flex()
+                            .justify_end()
+                            .gap_3()
+                            .px_4()
+                            .py_3()
+                            .border_t_1()
+                            .border_color(theme.border)
+                            // Cancel button - simple div
                             .child(
-                                HStack::new()
-                                    .spacing(StackSpacing::Md)
-                                    .child(
-                                        Text::new("File:")
-                                            .size(TextSize::Sm)
-                                            .weight(TextWeight::Semibold)
-                                            .color(theme.text_secondary),
-                                    )
-                                    .child(
-                                        Text::new(file_name)
-                                            .size(TextSize::Sm)
-                                            .color(theme.text_primary),
-                                    ),
+                                div()
+                                    .id("migration-cancel-btn")
+                                    .px_3()
+                                    .py_2()
+                                    .rounded_md()
+                                    .bg(theme.surface_hover)
+                                    .text_color(theme.text_secondary)
+                                    .cursor_pointer()
+                                    .hover(|s| s.bg(theme.border))
+                                    .child("Cancel")
+                                    .on_click({
+                                        let view = view.clone();
+                                        move |_event, _window, cx| {
+                                            log::info!("Cancel button clicked!");
+                                            view.update(cx, |this, cx| {
+                                                this.state.update(cx, |state, _| {
+                                                    let rec_state = &mut state.app.measurement_state.recording_state;
+                                                    rec_state.migration_modal_open = false;
+                                                    rec_state.migration_pending_json = None;
+                                                });
+                                                cx.notify();
+                                            });
+                                        }
+                                    }),
                             )
+                            // Convert button - simple div
                             .child(
-                                HStack::new()
-                                    .spacing(StackSpacing::Md)
-                                    .child(
-                                        Text::new("Size:")
-                                            .size(TextSize::Sm)
-                                            .weight(TextWeight::Semibold)
-                                            .color(theme.text_secondary),
-                                    )
-                                    .child(
-                                        Text::new(format!("{:.2} MB", file_size_mb))
-                                            .size(TextSize::Sm)
-                                            .color(theme.warning),
-                                    ),
-                            )
-                            .child(
-                                HStack::new()
-                                    .spacing(StackSpacing::Md)
-                                    .child(
-                                        Text::new("Channels:")
-                                            .size(TextSize::Sm)
-                                            .weight(TextWeight::Semibold)
-                                            .color(theme.text_secondary),
-                                    )
-                                    .child(
-                                        Text::new(format!("{}", channel_count))
-                                            .size(TextSize::Sm)
-                                            .color(theme.text_primary),
-                                    ),
+                                div()
+                                    .id("migration-convert-btn")
+                                    .px_3()
+                                    .py_2()
+                                    .rounded_md()
+                                    .bg(theme.accent)
+                                    .text_color(theme.text_on_accent)
+                                    .cursor_pointer()
+                                    .hover(|s| s.bg(theme.accent_muted))
+                                    .child("Convert")
+                                    .on_click({
+                                        move |_event, _window, cx| {
+                                            log::info!("Convert button clicked!");
+                                            view2.update(cx, |this, cx| {
+                                                this.perform_migration(cx);
+                                            });
+                                        }
+                                    }),
                             ),
-                    ),
-            )
-            .footer(
-                HStack::new()
-                    .width(StackSize::Full)
-                    .justify(StackJustify::End)
-                    .spacing(StackSpacing::Md)
-                    .child(
-                        Button::new("migration-cancel", "Cancel")
-                            .variant(ButtonVariant::Ghost)
-                            .size(ButtonSize::Sm)
-                            .theme(theme.to_button_theme())
-                            .build()
-                            .on_click(cx.listener(|view, _event: &ClickEvent, _window, cx| {
-                                let state = view.state.clone();
-                                cx.defer(move |cx| {
-                                    state.update(cx, |state, _| {
-                                        let rec_state =
-                                            &mut state.app.measurement_state.recording_state;
-                                        rec_state.migration_modal_open = false;
-                                        rec_state.migration_pending_json = None;
-                                    });
-                                });
-                            })),
-                    )
-                    .child(
-                        Button::new("migration-proceed", "Convert")
-                            .variant(ButtonVariant::Primary)
-                            .size(ButtonSize::Sm)
-                            .theme(theme.to_button_theme())
-                            .build()
-                            .on_click(cx.listener(|view, _event: &ClickEvent, _window, cx| {
-                                view.perform_migration(cx);
-                            })),
                     ),
             )
     }
 
     /// Perform the migration from legacy format to new format
+    ///
+    /// This will:
+    /// 1. Back up the original JSON file with a `.bak` extension
+    /// 2. Write updated CSV files with full data from the inline JSON
+    /// 3. Write a new lightweight JSON file to the original location
     fn perform_migration(&mut self, cx: &mut Context<Self>) {
-        use crate::app::types::RoomEqMeasurementsFile;
+        use crate::app::types::{
+            ChannelRecording, ChannelRecordingState, RoomEqMeasurementsFile,
+        };
         use sotf_audio::signal_analysis::AnalysisResult;
+
+        log::info!("perform_migration: STARTED");
 
         let state = self.state.read(cx);
         let rec_state = &state.app.measurement_state.recording_state;
+
+        log::info!(
+            "perform_migration: modal_open={}, has_pending_json={}, file_path={:?}",
+            rec_state.migration_modal_open,
+            rec_state.migration_pending_json.is_some(),
+            rec_state.migration_file_path
+        );
 
         let json = match &rec_state.migration_pending_json {
             Some(j) => j.clone(),
@@ -1604,13 +1642,40 @@ impl PlayerView {
             .clone()
             .map(std::path::PathBuf::from);
 
-        drop(state);
+        // Release the borrow on state before proceeding with migration
+        let _ = state;
+
+        let original_path = std::path::PathBuf::from(&file_path);
+
+        // Step 1: Back up the original JSON file
+        let backup_path = {
+            let mut backup = original_path.clone();
+            let extension = backup
+                .extension()
+                .map(|e| format!("{}.bak", e.to_string_lossy()))
+                .unwrap_or_else(|| "bak".to_string());
+            backup.set_extension(extension);
+            backup
+        };
+
+        if let Err(e) = std::fs::copy(&original_path, &backup_path) {
+            log::error!("Failed to back up original JSON file: {}", e);
+            self.state.update(cx, |state, _| {
+                let rec_state = &mut state.app.measurement_state.recording_state;
+                rec_state.migration_modal_open = false;
+                rec_state.migration_pending_json = None;
+                rec_state.status_message = format!("Failed to back up original file: {}", e);
+            });
+            cx.notify();
+            return;
+        }
+        log::info!("Backed up original JSON to {:?}", backup_path);
 
         // Parse and migrate
         match RoomEqMeasurementsFile::from_json_str(&json) {
             Ok(measurements_file) => {
                 let session_dir = file_dir.clone().unwrap_or_else(|| {
-                    std::path::PathBuf::from(&file_path)
+                    original_path
                         .parent()
                         .unwrap_or(std::path::Path::new("."))
                         .to_path_buf()
@@ -1622,9 +1687,22 @@ impl PlayerView {
                     session_dir
                 );
 
-                // Extract data to CSV files for each channel
+                // Step 2: Extract data to CSV files for each channel
+                // Use channel name for CSV filename (same as recording)
                 for (idx, channel) in measurements_file.channels.iter().enumerate() {
-                    let csv_filename = format!("channel_{}.csv", idx);
+                    // Sanitize channel name for filesystem
+                    let safe_channel_name: String = channel
+                        .channel_name
+                        .chars()
+                        .map(|c| {
+                            if c.is_alphanumeric() || c == '_' || c == '-' {
+                                c
+                            } else {
+                                '_'
+                            }
+                        })
+                        .collect();
+                    let csv_filename = format!("{}.csv", safe_channel_name);
                     let csv_path = session_dir.join(&csv_filename);
 
                     // Build AnalysisResult from the measurement data
@@ -1651,43 +1729,95 @@ impl PlayerView {
                         spectrogram_db: result.spectrogram_db.clone().unwrap_or_default(),
                     };
 
-                    // Write CSV with extended format
+                    // Write CSV with extended format (overwrites existing CSV if present)
                     if let Err(e) = Self::write_migration_csv(&analysis, &csv_path) {
                         log::error!("Failed to write CSV for channel {}: {}", idx, e);
                     } else {
-                        log::info!("Wrote migrated CSV: {:?}", csv_path);
+                        log::info!(
+                            "Wrote migrated CSV ({} points): {:?}",
+                            analysis.frequencies.len(),
+                            csv_path
+                        );
                     }
                 }
 
-                // Create new lightweight session.json
-                let session_json_path = session_dir.join("session.json");
+                // Step 3: Write new lightweight JSON to the ORIGINAL file location
                 if let Err(e) =
-                    Self::write_lightweight_session(&measurements_file, &session_json_path)
+                    Self::write_lightweight_session(&measurements_file, &original_path)
                 {
-                    log::error!("Failed to write session.json: {}", e);
-                } else {
-                    log::info!("Wrote lightweight session: {:?}", session_json_path);
+                    log::error!("Failed to write new JSON file: {}", e);
+                    self.state.update(cx, |state, _| {
+                        let rec_state = &mut state.app.measurement_state.recording_state;
+                        rec_state.migration_modal_open = false;
+                        rec_state.migration_pending_json = None;
+                        rec_state.status_message = format!("Failed to write new JSON: {}", e);
+                    });
+                    cx.notify();
+                    return;
                 }
+                log::info!("Wrote new lightweight JSON to {:?}", original_path);
 
-                // Now load the data normally
+                // Create recordings directly from the already-parsed measurements_file
+                // (no need to re-read and re-parse the JSON we just wrote)
+                let recordings: Vec<ChannelRecording> = measurements_file
+                    .channels
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, ch)| {
+                        // Sanitize channel name for filesystem
+                        let safe_channel_name: String = ch
+                            .channel_name
+                            .chars()
+                            .map(|c| {
+                                if c.is_alphanumeric() || c == '_' || c == '-' {
+                                    c
+                                } else {
+                                    '_'
+                                }
+                            })
+                            .collect();
+
+                        // Convert relative paths to absolute paths
+                        let mut result = ch.measurement.clone();
+                        result.csv_path = Some(
+                            session_dir
+                                .join(format!("{}.csv", safe_channel_name))
+                                .to_string_lossy()
+                                .to_string(),
+                        );
+                        if let Some(wav) = &result.wav_path {
+                            let abs_path = session_dir.join(wav);
+                            if abs_path.exists() {
+                                result.wav_path = Some(abs_path.to_string_lossy().to_string());
+                            }
+                        }
+
+                        ChannelRecording {
+                            channel_index: idx,
+                            channel_name: ch.channel_name.clone(),
+                            state: ChannelRecordingState::Done,
+                            result: Some(result),
+                        }
+                    })
+                    .collect();
+
+                let num_channels = recordings.len();
+
+                // Update state with the recordings and close modal
                 self.state.update(cx, |state, _| {
                     let rec_state = &mut state.app.measurement_state.recording_state;
+                    rec_state.channel_recordings = recordings;
                     rec_state.migration_modal_open = false;
                     rec_state.migration_pending_json = None;
                     rec_state.status_message = format!(
-                        "Converted {} channels. Created CSV files and session.json",
-                        measurements_file.channels.len()
+                        "Converted {} channels. Original backed up to .bak",
+                        num_channels
                     );
                 });
 
-                // Load the recordings normally
-                let state_entity = self.state.clone();
-                Self::load_recordings_internal(
-                    state_entity,
-                    &mut cx.to_async(),
-                    &json,
-                    std::path::Path::new(&file_path),
-                    file_dir,
+                log::info!(
+                    "Migration complete: {} channels loaded from migrated format",
+                    num_channels
                 );
             }
             Err(e) => {
@@ -1743,38 +1873,58 @@ impl PlayerView {
         Ok(())
     }
 
-    /// Write lightweight session.json file
+    /// Write session.json file with full data
+    /// This creates a proper RoomEqMeasurementsFile structure with csv_path set
+    /// Note: We keep the full data in JSON since the app doesn't have CSV loading yet
     fn write_lightweight_session(
         measurements: &crate::app::types::RoomEqMeasurementsFile,
         path: &std::path::Path,
     ) -> Result<(), String> {
-        use serde_json::json;
+        use crate::app::types::{ChannelMeasurement, RoomEqMeasurementsFile};
 
-        let channels: Vec<serde_json::Value> = measurements
+        // Create channels with csv_path AND full data
+        // (keeping data ensures app works; CSV is for backup/export)
+        let channels: Vec<ChannelMeasurement> = measurements
             .channels
             .iter()
             .enumerate()
             .map(|(idx, ch)| {
-                json!({
-                    "channel_index": idx,
-                    "channel_name": ch.channel_name,
-                    "wav_path": ch.measurement.wav_path,
-                    "csv_path": format!("channel_{}.csv", idx),
-                    "success": true
-                })
+                // Sanitize channel name for filesystem (same as in perform_migration)
+                let safe_channel_name: String = ch
+                    .channel_name
+                    .chars()
+                    .map(|c| {
+                        if c.is_alphanumeric() || c == '_' || c == '-' {
+                            c
+                        } else {
+                            '_'
+                        }
+                    })
+                    .collect();
+
+                // Clone the original measurement and add csv_path
+                let mut measurement = ch.measurement.clone();
+                measurement.channel = idx;
+                measurement.csv_path = Some(format!("{}.csv", safe_channel_name));
+
+                ChannelMeasurement {
+                    channel_name: ch.channel_name.clone(),
+                    measurement,
+                    is_group: ch.is_group,
+                    group_drivers: ch.group_drivers.clone(),
+                }
             })
             .collect();
 
-        let session = json!({
-            "version": "2.0",
-            "timestamp": chrono::Utc::now().to_rfc3339(),
-            "channels": channels,
-            "configuration": measurements.configuration
-        });
+        let file_data = RoomEqMeasurementsFile {
+            version: 2,
+            channels,
+            configuration: measurements.configuration.clone(),
+        };
 
         let file = std::fs::File::create(path)
             .map_err(|e| format!("Failed to create session file: {}", e))?;
-        serde_json::to_writer_pretty(file, &session)
+        serde_json::to_writer_pretty(file, &file_data)
             .map_err(|e| format!("Failed to serialize session: {}", e))?;
 
         Ok(())
