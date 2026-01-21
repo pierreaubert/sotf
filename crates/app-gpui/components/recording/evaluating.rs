@@ -541,8 +541,12 @@ impl PlayerView {
             .map(|i| i as f64 * nyquist as f64 / num_freq_bins as f64)
             .collect();
 
-        // Generate Time bins (X axis) - Just indices for now
-        let x_values: Vec<f64> = (0..num_time_slices).map(|i| i as f64).collect();
+        // Generate Time bins (X axis) - Seconds
+        // Backend uses hop_size = 128
+        let hop_size = 128.0;
+        let x_values: Vec<f64> = (0..num_time_slices)
+            .map(|i| i as f64 * hop_size / sample_rate as f64)
+            .collect();
 
         // Flatten data for Heatmap (Row-major: Y then X)
         // Spectrogram is [time][freq] (X then Y columns).
@@ -562,9 +566,10 @@ impl PlayerView {
 
         let config = SpectrumConfig {
             title: None,
-            x_label: Some("Time (frames)".to_string()),
+            x_label: Some("Time (s)".to_string()),
             y_label: Some("Frequency (Hz)".to_string()),
             x_scale: ScaleType::Linear, // Time is linear
+            y_scale: ScaleType::Linear, // Freq bins are linear
             width: 800.0,
             height: 300.0,
             color_scale: Some(gpui_px::ColorScale::Magma),
@@ -811,28 +816,45 @@ impl PlayerView {
         smoothing: PlotSmoothing,
         theme: &crate::theme::Theme,
     ) -> impl IntoElement {
-        // Process results
+        // Process results - show all THD data without filtering
         let series: Vec<Series> = results
             .iter()
             .filter_map(|(name, idx, result)| {
-                result.thd_percent.as_ref().map(|thd| {
-                    let smoothed = Self::apply_smoothing(&result.frequencies, thd, smoothing);
+                let thd = result.thd_percent.as_ref()?;
 
-                    let freqs_f64: Vec<f64> =
-                        result.frequencies.iter().map(|&v| v as f64).collect();
-                    let thd_f64: Vec<f64> = smoothed.iter().map(|&v| v as f64).collect();
+                let smoothed = Self::apply_smoothing(&result.frequencies, thd, smoothing);
 
-                    Series::new(
-                        name.clone(),
-                        CHANNEL_COLORS[*idx % CHANNEL_COLORS.len()],
-                        freqs_f64,
-                        thd_f64,
-                    )
-                })
+                let freqs_f64: Vec<f64> =
+                    result.frequencies.iter().map(|&v| v as f64).collect();
+                let thd_f64: Vec<f64> = smoothed.iter().map(|&v| v as f64).collect();
+
+                Some(Series::new(
+                    name.clone(),
+                    CHANNEL_COLORS[*idx % CHANNEL_COLORS.len()],
+                    freqs_f64,
+                    thd_f64,
+                ))
             })
             .collect();
 
-        // Y-axis: THD % (0 to max)
+        if series.is_empty() {
+            return div()
+                .h(px(250.0))
+                .w_full()
+                .bg(theme.surface)
+                .rounded_md()
+                .flex()
+                .items_center()
+                .justify_center()
+                .child(
+                    Text::new("Distortion data not available (use Sweep signal)")
+                        .size(TextSize::Sm)
+                        .color(theme.text_muted),
+                )
+                .into_any_element();
+        }
+
+        // Y-axis: THD % (0 to max) with adaptive range
         let max_thd = series
             .iter()
             .flat_map(|s| s.y_values.iter())
@@ -842,8 +864,14 @@ impl PlayerView {
             max_thd.ceil()
         } else if max_thd > 1.0 {
             max_thd.ceil()
-        } else {
+        } else if max_thd > 0.1 {
             1.0
+        } else if max_thd > 0.01 {
+            0.1
+        } else if max_thd > 0.001 {
+            0.01
+        } else {
+            0.001 // Show at least 0.001% range
         };
 
         let config = ChartConfig {
@@ -856,7 +884,7 @@ impl PlayerView {
             ..Default::default()
         };
 
-        render_line_chart(series, config, theme, None)
+        render_line_chart(series, config, theme, None).into_any_element()
     }
 
     /// Render RT60 chart
@@ -888,8 +916,17 @@ impl PlayerView {
                         result.frequencies.iter().map(|&v| v as f64).collect();
                     let rt60_f64: Vec<f64> = smoothed.iter().map(|&v| v as f64).collect();
 
+                    // Check if flat (broadband)
+                    let min_val = rt60_f64.iter().fold(f64::INFINITY, |a, &b| a.min(b));
+                    let max_val = rt60_f64.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+                    let label = if (max_val - min_val).abs() < 1e-3 {
+                        format!("{} (Broadband)", name)
+                    } else {
+                        name.clone()
+                    };
+
                     Series::new(
-                        name.clone(),
+                        label,
                         CHANNEL_COLORS[*idx % CHANNEL_COLORS.len()],
                         freqs_f64,
                         rt60_f64,
@@ -932,36 +969,58 @@ impl PlayerView {
         // Process C50 results
         let series: Vec<Series> = results
             .iter()
-            .map(|(name, idx, result)| {
+            .filter_map(|(name, idx, result)| {
                 let c50 = result.clarity_c50_db.clone().or_else(|| {
                     result.impulse_response.as_ref().map(|ir| {
                         dsp::compute_clarity_spectrum(ir, sample_rate, &result.frequencies).0
                     })
-                });
-                (name, idx, result, c50)
-            })
-            .filter_map(|(name, idx, result, c50_opt)| {
-                c50_opt.map(|c50| {
-                    let smoothed = Self::apply_smoothing(&result.frequencies, &c50, smoothing);
+                })?;
 
-                    let freqs_f64: Vec<f64> =
-                        result.frequencies.iter().map(|&v| v as f64).collect();
-                    let c50_f64: Vec<f64> = smoothed.iter().map(|&v| v as f64).collect();
+                let smoothed = Self::apply_smoothing(&result.frequencies, &c50, smoothing);
 
-                    Series::new(
-                        name.clone(),
-                        CHANNEL_COLORS[*idx % CHANNEL_COLORS.len()],
-                        freqs_f64,
-                        c50_f64,
-                    )
-                })
+                let freqs_f64: Vec<f64> =
+                    result.frequencies.iter().map(|&v| v as f64).collect();
+                let c50_f64: Vec<f64> = smoothed.iter().map(|&v| v as f64).collect();
+
+                // Check if flat (broadband)
+                let min_val = c50_f64.iter().fold(f64::INFINITY, |a, &b| a.min(b));
+                let max_val = c50_f64.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+                let label = if (max_val - min_val).abs() < 0.1 {
+                    format!("{} (Broadband)", name)
+                } else {
+                    name.clone()
+                };
+
+                Some(Series::new(
+                    label,
+                    CHANNEL_COLORS[*idx % CHANNEL_COLORS.len()],
+                    freqs_f64,
+                    c50_f64,
+                ))
             })
             .collect();
+
+        // Compute adaptive y-range from the data
+        let (y_min, y_max) = if series.is_empty() {
+            (-10.0, 20.0)
+        } else {
+            let data_min = series
+                .iter()
+                .flat_map(|s| s.y_values.iter())
+                .fold(f64::INFINITY, |a, &b| a.min(b));
+            let data_max = series
+                .iter()
+                .flat_map(|s| s.y_values.iter())
+                .fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+            // Add some padding
+            let range = (data_max - data_min).max(1.0);
+            (data_min - range * 0.1, data_max + range * 0.1)
+        };
 
         let config = ChartConfig {
             y_label: Some("Clarity C50 (dB)".to_string()),
             x_range: (20.0, 20000.0),
-            y_range: (-10.0, 20.0),
+            y_range: (y_min, y_max),
             x_scale: ScaleType::Log,
             width: 800.0,
             height: 250.0,

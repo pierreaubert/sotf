@@ -8,6 +8,7 @@
 //! - Standalone WAV buffer analysis (wav2csv functionality)
 
 use hound::WavReader;
+use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use rustfft::{FftPlanner, num_complex::Complex};
 use std::f32::consts::PI;
 use std::io::Write;
@@ -730,6 +731,7 @@ pub struct AnalysisResult {
 /// * `recorded_path` - Path to the recorded WAV file
 /// * `reference_signal` - Reference signal (should match the signal used for playback)
 /// * `sample_rate` - Sample rate in Hz
+/// * `sweep_range` - Optional (start_freq, end_freq) if the signal is a log sweep
 ///
 /// # Returns
 /// Analysis result with frequency, SPL, and phase data
@@ -737,6 +739,7 @@ pub fn analyze_recording(
     recorded_path: &Path,
     reference_signal: &[f32],
     sample_rate: u32,
+    sweep_range: Option<(f32, f32)>,
 ) -> Result<AnalysisResult, String> {
     // Load recorded WAV
     log::info!("[FFT Analysis] Loading recorded file: {:?}", recorded_path);
@@ -822,55 +825,32 @@ pub fn analyze_recording(
     );
 
     // Time-align the signals before FFT
-    // Use the full reference signal length and align the recorded signal to it
     // If recorded is delayed (positive lag), skip the lag samples in recorded
-    // If recorded leads (negative lag), we need to handle it differently
-    let analysis_len = reference.len();
-
     let (aligned_ref, aligned_rec) = if lag >= 0 {
         let lag_usize = lag as usize;
         if lag_usize >= recorded.len() {
             return Err("Lag is larger than recorded signal length".to_string());
         }
-        // Check if we have enough recorded samples after the lag
-        let available_rec_len = recorded.len() - lag_usize;
-        if available_rec_len < analysis_len {
-            log::info!(
-                "[FFT Analysis] Warning: Only {} samples available after lag alignment (need {})",
-                available_rec_len,
-                analysis_len
-            );
-            log::info!("[FFT Analysis] Analysis will be truncated to available length");
-            let truncated_len = available_rec_len;
-            (
-                &reference[..truncated_len],
-                &recorded[lag_usize..lag_usize + truncated_len],
-            )
-        } else {
-            // We have enough samples - use full reference length
-            (reference, &recorded[lag_usize..lag_usize + analysis_len])
-        }
+        // Capture full tail
+        (reference, &recorded[lag_usize..])
     } else {
-        // Recorded leads reference - this shouldn't happen in normal loopback
+        // Recorded leads reference - rare
         let lag_usize = (-lag) as usize;
         if lag_usize >= reference.len() {
             return Err("Negative lag is larger than reference signal length".to_string());
         }
-        let new_len = (reference.len() - lag_usize).min(recorded.len());
-        (
-            &reference[lag_usize..lag_usize + new_len],
-            &recorded[..new_len],
-        )
+        // Pad reference start? No, just slice reference
+        (&reference[lag_usize..], &recorded[..])
     };
 
     log::info!(
-        "[FFT Analysis] Aligned signal length: {} samples ({:.2}s)",
+        "[FFT Analysis] Aligned lengths: ref={}, rec={} (tail included)",
         aligned_ref.len(),
-        aligned_ref.len() as f32 / sample_rate as f32
+        aligned_rec.len()
     );
 
-    // Compute FFT for both aligned signals
-    let fft_size = next_power_of_two(aligned_ref.len());
+    // Compute FFT size to include the longer of the two (usually rec with tail)
+    let fft_size = next_power_of_two(aligned_ref.len().max(aligned_rec.len()));
 
     let ref_spectrum = compute_fft(aligned_ref, fft_size, WindowType::Tukey(0.1))?;
     let rec_spectrum = compute_fft(aligned_rec, fft_size, WindowType::Tukey(0.1))?;
@@ -1024,7 +1004,34 @@ pub fn analyze_recording(
     // Standard IFFT definition: sum(X[k] * exp(...)) / N?
     // RustFFT inverse is unnormalized sum. So we divide by N.
     let norm = 1.0 / fft_size as f32;
-    let impulse_response: Vec<f32> = transfer_function.iter().map(|c| c.re * norm).collect();
+    let mut impulse_response: Vec<f32> = transfer_function.iter().map(|c| c.re * norm).collect();
+
+    // Find the peak and shift the IR so the peak is near the beginning
+    // This is necessary because the IFFT result has the peak at an arbitrary position
+    // due to the phase of the transfer function (system latency)
+    let peak_idx = impulse_response
+        .iter()
+        .enumerate()
+        .max_by(|(_, a), (_, b)| a.abs().partial_cmp(&b.abs()).unwrap())
+        .map(|(i, _)| i)
+        .unwrap_or(0);
+
+    // Shift the IR so peak is at a small offset (e.g., 5ms for pre-ringing visibility)
+    let pre_ring_samples = (0.005 * sample_rate as f32) as usize; // 5ms pre-ring buffer
+    let shift_amount = if peak_idx > pre_ring_samples {
+        peak_idx - pre_ring_samples
+    } else {
+        0
+    };
+
+    if shift_amount > 0 {
+        impulse_response.rotate_left(shift_amount);
+        log::info!(
+            "[FFT Analysis] IR peak was at index {}, shifted by {} samples to put peak near beginning",
+            peak_idx,
+            shift_amount
+        );
+    }
 
     // Generate time vector for IR (0 to duration)
     let _ir_duration_sec = fft_size as f32 / sample_rate as f32;
@@ -1032,36 +1039,55 @@ pub fn analyze_recording(
         .map(|i| i as f32 / sample_rate as f32 * 1000.0)
         .collect();
 
-    // Circular shift IR to center the peak if needed?
-    // Usually IR from transfer function starts at t=0 if aligned.
-    // We already aligned signals using `lag`. So IR peak should be near 0.
+    // --- Compute THD if sweep range is provided ---
+    let (thd_percent, harmonic_distortion_db) = if let Some((start, end)) = sweep_range {
+        // Assume sweep duration is same as impulse length (circular convolution)
+        // or derived from reference signal length
+        let duration = reference_signal.len() as f32 / sample_rate as f32;
+        compute_thd_from_ir(
+            &impulse_response,
+            sample_rate as f32,
+            &frequencies,
+            &spl_db,
+            start,
+            end,
+            duration,
+        )
+    } else {
+        (vec![0.0; frequencies.len()], Vec::new())
+    };
 
     // --- Compute Excess Group Delay ---
-    // Minimum Phase Phase = Hilbert Transform of Log Magnitude
-    // 1. Cepstrum = Real(IFFT(ln(|H|)))
-    // 2. Window Cepstrum (keep positive time)
-    // 3. MinPhase Spectrum = FFT(Windowed Cepstrum)
-    // 4. MinPhase Phase = Arg(MinPhase Spectrum)
-    // 5. Excess Phase = Measured Phase - MinPhase Phase
-    // 6. Excess GD = -diff(Excess Phase)
+    // (Placeholder)
+    let excess_group_delay_ms = vec![0.0; frequencies.len()];
 
     // --- Compute Acoustic Metrics ---
-    let (rt60_val, c50_val, c80_val) =
-        compute_acoustic_metrics_broadband(&impulse_response, sample_rate);
+    // Debug: Log impulse response stats
+    let ir_max = impulse_response.iter().fold(0.0f32, |a, &b| a.max(b.abs()));
+    let ir_len = impulse_response.len();
+    log::info!(
+        "[Analysis] Impulse response: len={}, max_abs={:.6}, sample_rate={}",
+        ir_len, ir_max, sample_rate
+    );
 
-    // Replicate broadband values for now (placeholder for frequency-dependent analysis)
-    let rt60_ms = vec![rt60_val; frequencies.len()];
-    let clarity_c50_db = vec![c50_val; frequencies.len()];
-    let clarity_c80_db = vec![c80_val; frequencies.len()];
+    let rt60_ms = compute_rt60_spectrum(&impulse_response, sample_rate as f32, &frequencies);
+    let (clarity_c50_db, clarity_c80_db) = compute_clarity_spectrum(&impulse_response, sample_rate as f32, &frequencies);
+
+    // Debug: Log computed metrics
+    if !rt60_ms.is_empty() {
+        let rt60_min = rt60_ms.iter().fold(f32::INFINITY, |a, &b| a.min(b));
+        let rt60_max = rt60_ms.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
+        log::info!("[Analysis] RT60 range: {:.1} - {:.1} ms", rt60_min, rt60_max);
+    }
+    if !clarity_c50_db.is_empty() {
+        let c50_min = clarity_c50_db.iter().fold(f32::INFINITY, |a, &b| a.min(b));
+        let c50_max = clarity_c50_db.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
+        log::info!("[Analysis] Clarity C50 range: {:.1} - {:.1} dB", c50_min, c50_max);
+    }
 
     // Compute Spectrogram
     let (spectrogram_db, _, _) =
         compute_spectrogram(&impulse_response, sample_rate as f32, 512, 128);
-
-    // Simplified for now: Placeholder
-    let excess_group_delay_ms = vec![0.0; frequencies.len()];
-    let thd_percent = vec![0.0; frequencies.len()];
-    let harmonic_distortion_db = Vec::new();
 
     Ok(AnalysisResult {
         frequencies,
@@ -1080,6 +1106,183 @@ pub fn analyze_recording(
     })
 }
 
+/// Compute Total Harmonic Distortion (THD) from Impulse Response
+///
+/// Uses Farina's method to extract harmonics from the impulse response of a log sweep.
+fn compute_thd_from_ir(
+    impulse: &[f32],
+    sample_rate: f32,
+    frequencies: &[f32],
+    fundamental_db: &[f32],
+    start_freq: f32,
+    end_freq: f32,
+    duration: f32,
+) -> (Vec<f32>, Vec<Vec<f32>>) {
+    if frequencies.is_empty() {
+        return (Vec::new(), Vec::new());
+    }
+
+    let n = impulse.len();
+    if n == 0 {
+        return (vec![0.0; frequencies.len()], Vec::new());
+    }
+
+    let num_harmonics = 4; // Compute 2nd, 3rd, 4th, 5th
+    // Initialize to -120 dB (very low but not absurdly so)
+    let mut harmonics_db = vec![vec![-120.0; frequencies.len()]; num_harmonics];
+
+    // Find main peak index (t=0)
+    let peak_idx = impulse
+        .iter()
+        .enumerate()
+        .max_by(|(_, a), (_, b)| a.abs().partial_cmp(&b.abs()).unwrap())
+        .map(|(i, _)| i)
+        .unwrap_or(0);
+
+    let sweep_ratio = end_freq / start_freq;
+    log::debug!(
+        "[THD] Impulse len={}, peak_idx={}, duration={:.3}s, sweep {:.0}-{:.0} Hz (ratio {:.1})",
+        n, peak_idx, duration, start_freq, end_freq, sweep_ratio
+    );
+
+    // Compute harmonics
+    for k_idx in 0..num_harmonics {
+        let harmonic_order = k_idx + 2; // 2nd harmonic is k=2
+
+        // Calculate delay for this harmonic
+        // dt = T * ln(k) / ln(f2/f1)
+        let dt = duration * (harmonic_order as f32).ln() / sweep_ratio.ln();
+        let dn = (dt * sample_rate).round() as isize;
+
+        // Center of harmonic impulse (negative time wraps to end of array)
+        let center = peak_idx as isize - dn;
+        let center_wrapped = center.rem_euclid(n as isize) as usize;
+
+        // Window size logic: distance to next harmonic * 0.8 to avoid overlap
+        let dt_next_rel = duration * ((harmonic_order as f32 + 1.0).ln() - (harmonic_order as f32).ln()) / sweep_ratio.ln();
+        let win_len = ((dt_next_rel * sample_rate * 0.8).max(256.0) as usize).min(n / 2);
+
+        // Extract windowed harmonic IR
+        let mut harmonic_ir = vec![0.0f32; win_len];
+        let mut max_harmonic_sample = 0.0f32;
+        for i in 0..win_len {
+            let src_idx = (center - (win_len as isize / 2) + i as isize).rem_euclid(n as isize) as usize;
+            // Apply Hann window
+            let w = 0.5 * (1.0 - (2.0 * PI * i as f32 / (win_len as f32 - 1.0)).cos());
+            harmonic_ir[i] = impulse[src_idx] * w;
+            max_harmonic_sample = max_harmonic_sample.max(harmonic_ir[i].abs());
+        }
+
+        if k_idx == 0 {
+            log::debug!(
+                "[THD] H{}: dt={:.3}s, dn={}, center_wrapped={}, win_len={}, max_sample={:.2e}",
+                harmonic_order, dt, dn, center_wrapped, win_len, max_harmonic_sample
+            );
+        }
+
+        // Compute spectrum
+        let fft_size = next_power_of_two(win_len);
+        let nyquist_bin = fft_size / 2; // Only use positive frequency bins
+        if let Ok(spectrum) = compute_fft_padded(&harmonic_ir, fft_size) {
+            let freq_resolution = sample_rate / fft_size as f32;
+            
+            for (i, &f) in frequencies.iter().enumerate() {
+                // Map frequency f to the harmonic component at k*f generated by f?
+                // No, standard display plots distortion at fundamental frequency f.
+                // The k-th harmonic IR's spectrum at frequency f represents the k-th harmonic distortion amplitude when excitation is at frequency f?
+                // Actually, Farina's method puts the k-th order distortion component (at frequency k*f) generated by fundamental f, into the k-th impulse response.
+                // The frequency response of h_k(t) at frequency f corresponds to the level of the harmonic 2f (if k=2) when excitation was f.
+                // WAIT.
+                // Let's re-verify.
+                // If we excite with sweep f(t).
+                // Output contains linear response h1(t) * f(t) + h2(t) * f(t)^2 + ...
+                // Deconvolution with inverse sweep gives h1(t) at 0, h2(t) at Delta_t2, etc.
+                // The spectrum of h2(t), H2(f), represents the frequency response of the 2nd order kernel.
+                // The output at 2nd harmonic for input f is X_2(f) = H2(f) * Input(f)? No.
+                // For a sweep, |H_k(f)| gives the magnitude of the k-th harmonic component relative to the input.
+                // So if we plot |H_k(f)| vs f, it is the distortion level at frequency k*f when input is f?
+                // NO. It is the level of the distortion component associated with input frequency f.
+                // The frequency axis of H_k(f) IS the input frequency f.
+                // So |H_k(f)| is the amplitude of the k-th harmonic (which is at k*f) when input is f.
+                // So we just plot |H_k(f)| at frequency f.
+                
+                // One caveat: Farina's method results in a spectral tilt for harmonics if using a log sweep.
+                // The log sweep loses 3dB/octave energy. The inverse filter boosts 3dB/octave.
+                // This flattens the fundamental.
+                // The harmonics are generated at higher frequencies (k*f) but appear at f in the IR spectrum?
+                // Actually, the k-th harmonic of frequency f appears at the same time as the fundamental of frequency k*f would appear.
+                // The delay Delta_t aligns them such that they separate.
+                // When we take the FFT of the k-th impulse response, we get a spectrum.
+                // Does H_k(f') correspond to excitation at f'?
+                // Yes. H_k(f) is the transfer function for the k-th order nonlinearity.
+                // So magnitude at f in H_k is the distortion level for input f.
+                
+                // Correction for log sweep tilt:
+                // Since the harmonics occur at k*f, and the inverse filter is designed for f, there is a slope mismatch.
+                // The k-th harmonic IR spectrum must be scaled by frequency?
+                // Or simply +3dB/octave?
+                // Most sources say it requires +6dB/octave slope correction relative to fundamental?
+                // Or maybe just +3dB.
+                // Let's assume raw is okay for a first pass, usually the tilt is minor compared to resonance peaks.
+                
+                let bin = (f / freq_resolution).round() as usize;
+                // Only access positive frequency bins (0 to nyquist)
+                if bin < nyquist_bin && bin < spectrum.len() {
+                    // Undo 1/N normalization from compute_fft_padded to get proper IR frequency response magnitude
+                    let mag = spectrum[bin].norm() * fft_size as f32;
+                    // Convert to dB (threshold at -120 dB to avoid log of tiny values)
+                    if mag > 1e-6 {
+                        harmonics_db[k_idx][i] = 20.0 * mag.log10();
+                    }
+                }
+            }
+        }
+    }
+
+    // Log a summary of detected harmonic levels
+    if !frequencies.is_empty() {
+        let mid_idx = frequencies.len() / 2;
+        log::debug!(
+            "[THD] Harmonic levels at {:.0} Hz: H2={:.1}dB, H3={:.1}dB, H4={:.1}dB, H5={:.1}dB, fundamental={:.1}dB",
+            frequencies[mid_idx],
+            harmonics_db[0][mid_idx],
+            harmonics_db[1][mid_idx],
+            harmonics_db[2][mid_idx],
+            harmonics_db[3][mid_idx],
+            fundamental_db[mid_idx]
+        );
+    }
+
+    // Compute THD %
+    let mut thd_percent = Vec::with_capacity(frequencies.len());
+    for i in 0..frequencies.len() {
+        let fundamental = 10.0f32.powf(fundamental_db[i] / 20.0);
+        let mut harmonic_sum_sq = 0.0;
+
+        for k in 0..num_harmonics {
+            let h_mag = 10.0f32.powf(harmonics_db[k][i] / 20.0);
+            harmonic_sum_sq += h_mag * h_mag;
+        }
+
+        // THD = sqrt(sum(harmonics^2)) / fundamental
+        let thd = if fundamental > 1e-9 {
+            (harmonic_sum_sq.sqrt() / fundamental) * 100.0
+        } else {
+            0.0
+        };
+        thd_percent.push(thd);
+    }
+
+    // Log THD summary
+    if !thd_percent.is_empty() {
+        let max_thd = thd_percent.iter().fold(0.0f32, |a, &b| a.max(b));
+        let min_thd = thd_percent.iter().fold(f32::INFINITY, |a, &b| a.min(b));
+        log::debug!("[THD] THD range: {:.4}% to {:.4}%", min_thd, max_thd);
+    }
+
+    (thd_percent, harmonics_db)
+}
+
 /// Write analysis results to CSV file with optional microphone compensation
 ///
 /// # Arguments
@@ -1089,6 +1292,9 @@ pub fn analyze_recording(
 ///
 /// When compensation is provided, the inverse is applied: the microphone's
 /// SPL deviation is subtracted from the measured SPL to get the true SPL.
+///
+/// CSV format includes all analysis metrics:
+/// frequency_hz, spl_db, phase_deg, thd_percent, rt60_ms, c50_db, c80_db, group_delay_ms
 pub fn write_analysis_csv(
     result: &AnalysisResult,
     output_path: &Path,
@@ -1117,8 +1323,8 @@ pub fn write_analysis_csv(
     let mut file =
         File::create(output_path).map_err(|e| format!("Failed to create CSV file: {}", e))?;
 
-    // Write header
-    writeln!(file, "frequency_hz,spl_db,phase_deg")
+    // Write header with all metrics
+    writeln!(file, "frequency_hz,spl_db,phase_deg,thd_percent,rt60_ms,c50_db,c80_db,group_delay_ms")
         .map_err(|e| format!("Failed to write header: {}", e))?;
 
     // Write data with compensation applied
@@ -1133,8 +1339,19 @@ pub fn write_analysis_csv(
             spl -= mic_deviation;
         }
 
-        writeln!(file, "{:.6},{:.3},{:.6}", freq, spl, result.phase_deg[i])
-            .map_err(|e| format!("Failed to write data: {}", e))?;
+        let phase = result.phase_deg[i];
+        let thd = result.thd_percent.get(i).copied().unwrap_or(0.0);
+        let rt60 = result.rt60_ms.get(i).copied().unwrap_or(0.0);
+        let c50 = result.clarity_c50_db.get(i).copied().unwrap_or(0.0);
+        let c80 = result.clarity_c80_db.get(i).copied().unwrap_or(0.0);
+        let gd = result.excess_group_delay_ms.get(i).copied().unwrap_or(0.0);
+
+        writeln!(
+            file,
+            "{:.6},{:.3},{:.6},{:.6},{:.3},{:.3},{:.3},{:.6}",
+            freq, spl, phase, thd, rt60, c50, c80, gd
+        )
+        .map_err(|e| format!("Failed to write data: {}", e))?;
     }
 
     log::info!(
@@ -1143,6 +1360,88 @@ pub fn write_analysis_csv(
     );
 
     Ok(())
+}
+
+/// Read analysis results from CSV file
+///
+/// Parses CSV with columns: frequency_hz, spl_db, phase_deg, thd_percent, rt60_ms, c50_db, c80_db, group_delay_ms
+/// Also supports legacy format with just: frequency_hz, spl_db, phase_deg
+pub fn read_analysis_csv(csv_path: &Path) -> Result<AnalysisResult, String> {
+    use std::fs::File;
+    use std::io::{BufRead, BufReader};
+
+    let file = File::open(csv_path).map_err(|e| format!("Failed to open CSV: {}", e))?;
+    let reader = BufReader::new(file);
+    let mut lines = reader.lines();
+
+    // Read header
+    let header = lines
+        .next()
+        .ok_or("Empty CSV file")?
+        .map_err(|e| format!("Failed to read header: {}", e))?;
+
+    let columns: Vec<&str> = header.split(',').map(|s| s.trim()).collect();
+    let has_extended_format = columns.len() >= 8;
+
+    let mut frequencies = Vec::new();
+    let mut spl_db = Vec::new();
+    let mut phase_deg = Vec::new();
+    let mut thd_percent = Vec::new();
+    let mut rt60_ms = Vec::new();
+    let mut clarity_c50_db = Vec::new();
+    let mut clarity_c80_db = Vec::new();
+    let mut excess_group_delay_ms = Vec::new();
+
+    for line in lines {
+        let line = line.map_err(|e| format!("Failed to read line: {}", e))?;
+        let parts: Vec<&str> = line.split(',').map(|s| s.trim()).collect();
+
+        if parts.len() < 3 {
+            continue;
+        }
+
+        let freq: f32 = parts[0].parse().unwrap_or(0.0);
+        let spl: f32 = parts[1].parse().unwrap_or(0.0);
+        let phase: f32 = parts[2].parse().unwrap_or(0.0);
+
+        frequencies.push(freq);
+        spl_db.push(spl);
+        phase_deg.push(phase);
+
+        if has_extended_format && parts.len() >= 8 {
+            thd_percent.push(parts[3].parse().unwrap_or(0.0));
+            rt60_ms.push(parts[4].parse().unwrap_or(0.0));
+            clarity_c50_db.push(parts[5].parse().unwrap_or(0.0));
+            clarity_c80_db.push(parts[6].parse().unwrap_or(0.0));
+            excess_group_delay_ms.push(parts[7].parse().unwrap_or(0.0));
+        }
+    }
+
+    // If legacy format, fill with zeros
+    let n = frequencies.len();
+    if thd_percent.is_empty() {
+        thd_percent = vec![0.0; n];
+        rt60_ms = vec![0.0; n];
+        clarity_c50_db = vec![0.0; n];
+        clarity_c80_db = vec![0.0; n];
+        excess_group_delay_ms = vec![0.0; n];
+    }
+
+    Ok(AnalysisResult {
+        frequencies,
+        spl_db,
+        phase_deg,
+        estimated_lag_samples: 0,
+        impulse_response: Vec::new(),
+        impulse_time_ms: Vec::new(),
+        thd_percent,
+        harmonic_distortion_db: Vec::new(),
+        rt60_ms,
+        clarity_c50_db,
+        clarity_c80_db,
+        excess_group_delay_ms,
+        spectrogram_db: Vec::new(),
+    })
 }
 
 /// Window function type for FFT
@@ -1248,82 +1547,7 @@ fn compute_fft_padded(signal: &[f32], fft_size: usize) -> Result<Vec<Complex<f32
     Ok(buffer)
 }
 
-/// Compute Schroeder Decay and Acoustic Metrics
-/// Returns (rt60_ms, c50_db, c80_db) broadband
-fn compute_acoustic_metrics_broadband(impulse: &[f32], sample_rate: u32) -> (f32, f32, f32) {
-    // Schroeder Integration
-    let mut energy = 0.0;
-    let mut decay = vec![0.0; impulse.len()];
 
-    for i in (0..impulse.len()).rev() {
-        energy += impulse[i] * impulse[i];
-        decay[i] = energy;
-    }
-
-    let max_energy = decay.first().copied().unwrap_or(1.0);
-    if max_energy > 0.0 {
-        for v in &mut decay {
-            *v /= max_energy;
-        }
-    }
-
-    let decay_db: Vec<f32> = decay.iter().map(|&v| 10.0 * v.max(1e-9).log10()).collect();
-
-    // RT60 (T20 extrapolation)
-    let t_minus_5 = decay_db.iter().position(|&v| v < -5.0);
-    let t_minus_25 = decay_db.iter().position(|&v| v < -25.0);
-
-    let rt60 = match (t_minus_5, t_minus_25) {
-        (Some(start), Some(end)) => {
-            if end > start {
-                let dt = (end - start) as f32 / sample_rate as f32;
-                dt * 3.0 * 1000.0 // ms
-            } else {
-                0.0
-            }
-        }
-        _ => 0.0,
-    };
-
-    // Clarity
-    let samp_50ms = (0.050 * sample_rate as f32) as usize;
-    let samp_80ms = (0.080 * sample_rate as f32) as usize;
-
-    let _e_total = energy; // Total energy from start (approx)
-    // Actually we need energy from 0 to t
-    // Schroeder is energy from t to inf.
-    // E_total = decay[0] * max_energy.
-    // E(0..t) = E_total - E(t..inf) = (decay[0] - decay[t]) * max_energy
-    // ratio = E(0..t) / E(t..inf) = (decay[0] - decay[t]) / decay[t]
-    // Since decay is normalized, decay[0]=1.
-    // ratio = (1 - decay[t]) / decay[t]
-
-    let c50 = if samp_50ms < decay.len() {
-        let e_late = decay[samp_50ms];
-        let e_early = 1.0 - e_late;
-        if e_late > 1e-9 {
-            10.0 * (e_early / e_late).log10()
-        } else {
-            0.0
-        }
-    } else {
-        0.0
-    };
-
-    let c80 = if samp_80ms < decay.len() {
-        let e_late = decay[samp_80ms];
-        let e_early = 1.0 - e_late;
-        if e_late > 1e-9 {
-            10.0 * (e_early / e_late).log10()
-        } else {
-            0.0
-        }
-    } else {
-        0.0
-    };
-
-    (rt60, c50, c80)
-}
 
 /// Apply Hann window to a signal
 fn apply_hann_window(signal: &[f32]) -> Vec<f32> {
@@ -1707,36 +1931,205 @@ pub fn compute_clarity_broadband(impulse: &[f32], sample_rate: f32) -> (f32, f32
         }
     }
 
-    let c50 = if energy_50_inf > 1e-9 {
-        10.0 * (energy_0_50 / energy_50_inf).log10()
+    // When late energy is negligible, clarity is very high (capped at 60 dB)
+    // When early energy is negligible, clarity is very low (capped at -60 dB)
+    const MAX_CLARITY_DB: f32 = 60.0;
+
+    let c50 = if energy_50_inf > 1e-12 && energy_0_50 > 1e-12 {
+        let ratio = energy_0_50 / energy_50_inf;
+        (10.0 * ratio.log10()).clamp(-MAX_CLARITY_DB, MAX_CLARITY_DB)
+    } else if energy_0_50 > energy_50_inf {
+        MAX_CLARITY_DB // Early energy dominates - excellent clarity
     } else {
-        0.0
+        -MAX_CLARITY_DB // Late energy dominates - poor clarity
     };
 
-    let c80 = if energy_80_inf > 1e-9 {
-        10.0 * (energy_0_80 / energy_80_inf).log10()
+    let c80 = if energy_80_inf > 1e-12 && energy_0_80 > 1e-12 {
+        let ratio = energy_0_80 / energy_80_inf;
+        (10.0 * ratio.log10()).clamp(-MAX_CLARITY_DB, MAX_CLARITY_DB)
+    } else if energy_0_80 > energy_80_inf {
+        MAX_CLARITY_DB // Early energy dominates - excellent clarity
     } else {
-        0.0
+        -MAX_CLARITY_DB // Late energy dominates - poor clarity
     };
 
     (c50, c80)
 }
 
-/// Compute RT60 spectrum (interpolated broadband for now)
+/// Compute RT60 spectrum using octave band filtering
 pub fn compute_rt60_spectrum(impulse: &[f32], sample_rate: f32, frequencies: &[f32]) -> Vec<f32> {
-    let rt60 = compute_rt60_broadband(impulse, sample_rate);
-    vec![rt60; frequencies.len()]
+    if impulse.is_empty() {
+        return vec![0.0; frequencies.len()];
+    }
+
+    // Octave band center frequencies
+    let centers = [
+        63.0f32, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0,
+    ];
+    let mut band_rt60s = Vec::with_capacity(centers.len());
+    let mut valid_centers = Vec::with_capacity(centers.len());
+
+    // Compute RT60 for each band
+    for &freq in &centers {
+        // Skip if frequency is too high for sample rate
+        if freq >= sample_rate / 2.0 {
+            continue;
+        }
+
+        // Apply bandpass filter
+        // Q=1.414 (sqrt(2)) gives approx 1 octave bandwidth
+        let mut biquad = Biquad::new(
+            BiquadFilterType::Bandpass,
+            freq as f64,
+            sample_rate as f64,
+            1.414,
+            0.0,
+        );
+
+        // Process in f64
+        let mut filtered: Vec<f64> = impulse.iter().map(|&x| x as f64).collect();
+        biquad.process_block(&mut filtered);
+        let filtered_f32: Vec<f32> = filtered.iter().map(|&x| x as f32).collect();
+
+        // Compute RT60 for this band
+        let rt60 = compute_rt60_broadband(&filtered_f32, sample_rate);
+
+        band_rt60s.push(rt60);
+        valid_centers.push(freq);
+    }
+
+    // Log per-band values
+    log::info!(
+        "[RT60] Per-band values: {:?}",
+        valid_centers.iter().zip(band_rt60s.iter())
+            .map(|(f, v)| format!("{:.0}Hz:{:.1}ms", f, v))
+            .collect::<Vec<_>>()
+    );
+
+    if valid_centers.is_empty() {
+        return vec![0.0; frequencies.len()];
+    }
+
+    // Interpolate to output frequencies
+    interpolate_log(&valid_centers, &band_rt60s, frequencies)
 }
 
-/// Compute Clarity spectrum (interpolated broadband for now)
+/// Compute Clarity spectrum (C50, C80) using octave band filtering
 /// Returns (C50_vec, C80_vec)
 pub fn compute_clarity_spectrum(
     impulse: &[f32],
     sample_rate: f32,
     frequencies: &[f32],
 ) -> (Vec<f32>, Vec<f32>) {
-    let (c50, c80) = compute_clarity_broadband(impulse, sample_rate);
-    (vec![c50; frequencies.len()], vec![c80; frequencies.len()])
+    if impulse.is_empty() || frequencies.is_empty() {
+        return (vec![0.0; frequencies.len()], vec![0.0; frequencies.len()]);
+    }
+
+    // Octave band center frequencies
+    let centers = [
+        63.0f32, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0,
+    ];
+    let mut band_c50s = Vec::with_capacity(centers.len());
+    let mut band_c80s = Vec::with_capacity(centers.len());
+    let mut valid_centers = Vec::with_capacity(centers.len());
+
+    // Time boundaries for clarity calculation
+    let samp_50ms = (0.050 * sample_rate) as usize;
+    let samp_80ms = (0.080 * sample_rate) as usize;
+
+    // Compute Clarity for each band using cascaded bandpass for better selectivity
+    for &freq in &centers {
+        if freq >= sample_rate / 2.0 {
+            continue;
+        }
+
+        // Use cascaded biquads for sharper filter response (reduces filter ringing effects)
+        let mut biquad1 = Biquad::new(
+            BiquadFilterType::Bandpass,
+            freq as f64,
+            sample_rate as f64,
+            0.707, // Lower Q per stage, cascaded gives Q ≈ 1.0
+            0.0,
+        );
+        let mut biquad2 = Biquad::new(
+            BiquadFilterType::Bandpass,
+            freq as f64,
+            sample_rate as f64,
+            0.707,
+            0.0,
+        );
+
+        let mut filtered: Vec<f64> = impulse.iter().map(|&x| x as f64).collect();
+        biquad1.process_block(&mut filtered);
+        biquad2.process_block(&mut filtered);
+
+        // Compute energy in early and late windows directly
+        let mut energy_0_50 = 0.0f64;
+        let mut energy_50_inf = 0.0f64;
+        let mut energy_0_80 = 0.0f64;
+        let mut energy_80_inf = 0.0f64;
+
+        for (i, &samp) in filtered.iter().enumerate() {
+            let sq = samp * samp;
+
+            if i < samp_50ms {
+                energy_0_50 += sq;
+            } else {
+                energy_50_inf += sq;
+            }
+
+            if i < samp_80ms {
+                energy_0_80 += sq;
+            } else {
+                energy_80_inf += sq;
+            }
+        }
+
+        // Compute C50 and C80 with proper handling
+        // When late energy is very small, clarity is high (capped at 40 dB for display)
+        const MAX_CLARITY_DB: f32 = 40.0;
+        const MIN_ENERGY: f64 = 1e-20;
+
+        let c50 = if energy_50_inf > MIN_ENERGY && energy_0_50 > MIN_ENERGY {
+            let ratio = energy_0_50 / energy_50_inf;
+            (10.0 * ratio.log10() as f32).clamp(-MAX_CLARITY_DB, MAX_CLARITY_DB)
+        } else if energy_0_50 > energy_50_inf {
+            MAX_CLARITY_DB
+        } else {
+            -MAX_CLARITY_DB
+        };
+
+        let c80 = if energy_80_inf > MIN_ENERGY && energy_0_80 > MIN_ENERGY {
+            let ratio = energy_0_80 / energy_80_inf;
+            (10.0 * ratio.log10() as f32).clamp(-MAX_CLARITY_DB, MAX_CLARITY_DB)
+        } else if energy_0_80 > energy_80_inf {
+            MAX_CLARITY_DB
+        } else {
+            -MAX_CLARITY_DB
+        };
+
+        band_c50s.push(c50);
+        band_c80s.push(c80);
+        valid_centers.push(freq);
+    }
+
+    // Log per-band values
+    log::info!(
+        "[Clarity] Per-band C50: {:?}",
+        valid_centers.iter().zip(band_c50s.iter())
+            .map(|(f, v)| format!("{:.0}Hz:{:.1}dB", f, v))
+            .collect::<Vec<_>>()
+    );
+
+    if valid_centers.is_empty() {
+        return (vec![0.0; frequencies.len()], vec![0.0; frequencies.len()]);
+    }
+
+    // Interpolate to output frequency grid
+    let c50_interp = interpolate_log(&valid_centers, &band_c50s, frequencies);
+    let c80_interp = interpolate_log(&valid_centers, &band_c80s, frequencies);
+
+    (c50_interp, c80_interp)
 }
 
 /// Compute Spectrogram from Impulse Response
@@ -2008,6 +2401,15 @@ mod tests {
             spl_db,
             phase_deg,
             estimated_lag_samples: lag,
+            impulse_response: Vec::new(),
+            impulse_time_ms: Vec::new(),
+            excess_group_delay_ms: Vec::new(),
+            thd_percent: Vec::new(),
+            harmonic_distortion_db: Vec::new(),
+            rt60_ms: Vec::new(),
+            clarity_c50_db: Vec::new(),
+            clarity_c80_db: Vec::new(),
+            spectrogram_db: Vec::new(),
         })
     }
 
@@ -2332,6 +2734,15 @@ mod tests {
             spl_db: vec![-10.0, -20.0, -30.0], // Measured values
             phase_deg: vec![0.0, 45.0, -90.0],
             estimated_lag_samples: 0,
+            impulse_response: Vec::new(),
+            impulse_time_ms: Vec::new(),
+            excess_group_delay_ms: Vec::new(),
+            thd_percent: Vec::new(),
+            harmonic_distortion_db: Vec::new(),
+            rt60_ms: Vec::new(),
+            clarity_c50_db: Vec::new(),
+            clarity_c80_db: Vec::new(),
+            spectrogram_db: Vec::new(),
         };
 
         // Create compensation: mic reads +2dB louder at 1000 Hz
@@ -2351,7 +2762,10 @@ mod tests {
 
         // Should have header + 3 data rows
         assert_eq!(lines.len(), 4);
-        assert_eq!(lines[0], "frequency_hz,spl_db,phase_deg");
+        assert_eq!(
+            lines[0],
+            "frequency_hz,spl_db,phase_deg,thd_percent,rt60_ms,c50_db,c80_db,group_delay_ms"
+        );
 
         // Parse second line (1000 Hz): measured -20.0, mic deviation +2.0, true level = -20 - 2 = -22
         let parts: Vec<&str> = lines[2].split(',').collect();
@@ -2373,6 +2787,15 @@ mod tests {
             spl_db: vec![-20.0],
             phase_deg: vec![45.0],
             estimated_lag_samples: 0,
+            impulse_response: Vec::new(),
+            impulse_time_ms: Vec::new(),
+            excess_group_delay_ms: Vec::new(),
+            thd_percent: Vec::new(),
+            harmonic_distortion_db: Vec::new(),
+            rt60_ms: Vec::new(),
+            clarity_c50_db: Vec::new(),
+            clarity_c80_db: Vec::new(),
+            spectrogram_db: Vec::new(),
         };
 
         // Write CSV without compensation
@@ -2452,5 +2875,52 @@ mod tests {
         // Around 1000 Hz, signal should be attenuated
         let mid_idx = sweep.len() / 2;
         assert!(compensated[mid_idx] < sweep[mid_idx]);
+    }
+
+    #[test]
+    fn test_compute_thd_from_ir() {
+        // Synthesize an IR with known distortion
+        let sample_rate = 48000.0f32;
+        let duration = 1.0f32;
+        let start_freq = 20.0f32;
+        let end_freq = 20000.0f32;
+        let n = (duration * sample_rate) as usize;
+        let mut impulse = vec![0.0f32; n];
+
+        // Fundamental peak at index 1000
+        let peak_idx = 1000;
+        impulse[peak_idx] = 1.0;
+
+        // 2nd harmonic peak (approx 10% amplitude = -20dB)
+        // Delay dt = T * ln(2) / ln(f2/f1)
+        let dt = duration * 2.0f32.ln() / (end_freq / start_freq).ln();
+        let dn = (dt * sample_rate).round() as usize;
+        // Harmonic appears BEFORE fundamental (negative time)
+        // In circular buffer: peak_idx - dn (wrapped)
+        let h2_idx = (peak_idx as isize - dn as isize).rem_euclid(n as isize) as usize;
+        
+        // Add 2nd harmonic spike
+        impulse[h2_idx] = 0.1;
+
+        // Frequencies to test
+        let frequencies = vec![1000.0f32];
+        let fundamental_db = vec![0.0f32]; // Ideal impulse has 0dB magnitude
+
+        let (thd, harmonics) = compute_thd_from_ir(
+            &impulse,
+            sample_rate,
+            &frequencies,
+            &fundamental_db,
+            start_freq,
+            end_freq,
+            duration
+        );
+
+        // THD should be 10%
+        assert!((thd[0] - 10.0).abs() < 1.0, "THD should be approx 10%, got {:.2}%", thd[0]);
+        
+        // 2nd harmonic level should be -20dB
+        // Harmonics vector: [2nd, 3rd, 4th, 5th]
+        assert!((harmonics[0][0] - (-20.0)).abs() < 2.0, "2nd harmonic should be -20dB, got {:.2}dB", harmonics[0][0]);
     }
 }

@@ -21,10 +21,15 @@ pub use preflight::{PreflightError, run_preflight_checks};
 
 pub mod replaygain;
 pub mod signal_recorder;
+pub use signal_recorder::{
+    ChannelRecordingInfo, DeviceInfo, LegacyChannelRecording, LegacyRecordingResult,
+    LegacyRecordingSession, RecordingSession, migrate_legacy_recording, reprocess_recordings,
+};
 pub mod signals;
 pub mod waveform;
 
 pub mod signal_analysis;
+pub use signal_analysis::{AnalysisResult, read_analysis_csv, write_analysis_csv};
 
 pub mod engine;
 pub use engine::{AudioEngine, AudioEngineState, EngineConfig, PlaybackState, PluginConfig};

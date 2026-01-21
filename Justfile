@@ -1,4 +1,4 @@
-# --------------------------------------------------------- -*- just -*- 
+# --------------------------------------------------------- -*- just -*-
 # How to install Just?
 #	  cargo install just
 # ----------------------------------------------------------------------
@@ -305,11 +305,9 @@ demo-ui-kit:
 	cargo build --release --example showcase -p gpui-ui-kit
 
 demo-d3rs:
-	cargo build --release --bin d3rs-showcase --features="gpui"
 	cargo build --release --bin d3rs-spinorama --features="spinorama, gpu-3d"
 
 demo-px:
-	cargo build --release --bin px-showcase -p gpui-px
 	cargo build --release --bin px-spinorama -p gpui-px --features="autoeq,tokio,reqwest,urlencoding"
 
 demo-headphone-loss:
@@ -624,7 +622,7 @@ qa-edifierw830nb-autoeqde:
 	--curve data_tests/headphones/asr/edifierw830nb/Edifier\ W830NB.csv \
 	--target ./data_tests/targets/harman-over-ear-2018.csv \
 	--min-freq 50 --max-freq 16000 --max-q 8 --max-db 8 \
-	--loss headphone-score 
+	--loss headphone-score
 	--min-spacing-oct 0.08 \
 	--algo autoeq:de --population 70 --maxeval 8000 --seed 42 \
 	--qa 14.0

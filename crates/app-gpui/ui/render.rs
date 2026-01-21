@@ -366,6 +366,11 @@ impl Render for PlayerView {
             )
             // Scan progress modal
             .child(self.render_scan_progress_modal(cx))
+            // Migration modal for recording format conversion
+            .when(
+                self.state.read(cx).app.measurement_state.recording_state.migration_modal_open,
+                |div| div.child(self.render_migration_modal(cx)),
+            )
             .child(self.render_toast(cx))
             .when(self.state.read(cx).app.ui_state.context_menu.is_some(), |div| {
                 div.child(self.render_context_menu(cx))

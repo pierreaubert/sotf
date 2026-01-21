@@ -8,8 +8,8 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Card, HStack, NumberInput, NumberInputSize, Progress,
-    ProgressSize, ProgressVariant, Select, SelectOption, StackAlign, StackJustify, StackSpacing,
-    Text, TextSize, TextWeight, VStack,
+    ProgressSize, ProgressVariant, Select, SelectOption, StackAlign, StackJustify, StackSize,
+    StackSpacing, Text, TextSize, TextWeight, VStack,
 };
 
 impl PlayerView {
@@ -804,7 +804,7 @@ impl PlayerView {
         let temp_wav_path = temp_wav.path().to_path_buf();
 
         cx.spawn(async move |_, cx| {
-            use sotf_audio_player::signal_recorder::record_and_analyze;
+            use sotf_audio_player::signal_recorder::{record_and_analyze, SignalType};
 
             log::info!(
                 "Starting recording: output_ch={}, input_ch={}, device={}",
@@ -812,6 +812,13 @@ impl PlayerView {
                 input_channel,
                 output_device
             );
+
+            // Determine sweep range for THD calculation
+            let sweep_range = if signal_type == SignalType::Sweep {
+                Some((sweep_start_freq, sweep_end_freq))
+            } else {
+                None
+            };
 
             // Run the recording
             let result = record_and_analyze(
@@ -833,6 +840,7 @@ impl PlayerView {
                     Some(input_device.as_str())
                 },
                 mic_calibration.as_deref(),
+                sweep_range,
             );
 
             // Parse results and update state
@@ -1222,8 +1230,10 @@ impl PlayerView {
     }
 
     /// Load recordings from a JSON file (RoomEqMeasurementsFile format)
+    ///
+    /// Detects legacy format (large inline data) and prompts for migration.
     pub(crate) fn load_recordings_from_file(&mut self, cx: &mut Context<Self>) {
-        use crate::app::types::{ChannelRecording, RoomEqMeasurementsFile};
+        use crate::app::types::RoomEqMeasurementsFile;
 
         let state_entity = self.state.clone();
 
@@ -1238,97 +1248,49 @@ impl PlayerView {
                 let file_path = file.path().to_path_buf();
                 let file_dir = file_path.parent().map(|p| p.to_path_buf());
 
+                // Get file size
+                let file_size = std::fs::metadata(&file_path)
+                    .map(|m| m.len())
+                    .unwrap_or(0);
+
                 // Read file content
                 match std::fs::read_to_string(&file_path) {
                     Ok(json) => {
-                        // Deserialize as RoomEqMeasurementsFile with migration
-                        match RoomEqMeasurementsFile::from_json_str(&json) {
-                            Ok(measurements_file) => {
-                                log::info!(
-                                    "Loaded {} channel measurements from {:?}",
-                                    measurements_file.channels.len(),
-                                    file_path
-                                );
+                        // Check if this is a legacy format (large file with inline data)
+                        let needs_migration = Self::check_needs_migration(&json, file_size);
 
-                                let _ =
-                                    state_entity.update(&mut cx.clone(), |state, _| {
-                                        // Convert ChannelMeasurement to ChannelRecording
-                                        let recordings: Vec<ChannelRecording> = measurements_file
-                                            .channels
-                                            .into_iter()
-                                            .enumerate()
-                                            .map(|(idx, cm)| {
-                                                // Convert relative paths in result to absolute paths
-                                                let mut result = cm.measurement;
-                                                if let (Some(dir), Some(wav)) =
-                                                    (&file_dir, &result.wav_path)
-                                                {
-                                                    let abs_path = dir.join(wav);
-                                                    if abs_path.exists() {
-                                                        result.wav_path = Some(
-                                                            abs_path.to_string_lossy().to_string(),
-                                                        );
-                                                    }
-                                                }
-                                                if let (Some(dir), Some(csv)) =
-                                                    (&file_dir, &result.csv_path)
-                                                {
-                                                    let abs_path = dir.join(csv);
-                                                    if abs_path.exists() {
-                                                        result.csv_path = Some(
-                                                            abs_path.to_string_lossy().to_string(),
-                                                        );
-                                                    }
-                                                }
+                        if needs_migration {
+                            // Show migration modal instead of loading directly
+                            log::info!(
+                                "Detected legacy format ({:.2} MB), showing migration modal",
+                                file_size as f64 / 1_000_000.0
+                            );
 
-                                                ChannelRecording {
-                                                    channel_index: idx,
-                                                    channel_name: cm.channel_name,
-                                                    state: ChannelRecordingState::Done,
-                                                    result: Some(result),
-                                                }
-                                            })
-                                            .collect();
+                            // Count channels for display
+                            let channel_count = RoomEqMeasurementsFile::from_json_str(&json)
+                                .map(|m| m.channels.len())
+                                .unwrap_or(0);
 
-                                        state
-                                            .app
-                                            .measurement_state
-                                            .recording_state
-                                            .channel_recordings = recordings;
-
-                                        // Also set the recording directory to the file's directory
-                                        if let Some(dir) = file_dir {
-                                            state
-                                                .app
-                                                .measurement_state
-                                                .recording_state
-                                                .recording_directory =
-                                                Some(dir.to_string_lossy().to_string());
-                                        }
-
-                                        state
-                                            .app
-                                            .measurement_state
-                                            .recording_state
-                                            .status_message = format!(
-                                            "Loaded {} channels from {}",
-                                            state
-                                                .app
-                                                .measurement_state
-                                                .recording_state
-                                                .channel_recordings
-                                                .len(),
-                                            file_path.display()
-                                        );
-                                    });
-                            }
-                            Err(e) => {
-                                log::error!("Failed to parse recordings JSON: {}", e);
-                                let _ = state_entity.update(&mut cx.clone(), |state, _| {
-                                    state.app.measurement_state.recording_state.status_message =
-                                        format!("Failed to parse: {}", e);
-                                });
-                            }
+                            let _ = state_entity.update(&mut cx.clone(), |state, _| {
+                                let rec_state = &mut state.app.measurement_state.recording_state;
+                                rec_state.migration_modal_open = true;
+                                rec_state.migration_file_path =
+                                    Some(file_path.to_string_lossy().to_string());
+                                rec_state.migration_file_dir =
+                                    file_dir.map(|d| d.to_string_lossy().to_string());
+                                rec_state.migration_file_size = Some(file_size);
+                                rec_state.migration_channel_count = channel_count;
+                                rec_state.migration_pending_json = Some(json);
+                            });
+                        } else {
+                            // Load normally for new format or small files
+                            Self::load_recordings_internal(
+                                state_entity,
+                                &mut cx.clone(),
+                                &json,
+                                &file_path,
+                                file_dir,
+                            );
                         }
                     }
                     Err(e) => {
@@ -1344,5 +1306,477 @@ impl PlayerView {
         .detach();
 
         log::info!("Load recordings from file initiated");
+    }
+
+    /// Check if a JSON file needs migration (legacy format with large inline data)
+    fn check_needs_migration(json: &str, file_size: u64) -> bool {
+        // If file is small (<1MB), don't bother with migration
+        if file_size < 1_000_000 {
+            return false;
+        }
+
+        // Check if the JSON contains large inline frequency data
+        // Look for "frequencies" or "magnitude_db" arrays with data
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(json) {
+            // Check channels array for inline data
+            if let Some(channels) = value.get("channels").and_then(|c| c.as_array()) {
+                for channel in channels {
+                    // Check measurement.frequencies array
+                    if let Some(measurement) = channel.get("measurement") {
+                        if let Some(freqs) = measurement.get("frequencies").and_then(|f| f.as_array())
+                        {
+                            if freqs.len() > 100 {
+                                return true;
+                            }
+                        }
+                    }
+                    // Check result.frequencies for older format
+                    if let Some(result) = channel.get("result") {
+                        if let Some(freqs) = result.get("frequencies").and_then(|f| f.as_array()) {
+                            if freqs.len() > 100 {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        false
+    }
+
+    /// Internal function to load recordings from parsed JSON
+    fn load_recordings_internal(
+        state_entity: Entity<crate::app::state::AppState>,
+        cx: &mut gpui::AsyncApp,
+        json: &str,
+        file_path: &std::path::Path,
+        file_dir: Option<std::path::PathBuf>,
+    ) {
+        use crate::app::types::{ChannelRecording, RoomEqMeasurementsFile};
+
+        match RoomEqMeasurementsFile::from_json_str(json) {
+            Ok(measurements_file) => {
+                log::info!(
+                    "Loaded {} channel measurements from {:?}",
+                    measurements_file.channels.len(),
+                    file_path
+                );
+
+                let file_path_display = file_path.display().to_string();
+                let _ = state_entity.update(cx, |state, _| {
+                    // Convert ChannelMeasurement to ChannelRecording
+                    let recordings: Vec<ChannelRecording> = measurements_file
+                        .channels
+                        .into_iter()
+                        .enumerate()
+                        .map(|(idx, cm)| {
+                            // Convert relative paths in result to absolute paths
+                            let mut result = cm.measurement;
+                            if let (Some(dir), Some(wav)) = (&file_dir, &result.wav_path) {
+                                let abs_path = dir.join(wav);
+                                if abs_path.exists() {
+                                    result.wav_path =
+                                        Some(abs_path.to_string_lossy().to_string());
+                                }
+                            }
+                            if let (Some(dir), Some(csv)) = (&file_dir, &result.csv_path) {
+                                let abs_path = dir.join(csv);
+                                if abs_path.exists() {
+                                    result.csv_path =
+                                        Some(abs_path.to_string_lossy().to_string());
+                                }
+                            }
+
+                            ChannelRecording {
+                                channel_index: idx,
+                                channel_name: cm.channel_name,
+                                state: ChannelRecordingState::Done,
+                                result: Some(result),
+                            }
+                        })
+                        .collect();
+
+                    let rec_state = &mut state.app.measurement_state.recording_state;
+                    rec_state.channel_recordings = recordings.clone();
+
+                    // Also set the recording directory to the file's directory
+                    if let Some(dir) = file_dir {
+                        rec_state.recording_directory = Some(dir.to_string_lossy().to_string());
+                    }
+
+                    rec_state.status_message = format!(
+                        "Loaded {} channels from {}",
+                        recordings.len(),
+                        file_path_display
+                    );
+                });
+            }
+            Err(e) => {
+                log::error!("Failed to parse recordings JSON: {}", e);
+                let _ = state_entity.update(cx, |state, _| {
+                    state.app.measurement_state.recording_state.status_message =
+                        format!("Failed to parse: {}", e);
+                });
+            }
+        }
+    }
+
+    /// Render the migration confirmation modal
+    pub(crate) fn render_migration_modal(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        use gpui_ui_kit::{Dialog, DialogSize};
+
+        let state = self.state.read(cx);
+        let theme = state.app.ui_state.theme.clone();
+        let rec_state = &state.app.measurement_state.recording_state;
+
+        let file_path = rec_state
+            .migration_file_path
+            .clone()
+            .unwrap_or_default();
+        let file_size_mb = rec_state.migration_file_size.unwrap_or(0) as f64 / 1_000_000.0;
+        let channel_count = rec_state.migration_channel_count;
+
+        // Extract just the filename for display
+        let file_name = std::path::Path::new(&file_path)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| file_path.clone());
+
+        Dialog::new("migration-modal")
+            .title("Convert Recording Format")
+            .size(DialogSize::Md)
+            .on_close({
+                let state = self.state.clone();
+                move |_window, cx| {
+                    let state = state.clone();
+                    cx.defer(move |cx| {
+                        state.update(cx, |state, _| {
+                            let rec_state = &mut state.app.measurement_state.recording_state;
+                            rec_state.migration_modal_open = false;
+                            rec_state.migration_pending_json = None;
+                        });
+                    });
+                }
+            })
+            .content(
+                VStack::new()
+                    .spacing(StackSpacing::Lg)
+                    .child(
+                        VStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .child(
+                                Text::new("This recording file uses an older format with embedded data.")
+                                    .size(TextSize::Md)
+                                    .color(theme.text_primary),
+                            )
+                            .child(
+                                Text::new("Converting will:")
+                                    .size(TextSize::Sm)
+                                    .color(theme.text_secondary),
+                            )
+                            .child(
+                                VStack::new()
+                                    .spacing(StackSpacing::Xs)
+                                    .child(
+                                        Text::new("  - Extract analysis data to separate CSV files")
+                                            .size(TextSize::Sm)
+                                            .color(theme.text_secondary),
+                                    )
+                                    .child(
+                                        Text::new("  - Create a lightweight session.json file")
+                                            .size(TextSize::Sm)
+                                            .color(theme.text_secondary),
+                                    )
+                                    .child(
+                                        Text::new("  - Reduce file size significantly")
+                                            .size(TextSize::Sm)
+                                            .color(theme.text_secondary),
+                                    ),
+                            ),
+                    )
+                    .child(div().w_full().h(px(1.0)).bg(theme.border))
+                    .child(
+                        VStack::new()
+                            .spacing(StackSpacing::Sm)
+                            .child(
+                                HStack::new()
+                                    .spacing(StackSpacing::Md)
+                                    .child(
+                                        Text::new("File:")
+                                            .size(TextSize::Sm)
+                                            .weight(TextWeight::Semibold)
+                                            .color(theme.text_secondary),
+                                    )
+                                    .child(
+                                        Text::new(file_name)
+                                            .size(TextSize::Sm)
+                                            .color(theme.text_primary),
+                                    ),
+                            )
+                            .child(
+                                HStack::new()
+                                    .spacing(StackSpacing::Md)
+                                    .child(
+                                        Text::new("Size:")
+                                            .size(TextSize::Sm)
+                                            .weight(TextWeight::Semibold)
+                                            .color(theme.text_secondary),
+                                    )
+                                    .child(
+                                        Text::new(format!("{:.2} MB", file_size_mb))
+                                            .size(TextSize::Sm)
+                                            .color(theme.warning),
+                                    ),
+                            )
+                            .child(
+                                HStack::new()
+                                    .spacing(StackSpacing::Md)
+                                    .child(
+                                        Text::new("Channels:")
+                                            .size(TextSize::Sm)
+                                            .weight(TextWeight::Semibold)
+                                            .color(theme.text_secondary),
+                                    )
+                                    .child(
+                                        Text::new(format!("{}", channel_count))
+                                            .size(TextSize::Sm)
+                                            .color(theme.text_primary),
+                                    ),
+                            ),
+                    ),
+            )
+            .footer(
+                HStack::new()
+                    .width(StackSize::Full)
+                    .justify(StackJustify::End)
+                    .spacing(StackSpacing::Md)
+                    .child(
+                        Button::new("migration-cancel", "Cancel")
+                            .variant(ButtonVariant::Ghost)
+                            .size(ButtonSize::Sm)
+                            .theme(theme.to_button_theme())
+                            .build()
+                            .on_click(cx.listener(|view, _event: &ClickEvent, _window, cx| {
+                                let state = view.state.clone();
+                                cx.defer(move |cx| {
+                                    state.update(cx, |state, _| {
+                                        let rec_state =
+                                            &mut state.app.measurement_state.recording_state;
+                                        rec_state.migration_modal_open = false;
+                                        rec_state.migration_pending_json = None;
+                                    });
+                                });
+                            })),
+                    )
+                    .child(
+                        Button::new("migration-proceed", "Convert")
+                            .variant(ButtonVariant::Primary)
+                            .size(ButtonSize::Sm)
+                            .theme(theme.to_button_theme())
+                            .build()
+                            .on_click(cx.listener(|view, _event: &ClickEvent, _window, cx| {
+                                view.perform_migration(cx);
+                            })),
+                    ),
+            )
+    }
+
+    /// Perform the migration from legacy format to new format
+    fn perform_migration(&mut self, cx: &mut Context<Self>) {
+        use crate::app::types::RoomEqMeasurementsFile;
+        use sotf_audio::signal_analysis::AnalysisResult;
+
+        let state = self.state.read(cx);
+        let rec_state = &state.app.measurement_state.recording_state;
+
+        let json = match &rec_state.migration_pending_json {
+            Some(j) => j.clone(),
+            None => {
+                log::error!("No pending JSON for migration");
+                return;
+            }
+        };
+
+        let file_path = rec_state.migration_file_path.clone().unwrap_or_default();
+        let file_dir = rec_state
+            .migration_file_dir
+            .clone()
+            .map(std::path::PathBuf::from);
+
+        drop(state);
+
+        // Parse and migrate
+        match RoomEqMeasurementsFile::from_json_str(&json) {
+            Ok(measurements_file) => {
+                let session_dir = file_dir.clone().unwrap_or_else(|| {
+                    std::path::PathBuf::from(&file_path)
+                        .parent()
+                        .unwrap_or(std::path::Path::new("."))
+                        .to_path_buf()
+                });
+
+                log::info!(
+                    "Migrating {} channels to new format in {:?}",
+                    measurements_file.channels.len(),
+                    session_dir
+                );
+
+                // Extract data to CSV files for each channel
+                for (idx, channel) in measurements_file.channels.iter().enumerate() {
+                    let csv_filename = format!("channel_{}.csv", idx);
+                    let csv_path = session_dir.join(&csv_filename);
+
+                    // Build AnalysisResult from the measurement data
+                    let result = &channel.measurement;
+                    let analysis = AnalysisResult {
+                        frequencies: result.frequencies.clone(),
+                        spl_db: result.magnitude_db.clone(),
+                        phase_deg: result.phase_deg.clone(),
+                        estimated_lag_samples: 0,
+                        impulse_response: result.impulse_response.clone().unwrap_or_default(),
+                        impulse_time_ms: result.impulse_time_ms.clone().unwrap_or_default(),
+                        thd_percent: result.thd_percent.clone().unwrap_or_default(),
+                        harmonic_distortion_db: result
+                            .harmonic_distortion_db
+                            .clone()
+                            .unwrap_or_default(),
+                        rt60_ms: result.rt60_ms.clone().unwrap_or_default(),
+                        clarity_c50_db: result.clarity_c50_db.clone().unwrap_or_default(),
+                        clarity_c80_db: result.clarity_c80_db.clone().unwrap_or_default(),
+                        excess_group_delay_ms: result
+                            .excess_group_delay_ms
+                            .clone()
+                            .unwrap_or_default(),
+                        spectrogram_db: result.spectrogram_db.clone().unwrap_or_default(),
+                    };
+
+                    // Write CSV with extended format
+                    if let Err(e) = Self::write_migration_csv(&analysis, &csv_path) {
+                        log::error!("Failed to write CSV for channel {}: {}", idx, e);
+                    } else {
+                        log::info!("Wrote migrated CSV: {:?}", csv_path);
+                    }
+                }
+
+                // Create new lightweight session.json
+                let session_json_path = session_dir.join("session.json");
+                if let Err(e) =
+                    Self::write_lightweight_session(&measurements_file, &session_json_path)
+                {
+                    log::error!("Failed to write session.json: {}", e);
+                } else {
+                    log::info!("Wrote lightweight session: {:?}", session_json_path);
+                }
+
+                // Now load the data normally
+                self.state.update(cx, |state, _| {
+                    let rec_state = &mut state.app.measurement_state.recording_state;
+                    rec_state.migration_modal_open = false;
+                    rec_state.migration_pending_json = None;
+                    rec_state.status_message = format!(
+                        "Converted {} channels. Created CSV files and session.json",
+                        measurements_file.channels.len()
+                    );
+                });
+
+                // Load the recordings normally
+                let state_entity = self.state.clone();
+                Self::load_recordings_internal(
+                    state_entity,
+                    &mut cx.to_async(),
+                    &json,
+                    std::path::Path::new(&file_path),
+                    file_dir,
+                );
+            }
+            Err(e) => {
+                log::error!("Failed to parse JSON for migration: {}", e);
+                self.state.update(cx, |state, _| {
+                    let rec_state = &mut state.app.measurement_state.recording_state;
+                    rec_state.migration_modal_open = false;
+                    rec_state.migration_pending_json = None;
+                    rec_state.status_message = format!("Migration failed: {}", e);
+                });
+            }
+        }
+
+        cx.notify();
+    }
+
+    /// Write analysis result to CSV with extended format
+    fn write_migration_csv(
+        analysis: &sotf_audio::signal_analysis::AnalysisResult,
+        csv_path: &std::path::Path,
+    ) -> Result<(), String> {
+        use std::io::Write;
+
+        let mut file = std::fs::File::create(csv_path)
+            .map_err(|e| format!("Failed to create CSV: {}", e))?;
+
+        // Header
+        writeln!(
+            file,
+            "frequency_hz,spl_db,phase_deg,thd_percent,rt60_ms,c50_db,c80_db,group_delay_ms"
+        )
+        .map_err(|e| format!("Failed to write header: {}", e))?;
+
+        // Data
+        for i in 0..analysis.frequencies.len() {
+            let freq = analysis.frequencies[i];
+            let spl = analysis.spl_db[i];
+            let phase = analysis.phase_deg[i];
+            let thd = analysis.thd_percent.get(i).copied().unwrap_or(0.0);
+            let rt60 = analysis.rt60_ms.get(i).copied().unwrap_or(0.0);
+            let c50 = analysis.clarity_c50_db.get(i).copied().unwrap_or(0.0);
+            let c80 = analysis.clarity_c80_db.get(i).copied().unwrap_or(0.0);
+            let gd = analysis.excess_group_delay_ms.get(i).copied().unwrap_or(0.0);
+
+            writeln!(
+                file,
+                "{:.6},{:.3},{:.6},{:.6},{:.3},{:.3},{:.3},{:.6}",
+                freq, spl, phase, thd, rt60, c50, c80, gd
+            )
+            .map_err(|e| format!("Failed to write data: {}", e))?;
+        }
+
+        Ok(())
+    }
+
+    /// Write lightweight session.json file
+    fn write_lightweight_session(
+        measurements: &crate::app::types::RoomEqMeasurementsFile,
+        path: &std::path::Path,
+    ) -> Result<(), String> {
+        use serde_json::json;
+
+        let channels: Vec<serde_json::Value> = measurements
+            .channels
+            .iter()
+            .enumerate()
+            .map(|(idx, ch)| {
+                json!({
+                    "channel_index": idx,
+                    "channel_name": ch.channel_name,
+                    "wav_path": ch.measurement.wav_path,
+                    "csv_path": format!("channel_{}.csv", idx),
+                    "success": true
+                })
+            })
+            .collect();
+
+        let session = json!({
+            "version": "2.0",
+            "timestamp": chrono::Utc::now().to_rfc3339(),
+            "channels": channels,
+            "configuration": measurements.configuration
+        });
+
+        let file = std::fs::File::create(path)
+            .map_err(|e| format!("Failed to create session file: {}", e))?;
+        serde_json::to_writer_pretty(file, &session)
+            .map_err(|e| format!("Failed to serialize session: {}", e))?;
+
+        Ok(())
     }
 }

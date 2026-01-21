@@ -248,6 +248,7 @@ pub fn record_and_analyze(
     output_device_name: Option<&str>,
     input_device_name: Option<&str>,
     microphone_compensation_path: Option<&str>,
+    sweep_range: Option<(f32, f32)>,
 ) -> Result<crate::signal_analysis::AnalysisResult, String> {
     use crate::AudioEngineManager;
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -591,7 +592,7 @@ pub fn record_and_analyze(
 
     // Analyze the recording
     log::debug!("[record_and_analyze] Analyzing recording...");
-    let analysis = analyze_recording(recorded_wav_path, reference_signal, sample_rate)?;
+    let analysis = analyze_recording(recorded_wav_path, reference_signal, sample_rate, sweep_range)?;
     write_analysis_csv(&analysis, output_csv_path, compensation.as_ref())?;
     log::info!(
         "[record_and_analyze] Wrote analysis to {:?}",
@@ -734,6 +735,464 @@ fn find_device_by_name(
         device_type,
         available_devices.join(", ")
     ))
+}
+
+// ============================================================================
+// Lightweight Recording Format
+// ============================================================================
+
+use serde::{Deserialize, Serialize};
+
+/// Lightweight recording metadata (V2 format)
+///
+/// This format stores only metadata and file paths, with actual analysis
+/// data stored in CSV files. This reduces JSON file size dramatically
+/// (from ~90MB to ~2KB for a typical multi-channel recording session).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecordingSession {
+    /// Format version (currently "2.0")
+    pub version: String,
+    /// Recording timestamp (RFC 3339 format)
+    pub timestamp: String,
+    /// Sample rate used for recording
+    pub sample_rate: u32,
+    /// Signal type used (sweep, pink-noise, etc.)
+    pub signal_type: String,
+    /// Signal duration in seconds
+    pub signal_duration_secs: f32,
+    /// Signal level in dBFS
+    pub signal_level_db: f32,
+    /// Sweep frequency range (if applicable)
+    pub sweep_range: Option<(f32, f32)>,
+    /// Playback device configuration
+    pub playback_device: Option<DeviceInfo>,
+    /// Recording device configuration
+    pub recording_device: Option<DeviceInfo>,
+    /// Microphone calibration file path (relative to session directory)
+    pub mic_calibration_path: Option<String>,
+    /// Individual channel recordings
+    pub channels: Vec<ChannelRecordingInfo>,
+}
+
+/// Device information for recording metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeviceInfo {
+    pub device_id: String,
+    pub device_name: String,
+    pub num_channels: usize,
+}
+
+/// Information about a single channel's recording
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelRecordingInfo {
+    /// Channel index (0-based)
+    pub channel_index: usize,
+    /// Channel name (e.g., "L", "R", "C")
+    pub channel_name: String,
+    /// Interface output channel used for playback
+    pub output_channel: usize,
+    /// Interface input channel used for recording
+    pub input_channel: usize,
+    /// Path to WAV file (relative to session directory)
+    pub wav_path: String,
+    /// Path to CSV file with analysis data (relative to session directory)
+    pub csv_path: String,
+    /// Whether recording succeeded
+    pub success: bool,
+    /// Error message if recording failed
+    pub error: Option<String>,
+}
+
+impl RecordingSession {
+    /// Create a new recording session
+    pub fn new(
+        sample_rate: u32,
+        signal_type: &str,
+        signal_duration_secs: f32,
+        signal_level_db: f32,
+        sweep_range: Option<(f32, f32)>,
+    ) -> Self {
+        Self {
+            version: "2.0".to_string(),
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            sample_rate,
+            signal_type: signal_type.to_string(),
+            signal_duration_secs,
+            signal_level_db,
+            sweep_range,
+            playback_device: None,
+            recording_device: None,
+            mic_calibration_path: None,
+            channels: Vec::new(),
+        }
+    }
+
+    /// Add a channel recording to the session
+    pub fn add_channel(
+        &mut self,
+        channel_index: usize,
+        channel_name: &str,
+        output_channel: usize,
+        input_channel: usize,
+        wav_path: &str,
+        csv_path: &str,
+        success: bool,
+        error: Option<String>,
+    ) {
+        self.channels.push(ChannelRecordingInfo {
+            channel_index,
+            channel_name: channel_name.to_string(),
+            output_channel,
+            input_channel,
+            wav_path: wav_path.to_string(),
+            csv_path: csv_path.to_string(),
+            success,
+            error,
+        });
+    }
+
+    /// Save session to JSON file
+    pub fn save_to_file(&self, path: &Path) -> Result<(), String> {
+        let file = std::fs::File::create(path)
+            .map_err(|e| format!("Failed to create session file: {}", e))?;
+        serde_json::to_writer_pretty(file, self)
+            .map_err(|e| format!("Failed to serialize session: {}", e))?;
+        log::info!("[RecordingSession] Saved session to {:?}", path);
+        Ok(())
+    }
+
+    /// Load session from JSON file
+    pub fn load_from_file(path: &Path) -> Result<Self, String> {
+        let file = std::fs::File::open(path)
+            .map_err(|e| format!("Failed to open session file: {}", e))?;
+        let session: Self = serde_json::from_reader(file)
+            .map_err(|e| format!("Failed to deserialize session: {}", e))?;
+        log::info!(
+            "[RecordingSession] Loaded session from {:?} (version {})",
+            path,
+            session.version
+        );
+        Ok(session)
+    }
+}
+
+/// Re-process recordings from WAV files and regenerate CSV analysis files
+///
+/// This function loads WAV files from a recording session, re-runs the analysis,
+/// and writes updated CSV files. Useful when analysis algorithms are updated.
+///
+/// # Arguments
+/// * `session_dir` - Directory containing the recording session
+/// * `session` - Recording session metadata
+/// * `reference_signal` - Reference signal used for recording (must regenerate)
+/// * `sample_rate` - Sample rate
+/// * `sweep_range` - Sweep frequency range (if applicable)
+/// * `mic_compensation_path` - Path to microphone calibration file (optional)
+///
+/// # Returns
+/// Updated RecordingSession with new CSV paths
+pub fn reprocess_recordings(
+    session_dir: &Path,
+    session: &RecordingSession,
+    reference_signal: &[f32],
+    mic_compensation_path: Option<&Path>,
+) -> Result<RecordingSession, String> {
+    use crate::signal_analysis::{analyze_recording, write_analysis_csv, MicrophoneCompensation};
+
+    log::info!(
+        "[reprocess_recordings] Re-processing {} channels in {:?}",
+        session.channels.len(),
+        session_dir
+    );
+
+    // Load microphone compensation if provided
+    let compensation = if let Some(comp_path) = mic_compensation_path {
+        Some(MicrophoneCompensation::from_file(comp_path)?)
+    } else if let Some(ref rel_path) = session.mic_calibration_path {
+        let full_path = session_dir.join(rel_path);
+        if full_path.exists() {
+            Some(MicrophoneCompensation::from_file(&full_path)?)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let mut updated_session = session.clone();
+    updated_session.channels.clear();
+
+    for channel_info in &session.channels {
+        if !channel_info.success {
+            // Keep failed channels as-is
+            updated_session.channels.push(channel_info.clone());
+            continue;
+        }
+
+        let wav_path = session_dir.join(&channel_info.wav_path);
+        let csv_path = session_dir.join(&channel_info.csv_path);
+
+        if !wav_path.exists() {
+            log::warn!(
+                "[reprocess_recordings] WAV file not found: {:?}, skipping channel {}",
+                wav_path,
+                channel_info.channel_name
+            );
+            let mut failed_channel = channel_info.clone();
+            failed_channel.success = false;
+            failed_channel.error = Some(format!("WAV file not found: {:?}", wav_path));
+            updated_session.channels.push(failed_channel);
+            continue;
+        }
+
+        log::info!(
+            "[reprocess_recordings] Processing channel '{}' from {:?}",
+            channel_info.channel_name,
+            wav_path
+        );
+
+        // Re-analyze the recording
+        match analyze_recording(&wav_path, reference_signal, session.sample_rate, session.sweep_range)
+        {
+            Ok(analysis) => {
+                // Write updated CSV
+                if let Err(e) = write_analysis_csv(&analysis, &csv_path, compensation.as_ref()) {
+                    log::error!(
+                        "[reprocess_recordings] Failed to write CSV for channel '{}': {}",
+                        channel_info.channel_name,
+                        e
+                    );
+                    let mut failed_channel = channel_info.clone();
+                    failed_channel.success = false;
+                    failed_channel.error = Some(format!("Failed to write CSV: {}", e));
+                    updated_session.channels.push(failed_channel);
+                } else {
+                    log::info!(
+                        "[reprocess_recordings] Updated CSV for channel '{}'",
+                        channel_info.channel_name
+                    );
+                    updated_session.channels.push(channel_info.clone());
+                }
+            }
+            Err(e) => {
+                log::error!(
+                    "[reprocess_recordings] Analysis failed for channel '{}': {}",
+                    channel_info.channel_name,
+                    e
+                );
+                let mut failed_channel = channel_info.clone();
+                failed_channel.success = false;
+                failed_channel.error = Some(format!("Analysis failed: {}", e));
+                updated_session.channels.push(failed_channel);
+            }
+        }
+    }
+
+    Ok(updated_session)
+}
+
+// ============================================================================
+// Legacy JSON Migration (V1 to V2)
+// ============================================================================
+
+/// Legacy recording result format (V1 - data stored inline in JSON)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LegacyRecordingResult {
+    pub channel: usize,
+    pub wav_path: Option<String>,
+    pub csv_path: Option<String>,
+    pub frequencies: Vec<f32>,
+    pub magnitude_db: Vec<f32>,
+    pub phase_deg: Vec<f32>,
+    pub impulse_response: Option<Vec<f32>>,
+    pub impulse_time_ms: Option<Vec<f32>>,
+    pub thd_percent: Option<Vec<f32>>,
+    pub harmonic_distortion_db: Option<Vec<Vec<f32>>>,
+    pub excess_group_delay_ms: Option<Vec<f32>>,
+    pub rt60_ms: Option<Vec<f32>>,
+    pub clarity_c50_db: Option<Vec<f32>>,
+    pub clarity_c80_db: Option<Vec<f32>>,
+    pub spectrogram_db: Option<Vec<Vec<f32>>>,
+}
+
+/// Legacy channel recording format
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LegacyChannelRecording {
+    pub channel_index: usize,
+    pub channel_name: String,
+    pub state: String,
+    pub result: Option<LegacyRecordingResult>,
+}
+
+/// Legacy recording session format (V1)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LegacyRecordingSession {
+    pub timestamp: Option<String>,
+    pub sample_rate: Option<u32>,
+    pub channels: Vec<LegacyChannelRecording>,
+}
+
+/// Migrate legacy V1 recording format to V2 format
+///
+/// This function:
+/// 1. Reads the legacy JSON file with inline data
+/// 2. Creates a new V2 session file with metadata only
+/// 3. Extracts analysis data from JSON and writes to CSV files
+///
+/// # Arguments
+/// * `legacy_json_path` - Path to the legacy recordings.json file
+/// * `session_dir` - Directory containing the recording session
+///
+/// # Returns
+/// The new V2 RecordingSession
+pub fn migrate_legacy_recording(
+    legacy_json_path: &Path,
+    session_dir: &Path,
+) -> Result<RecordingSession, String> {
+    use crate::signal_analysis::AnalysisResult;
+    use std::fs::File;
+
+    log::info!(
+        "[migrate_legacy_recording] Migrating {:?} to V2 format",
+        legacy_json_path
+    );
+
+    // Load legacy format
+    let file = File::open(legacy_json_path)
+        .map_err(|e| format!("Failed to open legacy file: {}", e))?;
+    let legacy: LegacyRecordingSession = serde_json::from_reader(file)
+        .map_err(|e| format!("Failed to parse legacy format: {}", e))?;
+
+    // Create V2 session
+    let mut session = RecordingSession {
+        version: "2.0".to_string(),
+        timestamp: legacy.timestamp.unwrap_or_else(|| chrono::Utc::now().to_rfc3339()),
+        sample_rate: legacy.sample_rate.unwrap_or(48000),
+        signal_type: "sweep".to_string(), // Default, can't recover from legacy
+        signal_duration_secs: 5.0,        // Default
+        signal_level_db: -20.0,           // Default
+        sweep_range: Some((20.0, 20000.0)), // Default
+        playback_device: None,
+        recording_device: None,
+        mic_calibration_path: None,
+        channels: Vec::new(),
+    };
+
+    // Process each channel
+    for legacy_channel in &legacy.channels {
+        let success = legacy_channel.state == "Done";
+
+        if let Some(ref result) = legacy_channel.result {
+            // Generate CSV filename
+            let csv_filename = format!("channel_{}.csv", legacy_channel.channel_index);
+            let csv_path = session_dir.join(&csv_filename);
+
+            // Convert legacy result to AnalysisResult and write CSV
+            let analysis = AnalysisResult {
+                frequencies: result.frequencies.clone(),
+                spl_db: result.magnitude_db.clone(),
+                phase_deg: result.phase_deg.clone(),
+                estimated_lag_samples: 0,
+                impulse_response: result.impulse_response.clone().unwrap_or_default(),
+                impulse_time_ms: result.impulse_time_ms.clone().unwrap_or_default(),
+                thd_percent: result.thd_percent.clone().unwrap_or_default(),
+                harmonic_distortion_db: result.harmonic_distortion_db.clone().unwrap_or_default(),
+                rt60_ms: result.rt60_ms.clone().unwrap_or_default(),
+                clarity_c50_db: result.clarity_c50_db.clone().unwrap_or_default(),
+                clarity_c80_db: result.clarity_c80_db.clone().unwrap_or_default(),
+                excess_group_delay_ms: result.excess_group_delay_ms.clone().unwrap_or_default(),
+                spectrogram_db: result.spectrogram_db.clone().unwrap_or_default(),
+            };
+
+            // Write CSV with extended format
+            write_extended_csv(&analysis, &csv_path)?;
+
+            // Determine WAV path
+            let wav_path = result
+                .wav_path
+                .clone()
+                .unwrap_or_else(|| format!("channel_{}.wav", legacy_channel.channel_index));
+
+            session.add_channel(
+                legacy_channel.channel_index,
+                &legacy_channel.channel_name,
+                legacy_channel.channel_index, // Assume 1:1 mapping
+                0,                             // Unknown input channel
+                &wav_path,
+                &csv_filename,
+                success,
+                None,
+            );
+
+            log::info!(
+                "[migrate_legacy_recording] Migrated channel '{}' -> {}",
+                legacy_channel.channel_name,
+                csv_filename
+            );
+        } else {
+            // No result data - still add the channel entry
+            session.add_channel(
+                legacy_channel.channel_index,
+                &legacy_channel.channel_name,
+                legacy_channel.channel_index,
+                0,
+                "",
+                "",
+                false,
+                Some("No data in legacy format".to_string()),
+            );
+        }
+    }
+
+    // Save V2 session file
+    let session_path = session_dir.join("session.json");
+    session.save_to_file(&session_path)?;
+
+    log::info!(
+        "[migrate_legacy_recording] Migration complete: {} channels processed",
+        session.channels.len()
+    );
+
+    Ok(session)
+}
+
+/// Write analysis result to CSV with extended format
+fn write_extended_csv(
+    analysis: &crate::signal_analysis::AnalysisResult,
+    csv_path: &Path,
+) -> Result<(), String> {
+    use std::io::Write;
+
+    let mut file = std::fs::File::create(csv_path)
+        .map_err(|e| format!("Failed to create CSV: {}", e))?;
+
+    // Header
+    writeln!(
+        file,
+        "frequency_hz,spl_db,phase_deg,thd_percent,rt60_ms,c50_db,c80_db,group_delay_ms"
+    )
+    .map_err(|e| format!("Failed to write header: {}", e))?;
+
+    // Data
+    for i in 0..analysis.frequencies.len() {
+        let freq = analysis.frequencies[i];
+        let spl = analysis.spl_db[i];
+        let phase = analysis.phase_deg[i];
+        let thd = analysis.thd_percent.get(i).copied().unwrap_or(0.0);
+        let rt60 = analysis.rt60_ms.get(i).copied().unwrap_or(0.0);
+        let c50 = analysis.clarity_c50_db.get(i).copied().unwrap_or(0.0);
+        let c80 = analysis.clarity_c80_db.get(i).copied().unwrap_or(0.0);
+        let gd = analysis.excess_group_delay_ms.get(i).copied().unwrap_or(0.0);
+
+        writeln!(
+            file,
+            "{:.6},{:.3},{:.6},{:.6},{:.3},{:.3},{:.3},{:.6}",
+            freq, spl, phase, thd, rt60, c50, c80, gd
+        )
+        .map_err(|e| format!("Failed to write data: {}", e))?;
+    }
+
+    Ok(())
 }
 
 /// Validate signal parameters
@@ -1187,6 +1646,7 @@ mod tests {
                     None,        // output_device_name
                     None,        // input_device_name
                     None,        // microphone_compensation_path
+                    None,        // sweep_range
                 );
             }
         };

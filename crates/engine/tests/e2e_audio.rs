@@ -124,6 +124,7 @@ fn test_loopback_tone() {
         get_test_device().as_deref(), // Output device
         get_test_device().as_deref(), // Input device
         None,                         // No microphone compensation
+        None,                         // No sweep range
     )
     .expect("Failed to record and analyze");
 
@@ -237,6 +238,7 @@ fn test_loopback_sweep_accuracy() {
         get_test_device().as_deref(), // Output device
         get_test_device().as_deref(), // Input device
         None,                         // No microphone compensation
+        Some((20.0, 20000.0)),        // Sweep range for THD
     )
     .expect("Failed to record and analyze");
 
@@ -363,6 +365,7 @@ fn test_loopback_pink_noise() {
         get_test_device().as_deref(), // Output device
         get_test_device().as_deref(), // Input device
         None,                         // No microphone compensation
+        None,                         // No sweep range
     )
     .expect("Failed to record and analyze");
 

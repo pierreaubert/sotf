@@ -456,6 +456,20 @@ pub struct RecordingState {
     // === Noise Floor Warning ===
     /// Warning message when recording level is close to noise floor
     pub noise_floor_warning: Option<String>,
+
+    // === Migration Modal State ===
+    /// Whether the migration modal is currently shown
+    pub migration_modal_open: bool,
+    /// Path to the file being migrated (if migration modal is open)
+    pub migration_file_path: Option<String>,
+    /// Directory containing the file being migrated
+    pub migration_file_dir: Option<String>,
+    /// Original file size in bytes (for display)
+    pub migration_file_size: Option<u64>,
+    /// Number of channels in the file being migrated
+    pub migration_channel_count: usize,
+    /// Raw JSON content for migration (temporary storage)
+    pub migration_pending_json: Option<String>,
 }
 
 impl Default for RecordingState {
@@ -494,6 +508,12 @@ impl Default for RecordingState {
             plot_smoothing_dropdown_open: false,
             save_name: "recording".to_string(),
             noise_floor_warning: None,
+            migration_modal_open: false,
+            migration_file_path: None,
+            migration_file_dir: None,
+            migration_file_size: None,
+            migration_channel_count: 0,
+            migration_pending_json: None,
         }
     }
 }

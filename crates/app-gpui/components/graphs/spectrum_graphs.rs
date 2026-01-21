@@ -29,6 +29,7 @@ pub struct SpectrumConfig {
     pub x_range: Option<(f64, f64)>, // Optional override
     pub y_range: Option<(f64, f64)>, // Optional override
     pub x_scale: ScaleType,
+    pub y_scale: ScaleType,
     pub width: f32,
     pub height: f32,
     pub color_scale: Option<ColorScale>,
@@ -43,6 +44,7 @@ impl Default for SpectrumConfig {
             x_range: None,
             y_range: None,
             x_scale: ScaleType::Log,
+            y_scale: ScaleType::Linear,
             width: 800.0,
             height: 400.0,
             color_scale: None, // Will use gpui-px default if None
@@ -94,6 +96,7 @@ pub fn render_spectrum_heatmap(
         .x(&data.x_values)
         .y(&data.y_values)
         .x_scale(config.x_scale)
+        .y_scale(config.y_scale)
         .chart_size(config.width, config.height);
 
     if let Some(title) = &config.title {
