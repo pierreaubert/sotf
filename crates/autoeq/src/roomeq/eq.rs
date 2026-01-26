@@ -146,10 +146,11 @@ pub fn optimize_channel_eq(
         qa: None,
     };
 
-    // Create deviation curve (flat with zeros)
+    // Create deviation curve (target - input measurement)
+    // This tells the optimizer what correction is needed at each frequency
     let deviation_curve = Curve {
         freq: curve.freq.clone(),
-        spl: Array1::zeros(curve.freq.len()),
+        spl: &target_curve.spl - &curve.spl,
         phase: None,
     };
 

@@ -385,6 +385,7 @@ pub fn optimize_speaker(
         target_curve: target_curve.cloned(),
         group_delay: None,
         optimizer: optimizer_config.clone(),
+        recording_config: None,
     };
 
     let (chain, pre_score, post_score, initial_curve, final_curve, biquads) =

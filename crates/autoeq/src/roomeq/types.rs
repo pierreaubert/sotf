@@ -71,6 +71,91 @@ impl From<CurveData> for Curve {
 // Configuration Data Structures
 // ============================================================================
 
+/// Recording configuration stored with measurements
+/// Contains device settings and signal parameters used during measurement capture
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RecordingConfiguration {
+    /// Playback device name
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub playback_device_name: Option<String>,
+    /// Playback device ID
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub playback_device_id: Option<String>,
+    /// Playback sample rate in Hz
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub playback_sample_rate: Option<u32>,
+    /// Playback channel count
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub playback_channels: Option<usize>,
+    /// Speaker configuration (e.g., "5.1", "7.1.4", "Stereo")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speaker_configuration: Option<String>,
+    /// Channel names in order (e.g., ["L", "R", "C", "LFE", "SL", "SR"])
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel_names: Option<Vec<String>>,
+
+    /// Recording device name
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recording_device_name: Option<String>,
+    /// Recording device ID
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recording_device_id: Option<String>,
+    /// Recording sample rate in Hz
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recording_sample_rate: Option<u32>,
+    /// Recording channel count
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recording_channels: Option<usize>,
+
+    /// Microphone calibration file path (if used)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mic_calibration_path: Option<String>,
+    /// Recording output directory
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recording_directory: Option<String>,
+
+    /// Signal type used for measurements (e.g., "Sweep", "Pink Noise")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signal_type: Option<String>,
+    /// Signal duration in seconds
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signal_duration_secs: Option<f32>,
+    /// Signal level in dB
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signal_level_db: Option<f32>,
+
+    /// Sweep start frequency in Hz (only applicable when signal_type is "Sweep")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sweep_start_freq: Option<f32>,
+    /// Sweep end frequency in Hz (only applicable when signal_type is "Sweep")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sweep_end_freq: Option<f32>,
+}
+
+impl Default for RecordingConfiguration {
+    fn default() -> Self {
+        Self {
+            playback_device_name: None,
+            playback_device_id: None,
+            playback_sample_rate: None,
+            playback_channels: None,
+            speaker_configuration: None,
+            channel_names: None,
+            recording_device_name: None,
+            recording_device_id: None,
+            recording_sample_rate: None,
+            recording_channels: None,
+            mic_calibration_path: None,
+            recording_directory: None,
+            signal_type: None,
+            signal_duration_secs: None,
+            signal_level_db: None,
+            sweep_start_freq: None,
+            sweep_end_freq: None,
+        }
+    }
+}
+
 /// Complete room configuration
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct RoomConfig {
@@ -82,20 +167,41 @@ pub struct RoomConfig {
     pub speakers: HashMap<String, SpeakerConfig>,
 
     /// Optional crossover configuration for multi-driver groups
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub crossovers: Option<HashMap<String, CrossoverConfig>>,
 
     /// Optional target curve (freq, spl)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_curve: Option<TargetCurveConfig>,
 
     /// Optional group delay optimization configuration
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group_delay: Option<Vec<GroupDelayConfig>>,
 
     /// Optimizer configuration
     #[serde(default)]
     pub optimizer: OptimizerConfig,
+
+    /// Recording configuration (device settings, signal parameters used during capture)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recording_config: Option<RecordingConfiguration>,
+}
+
+impl RoomConfig {
+    /// Resolve relative paths in this room configuration against a base directory.
+    /// This is useful when loading a config file and need to resolve relative paths
+    /// (like csv_path in InlineMeasurement) relative to the config file's directory.
+    pub fn resolve_paths(&mut self, base_dir: &std::path::Path) {
+        for speaker in self.speakers.values_mut() {
+            speaker.resolve_paths(base_dir);
+        }
+        // Also resolve target_curve path if it's a file path
+        if let Some(TargetCurveConfig::Path(ref mut path)) = self.target_curve {
+            if path.is_relative() {
+                *path = base_dir.join(&*path);
+            }
+        }
+    }
 }
 
 /// Default configuration version
@@ -145,6 +251,18 @@ pub enum SpeakerConfig {
     Dba(DBAConfig),
 }
 
+impl SpeakerConfig {
+    /// Resolve relative paths in this speaker configuration against a base directory.
+    pub fn resolve_paths(&mut self, base_dir: &std::path::Path) {
+        match self {
+            SpeakerConfig::Single(source) => source.resolve_paths(base_dir),
+            SpeakerConfig::Group(group) => group.resolve_paths(base_dir),
+            SpeakerConfig::MultiSub(group) => group.resolve_paths(base_dir),
+            SpeakerConfig::Dba(config) => config.resolve_paths(base_dir),
+        }
+    }
+}
+
 /// Group of measurements for a single speaker (multi-driver)
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SpeakerGroup {
@@ -159,6 +277,15 @@ pub struct SpeakerGroup {
     pub crossover: Option<String>, // References crossovers map
 }
 
+impl SpeakerGroup {
+    /// Resolve relative paths in this speaker group against a base directory.
+    pub fn resolve_paths(&mut self, base_dir: &std::path::Path) {
+        for m in &mut self.measurements {
+            m.resolve_paths(base_dir);
+        }
+    }
+}
+
 /// Configuration for multiple subwoofers
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct MultiSubGroup {
@@ -167,6 +294,15 @@ pub struct MultiSubGroup {
 
     /// Measurements for each subwoofer
     pub subwoofers: Vec<MeasurementSource>,
+}
+
+impl MultiSubGroup {
+    /// Resolve relative paths in this multi-sub group against a base directory.
+    pub fn resolve_paths(&mut self, base_dir: &std::path::Path) {
+        for m in &mut self.subwoofers {
+            m.resolve_paths(base_dir);
+        }
+    }
 }
 
 /// Configuration for Double Bass Array (DBA)
@@ -180,6 +316,18 @@ pub struct DBAConfig {
 
     /// Measurements for the rear array
     pub rear: Vec<MeasurementSource>,
+}
+
+impl DBAConfig {
+    /// Resolve relative paths in this DBA config against a base directory.
+    pub fn resolve_paths(&mut self, base_dir: &std::path::Path) {
+        for m in &mut self.front {
+            m.resolve_paths(base_dir);
+        }
+        for m in &mut self.rear {
+            m.resolve_paths(base_dir);
+        }
+    }
 }
 
 /// Crossover configuration
@@ -291,7 +439,7 @@ fn default_loss_type() -> String {
     "flat".to_string()
 }
 fn default_algorithm() -> String {
-    "cobyla".to_string()
+    "autoeq:de".to_string()
 }
 fn default_peq_model() -> String {
     "pk".to_string()
@@ -306,7 +454,7 @@ fn default_fir_phase() -> String {
     "kirkeby".to_string()
 }
 fn default_num_filters() -> usize {
-    10
+    7
 }
 fn default_min_q() -> f64 {
     0.5
@@ -324,7 +472,7 @@ fn default_min_freq() -> f64 {
     20.0
 }
 fn default_max_freq() -> f64 {
-    20000.0
+    1200.0
 }
 fn default_max_iter() -> usize {
     10000
@@ -439,15 +587,28 @@ mod tests {
     #[test]
     fn test_measurement_ref_path() {
         let path_ref = MeasurementRef::Path(PathBuf::from("test.csv"));
-        assert_eq!(path_ref.path(), &PathBuf::from("test.csv"));
+        assert_eq!(path_ref.path(), Some(&PathBuf::from("test.csv")));
         assert_eq!(path_ref.name(), None);
 
         let named_ref = MeasurementRef::Named {
             path: PathBuf::from("named.csv"),
             name: Some("Test Measurement".to_string()),
         };
-        assert_eq!(named_ref.path(), &PathBuf::from("named.csv"));
+        assert_eq!(named_ref.path(), Some(&PathBuf::from("named.csv")));
         assert_eq!(named_ref.name(), Some("Test Measurement"));
+
+        // Test inline measurement
+        let inline_ref = MeasurementRef::Inline(crate::InlineMeasurement {
+            frequencies: vec![100.0, 1000.0, 10000.0],
+            magnitude_db: vec![-5.0, 0.0, -3.0],
+            phase_deg: Some(vec![0.0, 45.0, 90.0]),
+            name: Some("Inline Test".to_string()),
+            wav_path: None,
+            csv_path: None,
+        });
+        assert_eq!(inline_ref.path(), None);
+        assert_eq!(inline_ref.name(), Some("Inline Test"));
+        assert!(inline_ref.is_inline());
     }
 
     #[test]
@@ -467,6 +628,7 @@ mod tests {
             target_curve: None,
             group_delay: None,
             optimizer: OptimizerConfig::default(),
+            recording_config: None,
         };
 
         // Should serialize and deserialize

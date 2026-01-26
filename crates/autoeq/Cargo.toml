@@ -94,6 +94,10 @@ path = "bin/roomeq/main.rs"
 name = "roomeq-fuzzer"
 path = "bin/roomeq_fuzzer.rs"
 
+[[bin]]
+name = "convert-recording"
+path = "bin/convert_recording.rs"
+
 [lib]
 name = "autoeq"
 path = "src/lib.rs"

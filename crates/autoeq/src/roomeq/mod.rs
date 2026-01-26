@@ -32,6 +32,8 @@
 // Core types and configuration
 mod types;
 pub use types::*;
+// Re-export RecordingConfiguration explicitly for clarity
+pub use types::RecordingConfiguration;
 
 // Configuration validation
 mod config;

@@ -94,5 +94,6 @@ pub use x2peq::x2peq;
 // Re-export commonly used roomeq types
 pub use roomeq::{
     optimize_room, optimize_speaker as optimize_room_speaker, DspChainOutput, OptimizerConfig,
-    RoomConfig, RoomOptimizationProgress, RoomOptimizationResult, SpeakerConfig,
+    RecordingConfiguration, RoomConfig, RoomOptimizationProgress, RoomOptimizationResult,
+    SpeakerConfig,
 };

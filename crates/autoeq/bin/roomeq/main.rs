@@ -107,8 +107,13 @@ fn run(sample_rate: f64, config_path: PathBuf, output_path: PathBuf) -> Result<(
     let config_json = std::fs::read_to_string(&config_path)
         .with_context(|| format!("Failed to read config file: {:?}", config_path))?;
 
-    let room_config: RoomConfig = serde_json::from_str(&config_json)
+    let mut room_config: RoomConfig = serde_json::from_str(&config_json)
         .with_context(|| "Failed to parse room configuration JSON")?;
+
+    // Resolve relative paths in the config relative to the config file's directory
+    if let Some(config_dir) = config_path.parent() {
+        room_config.resolve_paths(config_dir);
+    }
 
     info!("Found {} speakers", room_config.speakers.len());
 

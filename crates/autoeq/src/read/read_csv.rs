@@ -114,6 +114,7 @@ pub fn read_curve_from_csv(path: &PathBuf) -> Result<Curve, Box<dyn Error>> {
 /// Expected formats:
 /// - 2 columns: frequency, spl
 /// - 3 columns: frequency, spl, phase
+/// - Multi-column with headers: frequency_hz/freq, spl_db/spl, phase_deg/phase (extracts relevant columns)
 #[allow(clippy::type_complexity)]
 pub fn load_driver_measurement(
     path: &PathBuf,
@@ -124,8 +125,12 @@ pub fn load_driver_measurement(
     let mut frequencies = Vec::new();
     let mut spl_values = Vec::new();
     let mut phase_values = Vec::new();
-    let mut detected_columns = 0;
-    let mut has_phase = false;
+
+    // Column indices (default to first 2-3 columns)
+    let mut freq_col: Option<usize> = None;
+    let mut spl_col: Option<usize> = None;
+    let mut phase_col: Option<usize> = None;
+    let mut header_parsed = false;
 
     for (line_num, line) in reader.lines().enumerate() {
         let line = line?;
@@ -136,23 +141,6 @@ pub fn load_driver_measurement(
             continue;
         }
 
-        // Skip header if it contains text
-        if line_num == 0
-            && (line.contains("freq")
-                || line.contains("Freq")
-                || line.contains("Hz")
-                || line.contains("spl")
-                || line.contains("SPL")
-                || line.contains("phase")
-                || line.contains("Phase"))
-        {
-            // Check if header indicates phase column
-            if line.contains("phase") || line.contains("Phase") {
-                has_phase = true;
-            }
-            continue;
-        }
-
         // Parse line (handle both comma and whitespace separation)
         let parts: Vec<&str> = if line.contains(',') {
             line.split(',').map(|s| s.trim()).collect()
@@ -160,39 +148,82 @@ pub fn load_driver_measurement(
             line.split_whitespace().collect()
         };
 
-        // Detect number of columns on first data line
-        if detected_columns == 0 && parts.len() >= 2 {
-            detected_columns = parts.len();
-            has_phase = detected_columns >= 3;
+        // Try to parse header on first line
+        if line_num == 0 && !header_parsed {
+            let is_header = parts.iter().any(|p| {
+                let lower = p.to_lowercase();
+                lower.contains("freq")
+                    || lower.contains("hz")
+                    || lower.contains("spl")
+                    || lower.contains("phase")
+                    || lower.contains("db")
+            });
+
+            if is_header {
+                // Parse header to find column indices
+                for (idx, col_name) in parts.iter().enumerate() {
+                    let lower = col_name.to_lowercase();
+                    if freq_col.is_none()
+                        && (lower.contains("freq") || lower == "hz" || lower == "frequency_hz")
+                    {
+                        freq_col = Some(idx);
+                    } else if spl_col.is_none()
+                        && (lower.contains("spl")
+                            || lower.contains("magnitude")
+                            || lower == "db"
+                            || lower == "spl_db")
+                    {
+                        spl_col = Some(idx);
+                    } else if phase_col.is_none()
+                        && (lower.contains("phase") || lower == "phase_deg")
+                    {
+                        phase_col = Some(idx);
+                    }
+                }
+                header_parsed = true;
+                continue; // Skip header line
+            }
+
+            // No header found, use default column positions
+            if parts.len() >= 2 {
+                freq_col = Some(0);
+                spl_col = Some(1);
+                if parts.len() >= 3 {
+                    phase_col = Some(2);
+                }
+            }
+            header_parsed = true;
         }
 
-        if detected_columns == 2 && parts.len() >= 2 {
-            // 2-column format: freq, spl
-            if let (Ok(freq), Ok(spl)) = (parts[0].parse::<f64>(), parts[1].parse::<f64>()) {
+        // Use default columns if not set
+        let freq_idx = freq_col.unwrap_or(0);
+        let spl_idx = spl_col.unwrap_or(1);
+
+        // Parse data
+        if parts.len() > freq_idx && parts.len() > spl_idx {
+            if let (Ok(freq), Ok(spl)) =
+                (parts[freq_idx].parse::<f64>(), parts[spl_idx].parse::<f64>())
+            {
                 frequencies.push(freq);
                 spl_values.push(spl);
-            }
-        } else if detected_columns == 3 && parts.len() >= 3 {
-            // 3-column format: freq, spl, phase
-            if let (Ok(freq), Ok(spl), Ok(phase)) = (
-                parts[0].parse::<f64>(),
-                parts[1].parse::<f64>(),
-                parts[2].parse::<f64>(),
-            ) {
-                frequencies.push(freq);
-                spl_values.push(spl);
-                phase_values.push(phase);
+
+                // Parse phase if available
+                if let Some(phase_idx) = phase_col {
+                    if parts.len() > phase_idx {
+                        if let Ok(phase) = parts[phase_idx].parse::<f64>() {
+                            phase_values.push(phase);
+                        }
+                    }
+                }
             }
         }
     }
 
     if frequencies.is_empty() {
-        return Err(
-            "No valid driver measurement data found in file (expected 2 or 3 columns)".into(),
-        );
+        return Err("No valid driver measurement data found in file".into());
     }
 
-    let phase = if has_phase && !phase_values.is_empty() {
+    let phase = if !phase_values.is_empty() && phase_values.len() == frequencies.len() {
         Some(Array1::from_vec(phase_values))
     } else {
         None

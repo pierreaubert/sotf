@@ -6,14 +6,54 @@ use ndarray::Array1;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+/// Inline measurement data (frequencies, SPL, phase)
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct InlineMeasurement {
+    /// Frequency points in Hz
+    pub frequencies: Vec<f64>,
+    /// Sound Pressure Level in dB
+    pub magnitude_db: Vec<f64>,
+    /// Phase in degrees (optional)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase_deg: Option<Vec<f64>>,
+    /// Optional display name
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Optional path to associated WAV file
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wav_path: Option<String>,
+    /// Optional path to associated CSV file
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub csv_path: Option<String>,
+}
+
+impl InlineMeasurement {
+    /// Resolve relative paths in this measurement against a base directory.
+    /// If csv_path or wav_path is relative, prepend the base directory.
+    pub fn resolve_paths(&mut self, base_dir: &Path) {
+        if let Some(ref csv_path) = self.csv_path {
+            let path = PathBuf::from(csv_path);
+            if path.is_relative() {
+                self.csv_path = Some(base_dir.join(&path).to_string_lossy().to_string());
+            }
+        }
+        if let Some(ref wav_path) = self.wav_path {
+            let path = PathBuf::from(wav_path);
+            if path.is_relative() {
+                self.wav_path = Some(base_dir.join(&path).to_string_lossy().to_string());
+            }
+        }
+    }
+}
 
 /// Reference to a measurement file
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum MeasurementRef {
-    /// Path to CSV file (freq, spl, phase columns)
-    Path(PathBuf),
+    /// Inline measurement data (stored directly in JSON)
+    Inline(InlineMeasurement),
 
     /// Named measurement with optional metadata
     Named {
@@ -23,14 +63,19 @@ pub enum MeasurementRef {
         #[serde(skip_serializing_if = "Option::is_none")]
         name: Option<String>,
     },
+
+    /// Path to CSV file (freq, spl, phase columns)
+    Path(PathBuf),
 }
 
 impl MeasurementRef {
-    /// Returns the path to the measurement file.
-    pub fn path(&self) -> &PathBuf {
+    /// Returns the path to the measurement file, if this is a file-based reference.
+    /// Returns None for inline measurements.
+    pub fn path(&self) -> Option<&PathBuf> {
         match self {
-            MeasurementRef::Path(p) => p,
-            MeasurementRef::Named { path, .. } => path,
+            MeasurementRef::Path(p) => Some(p),
+            MeasurementRef::Named { path, .. } => Some(path),
+            MeasurementRef::Inline(_) => None,
         }
     }
 
@@ -39,6 +84,39 @@ impl MeasurementRef {
         match self {
             MeasurementRef::Path(_) => None,
             MeasurementRef::Named { name, .. } => name.as_deref(),
+            MeasurementRef::Inline(inline) => inline.name.as_deref(),
+        }
+    }
+
+    /// Returns true if this is an inline measurement (data stored in JSON)
+    pub fn is_inline(&self) -> bool {
+        matches!(self, MeasurementRef::Inline(_))
+    }
+
+    /// Returns the inline measurement data, if this is an inline reference.
+    pub fn inline_data(&self) -> Option<&InlineMeasurement> {
+        match self {
+            MeasurementRef::Inline(data) => Some(data),
+            _ => None,
+        }
+    }
+
+    /// Resolve relative paths in this measurement reference against a base directory.
+    pub fn resolve_paths(&mut self, base_dir: &Path) {
+        match self {
+            MeasurementRef::Path(p) => {
+                if p.is_relative() {
+                    *p = base_dir.join(&*p);
+                }
+            }
+            MeasurementRef::Named { path, .. } => {
+                if path.is_relative() {
+                    *path = base_dir.join(&*path);
+                }
+            }
+            MeasurementRef::Inline(inline) => {
+                inline.resolve_paths(base_dir);
+            }
         }
     }
 }
@@ -57,10 +135,68 @@ pub enum MeasurementSource {
     InMemory(Curve),
 }
 
-/// Load a single measurement from a CSV file
+impl MeasurementSource {
+    /// Resolve relative paths in this measurement source against a base directory.
+    pub fn resolve_paths(&mut self, base_dir: &Path) {
+        match self {
+            MeasurementSource::Single(m) => m.resolve_paths(base_dir),
+            MeasurementSource::Multiple(refs) => {
+                for m in refs {
+                    m.resolve_paths(base_dir);
+                }
+            }
+            MeasurementSource::InMemory(_) => {} // No paths to resolve
+        }
+    }
+}
+
+/// Load a single measurement from a file or inline data
 pub fn load_measurement(measurement: &MeasurementRef) -> Result<Curve, Box<dyn Error>> {
-    let path = measurement.path();
-    read_curve_from_csv(path)
+    match measurement {
+        MeasurementRef::Path(path) => read_curve_from_csv(path),
+        MeasurementRef::Named { path, .. } => read_curve_from_csv(path),
+        MeasurementRef::Inline(inline) => {
+            // If inline data is empty but csv_path is provided, load from CSV
+            if inline.frequencies.is_empty() || inline.magnitude_db.is_empty() {
+                if let Some(ref csv_path) = inline.csv_path {
+                    return read_curve_from_csv(&PathBuf::from(csv_path));
+                }
+                return Err(format!(
+                    "Inline measurement has empty data and no csv_path to fall back to (name: {:?})",
+                    inline.name
+                )
+                .into());
+            }
+
+            if inline.frequencies.len() != inline.magnitude_db.len() {
+                return Err(format!(
+                    "Inline measurement has mismatched lengths: {} frequencies, {} magnitude values",
+                    inline.frequencies.len(),
+                    inline.magnitude_db.len()
+                )
+                .into());
+            }
+
+            let phase = inline.phase_deg.as_ref().map(|p| {
+                if p.len() != inline.frequencies.len() {
+                    eprintln!(
+                        "Warning: phase array length ({}) doesn't match frequencies ({}), ignoring phase",
+                        p.len(),
+                        inline.frequencies.len()
+                    );
+                    None
+                } else {
+                    Some(Array1::from(p.clone()))
+                }
+            }).flatten();
+
+            Ok(Curve {
+                freq: Array1::from(inline.frequencies.clone()),
+                spl: Array1::from(inline.magnitude_db.clone()),
+                phase,
+            })
+        }
+    }
 }
 
 /// Load measurement(s) from a source and average if necessary
@@ -79,7 +215,10 @@ pub fn load_source(source: &MeasurementSource) -> Result<Curve, Box<dyn Error>> 
                 match load_measurement(m) {
                     Ok(c) => curves.push(c),
                     Err(e) => {
-                        eprintln!("Warning: failed to load measurement {:?}: {}", m.path(), e)
+                        let name = m.path().map(|p| p.display().to_string())
+                            .or_else(|| m.name().map(String::from))
+                            .unwrap_or_else(|| "inline".to_string());
+                        eprintln!("Warning: failed to load measurement {}: {}", name, e)
                     }
                 }
             }

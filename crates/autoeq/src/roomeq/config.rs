@@ -426,6 +426,7 @@ mod tests {
             target_curve: None,
             group_delay: None,
             optimizer: OptimizerConfig::default(),
+            recording_config: None,
         };
 
         let result = validate_room_config(&config);
@@ -454,6 +455,7 @@ mod tests {
             target_curve: None,
             group_delay: None,
             optimizer,
+            recording_config: None,
         };
 
         let result = validate_room_config(&config);
@@ -483,6 +485,7 @@ mod tests {
             target_curve: None,
             group_delay: None,
             optimizer: OptimizerConfig::default(),
+            recording_config: None,
         };
 
         let result = validate_room_config(&config);
@@ -517,6 +520,7 @@ mod tests {
                 max_freq: 120.0,
             }]),
             optimizer: OptimizerConfig::default(),
+            recording_config: None,
         };
 
         let result = validate_room_config(&config);
