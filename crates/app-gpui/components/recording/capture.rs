@@ -1091,13 +1091,16 @@ impl PlayerView {
     }
 
     /// Save recordings to a JSON file in the recording directory
+    /// Outputs autoeq::RoomConfig format compatible with roomeq CLI
     pub(crate) fn save_recordings(&mut self, cx: &mut Context<Self>) {
-        use crate::app::types::{
-            ChannelMeasurement, RecordingConfiguration, RecordingResult, RoomEqMeasurementsFile,
+        use autoeq::{
+            InlineMeasurement, MeasurementRef, MeasurementSource, OptimizerConfig,
+            RecordingConfiguration, RoomConfig, SpeakerConfig,
         };
+        use std::collections::HashMap;
 
-        // Get recordings, recording directory, configuration, and convert to RoomEqMeasurementsFile format
-        let (measurements_file, recording_dir) = {
+        // Get recordings, recording directory, configuration, and convert to RoomConfig format
+        let (room_config, recording_dir) = {
             let state = self.state.read(cx);
             let rec_state = &state.app.measurement_state.recording_state;
             let recordings = &rec_state.channel_recordings;
@@ -1112,95 +1115,99 @@ impl PlayerView {
                 }
             };
 
-            // Build configuration from current state
-            let configuration = RecordingConfiguration {
-                playback_device_name: rec_state.playback_config.device_name.clone(),
-                playback_device_id: rec_state.playback_config.device_id.clone(),
-                playback_sample_rate: rec_state.playback_config.sample_rate,
-                playback_channels: rec_state.playback_config.num_channels,
-                speaker_configuration: rec_state
-                    .playback_config
-                    .speaker_configuration
-                    .as_str()
-                    .to_string(),
-                channel_names: rec_state
-                    .playback_config
-                    .channel_mappings
-                    .iter()
-                    .map(|m| m.group_name.clone())
-                    .collect(),
-
-                recording_device_name: rec_state.recording_config.device_name.clone(),
-                recording_device_id: rec_state.recording_config.device_id.clone(),
-                recording_sample_rate: rec_state.recording_config.sample_rate,
-                recording_channels: rec_state.recording_config.num_channels,
-
+            // Build recording configuration from current state
+            let recording_config = RecordingConfiguration {
+                playback_device_name: Some(rec_state.playback_config.device_name.clone()),
+                playback_device_id: Some(rec_state.playback_config.device_id.clone()),
+                playback_sample_rate: Some(rec_state.playback_config.sample_rate),
+                playback_channels: Some(rec_state.playback_config.num_channels),
+                speaker_configuration: Some(
+                    rec_state
+                        .playback_config
+                        .speaker_configuration
+                        .as_str()
+                        .to_string(),
+                ),
+                channel_names: Some(
+                    rec_state
+                        .playback_config
+                        .channel_mappings
+                        .iter()
+                        .map(|m| m.group_name.clone())
+                        .collect(),
+                ),
+                recording_device_name: Some(rec_state.recording_config.device_name.clone()),
+                recording_device_id: Some(rec_state.recording_config.device_id.clone()),
+                recording_sample_rate: Some(rec_state.recording_config.sample_rate),
+                recording_channels: Some(rec_state.recording_config.num_channels),
                 mic_calibration_path: rec_state.mic_calibration_path.clone(),
                 recording_directory: Some(recording_dir.clone()),
-
-                signal_type: rec_state.signal_type.as_str().to_string(),
-                signal_duration_secs: rec_state.signal_duration_secs,
-                signal_level_db: rec_state.signal_level_db,
+                signal_type: Some(rec_state.signal_type.as_str().to_string()),
+                signal_duration_secs: Some(rec_state.signal_duration_secs),
+                signal_level_db: Some(rec_state.signal_level_db),
+                // Sweep parameters for recomputing metrics from WAV
+                sweep_start_freq: Some(rec_state.sweep_start_freq),
+                sweep_end_freq: Some(rec_state.sweep_end_freq),
             };
 
-            // Convert ChannelRecording to ChannelMeasurement with relative paths
-            let channels: Vec<ChannelMeasurement> = recordings
-                .iter()
-                .filter_map(|rec| {
-                    rec.result.as_ref().map(|result| {
-                        // Convert absolute paths to relative (just filename)
-                        let relative_wav = result
-                            .wav_path
-                            .as_ref()
-                            .and_then(|p| std::path::Path::new(p).file_name())
-                            .map(|f| f.to_string_lossy().to_string());
-                        let relative_csv = result
-                            .csv_path
-                            .as_ref()
-                            .and_then(|p| std::path::Path::new(p).file_name())
-                            .map(|f| f.to_string_lossy().to_string());
+            // Convert ChannelRecording to speakers HashMap with inline measurements
+            let mut speakers: HashMap<String, SpeakerConfig> = HashMap::new();
 
-                        ChannelMeasurement {
-                            channel_name: rec.channel_name.clone(),
-                            measurement: RecordingResult {
-                                channel: result.channel,
-                                wav_path: relative_wav,
-                                csv_path: relative_csv,
-                                frequencies: result.frequencies.clone(),
-                                magnitude_db: result.magnitude_db.clone(),
-                                phase_deg: result.phase_deg.clone(),
-                                impulse_response: result.impulse_response.clone(),
-                                impulse_time_ms: result.impulse_time_ms.clone(),
-                                excess_group_delay_ms: result.excess_group_delay_ms.clone(),
-                                thd_percent: result.thd_percent.clone(),
-                                harmonic_distortion_db: result.harmonic_distortion_db.clone(),
-                                rt60_ms: result.rt60_ms.clone(),
-                                clarity_c50_db: result.clarity_c50_db.clone(),
-                                clarity_c80_db: result.clarity_c80_db.clone(),
-                                spectrogram_db: result.spectrogram_db.clone(),
-                            },
-                            is_group: false,
-                            group_drivers: Vec::new(),
-                        }
-                    })
-                })
-                .collect();
+            for rec in recordings.iter() {
+                if let Some(result) = &rec.result {
+                    // Convert absolute paths to relative (just filename)
+                    let relative_wav = result
+                        .wav_path
+                        .as_ref()
+                        .and_then(|p| std::path::Path::new(p).file_name())
+                        .map(|f| f.to_string_lossy().to_string());
+                    let relative_csv = result
+                        .csv_path
+                        .as_ref()
+                        .and_then(|p| std::path::Path::new(p).file_name())
+                        .map(|f| f.to_string_lossy().to_string());
 
-            if channels.is_empty() {
+                    // Create inline measurement with frequency response data
+                    let inline_measurement = InlineMeasurement {
+                        frequencies: result.frequencies.iter().map(|&f| f as f64).collect(),
+                        magnitude_db: result.magnitude_db.iter().map(|&m| m as f64).collect(),
+                        phase_deg: Some(result.phase_deg.iter().map(|&p| p as f64).collect()),
+                        name: Some(rec.channel_name.clone()),
+                        wav_path: relative_wav,
+                        csv_path: relative_csv,
+                    };
+
+                    let measurement_ref = MeasurementRef::Inline(inline_measurement);
+                    let measurement_source = MeasurementSource::Single(measurement_ref);
+                    let speaker_config = SpeakerConfig::Single(measurement_source);
+
+                    speakers.insert(rec.channel_name.clone(), speaker_config);
+                }
+            }
+
+            if speakers.is_empty() {
                 log::warn!("No completed recordings to save");
                 return;
             }
 
-            (
-                RoomEqMeasurementsFile::with_configuration(channels, configuration),
-                recording_dir,
-            )
+            // Build RoomConfig
+            let room_config = RoomConfig {
+                version: "1.1.0".to_string(),
+                speakers,
+                crossovers: None,
+                target_curve: None,
+                group_delay: None,
+                optimizer: OptimizerConfig::default(),
+                recording_config: Some(recording_config),
+            };
+
+            (room_config, recording_dir)
         };
 
         // Save to recording directory (no dialog needed)
         let json_path = std::path::Path::new(&recording_dir).join("recordings.json");
 
-        match serde_json::to_string_pretty(&measurements_file) {
+        match serde_json::to_string_pretty(&room_config) {
             Ok(json) => {
                 if let Err(e) = std::fs::write(&json_path, json) {
                     log::error!("Failed to write recordings file: {}", e);
@@ -1310,42 +1317,11 @@ impl PlayerView {
 
     /// Check if a JSON file needs migration (legacy format with large inline data)
     fn check_needs_migration(json: &str, file_size: u64) -> bool {
-        // If file is small (<1MB), don't bother with migration
-        if file_size < 1_000_000 {
-            return false;
-        }
-
-        // Check if the JSON contains large inline frequency data
-        // Look for "frequencies" or "magnitude_db" arrays with data
-        if let Ok(value) = serde_json::from_str::<serde_json::Value>(json) {
-            // Check channels array for inline data
-            if let Some(channels) = value.get("channels").and_then(|c| c.as_array()) {
-                for channel in channels {
-                    // Check measurement.frequencies array
-                    if let Some(measurement) = channel.get("measurement") {
-                        if let Some(freqs) = measurement.get("frequencies").and_then(|f| f.as_array())
-                        {
-                            if freqs.len() > 100 {
-                                return true;
-                            }
-                        }
-                    }
-                    // Check result.frequencies for older format
-                    if let Some(result) = channel.get("result") {
-                        if let Some(freqs) = result.get("frequencies").and_then(|f| f.as_array()) {
-                            if freqs.len() > 100 {
-                                return true;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        false
+        crate::components::migration::check_needs_migration(json, file_size)
     }
 
     /// Internal function to load recordings from parsed JSON
+    /// Supports both new RoomConfig format and legacy RoomEqMeasurementsFile format
     fn load_recordings_internal(
         state_entity: Entity<crate::app::state::AppState>,
         cx: &mut gpui::AsyncApp,
@@ -1353,12 +1329,166 @@ impl PlayerView {
         file_path: &std::path::Path,
         file_dir: Option<std::path::PathBuf>,
     ) {
-        use crate::app::types::{ChannelRecording, RoomEqMeasurementsFile};
+        use crate::app::types::{ChannelRecording, ChannelRecordingState, RecordingResult};
 
+        // Try to parse as new RoomConfig format first
+        if let Ok(room_config) = serde_json::from_str::<autoeq::RoomConfig>(json) {
+            log::info!(
+                "Loaded {} speakers from {:?} (RoomConfig format)",
+                room_config.speakers.len(),
+                file_path
+            );
+
+            let file_path_display = file_path.display().to_string();
+            let _ = state_entity.update(cx, |state, _| {
+                // Convert speakers to ChannelRecordings
+                let recordings: Vec<ChannelRecording> = room_config
+                    .speakers
+                    .into_iter()
+                    .enumerate()
+                    .filter_map(|(idx, (channel_name, speaker_config))| {
+                        // Extract inline measurement from speaker config
+                        let inline = match speaker_config {
+                            autoeq::SpeakerConfig::Single(source) => match source {
+                                autoeq::MeasurementSource::Single(ref_) => ref_.inline_data().cloned(),
+                                autoeq::MeasurementSource::Multiple(refs) => {
+                                    refs.first().and_then(|r| r.inline_data()).cloned()
+                                }
+                                autoeq::MeasurementSource::InMemory(_) => None,
+                            },
+                            _ => None, // Groups not yet supported in this conversion
+                        };
+
+                        inline.map(|inline_data| {
+                            // Convert absolute paths from relative
+                            let wav_path = inline_data.wav_path.as_ref().and_then(|wav| {
+                                file_dir.as_ref().map(|dir| {
+                                    let abs_path = dir.join(wav);
+                                    if abs_path.exists() {
+                                        abs_path.to_string_lossy().to_string()
+                                    } else {
+                                        wav.clone()
+                                    }
+                                })
+                            });
+                            let csv_path = inline_data.csv_path.as_ref().and_then(|csv| {
+                                file_dir.as_ref().map(|dir| {
+                                    let abs_path = dir.join(csv);
+                                    if abs_path.exists() {
+                                        abs_path.to_string_lossy().to_string()
+                                    } else {
+                                        csv.clone()
+                                    }
+                                })
+                            });
+
+                            // Check if inline data is empty - if so, load from CSV
+                            let (frequencies, magnitude_db, phase_deg) = if inline_data.frequencies.is_empty() {
+                                // Try to load from CSV file using autoeq's reader
+                                if let Some(ref csv) = csv_path {
+                                    let csv_full_path = std::path::PathBuf::from(csv);
+                                    if let Ok(curve) = autoeq::read::read_curve_from_csv(&csv_full_path) {
+                                        log::info!(
+                                            "Loaded {} frequency points from CSV for channel '{}'",
+                                            curve.freq.len(),
+                                            channel_name
+                                        );
+                                        (
+                                            curve.freq.iter().map(|&f| f as f32).collect(),
+                                            curve.spl.iter().map(|&s| s as f32).collect(),
+                                            curve.phase.map(|p| p.iter().map(|&v| v as f32).collect()).unwrap_or_default(),
+                                        )
+                                    } else {
+                                        log::warn!("Failed to load CSV for channel '{}': {:?}", channel_name, csv_full_path);
+                                        (Vec::new(), Vec::new(), Vec::new())
+                                    }
+                                } else {
+                                    log::warn!("No CSV path and empty inline data for channel '{}'", channel_name);
+                                    (Vec::new(), Vec::new(), Vec::new())
+                                }
+                            } else {
+                                // Use inline data
+                                (
+                                    inline_data.frequencies.iter().map(|&f| f as f32).collect(),
+                                    inline_data.magnitude_db.iter().map(|&m| m as f32).collect(),
+                                    inline_data.phase_deg.clone().unwrap_or_default().iter().map(|&p| p as f32).collect(),
+                                )
+                            };
+
+                            // Try to load extended metrics from CSV file
+                            let extended_metrics = crate::components::migration::load_extended_metrics(
+                                csv_path.as_deref(),
+                                file_dir.as_deref(),
+                            );
+
+                            let (thd_percent, rt60_ms, clarity_c50_db, clarity_c80_db, excess_group_delay_ms) =
+                                if let Some(metrics) = extended_metrics {
+                                    log::info!(
+                                        "Loaded extended metrics for channel '{}' from CSV",
+                                        channel_name
+                                    );
+                                    (
+                                        metrics.thd_percent,
+                                        metrics.rt60_ms,
+                                        metrics.clarity_c50_db,
+                                        metrics.clarity_c80_db,
+                                        metrics.excess_group_delay_ms,
+                                    )
+                                } else {
+                                    (None, None, None, None, None)
+                                };
+
+                            let result = RecordingResult {
+                                channel: idx,
+                                wav_path,
+                                csv_path,
+                                frequencies,
+                                magnitude_db,
+                                phase_deg,
+                                impulse_response: None,
+                                impulse_time_ms: None,
+                                excess_group_delay_ms,
+                                thd_percent,
+                                harmonic_distortion_db: None,
+                                rt60_ms,
+                                clarity_c50_db,
+                                clarity_c80_db,
+                                spectrogram_db: None,
+                            };
+
+                            ChannelRecording {
+                                channel_index: idx,
+                                channel_name,
+                                state: ChannelRecordingState::Done,
+                                result: Some(result),
+                            }
+                        })
+                    })
+                    .collect();
+
+                let rec_state = &mut state.app.measurement_state.recording_state;
+                rec_state.channel_recordings = recordings.clone();
+
+                // Also set the recording directory to the file's directory
+                if let Some(dir) = &file_dir {
+                    rec_state.recording_directory = Some(dir.to_string_lossy().to_string());
+                }
+
+                rec_state.status_message = format!(
+                    "Loaded {} channels from {}",
+                    recordings.len(),
+                    file_path_display
+                );
+            });
+            return;
+        }
+
+        // Fall back to legacy RoomEqMeasurementsFile format
+        use crate::app::types::RoomEqMeasurementsFile;
         match RoomEqMeasurementsFile::from_json_str(json) {
             Ok(measurements_file) => {
                 log::info!(
-                    "Loaded {} channel measurements from {:?}",
+                    "Loaded {} channel measurements from {:?} (legacy format)",
                     measurements_file.channels.len(),
                     file_path
                 );
@@ -1611,10 +1741,8 @@ impl PlayerView {
     /// 2. Write updated CSV files with full data from the inline JSON
     /// 3. Write a new lightweight JSON file to the original location
     fn perform_migration(&mut self, cx: &mut Context<Self>) {
-        use crate::app::types::{
-            ChannelRecording, ChannelRecordingState, RoomEqMeasurementsFile,
-        };
-        use sotf_audio::signal_analysis::AnalysisResult;
+        use crate::app::types::{ChannelRecording, ChannelRecordingState};
+        use crate::components::migration;
 
         log::info!("perform_migration: STARTED");
 
@@ -1646,182 +1774,86 @@ impl PlayerView {
         let _ = state;
 
         let original_path = std::path::PathBuf::from(&file_path);
+        let session_dir = file_dir.clone().unwrap_or_else(|| {
+            original_path
+                .parent()
+                .unwrap_or(std::path::Path::new("."))
+                .to_path_buf()
+        });
 
-        // Step 1: Back up the original JSON file
-        let backup_path = {
-            let mut backup = original_path.clone();
-            let extension = backup
-                .extension()
-                .map(|e| format!("{}.bak", e.to_string_lossy()))
-                .unwrap_or_else(|| "bak".to_string());
-            backup.set_extension(extension);
-            backup
-        };
-
-        if let Err(e) = std::fs::copy(&original_path, &backup_path) {
-            log::error!("Failed to back up original JSON file: {}", e);
-            self.state.update(cx, |state, _| {
-                let rec_state = &mut state.app.measurement_state.recording_state;
-                rec_state.migration_modal_open = false;
-                rec_state.migration_pending_json = None;
-                rec_state.status_message = format!("Failed to back up original file: {}", e);
-            });
-            cx.notify();
-            return;
-        }
-        log::info!("Backed up original JSON to {:?}", backup_path);
-
-        // Parse and migrate
-        match RoomEqMeasurementsFile::from_json_str(&json) {
-            Ok(measurements_file) => {
-                let session_dir = file_dir.clone().unwrap_or_else(|| {
-                    original_path
-                        .parent()
-                        .unwrap_or(std::path::Path::new("."))
-                        .to_path_buf()
-                });
-
+        // Use shared migration module for file operations
+        match migration::perform_migration(&json, &original_path, &session_dir) {
+            Ok(result) => {
                 log::info!(
-                    "Migrating {} channels to new format in {:?}",
-                    measurements_file.channels.len(),
-                    session_dir
+                    "Migration complete: {} channels, backup at {:?}",
+                    result.channel_count,
+                    result.backup_path
                 );
 
-                // Step 2: Extract data to CSV files for each channel
-                // Use channel name for CSV filename (same as recording)
-                for (idx, channel) in measurements_file.channels.iter().enumerate() {
-                    // Sanitize channel name for filesystem
-                    let safe_channel_name: String = channel
-                        .channel_name
-                        .chars()
-                        .map(|c| {
-                            if c.is_alphanumeric() || c == '_' || c == '-' {
-                                c
-                            } else {
-                                '_'
-                            }
-                        })
-                        .collect();
-                    let csv_filename = format!("{}.csv", safe_channel_name);
-                    let csv_path = session_dir.join(&csv_filename);
+                // Re-parse the measurements to build ChannelRecording objects
+                use crate::app::types::RoomEqMeasurementsFile;
+                match RoomEqMeasurementsFile::from_json_str(&json) {
+                    Ok(measurements_file) => {
+                        // Create recordings directly from the already-parsed measurements_file
+                        let recordings: Vec<ChannelRecording> = measurements_file
+                            .channels
+                            .iter()
+                            .enumerate()
+                            .map(|(idx, ch)| {
+                                let safe_channel_name = migration::sanitize_filename(&ch.channel_name);
 
-                    // Build AnalysisResult from the measurement data
-                    let result = &channel.measurement;
-                    let analysis = AnalysisResult {
-                        frequencies: result.frequencies.clone(),
-                        spl_db: result.magnitude_db.clone(),
-                        phase_deg: result.phase_deg.clone(),
-                        estimated_lag_samples: 0,
-                        impulse_response: result.impulse_response.clone().unwrap_or_default(),
-                        impulse_time_ms: result.impulse_time_ms.clone().unwrap_or_default(),
-                        thd_percent: result.thd_percent.clone().unwrap_or_default(),
-                        harmonic_distortion_db: result
-                            .harmonic_distortion_db
-                            .clone()
-                            .unwrap_or_default(),
-                        rt60_ms: result.rt60_ms.clone().unwrap_or_default(),
-                        clarity_c50_db: result.clarity_c50_db.clone().unwrap_or_default(),
-                        clarity_c80_db: result.clarity_c80_db.clone().unwrap_or_default(),
-                        excess_group_delay_ms: result
-                            .excess_group_delay_ms
-                            .clone()
-                            .unwrap_or_default(),
-                        spectrogram_db: result.spectrogram_db.clone().unwrap_or_default(),
-                    };
+                                // Convert relative paths to absolute paths
+                                let mut result = ch.measurement.clone();
+                                result.csv_path = Some(
+                                    session_dir
+                                        .join(format!("{}.csv", safe_channel_name))
+                                        .to_string_lossy()
+                                        .to_string(),
+                                );
+                                if let Some(wav) = &result.wav_path {
+                                    let abs_path = session_dir.join(wav);
+                                    if abs_path.exists() {
+                                        result.wav_path = Some(abs_path.to_string_lossy().to_string());
+                                    }
+                                }
 
-                    // Write CSV with extended format (overwrites existing CSV if present)
-                    if let Err(e) = Self::write_migration_csv(&analysis, &csv_path) {
-                        log::error!("Failed to write CSV for channel {}: {}", idx, e);
-                    } else {
-                        log::info!(
-                            "Wrote migrated CSV ({} points): {:?}",
-                            analysis.frequencies.len(),
-                            csv_path
-                        );
-                    }
-                }
-
-                // Step 3: Write new lightweight JSON to the ORIGINAL file location
-                if let Err(e) =
-                    Self::write_lightweight_session(&measurements_file, &original_path)
-                {
-                    log::error!("Failed to write new JSON file: {}", e);
-                    self.state.update(cx, |state, _| {
-                        let rec_state = &mut state.app.measurement_state.recording_state;
-                        rec_state.migration_modal_open = false;
-                        rec_state.migration_pending_json = None;
-                        rec_state.status_message = format!("Failed to write new JSON: {}", e);
-                    });
-                    cx.notify();
-                    return;
-                }
-                log::info!("Wrote new lightweight JSON to {:?}", original_path);
-
-                // Create recordings directly from the already-parsed measurements_file
-                // (no need to re-read and re-parse the JSON we just wrote)
-                let recordings: Vec<ChannelRecording> = measurements_file
-                    .channels
-                    .iter()
-                    .enumerate()
-                    .map(|(idx, ch)| {
-                        // Sanitize channel name for filesystem
-                        let safe_channel_name: String = ch
-                            .channel_name
-                            .chars()
-                            .map(|c| {
-                                if c.is_alphanumeric() || c == '_' || c == '-' {
-                                    c
-                                } else {
-                                    '_'
+                                ChannelRecording {
+                                    channel_index: idx,
+                                    channel_name: ch.channel_name.clone(),
+                                    state: ChannelRecordingState::Done,
+                                    result: Some(result),
                                 }
                             })
                             .collect();
 
-                        // Convert relative paths to absolute paths
-                        let mut result = ch.measurement.clone();
-                        result.csv_path = Some(
-                            session_dir
-                                .join(format!("{}.csv", safe_channel_name))
-                                .to_string_lossy()
-                                .to_string(),
-                        );
-                        if let Some(wav) = &result.wav_path {
-                            let abs_path = session_dir.join(wav);
-                            if abs_path.exists() {
-                                result.wav_path = Some(abs_path.to_string_lossy().to_string());
-                            }
-                        }
+                        let num_channels = recordings.len();
 
-                        ChannelRecording {
-                            channel_index: idx,
-                            channel_name: ch.channel_name.clone(),
-                            state: ChannelRecordingState::Done,
-                            result: Some(result),
-                        }
-                    })
-                    .collect();
-
-                let num_channels = recordings.len();
-
-                // Update state with the recordings and close modal
-                self.state.update(cx, |state, _| {
-                    let rec_state = &mut state.app.measurement_state.recording_state;
-                    rec_state.channel_recordings = recordings;
-                    rec_state.migration_modal_open = false;
-                    rec_state.migration_pending_json = None;
-                    rec_state.status_message = format!(
-                        "Converted {} channels. Original backed up to .bak",
-                        num_channels
-                    );
-                });
-
-                log::info!(
-                    "Migration complete: {} channels loaded from migrated format",
-                    num_channels
-                );
+                        // Update state with the recordings and close modal
+                        self.state.update(cx, |state, _| {
+                            let rec_state = &mut state.app.measurement_state.recording_state;
+                            rec_state.channel_recordings = recordings;
+                            rec_state.migration_modal_open = false;
+                            rec_state.migration_pending_json = None;
+                            rec_state.status_message = format!(
+                                "Converted {} channels. Original backed up to .bak",
+                                num_channels
+                            );
+                        });
+                    }
+                    Err(e) => {
+                        log::error!("Failed to re-parse JSON after migration: {}", e);
+                        self.state.update(cx, |state, _| {
+                            let rec_state = &mut state.app.measurement_state.recording_state;
+                            rec_state.migration_modal_open = false;
+                            rec_state.migration_pending_json = None;
+                            rec_state.status_message =
+                                format!("Migration files written but failed to load: {}", e);
+                        });
+                    }
+                }
             }
             Err(e) => {
-                log::error!("Failed to parse JSON for migration: {}", e);
+                log::error!("Migration failed: {}", e);
                 self.state.update(cx, |state, _| {
                     let rec_state = &mut state.app.measurement_state.recording_state;
                     rec_state.migration_modal_open = false;
@@ -1834,99 +1866,4 @@ impl PlayerView {
         cx.notify();
     }
 
-    /// Write analysis result to CSV with extended format
-    fn write_migration_csv(
-        analysis: &sotf_audio::signal_analysis::AnalysisResult,
-        csv_path: &std::path::Path,
-    ) -> Result<(), String> {
-        use std::io::Write;
-
-        let mut file = std::fs::File::create(csv_path)
-            .map_err(|e| format!("Failed to create CSV: {}", e))?;
-
-        // Header
-        writeln!(
-            file,
-            "frequency_hz,spl_db,phase_deg,thd_percent,rt60_ms,c50_db,c80_db,group_delay_ms"
-        )
-        .map_err(|e| format!("Failed to write header: {}", e))?;
-
-        // Data
-        for i in 0..analysis.frequencies.len() {
-            let freq = analysis.frequencies[i];
-            let spl = analysis.spl_db[i];
-            let phase = analysis.phase_deg[i];
-            let thd = analysis.thd_percent.get(i).copied().unwrap_or(0.0);
-            let rt60 = analysis.rt60_ms.get(i).copied().unwrap_or(0.0);
-            let c50 = analysis.clarity_c50_db.get(i).copied().unwrap_or(0.0);
-            let c80 = analysis.clarity_c80_db.get(i).copied().unwrap_or(0.0);
-            let gd = analysis.excess_group_delay_ms.get(i).copied().unwrap_or(0.0);
-
-            writeln!(
-                file,
-                "{:.6},{:.3},{:.6},{:.6},{:.3},{:.3},{:.3},{:.6}",
-                freq, spl, phase, thd, rt60, c50, c80, gd
-            )
-            .map_err(|e| format!("Failed to write data: {}", e))?;
-        }
-
-        Ok(())
-    }
-
-    /// Write session.json file with full data
-    /// This creates a proper RoomEqMeasurementsFile structure with csv_path set
-    /// Note: We keep the full data in JSON since the app doesn't have CSV loading yet
-    fn write_lightweight_session(
-        measurements: &crate::app::types::RoomEqMeasurementsFile,
-        path: &std::path::Path,
-    ) -> Result<(), String> {
-        use crate::app::types::{ChannelMeasurement, RoomEqMeasurementsFile};
-
-        // Create channels with csv_path AND full data
-        // (keeping data ensures app works; CSV is for backup/export)
-        let channels: Vec<ChannelMeasurement> = measurements
-            .channels
-            .iter()
-            .enumerate()
-            .map(|(idx, ch)| {
-                // Sanitize channel name for filesystem (same as in perform_migration)
-                let safe_channel_name: String = ch
-                    .channel_name
-                    .chars()
-                    .map(|c| {
-                        if c.is_alphanumeric() || c == '_' || c == '-' {
-                            c
-                        } else {
-                            '_'
-                        }
-                    })
-                    .collect();
-
-                // Clone the original measurement and add csv_path
-                let mut measurement = ch.measurement.clone();
-                measurement.channel = idx;
-                measurement.csv_path = Some(format!("{}.csv", safe_channel_name));
-
-                ChannelMeasurement {
-                    channel_name: ch.channel_name.clone(),
-                    measurement,
-                    is_group: ch.is_group,
-                    group_drivers: ch.group_drivers.clone(),
-                }
-            })
-            .collect();
-
-        let file_data = RoomEqMeasurementsFile {
-            version: 2,
-            channels,
-            configuration: measurements.configuration.clone(),
-        };
-
-        let file = std::fs::File::create(path)
-            .map_err(|e| format!("Failed to create session file: {}", e))?;
-        serde_json::to_writer_pretty(file, &file_data)
-            .map_err(|e| format!("Failed to serialize session: {}", e))?;
-
-        Ok(())
-    }
 }

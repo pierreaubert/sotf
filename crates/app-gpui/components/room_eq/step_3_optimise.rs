@@ -494,6 +494,7 @@ impl PlayerView {
                 target_curve: None,
                 group_delay: None,
                 optimizer,
+                recording_config: None,
             };
 
             (config, channel_names, room_eq.optimizer_config.max_iter)

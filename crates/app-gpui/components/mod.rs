@@ -6,6 +6,7 @@ pub mod graphs;
 pub mod headphone_eq;
 pub mod home;
 pub mod icons;
+pub mod migration;
 pub mod plugins;
 pub mod recording;
 mod room_eq;

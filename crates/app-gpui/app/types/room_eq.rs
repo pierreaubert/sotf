@@ -164,6 +164,13 @@ pub struct RecordingConfiguration {
     pub signal_duration_secs: f32,
     /// Signal level in dB
     pub signal_level_db: f32,
+
+    /// Sweep start frequency in Hz (only applicable when signal_type is "Sweep")
+    #[serde(default)]
+    pub sweep_start_freq: Option<f32>,
+    /// Sweep end frequency in Hz (only applicable when signal_type is "Sweep")
+    #[serde(default)]
+    pub sweep_end_freq: Option<f32>,
 }
 
 /// File format for saving/loading room EQ measurements

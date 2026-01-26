@@ -299,6 +299,7 @@ pub fn run_multi_speaker_optimization(
             fir: None,
             seed: None,
         },
+        recording_config: None,
     };
 
     // Wrap legacy callback
@@ -411,6 +412,7 @@ pub fn build_room_config_from_curves(
         target_curve: None,
         group_delay: None,
         optimizer,
+        recording_config: None,
     }
 }
 
