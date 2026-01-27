@@ -9,10 +9,12 @@
 /* Begin PBXBuildFile section */
 		0CAA7A594C1FF20C6976E73D /* CoreAudioKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 2121A680DAFBEC30DACBBC2D /* CoreAudioKit.framework */; };
 		205092137DC40B6F55A35F6A /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71C42DBA3E8C368B60556A63 /* AppDelegate.swift */; };
+		381004ED317BCBDF397E0BDF /* EQSwiftUIView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D92ADF055B104CD987CA3E1C /* EQSwiftUIView.swift */; };
 		4532FE1C25583BBBB877783F /* EQViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC4FB5E50EE778B07B255779 /* EQViewController.swift */; };
 		48E7F8B6A223DA8FC429888D /* EQAudioUnit.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = DD7BE16A411963C349D2A41D /* EQAudioUnit.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		4D41A9D18EC821AF287E8420 /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1FAEDA2E5D4272909D1EB3FE /* AudioToolbox.framework */; };
 		4F422056E38E00E2D65DA909 /* ViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84BDC522A6395C49A62E20CA /* ViewController.swift */; };
+		A02734A2AC2D77B4EB8AFCE4 /* GPUIBridgeStubs.c in Sources */ = {isa = PBXBuildFile; fileRef = B8BEA80E110E668AD8D765CA /* GPUIBridgeStubs.c */; };
 		A7DEA9CBCBA9FC5F9D83F32E /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 584BB2AEC6B0994DFE571F9F /* Main.storyboard */; };
 		C2706B2C2CB2896CC756A612 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */; };
 		DE1CF7A92210BA9F43BE8EB8 /* EQAudioUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 362CB68B363B6FEB4A23FF2B /* EQAudioUnit.swift */; };
@@ -52,13 +54,14 @@
 		84BDC522A6395C49A62E20CA /* ViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewController.swift; sourceTree = "<group>"; };
 		955BC360164EC7F23C7A4E5C /* BridgingHeader.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BridgingHeader.h; sourceTree = "<group>"; };
 		9703D0799FB858F9E2C0A5A4 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
-		9D92961E925B0A0984AD58B0 /* sotf_audio_plugin_ffi.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = sotf_audio_plugin_ffi.h; sourceTree = "<group>"; };
 		B763619FF8FA710D3366075C /* SOTFAudioUnits.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SOTFAudioUnits.entitlements; sourceTree = "<group>"; };
 		B798524C186472939A9780D0 /* EQAudioUnit.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = EQAudioUnit.entitlements; sourceTree = "<group>"; };
+		B8BEA80E110E668AD8D765CA /* GPUIBridgeStubs.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = GPUIBridgeStubs.c; sourceTree = "<group>"; };
 		BC4FB5E50EE778B07B255779 /* EQViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EQViewController.swift; sourceTree = "<group>"; };
 		C3AB38A7E788CEC95A6D1F27 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
 		D07098789949AA46E36FE5FF /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		D6D1FA0C6C730E9BBEEEBDF8 /* GPUIBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GPUIBridge.h; sourceTree = "<group>"; };
+		D92ADF055B104CD987CA3E1C /* EQSwiftUIView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EQSwiftUIView.swift; sourceTree = "<group>"; };
 		DD7BE16A411963C349D2A41D /* EQAudioUnit.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = EQAudioUnit.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -92,7 +95,7 @@
 			children = (
 				955BC360164EC7F23C7A4E5C /* BridgingHeader.h */,
 				D6D1FA0C6C730E9BBEEEBDF8 /* GPUIBridge.h */,
-				9D92961E925B0A0984AD58B0 /* sotf_audio_plugin_ffi.h */,
+				B8BEA80E110E668AD8D765CA /* GPUIBridgeStubs.c */,
 			);
 			name = Shared;
 			path = Shared;
@@ -134,6 +137,7 @@
 			children = (
 				B798524C186472939A9780D0 /* EQAudioUnit.entitlements */,
 				362CB68B363B6FEB4A23FF2B /* EQAudioUnit.swift */,
+				D92ADF055B104CD987CA3E1C /* EQSwiftUIView.swift */,
 				BC4FB5E50EE778B07B255779 /* EQViewController.swift */,
 				D07098789949AA46E36FE5FF /* Info.plist */,
 			);
@@ -245,7 +249,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				DE1CF7A92210BA9F43BE8EB8 /* EQAudioUnit.swift in Sources */,
+				381004ED317BCBDF397E0BDF /* EQSwiftUIView.swift in Sources */,
 				4532FE1C25583BBBB877783F /* EQViewController.swift in Sources */,
+				A02734A2AC2D77B4EB8AFCE4 /* GPUIBridgeStubs.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

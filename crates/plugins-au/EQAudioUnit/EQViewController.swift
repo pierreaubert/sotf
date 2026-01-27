@@ -1,9 +1,10 @@
 // EQViewController.swift
 // UI for SOTF Parametric EQ
 //
-// Uses Rust Metal UI when available, with AppKit table fallback.
+// Uses Rust Metal UI when available, with SwiftUI fallback.
 
 import AppKit
+import SwiftUI
 import CoreAudioKit
 import AudioToolbox
 
@@ -85,9 +86,17 @@ public class EQViewController: AUViewController, AUAudioUnitFactory, NSTableView
     /// Whether we're using Rust UI (vs fallback AppKit)
     private var usingRustUI = false
 
-    // MARK: - Fallback UI
+    // MARK: - SwiftUI Fallback UI
 
-    // Table view for parameter editing (fallback UI)
+    /// Observable model for SwiftUI parameter binding
+    private var parameterModel: EQParameterModel?
+
+    /// Hosting view for SwiftUI content
+    private var hostingView: NSHostingView<EQView>?
+
+    // MARK: - Legacy AppKit Fallback UI (kept for rollback)
+
+    // Table view for parameter editing (legacy fallback UI)
     private var tableView: NSTableView?
     private var scrollView: NSScrollView?
 
@@ -156,6 +165,8 @@ public class EQViewController: AUViewController, AUAudioUnitFactory, NSTableView
         // Update UI
         if usingRustUI {
             syncFiltersToRustView()
+        } else if let model = parameterModel {
+            model.bands = filters
         } else {
             tableView?.reloadData()
         }
@@ -182,6 +193,8 @@ public class EQViewController: AUViewController, AUAudioUnitFactory, NSTableView
         // Update UI
         if usingRustUI {
             syncFiltersToRustView()
+        } else if let model = parameterModel {
+            model.bands = filters
         } else {
             tableView?.reloadData(forRowIndexes: IndexSet(integer: band), columnIndexes: IndexSet(integersIn: 0..<5))
         }
@@ -273,8 +286,8 @@ public class EQViewController: AUViewController, AUAudioUnitFactory, NSTableView
             )
         } else {
             usingRustUI = false
-            NSLog("SOTF EQ: Falling back to AppKit table UI")
-            setupParameterTableUI()
+            NSLog("SOTF EQ: Falling back to SwiftUI")
+            setupSwiftUI()
         }
     }
 
@@ -282,12 +295,11 @@ public class EQViewController: AUViewController, AUAudioUnitFactory, NSTableView
         super.viewWillDisappear()
         pollTimer?.invalidate()
         pollTimer = nil
-    }
 
-    deinit {
-        pollTimer?.invalidate()
+        // Clean up Rust view if present
         if let rustView = rustView {
             au_plugin_view_destroy(rustView)
+            self.rustView = nil
         }
     }
 
@@ -331,9 +343,38 @@ public class EQViewController: AUViewController, AUAudioUnitFactory, NSTableView
         return true
     }
 
-    // MARK: - Fallback UI Setup
+    // MARK: - SwiftUI Fallback UI Setup
 
-    private func setupParameterTableUI() {
+    private func setupSwiftUI() {
+        // Create the observable model
+        let model = EQParameterModel(bandCount: bandCount)
+        model.bands = filters
+        model.onParametersChanged = { [weak self] newFilters in
+            self?.filters = newFilters
+            self?.onParametersChanged?(newFilters)
+        }
+        self.parameterModel = model
+
+        // Create SwiftUI view and hosting view
+        let swiftUIView = EQView(model: model)
+        let hosting = NSHostingView(rootView: swiftUIView)
+        hosting.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(hosting)
+
+        // Fill the view
+        NSLayoutConstraint.activate([
+            hosting.topAnchor.constraint(equalTo: view.topAnchor),
+            hosting.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            hosting.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            hosting.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
+
+        self.hostingView = hosting
+    }
+
+    // MARK: - Legacy AppKit Fallback UI Setup (kept for rollback)
+
+    private func setupParameterTableUI_legacy() {
         // Dark background
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor(calibratedRed: 0.12, green: 0.12, blue: 0.14, alpha: 1.0).cgColor
@@ -643,6 +684,8 @@ public class EQViewController: AUViewController, AUAudioUnitFactory, NSTableView
         // Update UI
         if usingRustUI {
             syncFiltersToRustView()
+        } else if let model = parameterModel {
+            model.bands = filters
         } else {
             tableView?.reloadData()
         }
