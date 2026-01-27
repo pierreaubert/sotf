@@ -34,10 +34,8 @@ use sotf_audio::manager::AudioEngineManager;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::Arc;
-use std::time::Duration;
 
 const SOCKET_PATH: &str = "/tmp/autoeq_audio.sock";
-const IDLE_TIMEOUT_SECS: u64 = 3;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "command")]
@@ -107,25 +105,23 @@ impl Response {
 
 struct AudioDaemon {
     manager: Arc<Mutex<AudioEngineManager>>,
-    last_activity: Arc<Mutex<std::time::Instant>>,
     running: Arc<Mutex<bool>>,
     hal_manager: Arc<Mutex<HalManager>>,
+    /// Selected output device name (None = use default device)
+    selected_device: Arc<Mutex<Option<String>>>,
 }
 
 impl AudioDaemon {
     fn new() -> Self {
         Self {
             manager: Arc::new(Mutex::new(AudioEngineManager::new())),
-            last_activity: Arc::new(Mutex::new(std::time::Instant::now())),
             running: Arc::new(Mutex::new(true)),
             hal_manager: Arc::new(Mutex::new(HalManager::new())),
+            selected_device: Arc::new(Mutex::new(None)),
         }
     }
 
     async fn handle_command(&self, cmd: Command) -> Response {
-        // Update activity timestamp
-        *self.last_activity.lock() = std::time::Instant::now();
-
         match cmd {
             Command::Status => self.handle_status().await,
             Command::Load { path } => self.handle_load(&path).await,
@@ -167,7 +163,8 @@ impl AudioDaemon {
 
     async fn handle_play(&self) -> Response {
         let mut manager = self.manager.lock();
-        match manager.start_playback(None, vec![], 2) {
+        let output_device = self.selected_device.lock().clone();
+        match manager.start_playback(output_device, vec![], 2) {
             Ok(_) => Response::ok_empty(),
             Err(e) => Response::err(format!("Failed to start playback: {}", e)),
         }
@@ -210,14 +207,36 @@ impl AudioDaemon {
         }
     }
 
-    async fn handle_set_device(&self, _device: &str) -> Response {
-        // Device selection is not exposed in current AudioEngineManager API
-        // Would need to be implemented via cpal device enumeration + selection
-        Response::err("Device selection not yet implemented in streaming manager")
+    async fn handle_set_device(&self, device: &str) -> Response {
+        // Validate that the device exists
+        match list_audio_devices() {
+            Ok(devices) => {
+                let device_exists = devices.iter().any(|d| {
+                    d.get("name")
+                        .and_then(|n| n.as_str())
+                        .map(|n| n == device)
+                        .unwrap_or(false)
+                });
+
+                if !device_exists {
+                    return Response::err(format!("Device '{}' not found", device));
+                }
+            }
+            Err(e) => {
+                return Response::err(format!("Failed to list devices: {}", e));
+            }
+        }
+
+        // Store the selected device
+        *self.selected_device.lock() = Some(device.to_string());
+        log::info!("Output device set to: {}", device);
+
+        Response::ok_empty()
     }
 
     async fn handle_load_plugins(&self, plugins: Vec<PluginConfig>) -> Response {
         let mut manager = self.manager.lock();
+        let output_device = self.selected_device.lock().clone();
 
         // Stop current playback if running
         let _ = manager.stop();
@@ -231,13 +250,14 @@ impl AudioDaemon {
             .unwrap_or(2) as usize;
 
         log::info!(
-            "Loading HAL plugin chain: {} plugins, {} output channels",
+            "Loading HAL plugin chain: {} plugins, {} output channels, device: {:?}",
             plugins.len(),
-            output_channels
+            output_channels,
+            output_device
         );
 
         // Start HAL playback (no file source needed)
-        match manager.start_hal_playback(None, plugins, output_channels) {
+        match manager.start_hal_playback(output_device, plugins, output_channels) {
             Ok(_) => {
                 log::info!("HAL plugin chain loaded successfully");
                 Response::ok_empty()
@@ -309,43 +329,12 @@ impl AudioDaemon {
         }
     }
 
-    fn monitor_idle(&self) {
-        let last_activity = Arc::clone(&self.last_activity);
-        let manager = Arc::clone(&self.manager);
-        let running = Arc::clone(&self.running);
-
-        std::thread::spawn(move || {
-            while *running.lock() {
-                std::thread::sleep(Duration::from_secs(1));
-
-                let elapsed = last_activity.lock().elapsed();
-                if elapsed > Duration::from_secs(IDLE_TIMEOUT_SECS) {
-                    let mgr = manager.lock();
-                    let state = mgr.get_state();
-
-                    // Only stop if not playing
-                    if matches!(
-                        state,
-                        sotf_audio::manager::StreamingState::Idle
-                            | sotf_audio::manager::StreamingState::Ready
-                    ) {
-                        println!("Idle timeout reached, audio engine in low-power mode");
-                        // Engine is already stopped, nothing to do
-                    }
-                }
-            }
-        });
-    }
-
     fn run(&self) -> Result<(), Box<dyn std::error::Error>> {
         // Remove stale socket if exists
         let _ = std::fs::remove_file(SOCKET_PATH);
 
         let listener = UnixListener::bind(SOCKET_PATH)?;
         println!("Audio daemon listening on {}", SOCKET_PATH);
-
-        // Start idle monitor thread
-        self.monitor_idle();
 
         // Accept connections
         for stream in listener.incoming() {
@@ -361,9 +350,9 @@ impl AudioDaemon {
                     // Actual shutdown is called explicitly in main()
                     let daemon = AudioDaemon {
                         manager: Arc::clone(&self.manager),
-                        last_activity: Arc::clone(&self.last_activity),
                         running: Arc::clone(&self.running),
                         hal_manager: Arc::clone(&self.hal_manager),
+                        selected_device: Arc::clone(&self.selected_device),
                     };
 
                     // Handle each client in a separate thread

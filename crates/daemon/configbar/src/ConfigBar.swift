@@ -54,7 +54,7 @@ enum AudioSource: String, CaseIterable, Identifiable {
 
 // MARK: - Audio Engine Client
 
-/// Client for communicating with the sotf_daemon via Unix socket
+/// Client for communicating with the sotf-daemon via Unix socket
 class AudioEngineClient {
     private let socketPath = "/tmp/autoeq_audio.sock"
     private var socketFD: Int32 = -1
@@ -322,28 +322,53 @@ class AudioEngineClient {
 
 // MARK: - Status Bar Controller
 
-@MainActor
-class StatusBarController: ObservableObject {
-    private var statusItem: NSStatusItem
+class StatusBarController: NSObject, ObservableObject {
+    private var statusItem: NSStatusItem!
     @Published var currentState: AudioEngineClient.AudioState = .idle
     @Published var showingWindow = false
+    private var configWindow: NSWindow?
 
     private let client = AudioEngineClient()
     private var monitorTimer: Timer?
 
-    init() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    override init() {
+        super.init()
+
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         if let button = statusItem.button {
-            // Use SF Symbol for speaker
-            let image = NSImage(systemSymbolName: "speaker.wave.2.fill",
-                              accessibilityDescription: "AutoEQ")!
-            image.isTemplate = true
-            button.image = image
-            button.target = self
-            button.action = #selector(statusBarButtonClicked)
-            button.toolTip = "AutoEQ Audio Engine"
+            // Use SF Symbol for speaker, with fallback
+            if let image = NSImage(systemSymbolName: "speaker.wave.2.fill",
+                                   accessibilityDescription: "SotF") {
+                image.isTemplate = true  // Makes icon adapt to light/dark menubar
+                button.image = image
+            } else {
+                // Fallback: use text if SF Symbol not available
+                button.title = "SotF"
+            }
+            button.toolTip = "SotF Audio Engine"
         }
+
+        // Create menu for the status item
+        let menu = NSMenu()
+
+        let configItem = NSMenuItem(title: "Configure...", action: #selector(openConfiguration), keyEquivalent: ",")
+        configItem.target = self
+        menu.addItem(configItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        let statusMenuItem = NSMenuItem(title: "Status: Idle", action: nil, keyEquivalent: "")
+        statusMenuItem.tag = 100  // Tag for updating later
+        menu.addItem(statusMenuItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        let quitItem = NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q")
+        quitItem.target = self
+        menu.addItem(quitItem)
+
+        statusItem.menu = menu
 
         // Connect to daemon
         _ = client.connect()
@@ -352,14 +377,16 @@ class StatusBarController: ObservableObject {
         startMonitoring()
 
         updateIcon()
+
+        print("StatusBarController initialized with menu")
     }
 
-    @objc func statusBarButtonClicked() {
-        showingWindow.toggle()
+    @objc func openConfiguration() {
+        showConfigWindow()
+    }
 
-        if showingWindow {
-            showConfigWindow()
-        }
+    @objc func quitApp() {
+        NSApplication.shared.terminate(nil)
     }
 
     func startMonitoring() {
@@ -374,11 +401,16 @@ class StatusBarController: ObservableObject {
     }
 
     private func updateStatus() {
-        let (state, volume, muted) = client.getStatus()
+        let (state, _, _) = client.getStatus()
 
         if currentState != state {
             currentState = state
             updateIcon()
+
+            // Update menu item
+            if let menu = statusItem.menu, let statusItem = menu.item(withTag: 100) {
+                statusItem.title = "Status: \(state.rawValue)"
+            }
         }
     }
 
@@ -854,8 +886,44 @@ struct ConfigurationView: View {
         panel.message = "Select plugin configuration file"
 
         if panel.runModal() == .OK, let url = panel.url {
-            print("Loading config from: \(url.path)")
-            // TODO: Load and apply plugin configuration
+            do {
+                let data = try Data(contentsOf: url)
+                guard let plugins = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+                    errorMessage = "Invalid configuration format: expected array of plugin objects"
+                    showingError = true
+                    return
+                }
+
+                // Send plugins to daemon
+                let command: [String: Any] = [
+                    "command": "load_plugins",
+                    "plugins": plugins
+                ]
+
+                let response = client.sendCommand(command)
+                if let resp = response, resp.success {
+                    print("✅ Plugin configuration loaded from: \(url.path)")
+
+                    // Update local state if HAL plugins found
+                    for plugin in plugins {
+                        if let pluginType = plugin["plugin_type"] as? String,
+                           let params = plugin["parameters"] as? [String: Any] {
+                            if pluginType == "hal_input", let ch = params["channels"] as? Int {
+                                halInputChannels = ch
+                            }
+                            if pluginType == "hal_output", let ch = params["channels"] as? Int {
+                                halOutputChannels = ch
+                            }
+                        }
+                    }
+                } else {
+                    errorMessage = response?.error ?? "Failed to apply plugin configuration"
+                    showingError = true
+                }
+            } catch {
+                errorMessage = "Failed to read configuration: \(error.localizedDescription)"
+                showingError = true
+            }
         }
     }
 
@@ -866,8 +934,26 @@ struct ConfigurationView: View {
         panel.message = "Save plugin configuration"
 
         if panel.runModal() == .OK, let url = panel.url {
-            print("Saving config to: \(url.path)")
-            // TODO: Save current plugin configuration
+            // Build current plugin configuration
+            let plugins: [[String: Any]] = [
+                [
+                    "plugin_type": "hal_input",
+                    "parameters": ["channels": halInputChannels]
+                ],
+                [
+                    "plugin_type": "hal_output",
+                    "parameters": ["channels": halOutputChannels]
+                ]
+            ]
+
+            do {
+                let data = try JSONSerialization.data(withJSONObject: plugins, options: .prettyPrinted)
+                try data.write(to: url)
+                print("✅ Plugin configuration saved to: \(url.path)")
+            } catch {
+                errorMessage = "Failed to save configuration: \(error.localizedDescription)"
+                showingError = true
+            }
         }
     }
 }
@@ -878,12 +964,37 @@ struct PluginHostView: NSViewRepresentable {
     func makeNSView(context: Context) -> WKWebView {
         let webView = WKWebView()
 
-        // Load the TypeScript UI
-        // In production, this would load from src-ui-frontend
-        let htmlPath = "/Users/pierre/src/autoEQ/src-ui-frontend/index.html"
-
-        if let url = URL(string: "file://\(htmlPath)") {
-            webView.loadFileURL(url, allowingReadAccessTo: URL(fileURLWithPath: "/Users/pierre/src/autoEQ/src-ui-frontend"))
+        // Try to load from bundle resources first
+        if let url = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "ui") {
+            webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+        } else {
+            // Show placeholder if UI not available
+            let html = """
+            <html>
+            <head>
+                <style>
+                    body {
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                        padding: 40px;
+                        text-align: center;
+                        color: #666;
+                        background: #f5f5f7;
+                    }
+                    h2 { color: #333; margin-bottom: 20px; }
+                    p { margin: 10px 0; line-height: 1.6; }
+                    .icon { font-size: 48px; margin-bottom: 20px; }
+                </style>
+            </head>
+            <body>
+                <div class="icon">🎛️</div>
+                <h2>Plugin Configuration</h2>
+                <p>Advanced plugin configuration UI is not yet available.</p>
+                <p>Use the channel settings above to configure HAL input/output,<br>
+                   or load a plugin configuration JSON file.</p>
+            </body>
+            </html>
+            """
+            webView.loadHTMLString(html, baseURL: nil)
         }
 
         return webView
@@ -894,23 +1005,254 @@ struct PluginHostView: NSViewRepresentable {
     }
 }
 
+// MARK: - Daemon Manager
+
+/// Manages the embedded sotf-daemon process
+class DaemonManager {
+    static let shared = DaemonManager()
+
+    private var daemonProcess: Process?
+    private let socketPath = "/tmp/autoeq_audio.sock"
+
+    private init() {}
+
+    /// Check if daemon is already running by attempting to connect
+    func isDaemonRunning() -> Bool {
+        guard FileManager.default.fileExists(atPath: socketPath) else {
+            return false
+        }
+
+        // Try to actually connect to verify daemon is responsive
+        let testFD = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard testFD >= 0 else {
+            return false
+        }
+        defer { close(testFD) }
+
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+
+        // Copy socket path into sun_path
+        let pathSize = MemoryLayout.size(ofValue: addr.sun_path)
+        _ = socketPath.withCString { pathCString in
+            withUnsafeMutablePointer(to: &addr.sun_path) { sunPathPtr in
+                sunPathPtr.withMemoryRebound(to: CChar.self, capacity: pathSize) { dest in
+                    strlcpy(dest, pathCString, pathSize)
+                }
+            }
+        }
+
+        let result = withUnsafePointer(to: &addr) { addrPtr in
+            addrPtr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPtr in
+                Darwin.connect(testFD, sockaddrPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+
+        if result < 0 {
+            // Connection failed - socket file is stale, remove it
+            debugLog("Stale socket detected, removing...")
+            try? FileManager.default.removeItem(atPath: socketPath)
+            return false
+        }
+
+        return true
+    }
+
+    /// Write debug message to a log file
+    private func debugLog(_ message: String) {
+        let logPath = NSHomeDirectory() + "/sotf-configbar-debug.log"
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let line = "[\(timestamp)] \(message)\n"
+        if let data = line.data(using: .utf8) {
+            if FileManager.default.fileExists(atPath: logPath) {
+                if let handle = FileHandle(forWritingAtPath: logPath) {
+                    handle.seekToEndOfFile()
+                    handle.write(data)
+                    handle.closeFile()
+                }
+            } else {
+                FileManager.default.createFile(atPath: logPath, contents: data)
+            }
+        }
+    }
+
+    /// Start the embedded daemon if not already running
+    func startDaemon() {
+        debugLog("startDaemon() called")
+
+        if isDaemonRunning() {
+            debugLog("Daemon already running (socket exists)")
+            return
+        }
+
+        // Find daemon binary in app bundle
+        debugLog("Looking for daemon binary...")
+        guard let daemonPath = findDaemonBinary() else {
+            debugLog("ERROR: Daemon binary not found in app bundle")
+            // Try system-wide daemon
+            if let systemDaemon = findSystemDaemon() {
+                debugLog("Found system daemon: \(systemDaemon)")
+                launchDaemon(at: systemDaemon)
+            } else {
+                debugLog("No system daemon found either")
+            }
+            return
+        }
+
+        launchDaemon(at: daemonPath)
+    }
+
+    /// Find daemon binary in app bundle
+    private func findDaemonBinary() -> String? {
+        debugLog("Bundle path: \(Bundle.main.bundlePath)")
+
+        // Check in Contents/Helpers (embedded in app bundle)
+        let helpersPath = "\(Bundle.main.bundlePath)/Contents/Helpers/sotf-daemon"
+        debugLog("Checking: \(helpersPath)")
+        if FileManager.default.fileExists(atPath: helpersPath) {
+            debugLog("Found daemon at: \(helpersPath)")
+            return helpersPath
+        } else {
+            debugLog("NOT FOUND at: \(helpersPath)")
+        }
+
+        // Check in bundle resources
+        if let path = Bundle.main.path(forResource: "sotf-daemon", ofType: nil) {
+            debugLog("Found daemon in resources: \(path)")
+            return path
+        }
+
+        debugLog("Daemon binary not found in bundle")
+        return nil
+    }
+
+    /// Find system-wide daemon installation
+    private func findSystemDaemon() -> String? {
+        let paths = [
+            "\(NSHomeDirectory())/.local/bin/sotf-daemon",
+            "/usr/local/bin/sotf-daemon",
+            "/opt/homebrew/bin/sotf-daemon"
+        ]
+
+        for path in paths {
+            if FileManager.default.fileExists(atPath: path) {
+                return path
+            }
+        }
+
+        return nil
+    }
+
+    /// Launch daemon process
+    private func launchDaemon(at path: String) {
+        debugLog("Starting daemon from: \(path)")
+
+        // Verify the binary exists and is executable
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: path) else {
+            debugLog("ERROR: Daemon binary does not exist at: \(path)")
+            return
+        }
+        guard fileManager.isExecutableFile(atPath: path) else {
+            debugLog("ERROR: Daemon binary is not executable: \(path)")
+            return
+        }
+
+        debugLog("Binary exists and is executable")
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: path)
+        process.arguments = []
+
+        // Create a pipe to capture daemon output for debugging
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
+
+        // Set up termination handler to detect crashes
+        process.terminationHandler = { [weak self] proc in
+            let status = proc.terminationStatus
+            self?.debugLog("Daemon terminated with status: \(status)")
+            if status != 0 {
+                // Read any error output
+                let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                if let errorStr = String(data: errorData, encoding: .utf8), !errorStr.isEmpty {
+                    self?.debugLog("Daemon stderr: \(errorStr)")
+                }
+            }
+        }
+
+        do {
+            try process.run()
+            daemonProcess = process
+            debugLog("Daemon started (PID: \(process.processIdentifier))")
+
+            // Wait a moment for socket to be created
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                if self?.isDaemonRunning() == true {
+                    self?.debugLog("Daemon socket ready")
+                } else {
+                    self?.debugLog("Daemon started but socket not ready yet")
+                    // Check if process is still running
+                    if process.isRunning {
+                        self?.debugLog("Process still running, waiting...")
+                    } else {
+                        self?.debugLog("ERROR: Daemon process died immediately")
+                    }
+                }
+            }
+        } catch {
+            debugLog("ERROR: Failed to start daemon: \(error)")
+        }
+    }
+
+    /// Stop the daemon process
+    func stopDaemon() {
+        // Send shutdown command via socket first (graceful shutdown)
+        let client = AudioEngineClient()
+        if client.connect() {
+            _ = client.sendCommand(["command": "shutdown"])
+            print("Sent shutdown command to daemon")
+        }
+
+        // Also terminate our process if we started it
+        if let process = daemonProcess, process.isRunning {
+            process.terminate()
+            print("Terminated daemon process")
+        }
+
+        daemonProcess = nil
+    }
+}
+
 // MARK: - App Delegate
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusBarController: StatusBarController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Write debug file FIRST before anything else
+        do {
+            let debugPath = NSHomeDirectory() + "/sotf-configbar-debug.log"
+            try "applicationDidFinishLaunching called at \(Date())\n".write(toFile: debugPath, atomically: true, encoding: .utf8)
+        } catch {
+            // Can't even write file
+        }
+
         // Hide dock icon (menu bar only app)
         NSApp.setActivationPolicy(.accessory)
 
-        // Create status bar controller
-        Task { @MainActor in
-            statusBarController = StatusBarController()
-        }
+        // Start the daemon
+        DaemonManager.shared.startDaemon()
+
+        // Create status bar controller (must be on main thread, which we are)
+        statusBarController = StatusBarController()
+        print("Created statusBarController: \(String(describing: statusBarController))")
 
         // Show startup notification
         NotificationManager.shared.showNotification(
-            title: "AutoEQ Started",
+            title: "SotF Started",
             body: "Audio engine control ready"
         )
 
@@ -918,9 +1260,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        Task { @MainActor in
-            statusBarController?.stopMonitoring()
-        }
+        statusBarController?.stopMonitoring()
+
+        // Stop the daemon if we started it
+        DaemonManager.shared.stopDaemon()
         print("AutoEQ menu bar app terminated")
     }
 }
@@ -929,6 +1272,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
 class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
     static let shared = NotificationManager()
+    private var notificationsAvailable = false
 
     private override init() {
         super.init()
@@ -936,19 +1280,35 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
     }
 
     private func setupNotifications() {
-        let center = UNUserNotificationCenter.current()
-        center.delegate = self
+        // UNUserNotificationCenter requires a proper app bundle
+        // Check if we're running from a valid bundle before trying to use it
+        guard Bundle.main.bundleIdentifier != nil else {
+            print("Notifications not available (not running from app bundle)")
+            return
+        }
 
-        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-            if granted {
-                print("Notification permission granted")
-            } else if let error = error {
-                print("Notification permission error: \(error)")
+        // Try to access UNUserNotificationCenter, which may fail without a proper bundle
+        do {
+            let center = UNUserNotificationCenter.current()
+            center.delegate = self
+            notificationsAvailable = true
+
+            center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+                if granted {
+                    print("Notification permission granted")
+                } else if let error = error {
+                    print("Notification permission error: \(error)")
+                }
             }
         }
     }
 
     func showNotification(title: String, body: String, sound: Bool = true) {
+        guard notificationsAvailable else {
+            print("Notification (disabled): \(title) - \(body)")
+            return
+        }
+
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body

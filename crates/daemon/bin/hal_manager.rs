@@ -126,6 +126,18 @@ impl HalManager {
             log::info!("✅ HAL driver shut down");
         }
     }
+
+    /// Check if HAL manager has been initialized
+    pub fn is_initialized(&self) -> bool {
+        #[cfg(target_os = "macos")]
+        {
+            self.initialized
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            false
+        }
+    }
 }
 
 // NOTE: Drop implementation intentionally omitted
