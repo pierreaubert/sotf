@@ -424,6 +424,10 @@ pub struct OptimizerConfig {
     #[serde(default = "default_max_iter")]
     pub max_iter: usize,
 
+    /// Population size for DE optimizer
+    #[serde(default = "default_population")]
+    pub population: usize,
+
     /// PEQ model (e.g., "pk", "ls-pk-hs", "free")
     #[serde(default = "default_peq_model")]
     pub peq_model: String,
@@ -477,6 +481,9 @@ fn default_max_freq() -> f64 {
 fn default_max_iter() -> usize {
     10000
 }
+fn default_population() -> usize {
+    300
+}
 
 impl Default for OptimizerConfig {
     fn default() -> Self {
@@ -491,6 +498,7 @@ impl Default for OptimizerConfig {
             min_freq: default_min_freq(),
             max_freq: default_max_freq(),
             max_iter: default_max_iter(),
+            population: default_population(),
             peq_model: default_peq_model(),
             mode: default_opt_mode(),
             fir: None,

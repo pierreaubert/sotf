@@ -481,6 +481,7 @@ impl PlayerView {
                 min_freq: room_eq.optimizer_config.min_freq,
                 max_freq: room_eq.optimizer_config.max_freq,
                 max_iter: room_eq.optimizer_config.max_iter,
+                population: room_eq.optimizer_config.population,
                 peq_model: "pk".to_string(),
                 mode: "iir".to_string(),
                 fir: None,

@@ -688,6 +688,18 @@ build-installer-signed:
 build-installer-notarized:
 	./scripts/build-installer.sh --sign --notarize
 
+# Build daemon + ConfigBar DMG (unsigned, for local testing)
+build-daemon-dmg:
+	./scripts/build-dmg-daemon.sh
+
+# Build signed daemon + ConfigBar DMG
+build-daemon-dmg-signed:
+	./scripts/build-dmg-daemon.sh --sign
+
+# Build signed and notarized daemon + ConfigBar DMG
+build-daemon-dmg-notarized:
+	./scripts/build-dmg-daemon.sh --sign --notarize
+
 # Uninstall SotF components
 uninstall-sotf:
 	./scripts/uninstall-sotf.sh

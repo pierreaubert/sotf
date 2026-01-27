@@ -102,7 +102,7 @@ pub fn optimize_channel_eq(
         peq_model_list: false,
 
         // Optimization parameters
-        population: 300,
+        population: config.population,
         maxeval: config.max_iter,
         refine: false,
         local_algo: "cobyla".to_string(),

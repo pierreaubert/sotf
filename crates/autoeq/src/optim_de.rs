@@ -61,7 +61,7 @@ pub fn setup_de_common(
 
     // Estimate parameters
     let pop_size = population.max(15); // minimum reasonable population
-    let max_iter = maxeval.min(pop_size * 10);
+    let max_iter = maxeval; // Use maxeval directly as max iterations
 
     // Set up objective data for DE with zero penalties since we use native constraints
     let mut penalty_data = objective_data.clone();

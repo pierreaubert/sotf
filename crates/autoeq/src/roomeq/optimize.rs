@@ -502,13 +502,36 @@ fn process_single_speaker(
                 response::compute_fir_complex_response(&coeffs, &curve.freq, sample_rate);
             let final_curve = response::apply_complex_response(&curve, &complex_resp);
 
+            // Compute post_score consistently with pre_score
+            let mut sum_final = 0.0;
+            let mut count_final = 0;
+            for i in 0..final_curve.freq.len() {
+                if final_curve.freq[i] >= min_freq && final_curve.freq[i] <= max_freq {
+                    sum_final += final_curve.spl[i];
+                    count_final += 1;
+                }
+            }
+            let mean_final = if count_final > 0 {
+                sum_final / count_final as f64
+            } else {
+                0.0
+            };
+            let normalized_final_spl = &final_curve.spl - mean_final;
+            let post_score =
+                crate::loss::flat_loss(&final_curve.freq, &normalized_final_spl, min_freq, max_freq);
+
+            info!(
+                "  Pre-score: {:.6}, Post-score: {:.6}",
+                pre_score, post_score
+            );
+
             let mut chain = chain;
             chain.final_curve = Some((&final_curve).into());
 
-            Ok((chain, pre_score, 0.0, curve.clone(), final_curve, vec![]))
+            Ok((chain, pre_score, post_score, curve.clone(), final_curve, vec![]))
         }
         "mixed" => {
-            let (eq_filters, post_iir_score) = eq::optimize_channel_eq(
+            let (eq_filters, _opt_loss) = eq::optimize_channel_eq(
                 &curve,
                 &room_config.optimizer,
                 room_config.target_curve.as_ref(),
@@ -516,11 +539,7 @@ fn process_single_speaker(
             )
             .map_err(|e| AutoeqError::OptimizationFailed { message: format!("IIR optimization failed for channel {}: {}", channel_name, e) })?;
 
-            info!(
-                "  IIR stage: {} filters, score={:.6}",
-                eq_filters.len(),
-                post_iir_score
-            );
+            info!("  IIR stage: {} filters", eq_filters.len());
 
             let iir_resp =
                 response::compute_peq_complex_response(&eq_filters, &curve.freq, sample_rate);
@@ -552,14 +571,37 @@ fn process_single_speaker(
                 response::compute_fir_complex_response(&coeffs, &curve.freq, sample_rate);
             let final_curve = response::apply_complex_response(&input_plus_iir, &fir_resp);
 
+            // Compute post_score consistently with pre_score
+            let mut sum_final = 0.0;
+            let mut count_final = 0;
+            for i in 0..final_curve.freq.len() {
+                if final_curve.freq[i] >= min_freq && final_curve.freq[i] <= max_freq {
+                    sum_final += final_curve.spl[i];
+                    count_final += 1;
+                }
+            }
+            let mean_final = if count_final > 0 {
+                sum_final / count_final as f64
+            } else {
+                0.0
+            };
+            let normalized_final_spl = &final_curve.spl - mean_final;
+            let post_score =
+                crate::loss::flat_loss(&final_curve.freq, &normalized_final_spl, min_freq, max_freq);
+
+            info!(
+                "  Pre-score: {:.6}, Post-score: {:.6}",
+                pre_score, post_score
+            );
+
             chain.initial_curve = Some((&curve).into());
             chain.final_curve = Some((&final_curve).into());
 
-            Ok((chain, pre_score, 0.0, curve.clone(), final_curve, eq_filters))
+            Ok((chain, pre_score, post_score, curve.clone(), final_curve, eq_filters))
         }
         _ => {
             // Default IIR mode
-            let (eq_filters, post_score) = eq::optimize_channel_eq(
+            let (eq_filters, _opt_loss) = eq::optimize_channel_eq(
                 &curve,
                 &room_config.optimizer,
                 room_config.target_curve.as_ref(),
@@ -568,10 +610,6 @@ fn process_single_speaker(
             .map_err(|e| AutoeqError::OptimizationFailed { message: format!("EQ optimization failed for channel {}: {}", channel_name, e) })?;
 
             info!("  Optimized {} EQ filters", eq_filters.len());
-            info!(
-                "  Pre-score: {:.6}, Post-score: {:.6}",
-                pre_score, post_score
-            );
 
             let chain = output::build_channel_dsp_chain_with_curves(
                 channel_name,
@@ -585,6 +623,29 @@ fn process_single_speaker(
             let iir_resp =
                 response::compute_peq_complex_response(&eq_filters, &curve.freq, sample_rate);
             let final_curve = response::apply_complex_response(&curve, &iir_resp);
+
+            // Compute post_score consistently with pre_score (flatness of corrected response)
+            let mut sum_final = 0.0;
+            let mut count_final = 0;
+            for i in 0..final_curve.freq.len() {
+                if final_curve.freq[i] >= min_freq && final_curve.freq[i] <= max_freq {
+                    sum_final += final_curve.spl[i];
+                    count_final += 1;
+                }
+            }
+            let mean_final = if count_final > 0 {
+                sum_final / count_final as f64
+            } else {
+                0.0
+            };
+            let normalized_final_spl = &final_curve.spl - mean_final;
+            let post_score =
+                crate::loss::flat_loss(&final_curve.freq, &normalized_final_spl, min_freq, max_freq);
+
+            info!(
+                "  Pre-score: {:.6}, Post-score: {:.6}",
+                pre_score, post_score
+            );
 
             let mut chain = chain;
             chain.final_curve = Some((&final_curve).into());
