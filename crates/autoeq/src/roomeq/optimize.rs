@@ -30,10 +30,14 @@ use super::types::{
 // ============================================================================
 
 /// Internal result type for speaker processing to reduce type complexity
+/// Returns: (channel_name, chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl)
 type SpeakerProcessResult = std::result::Result<
-    (String, ChannelDspChain, f64, f64, crate::Curve, crate::Curve, Vec<crate::iir::Biquad>),
+    (String, ChannelDspChain, f64, f64, crate::Curve, crate::Curve, Vec<crate::iir::Biquad>, f64),
     AutoeqError,
 >;
+
+/// Threshold in dB above which to warn about channel level differences
+const LEVEL_DIFFERENCE_WARNING_THRESHOLD: f64 = 6.0;
 
 // ============================================================================
 // Progress and Callback Types
@@ -180,7 +184,7 @@ pub fn optimize_room(
         .map(|(channel_name, speaker_config)| {
             info!("Processing channel: {}", channel_name);
 
-            let (chain, pre_score, post_score, initial_curve, final_curve, biquads) =
+            let (chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl) =
                 process_speaker_internal(
                     channel_name,
                     speaker_config,
@@ -197,6 +201,7 @@ pub fn optimize_room(
                 initial_curve,
                 final_curve,
                 biquads,
+                mean_spl,
             ))
         })
         .collect();
@@ -207,14 +212,16 @@ pub fn optimize_room(
     let mut pre_scores: Vec<f64> = Vec::new();
     let mut post_scores: Vec<f64> = Vec::new();
     let mut curves: HashMap<String, crate::Curve> = HashMap::new();
+    let mut channel_means: HashMap<String, f64> = HashMap::new();
 
     for res in results {
-        let (channel_name, chain, pre_score, post_score, initial_curve, final_curve, biquads) = res?;
+        let (channel_name, chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl) = res?;
 
         channel_chains.insert(channel_name.clone(), chain);
         curves.insert(channel_name.clone(), final_curve.clone());
         pre_scores.push(pre_score);
         post_scores.push(post_score);
+        channel_means.insert(channel_name.clone(), mean_spl);
 
         channel_results.insert(
             channel_name.clone(),
@@ -228,6 +235,46 @@ pub fn optimize_room(
                 fir_coeffs: None,
             },
         );
+    }
+
+    // Channel level alignment: add gain plugins to align all channels to the same level
+    if channel_means.len() > 1 {
+        let means: Vec<f64> = channel_means.values().copied().collect();
+        let min_mean = means.iter().cloned().fold(f64::INFINITY, f64::min);
+        let max_mean = means.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let level_spread = max_mean - min_mean;
+
+        // Use the minimum level as reference (avoid boosting, prefer cutting)
+        let reference_level = min_mean;
+
+        // Warn if level differences are significant (might indicate measurement issues)
+        if level_spread > LEVEL_DIFFERENCE_WARNING_THRESHOLD {
+            warn!(
+                "Channel levels differ by {:.1} dB (threshold: {:.1} dB). \
+                This may indicate measurement issues (mic placement, cable problems, etc.).",
+                level_spread, LEVEL_DIFFERENCE_WARNING_THRESHOLD
+            );
+            for (name, mean) in &channel_means {
+                info!("  Channel '{}': mean SPL = {:.1} dB", name, mean);
+            }
+        }
+
+        // Add gain plugins to align channels
+        for (channel_name, mean_spl) in &channel_means {
+            let alignment_gain = reference_level - mean_spl;
+
+            // Only add gain plugin if the adjustment is significant (> 0.1 dB)
+            if alignment_gain.abs() > 0.1 {
+                if let Some(chain) = channel_chains.get_mut(channel_name) {
+                    // Insert gain plugin at the end (after EQ) to adjust final level
+                    chain.plugins.push(output::create_gain_plugin(alignment_gain));
+                    info!(
+                        "  Channel '{}': added {:.2} dB gain for level alignment",
+                        channel_name, alignment_gain
+                    );
+                }
+            }
+        }
     }
 
     // Group Delay Optimization
@@ -388,7 +435,7 @@ pub fn optimize_speaker(
         recording_config: None,
     };
 
-    let (chain, pre_score, post_score, initial_curve, final_curve, biquads) =
+    let (chain, pre_score, post_score, initial_curve, final_curve, biquads, _mean_spl) =
         process_speaker_internal(channel_name, speaker_config, &room_config, sample_rate, None)?;
 
     Ok(SpeakerOptimizationResult {
@@ -408,7 +455,7 @@ pub fn optimize_speaker(
 
 /// Process a single speaker (simple or group)
 ///
-/// Returns: (DSP chain, pre_score, post_score, initial_curve, final_curve, biquads)
+/// Returns: (DSP chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl)
 #[allow(clippy::type_complexity)]
 fn process_speaker_internal(
     channel_name: &str,
@@ -416,7 +463,7 @@ fn process_speaker_internal(
     room_config: &RoomConfig,
     sample_rate: f64,
     output_dir: Option<&Path>,
-) -> Result<(ChannelDspChain, f64, f64, Curve, Curve, Vec<Biquad>)> {
+) -> Result<(ChannelDspChain, f64, f64, Curve, Curve, Vec<Biquad>, f64)> {
     let output_dir = output_dir.unwrap_or(Path::new("."));
 
     match speaker_config {
@@ -436,6 +483,8 @@ fn process_speaker_internal(
 }
 
 /// Process a simple speaker with a single measurement
+///
+/// Returns: (DSP chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl)
 #[allow(clippy::type_complexity)]
 fn process_single_speaker(
     channel_name: &str,
@@ -443,7 +492,7 @@ fn process_single_speaker(
     room_config: &RoomConfig,
     sample_rate: f64,
     output_dir: &Path,
-) -> Result<(ChannelDspChain, f64, f64, Curve, Curve, Vec<Biquad>)> {
+) -> Result<(ChannelDspChain, f64, f64, Curve, Curve, Vec<Biquad>, f64)> {
     // Load measurement
     let curve = load::load_source(source)
         .map_err(|e| AutoeqError::InvalidMeasurement { message: format!("Failed to load measurement for channel {}: {}", channel_name, e) })?;
@@ -528,7 +577,7 @@ fn process_single_speaker(
             let mut chain = chain;
             chain.final_curve = Some((&final_curve).into());
 
-            Ok((chain, pre_score, post_score, curve.clone(), final_curve, vec![]))
+            Ok((chain, pre_score, post_score, curve.clone(), final_curve, vec![], mean))
         }
         "mixed" => {
             let (eq_filters, _opt_loss) = eq::optimize_channel_eq(
@@ -597,7 +646,7 @@ fn process_single_speaker(
             chain.initial_curve = Some((&curve).into());
             chain.final_curve = Some((&final_curve).into());
 
-            Ok((chain, pre_score, post_score, curve.clone(), final_curve, eq_filters))
+            Ok((chain, pre_score, post_score, curve.clone(), final_curve, eq_filters, mean))
         }
         _ => {
             // Default IIR mode
@@ -650,12 +699,14 @@ fn process_single_speaker(
             let mut chain = chain;
             chain.final_curve = Some((&final_curve).into());
 
-            Ok((chain, pre_score, post_score, curve.clone(), final_curve, eq_filters))
+            Ok((chain, pre_score, post_score, curve.clone(), final_curve, eq_filters, mean))
         }
     }
 }
 
 /// Process a speaker group with multiple drivers and crossovers
+///
+/// Returns: (DSP chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl)
 #[allow(clippy::type_complexity)]
 fn process_speaker_group(
     channel_name: &str,
@@ -663,7 +714,7 @@ fn process_speaker_group(
     room_config: &RoomConfig,
     sample_rate: f64,
     _output_dir: &Path,
-) -> Result<(ChannelDspChain, f64, f64, Curve, Curve, Vec<Biquad>)> {
+) -> Result<(ChannelDspChain, f64, f64, Curve, Curve, Vec<Biquad>, f64)> {
     // Load all measurements in the group
     let mut driver_curves = Vec::new();
     for (i, source) in group.measurements.iter().enumerate() {
@@ -827,6 +878,19 @@ fn process_speaker_group(
         response::compute_peq_complex_response(&eq_filters, &combined_curve.freq, sample_rate);
     let final_curve = response::apply_complex_response(&combined_curve, &iir_resp);
 
+    // Compute mean SPL of combined curve for level alignment
+    let min_freq = room_config.optimizer.min_freq;
+    let max_freq = room_config.optimizer.max_freq;
+    let mut sum = 0.0;
+    let mut count = 0;
+    for i in 0..combined_curve.freq.len() {
+        if combined_curve.freq[i] >= min_freq && combined_curve.freq[i] <= max_freq {
+            sum += combined_curve.spl[i];
+            count += 1;
+        }
+    }
+    let mean_spl = if count > 0 { sum / count as f64 } else { 0.0 };
+
     let mut chain = chain;
     chain.final_curve = Some((&final_curve).into());
 
@@ -837,10 +901,13 @@ fn process_speaker_group(
         combined_curve.clone(),
         final_curve,
         eq_filters,
+        mean_spl,
     ))
 }
 
 /// Process multi-subwoofer group
+///
+/// Returns: (DSP chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl)
 #[allow(clippy::type_complexity)]
 fn process_multisub_group(
     channel_name: &str,
@@ -848,7 +915,7 @@ fn process_multisub_group(
     room_config: &RoomConfig,
     sample_rate: f64,
     _output_dir: &Path,
-) -> Result<(ChannelDspChain, f64, f64, Curve, Curve, Vec<Biquad>)> {
+) -> Result<(ChannelDspChain, f64, f64, Curve, Curve, Vec<Biquad>, f64)> {
     let (result, combined_curve) =
         multisub::optimize_multisub(&group.subwoofers, &room_config.optimizer, sample_rate)
             .map_err(|e| AutoeqError::OptimizationFailed { message: format!("Multi-sub optimization failed: {}", e) })?;
@@ -887,6 +954,19 @@ fn process_multisub_group(
         response::compute_peq_complex_response(&eq_filters, &combined_curve.freq, sample_rate);
     let final_curve = response::apply_complex_response(&combined_curve, &iir_resp);
 
+    // Compute mean SPL of combined curve for level alignment
+    let min_freq = room_config.optimizer.min_freq;
+    let max_freq = room_config.optimizer.max_freq;
+    let mut sum = 0.0;
+    let mut count = 0;
+    for i in 0..combined_curve.freq.len() {
+        if combined_curve.freq[i] >= min_freq && combined_curve.freq[i] <= max_freq {
+            sum += combined_curve.spl[i];
+            count += 1;
+        }
+    }
+    let mean_spl = if count > 0 { sum / count as f64 } else { 0.0 };
+
     let mut chain = chain;
     chain.final_curve = Some((&final_curve).into());
 
@@ -897,10 +977,13 @@ fn process_multisub_group(
         combined_curve.clone(),
         final_curve,
         eq_filters,
+        mean_spl,
     ))
 }
 
 /// Process DBA configuration
+///
+/// Returns: (DSP chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl)
 #[allow(clippy::type_complexity)]
 fn process_dba(
     channel_name: &str,
@@ -908,7 +991,7 @@ fn process_dba(
     room_config: &RoomConfig,
     sample_rate: f64,
     _output_dir: &Path,
-) -> Result<(ChannelDspChain, f64, f64, Curve, Curve, Vec<Biquad>)> {
+) -> Result<(ChannelDspChain, f64, f64, Curve, Curve, Vec<Biquad>, f64)> {
     let (result, combined_curve) =
         dba::optimize_dba(dba_config, &room_config.optimizer, sample_rate)
             .map_err(|e| AutoeqError::OptimizationFailed { message: format!("DBA optimization failed: {}", e) })?;
@@ -945,6 +1028,19 @@ fn process_dba(
         response::compute_peq_complex_response(&eq_filters, &combined_curve.freq, sample_rate);
     let final_curve = response::apply_complex_response(&combined_curve, &iir_resp);
 
+    // Compute mean SPL of combined curve for level alignment
+    let min_freq = room_config.optimizer.min_freq;
+    let max_freq = room_config.optimizer.max_freq;
+    let mut sum = 0.0;
+    let mut count = 0;
+    for i in 0..combined_curve.freq.len() {
+        if combined_curve.freq[i] >= min_freq && combined_curve.freq[i] <= max_freq {
+            sum += combined_curve.spl[i];
+            count += 1;
+        }
+    }
+    let mean_spl = if count > 0 { sum / count as f64 } else { 0.0 };
+
     let mut chain = chain;
     chain.final_curve = Some((&final_curve).into());
 
@@ -955,5 +1051,6 @@ fn process_dba(
         combined_curve.clone(),
         final_curve,
         eq_filters,
+        mean_spl,
     ))
 }

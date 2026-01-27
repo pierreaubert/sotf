@@ -27,16 +27,33 @@ pub fn optimize_channel_eq(
     target_config: Option<&TargetCurveConfig>,
     sample_rate: f64,
 ) -> Result<(Vec<Biquad>, f64), Box<dyn Error>> {
+    // Normalize the input curve by subtracting the mean SPL in the optimization range
+    // This is critical for room measurements which may have arbitrary absolute levels
+    let mut sum = 0.0;
+    let mut count = 0;
+    for i in 0..curve.freq.len() {
+        if curve.freq[i] >= config.min_freq && curve.freq[i] <= config.max_freq {
+            sum += curve.spl[i];
+            count += 1;
+        }
+    }
+    let mean_spl = if count > 0 { sum / count as f64 } else { 0.0 };
+    let normalized_curve = Curve {
+        freq: curve.freq.clone(),
+        spl: &curve.spl - mean_spl,
+        phase: curve.phase.clone(),
+    };
+
     // Parse PEQ model
     let peq_model = PeqModel::from_str(&config.peq_model, true)
         .map_err(|e| format!("Invalid PEQ model '{}': {}", config.peq_model, e))?;
 
-    // Create target curve
+    // Create target curve (using normalized curve for consistency)
     let target_curve = match target_config {
         Some(TargetCurveConfig::Path(path)) => {
             // Load target from file
             let target = crate::read::read_curve_from_csv(path)?;
-            crate::read::normalize_and_interpolate_response(&curve.freq, &target)
+            crate::read::normalize_and_interpolate_response(&normalized_curve.freq, &target)
         }
         Some(TargetCurveConfig::Predefined(name)) => {
             // Generate predefined target
@@ -44,13 +61,13 @@ pub fn optimize_channel_eq(
             // For now, simpler to re-implement common targets or map to Args
             // We can construct minimal Args with curve_name
             let dummy_args = Args::parse_from(["autoeq", "--curve-name", name]);
-            crate::workflow::build_target_curve(&dummy_args, &curve.freq, curve)?
+            crate::workflow::build_target_curve(&dummy_args, &normalized_curve.freq, &normalized_curve)?
         }
         None => {
             // Default flat target
             Curve {
-                freq: curve.freq.clone(),
-                spl: Array1::zeros(curve.freq.len()),
+                freq: normalized_curve.freq.clone(),
+                spl: Array1::zeros(normalized_curve.freq.len()),
                 phase: None,
             }
         }
@@ -146,18 +163,18 @@ pub fn optimize_channel_eq(
         qa: None,
     };
 
-    // Create deviation curve (target - input measurement)
+    // Create deviation curve (target - normalized input measurement)
     // This tells the optimizer what correction is needed at each frequency
     let deviation_curve = Curve {
-        freq: curve.freq.clone(),
-        spl: &target_curve.spl - &curve.spl,
+        freq: normalized_curve.freq.clone(),
+        spl: &target_curve.spl - &normalized_curve.spl,
         phase: None,
     };
 
     // Setup objective data using autoeq's workflow
     let (objective_data, _use_cea) = setup_objective_data(
         &args,
-        curve,
+        &normalized_curve,
         &target_curve,
         &deviation_curve,
         &None, // No spin data
