@@ -153,7 +153,7 @@ gpui:
 gpui-release-macos:
 	#!/usr/bin/env bash
 	set -euo pipefail
-	sh -x ./scripts/build-dmg.sh --sign --notarize
+	sh -x ./scripts/build-dmg-sotf.sh --sign --notarize
 
 gpui-release-windows:
 	echo "cd scripts and launch build-windows.bat or build-windows.ps1"

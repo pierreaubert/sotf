@@ -120,10 +120,11 @@ pub unsafe extern "C" fn AudioDriverPlugInFactory(uuid: CFUUIDRef) -> *mut c_voi
     result
 }
 
-/// Alias for factory function (for backward compatibility)
+/// Primary factory function for Core Audio HAL
+/// This name must match CFPlugInFactories in Info.plist
 #[unsafe(no_mangle)]
 #[allow(clippy::missing_safety_doc)]
-pub unsafe extern "C" fn AutoEQHalFactory(uuid: CFUUIDRef) -> *mut c_void {
-    log::info!("🏭 AutoEQHalFactory alias called, forwarding to AudioDriverPlugInFactory");
+pub unsafe extern "C" fn SotFHALDriverFactory(uuid: CFUUIDRef) -> *mut c_void {
+    log::info!("🏭 SotFHALDriverFactory called");
     unsafe { AudioDriverPlugInFactory(uuid) }
 }

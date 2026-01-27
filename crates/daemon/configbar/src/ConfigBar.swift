@@ -337,14 +337,18 @@ class StatusBarController: NSObject, ObservableObject {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         if let button = statusItem.button {
-            // Use SF Symbol for speaker, with fallback
+            // Use SF Symbol for speaker - must be template for menubar
+            let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
             if let image = NSImage(systemSymbolName: "speaker.wave.2.fill",
-                                   accessibilityDescription: "SotF") {
-                image.isTemplate = true  // Makes icon adapt to light/dark menubar
-                button.image = image
+                                   accessibilityDescription: "SotF")?
+                .withSymbolConfiguration(config) {
+                // Create a template copy that adapts to menubar appearance
+                let templateImage = image.copy() as! NSImage
+                templateImage.isTemplate = true
+                button.image = templateImage
             } else {
-                // Fallback: use text if SF Symbol not available
-                button.title = "SotF"
+                // Fallback: use simple text
+                button.title = "♪"
             }
             button.toolTip = "SotF Audio Engine"
         }
@@ -361,6 +365,27 @@ class StatusBarController: NSObject, ObservableObject {
         let statusMenuItem = NSMenuItem(title: "Status: Idle", action: nil, keyEquivalent: "")
         statusMenuItem.tag = 100  // Tag for updating later
         menu.addItem(statusMenuItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        // HAL Driver submenu
+        let halMenu = NSMenu()
+        let halStatusItem = NSMenuItem(title: isHALDriverInstalled() ? "✓ Installed" : "✗ Not Installed", action: nil, keyEquivalent: "")
+        halStatusItem.tag = 101
+        halMenu.addItem(halStatusItem)
+        halMenu.addItem(NSMenuItem.separator())
+
+        let installItem = NSMenuItem(title: "Install HAL Driver...", action: #selector(installHALDriver), keyEquivalent: "")
+        installItem.target = self
+        halMenu.addItem(installItem)
+
+        let uninstallItem = NSMenuItem(title: "Uninstall HAL Driver...", action: #selector(uninstallHALDriver), keyEquivalent: "")
+        uninstallItem.target = self
+        halMenu.addItem(uninstallItem)
+
+        let halMenuItem = NSMenuItem(title: "HAL Driver", action: nil, keyEquivalent: "")
+        halMenuItem.submenu = halMenu
+        menu.addItem(halMenuItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -387,6 +412,97 @@ class StatusBarController: NSObject, ObservableObject {
 
     @objc func quitApp() {
         NSApplication.shared.terminate(nil)
+    }
+
+    // MARK: - HAL Driver Management
+
+    private let halDriverPath = "/Library/Audio/Plug-Ins/HAL/sotf.driver"
+
+    func isHALDriverInstalled() -> Bool {
+        return FileManager.default.fileExists(atPath: halDriverPath)
+    }
+
+    @objc func installHALDriver() {
+        // Find the bundled driver
+        guard let bundledDriver = Bundle.main.path(forResource: "sotf", ofType: "driver") else {
+            showAlert(title: "HAL Driver Not Found",
+                     message: "The HAL driver bundle was not found in the application.\n\nPlease reinstall SotF ConfigBar.")
+            return
+        }
+
+        let script = """
+        do shell script "mkdir -p /Library/Audio/Plug-Ins/HAL && \\
+            rm -rf '\(halDriverPath)' && \\
+            cp -R '\(bundledDriver)' /Library/Audio/Plug-Ins/HAL/ && \\
+            chmod -R 755 '\(halDriverPath)' && \\
+            codesign --force --deep --sign - '\(halDriverPath)'" with administrator privileges
+        """
+
+        var error: NSDictionary?
+        if let scriptObject = NSAppleScript(source: script) {
+            scriptObject.executeAndReturnError(&error)
+            if let error = error {
+                showAlert(title: "Installation Failed",
+                         message: "Failed to install HAL driver: \(error["NSAppleScriptErrorMessage"] ?? "Unknown error")")
+            } else {
+                // Restart coreaudiod
+                restartCoreAudio()
+                updateHALDriverStatus()
+                showAlert(title: "HAL Driver Installed",
+                         message: "The SotF HAL driver has been installed successfully.\n\nCore Audio is restarting. The driver will appear in Sound settings shortly.")
+            }
+        }
+    }
+
+    @objc func uninstallHALDriver() {
+        guard isHALDriverInstalled() else {
+            showAlert(title: "Not Installed", message: "The HAL driver is not currently installed.")
+            return
+        }
+
+        let script = """
+        do shell script "rm -rf '\(halDriverPath)'" with administrator privileges
+        """
+
+        var error: NSDictionary?
+        if let scriptObject = NSAppleScript(source: script) {
+            scriptObject.executeAndReturnError(&error)
+            if let error = error {
+                showAlert(title: "Uninstall Failed",
+                         message: "Failed to uninstall HAL driver: \(error["NSAppleScriptErrorMessage"] ?? "Unknown error")")
+            } else {
+                restartCoreAudio()
+                updateHALDriverStatus()
+                showAlert(title: "HAL Driver Uninstalled",
+                         message: "The SotF HAL driver has been removed.\n\nCore Audio is restarting.")
+            }
+        }
+    }
+
+    private func restartCoreAudio() {
+        let script = "do shell script \"killall coreaudiod 2>/dev/null || true\" with administrator privileges"
+        var error: NSDictionary?
+        if let scriptObject = NSAppleScript(source: script) {
+            scriptObject.executeAndReturnError(&error)
+        }
+    }
+
+    private func updateHALDriverStatus() {
+        if let menu = statusItem.menu,
+           let halMenuItem = menu.items.first(where: { $0.title == "HAL Driver" }),
+           let halMenu = halMenuItem.submenu,
+           let statusItem = halMenu.item(withTag: 101) {
+            statusItem.title = isHALDriverInstalled() ? "✓ Installed" : "✗ Not Installed"
+        }
+    }
+
+    private func showAlert(title: String, message: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 
     func startMonitoring() {
@@ -417,8 +533,20 @@ class StatusBarController: NSObject, ObservableObject {
     private func updateIcon() {
         guard let button = statusItem.button else { return }
 
-        // Tint the icon based on state
-        button.contentTintColor = currentState.iconColor
+        // For menubar template icons, don't set contentTintColor as it breaks
+        // the automatic light/dark adaptation. Instead, use different symbols
+        // or keep it monochrome and show status in the menu.
+
+        // Only tint when actively playing (green) or error (red)
+        switch currentState {
+        case .playing:
+            button.contentTintColor = .systemGreen
+        case .error:
+            button.contentTintColor = .systemRed
+        default:
+            // Let system handle the color for template images
+            button.contentTintColor = nil
+        }
     }
 
     private func showConfigWindow() {

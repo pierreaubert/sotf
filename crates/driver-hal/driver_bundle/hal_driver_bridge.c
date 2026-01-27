@@ -11,14 +11,26 @@
 #include <CoreFoundation/CFPlugInCOM.h>
 #include <stdio.h>
 #include <string.h>
+#include <mach/mach_time.h>
+#include <pthread.h>
+#include <dispatch/dispatch.h>
 
-// Additional Core Audio constants
-#ifndef kAudioDevicePropertyStreamConfiguration
-#define kAudioDevicePropertyStreamConfiguration 'slay'
-#endif
+// Object IDs - must be unique within the driver
+enum {
+    kObjectID_PlugIn                = 1,
+    kObjectID_Device                = 2,
+    kObjectID_Stream_Input          = 3,
+    kObjectID_Stream_Output         = 4,
+};
 
-// Driver identification
-#define kAudioHALDriverFactoryUUID CFUUIDGetConstantUUIDWithBytes(NULL, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01)
+// Driver configuration
+#define kDevice_Name                "SotF Virtual Device"
+#define kDevice_Manufacturer        "Spinorama"
+#define kDevice_UID                 "SotF_VirtualDevice_UID"
+#define kDevice_ModelUID            "SotF_Model_UID"
+#define kDevice_SampleRate          48000.0
+#define kDevice_ChannelCount        2
+#define kDevice_BufferFrameSize     512
 
 // Forward declarations
 static HRESULT QueryInterface(void* inDriver, REFIID inUUID, LPVOID* outInterface);
@@ -74,12 +86,18 @@ static AudioServerPlugInDriverInterface gAudioServerPlugInDriverInterface = {
 // Driver instance structure
 typedef struct {
     AudioServerPlugInDriverInterface* interface;
+    AudioServerPlugInDriverInterface** interfacePtr;
     CFUUIDRef factoryID;
     UInt32 refCount;
     AudioServerPlugInHostRef host;
-    AudioObjectID deviceObjectID;
-    UInt32 inputChannels;
-    UInt32 outputChannels;
+
+    // IO state
+    Boolean isRunning;
+    UInt64 anchorHostTime;
+    Float64 anchorSampleTime;
+    UInt64 timestampSeed;
+
+    pthread_mutex_t mutex;
 } AudioHALDriver;
 
 static AudioHALDriver* gDriver = NULL;
@@ -94,20 +112,23 @@ void* AudioHALDriverFactory(CFAllocatorRef allocator, CFUUIDRef typeID) {
             gDriver = (AudioHALDriver*)malloc(sizeof(AudioHALDriver));
             if (gDriver != NULL) {
                 gDriver->interface = &gAudioServerPlugInDriverInterface;
-                gDriver->factoryID = kAudioHALDriverFactoryUUID;
+                gDriver->interfacePtr = &gDriver->interface;
+                gDriver->factoryID = CFUUIDCreateFromString(NULL, CFSTR("5A4E28B8-93F4-4B8A-B5E2-3D9F6A8C7E01"));
                 CFPlugInAddInstanceForFactory(gDriver->factoryID);
                 gDriver->refCount = 1;
                 gDriver->host = NULL;
-                gDriver->deviceObjectID = 0;
-                gDriver->inputChannels = 16;   // Support up to 16 input channels
-                gDriver->outputChannels = 16;  // Support up to 16 output channels
+                gDriver->isRunning = false;
+                gDriver->anchorHostTime = 0;
+                gDriver->anchorSampleTime = 0;
+                gDriver->timestampSeed = 1;
+                pthread_mutex_init(&gDriver->mutex, NULL);
 
                 fprintf(stderr, "AudioHALDriver: Driver instance created\n");
             }
         } else {
             AddRef(gDriver);
         }
-        return gDriver;
+        return &gDriver->interfacePtr;
     }
 
     return NULL;
@@ -116,107 +137,154 @@ void* AudioHALDriverFactory(CFAllocatorRef allocator, CFUUIDRef typeID) {
 #pragma mark - COM Interface
 
 static HRESULT QueryInterface(void* inDriver, REFIID inUUID, LPVOID* outInterface) {
-    AudioHALDriver* driver = (AudioHALDriver*)inDriver;
-
-    // Create CFUUIDs from the UUIDs for comparison
     CFUUIDRef requestedUUID = CFUUIDCreateFromUUIDBytes(NULL, inUUID);
     CFUUIDRef unknownUUID = CFUUIDGetConstantUUIDWithBytes(NULL, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46);
     CFUUIDRef driverUUID = kAudioServerPlugInDriverInterfaceUUID;
 
     if (CFEqual(requestedUUID, unknownUUID) || CFEqual(requestedUUID, driverUUID)) {
-        AddRef(driver);
-        *outInterface = driver;
+        AddRef(inDriver);
+        *outInterface = &gDriver->interfacePtr;
         CFRelease(requestedUUID);
         return S_OK;
     }
 
     CFRelease(requestedUUID);
+    *outInterface = NULL;
     return E_NOINTERFACE;
 }
 
 static ULONG AddRef(void* inDriver) {
-    AudioHALDriver* driver = (AudioHALDriver*)inDriver;
-    driver->refCount++;
-    return driver->refCount;
+    if (gDriver != NULL) {
+        gDriver->refCount++;
+        return gDriver->refCount;
+    }
+    return 0;
 }
 
 static ULONG Release(void* inDriver) {
-    AudioHALDriver* driver = (AudioHALDriver*)inDriver;
-    driver->refCount--;
-
-    if (driver->refCount == 0) {
-        CFPlugInRemoveInstanceForFactory(driver->factoryID);
-        free(driver);
-        gDriver = NULL;
-        return 0;
+    if (gDriver != NULL) {
+        gDriver->refCount--;
+        if (gDriver->refCount == 0) {
+            pthread_mutex_destroy(&gDriver->mutex);
+            CFPlugInRemoveInstanceForFactory(gDriver->factoryID);
+            CFRelease(gDriver->factoryID);
+            free(gDriver);
+            gDriver = NULL;
+            return 0;
+        }
+        return gDriver->refCount;
     }
-
-    return driver->refCount;
+    return 0;
 }
 
 #pragma mark - Driver Operations
 
 static OSStatus Initialize(AudioServerPlugInDriverRef inDriver, AudioServerPlugInHostRef inHost) {
-    AudioHALDriver* driver = (AudioHALDriver*)inDriver;
     fprintf(stderr, "AudioHALDriver: Initialize called\n");
 
-    driver->host = inHost;
+    if (gDriver == NULL) {
+        return kAudioHardwareUnspecifiedError;
+    }
 
-    // For now, we'll create a simple virtual device
-    // In a full implementation, this would initialize the Rust backend
-    driver->deviceObjectID = 1; // Placeholder device ID
-
+    gDriver->host = inHost;
     fprintf(stderr, "AudioHALDriver: Initialized successfully\n");
     return kAudioHardwareNoError;
 }
 
 static OSStatus CreateDevice(AudioServerPlugInDriverRef inDriver, CFDictionaryRef inDescription, const AudioServerPlugInClientInfo* inClientInfo, AudioObjectID* outDeviceObjectID) {
-    fprintf(stderr, "AudioHALDriver: CreateDevice called\n");
-    *outDeviceObjectID = 0;
+    *outDeviceObjectID = kObjectID_Device;
     return kAudioHardwareNoError;
 }
 
 static OSStatus DestroyDevice(AudioServerPlugInDriverRef inDriver, AudioObjectID inDeviceObjectID) {
-    fprintf(stderr, "AudioHALDriver: DestroyDevice called\n");
     return kAudioHardwareNoError;
 }
 
 static OSStatus AddDeviceClient(AudioServerPlugInDriverRef inDriver, AudioObjectID inDeviceObjectID, const AudioServerPlugInClientInfo* inClientInfo) {
-    fprintf(stderr, "AudioHALDriver: AddDeviceClient called\n");
     return kAudioHardwareNoError;
 }
 
 static OSStatus RemoveDeviceClient(AudioServerPlugInDriverRef inDriver, AudioObjectID inDeviceObjectID, const AudioServerPlugInClientInfo* inClientInfo) {
-    fprintf(stderr, "AudioHALDriver: RemoveDeviceClient called\n");
     return kAudioHardwareNoError;
 }
 
 static OSStatus PerformDeviceConfigurationChange(AudioServerPlugInDriverRef inDriver, AudioObjectID inDeviceObjectID, UInt64 inChangeAction, void* inChangeInfo) {
-    fprintf(stderr, "AudioHALDriver: PerformDeviceConfigurationChange called\n");
     return kAudioHardwareNoError;
 }
 
 static OSStatus AbortDeviceConfigurationChange(AudioServerPlugInDriverRef inDriver, AudioObjectID inDeviceObjectID, UInt64 inChangeAction, void* inChangeInfo) {
-    fprintf(stderr, "AudioHALDriver: AbortDeviceConfigurationChange called\n");
     return kAudioHardwareNoError;
 }
 
 #pragma mark - Property Operations
 
 static Boolean HasProperty(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress) {
-    // Simplified implementation - return true for basic properties
-    switch (inAddress->mSelector) {
-        case kAudioObjectPropertyName:
-        case kAudioObjectPropertyManufacturer:
-        case kAudioDevicePropertyDeviceUID:
-        case kAudioDevicePropertyStreams:
-        case kAudioDevicePropertyStreamConfiguration:
-        case kAudioDevicePropertyNominalSampleRate:
-        case kAudioDevicePropertyAvailableNominalSampleRates:
-            return true;
-        default:
-            return false;
+    switch (inObjectID) {
+        case kObjectID_PlugIn:
+            switch (inAddress->mSelector) {
+                case kAudioObjectPropertyBaseClass:
+                case kAudioObjectPropertyClass:
+                case kAudioObjectPropertyOwner:
+                case kAudioObjectPropertyManufacturer:
+                case kAudioObjectPropertyOwnedObjects:
+                case kAudioPlugInPropertyDeviceList:
+                case kAudioPlugInPropertyTranslateUIDToDevice:
+                case kAudioPlugInPropertyResourceBundle:
+                    return true;
+            }
+            break;
+
+        case kObjectID_Device:
+            switch (inAddress->mSelector) {
+                case kAudioObjectPropertyBaseClass:
+                case kAudioObjectPropertyClass:
+                case kAudioObjectPropertyOwner:
+                case kAudioObjectPropertyName:
+                case kAudioObjectPropertyManufacturer:
+                case kAudioObjectPropertyOwnedObjects:
+                case kAudioDevicePropertyDeviceUID:
+                case kAudioDevicePropertyModelUID:
+                case kAudioDevicePropertyTransportType:
+                case kAudioDevicePropertyRelatedDevices:
+                case kAudioDevicePropertyClockDomain:
+                case kAudioDevicePropertyDeviceIsAlive:
+                case kAudioDevicePropertyDeviceIsRunning:
+                case kAudioDevicePropertyDeviceCanBeDefaultDevice:
+                case kAudioDevicePropertyDeviceCanBeDefaultSystemDevice:
+                case kAudioDevicePropertyLatency:
+                case kAudioDevicePropertyStreams:
+                case kAudioObjectPropertyControlList:
+                case kAudioDevicePropertySafetyOffset:
+                case kAudioDevicePropertyNominalSampleRate:
+                case kAudioDevicePropertyAvailableNominalSampleRates:
+                case kAudioDevicePropertyIsHidden:
+                case kAudioDevicePropertyZeroTimeStampPeriod:
+                case kAudioDevicePropertyIcon:
+                    return true;
+            }
+            break;
+
+        case kObjectID_Stream_Input:
+        case kObjectID_Stream_Output:
+            switch (inAddress->mSelector) {
+                case kAudioObjectPropertyBaseClass:
+                case kAudioObjectPropertyClass:
+                case kAudioObjectPropertyOwner:
+                case kAudioStreamPropertyIsActive:
+                case kAudioStreamPropertyDirection:
+                case kAudioStreamPropertyTerminalType:
+                case kAudioStreamPropertyStartingChannel:
+                case kAudioStreamPropertyLatency:
+                case kAudioStreamPropertyVirtualFormat:
+                case kAudioStreamPropertyPhysicalFormat:
+                case kAudioStreamPropertyAvailableVirtualFormats:
+                case kAudioStreamPropertyAvailablePhysicalFormats:
+                    return true;
+            }
+            break;
     }
+
+    return false;
 }
 
 static OSStatus IsPropertySettable(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress, Boolean* outIsSettable) {
@@ -225,100 +293,389 @@ static OSStatus IsPropertySettable(AudioServerPlugInDriverRef inDriver, AudioObj
 }
 
 static OSStatus GetPropertyDataSize(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress, UInt32 inQualifierDataSize, const void* inQualifierData, UInt32* outDataSize) {
-    switch (inAddress->mSelector) {
-        case kAudioObjectPropertyName:
-        case kAudioObjectPropertyManufacturer:
-        case kAudioDevicePropertyDeviceUID:
-            *outDataSize = sizeof(CFStringRef);
+    OSStatus result = kAudioHardwareNoError;
+
+    switch (inObjectID) {
+        case kObjectID_PlugIn:
+            switch (inAddress->mSelector) {
+                case kAudioObjectPropertyBaseClass:
+                case kAudioObjectPropertyClass:
+                    *outDataSize = sizeof(AudioClassID);
+                    break;
+                case kAudioObjectPropertyOwner:
+                    *outDataSize = sizeof(AudioObjectID);
+                    break;
+                case kAudioObjectPropertyManufacturer:
+                    *outDataSize = sizeof(CFStringRef);
+                    break;
+                case kAudioObjectPropertyOwnedObjects:
+                case kAudioPlugInPropertyDeviceList:
+                    *outDataSize = sizeof(AudioObjectID);
+                    break;
+                case kAudioPlugInPropertyTranslateUIDToDevice:
+                    *outDataSize = sizeof(AudioObjectID);
+                    break;
+                case kAudioPlugInPropertyResourceBundle:
+                    *outDataSize = sizeof(CFStringRef);
+                    break;
+                default:
+                    result = kAudioHardwareUnknownPropertyError;
+                    break;
+            }
             break;
-        case kAudioDevicePropertyStreamConfiguration:
-            *outDataSize = sizeof(AudioBufferList) + (15 * sizeof(AudioBuffer)); // Up to 16 channels
+
+        case kObjectID_Device:
+            switch (inAddress->mSelector) {
+                case kAudioObjectPropertyBaseClass:
+                case kAudioObjectPropertyClass:
+                    *outDataSize = sizeof(AudioClassID);
+                    break;
+                case kAudioObjectPropertyOwner:
+                    *outDataSize = sizeof(AudioObjectID);
+                    break;
+                case kAudioObjectPropertyName:
+                case kAudioObjectPropertyManufacturer:
+                case kAudioDevicePropertyDeviceUID:
+                case kAudioDevicePropertyModelUID:
+                    *outDataSize = sizeof(CFStringRef);
+                    break;
+                case kAudioDevicePropertyTransportType:
+                case kAudioDevicePropertyClockDomain:
+                    *outDataSize = sizeof(UInt32);
+                    break;
+                case kAudioDevicePropertyRelatedDevices:
+                    *outDataSize = sizeof(AudioObjectID);
+                    break;
+                case kAudioDevicePropertyDeviceIsAlive:
+                case kAudioDevicePropertyDeviceIsRunning:
+                case kAudioDevicePropertyDeviceCanBeDefaultDevice:
+                case kAudioDevicePropertyDeviceCanBeDefaultSystemDevice:
+                case kAudioDevicePropertyIsHidden:
+                    *outDataSize = sizeof(UInt32);
+                    break;
+                case kAudioDevicePropertyLatency:
+                case kAudioDevicePropertySafetyOffset:
+                case kAudioDevicePropertyZeroTimeStampPeriod:
+                    *outDataSize = sizeof(UInt32);
+                    break;
+                case kAudioDevicePropertyStreams:
+                    if (inAddress->mScope == kAudioObjectPropertyScopeInput) {
+                        *outDataSize = sizeof(AudioObjectID);
+                    } else if (inAddress->mScope == kAudioObjectPropertyScopeOutput) {
+                        *outDataSize = sizeof(AudioObjectID);
+                    } else {
+                        *outDataSize = sizeof(AudioObjectID) * 2;
+                    }
+                    break;
+                case kAudioObjectPropertyControlList:
+                    *outDataSize = 0;
+                    break;
+                case kAudioObjectPropertyOwnedObjects:
+                    *outDataSize = sizeof(AudioObjectID) * 2;
+                    break;
+                case kAudioDevicePropertyNominalSampleRate:
+                    *outDataSize = sizeof(Float64);
+                    break;
+                case kAudioDevicePropertyAvailableNominalSampleRates:
+                    *outDataSize = sizeof(AudioValueRange);
+                    break;
+                case kAudioDevicePropertyIcon:
+                    *outDataSize = sizeof(CFURLRef);
+                    break;
+                default:
+                    result = kAudioHardwareUnknownPropertyError;
+                    break;
+            }
             break;
-        case kAudioDevicePropertyNominalSampleRate:
-            *outDataSize = sizeof(Float64);
+
+        case kObjectID_Stream_Input:
+        case kObjectID_Stream_Output:
+            switch (inAddress->mSelector) {
+                case kAudioObjectPropertyBaseClass:
+                case kAudioObjectPropertyClass:
+                    *outDataSize = sizeof(AudioClassID);
+                    break;
+                case kAudioObjectPropertyOwner:
+                    *outDataSize = sizeof(AudioObjectID);
+                    break;
+                case kAudioStreamPropertyIsActive:
+                case kAudioStreamPropertyDirection:
+                case kAudioStreamPropertyTerminalType:
+                case kAudioStreamPropertyStartingChannel:
+                case kAudioStreamPropertyLatency:
+                    *outDataSize = sizeof(UInt32);
+                    break;
+                case kAudioStreamPropertyVirtualFormat:
+                case kAudioStreamPropertyPhysicalFormat:
+                    *outDataSize = sizeof(AudioStreamBasicDescription);
+                    break;
+                case kAudioStreamPropertyAvailableVirtualFormats:
+                case kAudioStreamPropertyAvailablePhysicalFormats:
+                    *outDataSize = sizeof(AudioStreamRangedDescription);
+                    break;
+                default:
+                    result = kAudioHardwareUnknownPropertyError;
+                    break;
+            }
             break;
-        case kAudioDevicePropertyAvailableNominalSampleRates:
-            *outDataSize = sizeof(AudioValueRange) * 3; // 44.1, 48, 96 kHz
-            break;
-        case kAudioDevicePropertyStreams:
-            *outDataSize = 0; // No streams for now
-            break;
+
         default:
-            *outDataSize = 0;
+            result = kAudioHardwareBadObjectError;
             break;
     }
-    return kAudioHardwareNoError;
+
+    return result;
 }
 
 static OSStatus GetPropertyData(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress, UInt32 inQualifierDataSize, const void* inQualifierData, UInt32 inDataSize, UInt32* outDataSize, void* outData) {
-    AudioHALDriver* driver = (AudioHALDriver*)inDriver;
+    OSStatus result = kAudioHardwareNoError;
 
-    switch (inAddress->mSelector) {
-        case kAudioObjectPropertyName:
-            if (inDataSize >= sizeof(CFStringRef)) {
-                *(CFStringRef*)outData = CFSTR("SotF");
-                *outDataSize = sizeof(CFStringRef);
+    switch (inObjectID) {
+        case kObjectID_PlugIn:
+            switch (inAddress->mSelector) {
+                case kAudioObjectPropertyBaseClass:
+                    *((AudioClassID*)outData) = kAudioObjectClassID;
+                    *outDataSize = sizeof(AudioClassID);
+                    break;
+                case kAudioObjectPropertyClass:
+                    *((AudioClassID*)outData) = kAudioPlugInClassID;
+                    *outDataSize = sizeof(AudioClassID);
+                    break;
+                case kAudioObjectPropertyOwner:
+                    *((AudioObjectID*)outData) = kAudioObjectUnknown;
+                    *outDataSize = sizeof(AudioObjectID);
+                    break;
+                case kAudioObjectPropertyManufacturer:
+                    *((CFStringRef*)outData) = CFSTR(kDevice_Manufacturer);
+                    *outDataSize = sizeof(CFStringRef);
+                    break;
+                case kAudioObjectPropertyOwnedObjects:
+                case kAudioPlugInPropertyDeviceList:
+                    *((AudioObjectID*)outData) = kObjectID_Device;
+                    *outDataSize = sizeof(AudioObjectID);
+                    break;
+                case kAudioPlugInPropertyTranslateUIDToDevice:
+                    if (inQualifierDataSize == sizeof(CFStringRef)) {
+                        CFStringRef uid = *((CFStringRef*)inQualifierData);
+                        if (CFStringCompare(uid, CFSTR(kDevice_UID), 0) == kCFCompareEqualTo) {
+                            *((AudioObjectID*)outData) = kObjectID_Device;
+                        } else {
+                            *((AudioObjectID*)outData) = kAudioObjectUnknown;
+                        }
+                    } else {
+                        *((AudioObjectID*)outData) = kAudioObjectUnknown;
+                    }
+                    *outDataSize = sizeof(AudioObjectID);
+                    break;
+                case kAudioPlugInPropertyResourceBundle:
+                    *((CFStringRef*)outData) = CFSTR("");
+                    *outDataSize = sizeof(CFStringRef);
+                    break;
+                default:
+                    result = kAudioHardwareUnknownPropertyError;
+                    break;
             }
             break;
-        case kAudioObjectPropertyManufacturer:
-            if (inDataSize >= sizeof(CFStringRef)) {
-                *(CFStringRef*)outData = CFSTR("Pierre F. Aubert");
-                *outDataSize = sizeof(CFStringRef);
-            }
-            break;
-        case kAudioDevicePropertyDeviceUID:
-            if (inDataSize >= sizeof(CFStringRef)) {
-                *(CFStringRef*)outData = CFSTR("SotF-001");
-                *outDataSize = sizeof(CFStringRef);
-            }
-            break;
-        case kAudioDevicePropertyStreamConfiguration: {
-            if (inDataSize >= sizeof(AudioBufferList)) {
-                AudioBufferList* bufferList = (AudioBufferList*)outData;
-                UInt32 numChannels = 0;
 
-                // Determine if this is input or output
-                if (inAddress->mScope == kAudioObjectPropertyScopeInput) {
-                    numChannels = driver->inputChannels;
-                } else if (inAddress->mScope == kAudioObjectPropertyScopeOutput) {
-                    numChannels = driver->outputChannels;
-                }
+        case kObjectID_Device:
+            switch (inAddress->mSelector) {
+                case kAudioObjectPropertyBaseClass:
+                    *((AudioClassID*)outData) = kAudioObjectClassID;
+                    *outDataSize = sizeof(AudioClassID);
+                    break;
+                case kAudioObjectPropertyClass:
+                    *((AudioClassID*)outData) = kAudioDeviceClassID;
+                    *outDataSize = sizeof(AudioClassID);
+                    break;
+                case kAudioObjectPropertyOwner:
+                    *((AudioObjectID*)outData) = kObjectID_PlugIn;
+                    *outDataSize = sizeof(AudioObjectID);
+                    break;
+                case kAudioObjectPropertyName:
+                    *((CFStringRef*)outData) = CFSTR(kDevice_Name);
+                    *outDataSize = sizeof(CFStringRef);
+                    break;
+                case kAudioObjectPropertyManufacturer:
+                    *((CFStringRef*)outData) = CFSTR(kDevice_Manufacturer);
+                    *outDataSize = sizeof(CFStringRef);
+                    break;
+                case kAudioDevicePropertyDeviceUID:
+                    *((CFStringRef*)outData) = CFSTR(kDevice_UID);
+                    *outDataSize = sizeof(CFStringRef);
+                    break;
+                case kAudioDevicePropertyModelUID:
+                    *((CFStringRef*)outData) = CFSTR(kDevice_ModelUID);
+                    *outDataSize = sizeof(CFStringRef);
+                    break;
+                case kAudioDevicePropertyTransportType:
+                    *((UInt32*)outData) = kAudioDeviceTransportTypeVirtual;
+                    *outDataSize = sizeof(UInt32);
+                    break;
+                case kAudioDevicePropertyClockDomain:
+                    *((UInt32*)outData) = 0;
+                    *outDataSize = sizeof(UInt32);
+                    break;
+                case kAudioDevicePropertyRelatedDevices:
+                    *((AudioObjectID*)outData) = kObjectID_Device;
+                    *outDataSize = sizeof(AudioObjectID);
+                    break;
+                case kAudioDevicePropertyDeviceIsAlive:
+                    *((UInt32*)outData) = 1;
+                    *outDataSize = sizeof(UInt32);
+                    break;
+                case kAudioDevicePropertyDeviceIsRunning:
+                    pthread_mutex_lock(&gDriver->mutex);
+                    *((UInt32*)outData) = gDriver->isRunning ? 1 : 0;
+                    pthread_mutex_unlock(&gDriver->mutex);
+                    *outDataSize = sizeof(UInt32);
+                    break;
+                case kAudioDevicePropertyDeviceCanBeDefaultDevice:
+                case kAudioDevicePropertyDeviceCanBeDefaultSystemDevice:
+                    *((UInt32*)outData) = 1;
+                    *outDataSize = sizeof(UInt32);
+                    break;
+                case kAudioDevicePropertyIsHidden:
+                    *((UInt32*)outData) = 0;
+                    *outDataSize = sizeof(UInt32);
+                    break;
+                case kAudioDevicePropertyLatency:
+                    *((UInt32*)outData) = 0;
+                    *outDataSize = sizeof(UInt32);
+                    break;
+                case kAudioDevicePropertySafetyOffset:
+                    *((UInt32*)outData) = 0;
+                    *outDataSize = sizeof(UInt32);
+                    break;
+                case kAudioDevicePropertyZeroTimeStampPeriod:
+                    *((UInt32*)outData) = kDevice_BufferFrameSize;
+                    *outDataSize = sizeof(UInt32);
+                    break;
+                case kAudioDevicePropertyStreams:
+                    if (inAddress->mScope == kAudioObjectPropertyScopeInput) {
+                        *((AudioObjectID*)outData) = kObjectID_Stream_Input;
+                        *outDataSize = sizeof(AudioObjectID);
+                    } else if (inAddress->mScope == kAudioObjectPropertyScopeOutput) {
+                        *((AudioObjectID*)outData) = kObjectID_Stream_Output;
+                        *outDataSize = sizeof(AudioObjectID);
+                    } else {
+                        AudioObjectID* ids = (AudioObjectID*)outData;
+                        ids[0] = kObjectID_Stream_Input;
+                        ids[1] = kObjectID_Stream_Output;
+                        *outDataSize = sizeof(AudioObjectID) * 2;
+                    }
+                    break;
+                case kAudioObjectPropertyControlList:
+                    *outDataSize = 0;
+                    break;
+                case kAudioObjectPropertyOwnedObjects:
+                    {
+                        AudioObjectID* ids = (AudioObjectID*)outData;
+                        ids[0] = kObjectID_Stream_Input;
+                        ids[1] = kObjectID_Stream_Output;
+                        *outDataSize = sizeof(AudioObjectID) * 2;
+                    }
+                    break;
+                case kAudioDevicePropertyNominalSampleRate:
+                    *((Float64*)outData) = kDevice_SampleRate;
+                    *outDataSize = sizeof(Float64);
+                    break;
+                case kAudioDevicePropertyAvailableNominalSampleRates:
+                    {
+                        AudioValueRange* range = (AudioValueRange*)outData;
+                        range->mMinimum = kDevice_SampleRate;
+                        range->mMaximum = kDevice_SampleRate;
+                        *outDataSize = sizeof(AudioValueRange);
+                    }
+                    break;
+                case kAudioDevicePropertyIcon:
+                    *((CFURLRef*)outData) = NULL;
+                    *outDataSize = sizeof(CFURLRef);
+                    break;
+                default:
+                    result = kAudioHardwareUnknownPropertyError;
+                    break;
+            }
+            break;
 
-                bufferList->mNumberBuffers = numChannels;
-                for (UInt32 i = 0; i < numChannels; i++) {
-                    bufferList->mBuffers[i].mNumberChannels = 1;
-                    bufferList->mBuffers[i].mDataByteSize = 0;
-                    bufferList->mBuffers[i].mData = NULL;
-                }
+        case kObjectID_Stream_Input:
+        case kObjectID_Stream_Output:
+            switch (inAddress->mSelector) {
+                case kAudioObjectPropertyBaseClass:
+                    *((AudioClassID*)outData) = kAudioObjectClassID;
+                    *outDataSize = sizeof(AudioClassID);
+                    break;
+                case kAudioObjectPropertyClass:
+                    *((AudioClassID*)outData) = kAudioStreamClassID;
+                    *outDataSize = sizeof(AudioClassID);
+                    break;
+                case kAudioObjectPropertyOwner:
+                    *((AudioObjectID*)outData) = kObjectID_Device;
+                    *outDataSize = sizeof(AudioObjectID);
+                    break;
+                case kAudioStreamPropertyIsActive:
+                    *((UInt32*)outData) = 1;
+                    *outDataSize = sizeof(UInt32);
+                    break;
+                case kAudioStreamPropertyDirection:
+                    *((UInt32*)outData) = (inObjectID == kObjectID_Stream_Input) ? 1 : 0;
+                    *outDataSize = sizeof(UInt32);
+                    break;
+                case kAudioStreamPropertyTerminalType:
+                    *((UInt32*)outData) = (inObjectID == kObjectID_Stream_Input) ? kAudioStreamTerminalTypeMicrophone : kAudioStreamTerminalTypeSpeaker;
+                    *outDataSize = sizeof(UInt32);
+                    break;
+                case kAudioStreamPropertyStartingChannel:
+                    *((UInt32*)outData) = 1;
+                    *outDataSize = sizeof(UInt32);
+                    break;
+                case kAudioStreamPropertyLatency:
+                    *((UInt32*)outData) = 0;
+                    *outDataSize = sizeof(UInt32);
+                    break;
+                case kAudioStreamPropertyVirtualFormat:
+                case kAudioStreamPropertyPhysicalFormat:
+                    {
+                        AudioStreamBasicDescription* format = (AudioStreamBasicDescription*)outData;
+                        format->mSampleRate = kDevice_SampleRate;
+                        format->mFormatID = kAudioFormatLinearPCM;
+                        format->mFormatFlags = kAudioFormatFlagIsFloat | kAudioFormatFlagsNativeEndian | kAudioFormatFlagIsPacked;
+                        format->mBytesPerPacket = sizeof(Float32) * kDevice_ChannelCount;
+                        format->mFramesPerPacket = 1;
+                        format->mBytesPerFrame = sizeof(Float32) * kDevice_ChannelCount;
+                        format->mChannelsPerFrame = kDevice_ChannelCount;
+                        format->mBitsPerChannel = sizeof(Float32) * 8;
+                        *outDataSize = sizeof(AudioStreamBasicDescription);
+                    }
+                    break;
+                case kAudioStreamPropertyAvailableVirtualFormats:
+                case kAudioStreamPropertyAvailablePhysicalFormats:
+                    {
+                        AudioStreamRangedDescription* desc = (AudioStreamRangedDescription*)outData;
+                        desc->mFormat.mSampleRate = kDevice_SampleRate;
+                        desc->mFormat.mFormatID = kAudioFormatLinearPCM;
+                        desc->mFormat.mFormatFlags = kAudioFormatFlagIsFloat | kAudioFormatFlagsNativeEndian | kAudioFormatFlagIsPacked;
+                        desc->mFormat.mBytesPerPacket = sizeof(Float32) * kDevice_ChannelCount;
+                        desc->mFormat.mFramesPerPacket = 1;
+                        desc->mFormat.mBytesPerFrame = sizeof(Float32) * kDevice_ChannelCount;
+                        desc->mFormat.mChannelsPerFrame = kDevice_ChannelCount;
+                        desc->mFormat.mBitsPerChannel = sizeof(Float32) * 8;
+                        desc->mSampleRateRange.mMinimum = kDevice_SampleRate;
+                        desc->mSampleRateRange.mMaximum = kDevice_SampleRate;
+                        *outDataSize = sizeof(AudioStreamRangedDescription);
+                    }
+                    break;
+                default:
+                    result = kAudioHardwareUnknownPropertyError;
+                    break;
+            }
+            break;
 
-                *outDataSize = sizeof(AudioBufferList) + ((numChannels - 1) * sizeof(AudioBuffer));
-            }
-            break;
-        }
-        case kAudioDevicePropertyNominalSampleRate:
-            if (inDataSize >= sizeof(Float64)) {
-                *(Float64*)outData = 44100.0;
-                *outDataSize = sizeof(Float64);
-            }
-            break;
-        case kAudioDevicePropertyAvailableNominalSampleRates: {
-            if (inDataSize >= sizeof(AudioValueRange) * 3) {
-                AudioValueRange* ranges = (AudioValueRange*)outData;
-                ranges[0].mMinimum = 44100.0;
-                ranges[0].mMaximum = 44100.0;
-                ranges[1].mMinimum = 48000.0;
-                ranges[1].mMaximum = 48000.0;
-                ranges[2].mMinimum = 96000.0;
-                ranges[2].mMaximum = 96000.0;
-                *outDataSize = sizeof(AudioValueRange) * 3;
-            }
-            break;
-        }
         default:
-            *outDataSize = 0;
+            result = kAudioHardwareBadObjectError;
             break;
     }
-    return kAudioHardwareNoError;
+
+    return result;
 }
 
 static OSStatus SetPropertyData(AudioServerPlugInDriverRef inDriver, AudioObjectID inObjectID, pid_t inClientProcessID, const AudioObjectPropertyAddress* inAddress, UInt32 inQualifierDataSize, const void* inQualifierData, UInt32 inDataSize, const void* inData) {
@@ -329,24 +686,69 @@ static OSStatus SetPropertyData(AudioServerPlugInDriverRef inDriver, AudioObject
 
 static OSStatus StartIO(AudioServerPlugInDriverRef inDriver, AudioObjectID inDeviceObjectID, UInt32 inClientID) {
     fprintf(stderr, "AudioHALDriver: StartIO called\n");
+
+    pthread_mutex_lock(&gDriver->mutex);
+    gDriver->isRunning = true;
+    gDriver->anchorHostTime = mach_absolute_time();
+    gDriver->anchorSampleTime = 0;
+    gDriver->timestampSeed++;
+    pthread_mutex_unlock(&gDriver->mutex);
+
     return kAudioHardwareNoError;
 }
 
 static OSStatus StopIO(AudioServerPlugInDriverRef inDriver, AudioObjectID inDeviceObjectID, UInt32 inClientID) {
     fprintf(stderr, "AudioHALDriver: StopIO called\n");
+
+    pthread_mutex_lock(&gDriver->mutex);
+    gDriver->isRunning = false;
+    pthread_mutex_unlock(&gDriver->mutex);
+
     return kAudioHardwareNoError;
 }
 
 static OSStatus GetZeroTimeStamp(AudioServerPlugInDriverRef inDriver, AudioObjectID inDeviceObjectID, UInt32 inClientID, Float64* outSampleTime, UInt64* outHostTime, UInt64* outSeed) {
-    *outSampleTime = 0.0;
-    *outHostTime = 0;
-    *outSeed = 0;
+    pthread_mutex_lock(&gDriver->mutex);
+
+    // Get time info
+    static mach_timebase_info_data_t timebaseInfo;
+    if (timebaseInfo.denom == 0) {
+        mach_timebase_info(&timebaseInfo);
+    }
+
+    UInt64 currentHostTime = mach_absolute_time();
+    UInt64 hostTimeDelta = currentHostTime - gDriver->anchorHostTime;
+
+    // Convert to nanoseconds
+    Float64 hostTimeNanos = (Float64)hostTimeDelta * (Float64)timebaseInfo.numer / (Float64)timebaseInfo.denom;
+
+    // Convert to samples
+    Float64 sampleTime = (hostTimeNanos * kDevice_SampleRate) / 1000000000.0;
+
+    // Align to buffer boundaries
+    UInt64 bufferCount = (UInt64)(sampleTime / kDevice_BufferFrameSize);
+
+    *outSampleTime = bufferCount * kDevice_BufferFrameSize;
+    *outHostTime = gDriver->anchorHostTime + (UInt64)((*outSampleTime / kDevice_SampleRate) * 1000000000.0 * (Float64)timebaseInfo.denom / (Float64)timebaseInfo.numer);
+    *outSeed = gDriver->timestampSeed;
+
+    pthread_mutex_unlock(&gDriver->mutex);
+
     return kAudioHardwareNoError;
 }
 
 static OSStatus WillDoIOOperation(AudioServerPlugInDriverRef inDriver, AudioObjectID inDeviceObjectID, UInt32 inClientID, UInt32 inOperationID, Boolean* outWillDo, Boolean* outWillDoInPlace) {
-    *outWillDo = false;
-    *outWillDoInPlace = false;
+    switch (inOperationID) {
+        case kAudioServerPlugInIOOperationReadInput:
+        case kAudioServerPlugInIOOperationWriteMix:
+            *outWillDo = true;
+            *outWillDoInPlace = true;
+            break;
+        default:
+            *outWillDo = false;
+            *outWillDoInPlace = true;
+            break;
+    }
     return kAudioHardwareNoError;
 }
 
@@ -355,18 +757,11 @@ static OSStatus BeginIOOperation(AudioServerPlugInDriverRef inDriver, AudioObjec
 }
 
 static OSStatus DoIOOperation(AudioServerPlugInDriverRef inDriver, AudioObjectID inDeviceObjectID, AudioObjectID inStreamObjectID, UInt32 inClientID, UInt32 inOperationID, UInt32 inIOBufferFrameSize, const AudioServerPlugInIOCycleInfo* inIOCycleInfo, void* ioMainBuffer, void* ioSecondaryBuffer) {
-    AudioHALDriver* driver = (AudioHALDriver*)inDriver;
-
-    // This is where audio processing would happen
-    // For now, just pass through silence for all channels
+    // For now, just pass silence
     if (ioMainBuffer != NULL) {
-        // Clear up to 16 output channels
-        size_t bufferSize = inIOBufferFrameSize * sizeof(float) * driver->outputChannels;
+        size_t bufferSize = inIOBufferFrameSize * sizeof(Float32) * kDevice_ChannelCount;
         memset(ioMainBuffer, 0, bufferSize);
     }
-
-    // TODO: Process input from ioMainBuffer (input channels) to output
-    // TODO: Connect to Rust audio processing pipeline
 
     return kAudioHardwareNoError;
 }

@@ -174,25 +174,91 @@ pub unsafe extern "C" fn audio_driver_plugin_close(
 }
 
 /// Factory function for creating driver instances
+/// This is called by Core Audio to create an AudioServerPlugIn driver instance
 #[allow(clippy::missing_safety_doc)]
+#[allow(clippy::missing_transmute_annotations)]
 pub unsafe extern "C" fn audio_driver_plugin_factory(_uuid: CFUUIDRef) -> *mut c_void {
-    log::info!("🏭 AudioDriverPlugInFactory called (not implemented, returning null)");
+    log::info!("🏭 AudioDriverPlugInFactory called - creating driver instance");
 
-    // For now, we don't support the factory pattern - return null
-    // Core Audio will use AudioDriverPlugInOpen instead
-    ptr::null_mut()
+    // Initialize the driver
+    let _driver_instance = match init_driver() {
+        Ok(instance) => {
+            log::info!("✅ Driver instance initialized in factory");
+            instance
+        }
+        Err(e) => {
+            log::error!("❌ Failed to initialize driver in factory: {}", e);
+            return ptr::null_mut();
+        }
+    };
+
+    // Allocate the interface structure
+    let interface = malloc(std::mem::size_of::<AudioDriverPlugInInterface>())
+        as *mut AudioDriverPlugInInterface;
+    if interface.is_null() {
+        log::error!("❌ Failed to allocate driver interface in factory");
+        return ptr::null_mut();
+    }
+
+    // Populate the interface with function pointers
+    (*interface).interface = AudioServerPlugInDriverInterface {
+        _reserved: ptr::null_mut(),
+        QueryInterface: Some(std::mem::transmute(driver_query_interface as *const ())),
+        AddRef: Some(std::mem::transmute(driver_add_ref as *const ())),
+        Release: Some(std::mem::transmute(driver_release as *const ())),
+        Initialize: Some(driver_initialize),
+        CreateDevice: Some(driver_create_device),
+        DestroyDevice: Some(driver_destroy_device),
+        AddDeviceClient: Some(driver_add_device_client),
+        RemoveDeviceClient: Some(driver_remove_device_client),
+        PerformDeviceConfigurationChange: Some(driver_perform_device_configuration_change),
+        AbortDeviceConfigurationChange: Some(driver_abort_device_configuration_change),
+        HasProperty: Some(driver_has_property),
+        IsPropertySettable: Some(driver_is_property_settable),
+        GetPropertyDataSize: Some(driver_get_property_data_size),
+        GetPropertyData: Some(driver_get_property_data),
+        SetPropertyData: Some(driver_set_property_data),
+        StartIO: Some(driver_start_io),
+        StopIO: Some(driver_stop_io),
+        GetZeroTimeStamp: Some(driver_get_zero_time_stamp),
+        WillDoIOOperation: Some(driver_will_do_io_operation),
+        BeginIOOperation: Some(driver_begin_io_operation),
+        DoIOOperation: Some(driver_do_io_operation),
+        EndIOOperation: Some(driver_end_io_operation),
+    };
+
+    log::info!("✅ AudioDriverPlugInFactory returning interface at {:p}", interface);
+    interface as *mut c_void
 }
 
 // HAL Driver Interface Implementation Functions
 
 unsafe extern "C" fn driver_query_interface(
-    _driver: AudioServerPlugInDriverRef,
-    _iid: REFIID,
-    _interface: *mut LPVOID,
+    driver: AudioServerPlugInDriverRef,
+    iid: REFIID,
+    interface: *mut LPVOID,
 ) -> HRESULT {
-    log::debug!("driver_query_interface called");
-    kAudioHardwareUnsupportedOperationError
+    // kAudioServerPlugInDriverInterfaceUUID = F8BB1C28-BAE8-11D6-9C31-00039315CD46
+    // IUnknown UUID = 00000000-0000-0000-C000-000000000046
+    log::info!("🔍 driver_query_interface called with iid: {:?}", iid);
+
+    if interface.is_null() {
+        log::error!("❌ interface pointer is null");
+        return E_POINTER;
+    }
+
+    // For AudioServerPlugIn, we should return the driver interface for any valid query
+    // Return the same interface (the driver itself implements the interface)
+    *interface = driver as LPVOID;
+    driver_add_ref(driver);
+
+    log::info!("✅ driver_query_interface returning driver interface");
+    S_OK
 }
+
+// COM HRESULT codes
+const S_OK: HRESULT = 0;
+const E_POINTER: HRESULT = 0x80004003u32 as i32;
 
 unsafe extern "C" fn driver_add_ref(_driver: AudioServerPlugInDriverRef) -> ULONG {
     log::debug!("driver_add_ref called");

@@ -2,13 +2,22 @@
 #
 # SotF Uninstaller Script
 #
-# This script removes all SotF components:
-# - SotF ConfigBar app
-# - sotf-daemon binary and LaunchAgent
-# - HAL driver (requires sudo)
-# - Socket files and logs
+# Removes all SotF components:
+#   - SotF Toolbar app
+#   - sotf-daemon (embedded in app)
+#   - HAL driver
+#   - LaunchAgents
+#   - Socket files and logs
 #
-# Usage: ./uninstall-sotf.sh [--keep-logs]
+# Bundle identifiers:
+#   - org.spinorama.sotf-toolbar
+#   - org.spinorama.sotf-hal
+#   - org.spinorama.sotf-daemon
+#
+# Usage:
+#   ./uninstall-sotf.sh              # Uninstall everything
+#   ./uninstall-sotf.sh --keep-logs  # Keep log files
+#   ./uninstall-sotf.sh --hal-only   # Only remove HAL driver
 #
 
 set -e
@@ -20,19 +29,53 @@ BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Parse arguments
+# Bundle identifiers
+TOOLBAR_BUNDLE_ID="org.spinorama.sotf-toolbar"
+HAL_BUNDLE_ID="org.spinorama.sotf-hal"
+DAEMON_BUNDLE_ID="org.spinorama.sotf-daemon"
+
+# Paths
+USER_HOME="$HOME"
+LAUNCHAGENTS_DIR="${USER_HOME}/Library/LaunchAgents"
+TOOLBAR_PLIST="${LAUNCHAGENTS_DIR}/${TOOLBAR_BUNDLE_ID}.plist"
+DAEMON_PLIST="${LAUNCHAGENTS_DIR}/${DAEMON_BUNDLE_ID}.plist"
+# Legacy plists
+LEGACY_DAEMON_PLIST="${LAUNCHAGENTS_DIR}/org.spinorama.sotf.daemon.plist"
+LEGACY_CONFIGBAR_PLIST="${LAUNCHAGENTS_DIR}/org.spinorama.sotf.configbar.plist"
+
+TOOLBAR_APP="/Applications/SotF Toolbar.app"
+LEGACY_CONFIGBAR_APP="/Applications/SotF ConfigBar.app"
+DAEMON_BIN="/usr/local/bin/sotf-daemon"
+HAL_DRIVER="/Library/Audio/Plug-Ins/HAL/sotf.driver"
+SOCKET_PATH="/tmp/autoeq_audio.sock"
+
+# Options
 KEEP_LOGS=false
+HAL_ONLY=false
+
+# Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
         --keep-logs)
             KEEP_LOGS=true
             shift
             ;;
+        --hal-only)
+            HAL_ONLY=true
+            shift
+            ;;
         -h|--help)
-            echo "Usage: $0 [--keep-logs]"
+            echo "Usage: $0 [options]"
             echo ""
             echo "Options:"
             echo "  --keep-logs    Don't remove log files"
+            echo "  --hal-only     Only remove HAL driver"
+            echo "  --help         Show this help message"
+            echo ""
+            echo "Bundle identifiers that will be removed:"
+            echo "  - $TOOLBAR_BUNDLE_ID"
+            echo "  - $HAL_BUNDLE_ID"
+            echo "  - $DAEMON_BUNDLE_ID"
             exit 0
             ;;
         *)
@@ -42,132 +85,164 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-echo -e "${BLUE}╔═══════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║  SotF Uninstaller                                             ║${NC}"
-echo -e "${BLUE}╚═══════════════════════════════════════════════════════════════╝${NC}"
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+log_success() {
+    echo -e "${GREEN}[OK]${NC} $1"
+}
+
+log_warning() {
+    echo -e "${YELLOW}[WARN]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}  SotF Uninstaller${NC}"
+echo -e "${BLUE}========================================${NC}"
 echo ""
 
-# Paths
-USER_HOME="$HOME"
-LAUNCHAGENTS_DIR="${USER_HOME}/Library/LaunchAgents"
-DAEMON_PLIST="${LAUNCHAGENTS_DIR}/org.spinorama.sotf.daemon.plist"
-CONFIGBAR_PLIST="${LAUNCHAGENTS_DIR}/org.spinorama.sotf.configbar.plist"
-CONFIGBAR_APP="/Applications/SotF ConfigBar.app"
-DAEMON_BIN="/usr/local/bin/sotf-daemon"
-HAL_DRIVER="/Library/Audio/Plug-Ins/HAL/sotf.driver"
-SOCKET_PATH="/tmp/autoeq_audio.sock"
+# HAL-only mode
+if $HAL_ONLY; then
+    log_info "Removing HAL driver only..."
 
-# Track if we need sudo for HAL driver
+    if [ -d "${HAL_DRIVER}" ]; then
+        sudo rm -rf "${HAL_DRIVER}"
+        log_success "HAL driver removed"
+
+        log_info "Restarting CoreAudio..."
+        sudo killall coreaudiod 2>/dev/null || true
+        log_success "CoreAudio restarted"
+    else
+        log_info "HAL driver not installed"
+    fi
+
+    echo ""
+    echo -e "${GREEN}HAL driver uninstallation complete!${NC}"
+    exit 0
+fi
+
+# Full uninstall
 NEED_SUDO=false
 
-echo -e "${YELLOW}[1/6] Stopping running processes...${NC}"
+log_info "[1/6] Stopping running processes..."
 
-# Stop ConfigBar
+# Stop Toolbar
+if pgrep -x "sotf-toolbar" > /dev/null 2>&1; then
+    killall "sotf-toolbar" 2>/dev/null || true
+    log_success "Toolbar stopped"
+else
+    log_info "Toolbar not running"
+fi
+
+# Stop legacy ConfigBar
 if pgrep -x "sotf-configbar" > /dev/null 2>&1; then
     killall "sotf-configbar" 2>/dev/null || true
-    echo "  ✓ ConfigBar stopped"
-else
-    echo "  - ConfigBar not running"
+    log_success "ConfigBar stopped"
 fi
 
 # Stop daemon
 if pgrep -x "sotf-daemon" > /dev/null 2>&1; then
     killall "sotf-daemon" 2>/dev/null || true
-    echo "  ✓ Daemon stopped"
+    log_success "Daemon stopped"
 else
-    echo "  - Daemon not running"
+    log_info "Daemon not running"
 fi
 
-echo -e "${GREEN}✓ Processes stopped${NC}"
+log_info "[2/6] Unloading LaunchAgents..."
 
-echo -e "${YELLOW}[2/6] Unloading LaunchAgents...${NC}"
+# Unload Toolbar LaunchAgent
+if [ -f "${TOOLBAR_PLIST}" ]; then
+    launchctl unload "${TOOLBAR_PLIST}" 2>/dev/null || true
+    log_success "Toolbar LaunchAgent unloaded"
+fi
 
 # Unload daemon LaunchAgent
 if [ -f "${DAEMON_PLIST}" ]; then
     launchctl unload "${DAEMON_PLIST}" 2>/dev/null || true
-    echo "  ✓ Daemon LaunchAgent unloaded"
+    log_success "Daemon LaunchAgent unloaded"
+fi
+
+# Unload legacy LaunchAgents
+if [ -f "${LEGACY_DAEMON_PLIST}" ]; then
+    launchctl unload "${LEGACY_DAEMON_PLIST}" 2>/dev/null || true
+    log_success "Legacy daemon LaunchAgent unloaded"
+fi
+
+if [ -f "${LEGACY_CONFIGBAR_PLIST}" ]; then
+    launchctl unload "${LEGACY_CONFIGBAR_PLIST}" 2>/dev/null || true
+    log_success "Legacy ConfigBar LaunchAgent unloaded"
+fi
+
+log_info "[3/6] Removing LaunchAgent plists..."
+
+# Remove all SotF LaunchAgent plists
+for plist in "${TOOLBAR_PLIST}" "${DAEMON_PLIST}" "${LEGACY_DAEMON_PLIST}" "${LEGACY_CONFIGBAR_PLIST}"; do
+    if [ -f "$plist" ]; then
+        rm -f "$plist"
+        log_success "Removed $(basename "$plist")"
+    fi
+done
+
+log_info "[4/6] Removing applications..."
+
+# Remove Toolbar app
+if [ -d "${TOOLBAR_APP}" ]; then
+    rm -rf "${TOOLBAR_APP}"
+    log_success "Toolbar app removed"
 else
-    echo "  - Daemon LaunchAgent not found"
+    log_info "Toolbar app not found"
 fi
 
-# Unload ConfigBar LaunchAgent
-if [ -f "${CONFIGBAR_PLIST}" ]; then
-    launchctl unload "${CONFIGBAR_PLIST}" 2>/dev/null || true
-    echo "  ✓ ConfigBar LaunchAgent unloaded"
-else
-    echo "  - ConfigBar LaunchAgent not found"
+# Remove legacy ConfigBar app
+if [ -d "${LEGACY_CONFIGBAR_APP}" ]; then
+    rm -rf "${LEGACY_CONFIGBAR_APP}"
+    log_success "Legacy ConfigBar app removed"
 fi
 
-echo -e "${GREEN}✓ LaunchAgents unloaded${NC}"
-
-echo -e "${YELLOW}[3/6] Removing LaunchAgent plists...${NC}"
-
-if [ -f "${DAEMON_PLIST}" ]; then
-    rm -f "${DAEMON_PLIST}"
-    echo "  ✓ Daemon plist removed"
-fi
-
-if [ -f "${CONFIGBAR_PLIST}" ]; then
-    rm -f "${CONFIGBAR_PLIST}"
-    echo "  ✓ ConfigBar plist removed"
-fi
-
-echo -e "${GREEN}✓ LaunchAgent plists removed${NC}"
-
-echo -e "${YELLOW}[4/6] Removing applications...${NC}"
-
-# Remove ConfigBar app
-if [ -d "${CONFIGBAR_APP}" ]; then
-    rm -rf "${CONFIGBAR_APP}"
-    echo "  ✓ ConfigBar app removed"
-else
-    echo "  - ConfigBar app not found"
-fi
-
-# Remove daemon binary
+# Remove daemon binary (if installed separately)
 if [ -f "${DAEMON_BIN}" ]; then
-    # May need sudo
     if rm -f "${DAEMON_BIN}" 2>/dev/null; then
-        echo "  ✓ Daemon binary removed"
+        log_success "Daemon binary removed"
     else
-        echo "  - Daemon binary requires sudo to remove"
+        log_warning "Daemon binary requires sudo to remove"
         NEED_SUDO=true
     fi
-else
-    echo "  - Daemon binary not found"
 fi
 
-echo -e "${GREEN}✓ Applications removed${NC}"
-
-echo -e "${YELLOW}[5/6] Removing HAL driver...${NC}"
+log_info "[5/6] Removing HAL driver..."
 
 if [ -d "${HAL_DRIVER}" ]; then
     if sudo rm -rf "${HAL_DRIVER}" 2>/dev/null; then
-        echo "  ✓ HAL driver removed"
-        # Restart CoreAudio
-        echo "  Restarting CoreAudio..."
+        log_success "HAL driver removed"
+
+        log_info "Restarting CoreAudio..."
         sudo killall coreaudiod 2>/dev/null || true
-        echo "  ✓ CoreAudio restarted"
+        log_success "CoreAudio restarted"
     else
-        echo -e "${YELLOW}  ⚠ HAL driver requires sudo to remove${NC}"
+        log_warning "HAL driver requires sudo to remove"
         NEED_SUDO=true
     fi
 else
-    echo "  - HAL driver not found"
+    log_info "HAL driver not installed"
 fi
 
-echo -e "${GREEN}✓ HAL driver removal complete${NC}"
-
-echo -e "${YELLOW}[6/6] Cleaning up...${NC}"
+log_info "[6/6] Cleaning up..."
 
 # Remove socket
 if [ -e "${SOCKET_PATH}" ]; then
     rm -f "${SOCKET_PATH}"
-    echo "  ✓ Socket file removed"
+    log_success "Socket file removed"
 fi
 
 # Remove logs (unless --keep-logs)
 if [ "$KEEP_LOGS" = false ]; then
+    rm -f /tmp/sotf-toolbar.log 2>/dev/null || true
+    rm -f /tmp/sotf-toolbar.error.log 2>/dev/null || true
     rm -f /tmp/sotf-daemon.log 2>/dev/null || true
     rm -f /tmp/sotf-daemon.error.log 2>/dev/null || true
     rm -f /tmp/sotf-configbar.log 2>/dev/null || true
@@ -176,21 +251,19 @@ if [ "$KEEP_LOGS" = false ]; then
     rm -f /tmp/autoeq-daemon.error.log 2>/dev/null || true
     rm -f /tmp/autoeq-menubar.log 2>/dev/null || true
     rm -f /tmp/autoeq-menubar.error.log 2>/dev/null || true
-    echo "  ✓ Log files removed"
+    log_success "Log files removed"
 else
-    echo "  - Log files kept (--keep-logs)"
+    log_info "Log files kept (--keep-logs)"
 fi
 
-echo -e "${GREEN}✓ Cleanup complete${NC}"
-
 echo ""
-echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
+echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}  Uninstallation Complete!${NC}"
-echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
+echo -e "${GREEN}========================================${NC}"
 echo ""
 
 if [ "$NEED_SUDO" = true ]; then
-    echo -e "${YELLOW}Note: Some files could not be removed without sudo.${NC}"
+    log_warning "Some files could not be removed without sudo."
     echo "Run the following commands manually if needed:"
     echo ""
     [ -f "${DAEMON_BIN}" ] && echo "  sudo rm -f ${DAEMON_BIN}"
