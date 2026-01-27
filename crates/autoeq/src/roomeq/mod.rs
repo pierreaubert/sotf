@@ -72,4 +72,7 @@ pub use progress::{MultiStageProgress, ProgressReporter};
 
 // Utility modules
 mod phase_utils;
+mod time_align;
 mod weighted_loss;
+
+pub use time_align::{find_arrival_time, calculate_alignment_delays, ArrivalTimeResult};

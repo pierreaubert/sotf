@@ -30,14 +30,17 @@ use super::types::{
 // ============================================================================
 
 /// Internal result type for speaker processing to reduce type complexity
-/// Returns: (channel_name, chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl)
+/// Returns: (channel_name, chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms)
 type SpeakerProcessResult = std::result::Result<
-    (String, ChannelDspChain, f64, f64, crate::Curve, crate::Curve, Vec<crate::iir::Biquad>, f64),
+    (String, ChannelDspChain, f64, f64, crate::Curve, crate::Curve, Vec<crate::iir::Biquad>, f64, Option<f64>),
     AutoeqError,
 >;
 
 /// Threshold in dB above which to warn about channel level differences
 const LEVEL_DIFFERENCE_WARNING_THRESHOLD: f64 = 6.0;
+
+/// Threshold in ms above which to warn about arrival time differences
+const ARRIVAL_TIME_WARNING_THRESHOLD_MS: f64 = 50.0;
 
 // ============================================================================
 // Progress and Callback Types
@@ -184,7 +187,7 @@ pub fn optimize_room(
         .map(|(channel_name, speaker_config)| {
             info!("Processing channel: {}", channel_name);
 
-            let (chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl) =
+            let (chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms) =
                 process_speaker_internal(
                     channel_name,
                     speaker_config,
@@ -202,6 +205,7 @@ pub fn optimize_room(
                 final_curve,
                 biquads,
                 mean_spl,
+                arrival_time_ms,
             ))
         })
         .collect();
@@ -213,15 +217,19 @@ pub fn optimize_room(
     let mut post_scores: Vec<f64> = Vec::new();
     let mut curves: HashMap<String, crate::Curve> = HashMap::new();
     let mut channel_means: HashMap<String, f64> = HashMap::new();
+    let mut channel_arrivals: HashMap<String, f64> = HashMap::new();
 
     for res in results {
-        let (channel_name, chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl) = res?;
+        let (channel_name, chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms) = res?;
 
         channel_chains.insert(channel_name.clone(), chain);
         curves.insert(channel_name.clone(), final_curve.clone());
         pre_scores.push(pre_score);
         post_scores.push(post_score);
         channel_means.insert(channel_name.clone(), mean_spl);
+        if let Some(arrival_ms) = arrival_time_ms {
+            channel_arrivals.insert(channel_name.clone(), arrival_ms);
+        }
 
         channel_results.insert(
             channel_name.clone(),
@@ -235,6 +243,47 @@ pub fn optimize_room(
                 fir_coeffs: None,
             },
         );
+    }
+
+    // Time alignment: add delay plugins to align all channels to the slowest one
+    // This is done PRE-EQ by inserting at the beginning of the plugin chain
+    if channel_arrivals.len() > 1 {
+        let arrivals: Vec<f64> = channel_arrivals.values().copied().collect();
+        let min_arrival = arrivals.iter().cloned().fold(f64::INFINITY, f64::min);
+        let max_arrival = arrivals.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let arrival_spread = max_arrival - min_arrival;
+
+        // Warn if arrival time differences are significant (might indicate measurement issues)
+        if arrival_spread > ARRIVAL_TIME_WARNING_THRESHOLD_MS {
+            warn!(
+                "Channel arrival times differ by {:.1} ms (threshold: {:.1} ms). \
+                This may indicate measurement issues or very different speaker distances.",
+                arrival_spread, ARRIVAL_TIME_WARNING_THRESHOLD_MS
+            );
+            for (name, arrival) in &channel_arrivals {
+                info!("  Channel '{}': arrival time = {:.2} ms", name, arrival);
+            }
+        }
+
+        // Calculate alignment delays (slowest channel = reference, others get delays)
+        let alignment_delays = super::time_align::calculate_alignment_delays(&channel_arrivals);
+
+        // Add delay plugins at the BEGINNING of the chain (pre-EQ)
+        for (channel_name, delay_ms) in &alignment_delays {
+            // Only add delay plugin if the adjustment is significant (> 0.01 ms = ~0.5 samples at 48kHz)
+            if *delay_ms > 0.01 {
+                if let Some(chain) = channel_chains.get_mut(channel_name) {
+                    // Insert delay plugin at the beginning (before EQ)
+                    chain.plugins.insert(0, output::create_delay_plugin(*delay_ms));
+                    info!(
+                        "  Channel '{}': added {:.3} ms delay for time alignment",
+                        channel_name, delay_ms
+                    );
+                }
+            }
+        }
+    } else if channel_arrivals.is_empty() && config.speakers.len() > 1 {
+        info!("No WAV files available for time alignment. Skipping time alignment.");
     }
 
     // Channel level alignment: add gain plugins to align all channels to the same level
@@ -435,7 +484,7 @@ pub fn optimize_speaker(
         recording_config: None,
     };
 
-    let (chain, pre_score, post_score, initial_curve, final_curve, biquads, _mean_spl) =
+    let (chain, pre_score, post_score, initial_curve, final_curve, biquads, _mean_spl, _arrival_time_ms) =
         process_speaker_internal(channel_name, speaker_config, &room_config, sample_rate, None)?;
 
     Ok(SpeakerOptimizationResult {
@@ -455,7 +504,7 @@ pub fn optimize_speaker(
 
 /// Process a single speaker (simple or group)
 ///
-/// Returns: (DSP chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl)
+/// Returns: (DSP chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms)
 #[allow(clippy::type_complexity)]
 fn process_speaker_internal(
     channel_name: &str,
@@ -463,7 +512,7 @@ fn process_speaker_internal(
     room_config: &RoomConfig,
     sample_rate: f64,
     output_dir: Option<&Path>,
-) -> Result<(ChannelDspChain, f64, f64, Curve, Curve, Vec<Biquad>, f64)> {
+) -> Result<(ChannelDspChain, f64, f64, Curve, Curve, Vec<Biquad>, f64, Option<f64>)> {
     let output_dir = output_dir.unwrap_or(Path::new("."));
 
     match speaker_config {
@@ -482,9 +531,33 @@ fn process_speaker_internal(
     }
 }
 
+/// Extract wav_path from a MeasurementSource if available
+fn extract_wav_path(source: &MeasurementSource) -> Option<String> {
+    match source {
+        MeasurementSource::Single(measurement_ref) => {
+            if let crate::MeasurementRef::Inline(inline) = measurement_ref {
+                inline.wav_path.clone()
+            } else {
+                None
+            }
+        }
+        MeasurementSource::Multiple(refs) => {
+            // Use the first measurement's wav_path if available
+            refs.first().and_then(|r| {
+                if let crate::MeasurementRef::Inline(inline) = r {
+                    inline.wav_path.clone()
+                } else {
+                    None
+                }
+            })
+        }
+        MeasurementSource::InMemory(_) => None,
+    }
+}
+
 /// Process a simple speaker with a single measurement
 ///
-/// Returns: (DSP chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl)
+/// Returns: (DSP chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms)
 #[allow(clippy::type_complexity)]
 fn process_single_speaker(
     channel_name: &str,
@@ -492,7 +565,7 @@ fn process_single_speaker(
     room_config: &RoomConfig,
     sample_rate: f64,
     output_dir: &Path,
-) -> Result<(ChannelDspChain, f64, f64, Curve, Curve, Vec<Biquad>, f64)> {
+) -> Result<(ChannelDspChain, f64, f64, Curve, Curve, Vec<Biquad>, f64, Option<f64>)> {
     // Load measurement
     let curve = load::load_source(source)
         .map_err(|e| AutoeqError::InvalidMeasurement { message: format!("Failed to load measurement for channel {}: {}", channel_name, e) })?;
@@ -502,6 +575,30 @@ fn process_single_speaker(
         curve.freq[0],
         curve.freq[curve.freq.len() - 1]
     );
+
+    // Extract wav_path and calculate arrival time for time alignment
+    let arrival_time_ms: Option<f64> = extract_wav_path(source)
+        .and_then(|wav_path| {
+            let path = std::path::Path::new(&wav_path);
+            if path.exists() {
+                match super::time_align::find_arrival_time(path, None) {
+                    Ok(result) => {
+                        debug!(
+                            "  Arrival time for '{}': {:.2} ms (peak at sample {})",
+                            channel_name, result.arrival_ms, result.arrival_samples
+                        );
+                        Some(result.arrival_ms)
+                    }
+                    Err(e) => {
+                        debug!("  Could not determine arrival time for '{}': {}", channel_name, e);
+                        None
+                    }
+                }
+            } else {
+                debug!("  WAV file not found for '{}': {:?}", channel_name, path);
+                None
+            }
+        });
 
     // Compute pre-score
     let min_freq = room_config.optimizer.min_freq;
@@ -577,7 +674,7 @@ fn process_single_speaker(
             let mut chain = chain;
             chain.final_curve = Some((&final_curve).into());
 
-            Ok((chain, pre_score, post_score, curve.clone(), final_curve, vec![], mean))
+            Ok((chain, pre_score, post_score, curve.clone(), final_curve, vec![], mean, arrival_time_ms))
         }
         "mixed" => {
             let (eq_filters, _opt_loss) = eq::optimize_channel_eq(
@@ -646,7 +743,7 @@ fn process_single_speaker(
             chain.initial_curve = Some((&curve).into());
             chain.final_curve = Some((&final_curve).into());
 
-            Ok((chain, pre_score, post_score, curve.clone(), final_curve, eq_filters, mean))
+            Ok((chain, pre_score, post_score, curve.clone(), final_curve, eq_filters, mean, arrival_time_ms))
         }
         _ => {
             // Default IIR mode
@@ -699,14 +796,14 @@ fn process_single_speaker(
             let mut chain = chain;
             chain.final_curve = Some((&final_curve).into());
 
-            Ok((chain, pre_score, post_score, curve.clone(), final_curve, eq_filters, mean))
+            Ok((chain, pre_score, post_score, curve.clone(), final_curve, eq_filters, mean, arrival_time_ms))
         }
     }
 }
 
 /// Process a speaker group with multiple drivers and crossovers
 ///
-/// Returns: (DSP chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl)
+/// Returns: (DSP chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms)
 #[allow(clippy::type_complexity)]
 fn process_speaker_group(
     channel_name: &str,
@@ -714,7 +811,7 @@ fn process_speaker_group(
     room_config: &RoomConfig,
     sample_rate: f64,
     _output_dir: &Path,
-) -> Result<(ChannelDspChain, f64, f64, Curve, Curve, Vec<Biquad>, f64)> {
+) -> Result<(ChannelDspChain, f64, f64, Curve, Curve, Vec<Biquad>, f64, Option<f64>)> {
     // Load all measurements in the group
     let mut driver_curves = Vec::new();
     for (i, source) in group.measurements.iter().enumerate() {
@@ -902,12 +999,13 @@ fn process_speaker_group(
         final_curve,
         eq_filters,
         mean_spl,
+        None, // No single WAV for speaker groups
     ))
 }
 
 /// Process multi-subwoofer group
 ///
-/// Returns: (DSP chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl)
+/// Returns: (DSP chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms)
 #[allow(clippy::type_complexity)]
 fn process_multisub_group(
     channel_name: &str,
@@ -915,7 +1013,7 @@ fn process_multisub_group(
     room_config: &RoomConfig,
     sample_rate: f64,
     _output_dir: &Path,
-) -> Result<(ChannelDspChain, f64, f64, Curve, Curve, Vec<Biquad>, f64)> {
+) -> Result<(ChannelDspChain, f64, f64, Curve, Curve, Vec<Biquad>, f64, Option<f64>)> {
     let (result, combined_curve) =
         multisub::optimize_multisub(&group.subwoofers, &room_config.optimizer, sample_rate)
             .map_err(|e| AutoeqError::OptimizationFailed { message: format!("Multi-sub optimization failed: {}", e) })?;
@@ -978,12 +1076,13 @@ fn process_multisub_group(
         final_curve,
         eq_filters,
         mean_spl,
+        None, // No single WAV for multi-sub groups
     ))
 }
 
 /// Process DBA configuration
 ///
-/// Returns: (DSP chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl)
+/// Returns: (DSP chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms)
 #[allow(clippy::type_complexity)]
 fn process_dba(
     channel_name: &str,
@@ -991,7 +1090,7 @@ fn process_dba(
     room_config: &RoomConfig,
     sample_rate: f64,
     _output_dir: &Path,
-) -> Result<(ChannelDspChain, f64, f64, Curve, Curve, Vec<Biquad>, f64)> {
+) -> Result<(ChannelDspChain, f64, f64, Curve, Curve, Vec<Biquad>, f64, Option<f64>)> {
     let (result, combined_curve) =
         dba::optimize_dba(dba_config, &room_config.optimizer, sample_rate)
             .map_err(|e| AutoeqError::OptimizationFailed { message: format!("DBA optimization failed: {}", e) })?;
@@ -1052,5 +1151,6 @@ fn process_dba(
         final_curve,
         eq_filters,
         mean_spl,
+        None, // No single WAV for DBA
     ))
 }
