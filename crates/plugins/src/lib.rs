@@ -30,6 +30,8 @@ pub mod param_specs;
 pub mod parameters;
 mod plugin;
 mod plugin_ab_compare;
+mod plugin_band_merge;
+mod plugin_band_split;
 mod plugin_binaural;
 mod plugin_channel_mute_solo;
 mod plugin_compressor;
@@ -77,6 +79,8 @@ pub use serialization::{PluginPreset, PresetBank, PresetMetadata, SerializablePl
 pub use simd::enable_ftz_daz;
 
 pub use plugin_ab_compare::{ABComparePlugin, ABComparePluginParams};
+pub use plugin_band_merge::{BandMergePlugin, BandMergePluginParams};
+pub use plugin_band_split::{BandSplitPlugin, BandSplitPluginParams};
 pub use plugin_binaural::{
     BinauralDecoderParams, BinauralDecoderPlugin, RoomModel, binaural_default_enable_optimization,
 };
