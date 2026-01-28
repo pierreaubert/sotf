@@ -46,7 +46,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Extract version from root Cargo.toml
-VERSION=$(grep -m1 '^version = ' "$PROJECT_ROOT/Cargo.toml" | sed 's/version = "(.*)"/\\1/')
+VERSION=$(grep -m1 '^version = ' "$PROJECT_ROOT/Cargo.toml" | sed -E 's/version = "(.*)"/\1/')
 if [ -z "$VERSION" ]; then
     echo "ERROR: Could not extract version from Cargo.toml"
     exit 1
@@ -206,23 +206,21 @@ build_daemon() {
     log_success "Daemon binary built successfully"
 }
 
-# Build the HAL driver bundle
+# Build the HAL driver bundle (Swift)
 build_hal_driver() {
     if ! $BUILD_HAL; then
         log_warning "Skipping HAL driver build (--no-hal specified)"
         return 0
     fi
 
-    log_info "Building HAL driver ($BUILD_TYPE)..."
+    log_info "Building Swift HAL driver..."
 
-    cd "$PROJECT_ROOT"
+    local HAL_SWIFT_DIR="$HAL_DRIVER_DIR/swift"
+    local HAL_SOURCES_DIR="$HAL_SWIFT_DIR/Sources"
 
-    # Build the Rust HAL library
-    cargo build $CARGO_FLAGS -p driver-hal
-
-    # Check if the dylib was created
-    if [ ! -f "$BUILD_DIR/libsotf_hal.dylib" ]; then
-        log_warning "HAL driver library not found, skipping HAL driver bundle"
+    # Check for Swift sources
+    if [ ! -d "$HAL_SOURCES_DIR" ]; then
+        log_warning "Swift HAL driver sources not found at $HAL_SOURCES_DIR"
         BUILD_HAL=false
         return 0
     fi
@@ -231,101 +229,86 @@ build_hal_driver() {
     mkdir -p "$DRIVER_BUNDLE/Contents/MacOS"
     mkdir -p "$DRIVER_BUNDLE/Contents/Resources"
 
-    # Copy the dylib as the driver binary
-    cp "$BUILD_DIR/libsotf_hal.dylib" "$DRIVER_BUNDLE/Contents/MacOS/SotFHAL"
+    # Find all Swift source files
+    local SWIFT_FILES=(
+        "$HAL_SOURCES_DIR/Timing.swift"
+        "$HAL_SOURCES_DIR/RingBuffer.swift"
+        "$HAL_SOURCES_DIR/SharedMemory.swift"
+        "$HAL_SOURCES_DIR/SotFHALDriver.swift"
+    )
 
-    # Update install name
-    install_name_tool -id "@rpath/SotFHAL" "$DRIVER_BUNDLE/Contents/MacOS/SotFHAL" 2>/dev/null || true
+    log_info "Compiling Swift HAL driver..."
 
-    # Create HAL driver Info.plist
-    cat > "$DRIVER_BUNDLE/Contents/Info.plist" << EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleDevelopmentRegion</key>
-    <string>English</string>
+    # Compile Swift to a bundle
+    swiftc \
+        -emit-library \
+        -o "$DRIVER_BUNDLE/Contents/MacOS/SotFHAL" \
+        -module-name SotFHAL \
+        -import-objc-header "$HAL_SOURCES_DIR/BridgingHeader.h" \
+        -Xlinker -bundle \
+        -Xlinker -rpath -Xlinker @loader_path/../Frameworks \
+        -framework CoreAudio \
+        -framework CoreFoundation \
+        -framework Foundation \
+        -O \
+        "${SWIFT_FILES[@]}"
 
-    <key>CFBundleExecutable</key>
-    <string>SotFHAL</string>
+    # Verify it's a bundle
+    local FILETYPE=$(otool -hv "$DRIVER_BUNDLE/Contents/MacOS/SotFHAL" | grep -A1 filetype | tail -1 | awk '{print $5}')
+    if [ "$FILETYPE" != "BUNDLE" ]; then
+        log_warning "Binary is $FILETYPE instead of BUNDLE, trying alternative linking..."
 
-    <key>CFBundleIdentifier</key>
-    <string>${HAL_BUNDLE_ID}</string>
+        # Compile to object files first
+        local BUILD_TMP="$DMG_DIR/hal_build"
+        mkdir -p "$BUILD_TMP"
 
-    <key>CFBundleInfoDictionaryVersion</key>
-    <string>6.0</string>
+        for f in "${SWIFT_FILES[@]}"; do
+            local BASENAME=$(basename "$f" .swift)
+            swiftc \
+                -c \
+                -o "$BUILD_TMP/$BASENAME.o" \
+                -module-name SotFHAL \
+                -import-objc-header "$HAL_SOURCES_DIR/BridgingHeader.h" \
+                -framework CoreAudio \
+                -framework CoreFoundation \
+                -framework Foundation \
+                -O \
+                "$f"
+        done
 
-    <key>CFBundleName</key>
-    <string>SotF HAL</string>
+        # Link all object files as bundle
+        ld -bundle \
+            -arch arm64 \
+            -platform_version macos 14.0.0 15.0.0 \
+            -syslibroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk \
+            -L/usr/lib/swift \
+            -lSystem \
+            -lswiftCore \
+            -lswiftFoundation \
+            -lswiftCoreFoundation \
+            -lswiftDarwin \
+            -lswiftDispatch \
+            -lswiftObjectiveC \
+            -framework CoreAudio \
+            -framework CoreFoundation \
+            -framework Foundation \
+            "$BUILD_TMP"/*.o \
+            -o "$DRIVER_BUNDLE/Contents/MacOS/SotFHAL"
 
-    <key>CFBundlePackageType</key>
-    <string>BNDL</string>
+        rm -rf "$BUILD_TMP"
+        FILETYPE=$(otool -hv "$DRIVER_BUNDLE/Contents/MacOS/SotFHAL" | grep -A1 filetype | tail -1 | awk '{print $5}')
+    fi
 
-    <key>CFBundleShortVersionString</key>
-    <string>${VERSION}</string>
+    log_info "HAL driver binary type: $FILETYPE"
 
-    <key>CFBundleSignature</key>
-    <string>????</string>
-
-    <key>CFBundleVersion</key>
-    <string>1</string>
-
-    <key>CFBundleSupportedPlatforms</key>
-    <array>
-        <string>MacOSX</string>
-    </array>
-
-    <key>CFPlugInDynamicRegisterFunction</key>
-    <string></string>
-
-    <key>CFPlugInDynamicRegistration</key>
-    <string>NO</string>
-
-    <key>CFPlugInFactories</key>
-    <dict>
-        <!-- Factory UUID for our driver - must match exported symbol -->
-        <key>5A4E28B8-93F4-4B8A-B5E2-3D9F6A8C7E01</key>
-        <string>SotFHALDriverFactory</string>
-    </dict>
-
-    <key>CFPlugInTypes</key>
-    <dict>
-        <!-- kAudioServerPlugInTypeUUID from AudioServerPlugIn.h -->
-        <key>443ABAB8-E7B3-491A-B985-BEB9187030DB</key>
-        <array>
-            <string>5A4E28B8-93F4-4B8A-B5E2-3D9F6A8C7E01</string>
-        </array>
-    </dict>
-
-    <key>SotFHalPlugIn</key>
-    <dict>
-        <key>Name</key>
-        <string>SotFHal</string>
-
-        <key>Manufacturer</key>
-        <string>org.spinorama</string>
-
-        <key>Version</key>
-        <string>${VERSION}</string>
-    </dict>
-
-    <key>NSHumanReadableCopyright</key>
-    <string>Copyright 2025 Pierre F. Aubert pierre@spinorama.org All rights reserved.</string>
-
-    <key>OSBundleLibraries</key>
-    <dict>
-        <key>com.apple.CoreAudio</key>
-        <string>1.0</string>
-    </dict>
-</dict>
-</plist>
-EOF
+    # Copy Info.plist from Swift sources (already configured)
+    cp "$HAL_SWIFT_DIR/Info.plist" "$DRIVER_BUNDLE/Contents/Info.plist"
 
     # Set permissions
     chmod 755 "$DRIVER_BUNDLE/Contents/MacOS/SotFHAL"
     chmod 644 "$DRIVER_BUNDLE/Contents/Info.plist"
 
-    log_success "HAL driver bundle created"
+    log_success "Swift HAL driver bundle created"
 }
 
 # Build the Toolbar Swift app
@@ -424,25 +407,29 @@ create_app_icon() {
         # Generate all required sizes
         local sizes=(16 32 64 128 256 512 1024)
         for size in "${sizes[@]}"; do
-            sips -z $size $size "$input_image" --out "$iconset_dir/icon_${size}x${size}.png" 2>/dev/null || true
+            sips -s format png -z $size $size "$input_image" --out "$iconset_dir/icon_${size}x${size}.png" 2>/dev/null || true
         done
 
         # Create @2x versions
-        sips -z 32 32 "$input_image" --out "$iconset_dir/icon_16x16@2x.png" 2>/dev/null || true
-        sips -z 64 64 "$input_image" --out "$iconset_dir/icon_32x32@2x.png" 2>/dev/null || true
-        sips -z 256 256 "$input_image" --out "$iconset_dir/icon_128x128@2x.png" 2>/dev/null || true
-        sips -z 512 512 "$input_image" --out "$iconset_dir/icon_256x256@2x.png" 2>/dev/null || true
-        sips -z 1024 1024 "$input_image" --out "$iconset_dir/icon_512x512@2x.png" 2>/dev/null || true
+        sips -s format png -z 32 32 "$input_image" --out "$iconset_dir/icon_16x16@2x.png" 2>/dev/null || true
+        sips -s format png -z 64 64 "$input_image" --out "$iconset_dir/icon_32x32@2x.png" 2>/dev/null || true
+        sips -s format png -z 128 128 "$input_image" --out "$iconset_dir/icon_64x64@2x.png" 2>/dev/null || true
+        sips -s format png -z 256 256 "$input_image" --out "$iconset_dir/icon_128x128@2x.png" 2>/dev/null || true
+        sips -s format png -z 512 512 "$input_image" --out "$iconset_dir/icon_256x256@2x.png" 2>/dev/null || true
+        sips -s format png -z 1024 1024 "$input_image" --out "$iconset_dir/icon_512x512@2x.png" 2>/dev/null || true
 
         # Convert to icns
         iconutil -c icns "$iconset_dir" -o "$APP_BUNDLE/Contents/Resources/AppIcon.icns" 2>/dev/null || {
             log_warning "Failed to create icns, app will use default icon"
+            rm -rf "$iconset_dir"
+            return
         }
+
+        rm -rf "$iconset_dir"
+        log_success "App icon created"
     else
         log_warning "No icon source found, using default icon"
     fi
-
-    rm -rf "$iconset_dir"
 }
 
 # Create entitlements files

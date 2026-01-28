@@ -12,7 +12,7 @@ use std::sync::mpsc::{Receiver, Sender, SyncSender};
 use std::time::{Duration, Instant};
 
 #[cfg(all(target_os = "macos", feature = "hal"))]
-use sotf_hal::HalInputReader;
+use driver_hal::HalInputReader;
 
 const SPIN_MS_SLEEP_DECODER: u64 = 10;
 

@@ -1,46 +1,31 @@
 //! HAL Driver Manager for sotf_daemon
 //!
 //! This module manages the HAL driver lifecycle within the daemon process.
-//! When the daemon starts, it automatically initializes the HAL audio buffer,
-//! making the HAL plugins functional without any user intervention.
+//! With the Swift HAL driver architecture:
 //!
-//! # Thread Safety
+//! - The Swift HAL driver creates and manages shared memory at `/tmp/sotf-audio-shm`
+//! - The Rust daemon connects to this shared memory for audio data exchange
+//! - No explicit buffer initialization is needed from Rust side
 //!
-//! The HAL driver uses a global audio buffer implemented with thread-safe primitives:
+//! # Architecture
 //!
-//! - **Global Buffer**: `OnceLock<Mutex<Option<Arc<AudioBuffer>>>>` ensures:
-//!   - One-time initialization (first call wins, concurrent calls are safe)
-//!   - Thread-safe access via Mutex
-//!   - Shared ownership via Arc (multiple readers/writers can coexist)
+//! - **Swift HAL Driver**: Installs as a macOS audio plugin, creates shared memory,
+//!   captures audio from apps, and outputs processed audio
+//! - **Shared Memory**: Lock-free ring buffers for bidirectional audio exchange
+//! - **Rust Daemon**: Connects to shared memory via `driver_hal::SharedAudioBuffer`
 //!
-//! - **Audio Channels**: The AudioBuffer uses `crossbeam::channel` which is lock-free
-//!   and designed for concurrent producer/consumer access:
-//!   - Input channel: HAL I/O callback (writer) ↔ HalInputPlugin (reader)
-//!   - Output channel: HalOutputPlugin (writer) ↔ HAL I/O callback (reader)
+//! # Plugin Access
 //!
-//! - **Concurrent Plugin Access**: Multiple `HalInputPlugin` and `HalOutputPlugin`
-//!   instances can safely read/write concurrently. The crossbeam channels handle
-//!   synchronization internally.
-//!
-//! - **HalManager Arc Cloning**: The daemon uses `Arc<Mutex<HalManager>>` to share
-//!   the manager across threads. The Drop impl was intentionally removed to avoid
-//!   shutdown being triggered when client threads exit. Shutdown must be called
-//!   explicitly by the main daemon thread.
-//!
-//! # Initialization Guarantees
-//!
-//! - `init_global_buffer()` is safe to call multiple times (subsequent calls log a warning)
-//! - `get_global_buffer()` returns None until initialization completes
-//! - Plugin constructors check for initialization and return Err if buffer is unavailable
-//! - This ensures fail-fast behavior rather than silent degradation
+//! - `HalInputPlugin`: Reads audio from shared memory (app audio captured by HAL)
+//! - `HalOutputPlugin`: Writes processed audio back to shared memory (for HAL output)
 
 #[cfg(target_os = "macos")]
-use sotf_hal::audio_buffer::init_global_buffer;
+use driver_hal::SharedAudioBuffer;
 
-/// HAL Manager - handles HAL driver initialization and lifecycle
+/// HAL Manager - handles HAL driver status and connectivity
 pub struct HalManager {
     #[cfg(target_os = "macos")]
-    initialized: bool,
+    connected: bool,
 }
 
 impl HalManager {
@@ -48,90 +33,84 @@ impl HalManager {
     pub fn new() -> Self {
         Self {
             #[cfg(target_os = "macos")]
-            initialized: false,
+            connected: false,
         }
     }
 
-    /// Initialize the HAL driver and audio buffers
+    /// Initialize the HAL manager and verify connectivity
     ///
-    /// This should be called once at daemon startup.
-    /// It initializes the global audio buffer that the HAL plugins use.
-    ///
-    /// # Arguments
-    /// * `capacity_ms` - Buffer capacity in milliseconds (default: 500ms)
-    /// * `sample_rate` - Sample rate in Hz (default: 48000)
-    /// * `channels` - Number of channels (default: 2 for stereo)
-    pub fn initialize(
-        &mut self,
-        capacity_ms: usize,
-        sample_rate: u32,
-        channels: usize,
-    ) -> Result<(), String> {
+    /// This checks that the Swift HAL driver is installed and that we can
+    /// connect to the shared memory. The Swift driver creates the shared
+    /// memory, so this is a connectivity check rather than initialization.
+    pub fn initialize(&mut self) -> Result<(), String> {
         #[cfg(target_os = "macos")]
         {
-            if self.initialized {
-                log::warn!("HAL manager already initialized");
+            if self.connected {
+                log::warn!("HAL manager already connected");
                 return Ok(());
             }
 
-            log::info!("🎵 Initializing HAL driver...");
-            log::info!("   Buffer capacity: {}ms", capacity_ms);
-            log::info!("   Sample rate: {} Hz", sample_rate);
-            log::info!("   Channels: {}", channels);
+            log::info!("Checking HAL driver connectivity...");
 
-            // Initialize the global audio buffer
-            init_global_buffer(capacity_ms, sample_rate, channels);
+            // Check if driver is installed
+            if !check_hal_driver_installed() {
+                log::warn!("HAL driver not installed at /Library/Audio/Plug-Ins/HAL/");
+                log::warn!("HAL plugins will not be available until driver is installed");
+                // Don't fail - daemon can still run without HAL
+                return Ok(());
+            }
 
-            self.initialized = true;
-            log::info!("✅ HAL driver initialized successfully");
-            log::info!("   HAL input/output plugins are now available");
+            log::info!("HAL driver is installed");
+
+            // Try to connect to shared memory
+            match SharedAudioBuffer::open_default() {
+                Ok(_buffer) => {
+                    self.connected = true;
+                    log::info!("Connected to HAL shared memory");
+                    log::info!("HAL input/output plugins are now available");
+                }
+                Err(_) => {
+                    log::warn!("HAL shared memory not available yet");
+                    log::warn!(
+                        "This is normal if no app is using the HAL audio device"
+                    );
+                    log::warn!("HAL plugins will connect when audio starts playing");
+                    // Don't fail - shared memory is created on-demand by HAL driver
+                }
+            }
 
             Ok(())
         }
 
         #[cfg(not(target_os = "macos"))]
         {
-            let _ = (capacity_ms, sample_rate, channels);
             log::warn!("HAL driver not available on this platform (macOS only)");
             Ok(())
         }
     }
 
-    /// Initialize with default settings
+    /// Shutdown the HAL manager
     ///
-    /// Uses:
-    /// - 500ms buffer capacity
-    /// - 48kHz sample rate
-    /// - 2 channels (stereo)
-    pub fn initialize_default(&mut self) -> Result<(), String> {
-        self.initialize(500, 48000, 2)
-    }
-
-    /// Shutdown the HAL driver
-    ///
-    /// This should be called explicitly before the daemon exits.
-    /// Note: This is NOT called automatically in Drop to avoid
-    /// shutdown being triggered when Arc clones are dropped in
-    /// client handler threads.
+    /// With the Swift HAL driver architecture, there's nothing to clean up
+    /// on the Rust side - the Swift driver manages the shared memory lifecycle.
     pub fn shutdown(&mut self) {
         #[cfg(target_os = "macos")]
         {
-            if !self.initialized {
+            if !self.connected {
                 return;
             }
 
-            log::info!("🛑 Shutting down HAL driver...");
-            sotf_hal::audio_buffer::shutdown_global_buffer();
-            self.initialized = false;
-            log::info!("✅ HAL driver shut down");
+            log::info!("HAL manager shutting down");
+            self.connected = false;
+            log::info!("HAL manager shut down");
         }
     }
 
-    /// Check if HAL manager has been initialized
+    /// Check if HAL manager has verified connectivity
     pub fn is_initialized(&self) -> bool {
         #[cfg(target_os = "macos")]
         {
-            self.initialized
+            self.connected
         }
         #[cfg(not(target_os = "macos"))]
         {
@@ -142,19 +121,16 @@ impl HalManager {
 
 // NOTE: Drop implementation intentionally omitted
 // Shutdown must be called explicitly to avoid race conditions
-// when Arc<Mutex<HalManager>> is cloned into multiple threads
 
 /// Get HAL driver status information
 pub fn get_hal_status() -> HalStatus {
     #[cfg(target_os = "macos")]
     {
-        use sotf_hal::audio_buffer::get_global_buffer;
-
-        let buffer_initialized = get_global_buffer().is_some();
+        let shm_available = SharedAudioBuffer::open_default().is_ok();
 
         HalStatus {
             platform_supported: true,
-            buffer_initialized,
+            buffer_initialized: shm_available,
             driver_installed: check_hal_driver_installed(),
         }
     }
@@ -174,7 +150,7 @@ pub fn get_hal_status() -> HalStatus {
 pub struct HalStatus {
     /// Whether this platform supports HAL (macOS only)
     pub platform_supported: bool,
-    /// Whether the audio buffer is initialized
+    /// Whether the shared memory is available
     pub buffer_initialized: bool,
     /// Whether the HAL driver is installed as a system plugin
     pub driver_installed: bool,
@@ -183,7 +159,7 @@ pub struct HalStatus {
 impl HalStatus {
     /// Check if HAL is ready to use
     pub fn is_ready(&self) -> bool {
-        self.platform_supported && self.buffer_initialized
+        self.platform_supported && self.driver_installed
     }
 }
 
@@ -195,6 +171,8 @@ fn check_hal_driver_installed() -> bool {
     use std::path::Path;
 
     let driver_paths = [
+        "/Library/Audio/Plug-Ins/HAL/SotFHAL.driver",
+        // Legacy names for backward compatibility
         "/Library/Audio/Plug-Ins/HAL/AutoEQ.driver",
         "/Library/Audio/Plug-Ins/HAL/sotf_hal.driver",
     ];
@@ -210,14 +188,6 @@ mod tests {
     fn test_hal_manager_creation() {
         let manager = HalManager::new();
         assert!(!manager.is_initialized());
-    }
-
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn test_hal_manager_initialization() {
-        let mut manager = HalManager::new();
-        assert!(manager.initialize_default().is_ok());
-        assert!(manager.is_initialized());
     }
 
     #[test]

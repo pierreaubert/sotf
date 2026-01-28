@@ -1,9 +1,0 @@
-# Linker configuration for macOS HAL driver
-# Produces a Mach-O bundle (MH_BUNDLE) instead of dylib (MH_DYLIB)
-# This is required for CFPlugIn compatibility on modern macOS
-
-[target.aarch64-apple-darwin]
-rustflags = ["-C", "link-args=-bundle"]
-
-[target.x86_64-apple-darwin]
-rustflags = ["-C", "link-args=-bundle"]

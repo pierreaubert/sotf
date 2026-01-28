@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
 
 #[cfg(all(target_os = "macos", feature = "hal"))]
-use sotf_hal::HalOutputWriter;
+use driver_hal::HalOutputWriter;
 
 const SPIN_MS_RINGBUFFER: u64 = 5;
 const SPIN_MS_SIGNAL: u64 = 10;

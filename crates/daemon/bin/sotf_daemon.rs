@@ -448,7 +448,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     {
         let mut hal = daemon.hal_manager.lock();
-        match hal.initialize_default() {
+        match hal.initialize() {
             Ok(_) => {
                 let status = get_hal_status();
                 println!("📊 HAL Status:");

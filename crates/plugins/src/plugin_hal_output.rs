@@ -7,7 +7,7 @@ use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use serde::{Deserialize, Serialize};
 
 #[cfg(target_os = "macos")]
-use sotf_hal::HalOutputWriter;
+use driver_hal::HalOutputWriter;
 
 // ============================================================================
 // Configuration

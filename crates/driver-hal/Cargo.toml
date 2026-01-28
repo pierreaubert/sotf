@@ -4,38 +4,16 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "Simplified Core Audio HAL driver with bidirectional audio buffers"
+description = "Shared memory interface for Swift HAL driver communication"
 
 [lib]
-name = "sotf_hal"
-# Build as staticlib so we can link it as a Mach-O bundle (MH_BUNDLE) in post-build
-# CFPlugIn requires MH_BUNDLE format, not MH_DYLIB
-crate-type = ["staticlib", "lib"]
-
-[[bin]]
-name = "hal-loopback"
-path = "bin/test_loopback.rs"
+name = "driver_hal"
+crate-type = ["lib"]
 
 # This crate is macOS-only (Core Audio HAL driver)
 [target.'cfg(target_os = "macos")'.dependencies]
-libc = { workspace = true }
+# Shared memory mapping
+memmap2 = "0.9"
 
-# Lock-free ring buffer
-rtrb = { workspace = true }
-
-# Logging and error handling
-log = { workspace = true }
-env_logger = { workspace = true }
-thiserror = { workspace = true }
-anyhow = { workspace = true }
-
-# Core Audio integration
-coreaudio-sys = { workspace = true }
-core-foundation = { workspace = true }
-core-foundation-sys = { workspace = true }
-
-[target.'cfg(target_os = "macos")'.dev-dependencies]
+[dev-dependencies]
 tempfile = { workspace = true }
-
-[dependencies]
-ctor = "0.2"

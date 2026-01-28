@@ -3,69 +3,45 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleDevelopmentRegion</key>
-    <string>English</string>
-
+    <string>en</string>
     <key>CFBundleExecutable</key>
-    <string>sotf_driver</string>
-
+    <string>SotFHAL</string>
     <key>CFBundleIdentifier</key>
-    <string>org.spinorama.sotf-driver</string>
-
+    <string>org.spinorama.sotf-hal</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
-
     <key>CFBundleName</key>
-    <string>SotF HAL</string>
-
+    <string>SotF HAL Driver</string>
     <key>CFBundlePackageType</key>
-    <string>drvr</string>
-
+    <string>BNDL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.5.0</string>
-
-    <key>CFBundleSignature</key>
-    <string>????</string>
-
+    <string>1.0</string>
     <key>CFBundleVersion</key>
     <string>1</string>
-
+    <key>CFBundleSupportedPlatforms</key>
+    <array>
+        <string>MacOSX</string>
+    </array>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
     <key>CFPlugInDynamicRegisterFunction</key>
     <string></string>
-
     <key>CFPlugInDynamicRegistration</key>
     <string>NO</string>
-
     <key>CFPlugInFactories</key>
     <dict>
-        <!-- Factory UUID for our driver - must match exported symbol -->
+        <!-- Factory UUID - must match what we check in the factory function -->
         <key>5A4E28B8-93F4-4B8A-B5E2-3D9F6A8C7E01</key>
         <string>SotFHALDriverFactory</string>
     </dict>
-
     <key>CFPlugInTypes</key>
     <dict>
-        <!-- kAudioServerPlugInTypeUUID from AudioServerPlugIn.h -->
+        <!-- kAudioServerPlugInTypeUUID = 443ABAB8-E7B3-491A-B985-BEB9187030DB -->
         <key>443ABAB8-E7B3-491A-B985-BEB9187030DB</key>
         <array>
             <string>5A4E28B8-93F4-4B8A-B5E2-3D9F6A8C7E01</string>
         </array>
     </dict>
-
-    <key>SotFHalPlugIn</key>
-    <dict>
-        <key>Name</key>
-        <string>SotFHal</string>
-
-        <key>Manufacturer</key>
-        <string>org.spinorama</string>
-
-        <key>Version</key>
-        <string>1.0.2</string>
-    </dict>
-
-    <key>NSHumanReadableCopyright</key>
-    <string>Copyright © 2025 Pierre F. Aubert pierre@spinorama.org  All rights reserved.</string>
-
     <key>OSBundleLibraries</key>
     <dict>
         <key>com.apple.CoreAudio</key>

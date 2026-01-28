@@ -111,126 +111,126 @@ echo -e "${BLUE}  SotF Installer${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
-# Dev mode: quick HAL driver build and install only
+# Dev mode: quick Swift HAL driver build and install only
 if $DEV_MODE; then
-    log_info "Dev mode: Building and installing HAL driver only..."
+    log_info "Dev mode: Building and installing Swift HAL driver only..."
 
     cd "$PROJECT_ROOT"
 
-    # Build HAL driver in release mode (produces staticlib)
-    log_info "Building HAL driver (release)..."
-    cargo build --release -p driver-hal
+    HAL_DRIVER_DIR="$PROJECT_ROOT/crates/driver-hal"
+    HAL_SWIFT_DIR="$HAL_DRIVER_DIR/swift"
+    HAL_SOURCES_DIR="$HAL_SWIFT_DIR/Sources"
 
-    RELEASE_STATICLIB="$PROJECT_ROOT/target/release/libsotf_hal.a"
-    RELEASE_BUNDLE="$PROJECT_ROOT/target/release/SotFHAL.bundle"
-    if [ ! -f "$RELEASE_STATICLIB" ]; then
-        log_error "HAL driver build failed: $RELEASE_STATICLIB not found"
-        exit 1
-    fi
-    log_success "HAL driver staticlib built successfully"
-
-    # Link staticlib as Mach-O bundle (MH_BUNDLE instead of MH_DYLIB)
-    # CFPlugIn requires MH_BUNDLE format for proper loading
-    log_info "Linking as Mach-O bundle..."
-    ld -bundle \
-       -arch arm64 \
-       -platform_version macos 15.0.0 15.0.0 \
-       -syslibroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk \
-       -lSystem \
-       -framework CoreAudio \
-       -framework CoreFoundation \
-       -framework AudioToolbox \
-       -all_load "$RELEASE_STATICLIB" \
-       -o "$RELEASE_BUNDLE"
-
-    if [ ! -f "$RELEASE_BUNDLE" ]; then
-        log_error "Bundle linking failed"
+    # Check for Swift sources
+    if [ ! -d "$HAL_SOURCES_DIR" ]; then
+        log_error "Swift HAL driver sources not found at $HAL_SOURCES_DIR"
         exit 1
     fi
 
-    # Verify it's actually a bundle
-    FILETYPE=$(otool -hv "$RELEASE_BUNDLE" | grep -A1 filetype | tail -1 | awk '{print $5}')
+    # Create temp build directory
+    BUILD_TMP="$PROJECT_ROOT/target/hal-dev-build"
+    mkdir -p "$BUILD_TMP"
+
+    # Find all Swift source files
+    SWIFT_FILES=(
+        "$HAL_SOURCES_DIR/Timing.swift"
+        "$HAL_SOURCES_DIR/RingBuffer.swift"
+        "$HAL_SOURCES_DIR/SharedMemory.swift"
+        "$HAL_SOURCES_DIR/SotFHALDriver.swift"
+    )
+
+    log_info "Compiling Swift HAL driver..."
+
+    # Compile Swift to a bundle
+    swiftc \
+        -emit-library \
+        -o "$BUILD_TMP/SotFHAL" \
+        -module-name SotFHAL \
+        -import-objc-header "$HAL_SOURCES_DIR/BridgingHeader.h" \
+        -Xlinker -bundle \
+        -Xlinker -rpath -Xlinker @loader_path/../Frameworks \
+        -framework CoreAudio \
+        -framework CoreFoundation \
+        -framework Foundation \
+        -O \
+        "${SWIFT_FILES[@]}"
+
+    if [ ! -f "$BUILD_TMP/SotFHAL" ]; then
+        log_error "Swift compilation failed"
+        exit 1
+    fi
+
+    # Verify it's a bundle
+    FILETYPE=$(otool -hv "$BUILD_TMP/SotFHAL" | grep -A1 filetype | tail -1 | awk '{print $5}')
     if [ "$FILETYPE" != "BUNDLE" ]; then
-        log_warning "Binary is $FILETYPE instead of BUNDLE"
-    else
-        log_success "Mach-O bundle created (MH_BUNDLE)"
+        log_warning "Binary is $FILETYPE instead of BUNDLE, trying alternative linking..."
+
+        # Compile to object files first
+        for f in "${SWIFT_FILES[@]}"; do
+            BASENAME=$(basename "$f" .swift)
+            swiftc \
+                -c \
+                -o "$BUILD_TMP/$BASENAME.o" \
+                -module-name SotFHAL \
+                -import-objc-header "$HAL_SOURCES_DIR/BridgingHeader.h" \
+                -framework CoreAudio \
+                -framework CoreFoundation \
+                -framework Foundation \
+                -O \
+                "$f"
+        done
+
+        # Link all object files as bundle
+        ld -bundle \
+            -arch arm64 \
+            -platform_version macos 14.0.0 15.0.0 \
+            -syslibroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk \
+            -L/usr/lib/swift \
+            -lSystem \
+            -lswiftCore \
+            -lswiftFoundation \
+            -lswiftCoreFoundation \
+            -lswiftDarwin \
+            -lswiftDispatch \
+            -lswiftObjectiveC \
+            -framework CoreAudio \
+            -framework CoreFoundation \
+            -framework Foundation \
+            "$BUILD_TMP"/*.o \
+            -o "$BUILD_TMP/SotFHAL"
+
+        FILETYPE=$(otool -hv "$BUILD_TMP/SotFHAL" | grep -A1 filetype | tail -1 | awk '{print $5}')
     fi
+
+    log_info "HAL driver binary type: $FILETYPE"
+    log_success "Swift HAL driver compiled successfully"
 
     # Stop coreaudiod
     log_info "Stopping CoreAudio..."
     sudo killall coreaudiod 2>/dev/null || true
     sleep 1
 
-    # Create driver bundle structure if it doesn't exist
-    if [ ! -d "$HAL_TARGET" ]; then
-        log_info "Creating driver bundle structure..."
-        sudo mkdir -p "$HAL_TARGET/Contents/MacOS"
-        sudo mkdir -p "$HAL_TARGET/Contents/Resources"
-
-        # Create Info.plist
-        VERSION=$(grep '^version' "$PROJECT_ROOT/Cargo.toml" | head -1 | sed 's/.*"\(.*\)".*/\1/')
-        sudo tee "$HAL_TARGET/Contents/Info.plist" > /dev/null << EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleDevelopmentRegion</key>
-    <string>English</string>
-    <key>CFBundleExecutable</key>
-    <string>SotFHAL</string>
-    <key>CFBundleIdentifier</key>
-    <string>${HAL_BUNDLE_ID}</string>
-    <key>CFBundleInfoDictionaryVersion</key>
-    <string>6.0</string>
-    <key>CFBundleName</key>
-    <string>SotF HAL</string>
-    <key>CFBundlePackageType</key>
-    <string>BNDL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>${VERSION}</string>
-    <key>CFBundleSignature</key>
-    <string>????</string>
-    <key>CFBundleVersion</key>
-    <string>1</string>
-    <key>CFBundleSupportedPlatforms</key>
-    <array>
-        <string>MacOSX</string>
-    </array>
-    <key>CFPlugInDynamicRegisterFunction</key>
-    <string></string>
-    <key>CFPlugInDynamicRegistration</key>
-    <string>NO</string>
-    <key>CFPlugInFactories</key>
-    <dict>
-        <key>5A4E28B8-93F4-4B8A-B5E2-3D9F6A8C7E01</key>
-        <string>SotFHALDriverFactory</string>
-    </dict>
-    <key>CFPlugInTypes</key>
-    <dict>
-        <!-- kAudioServerPlugInTypeUUID from AudioServerPlugIn.h -->
-        <key>443ABAB8-E7B3-491A-B985-BEB9187030DB</key>
-        <array>
-            <string>5A4E28B8-93F4-4B8A-B5E2-3D9F6A8C7E01</string>
-        </array>
-    </dict>
-    <key>OSBundleLibraries</key>
-    <dict>
-        <key>com.apple.CoreAudio</key>
-        <string>1.0</string>
-    </dict>
-</dict>
-</plist>
-EOF
-    fi
+    # Create driver bundle structure
+    log_info "Creating driver bundle structure..."
+    sudo mkdir -p "$HAL_TARGET/Contents/MacOS"
+    sudo mkdir -p "$HAL_TARGET/Contents/Resources"
 
     # Copy the bundle binary
     log_info "Copying driver binary..."
-    sudo cp "$RELEASE_BUNDLE" "$HAL_TARGET/Contents/MacOS/SotFHAL"
+    sudo cp "$BUILD_TMP/SotFHAL" "$HAL_TARGET/Contents/MacOS/SotFHAL"
     sudo chmod 755 "$HAL_TARGET/Contents/MacOS/SotFHAL"
+
+    # Copy Info.plist from Swift sources
+    log_info "Copying Info.plist..."
+    sudo cp "$HAL_SWIFT_DIR/Info.plist" "$HAL_TARGET/Contents/Info.plist"
+    sudo chmod 644 "$HAL_TARGET/Contents/Info.plist"
 
     # Sign the bundle
     log_info "Signing driver bundle..."
     sudo codesign --force --deep --sign - "$HAL_TARGET"
+
+    # Clean up build temp
+    rm -rf "$BUILD_TMP"
 
     # CoreAudio will restart automatically
     log_success "HAL driver installed!"

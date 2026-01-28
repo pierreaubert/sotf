@@ -12,7 +12,7 @@ members = [
     "crates/plugins-gpui",
     "crates/driver-hal",
     "crates/head-tracker",
-    "crates/daemon", "check_driver_load",
+    "crates/daemon",
 ]
 resolver = "3"
 

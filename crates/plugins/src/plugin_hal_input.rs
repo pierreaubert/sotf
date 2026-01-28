@@ -7,7 +7,7 @@ use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use serde::{Deserialize, Serialize};
 
 #[cfg(target_os = "macos")]
-use sotf_hal::HalInputReader;
+use driver_hal::HalInputReader;
 
 // ============================================================================
 // Configuration

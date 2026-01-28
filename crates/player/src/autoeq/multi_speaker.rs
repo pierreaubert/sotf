@@ -299,6 +299,7 @@ pub fn run_multi_speaker_optimization(
             mode: "iir".to_string(),
             fir: None,
             seed: None,
+            mixed_config: None,
         },
         recording_config: None,
     };
@@ -435,6 +436,7 @@ pub fn optimizer_config_from_args(args: &autoeq::Args) -> OptimizerConfig {
         mode: "iir".to_string(),
         fir: None,
         seed: None,
+        mixed_config: None,
     }
 }
 
