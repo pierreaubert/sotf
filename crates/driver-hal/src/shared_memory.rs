@@ -415,10 +415,339 @@ impl Default for HalOutputWriter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
 
     #[test]
     fn test_header_size() {
         // Ensure header is packed correctly
         assert!(std::mem::size_of::<SharedAudioHeader>() <= 128);
+    }
+
+    /// Create a mock shared memory file for testing
+    /// Returns the file path
+    fn create_mock_shared_memory(
+        sample_rate: u32,
+        buffer_frames: u32,
+        channel_count: u32,
+    ) -> NamedTempFile {
+        let header_size = std::mem::size_of::<SharedAudioHeader>();
+        let audio_offset = (header_size + 63) & !63; // 64-byte aligned
+        let audio_capacity = (buffer_frames as usize) * (channel_count as usize) * 8; // 8 buffers
+        let total_size = audio_offset + audio_capacity * std::mem::size_of::<f32>();
+
+        let mut file = NamedTempFile::new().expect("Failed to create temp file");
+
+        // Write header
+        let header = SharedAudioHeader {
+            magic: SHARED_MEMORY_MAGIC,
+            version: SHARED_MEMORY_VERSION,
+            sample_rate,
+            buffer_frames,
+            channel_count,
+            write_position: AtomicU64::new(0),
+            read_position: AtomicU64::new(0),
+            active: AtomicU32::new(1),
+            config_changed: AtomicU32::new(0),
+            driver_ready: AtomicU32::new(1),
+            engine_ready: AtomicU32::new(0),
+            reserved: [0; 4],
+        };
+
+        // Create buffer with header bytes
+        let header_bytes: &[u8] =
+            unsafe { std::slice::from_raw_parts(&header as *const _ as *const u8, header_size) };
+
+        // Write header + padding + audio data space
+        let mut buffer = vec![0u8; total_size];
+        buffer[..header_size].copy_from_slice(header_bytes);
+
+        file.write_all(&buffer).expect("Failed to write to file");
+        file.flush().expect("Failed to flush file");
+
+        file
+    }
+
+    #[test]
+    fn test_shared_memory_roundtrip_bit_exact() {
+        // Create mock shared memory
+        let sample_rate = 48000;
+        let buffer_frames = 1024;
+        let channel_count = 2;
+        let temp_file = create_mock_shared_memory(sample_rate, buffer_frames, channel_count);
+
+        // Open the shared memory buffer
+        let mut buffer = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open buffer");
+
+        // Verify header values
+        assert_eq!(buffer.sample_rate(), sample_rate);
+        assert_eq!(buffer.buffer_frames(), buffer_frames);
+        assert_eq!(buffer.channel_count(), channel_count);
+        assert!(buffer.driver_ready());
+
+        // Create test audio data with known values
+        let num_samples = buffer_frames as usize * channel_count as usize;
+        let input_audio: Vec<f32> = (0..num_samples)
+            .map(|i| {
+                // Use a mix of values to test precision
+                let t = i as f32 / sample_rate as f32;
+                (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.5
+            })
+            .collect();
+
+        // Write audio to shared memory
+        let frames_written = buffer.write_audio(&input_audio);
+        assert_eq!(
+            frames_written,
+            buffer_frames as usize,
+            "Should write all frames"
+        );
+
+        // Read audio back
+        let mut output_audio = vec![0.0f32; num_samples];
+        let frames_read = buffer.read_audio(&mut output_audio);
+        assert_eq!(
+            frames_read,
+            buffer_frames as usize,
+            "Should read all frames"
+        );
+
+        // Verify bit-for-bit accuracy
+        for (i, (input, output)) in input_audio.iter().zip(output_audio.iter()).enumerate() {
+            assert_eq!(
+                input.to_bits(),
+                output.to_bits(),
+                "Sample {} mismatch: input={} (bits={:#x}), output={} (bits={:#x})",
+                i,
+                input,
+                input.to_bits(),
+                output,
+                output.to_bits()
+            );
+        }
+    }
+
+    #[test]
+    fn test_shared_memory_roundtrip_multiple_blocks() {
+        let sample_rate = 48000;
+        let buffer_frames = 256;
+        let channel_count = 2;
+        let temp_file = create_mock_shared_memory(sample_rate, buffer_frames, channel_count);
+
+        let mut buffer = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open buffer");
+
+        // Write and read multiple blocks to test ring buffer wrap-around
+        let num_blocks = 10;
+        let samples_per_block = buffer_frames as usize * channel_count as usize;
+
+        for block_idx in 0..num_blocks {
+            // Create unique audio for each block
+            let input_audio: Vec<f32> = (0..samples_per_block)
+                .map(|i| {
+                    let sample_idx = block_idx * samples_per_block + i;
+                    let t = sample_idx as f32 / sample_rate as f32;
+                    (2.0 * std::f32::consts::PI * (440.0 + block_idx as f32 * 100.0) * t).sin()
+                        * 0.5
+                })
+                .collect();
+
+            // Write
+            let frames_written = buffer.write_audio(&input_audio);
+            assert_eq!(
+                frames_written,
+                buffer_frames as usize,
+                "Block {}: Should write all frames",
+                block_idx
+            );
+
+            // Read
+            let mut output_audio = vec![0.0f32; samples_per_block];
+            let frames_read = buffer.read_audio(&mut output_audio);
+            assert_eq!(
+                frames_read,
+                buffer_frames as usize,
+                "Block {}: Should read all frames",
+                block_idx
+            );
+
+            // Verify
+            for (i, (input, output)) in input_audio.iter().zip(output_audio.iter()).enumerate() {
+                assert_eq!(
+                    input.to_bits(),
+                    output.to_bits(),
+                    "Block {} Sample {}: mismatch",
+                    block_idx,
+                    i
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_shared_memory_roundtrip_special_values() {
+        let sample_rate = 48000;
+        let buffer_frames = 32;
+        let channel_count = 2;
+        let temp_file = create_mock_shared_memory(sample_rate, buffer_frames, channel_count);
+
+        let mut buffer = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open buffer");
+
+        // Test special float values
+        let special_values: Vec<f32> = vec![
+            0.0,
+            -0.0,
+            1.0,
+            -1.0,
+            0.5,
+            -0.5,
+            f32::MIN_POSITIVE,
+            -f32::MIN_POSITIVE,
+            f32::EPSILON,
+            -f32::EPSILON,
+            0.999999,
+            -0.999999,
+            // Typical audio values
+            0.707,   // -3dB
+            0.5012,  // -6dB
+            0.251,   // -12dB
+            0.1,     // -20dB
+            0.0316,  // -30dB
+            0.01,    // -40dB
+            0.00316, // -50dB
+            0.001,   // -60dB
+        ];
+
+        // Pad to fill buffer
+        let num_samples = buffer_frames as usize * channel_count as usize;
+        let mut input_audio = special_values.clone();
+        while input_audio.len() < num_samples {
+            input_audio.push(0.0);
+        }
+        input_audio.truncate(num_samples);
+
+        // Write
+        buffer.write_audio(&input_audio);
+
+        // Read
+        let mut output_audio = vec![0.0f32; num_samples];
+        buffer.read_audio(&mut output_audio);
+
+        // Verify bit-for-bit
+        for (i, (input, output)) in input_audio.iter().zip(output_audio.iter()).enumerate() {
+            assert_eq!(
+                input.to_bits(),
+                output.to_bits(),
+                "Sample {} ({}) mismatch",
+                i,
+                input
+            );
+        }
+    }
+
+    #[test]
+    fn test_shared_memory_stereo_channel_separation() {
+        let sample_rate = 48000;
+        let buffer_frames = 128;
+        let channel_count = 2;
+        let temp_file = create_mock_shared_memory(sample_rate, buffer_frames, channel_count);
+
+        let mut buffer = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open buffer");
+
+        // Create stereo audio with distinct left and right content
+        let num_samples = buffer_frames as usize * channel_count as usize;
+        let input_audio: Vec<f32> = (0..buffer_frames as usize)
+            .flat_map(|i| {
+                let t = i as f32 / sample_rate as f32;
+                let left = (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.5; // 440Hz on left
+                let right = (2.0 * std::f32::consts::PI * 880.0 * t).sin() * 0.3; // 880Hz on right
+                [left, right]
+            })
+            .collect();
+
+        // Write and read
+        buffer.write_audio(&input_audio);
+        let mut output_audio = vec![0.0f32; num_samples];
+        buffer.read_audio(&mut output_audio);
+
+        // Verify channels are preserved correctly
+        for i in 0..buffer_frames as usize {
+            let left_in = input_audio[i * 2];
+            let right_in = input_audio[i * 2 + 1];
+            let left_out = output_audio[i * 2];
+            let right_out = output_audio[i * 2 + 1];
+
+            assert_eq!(
+                left_in.to_bits(),
+                left_out.to_bits(),
+                "Frame {}: Left channel mismatch",
+                i
+            );
+            assert_eq!(
+                right_in.to_bits(),
+                right_out.to_bits(),
+                "Frame {}: Right channel mismatch",
+                i
+            );
+
+            // Also verify left and right are different (sanity check)
+            if i > 0 {
+                assert_ne!(
+                    left_in.to_bits(),
+                    right_in.to_bits(),
+                    "Frame {}: Left and right should be different",
+                    i
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_invalid_magic_number() {
+        let mut file = NamedTempFile::new().expect("Failed to create temp file");
+
+        // Write invalid header (wrong magic)
+        let mut buffer = vec![0u8; 4096];
+
+        // Write wrong magic number
+        buffer[0..4].copy_from_slice(&0x12345678u32.to_ne_bytes());
+        buffer[4..8].copy_from_slice(&SHARED_MEMORY_VERSION.to_ne_bytes());
+
+        file.write_all(&buffer).expect("Failed to write");
+        file.flush().expect("Failed to flush");
+
+        let result = SharedAudioBuffer::open(file.path());
+        match result {
+            Err(e) => assert!(
+                e.to_string().contains("Invalid shared memory magic"),
+                "Expected 'Invalid shared memory magic' error, got: {}",
+                e
+            ),
+            Ok(_) => panic!("Expected error for invalid magic number"),
+        }
+    }
+
+    #[test]
+    fn test_invalid_version() {
+        let mut file = NamedTempFile::new().expect("Failed to create temp file");
+
+        // Write header with wrong version
+        let mut buffer = vec![0u8; 4096];
+
+        // Correct magic, wrong version
+        buffer[0..4].copy_from_slice(&SHARED_MEMORY_MAGIC.to_ne_bytes());
+        buffer[4..8].copy_from_slice(&99u32.to_ne_bytes()); // Invalid version
+
+        file.write_all(&buffer).expect("Failed to write");
+        file.flush().expect("Failed to flush");
+
+        let result = SharedAudioBuffer::open(file.path());
+        match result {
+            Err(e) => assert!(
+                e.to_string().contains("Incompatible shared memory version"),
+                "Expected 'Incompatible shared memory version' error, got: {}",
+                e
+            ),
+            Ok(_) => panic!("Expected error for invalid version"),
+        }
     }
 }

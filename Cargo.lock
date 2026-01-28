@@ -2553,6 +2553,7 @@ name = "driver-hal"
 version = "0.5.11"
 dependencies = [
  "memmap2",
+ "plugins",
  "tempfile",
 ]
 
