@@ -486,6 +486,7 @@ impl PlayerView {
                 mode: "iir".to_string(),
                 fir: None,
                 seed: None,
+                mixed_config: None,
             };
 
             let config = RoomConfig {
