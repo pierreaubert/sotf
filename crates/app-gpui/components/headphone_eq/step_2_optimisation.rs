@@ -92,13 +92,14 @@ impl PlayerView {
             .on_loss_type_toggle({
                 let state = self.state.clone();
                 move |open, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .headphone_eq_state
                             .dropdowns
                             .loss_type_open = open;
+                        cx.notify();
                     });
                 }
             })
@@ -120,13 +121,14 @@ impl PlayerView {
             .on_target_curve_toggle({
                 let state = self.state.clone();
                 move |open, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .headphone_eq_state
                             .dropdowns
                             .target_curve_open = open;
+                        cx.notify();
                     });
                 }
             })
@@ -158,13 +160,14 @@ impl PlayerView {
             .on_algo_toggle({
                 let state = self.state.clone();
                 move |open, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .headphone_eq_state
                             .dropdowns
                             .algorithm_open = open;
+                        cx.notify();
                     });
                 }
             })
@@ -190,13 +193,14 @@ impl PlayerView {
             .on_peq_model_toggle({
                 let state = self.state.clone();
                 move |open, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .headphone_eq_state
                             .dropdowns
                             .peq_model_open = open;
+                        cx.notify();
                     });
                 }
             })
@@ -261,13 +265,14 @@ impl PlayerView {
             .on_strategy_toggle({
                 let state = self.state.clone();
                 move |open, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .headphone_eq_state
                             .dropdowns
                             .strategy_open = open;
+                        cx.notify();
                     });
                 }
             })
@@ -319,13 +324,14 @@ impl PlayerView {
             .on_local_algo_toggle({
                 let state = self.state.clone();
                 move |open, _window, cx| {
-                    state.update(cx, |state, _cx| {
+                    state.update(cx, |state, cx| {
                         state
                             .app
                             .measurement_state
                             .headphone_eq_state
                             .dropdowns
                             .local_algo_open = open;
+                        cx.notify();
                     });
                 }
             })
