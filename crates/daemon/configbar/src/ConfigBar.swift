@@ -337,18 +337,22 @@ class StatusBarController: NSObject, ObservableObject {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         if let button = statusItem.button {
-            // Use SF Symbol for speaker - must be template for menubar
-            let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
-            if let image = NSImage(systemSymbolName: "speaker.wave.2.fill",
-                                   accessibilityDescription: "SotF")?
-                .withSymbolConfiguration(config) {
-                // Create a template copy that adapts to menubar appearance
-                let templateImage = image.copy() as! NSImage
-                templateImage.isTemplate = true
-                button.image = templateImage
+            // Try to load custom icon from bundle assets
+            if let iconImage = loadMenuBarIcon() {
+                button.image = iconImage
             } else {
-                // Fallback: use simple text
-                button.title = "♪"
+                // Fallback: use SF Symbol
+                let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .regular)
+                if let image = NSImage(systemSymbolName: "speaker.wave.2.fill",
+                                       accessibilityDescription: "SotF")?
+                    .withSymbolConfiguration(config) {
+                    let templateImage = image.copy() as! NSImage
+                    templateImage.isTemplate = true
+                    button.image = templateImage
+                } else {
+                    // Final fallback: use simple text
+                    button.title = "♪"
+                }
             }
             button.toolTip = "SotF Audio Engine"
         }
@@ -494,6 +498,50 @@ class StatusBarController: NSObject, ObservableObject {
            let statusItem = halMenu.item(withTag: 101) {
             statusItem.title = isHALDriverInstalled() ? "✓ Installed" : "✗ Not Installed"
         }
+    }
+
+    /// Load custom menubar icon from bundle or assets directory
+    private func loadMenuBarIcon() -> NSImage? {
+        // Try loading from bundle resources first (for packaged app)
+        if let bundleIcon = Bundle.main.image(forResource: "icon_16") {
+            bundleIcon.isTemplate = true
+            return bundleIcon
+        }
+
+        // Try loading from assets directory (for development)
+        let assetPaths = [
+            // Relative to executable (when running from build)
+            "../assets/icon_16@2x.png",
+            "../assets/icon_16.png",
+            // Relative to source (when running via swift directly)
+            "assets/icon_16@2x.png",
+            "assets/icon_16.png",
+            // Absolute paths for development
+            "\(FileManager.default.currentDirectoryPath)/assets/icon_16@2x.png",
+        ]
+
+        for path in assetPaths {
+            if FileManager.default.fileExists(atPath: path),
+               let image = NSImage(contentsOfFile: path) {
+                image.isTemplate = true
+                image.size = NSSize(width: 18, height: 18) // Standard menubar size
+                return image
+            }
+        }
+
+        // Try loading from script directory
+        let scriptPath = CommandLine.arguments[0]
+        if let scriptDir = URL(string: scriptPath)?.deletingLastPathComponent().path {
+            let iconPath = "\(scriptDir)/assets/icon_16@2x.png"
+            if FileManager.default.fileExists(atPath: iconPath),
+               let image = NSImage(contentsOfFile: iconPath) {
+                image.isTemplate = true
+                image.size = NSSize(width: 18, height: 18)
+                return image
+            }
+        }
+
+        return nil
     }
 
     private func showAlert(title: String, message: String) {

@@ -7,14 +7,49 @@
 //! and uses shared memory at /tmp/sotf-audio-shm to exchange audio data
 //! with the Rust audio engine.
 //!
-//! Data flow:
-//! - Swift HAL captures audio from macOS apps
-//! - Swift HAL writes to shared memory
-//! - Rust engine reads from shared memory, processes, and writes back
-//! - Swift HAL reads processed audio and outputs to macOS apps
+//! # Data Flow
+//!
+//! ```text
+//! macOS Audio Apps → Swift HAL Driver
+//!                         ↓
+//!             Shared Memory (interleaved, N channels)
+//!                         ↓
+//!             Rust Audio Engine (reads via HalInputReader)
+//!                         ↓
+//!             DSP Chain (GainPlugin for volume, EQ, etc.)
+//!                         ↓
+//!             Rust Audio Engine (writes via HalOutputWriter)
+//!                         ↓
+//!             Shared Memory (interleaved, N channels)
+//!                         ↓
+//!             Swift HAL Driver → macOS Audio System
+//! ```
+//!
+//! # Channel Support
+//!
+//! The HAL driver supports dynamic channel counts (1-16 channels) as specified
+//! in the shared memory header. The channel count is read from the header at
+//! runtime, allowing for stereo, 5.1, 7.1, and other configurations.
+//!
+//! # Volume Control
+//!
+//! Volume control is handled via the DSP chain using `GainPlugin` from the
+//! `plugins` crate. The `volume` module provides atomic volume types for
+//! thread-safe volume control:
+//!
+//! - `AtomicVolume`: Single global volume for all channels
+//! - `AtomicChannelVolumes`: Per-channel volume control
+//!
+//! See the `volume` module for details.
 
 pub mod shared_memory;
+pub mod volume;
 
 pub use shared_memory::{
     HalInputReader, HalOutputWriter, SharedAudioBuffer, SHARED_MEMORY_PATH,
+};
+pub use volume::{
+    AtomicChannelVolumes, AtomicVolume, SharedChannelVolumes, SharedVolume, VolumeConfig,
+    clamp_volume_db, clamp_volume_linear, create_shared_channel_volumes, create_shared_volume,
+    db_to_linear, linear_to_db,
 };

@@ -150,14 +150,67 @@ impl SharedAudioBuffer {
         self.header().sample_rate
     }
 
+    /// Set sample rate
+    ///
+    /// This updates the sample rate in the shared memory header and sets the
+    /// config_changed flag to notify the Swift HAL driver. The driver should
+    /// read the new sample rate and reconfigure accordingly.
+    ///
+    /// # Arguments
+    /// * `sample_rate` - New sample rate in Hz (e.g., 44100, 48000, 96000)
+    ///
+    /// # Note
+    /// The actual sample rate change only takes effect after the driver
+    /// processes the config_changed flag. Audio processing should be stopped
+    /// before changing sample rate to avoid glitches.
+    pub fn set_sample_rate(&mut self, sample_rate: u32) {
+        // Write sample rate directly (non-atomic, but coordinated via config_changed)
+        self.header_mut().sample_rate = sample_rate;
+        // Signal config change to the driver
+        self.set_config_changed();
+    }
+
     /// Get buffer frame size
     pub fn buffer_frames(&self) -> u32 {
         self.header().buffer_frames
     }
 
+    /// Set buffer frame size
+    ///
+    /// # Note
+    /// Changing buffer frames affects latency. Smaller = lower latency but higher CPU.
+    /// Common values: 256, 512, 1024, 2048
+    pub fn set_buffer_frames(&mut self, buffer_frames: u32) {
+        self.header_mut().buffer_frames = buffer_frames;
+        // Recalculate audio capacity
+        let channel_count = self.header().channel_count as usize;
+        self.audio_capacity = (buffer_frames as usize) * channel_count * 8;
+        self.set_config_changed();
+    }
+
     /// Get channel count
     pub fn channel_count(&self) -> u32 {
         self.header().channel_count
+    }
+
+    /// Set channel count
+    ///
+    /// # Arguments
+    /// * `channel_count` - Number of audio channels (e.g., 2 for stereo, 6 for 5.1)
+    pub fn set_channel_count(&mut self, channel_count: u32) {
+        self.header_mut().channel_count = channel_count;
+        // Recalculate audio capacity
+        let buffer_frames = self.header().buffer_frames as usize;
+        self.audio_capacity = buffer_frames * (channel_count as usize) * 8;
+        self.set_config_changed();
+    }
+
+    /// Set the configuration changed flag
+    ///
+    /// This signals the Swift HAL driver that configuration has changed
+    /// and it should re-read the header values.
+    pub fn set_config_changed(&self) {
+        self.header().config_changed.store(1, Ordering::Release);
     }
 
     /// Get pointer to audio data
@@ -354,6 +407,9 @@ impl Default for HalInputReader {
 }
 
 /// Writer adapter for HAL output (compatible with old HalOutputWriter API)
+///
+/// Also provides configuration methods for setting sample rate, channel count,
+/// and buffer frames.
 pub struct HalOutputWriter {
     buffer: Option<SharedAudioBuffer>,
 }
@@ -390,6 +446,25 @@ impl HalOutputWriter {
         self.buffer.as_ref().map(|b| b.sample_rate()).unwrap_or(48000)
     }
 
+    /// Set sample rate
+    ///
+    /// Updates the sample rate in the shared memory header and notifies the
+    /// Swift HAL driver via the config_changed flag.
+    ///
+    /// # Arguments
+    /// * `sample_rate` - New sample rate in Hz (e.g., 44100, 48000, 96000)
+    ///
+    /// # Returns
+    /// `true` if the sample rate was set, `false` if not connected
+    pub fn set_sample_rate(&mut self, sample_rate: u32) -> bool {
+        if let Some(buffer) = &mut self.buffer {
+            buffer.set_sample_rate(sample_rate);
+            true
+        } else {
+            false
+        }
+    }
+
     /// Get channel count
     pub fn channel_count(&self) -> u32 {
         self.buffer
@@ -398,10 +473,69 @@ impl HalOutputWriter {
             .unwrap_or(2)
     }
 
+    /// Set channel count
+    ///
+    /// # Arguments
+    /// * `channel_count` - Number of audio channels (e.g., 2 for stereo, 6 for 5.1)
+    ///
+    /// # Returns
+    /// `true` if the channel count was set, `false` if not connected
+    pub fn set_channel_count(&mut self, channel_count: u32) -> bool {
+        if let Some(buffer) = &mut self.buffer {
+            buffer.set_channel_count(channel_count);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Get buffer frame size
+    pub fn buffer_frames(&self) -> u32 {
+        self.buffer.as_ref().map(|b| b.buffer_frames()).unwrap_or(1024)
+    }
+
+    /// Set buffer frame size
+    ///
+    /// # Arguments
+    /// * `buffer_frames` - Frames per buffer (e.g., 256, 512, 1024, 2048)
+    ///
+    /// # Returns
+    /// `true` if the buffer frames was set, `false` if not connected
+    pub fn set_buffer_frames(&mut self, buffer_frames: u32) -> bool {
+        if let Some(buffer) = &mut self.buffer {
+            buffer.set_buffer_frames(buffer_frames);
+            true
+        } else {
+            false
+        }
+    }
+
     /// Set engine ready flag
     pub fn set_engine_ready(&self, ready: bool) {
         if let Some(buffer) = &self.buffer {
             buffer.set_engine_ready(ready);
+        }
+    }
+
+    /// Check if configuration has changed (signaled by Swift driver)
+    pub fn config_changed(&self) -> bool {
+        self.buffer
+            .as_ref()
+            .map(|b| b.config_changed())
+            .unwrap_or(false)
+    }
+
+    /// Clear the configuration changed flag
+    pub fn clear_config_changed(&self) {
+        if let Some(buffer) = &self.buffer {
+            buffer.clear_config_changed();
+        }
+    }
+
+    /// Signal configuration change to the Swift driver
+    pub fn set_config_changed(&self) {
+        if let Some(buffer) = &self.buffer {
+            buffer.set_config_changed();
         }
     }
 }

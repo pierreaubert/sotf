@@ -469,6 +469,377 @@ fn test_eq_zero_gain_with_silence() {
     }
 }
 
+// ============================================================================
+// Multi-Channel Support Tests
+// ============================================================================
+
+#[test]
+fn test_hal_multi_channel_support_4ch() {
+    // Test 4-channel (quad) configuration
+    let sample_rate = 48000;
+    let buffer_frames = 256;
+    let channel_count = 4;
+
+    let temp_file = create_mock_shared_memory(sample_rate, buffer_frames, channel_count);
+    let mut buffer = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open buffer");
+
+    assert_eq!(buffer.channel_count(), channel_count);
+
+    // Generate 4-channel audio with distinct content per channel
+    let input_audio: Vec<f32> = (0..buffer_frames as usize)
+        .flat_map(|i| {
+            let t = i as f32 / sample_rate as f32;
+            [
+                (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.5,  // Ch0: 440Hz
+                (2.0 * std::f32::consts::PI * 880.0 * t).sin() * 0.4,  // Ch1: 880Hz
+                (2.0 * std::f32::consts::PI * 1320.0 * t).sin() * 0.3, // Ch2: 1320Hz
+                (2.0 * std::f32::consts::PI * 1760.0 * t).sin() * 0.2, // Ch3: 1760Hz
+            ]
+        })
+        .collect();
+
+    // Write and read back
+    let frames_written = buffer.write_audio(&input_audio);
+    assert_eq!(frames_written, buffer_frames as usize);
+
+    let mut output_audio = vec![0.0f32; input_audio.len()];
+    let frames_read = buffer.read_audio(&mut output_audio);
+    assert_eq!(frames_read, buffer_frames as usize);
+
+    // Verify bit-exact
+    for (i, (input, output)) in input_audio.iter().zip(output_audio.iter()).enumerate() {
+        assert_eq!(
+            input.to_bits(),
+            output.to_bits(),
+            "4-channel sample {} mismatch",
+            i
+        );
+    }
+}
+
+#[test]
+fn test_hal_multi_channel_support_6ch() {
+    // Test 5.1 surround (6-channel) configuration
+    let sample_rate = 48000;
+    let buffer_frames = 256;
+    let channel_count = 6;
+
+    let temp_file = create_mock_shared_memory(sample_rate, buffer_frames, channel_count);
+    let mut buffer = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open buffer");
+
+    assert_eq!(buffer.channel_count(), channel_count);
+
+    // Generate 6-channel audio
+    let input_audio: Vec<f32> = (0..buffer_frames as usize)
+        .flat_map(|i| {
+            let t = i as f32 / sample_rate as f32;
+            (0..6)
+                .map(|ch| {
+                    let freq = 440.0 * (ch as f32 + 1.0);
+                    (2.0 * std::f32::consts::PI * freq * t).sin() * (0.5 - ch as f32 * 0.07)
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+
+    buffer.write_audio(&input_audio);
+    let mut output_audio = vec![0.0f32; input_audio.len()];
+    buffer.read_audio(&mut output_audio);
+
+    for (i, (input, output)) in input_audio.iter().zip(output_audio.iter()).enumerate() {
+        assert_eq!(
+            input.to_bits(),
+            output.to_bits(),
+            "6-channel sample {} mismatch",
+            i
+        );
+    }
+}
+
+#[test]
+fn test_hal_multi_channel_support_8ch() {
+    // Test 7.1 surround (8-channel) configuration
+    let sample_rate = 48000;
+    let buffer_frames = 256;
+    let channel_count = 8;
+
+    let temp_file = create_mock_shared_memory(sample_rate, buffer_frames, channel_count);
+    let mut buffer = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open buffer");
+
+    assert_eq!(buffer.channel_count(), channel_count);
+
+    let input_audio: Vec<f32> = (0..buffer_frames as usize)
+        .flat_map(|i| {
+            let t = i as f32 / sample_rate as f32;
+            (0..8)
+                .map(|ch| {
+                    let freq = 220.0 * (ch as f32 + 1.0);
+                    (2.0 * std::f32::consts::PI * freq * t).sin() * 0.4
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+
+    buffer.write_audio(&input_audio);
+    let mut output_audio = vec![0.0f32; input_audio.len()];
+    buffer.read_audio(&mut output_audio);
+
+    for (i, (input, output)) in input_audio.iter().zip(output_audio.iter()).enumerate() {
+        assert_eq!(
+            input.to_bits(),
+            output.to_bits(),
+            "8-channel sample {} mismatch",
+            i
+        );
+    }
+}
+
+#[test]
+fn test_hal_channel_count_dynamic() {
+    // Test that channel count is read from header, not hardcoded
+    for channel_count in [1, 2, 4, 6, 8, 16] {
+        let sample_rate = 48000;
+        let buffer_frames = 128;
+
+        let temp_file = create_mock_shared_memory(sample_rate, buffer_frames, channel_count);
+        let buffer = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open buffer");
+
+        assert_eq!(
+            buffer.channel_count(),
+            channel_count,
+            "Channel count should match header for {} channels",
+            channel_count
+        );
+    }
+}
+
+// ============================================================================
+// Volume Control via GainPlugin Tests
+// ============================================================================
+
+use sotf_plugins::{GainPlugin, GainPluginParams, InPlacePlugin};
+
+#[test]
+fn test_volume_control_global_gain() {
+    // Test global volume control (same gain on all channels)
+    let sample_rate = 48000;
+    let num_channels = 2;
+    let num_frames = 256;
+
+    // Create GainPlugin with -6dB (approximately 0.5x)
+    let mut plugin = GainPlugin::new(num_channels, -6.0);
+    plugin.initialize(sample_rate).expect("Failed to initialize");
+
+    // Generate test audio
+    let mut buffer: Vec<f32> = (0..num_frames * num_channels)
+        .map(|i| {
+            let t = (i / num_channels) as f32 / sample_rate as f32;
+            (2.0 * std::f32::consts::PI * 1000.0 * t).sin() * 0.8
+        })
+        .collect();
+
+    let original_buffer = buffer.clone();
+
+    let context = ProcessContext {
+        sample_rate,
+        num_frames,
+    };
+
+    plugin
+        .process_in_place(&mut buffer, &context)
+        .expect("Failed to process");
+
+    // Verify attenuation (should be approximately half amplitude)
+    // -6dB ≈ 0.501x linear gain
+    let expected_gain = 10.0_f32.powf(-6.0 / 20.0);
+    for (i, (orig, processed)) in original_buffer.iter().zip(buffer.iter()).enumerate() {
+        let expected = orig * expected_gain;
+        assert!(
+            (processed - expected).abs() < 0.001,
+            "Sample {}: expected {}, got {}",
+            i,
+            expected,
+            processed
+        );
+    }
+}
+
+#[test]
+fn test_volume_control_per_channel() {
+    // Test per-channel volume control
+    let sample_rate = 48000;
+    let num_channels = 2;
+    let num_frames = 256;
+
+    // Left channel: 0dB (unity), Right channel: -6dB (half)
+    let params = GainPluginParams {
+        gain_db: 0.0,
+        channel_gains: vec![0.0, -6.0],
+    };
+    let mut plugin =
+        GainPlugin::from_params(num_channels, params).expect("Failed to create plugin");
+    plugin.initialize(sample_rate).expect("Failed to initialize");
+
+    // Generate identical audio on both channels
+    let mut buffer: Vec<f32> = (0..num_frames)
+        .flat_map(|i| {
+            let t = i as f32 / sample_rate as f32;
+            let sample = (2.0 * std::f32::consts::PI * 1000.0 * t).sin() * 0.8;
+            [sample, sample] // Same sample on L and R
+        })
+        .collect();
+
+    let context = ProcessContext {
+        sample_rate,
+        num_frames,
+    };
+
+    plugin
+        .process_in_place(&mut buffer, &context)
+        .expect("Failed to process");
+
+    // Verify per-channel gains
+    let gain_r = 10.0_f32.powf(-6.0 / 20.0);
+    for i in 0..num_frames {
+        let left = buffer[i * 2];
+        let right = buffer[i * 2 + 1];
+
+        // Left should be nearly unchanged (0dB)
+        // Right should be attenuated by ~0.5x (-6dB)
+        // Note: They started equal, so right should be ~half of left
+        assert!(
+            (right - left * gain_r).abs() < 0.01,
+            "Frame {}: right channel should be ~{:.1}x of left, got L={}, R={}",
+            i,
+            gain_r,
+            left,
+            right
+        );
+    }
+}
+
+#[test]
+fn test_volume_control_multichannel() {
+    // Test per-channel volume on 6-channel (5.1) configuration
+    let sample_rate = 48000;
+    let num_channels = 6;
+    let num_frames = 256;
+
+    // Different gain for each channel
+    // FL=0dB, FR=-3dB, C=-6dB, LFE=-12dB, SL=-9dB, SR=-9dB
+    let channel_gains = vec![0.0, -3.0, -6.0, -12.0, -9.0, -9.0];
+    let params = GainPluginParams {
+        gain_db: 0.0,
+        channel_gains: channel_gains.clone(),
+    };
+    let mut plugin =
+        GainPlugin::from_params(num_channels, params).expect("Failed to create plugin");
+    plugin.initialize(sample_rate).expect("Failed to initialize");
+
+    // Generate audio with same amplitude on all channels
+    let amplitude = 0.8;
+    let mut buffer: Vec<f32> = (0..num_frames)
+        .flat_map(|i| {
+            let t = i as f32 / sample_rate as f32;
+            let sample = (2.0 * std::f32::consts::PI * 1000.0 * t).sin() * amplitude;
+            vec![sample; num_channels]
+        })
+        .collect();
+
+    let context = ProcessContext {
+        sample_rate,
+        num_frames,
+    };
+
+    plugin
+        .process_in_place(&mut buffer, &context)
+        .expect("Failed to process");
+
+    // Verify each channel has correct gain applied
+    let linear_gains: Vec<f32> = channel_gains
+        .iter()
+        .map(|&db| 10.0_f32.powf(db / 20.0))
+        .collect();
+
+    for frame in 0..num_frames {
+        for ch in 0..num_channels {
+            let idx = frame * num_channels + ch;
+            let t = frame as f32 / sample_rate as f32;
+            let original = (2.0 * std::f32::consts::PI * 1000.0 * t).sin() * amplitude;
+            let expected = original * linear_gains[ch];
+
+            assert!(
+                (buffer[idx] - expected).abs() < 0.01,
+                "Frame {} Ch {}: expected {:.4}, got {:.4}",
+                frame,
+                ch,
+                expected,
+                buffer[idx]
+            );
+        }
+    }
+}
+
+#[test]
+fn test_volume_with_hal_pipeline() {
+    // Test full pipeline: HAL read -> Gain (volume) -> verify
+    let sample_rate = 48000;
+    let buffer_frames = 256;
+    let channel_count = 2;
+
+    // Create mock shared memory
+    let temp_file = create_mock_shared_memory(sample_rate, buffer_frames, channel_count);
+    let mut hal_buffer = SharedAudioBuffer::open(temp_file.path()).expect("Failed to open buffer");
+
+    // Generate test audio
+    let input_audio: Vec<f32> = (0..buffer_frames as usize)
+        .flat_map(|i| {
+            let t = i as f32 / sample_rate as f32;
+            let sample = (2.0 * std::f32::consts::PI * 1000.0 * t).sin() * 0.8;
+            [sample, sample]
+        })
+        .collect();
+
+    // Write to HAL
+    hal_buffer.write_audio(&input_audio);
+
+    // Read from HAL (simulating HalInputPlugin)
+    let mut read_buffer = vec![0.0f32; input_audio.len()];
+    hal_buffer.read_audio(&mut read_buffer);
+
+    // Apply volume via GainPlugin (-6dB global)
+    let mut gain_plugin = GainPlugin::new(channel_count as usize, -6.0);
+    gain_plugin
+        .initialize(sample_rate)
+        .expect("Failed to initialize");
+
+    let context = ProcessContext {
+        sample_rate,
+        num_frames: buffer_frames as usize,
+    };
+
+    gain_plugin
+        .process_in_place(&mut read_buffer, &context)
+        .expect("Failed to process");
+
+    // Verify attenuation
+    let expected_gain = 10.0_f32.powf(-6.0 / 20.0);
+    for (i, (orig, processed)) in input_audio.iter().zip(read_buffer.iter()).enumerate() {
+        let expected = orig * expected_gain;
+        assert!(
+            (processed - expected).abs() < 0.001,
+            "Sample {}: expected {:.6}, got {:.6}",
+            i,
+            expected,
+            processed
+        );
+    }
+}
+
+// ============================================================================
+// Edge Case Tests
+// ============================================================================
+
 #[test]
 fn test_eq_zero_gain_preserves_full_scale() {
     // Test with full-scale values to ensure no clipping or modification
