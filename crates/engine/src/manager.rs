@@ -299,7 +299,35 @@ impl AudioEngineManager {
         plugins: Vec<PluginConfig>,
         output_channels: usize,
     ) -> AudioDecoderResult<()> {
-        log::debug!("[AudioEngineManager] Starting HAL playback");
+        // Use default sample rate
+        self.start_hal_playback_with_config(output_device, plugins, output_channels, 48000)
+    }
+
+    /// Start HAL playback with custom sample rate
+    ///
+    /// This method is specifically for HAL input plugins that act as audio sources.
+    /// Unlike `start_playback()`, this doesn't require a file to be loaded first.
+    ///
+    /// # Arguments
+    /// * `output_device` - Output device (None for default)
+    /// * `plugins` - Plugin chain (must include hal_input as first plugin)
+    /// * `output_channels` - Expected output channel count after all plugins
+    /// * `sample_rate` - Output sample rate in Hz (e.g., 44100, 48000, 96000)
+    ///
+    /// # Notes
+    /// - Input channels set to 0 (HAL input plugin is the source)
+    /// - No decoder thread is started since HAL input generates audio
+    pub fn start_hal_playback_with_config(
+        &mut self,
+        output_device: Option<String>,
+        plugins: Vec<PluginConfig>,
+        output_channels: usize,
+        sample_rate: u32,
+    ) -> AudioDecoderResult<()> {
+        log::debug!(
+            "[AudioEngineManager] Starting HAL playback at {}Hz",
+            sample_rate
+        );
 
         // Validate that we have a HAL input plugin
         if !plugins.iter().any(|p| p.plugin_type == "hal_input") {
@@ -313,9 +341,9 @@ impl AudioEngineManager {
         let config = EngineConfig {
             version: 1,
             frame_size: 1024,
-            buffer_ms: 200,            // 200ms latency
-            output_sample_rate: 48000, // HAL default sample rate
-            input_channels: 0,         // No file input - HAL input plugin is the source
+            buffer_ms: 200,               // 200ms latency
+            output_sample_rate: sample_rate,
+            input_channels: 0,            // No file input - HAL input plugin is the source
             output_channels,
             output_device,
             plugins,

@@ -1,12 +1,15 @@
 //! Audio device settings content
 
 #[cfg(all(target_os = "macos", feature = "hal"))]
+use crate::app::state::audio_device::{format_buffer_size, format_sample_rate, HalConfig};
+#[cfg(all(target_os = "macos", feature = "hal"))]
 use crate::app::types::PlaybackSource;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    Badge, BadgeVariant, HStack, StackAlign, StackSpacing, Text, TextSize, TextWeight, VStack,
+    Badge, BadgeVariant, HStack, Select, SelectOption, StackAlign, StackSpacing, Text, TextSize,
+    TextWeight, VStack,
 };
 
 impl PlayerView {
@@ -147,6 +150,121 @@ impl PlayerView {
                         }),
                 )
                 .child(div().h(px(8.0))); // Spacer between sections
+
+            // HAL Configuration section (only show when in HAL mode)
+            if is_hal_mode {
+                let hal_config = state.app.audio_device_state.hal_config.clone();
+                let hal_dropdowns = state.app.audio_device_state.hal_dropdowns.clone();
+
+                // Sample rate options
+                let sample_rate_options: Vec<SelectOption> = HalConfig::available_sample_rates()
+                    .iter()
+                    .map(|&rate| SelectOption::new(rate.to_string(), format_sample_rate(rate)))
+                    .collect();
+
+                // Channel count options
+                let channel_options: Vec<SelectOption> = vec![
+                    SelectOption::new("2", "2 ch (Stereo)"),
+                    SelectOption::new("4", "4 ch (Quad)"),
+                    SelectOption::new("6", "6 ch (5.1)"),
+                    SelectOption::new("8", "8 ch (7.1)"),
+                ];
+
+                // Buffer size options
+                let buffer_options: Vec<SelectOption> = HalConfig::available_buffer_sizes()
+                    .iter()
+                    .map(|&size| {
+                        SelectOption::new(
+                            size.to_string(),
+                            format_buffer_size(size, hal_config.sample_rate),
+                        )
+                    })
+                    .collect();
+
+                content = content
+                    .child(
+                        Text::new("HAL Configuration")
+                            .size(TextSize::Sm)
+                            .weight(TextWeight::Semibold),
+                    )
+                    .child(
+                        HStack::new()
+                            .spacing(StackSpacing::Lg)
+                            .child({
+                                // Sample Rate selector
+                                let state_for_change = state_entity.clone();
+                                let state_for_toggle = state_entity.clone();
+                                Select::new("hal-sample-rate")
+                                    .label("Sample Rate")
+                                    .options(sample_rate_options)
+                                    .selected(hal_config.sample_rate.to_string())
+                                    .is_open(hal_dropdowns.sample_rate_open)
+                                    .on_change(move |value, _window, cx| {
+                                        if let Ok(rate) = value.parse::<u32>() {
+                                            Self::update_hal_sample_rate(&state_for_change, rate, cx);
+                                        }
+                                    })
+                                    .on_toggle(move |open, _window, cx| {
+                                        state_for_toggle.update(cx, |state, cx| {
+                                            // Close other dropdowns
+                                            state.app.audio_device_state.hal_dropdowns.channel_count_open = false;
+                                            state.app.audio_device_state.hal_dropdowns.buffer_size_open = false;
+                                            state.app.audio_device_state.hal_dropdowns.sample_rate_open = open;
+                                            cx.notify();
+                                        });
+                                    })
+                            })
+                            .child({
+                                // Channel Count selector
+                                let state_for_change = state_entity.clone();
+                                let state_for_toggle = state_entity.clone();
+                                Select::new("hal-channel-count")
+                                    .label("Channels")
+                                    .options(channel_options)
+                                    .selected(hal_config.channel_count.to_string())
+                                    .is_open(hal_dropdowns.channel_count_open)
+                                    .on_change(move |value, _window, cx| {
+                                        if let Ok(channels) = value.parse::<u32>() {
+                                            Self::update_hal_channel_count(&state_for_change, channels, cx);
+                                        }
+                                    })
+                                    .on_toggle(move |open, _window, cx| {
+                                        state_for_toggle.update(cx, |state, cx| {
+                                            // Close other dropdowns
+                                            state.app.audio_device_state.hal_dropdowns.sample_rate_open = false;
+                                            state.app.audio_device_state.hal_dropdowns.buffer_size_open = false;
+                                            state.app.audio_device_state.hal_dropdowns.channel_count_open = open;
+                                            cx.notify();
+                                        });
+                                    })
+                            })
+                            .child({
+                                // Buffer Size selector
+                                let state_for_change = state_entity.clone();
+                                let state_for_toggle = state_entity.clone();
+                                Select::new("hal-buffer-size")
+                                    .label("Buffer Size")
+                                    .options(buffer_options)
+                                    .selected(hal_config.buffer_frames.to_string())
+                                    .is_open(hal_dropdowns.buffer_size_open)
+                                    .on_change(move |value, _window, cx| {
+                                        if let Ok(size) = value.parse::<u32>() {
+                                            Self::update_hal_buffer_size(&state_for_change, size, cx);
+                                        }
+                                    })
+                                    .on_toggle(move |open, _window, cx| {
+                                        state_for_toggle.update(cx, |state, cx| {
+                                            // Close other dropdowns
+                                            state.app.audio_device_state.hal_dropdowns.sample_rate_open = false;
+                                            state.app.audio_device_state.hal_dropdowns.channel_count_open = false;
+                                            state.app.audio_device_state.hal_dropdowns.buffer_size_open = open;
+                                            cx.notify();
+                                        });
+                                    })
+                            }),
+                    )
+                    .child(div().h(px(8.0))); // Spacer
+            }
         }
 
         content = content.child(
@@ -304,24 +422,28 @@ impl PlayerView {
         use sotf_audio::engine::PluginConfig;
 
         state_entity.update(cx, |state, _cx| {
+            // Get HAL configuration from state
+            let hal_config = &state.app.audio_device_state.hal_config;
+            let sample_rate = hal_config.sample_rate;
+            let channels = hal_config.channel_count;
+
             // Build plugin chain with hal_input as first plugin
             let mut plugins: Vec<PluginConfig> = Vec::new();
 
-            // Add hal_input plugin as the source
+            // Add hal_input plugin as the source with configured settings
             plugins.push(PluginConfig {
                 plugin_type: "hal_input".to_string(),
                 parameters: serde_json::json!({
-                    "channels": 2,
-                    "sample_rate": 48000
+                    "channels": channels,
                 }),
             });
 
-            // Add plugins from the current plugin chain (48kHz is the HAL default rate)
+            // Add plugins from the current plugin chain using configured sample rate
             for plugin_config in state
                 .app
                 .plugin_state
                 .plugin_chain
-                .to_plugin_configs(48000.0)
+                .to_plugin_configs(sample_rate as f64)
             {
                 plugins.push(plugin_config);
             }
@@ -336,16 +458,24 @@ impl PlayerView {
             // Determine output channels from plugin chain
             let output_channels = state.app.plugin_state.plugin_chain.output_channels();
 
-            // Start HAL playback
-            match state
-                .player
-                .lock()
-                .start_hal_playback(plugins, output_channels, output_device)
-            {
+            // Update driver-hal with the new configuration
+            Self::apply_hal_config_to_driver(hal_config);
+
+            // Start HAL playback with configured sample rate
+            match state.player.lock().start_hal_playback_with_config(
+                plugins,
+                output_channels,
+                output_device,
+                sample_rate,
+            ) {
                 Ok(()) => {
                     state.app.audio_device_state.playback_source = PlaybackSource::HalDevice;
                     state.app.playback.is_playing = true;
-                    log::info!("HAL playback started successfully");
+                    log::info!(
+                        "HAL playback started: {}Hz, {} channels",
+                        sample_rate,
+                        channels
+                    );
                 }
                 Err(e) => {
                     log::error!("Failed to start HAL playback: {}", e);
@@ -357,6 +487,112 @@ impl PlayerView {
                 }
             }
         });
+    }
+
+    /// Update HAL sample rate and restart playback if needed
+    #[cfg(all(target_os = "macos", feature = "hal"))]
+    fn update_hal_sample_rate(
+        state_entity: &Entity<crate::app::AppState>,
+        sample_rate: u32,
+        cx: &mut App,
+    ) {
+        let is_playing = state_entity.read(cx).app.playback.is_playing;
+        let entity_id = state_entity.entity_id();
+
+        state_entity.update(cx, |state, _cx| {
+            state.app.audio_device_state.hal_config.sample_rate = sample_rate;
+            state.app.audio_device_state.close_hal_dropdowns();
+            log::info!("HAL sample rate changed to {}Hz", sample_rate);
+        });
+
+        // Restart HAL playback with new configuration
+        if is_playing {
+            Self::restart_hal_playback(state_entity, cx);
+        }
+
+        cx.notify(entity_id);
+    }
+
+    /// Update HAL channel count and restart playback if needed
+    #[cfg(all(target_os = "macos", feature = "hal"))]
+    fn update_hal_channel_count(
+        state_entity: &Entity<crate::app::AppState>,
+        channel_count: u32,
+        cx: &mut App,
+    ) {
+        let is_playing = state_entity.read(cx).app.playback.is_playing;
+        let entity_id = state_entity.entity_id();
+
+        state_entity.update(cx, |state, _cx| {
+            state.app.audio_device_state.hal_config.channel_count = channel_count;
+            state.app.audio_device_state.close_hal_dropdowns();
+            log::info!("HAL channel count changed to {}", channel_count);
+        });
+
+        // Restart HAL playback with new configuration
+        if is_playing {
+            Self::restart_hal_playback(state_entity, cx);
+        }
+
+        cx.notify(entity_id);
+    }
+
+    /// Update HAL buffer size and restart playback if needed
+    #[cfg(all(target_os = "macos", feature = "hal"))]
+    fn update_hal_buffer_size(
+        state_entity: &Entity<crate::app::AppState>,
+        buffer_frames: u32,
+        cx: &mut App,
+    ) {
+        let is_playing = state_entity.read(cx).app.playback.is_playing;
+        let entity_id = state_entity.entity_id();
+
+        state_entity.update(cx, |state, _cx| {
+            state.app.audio_device_state.hal_config.buffer_frames = buffer_frames;
+            state.app.audio_device_state.close_hal_dropdowns();
+            log::info!("HAL buffer size changed to {} frames", buffer_frames);
+        });
+
+        // Restart HAL playback with new configuration
+        if is_playing {
+            Self::restart_hal_playback(state_entity, cx);
+        }
+
+        cx.notify(entity_id);
+    }
+
+    /// Restart HAL playback with current configuration
+    #[cfg(all(target_os = "macos", feature = "hal"))]
+    fn restart_hal_playback(state_entity: &Entity<crate::app::AppState>, cx: &mut App) {
+        // Stop current playback
+        state_entity.update(cx, |state, _cx| {
+            if let Err(e) = state.player.lock().stop() {
+                log::warn!("Failed to stop HAL playback for restart: {}", e);
+            }
+        });
+
+        // Start with new configuration
+        Self::start_hal_playback_from_ui(state_entity, cx);
+    }
+
+    /// Apply HAL configuration to the driver-hal shared memory
+    #[cfg(all(target_os = "macos", feature = "hal"))]
+    fn apply_hal_config_to_driver(config: &HalConfig) {
+        use driver_hal::HalOutputWriter;
+
+        if let Some(mut writer) = HalOutputWriter::new() {
+            writer.set_sample_rate(config.sample_rate);
+            writer.set_channel_count(config.channel_count);
+            writer.set_buffer_frames(config.buffer_frames);
+            log::debug!(
+                "Applied HAL config to driver: {}Hz, {} ch, {} frames",
+                config.sample_rate,
+                config.channel_count,
+                config.buffer_frames
+            );
+        } else {
+            log::warn!("Could not connect to HAL driver to apply configuration");
+        }
     }
 }
 

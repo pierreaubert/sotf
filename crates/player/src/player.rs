@@ -224,15 +224,42 @@ impl Player {
         output_channels: usize,
         output_device: Option<String>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        // Use default sample rate (48kHz)
+        self.start_hal_playback_with_config(plugins, output_channels, output_device, 48000)
+    }
+
+    /// Start HAL input playback with custom sample rate (macOS only)
+    ///
+    /// This starts audio processing from the HAL virtual device instead of a file.
+    /// The HAL device captures system-wide audio which is then processed through
+    /// the plugin chain.
+    ///
+    /// # Arguments
+    /// * `plugins` - Plugin chain to apply (should include hal_input as first plugin)
+    /// * `output_channels` - Expected output channel count after all plugins
+    /// * `output_device` - Output device name (None for default)
+    /// * `sample_rate` - Sample rate in Hz (e.g., 44100, 48000, 96000)
+    #[cfg(all(target_os = "macos", feature = "hal"))]
+    pub fn start_hal_playback_with_config(
+        &mut self,
+        plugins: Vec<PluginConfig>,
+        output_channels: usize,
+        output_device: Option<String>,
+        sample_rate: u32,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         // Update analyzer indices
         self.update_analyzer_indices(&plugins);
 
         // Stop current playback if any
         self.manager.stop()?;
 
-        // Start HAL playback
-        self.manager
-            .start_hal_playback(output_device, plugins, output_channels)?;
+        // Start HAL playback with custom sample rate
+        self.manager.start_hal_playback_with_config(
+            output_device,
+            plugins,
+            output_channels,
+            sample_rate,
+        )?;
 
         Ok(())
     }

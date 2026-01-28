@@ -2,9 +2,9 @@
 #
 # Build script for SotF macOS distribution
 #
-# Creates a signed and notarized DMG containing:
-#   - SotF Toolbar.app (menu bar app)
-#   - SotFHAL.driver (HAL audio driver)
+# Creates a signed and notarized installer package (.pkg) containing:
+#   - SotF Toolbar.app (menu bar app) -> /Applications/
+#   - SotFHAL.driver (HAL audio driver) -> /Library/Audio/Plug-Ins/HAL/
 #   - sotf-daemon (embedded in app)
 #
 # Bundle identifiers:
@@ -13,15 +13,18 @@
 #   - org.spinorama.sotf-daemon   (background daemon)
 #
 # Usage:
-#   ./build-dmg-daemon.sh                    # Build unsigned DMG (for local testing)
-#   ./build-dmg-daemon.sh --sign             # Build signed DMG (requires Developer ID)
+#   ./build-dmg-daemon.sh                    # Build unsigned pkg (for local testing)
+#   ./build-dmg-daemon.sh --sign             # Build signed pkg (requires Developer ID)
 #   ./build-dmg-daemon.sh --sign --notarize  # Build, sign, and notarize (for distribution)
+#   ./build-dmg-daemon.sh --dmg              # Build DMG instead of pkg (legacy)
 #
 # Environment variables:
-#   DEVELOPER_ID         - Developer ID Application certificate name
-#                          Example: "Developer ID Application: Your Name (TEAMID)"
-#   APPLE_ID             - Apple ID email for notarization
-#   APPLE_TEAM_ID        - Apple Developer Team ID
+#   DEVELOPER_ID             - Developer ID Application certificate name
+#                              Example: "Developer ID Application: Your Name (TEAMID)"
+#   INSTALLER_DEVELOPER_ID   - Developer ID Installer certificate name (for pkg signing)
+#                              Example: "Developer ID Installer: Your Name (TEAMID)"
+#   APPLE_ID                 - Apple ID email for notarization
+#   APPLE_TEAM_ID            - Apple Developer Team ID
 #
 # Prerequisites:
 #   - Xcode Command Line Tools
@@ -65,6 +68,7 @@ NOTARIZE=false
 CLEAN=false
 BUILD_HAL=true
 DEBUG=false
+BUILD_DMG=false  # Default to pkg, use --dmg for legacy DMG output
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -90,6 +94,10 @@ while [[ $# -gt 0 ]]; do
             BUILD_HAL=false
             shift
             ;;
+        --dmg)
+            BUILD_DMG=true
+            shift
+            ;;
         --help|-h)
             echo "Usage: $0 [options]"
             echo ""
@@ -99,6 +107,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --clean       Clean build directory before building"
             echo "  --debug, -d   Build in debug mode (faster, no optimizations)"
             echo "  --no-hal      Skip building HAL driver"
+            echo "  --dmg         Build DMG instead of pkg installer (legacy)"
             echo "  --help        Show this help message"
             exit 0
             ;;
@@ -336,6 +345,19 @@ build_toolbar() {
 # Create app bundle with embedded daemon
 create_app_bundle() {
     log_info "Creating app bundle..."
+
+    # Copy menubar icon assets to Resources
+    local ICON_ASSETS_DIR="$CONFIGBAR_DIR/assets"
+    if [ -f "$ICON_ASSETS_DIR/icon_16.png" ]; then
+        log_info "Copying menubar icon assets..."
+        cp "$ICON_ASSETS_DIR/icon_16.png" "$APP_BUNDLE/Contents/Resources/"
+        cp "$ICON_ASSETS_DIR/icon_16@2x.png" "$APP_BUNDLE/Contents/Resources/" 2>/dev/null || true
+        cp "$ICON_ASSETS_DIR/icon_18.png" "$APP_BUNDLE/Contents/Resources/" 2>/dev/null || true
+        cp "$ICON_ASSETS_DIR/icon_18@2x.png" "$APP_BUNDLE/Contents/Resources/" 2>/dev/null || true
+        log_success "Menubar icon assets copied"
+    else
+        log_warning "Menubar icon assets not found at $ICON_ASSETS_DIR"
+    fi
 
     # Create Toolbar Info.plist
     cat > "$APP_BUNDLE/Contents/Info.plist" << EOF
@@ -885,6 +907,315 @@ notarize_dmg() {
     fi
 }
 
+# Create installer package (.pkg)
+create_pkg() {
+    log_info "Creating installer package..."
+
+    local pkg_path="$DMG_DIR/SotF-Toolbar-$VERSION.pkg"
+    local pkg_root="$DMG_DIR/pkg-root"
+    local pkg_scripts="$DMG_DIR/pkg-scripts"
+    local pkg_components="$DMG_DIR/pkg-components"
+
+    rm -rf "$pkg_root" "$pkg_scripts" "$pkg_components"
+    mkdir -p "$pkg_root/Applications"
+    mkdir -p "$pkg_root/Library/Audio/Plug-Ins/HAL"
+    mkdir -p "$pkg_scripts"
+    mkdir -p "$pkg_components"
+
+    # Copy app to pkg root
+    cp -R "$APP_BUNDLE" "$pkg_root/Applications/"
+
+    # Copy HAL driver to pkg root
+    if $BUILD_HAL && [ -d "$DRIVER_BUNDLE" ]; then
+        cp -R "$DRIVER_BUNDLE" "$pkg_root/Library/Audio/Plug-Ins/HAL/"
+    fi
+
+    # Create postinstall script to restart CoreAudio
+    cat > "$pkg_scripts/postinstall" << 'POSTINSTALL'
+#!/bin/bash
+# Post-installation script for SotF
+
+# Restart CoreAudio to load the new HAL driver
+echo "Restarting CoreAudio to load HAL driver..."
+if launchctl kickstart -kp system/com.apple.audio.coreaudiod >/dev/null 2>&1; then
+    echo "CoreAudio restarted (via launchctl)"
+else
+    killall coreaudiod 2>/dev/null || true
+    echo "CoreAudio restarted (via killall)"
+fi
+
+# Set correct permissions on HAL driver
+if [ -d "/Library/Audio/Plug-Ins/HAL/SotFHAL.driver" ]; then
+    chmod -R 755 "/Library/Audio/Plug-Ins/HAL/SotFHAL.driver"
+    chmod 644 "/Library/Audio/Plug-Ins/HAL/SotFHAL.driver/Contents/Info.plist"
+fi
+
+echo "SotF installation complete!"
+exit 0
+POSTINSTALL
+    chmod +x "$pkg_scripts/postinstall"
+
+    # Create preinstall script to remove old versions
+    cat > "$pkg_scripts/preinstall" << 'PREINSTALL'
+#!/bin/bash
+# Pre-installation script for SotF
+
+# Remove legacy driver if it exists
+if [ -d "/Library/Audio/Plug-Ins/HAL/sotf.driver" ]; then
+    echo "Removing legacy HAL driver..."
+    rm -rf "/Library/Audio/Plug-Ins/HAL/sotf.driver"
+fi
+
+# Remove old version of current driver
+if [ -d "/Library/Audio/Plug-Ins/HAL/SotFHAL.driver" ]; then
+    echo "Removing old HAL driver..."
+    rm -rf "/Library/Audio/Plug-Ins/HAL/SotFHAL.driver"
+fi
+
+exit 0
+PREINSTALL
+    chmod +x "$pkg_scripts/preinstall"
+
+    # Build component packages
+    log_info "Building component packages..."
+
+    # App component
+    pkgbuild \
+        --root "$pkg_root/Applications" \
+        --install-location "/Applications" \
+        --identifier "$TOOLBAR_BUNDLE_ID" \
+        --version "$VERSION" \
+        --scripts "$pkg_scripts" \
+        "$pkg_components/SotFToolbar.pkg"
+
+    # HAL driver component (if built)
+    if $BUILD_HAL && [ -d "$pkg_root/Library/Audio/Plug-Ins/HAL/$DRIVER_NAME" ]; then
+        pkgbuild \
+            --root "$pkg_root/Library/Audio/Plug-Ins/HAL" \
+            --install-location "/Library/Audio/Plug-Ins/HAL" \
+            --identifier "$HAL_BUNDLE_ID" \
+            --version "$VERSION" \
+            "$pkg_components/SotFHAL.pkg"
+    fi
+
+    # Create distribution XML
+    cat > "$DMG_DIR/distribution.xml" << DISTXML
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+    <title>SotF - Sound of the Future</title>
+    <organization>org.spinorama</organization>
+    <domains enable_localSystem="true"/>
+    <options customize="never" require-scripts="true" rootVolumeOnly="true"/>
+
+    <welcome file="welcome.html"/>
+    <conclusion file="conclusion.html"/>
+
+    <pkg-ref id="$TOOLBAR_BUNDLE_ID"/>
+DISTXML
+
+    if $BUILD_HAL; then
+        cat >> "$DMG_DIR/distribution.xml" << DISTXML
+    <pkg-ref id="$HAL_BUNDLE_ID"/>
+DISTXML
+    fi
+
+    cat >> "$DMG_DIR/distribution.xml" << DISTXML
+
+    <options hostArchitectures="arm64,x86_64"/>
+
+    <choices-outline>
+        <line choice="default">
+            <line choice="$TOOLBAR_BUNDLE_ID"/>
+DISTXML
+
+    if $BUILD_HAL; then
+        cat >> "$DMG_DIR/distribution.xml" << DISTXML
+            <line choice="$HAL_BUNDLE_ID"/>
+DISTXML
+    fi
+
+    cat >> "$DMG_DIR/distribution.xml" << DISTXML
+        </line>
+    </choices-outline>
+
+    <choice id="default"/>
+    <choice id="$TOOLBAR_BUNDLE_ID" visible="false">
+        <pkg-ref id="$TOOLBAR_BUNDLE_ID"/>
+    </choice>
+DISTXML
+
+    if $BUILD_HAL; then
+        cat >> "$DMG_DIR/distribution.xml" << DISTXML
+    <choice id="$HAL_BUNDLE_ID" visible="false">
+        <pkg-ref id="$HAL_BUNDLE_ID"/>
+    </choice>
+DISTXML
+    fi
+
+    cat >> "$DMG_DIR/distribution.xml" << DISTXML
+
+    <pkg-ref id="$TOOLBAR_BUNDLE_ID" version="$VERSION" onConclusion="none">SotFToolbar.pkg</pkg-ref>
+DISTXML
+
+    if $BUILD_HAL; then
+        cat >> "$DMG_DIR/distribution.xml" << DISTXML
+    <pkg-ref id="$HAL_BUNDLE_ID" version="$VERSION" onConclusion="none">SotFHAL.pkg</pkg-ref>
+DISTXML
+    fi
+
+    cat >> "$DMG_DIR/distribution.xml" << DISTXML
+</installer-gui-script>
+DISTXML
+
+    # Create welcome HTML
+    cat > "$DMG_DIR/welcome.html" << 'WELCOME'
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 20px; }
+        h1 { color: #333; }
+        p { color: #666; line-height: 1.6; }
+        .features { margin-top: 20px; }
+        .features li { margin: 8px 0; }
+    </style>
+</head>
+<body>
+    <h1>Welcome to SotF</h1>
+    <p><strong>Sound of the Future</strong> - Professional audio optimization and processing for macOS.</p>
+
+    <p>This installer will install:</p>
+    <ul class="features">
+        <li><strong>SotF Toolbar</strong> - Menu bar application for controlling the audio engine</li>
+        <li><strong>SotF HAL Driver</strong> - Virtual audio device for system-wide audio capture</li>
+    </ul>
+
+    <p>After installation, the HAL driver will appear as "SotF" in your audio devices.</p>
+</body>
+</html>
+WELCOME
+
+    # Create conclusion HTML
+    cat > "$DMG_DIR/conclusion.html" << 'CONCLUSION'
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 20px; }
+        h1 { color: #28a745; }
+        p { color: #666; line-height: 1.6; }
+        .next-steps { background: #f8f9fa; padding: 15px; border-radius: 8px; margin-top: 20px; }
+        .next-steps h3 { margin-top: 0; color: #333; }
+        code { background: #e9ecef; padding: 2px 6px; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <h1>Installation Complete!</h1>
+    <p>SotF has been successfully installed on your system.</p>
+
+    <div class="next-steps">
+        <h3>Getting Started</h3>
+        <ol>
+            <li>Launch <strong>SotF Toolbar</strong> from your Applications folder</li>
+            <li>A speaker icon will appear in your menu bar</li>
+            <li>Click the icon to configure audio settings</li>
+            <li>Set "SotF" as your audio output device in System Settings → Sound</li>
+        </ol>
+    </div>
+
+    <p style="margin-top: 20px; font-size: 12px; color: #999;">
+        Note: CoreAudio has been restarted. The SotF audio device should now be visible in Audio MIDI Setup.
+    </p>
+</body>
+</html>
+CONCLUSION
+
+    # Build the distribution package
+    log_info "Building distribution package..."
+
+    if $SIGN && [ -n "${INSTALLER_DEVELOPER_ID:-}" ]; then
+        productbuild \
+            --distribution "$DMG_DIR/distribution.xml" \
+            --package-path "$pkg_components" \
+            --resources "$DMG_DIR" \
+            --sign "$INSTALLER_DEVELOPER_ID" \
+            "$pkg_path"
+        log_success "Signed installer package created"
+    else
+        productbuild \
+            --distribution "$DMG_DIR/distribution.xml" \
+            --package-path "$pkg_components" \
+            --resources "$DMG_DIR" \
+            "$pkg_path"
+
+        if $SIGN; then
+            log_warning "INSTALLER_DEVELOPER_ID not set, package is unsigned"
+            log_info "Set INSTALLER_DEVELOPER_ID='Developer ID Installer: Your Name (TEAMID)' to sign packages"
+        fi
+        log_success "Installer package created (unsigned)"
+    fi
+
+    # Cleanup
+    rm -rf "$pkg_root" "$pkg_scripts" "$pkg_components"
+    rm -f "$DMG_DIR/distribution.xml" "$DMG_DIR/welcome.html" "$DMG_DIR/conclusion.html"
+
+    log_success "Package created at $pkg_path"
+    echo "$pkg_path"
+}
+
+# Notarize the package
+notarize_pkg() {
+    if ! $NOTARIZE; then
+        log_warning "Skipping notarization (use --notarize to enable)"
+        return
+    fi
+
+    local pkg_path="$DMG_DIR/SotF-Toolbar-$VERSION.pkg"
+
+    if [ ! -f "$pkg_path" ]; then
+        log_error "Package not found at $pkg_path"
+        exit 1
+    fi
+
+    log_info "Submitting package for notarization..."
+
+    # Submit for notarization
+    local submission_output
+    submission_output=$(xcrun notarytool submit "$pkg_path" \
+        --apple-id "$APPLE_ID" \
+        --keychain-profile "autoeq-notarization" \
+        --wait 2>&1)
+
+    echo "$submission_output"
+
+    if echo "$submission_output" | grep -q "status: Accepted"; then
+        log_success "Notarization accepted"
+
+        # Staple the notarization ticket
+        log_info "Stapling notarization ticket..."
+        xcrun stapler staple "$pkg_path"
+        log_success "Notarization ticket stapled"
+
+        # Verify
+        xcrun stapler validate "$pkg_path"
+        log_success "Notarization verified"
+    else
+        log_error "Notarization failed"
+        log_info "Check the submission output above for details"
+
+        # Extract submission ID for log retrieval
+        local submission_id
+        submission_id=$(echo "$submission_output" | grep -o 'id: [a-f0-9-]*' | head -1 | cut -d' ' -f2)
+        if [ -n "$submission_id" ]; then
+            log_info "To get detailed logs, run:"
+            log_info "  xcrun notarytool log $submission_id --apple-id $APPLE_ID --keychain-profile autoeq-notarization"
+        fi
+        exit 1
+    fi
+}
+
 # Main build process
 main() {
     log_info "=========================================="
@@ -905,42 +1236,80 @@ main() {
     build_hal_driver
     build_toolbar
     create_app_bundle
-    create_readme
-    create_hal_scripts
-    sign_app
-    create_dmg_file
-    notarize_dmg
 
-    log_info "=========================================="
-    log_success "Build complete!"
-    log_info "=========================================="
+    if $BUILD_DMG; then
+        # Legacy DMG build
+        create_readme
+        create_hal_scripts
+        sign_app
+        create_dmg_file
+        notarize_dmg
 
-    local dmg_path="$DMG_DIR/SotF-Toolbar-$VERSION.dmg"
-    if [ -f "$dmg_path" ]; then
-        log_info "DMG: $dmg_path"
-        log_info "Size: $(du -h "$dmg_path" | cut -f1)"
+        log_info "=========================================="
+        log_success "Build complete!"
+        log_info "=========================================="
 
-        if $SIGN;
- then
-            log_info "Signed: Yes"
-        else
-            log_warning "Signed: No (use --sign for distribution)"
+        local dmg_path="$DMG_DIR/SotF-Toolbar-$VERSION.dmg"
+        if [ -f "$dmg_path" ]; then
+            log_info "DMG: $dmg_path"
+            log_info "Size: $(du -h "$dmg_path" | cut -f1)"
+
+            if $SIGN; then
+                log_info "Signed: Yes"
+            else
+                log_warning "Signed: No (use --sign for distribution)"
+            fi
+
+            if $NOTARIZE; then
+                log_info "Notarized: Yes"
+            else
+                log_warning "Notarized: No (use --notarize for App Store/Gatekeeper)"
+            fi
         fi
 
-        if $NOTARIZE;
- then
-            log_info "Notarized: Yes"
-        else
-            log_warning "Notarized: No (use --notarize for App Store/Gatekeeper)"
+        log_info ""
+        log_info "To install the app:"
+        log_info "  open $dmg_path"
+        log_info ""
+        log_info "To install HAL driver after app installation:"
+        log_info "  /Applications/SotF\\ Toolbar.app/Contents/Resources/install-hal.sh"
+    else
+        # Package installer build (default)
+        sign_app
+        create_pkg
+        notarize_pkg
+
+        log_info "=========================================="
+        log_success "Build complete!"
+        log_info "=========================================="
+
+        local pkg_path="$DMG_DIR/SotF-Toolbar-$VERSION.pkg"
+        if [ -f "$pkg_path" ]; then
+            log_info "Package: $pkg_path"
+            log_info "Size: $(du -h "$pkg_path" | cut -f1)"
+
+            if $SIGN && [ -n "${INSTALLER_DEVELOPER_ID:-}" ]; then
+                log_info "Signed: Yes"
+            else
+                log_warning "Signed: No (set INSTALLER_DEVELOPER_ID for distribution)"
+            fi
+
+            if $NOTARIZE; then
+                log_info "Notarized: Yes"
+            else
+                log_warning "Notarized: No (use --notarize for Gatekeeper)"
+            fi
         fi
+
+        log_info ""
+        log_info "To install:"
+        log_info "  open $pkg_path"
+        log_info ""
+        log_info "The installer will:"
+        log_info "  - Install SotF Toolbar to /Applications/"
+        log_info "  - Install HAL driver to /Library/Audio/Plug-Ins/HAL/"
+        log_info "  - Restart CoreAudio automatically"
     fi
-
-    log_info ""
-    log_info "To install the app:"
-    log_info "  open $dmg_path"
-    log_info ""
-    log_info "To install HAL driver after app installation:"
-    log_info "  /Applications/SotF\ Toolbar.app/Contents/Resources/install-hal.sh"
 }
 
 main "$@"

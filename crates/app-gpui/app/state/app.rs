@@ -538,22 +538,39 @@ impl App {
     }
 
     pub fn load_audio_devices(&mut self) {
+        use crate::app::state::audio_device::AudioDeviceState;
+
         // Load available devices
         if let Ok(devices_map) = sotf_audio::devices::get_audio_devices() {
             if let Some(output_devices) = devices_map.get("output") {
-                self.audio_device_state.output_devices = output_devices.clone();
-                // Find the default device
-                if let Some(default_idx) = output_devices.iter().position(|d| d.is_default) {
-                    self.audio_device_state.selected_output_device_index = default_idx;
-                    // Initialize recording state playback device if not already set
-                    if self
-                        .measurement_state
-                        .recording_state
-                        .playback_config
-                        .device_name
-                        .is_empty()
-                    {
-                        let device = &output_devices[default_idx];
+                // Use smart default selection that avoids virtual devices like HAL/BlackHole
+                self.audio_device_state
+                    .set_output_devices_with_smart_default(output_devices.clone());
+
+                let selected_idx = self.audio_device_state.selected_output_device_index;
+
+                // Initialize recording state playback device if not already set
+                if self
+                    .measurement_state
+                    .recording_state
+                    .playback_config
+                    .device_name
+                    .is_empty()
+                {
+                    // For recording config, prefer a device that's not virtual
+                    let recording_device_idx = output_devices
+                        .iter()
+                        .position(|d| {
+                            d.is_default && !AudioDeviceState::is_virtual_device(&d.name)
+                        })
+                        .or_else(|| {
+                            output_devices
+                                .iter()
+                                .position(|d| !AudioDeviceState::is_virtual_device(&d.name))
+                        })
+                        .unwrap_or(selected_idx);
+
+                    if let Some(device) = output_devices.get(recording_device_idx) {
                         self.measurement_state
                             .recording_state
                             .playback_config

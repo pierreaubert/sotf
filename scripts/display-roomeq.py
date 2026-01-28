@@ -18,6 +18,12 @@ import sys
 from pathlib import Path
 
 try:
+    import numpy as np
+except ImportError:
+    print("Error: numpy is required. Install with: pip install numpy")
+    sys.exit(1)
+
+try:
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
 except ImportError:
@@ -242,6 +248,79 @@ def generate_freq_points(min_freq: float = 20.0, max_freq: float = 20000.0, n_po
     log_min = math.log10(min_freq)
     log_max = math.log10(max_freq)
     return [10 ** (log_min + (log_max - log_min) * i / (n_points - 1)) for i in range(n_points)]
+
+
+def compute_impulse_response(
+    freq: list[float],
+    spl: list[float],
+    sample_rate: float = 48000.0,
+    n_fft: int = 4096,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Compute minimum-phase impulse response from frequency response magnitude data.
+
+    Args:
+        freq: Frequency points in Hz
+        spl: SPL values in dB
+        sample_rate: Sample rate for the impulse response
+        n_fft: FFT size
+
+    Returns:
+        Tuple of (time_ms, impulse_response) arrays
+    """
+    if not freq or not spl:
+        return np.array([]), np.array([])
+
+    freq = np.array(freq)
+    spl = np.array(spl)
+
+    # Create linearly spaced frequency bins for FFT
+    fft_freqs = np.fft.rfftfreq(n_fft, 1.0 / sample_rate)
+
+    # Interpolate magnitude response to FFT frequency grid
+    # Use log-frequency interpolation for better accuracy
+    log_freq = np.log10(np.maximum(freq, 1e-10))
+    log_fft_freqs = np.log10(np.maximum(fft_freqs, 1e-10))
+
+    # Interpolate, extrapolating flat at edges
+    mag_db = np.interp(log_fft_freqs, log_freq, spl, left=spl[0], right=spl[-1])
+
+    # Convert dB to linear magnitude
+    mag_linear = 10 ** (mag_db / 20.0)
+
+    # Compute minimum phase using Hilbert transform of log magnitude
+    # This ensures a causal impulse response
+    log_mag = np.log(np.maximum(mag_linear, 1e-10))
+
+    # For minimum phase: phase = -hilbert(log_magnitude)
+    # We use the discrete Hilbert transform via FFT
+    n_rfft = len(log_mag)
+    full_log_mag = np.concatenate([log_mag, log_mag[-2:0:-1]])  # Make symmetric
+    analytic = np.fft.fft(full_log_mag)
+
+    # Apply Hilbert transform (multiply by -j*sign(f))
+    n_full = len(analytic)
+    h = np.zeros(n_full)
+    h[0] = 1
+    h[1:(n_full + 1) // 2] = 2
+    if n_full % 2 == 0:
+        h[n_full // 2] = 1
+
+    phase = -np.imag(np.fft.ifft(analytic * h))[:n_rfft]
+
+    # Construct complex spectrum
+    spectrum = mag_linear * np.exp(1j * phase)
+
+    # Inverse FFT to get impulse response
+    ir = np.fft.irfft(spectrum, n_fft)
+
+    # Normalize
+    ir = ir / np.max(np.abs(ir)) if np.max(np.abs(ir)) > 0 else ir
+
+    # Create time axis in milliseconds
+    time_ms = np.arange(n_fft) / sample_rate * 1000.0
+
+    return time_ms, ir
 
 
 def get_freq_axis_config() -> dict:
@@ -611,93 +690,255 @@ def create_eq_figure(
 
 
 def create_combined_figure(data: dict) -> go.Figure:
-    """Create a combined figure with all channels in subplots."""
+    """Create a combined figure with three subplots: EQs, corrected curves, and impulse responses."""
     channels = data.get("channels", {})
 
     if not channels:
         print("Warning: No channels found in the JSON file")
         return go.Figure()
 
-    n_channels = len(channels)
     channel_names = list(channels.keys())
+    n_channels = len(channel_names)
 
-    # Create subplots
+    # Create 3-row subplot: EQ responses, corrected curves, impulse responses
     fig = make_subplots(
-        rows=n_channels,
+        rows=3,
         cols=1,
-        subplot_titles=[f"Channel: {name}" for name in channel_names],
+        subplot_titles=["All EQ Responses", "All Corrected Curves", "Impulse Responses (shifted)"],
         vertical_spacing=0.08,
     )
 
-    colors = {
-        "before": "rgba(255, 100, 100, 0.8)",
-        "after": "rgba(100, 200, 100, 0.9)",
-        "target": "rgba(150, 150, 150, 0.5)",
-    }
+    # Color palette for channels
+    channel_colors = [
+        "rgba(31, 119, 180, 0.9)",   # blue
+        "rgba(255, 127, 14, 0.9)",   # orange
+        "rgba(44, 160, 44, 0.9)",    # green
+        "rgba(214, 39, 40, 0.9)",    # red
+        "rgba(148, 103, 189, 0.9)",  # purple
+        "rgba(140, 86, 75, 0.9)",    # brown
+        "rgba(227, 119, 194, 0.9)",  # pink
+        "rgba(127, 127, 127, 0.9)",  # gray
+    ]
 
-    # Collect all curves to compute global y-range
-    all_curves = []
+    # Generate frequency points for EQ response
+    freq_points = generate_freq_points(20.0, 20000.0, 500)
+
+    # Collect all final curves to compute y-range for corrected curves plot
+    all_final_curves = []
+    all_eq_responses = []
+
     for channel_data in channels.values():
-        all_curves.append(channel_data.get("initial_curve"))
-        all_curves.append(channel_data.get("final_curve"))
+        all_final_curves.append(channel_data.get("final_curve"))
 
-    global_y_min, global_y_max = compute_y_range(all_curves)
+    # First pass: compute EQ responses and collect for y-range
+    for channel_name, channel_data in channels.items():
+        plugins = channel_data.get("plugins", [])
+        eq_filters = []
+        for plugin in plugins:
+            if plugin.get("plugin_type") == "eq":
+                filters = plugin.get("parameters", {}).get("filters", [])
+                eq_filters.extend(filters)
 
-    for i, (channel_name, channel_data) in enumerate(channels.items(), start=1):
-        initial_curve = channel_data.get("initial_curve")
-        final_curve = channel_data.get("final_curve")
+        if eq_filters:
+            eq_response = compute_eq_response(eq_filters, freq_points)
+            all_eq_responses.append(eq_response)
 
-        # Add initial curve (before EQ)
-        if initial_curve:
+    # Compute y-ranges
+    final_y_min, final_y_max = compute_y_range(all_final_curves)
+
+    # Compute EQ y-range
+    if all_eq_responses:
+        all_eq_values = [v for resp in all_eq_responses for v in resp]
+        if all_eq_values:
+            max_abs = max(abs(min(all_eq_values)), abs(max(all_eq_values)))
+            eq_y_limit = max(15, math.ceil(max_abs / 5) * 5 + 5)
+        else:
+            eq_y_limit = 15
+    else:
+        eq_y_limit = 15
+
+    # Track trace indices and raw data for smoothing
+    trace_y_data = []  # Will hold y-data for each trace (None for non-smoothable)
+    corrected_freq_data = None  # Frequency data for corrected curves
+    corrected_raw_spl = []  # Raw SPL data for each corrected curve
+    corrected_trace_indices = []  # Indices of corrected curve traces
+
+    # Plot EQ responses (row 1)
+    for i, (channel_name, channel_data) in enumerate(channels.items()):
+        color = channel_colors[i % len(channel_colors)]
+
+        plugins = channel_data.get("plugins", [])
+        eq_filters = []
+        for plugin in plugins:
+            if plugin.get("plugin_type") == "eq":
+                filters = plugin.get("parameters", {}).get("filters", [])
+                eq_filters.extend(filters)
+
+        if eq_filters:
+            eq_response = compute_eq_response(eq_filters, freq_points)
             fig.add_trace(
                 go.Scatter(
-                    x=initial_curve["freq"],
-                    y=initial_curve["spl"],
+                    x=freq_points,
+                    y=eq_response,
                     mode="lines",
-                    name="Before EQ",
-                    line=dict(color=colors["before"], width=2),
-                    legendgroup="before",
-                    showlegend=(i == 1),
+                    name=f"EQ: {channel_name}",
+                    line=dict(color=color, width=2),
+                    legendgroup=f"ch_{channel_name}",
                 ),
-                row=i,
+                row=1,
                 col=1,
             )
+            trace_y_data.append(eq_response)  # EQ traces don't get smoothed
 
-        # Add final curve (after EQ)
+    # Add 0 dB reference line to EQ plot
+    fig.add_trace(
+        go.Scatter(
+            x=[freq_points[0], freq_points[-1]],
+            y=[0, 0],
+            mode="lines",
+            name="0 dB",
+            line=dict(color="rgba(150, 150, 150, 0.5)", width=1, dash="dash"),
+            showlegend=False,
+        ),
+        row=1,
+        col=1,
+    )
+    trace_y_data.append([0, 0])  # Reference line
+
+    # Plot corrected curves (row 2) with default smoothing
+    for i, (channel_name, channel_data) in enumerate(channels.items()):
+        color = channel_colors[i % len(channel_colors)]
+        final_curve = channel_data.get("final_curve")
+
         if final_curve:
+            if corrected_freq_data is None:
+                corrected_freq_data = final_curve["freq"]
+
+            spl_raw = final_curve["spl"]
+            spl_smoothed = smooth_octave(final_curve["freq"], spl_raw, DEFAULT_SMOOTHING)
+
+            corrected_trace_indices.append(len(trace_y_data))
+            corrected_raw_spl.append(spl_raw)
+
             fig.add_trace(
                 go.Scatter(
                     x=final_curve["freq"],
-                    y=final_curve["spl"],
+                    y=spl_smoothed,
                     mode="lines",
-                    name="After EQ",
-                    line=dict(color=colors["after"], width=2),
-                    legendgroup="after",
-                    showlegend=(i == 1),
+                    name=f"Corrected: {channel_name}",
+                    line=dict(color=color, width=2),
+                    legendgroup=f"ch_{channel_name}",
+                    showlegend=False,
                 ),
-                row=i,
+                row=2,
                 col=1,
             )
+            trace_y_data.append(spl_smoothed)
 
-        # Add target line
-        if initial_curve:
-            freq = initial_curve["freq"]
+    # Add target line to corrected curves plot
+    if channels:
+        first_channel = next(iter(channels.values()))
+        ref_curve = first_channel.get("final_curve") or first_channel.get("initial_curve")
+        if ref_curve:
+            freq = ref_curve["freq"]
             fig.add_trace(
                 go.Scatter(
                     x=[freq[0], freq[-1]],
                     y=[0, 0],
                     mode="lines",
-                    name="Target",
-                    line=dict(color=colors["target"], width=1, dash="dash"),
-                    legendgroup="target",
-                    showlegend=(i == 1),
+                    name="Target (0 dB)",
+                    line=dict(color="rgba(150, 150, 150, 0.5)", width=1, dash="dash"),
+                    showlegend=False,
                 ),
-                row=i,
+                row=2,
                 col=1,
             )
+            trace_y_data.append([0, 0])  # Target line
 
-    # Update all axes
-    for i in range(1, n_channels + 1):
+    # Plot impulse responses (row 3) - shifted vertically
+    ir_shift = 1.5  # Vertical shift between impulse responses
+    ir_time_limit = 50.0  # Show first 50ms of impulse response
+    ir_count = 0
+
+    for i, (channel_name, channel_data) in enumerate(channels.items()):
+        color = channel_colors[i % len(channel_colors)]
+        final_curve = channel_data.get("final_curve")
+
+        if final_curve:
+            time_ms, ir = compute_impulse_response(
+                final_curve["freq"],
+                final_curve["spl"],
+                sample_rate=48000.0,
+                n_fft=4096,
+            )
+
+            if len(time_ms) > 0 and len(ir) > 0:
+                # Limit to first ir_time_limit ms
+                mask = time_ms <= ir_time_limit
+                time_ms = time_ms[mask]
+                ir = ir[mask]
+
+                # Shift vertically (bottom to top)
+                vertical_offset = (n_channels - 1 - ir_count) * ir_shift
+                ir_shifted = ir + vertical_offset
+
+                fig.add_trace(
+                    go.Scatter(
+                        x=time_ms,
+                        y=ir_shifted,
+                        mode="lines",
+                        name=f"IR: {channel_name}",
+                        line=dict(color=color, width=1.5),
+                        legendgroup=f"ch_{channel_name}",
+                        showlegend=False,
+                    ),
+                    row=3,
+                    col=1,
+                )
+                trace_y_data.append(ir_shifted.tolist())
+                ir_count += 1
+
+    # Create smoothing buttons for corrected curves
+    updatemenus = []
+    if corrected_freq_data and corrected_raw_spl:
+        buttons = []
+        for label, octave_frac in SMOOTHING_OPTIONS:
+            # Build new y-data for all traces
+            new_y_data = []
+            corrected_idx = 0
+            for trace_idx, y_data in enumerate(trace_y_data):
+                if trace_idx in corrected_trace_indices:
+                    # Apply smoothing to this corrected curve
+                    smoothed = smooth_octave(
+                        corrected_freq_data, corrected_raw_spl[corrected_idx], octave_frac
+                    )
+                    new_y_data.append(smoothed)
+                    corrected_idx += 1
+                else:
+                    # Keep unchanged (EQ traces, reference lines, IR traces)
+                    new_y_data.append(y_data)
+
+            buttons.append(dict(
+                label=label,
+                method="update",
+                args=[{"y": new_y_data}]
+            ))
+
+        updatemenus = [dict(
+            type="dropdown",
+            direction="down",
+            active=0,
+            x=0.0,
+            xanchor="left",
+            y=0.62,  # Position near the second subplot
+            yanchor="top",
+            buttons=buttons,
+            showactive=True,
+            font=dict(size=10),
+        )]
+
+    # Update axes for frequency plots (rows 1 and 2)
+    for row in [1, 2]:
         fig.update_xaxes(
             type="log",
             tickvals=[20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000],
@@ -705,28 +946,64 @@ def create_combined_figure(data: dict) -> go.Figure:
             tickfont=dict(size=10),
             gridcolor="rgba(128, 128, 128, 0.2)",
             range=[1.3, 4.3],
-            row=i,
-            col=1,
-        )
-        fig.update_yaxes(
-            tickfont=dict(size=10),
-            gridcolor="rgba(128, 128, 128, 0.2)",
-            range=[global_y_min, global_y_max],
-            row=i,
+            row=row,
             col=1,
         )
 
-    # Add axis labels
-    fig.update_xaxes(title_text="Frequency (Hz)", title_font=dict(size=11), row=n_channels, col=1)
-    for i in range(1, n_channels + 1):
-        fig.update_yaxes(title_text="SPL (dB)", title_font=dict(size=11), row=i, col=1)
+    # EQ response y-axis (symmetric around 0)
+    fig.update_yaxes(
+        title_text="Gain (dB)",
+        title_font=dict(size=11),
+        tickfont=dict(size=10),
+        gridcolor="rgba(128, 128, 128, 0.2)",
+        range=[-eq_y_limit, eq_y_limit],
+        dtick=5,
+        row=1,
+        col=1,
+    )
+
+    # Corrected curves y-axis
+    fig.update_yaxes(
+        title_text="SPL (dB)",
+        title_font=dict(size=11),
+        tickfont=dict(size=10),
+        gridcolor="rgba(128, 128, 128, 0.2)",
+        range=[final_y_min, final_y_max],
+        row=2,
+        col=1,
+    )
+
+    # Impulse response x-axis (linear time in ms)
+    fig.update_xaxes(
+        title_text="Time (ms)",
+        title_font=dict(size=11),
+        tickfont=dict(size=10),
+        gridcolor="rgba(128, 128, 128, 0.2)",
+        range=[0, ir_time_limit],
+        row=3,
+        col=1,
+    )
+
+    # Impulse response y-axis
+    ir_y_max = n_channels * ir_shift
+    fig.update_yaxes(
+        title_text="Amplitude (shifted)",
+        title_font=dict(size=11),
+        tickfont=dict(size=10),
+        gridcolor="rgba(128, 128, 128, 0.2)",
+        range=[-0.5, ir_y_max + 0.5],
+        showticklabels=False,  # Hide tick labels since values are shifted
+        row=3,
+        col=1,
+    )
 
     fig.update_layout(
-        height=350 * n_channels,
+        height=950,
         plot_bgcolor="white",
         paper_bgcolor="white",
         legend=dict(yanchor="top", y=0.99, xanchor="right", x=0.99, font=dict(size=10)),
-        margin=dict(l=60, r=40, t=60, b=60),
+        margin=dict(l=60, r=40, t=80, b=60),
+        updatemenus=updatemenus,
     )
 
     return fig
