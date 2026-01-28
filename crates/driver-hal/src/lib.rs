@@ -33,6 +33,31 @@ pub use hal_driver::HALDriver;
 pub use anyhow::{Error, Result};
 pub use thiserror::Error as ThisError;
 
+unsafe extern "C" {
+    fn syslog(priority: i32, message: *const std::ffi::c_char, ...);
+}
+
+#[cfg(target_os = "macos")]
+#[ctor::ctor]
+fn on_library_load() {
+    // This runs immediately when the library is dlopen'd
+    unsafe {
+        log_to_syslog("SotF HAL Driver: Library Loaded (ctor)");
+    }
+}
+
+fn log_to_syslog(msg: &str) {
+    use std::ffi::CString;
+    if let Ok(c_msg) = CString::new(msg) {
+        if let Ok(format) = CString::new("%s") {
+            unsafe {
+                // 3 = LOG_ERR (high priority to ensure visibility)
+                syslog(3, format.as_ptr(), c_msg.as_ptr());
+            }
+        }
+    }
+}
+
 /// Custom error types for the audio driver
 #[derive(ThisError, Debug)]
 pub enum AudioDriverError {
@@ -57,16 +82,9 @@ static INIT: Once = Once::new();
 
 pub fn init_logging() {
     INIT.call_once(|| {
-        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
-        log::info!(
-            "================================================================================"
-        );
-        log::info!("🎵 Audio HAL Driver v{} Starting...", DRIVER_VERSION);
-        log::info!("   Name: {}", DRIVER_NAME);
-        log::info!("   Manufacturer: {}", DRIVER_MANUFACTURER);
-        log::info!(
-            "================================================================================"
-        );
+        // Log to syslog immediately to confirm loading
+        log_to_syslog("SotF HAL Driver: Initializing...");
+        // env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
     });
 }
 
@@ -88,9 +106,10 @@ pub unsafe extern "C" fn AudioDriverPlugInOpen(
 ) -> OSStatus {
     // Initialize logging first
     init_logging();
-    log::info!("🚀 AudioDriverPlugInOpen entry point called from Core Audio");
+    log_to_syslog("SotF HAL Driver: AudioDriverPlugInOpen called");
+    // log::info!("🚀 AudioDriverPlugInOpen entry point called from Core Audio");
     let result = unsafe { bridge::audio_driver_plugin_open(driver_ref, driver) };
-    log::info!("🏁 AudioDriverPlugInOpen returning: {}", result);
+    // log::info!("🏁 AudioDriverPlugInOpen returning: {}", result);
     result
 }
 
@@ -100,9 +119,10 @@ pub unsafe extern "C" fn AudioDriverPlugInOpen(
 pub unsafe extern "C" fn AudioDriverPlugInClose(
     driver: *mut AudioServerPlugInDriverInterface,
 ) -> OSStatus {
-    log::info!("🚪 AudioDriverPlugInClose entry point called from Core Audio");
+    log_to_syslog("SotF HAL Driver: AudioDriverPlugInClose called");
+    // log::info!("🚪 AudioDriverPlugInClose entry point called from Core Audio");
     let result = unsafe { bridge::audio_driver_plugin_close(driver) };
-    log::info!("🏁 AudioDriverPlugInClose returning: {}", result);
+    // log::info!("🏁 AudioDriverPlugInClose returning: {}", result);
     result
 }
 
@@ -112,11 +132,12 @@ pub unsafe extern "C" fn AudioDriverPlugInClose(
 pub unsafe extern "C" fn AudioDriverPlugInFactory(uuid: CFUUIDRef) -> *mut c_void {
     // Initialize logging first
     init_logging();
-    log::info!("🏭 AudioDriverPlugInFactory entry point called from Core Audio");
+    log_to_syslog("SotF HAL Driver: AudioDriverPlugInFactory called");
+    // log::info!("🏭 AudioDriverPlugInFactory entry point called from Core Audio");
     let result = unsafe {
         bridge::audio_driver_plugin_factory(uuid as *const _ as core_foundation::uuid::CFUUIDRef)
     };
-    log::info!("🏁 AudioDriverPlugInFactory returning: {:p}", result);
+    // log::info!("🏁 AudioDriverPlugInFactory returning: {:p}", result);
     result
 }
 
@@ -125,6 +146,7 @@ pub unsafe extern "C" fn AudioDriverPlugInFactory(uuid: CFUUIDRef) -> *mut c_voi
 #[unsafe(no_mangle)]
 #[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn SotFHALDriverFactory(uuid: CFUUIDRef) -> *mut c_void {
-    log::info!("🏭 SotFHALDriverFactory called");
+    log_to_syslog("SotF HAL Driver: SotFHALDriverFactory called");
+    // log::info!("🏭 SotFHALDriverFactory called");
     unsafe { AudioDriverPlugInFactory(uuid) }
 }

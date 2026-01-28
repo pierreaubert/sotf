@@ -8,7 +8,9 @@ description = "Simplified Core Audio HAL driver with bidirectional audio buffers
 
 [lib]
 name = "sotf_hal"
-crate-type = ["cdylib", "lib"]
+# Build as staticlib so we can link it as a Mach-O bundle (MH_BUNDLE) in post-build
+# CFPlugIn requires MH_BUNDLE format, not MH_DYLIB
+crate-type = ["staticlib", "lib"]
 
 [[bin]]
 name = "hal-loopback"
@@ -34,3 +36,6 @@ core-foundation-sys = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]
 tempfile = { workspace = true }
+
+[dependencies]
+ctor = "0.2"

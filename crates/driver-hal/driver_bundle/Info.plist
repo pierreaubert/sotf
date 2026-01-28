@@ -44,8 +44,8 @@
 
     <key>CFPlugInTypes</key>
     <dict>
-        <!-- kAudioHardwarePlugInTypeID - for HAL driver plugins -->
-        <key>FBC16C0B-8A0D-11D4-91F0-0050E4C10664</key>
+        <!-- kAudioServerPlugInTypeUUID from AudioServerPlugIn.h -->
+        <key>443ABAB8-E7B3-491A-B985-BEB9187030DB</key>
         <array>
             <string>5A4E28B8-93F4-4B8A-B5E2-3D9F6A8C7E01</string>
         </array>

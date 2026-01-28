@@ -12,10 +12,6 @@ name = "generate-audio-tests"
 path = "bin/generate_audio_tests.rs"
 
 [[bin]]
-name = "wav2csv"
-path = "bin/wav2csv.rs"
-
-[[bin]]
 name = "sofa-to-sqlite"
 path = "bin/sofa_to_sqlite.rs"
 required-features = ["sofa_support"]

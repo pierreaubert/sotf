@@ -4,10 +4,11 @@
 /coverage
 mutants.out
 
-# build
-/tools
-/dist
+# installers
 /appimage-builder-*
+
+# python
+__pycache__
 
 # generated data
 /data

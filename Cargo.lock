@@ -708,7 +708,7 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "autoeq"
-version = "0.3.12"
+version = "0.3.13"
 dependencies = [
  "anyhow",
  "assert_fs",
@@ -1453,6 +1453,13 @@ name = "cgl"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ced0551234e87afee12411d535648dd89d2e7f34c78b753395567aff3d447ff"
+dependencies = [
+ "libc",
+]
+
+[[package]]
+name = "check_driver_load"
+version = "0.1.0"
 dependencies = [
  "libc",
 ]
@@ -2237,6 +2244,16 @@ dependencies = [
 
 [[package]]
 name = "ctor"
+version = "0.2.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32a2785755761f3ddc1492979ce1e48d2c00d09311c39e4466429188f3dd6501"
+dependencies = [
+ "quote",
+ "syn 2.0.114",
+]
+
+[[package]]
+name = "ctor"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec09e802f5081de6157da9a75701d6c713d8dc3ba52571fd4bd25f412644e8a6"
@@ -2583,6 +2600,7 @@ dependencies = [
  "core-foundation 0.10.0",
  "core-foundation-sys",
  "coreaudio-sys",
+ "ctor 0.2.9",
  "env_logger",
  "libc",
  "log",
@@ -2696,6 +2714,7 @@ dependencies = [
  "id3",
  "libc",
  "log",
+ "math-dsp",
  "math-iir-fir",
  "metaflac",
  "ndarray 0.17.2",
@@ -3639,7 +3658,7 @@ dependencies = [
  "core-text",
  "core-video",
  "cosmic-text",
- "ctor",
+ "ctor 0.4.3",
  "derive_more 0.99.20",
  "embed-resource",
  "etagere",
@@ -5218,6 +5237,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "math-dsp"
+version = "0.3.0"
+dependencies = [
+ "approx",
+ "clap",
+ "hound",
+ "log",
+ "math-iir-fir",
+ "num-complex",
+ "rustfft",
+]
+
+[[package]]
 name = "math-iir-fir"
 version = "0.3.1"
 dependencies = [
@@ -5279,7 +5311,7 @@ dependencies = [
  "bindgen 0.71.1",
  "core-foundation 0.10.0",
  "core-video",
- "ctor",
+ "ctor 0.4.3",
  "foreign-types 0.5.0",
  "metal 0.29.0",
  "objc",

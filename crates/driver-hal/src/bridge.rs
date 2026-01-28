@@ -35,8 +35,13 @@ const kAudioHardwareUnknownPropertyError: OSStatus = -4;
 static DRIVER_INSTANCE: OnceLock<Arc<Mutex<HALDriver>>> = OnceLock::new();
 
 /// Core Audio HAL driver interface structure
+/// IMPORTANT: AudioServerPlugInDriverRef is a DOUBLE pointer (AudioServerPlugInDriverInterface**)
+/// The factory must return a pointer to a structure whose first field is a pointer to the vtable.
 #[repr(C)]
 pub struct AudioDriverPlugInInterface {
+    /// Pointer to the actual interface vtable - MUST be first field
+    pub interface_ptr: *mut AudioServerPlugInDriverInterface,
+    /// The actual interface vtable (allocated separately, interface_ptr points here)
     pub interface: AudioServerPlugInDriverInterface,
 }
 
@@ -133,6 +138,9 @@ pub unsafe extern "C" fn audio_driver_plugin_open(
         EndIOOperation: Some(driver_end_io_operation),
     };
 
+    // Set interface_ptr to point to the interface vtable
+    (*interface).interface_ptr = &mut (*interface).interface;
+
     // Store the host info for future reference
     if !driver_ref.is_null() {
         log::info!("📝 Setting host info...");
@@ -200,7 +208,7 @@ pub unsafe extern "C" fn audio_driver_plugin_factory(_uuid: CFUUIDRef) -> *mut c
         return ptr::null_mut();
     }
 
-    // Populate the interface with function pointers
+    // Populate the interface vtable with function pointers
     (*interface).interface = AudioServerPlugInDriverInterface {
         _reserved: ptr::null_mut(),
         QueryInterface: Some(std::mem::transmute(driver_query_interface as *const ())),
@@ -226,6 +234,11 @@ pub unsafe extern "C" fn audio_driver_plugin_factory(_uuid: CFUUIDRef) -> *mut c
         DoIOOperation: Some(driver_do_io_operation),
         EndIOOperation: Some(driver_end_io_operation),
     };
+
+    // CRITICAL: Set interface_ptr to point to the interface vtable
+    // AudioServerPlugInDriverRef is a double pointer (AudioServerPlugInDriverInterface**)
+    // So when Core Audio dereferences our return value, it must get a pointer to the vtable
+    (*interface).interface_ptr = &mut (*interface).interface;
 
     log::info!("✅ AudioDriverPlugInFactory returning interface at {:p}", interface);
     interface as *mut c_void

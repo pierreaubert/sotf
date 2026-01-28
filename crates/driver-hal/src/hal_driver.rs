@@ -17,6 +17,11 @@ use std::collections::HashMap;
 use std::os::raw::c_void;
 use std::sync::Arc;
 
+fn format_fourcc(code: u32) -> String {
+    let bytes = code.to_be_bytes();
+    String::from_utf8_lossy(&bytes).to_string()
+}
+
 // Define Core Audio property selectors as hardcoded values
 // These use Apple's camelCase naming convention to match Apple's official documentation
 #[allow(non_upper_case_globals, dead_code)]
@@ -31,6 +36,12 @@ const kAudioObjectPropertyBaseClass: u32 = 1650680371; // 'bcls'
 const kAudioObjectPropertyClass: u32 = 1668047219; // 'clas'
 #[allow(non_upper_case_globals, dead_code)]
 const kAudioObjectPropertyOwner: u32 = 1937008677; // 'stdv'
+#[allow(non_upper_case_globals, dead_code)]
+const kAudioPlugInPropertyDeviceList: u32 = 1684370291; // 'dev#'
+#[allow(non_upper_case_globals, dead_code)]
+const kAudioPlugInPropertyResourceBundle: u32 = 1919902563; // 'rsrc'
+#[allow(non_upper_case_globals, dead_code)]
+const kAudioObjectPlugInObject: AudioObjectID = 1;
 
 // Device properties
 const kAudioDevicePropertyDeviceUID: u32 = 1969841184; // 'uid '
@@ -99,6 +110,7 @@ const kAudioDevicePropertyScopeOutput: u32 = 1869968496; // 'outp'
 /// Type of audio object
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ObjectType {
+    Plugin,
     Device,
     InputStream,
     OutputStream,
@@ -242,6 +254,30 @@ impl HALDriver {
         log::info!("✅ Host info stored");
     }
 
+    /// Notify the host that properties have changed
+    pub fn notify_properties_changed(
+        &self,
+        object_id: AudioObjectID,
+        properties: &[AudioObjectPropertyAddress],
+    ) -> Result<()> {
+        if let Some(host) = self.host {
+            if let Some(host_fn) = unsafe { (*host).PropertiesChanged } {
+                let status = unsafe {
+                    host_fn(
+                        host, // Pass the host interface pointer directly
+                        object_id,
+                        properties.len() as u32,
+                        properties.as_ptr(),
+                    )
+                };
+                if status != 0 {
+                    log::warn!("PropertiesChanged callback failed: {}", status);
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Create a new virtual audio device
     pub fn create_device(&mut self) -> Result<AudioObjectID> {
         log::info!("🎵 Creating new virtual audio device...");
@@ -293,6 +329,11 @@ impl HALDriver {
             output_stream_id
         );
 
+        // Note: We do NOT call notify_properties_changed here during initialization.
+        // Core Audio will query kAudioPlugInPropertyDeviceList after Initialize returns.
+        // Calling PropertiesChanged during Initialize causes "object is not valid" errors
+        // because Core Audio hasn't registered our plugin's objects yet.
+
         Ok(device_id)
     }
 
@@ -308,6 +349,10 @@ impl HALDriver {
 
     /// Determine the type of an audio object
     fn get_object_type(&self, object_id: AudioObjectID) -> ObjectType {
+        if object_id == kAudioObjectPlugInObject {
+            return ObjectType::Plugin;
+        }
+
         // Check if it's a device
         if self.devices.contains_key(&object_id) {
             return ObjectType::Device;
@@ -340,6 +385,7 @@ impl HALDriver {
             kAudioObjectPropertyBaseClass |
             kAudioObjectPropertyClass |
             kAudioObjectPropertyOwner |
+            kAudioObjectPropertyOwnedObjects |
             kAudioObjectPropertyName |
             kAudioObjectPropertyManufacturer => true,
 
@@ -381,6 +427,12 @@ impl HALDriver {
             kAudioStreamPropertyAvailableVirtualFormats |
             kAudioStreamPropertyAvailablePhysicalFormats => {
                 matches!(obj_type, ObjectType::InputStream | ObjectType::OutputStream)
+            }
+
+            // Plugin-specific properties
+            kAudioPlugInPropertyDeviceList |
+            kAudioPlugInPropertyResourceBundle => {
+                matches!(obj_type, ObjectType::Plugin)
             }
 
             _ => false,
@@ -467,6 +519,37 @@ impl HALDriver {
                 Ok(std::mem::size_of::<AudioStreamRangedDescription>() as u32 * 3)
             }
 
+            kAudioPlugInPropertyDeviceList => {
+                Ok((std::mem::size_of::<AudioObjectID>() * self.devices.len()) as u32)
+            }
+
+            kAudioPlugInPropertyResourceBundle => Ok(cfstring_ref_size()),
+
+            // Owned objects property - returns objects owned by this object
+            kAudioObjectPropertyOwnedObjects => {
+                let obj_type = self.get_object_type(_object_id);
+                let count = match obj_type {
+                    ObjectType::Plugin => self.devices.len(),
+                    ObjectType::Device => {
+                        // Device owns input and output streams
+                        if let Some(device) = self.devices.get(&_object_id) {
+                            let mut count = 0;
+                            if device.input_stream_id.is_some() {
+                                count += 1;
+                            }
+                            if device.output_stream_id.is_some() {
+                                count += 1;
+                            }
+                            count
+                        } else {
+                            0
+                        }
+                    }
+                    _ => 0, // Streams don't own anything
+                };
+                Ok((std::mem::size_of::<AudioObjectID>() * count) as u32)
+            }
+
             _ => {
                 log::warn!(
                     "Unhandled get_property_data_size selector: 0x{:08X}",
@@ -491,12 +574,20 @@ impl HALDriver {
     ) -> Result<u32> {
         use crate::utils::{copy_cfstring_to_buffer, copy_value_to_buffer};
 
+        log::debug!(
+            "get_property_data: object={} selector=0x{:08X} ('{}')", 
+            _object_id, 
+            address.mSelector,
+            format_fourcc(address.mSelector)
+        );
+
         let obj_type = self.get_object_type(_object_id);
 
         match address.mSelector {
             // Object class
             kAudioObjectPropertyClass => {
                 let class_id = match obj_type {
+                    ObjectType::Plugin => kAudioPlugInClassID,
                     ObjectType::Device => kAudioDeviceClassID,
                     ObjectType::InputStream | ObjectType::OutputStream => kAudioStreamClassID,
                     ObjectType::Unknown => kAudioObjectClassID,
@@ -507,9 +598,9 @@ impl HALDriver {
             kAudioObjectPropertyBaseClass => copy_value_to_buffer(&kAudioObjectClassID, buffer),
 
             kAudioObjectPropertyOwner => {
-                // For devices, return 0 (system owned). For streams, return device ID
+                // For devices and plugin, return 0 (system owned). For streams, return device ID
                 let owner = match obj_type {
-                    ObjectType::Device => 0u32,
+                    ObjectType::Plugin | ObjectType::Device => 0u32,
                     ObjectType::InputStream | ObjectType::OutputStream => {
                         // Find the owning device
                         for device in self.devices.values() {
@@ -655,6 +746,123 @@ impl HALDriver {
                 } else {
                     Ok(0)
                 }
+            }
+
+            // Stream direction: 0 = output (playback), 1 = input (recording)
+            kAudioStreamPropertyDirection => {
+                let obj_type = self.get_object_type(_object_id);
+                let direction: u32 = match obj_type {
+                    ObjectType::InputStream => 1,  // Input (recording from apps)
+                    ObjectType::OutputStream => 0, // Output (playback/loopback)
+                    _ => 0,
+                };
+                copy_value_to_buffer(&direction, buffer)
+            }
+
+            // Terminal type: microphone for input, speaker for output
+            kAudioStreamPropertyTerminalType => {
+                let obj_type = self.get_object_type(_object_id);
+                let terminal_type: u32 = match obj_type {
+                    ObjectType::InputStream => kAudioStreamTerminalTypeMicrophone,
+                    ObjectType::OutputStream => kAudioStreamTerminalTypeSpeaker,
+                    _ => kAudioStreamTerminalTypeSpeaker,
+                };
+                copy_value_to_buffer(&terminal_type, buffer)
+            }
+
+            // Starting channel: always 1 (first channel)
+            kAudioStreamPropertyStartingChannel => {
+                let starting_channel: u32 = 1;
+                copy_value_to_buffer(&starting_channel, buffer)
+            }
+
+            // Stream format properties
+            kAudioStreamPropertyVirtualFormat | kAudioStreamPropertyPhysicalFormat => {
+                // Return stereo float32 format at current sample rate
+                let asbd = crate::utils::create_stereo_f32_asbd(self.sample_rate);
+                copy_value_to_buffer(&asbd, buffer)
+            }
+
+            kAudioStreamPropertyAvailableVirtualFormats
+            | kAudioStreamPropertyAvailablePhysicalFormats => {
+                // Return available formats as AudioStreamRangedDescription
+                // Each format has a min/max sample rate range
+                let formats = [
+                    AudioStreamRangedDescription {
+                        mFormat: crate::utils::create_stereo_f32_asbd(44100.0),
+                        mSampleRateRange: AudioValueRange {
+                            mMinimum: 44100.0,
+                            mMaximum: 44100.0,
+                        },
+                    },
+                    AudioStreamRangedDescription {
+                        mFormat: crate::utils::create_stereo_f32_asbd(48000.0),
+                        mSampleRateRange: AudioValueRange {
+                            mMinimum: 48000.0,
+                            mMaximum: 48000.0,
+                        },
+                    },
+                    AudioStreamRangedDescription {
+                        mFormat: crate::utils::create_stereo_f32_asbd(96000.0),
+                        mSampleRateRange: AudioValueRange {
+                            mMinimum: 96000.0,
+                            mMaximum: 96000.0,
+                        },
+                    },
+                ];
+                let mut offset = 0;
+                for format in &formats {
+                    let bytes = copy_value_to_buffer(format, &mut buffer[offset..])?;
+                    offset += bytes as usize;
+                }
+                Ok(offset as u32)
+            }
+
+            kAudioPlugInPropertyDeviceList => {
+                let mut offset = 0;
+                for device_id in self.devices.keys() {
+                    let bytes = copy_value_to_buffer(device_id, &mut buffer[offset..])?;
+                    offset += bytes as usize;
+                }
+                Ok(offset as u32)
+            }
+
+            kAudioPlugInPropertyResourceBundle => {
+                // Return the bundle identifier for the resource bundle
+                copy_cfstring_to_buffer("org.spinorama.sotf-hal", buffer)
+            }
+
+            // Owned objects - return list of objects owned by this object
+            kAudioObjectPropertyOwnedObjects => {
+                let obj_type = self.get_object_type(_object_id);
+                let mut offset = 0;
+
+                match obj_type {
+                    ObjectType::Plugin => {
+                        // Plugin owns all devices
+                        for device_id in self.devices.keys() {
+                            let bytes = copy_value_to_buffer(device_id, &mut buffer[offset..])?;
+                            offset += bytes as usize;
+                        }
+                    }
+                    ObjectType::Device => {
+                        // Device owns its streams
+                        if let Some(device) = self.devices.get(&_object_id) {
+                            if let Some(input_id) = device.input_stream_id {
+                                let bytes = copy_value_to_buffer(&input_id, &mut buffer[offset..])?;
+                                offset += bytes as usize;
+                            }
+                            if let Some(output_id) = device.output_stream_id {
+                                let bytes = copy_value_to_buffer(&output_id, &mut buffer[offset..])?;
+                                offset += bytes as usize;
+                            }
+                        }
+                    }
+                    _ => {
+                        // Streams don't own anything
+                    }
+                }
+                Ok(offset as u32)
             }
 
             _ => {

@@ -12,7 +12,7 @@ members = [
     "crates/plugins-gpui",
     "crates/driver-hal",
     "crates/head-tracker",
-    "crates/daemon",
+    "crates/daemon", "check_driver_load",
 ]
 resolver = "3"
 
@@ -97,6 +97,7 @@ math-xem-common = { path = "crates/math-xem-common", version = "0.3" }
 math-iir-fir = { path = "crates/math-iir-fir", version = "0.3" }
 math-convex-hull = { path = "crates/math-convex-hull", version = "0.3" }
 math-differential-evolution = { path = "crates/math-differential-evolution", version = "0.3" }
+math-dsp = { path = "crates/math-dsp", version = "0.3" }
 
 autoeq-env = { version = "0.3", path = "crates/autoeq-env" }
 autoeq-cea2034 = { version = "0.3", path = "crates/autoeq-cea2034" }

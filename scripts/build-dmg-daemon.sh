@@ -4,7 +4,7 @@
 #
 # Creates a signed and notarized DMG containing:
 #   - SotF Toolbar.app (menu bar app)
-#   - sotf.driver (HAL audio driver)
+#   - SotFHAL.driver (HAL audio driver)
 #   - sotf-daemon (embedded in app)
 #
 # Bundle identifiers:
@@ -33,7 +33,7 @@ set -euo pipefail
 
 # Configuration
 APP_NAME="SotF Toolbar"
-DRIVER_NAME="sotf.driver"
+DRIVER_NAME="SotFHAL.driver"
 DAEMON_BINARY="sotf-daemon"
 
 # Bundle identifiers
@@ -46,7 +46,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Extract version from root Cargo.toml
-VERSION=$(grep -m1 '^version = ' "$PROJECT_ROOT/Cargo.toml" | sed 's/version = "\(.*\)"/\1/')
+VERSION=$(grep -m1 '^version = ' "$PROJECT_ROOT/Cargo.toml" | sed 's/version = "(.*)"/\\1/')
 if [ -z "$VERSION" ]; then
     echo "ERROR: Could not extract version from Cargo.toml"
     exit 1
@@ -64,6 +64,7 @@ SIGN=false
 NOTARIZE=false
 CLEAN=false
 BUILD_HAL=true
+DEBUG=false
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -81,6 +82,10 @@ while [[ $# -gt 0 ]]; do
             CLEAN=true
             shift
             ;;
+        --debug|-d)
+            DEBUG=true
+            shift
+            ;;
         --no-hal)
             BUILD_HAL=false
             shift
@@ -92,6 +97,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --sign        Sign the application with Developer ID"
             echo "  --notarize    Notarize the application (implies --sign)"
             echo "  --clean       Clean build directory before building"
+            echo "  --debug, -d   Build in debug mode (faster, no optimizations)"
             echo "  --no-hal      Skip building HAL driver"
             echo "  --help        Show this help message"
             exit 0
@@ -102,6 +108,15 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Set build type
+if $DEBUG; then
+    BUILD_TYPE="debug"
+    CARGO_FLAGS=""
+else
+    BUILD_TYPE="release"
+    CARGO_FLAGS="--release"
+fi
 
 # Color output
 RED='\033[0;31m'
@@ -172,14 +187,16 @@ clean_build() {
     fi
 }
 
+BUILD_DIR="$PROJECT_ROOT/target/$BUILD_TYPE"
+
 # Build the daemon binary
 build_daemon() {
-    log_info "Building daemon binary..."
+    log_info "Building daemon binary ($BUILD_TYPE)..."
 
     cd "$PROJECT_ROOT"
 
     # Build with HAL support on macOS
-    cargo build --release -p sotf-daemon --features hal
+    cargo build $CARGO_FLAGS -p sotf-daemon --features hal
 
     if [ ! -f "$BUILD_DIR/$DAEMON_BINARY" ]; then
         log_error "Daemon binary not found at $BUILD_DIR/$DAEMON_BINARY"
@@ -196,12 +213,12 @@ build_hal_driver() {
         return 0
     fi
 
-    log_info "Building HAL driver..."
+    log_info "Building HAL driver ($BUILD_TYPE)..."
 
     cd "$PROJECT_ROOT"
 
     # Build the Rust HAL library
-    cargo build --release -p driver-hal
+    cargo build $CARGO_FLAGS -p driver-hal
 
     # Check if the dylib was created
     if [ ! -f "$BUILD_DIR/libsotf_hal.dylib" ]; then
@@ -215,10 +232,10 @@ build_hal_driver() {
     mkdir -p "$DRIVER_BUNDLE/Contents/Resources"
 
     # Copy the dylib as the driver binary
-    cp "$BUILD_DIR/libsotf_hal.dylib" "$DRIVER_BUNDLE/Contents/MacOS/sotf_driver"
+    cp "$BUILD_DIR/libsotf_hal.dylib" "$DRIVER_BUNDLE/Contents/MacOS/SotFHAL"
 
     # Update install name
-    install_name_tool -id "@rpath/sotf_driver" "$DRIVER_BUNDLE/Contents/MacOS/sotf_driver" 2>/dev/null || true
+    install_name_tool -id "@rpath/SotFHAL" "$DRIVER_BUNDLE/Contents/MacOS/SotFHAL" 2>/dev/null || true
 
     # Create HAL driver Info.plist
     cat > "$DRIVER_BUNDLE/Contents/Info.plist" << EOF
@@ -230,7 +247,7 @@ build_hal_driver() {
     <string>English</string>
 
     <key>CFBundleExecutable</key>
-    <string>sotf_driver</string>
+    <string>SotFHAL</string>
 
     <key>CFBundleIdentifier</key>
     <string>${HAL_BUNDLE_ID}</string>
@@ -242,7 +259,7 @@ build_hal_driver() {
     <string>SotF HAL</string>
 
     <key>CFBundlePackageType</key>
-    <string>drvr</string>
+    <string>BNDL</string>
 
     <key>CFBundleShortVersionString</key>
     <string>${VERSION}</string>
@@ -252,6 +269,11 @@ build_hal_driver() {
 
     <key>CFBundleVersion</key>
     <string>1</string>
+
+    <key>CFBundleSupportedPlatforms</key>
+    <array>
+        <string>MacOSX</string>
+    </array>
 
     <key>CFPlugInDynamicRegisterFunction</key>
     <string></string>
@@ -268,8 +290,8 @@ build_hal_driver() {
 
     <key>CFPlugInTypes</key>
     <dict>
-        <!-- kAudioHardwarePlugInTypeID - for HAL driver plugins -->
-        <key>FBC16C0B-8A0D-11D4-91F0-0050E4C10664</key>
+        <!-- kAudioServerPlugInTypeUUID from AudioServerPlugIn.h -->
+        <key>443ABAB8-E7B3-491A-B985-BEB9187030DB</key>
         <array>
             <string>5A4E28B8-93F4-4B8A-B5E2-3D9F6A8C7E01</string>
         </array>
@@ -300,7 +322,7 @@ build_hal_driver() {
 EOF
 
     # Set permissions
-    chmod 755 "$DRIVER_BUNDLE/Contents/MacOS/sotf_driver"
+    chmod 755 "$DRIVER_BUNDLE/Contents/MacOS/SotFHAL"
     chmod 644 "$DRIVER_BUNDLE/Contents/Info.plist"
 
     log_success "HAL driver bundle created"
@@ -561,9 +583,9 @@ create_hal_scripts() {
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DRIVER_SOURCE="$SCRIPT_DIR/sotf.driver"
+DRIVER_SOURCE="$SCRIPT_DIR/SotFHAL.driver"
 TARGET_DIR="/Library/Audio/Plug-Ins/HAL"
-TARGET_BUNDLE="${TARGET_DIR}/sotf.driver"
+TARGET_BUNDLE="${TARGET_DIR}/SotFHAL.driver"
 
 echo "Installing SotF HAL Driver..."
 
@@ -582,6 +604,12 @@ if [ -d "${TARGET_BUNDLE}" ]; then
     sudo rm -rf "${TARGET_BUNDLE}"
 fi
 
+# Also remove old named version
+if [ -d "${TARGET_DIR}/sotf.driver" ]; then
+    echo "Removing legacy driver..."
+    sudo rm -rf "${TARGET_DIR}/sotf.driver"
+fi
+
 # Copy the bundle
 echo "Copying driver bundle..."
 sudo cp -R "${DRIVER_SOURCE}" "${TARGET_DIR}/"
@@ -592,11 +620,16 @@ sudo chmod 644 "${TARGET_BUNDLE}/Contents/Info.plist"
 
 # Sign with ad-hoc signature
 echo "Signing driver bundle..."
-sudo codesign --force --deep --sign - "${TARGET_BUNDLE}"
+sudo codesign --force --deep --sign - --options runtime "${TARGET_BUNDLE}"
 
 # Restart CoreAudio
 echo "Restarting CoreAudio..."
-sudo killall coreaudiod 2>/dev/null || true
+if sudo launchctl kickstart -kp system/com.apple.audio.coreaudiod >/dev/null 2>&1; then
+     echo "CoreAudio restarted (via launchctl)"
+else
+     sudo killall coreaudiod 2>/dev/null || true
+     echo "CoreAudio restarted (via killall)"
+fi
 
 echo ""
 echo "HAL driver installed successfully!"
@@ -614,22 +647,38 @@ INSTALL_SCRIPT
 #
 set -e
 
-TARGET_BUNDLE="/Library/Audio/Plug-Ins/HAL/sotf.driver"
+TARGET_BUNDLE="/Library/Audio/Plug-Ins/HAL/SotFHAL.driver"
+LEGACY_BUNDLE="/Library/Audio/Plug-Ins/HAL/sotf.driver"
 
 echo "Uninstalling SotF HAL Driver..."
 
-if [ ! -d "${TARGET_BUNDLE}" ]; then
+REMOVED=false
+
+if [ -d "${TARGET_BUNDLE}" ]; then
+    echo "Removing driver bundle..."
+    sudo rm -rf "${TARGET_BUNDLE}"
+    REMOVED=true
+fi
+
+if [ -d "${LEGACY_BUNDLE}" ]; then
+    echo "Removing legacy driver bundle..."
+    sudo rm -rf "${LEGACY_BUNDLE}"
+    REMOVED=true
+fi
+
+if [ "$REMOVED" = false ]; then
     echo "HAL driver is not installed."
     exit 0
 fi
 
-# Remove the bundle
-echo "Removing driver bundle..."
-sudo rm -rf "${TARGET_BUNDLE}"
-
 # Restart CoreAudio
 echo "Restarting CoreAudio..."
-sudo killall coreaudiod 2>/dev/null || true
+if sudo launchctl kickstart -kp system/com.apple.audio.coreaudiod >/dev/null 2>&1; then
+     echo "CoreAudio restarted (via launchctl)"
+else
+     sudo killall coreaudiod 2>/dev/null || true
+     echo "CoreAudio restarted (via killall)"
+fi
 
 echo ""
 echo "HAL driver uninstalled successfully!"
@@ -641,7 +690,8 @@ UNINSTALL_SCRIPT
 
 # Sign the application
 sign_app() {
-    if ! $SIGN; then
+    if ! $SIGN;
+ then
         log_warning "Skipping code signing (use --sign to enable)"
         # Ad-hoc sign for local testing
         log_info "Ad-hoc signing for local testing..."
@@ -717,7 +767,8 @@ create_dmg_file() {
     rm -f "$dmg_path" "$dmg_temp"
 
     # Copy HAL scripts to app Resources
-    if $BUILD_HAL; then
+    if $BUILD_HAL;
+ then
         cp "$DMG_DIR/install-hal.sh" "$APP_BUNDLE/Contents/Resources/"
         cp "$DMG_DIR/uninstall-hal.sh" "$APP_BUNDLE/Contents/Resources/"
         # Copy standalone driver to Resources if not already there
@@ -797,7 +848,8 @@ create_dmg_hdiutil() {
 
 # Notarize the DMG
 notarize_dmg() {
-    if ! $NOTARIZE; then
+    if ! $NOTARIZE;
+ then
         log_warning "Skipping notarization (use --notarize to enable)"
         return
     fi
@@ -881,13 +933,15 @@ main() {
         log_info "DMG: $dmg_path"
         log_info "Size: $(du -h "$dmg_path" | cut -f1)"
 
-        if $SIGN; then
+        if $SIGN;
+ then
             log_info "Signed: Yes"
         else
             log_warning "Signed: No (use --sign for distribution)"
         fi
 
-        if $NOTARIZE; then
+        if $NOTARIZE;
+ then
             log_info "Notarized: Yes"
         else
             log_warning "Notarized: No (use --notarize for App Store/Gatekeeper)"
@@ -899,7 +953,7 @@ main() {
     log_info "  open $dmg_path"
     log_info ""
     log_info "To install HAL driver after app installation:"
-    log_info "  /Applications/SotF\\ Toolbar.app/Contents/Resources/install-hal.sh"
+    log_info "  /Applications/SotF\ Toolbar.app/Contents/Resources/install-hal.sh"
 }
 
 main "$@"
