@@ -21,8 +21,9 @@ use super::group_delay;
 use super::multisub;
 use super::output;
 use super::types::{
-    ChannelDspChain, DspChainOutput, MeasurementSource, MultiSubGroup, OptimizerConfig,
-    OptimizationMetadata, RoomConfig, SpeakerConfig, SpeakerGroup, TargetCurveConfig,
+    ChannelDspChain, DspChainOutput, MeasurementSource, MixedModeConfig, MultiSubGroup,
+    OptimizerConfig, OptimizationMetadata, RoomConfig, SpeakerConfig, SpeakerGroup,
+    TargetCurveConfig,
 };
 
 // ============================================================================
@@ -677,6 +678,25 @@ fn process_single_speaker(
             Ok((chain, pre_score, post_score, curve.clone(), final_curve, vec![], mean, arrival_time_ms))
         }
         "mixed" => {
+            // Check for frequency-based crossover configuration
+            if let Some(mixed_config) = &room_config.optimizer.mixed_config {
+                // New frequency-based mixed mode: FIR on one band, IIR on the other
+                return process_mixed_mode_crossover(
+                    channel_name,
+                    &curve,
+                    room_config,
+                    mixed_config,
+                    sample_rate,
+                    output_dir,
+                    min_freq,
+                    max_freq,
+                    mean,
+                    pre_score,
+                    arrival_time_ms,
+                );
+            }
+
+            // Legacy sequential mixed mode: IIR first, then FIR on residual
             let (eq_filters, _opt_loss) = eq::optimize_channel_eq(
                 &curve,
                 &room_config.optimizer,
@@ -1153,4 +1173,258 @@ fn process_dba(
         mean_spl,
         None, // No single WAV for DBA
     ))
+}
+
+// ============================================================================
+// Frequency-Based Mixed Mode Processing
+// ============================================================================
+
+/// Process mixed mode with frequency-based crossover
+///
+/// This mode applies FIR correction to one frequency band (default: low frequencies)
+/// and IIR correction to the other band (default: high frequencies), separated by
+/// a configurable crossover frequency.
+///
+/// Returns: (DSP chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms)
+#[allow(clippy::too_many_arguments)]
+fn process_mixed_mode_crossover(
+    channel_name: &str,
+    curve: &Curve,
+    room_config: &RoomConfig,
+    mixed_config: &MixedModeConfig,
+    sample_rate: f64,
+    output_dir: &Path,
+    min_freq: f64,
+    max_freq: f64,
+    mean: f64,
+    pre_score: f64,
+    arrival_time_ms: Option<f64>,
+) -> Result<(ChannelDspChain, f64, f64, Curve, Curve, Vec<Biquad>, f64, Option<f64>)> {
+    let crossover_freq = mixed_config.crossover_freq;
+    let fir_uses_low = mixed_config.fir_band.to_lowercase() == "low";
+
+    info!(
+        "  Mixed mode crossover at {} Hz (FIR on {} band, IIR on {} band)",
+        crossover_freq,
+        if fir_uses_low { "low" } else { "high" },
+        if fir_uses_low { "high" } else { "low" }
+    );
+
+    // Split the curve at crossover frequency
+    let (low_curve, high_curve) = split_curve_at_frequency(curve, crossover_freq);
+
+    // Determine which curve gets FIR and which gets IIR
+    let (fir_curve, iir_curve) = if fir_uses_low {
+        (&low_curve, &high_curve)
+    } else {
+        (&high_curve, &low_curve)
+    };
+
+    // Create band-specific optimizer configs with appropriate frequency ranges
+    let fir_min_freq = fir_curve.freq.first().copied().unwrap_or(min_freq);
+    let fir_max_freq = fir_curve.freq.last().copied().unwrap_or(crossover_freq);
+    let iir_min_freq = iir_curve.freq.first().copied().unwrap_or(crossover_freq);
+    let iir_max_freq = iir_curve.freq.last().copied().unwrap_or(max_freq);
+
+    info!(
+        "  FIR band: {:.1}-{:.1} Hz, IIR band: {:.1}-{:.1} Hz",
+        fir_min_freq, fir_max_freq, iir_min_freq, iir_max_freq
+    );
+
+    // Optimize IIR on designated band
+    let iir_config = OptimizerConfig {
+        min_freq: iir_min_freq,
+        max_freq: iir_max_freq,
+        ..room_config.optimizer.clone()
+    };
+
+    let (eq_filters, _) = eq::optimize_channel_eq(
+        iir_curve,
+        &iir_config,
+        room_config.target_curve.as_ref(),
+        sample_rate,
+    )
+    .map_err(|e| AutoeqError::OptimizationFailed {
+        message: format!("IIR optimization failed for {} band: {}", if fir_uses_low { "high" } else { "low" }, e),
+    })?;
+
+    info!("  IIR stage: {} filters for {} band", eq_filters.len(), if fir_uses_low { "high" } else { "low" });
+
+    // Optimize FIR on designated band
+    let fir_config = OptimizerConfig {
+        min_freq: fir_min_freq,
+        max_freq: fir_max_freq,
+        ..room_config.optimizer.clone()
+    };
+
+    let fir_coeffs = fir::generate_fir_correction(
+        fir_curve,
+        &fir_config,
+        room_config.target_curve.as_ref(),
+        sample_rate,
+    )
+    .map_err(|e| AutoeqError::OptimizationFailed {
+        message: format!("FIR generation failed for {} band: {}", if fir_uses_low { "low" } else { "high" }, e),
+    })?;
+
+    // Save FIR to WAV
+    let fir_filename = format!("{}_band_fir.wav", channel_name);
+    let wav_path = output_dir.join(&fir_filename);
+    crate::fir::save_fir_to_wav(&fir_coeffs, sample_rate as u32, &wav_path)
+        .map_err(|e| AutoeqError::OptimizationFailed {
+            message: format!("Failed to save FIR WAV: {}", e),
+        })?;
+
+    info!("  Saved FIR filter to {}", wav_path.display());
+
+    // Build DSP chain with band split/merge
+    let chain = output::build_mixed_mode_crossover_chain(
+        channel_name,
+        mixed_config,
+        &eq_filters,
+        &fir_filename,
+        fir_uses_low,
+        Some(curve),
+    );
+
+    // Compute combined response for scoring
+    // For proper scoring, we need to simulate what the full chain does:
+    // - Split into bands at crossover
+    // - Apply FIR to one band, IIR to the other
+    // - Sum bands back together
+    let iir_resp = response::compute_peq_complex_response(&eq_filters, &curve.freq, sample_rate);
+    let fir_resp = response::compute_fir_complex_response(&fir_coeffs, &curve.freq, sample_rate);
+
+    // Compute crossover filter responses (LR24 = 4th order Butterworth)
+    let (lp_resp, hp_resp) = compute_lr24_crossover_responses(&curve.freq, crossover_freq, sample_rate);
+
+    // Combine responses: low_band * fir_or_iir + high_band * iir_or_fir
+    let combined_resp: Vec<num_complex::Complex<f64>> = curve
+        .freq
+        .iter()
+        .enumerate()
+        .map(|(i, _)| {
+            if fir_uses_low {
+                lp_resp[i] * fir_resp[i] + hp_resp[i] * iir_resp[i]
+            } else {
+                lp_resp[i] * iir_resp[i] + hp_resp[i] * fir_resp[i]
+            }
+        })
+        .collect();
+
+    let final_curve = response::apply_complex_response(curve, &combined_resp);
+
+    // Compute post-score
+    let mut sum_final = 0.0;
+    let mut count_final = 0;
+    for i in 0..final_curve.freq.len() {
+        if final_curve.freq[i] >= min_freq && final_curve.freq[i] <= max_freq {
+            sum_final += final_curve.spl[i];
+            count_final += 1;
+        }
+    }
+    let mean_final = if count_final > 0 {
+        sum_final / count_final as f64
+    } else {
+        0.0
+    };
+    let normalized_final_spl = &final_curve.spl - mean_final;
+    let post_score = crate::loss::flat_loss(&final_curve.freq, &normalized_final_spl, min_freq, max_freq);
+
+    info!(
+        "  Pre-score: {:.6}, Post-score: {:.6}",
+        pre_score, post_score
+    );
+
+    let mut chain = chain;
+    chain.final_curve = Some((&final_curve).into());
+
+    Ok((
+        chain,
+        pre_score,
+        post_score,
+        curve.clone(),
+        final_curve,
+        eq_filters,
+        mean,
+        arrival_time_ms,
+    ))
+}
+
+/// Split a frequency response curve at a specified frequency
+fn split_curve_at_frequency(curve: &Curve, crossover_freq: f64) -> (Curve, Curve) {
+    // Find the index where frequency exceeds crossover
+    let split_idx = curve
+        .freq
+        .iter()
+        .position(|&f| f >= crossover_freq)
+        .unwrap_or(curve.freq.len());
+
+    // Include some overlap around crossover for better optimization
+    let overlap_points = 3; // Include a few points on each side
+    let low_end = (split_idx + overlap_points).min(curve.freq.len());
+    let high_start = split_idx.saturating_sub(overlap_points);
+
+    let low_curve = Curve {
+        freq: curve.freq.slice(ndarray::s![..low_end]).to_owned(),
+        spl: curve.spl.slice(ndarray::s![..low_end]).to_owned(),
+        phase: curve
+            .phase
+            .as_ref()
+            .map(|p| p.slice(ndarray::s![..low_end]).to_owned()),
+    };
+
+    let high_curve = Curve {
+        freq: curve.freq.slice(ndarray::s![high_start..]).to_owned(),
+        spl: curve.spl.slice(ndarray::s![high_start..]).to_owned(),
+        phase: curve
+            .phase
+            .as_ref()
+            .map(|p| p.slice(ndarray::s![high_start..]).to_owned()),
+    };
+
+    (low_curve, high_curve)
+}
+
+/// Compute Linkwitz-Riley 24dB/oct crossover filter responses
+///
+/// Returns (lowpass_response, highpass_response) as complex vectors
+fn compute_lr24_crossover_responses(
+    frequencies: &ndarray::Array1<f64>,
+    crossover_freq: f64,
+    _sample_rate: f64,
+) -> (Vec<num_complex::Complex<f64>>, Vec<num_complex::Complex<f64>>) {
+    use num_complex::Complex;
+
+    let mut lp_resp = Vec::with_capacity(frequencies.len());
+    let mut hp_resp = Vec::with_capacity(frequencies.len());
+
+    // LR24 = two cascaded 2nd-order Butterworth filters
+    // Using simplified magnitude response formula
+
+    for &freq in frequencies.iter() {
+        // 2nd-order Butterworth lowpass transfer function (analog)
+        // H(s) = 1 / (s^2 + s/Q + 1)  (normalized)
+        // After bilinear transform and cascading twice for LR24
+
+        // Simplified: compute magnitude response directly
+        // For LR24 lowpass: |H|^2 = 1 / (1 + (f/fc)^8)
+        let ratio = freq / crossover_freq;
+        let ratio_sq = ratio * ratio;
+        let ratio_4 = ratio_sq * ratio_sq;
+        let ratio_8 = ratio_4 * ratio_4;
+
+        let lp_mag_sq = 1.0 / (1.0 + ratio_8);
+        let hp_mag_sq = ratio_8 / (1.0 + ratio_8);
+
+        // LR crossovers have 0 or 180 degree phase at crossover
+        // For scoring purposes, we primarily care about magnitude
+        let lp_mag = lp_mag_sq.sqrt();
+        let hp_mag = hp_mag_sq.sqrt();
+
+        lp_resp.push(Complex::new(lp_mag, 0.0));
+        hp_resp.push(Complex::new(hp_mag, 0.0));
+    }
+
+    (lp_resp, hp_resp)
 }

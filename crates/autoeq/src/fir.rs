@@ -233,3 +233,325 @@ pub fn save_fir_to_wav(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ndarray::Array1;
+    use tempfile::TempDir;
+
+    /// Helper to create a test curve with given frequencies and SPL values
+    fn create_test_curve(freqs: &[f64], spl_values: &[f64]) -> Curve {
+        Curve {
+            freq: Array1::from(freqs.to_vec()),
+            spl: Array1::from(spl_values.to_vec()),
+            phase: None,
+        }
+    }
+
+    /// Create a flat response curve at given SPL level
+    fn create_flat_curve(min_freq: f64, max_freq: f64, n_points: usize, spl_db: f64) -> Curve {
+        let freqs: Vec<f64> = (0..n_points)
+            .map(|i| {
+                let t = i as f64 / (n_points - 1) as f64;
+                min_freq * (max_freq / min_freq).powf(t)
+            })
+            .collect();
+        let spl: Vec<f64> = vec![spl_db; n_points];
+        create_test_curve(&freqs, &spl)
+    }
+
+    /// Compute energy in a specific portion of the signal
+    fn compute_energy_in_range(coeffs: &[f64], start_fraction: f64, end_fraction: f64) -> f64 {
+        let n = coeffs.len();
+        let start = (n as f64 * start_fraction) as usize;
+        let end = (n as f64 * end_fraction) as usize;
+        coeffs[start..end].iter().map(|x| x * x).sum()
+    }
+
+    /// Compute total energy of a signal
+    fn compute_total_energy(coeffs: &[f64]) -> f64 {
+        coeffs.iter().map(|x| x * x).sum()
+    }
+
+    #[test]
+    fn test_linear_phase_impulse_symmetry() {
+        // Linear phase FIR should have symmetric impulse response
+        // Note: The FIR filter generation applies a Blackman window which
+        // can introduce some asymmetry. We check relative symmetry.
+        let sample_rate = 48000.0;
+        let n_taps = 512;
+
+        // Create a simple curve with mild frequency response variation
+        let target_curve = create_test_curve(
+            &[20.0, 100.0, 1000.0, 5000.0, 20000.0],
+            &[0.0, 2.0, 0.0, -1.0, -2.0],
+        );
+
+        let coeffs = generate_fir_from_response(&target_curve, sample_rate, n_taps, FirPhase::Linear);
+
+        assert_eq!(coeffs.len(), n_taps);
+
+        // Check that the energy is centered (indicative of linear phase)
+        // Find the index of maximum energy
+        let (max_idx, _) = coeffs
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.abs().partial_cmp(&b.1.abs()).unwrap())
+            .unwrap();
+
+        let center = n_taps / 2;
+
+        // Peak should be near the center (within 10% of length)
+        let tolerance = n_taps / 10;
+        assert!(
+            (max_idx as isize - center as isize).unsigned_abs() < tolerance,
+            "Linear phase FIR peak should be near center. Peak at {}, center at {}",
+            max_idx,
+            center
+        );
+
+        // Verify that energy distribution is roughly symmetric around the peak
+        let left_energy: f64 = coeffs[..max_idx].iter().map(|x| x * x).sum();
+        let right_energy: f64 = coeffs[max_idx + 1..].iter().map(|x| x * x).sum();
+
+        // Energy ratio should be within 10x of each other for a roughly symmetric filter
+        let energy_ratio = if left_energy > right_energy {
+            left_energy / right_energy.max(1e-10)
+        } else {
+            right_energy / left_energy.max(1e-10)
+        };
+
+        assert!(
+            energy_ratio < 10.0,
+            "Linear phase FIR should have roughly symmetric energy distribution. Ratio = {}",
+            energy_ratio
+        );
+    }
+
+    #[test]
+    fn test_minimum_phase_energy_concentration() {
+        // Minimum phase FIR should concentrate energy at the start
+        let sample_rate = 48000.0;
+        let n_taps = 1024;
+
+        // Create a curve with some frequency shaping
+        let target_curve = create_test_curve(
+            &[20.0, 100.0, 500.0, 1000.0, 5000.0, 20000.0],
+            &[-3.0, 0.0, 2.0, 0.0, -2.0, -5.0],
+        );
+
+        let coeffs =
+            generate_fir_from_response(&target_curve, sample_rate, n_taps, FirPhase::Minimum);
+
+        assert_eq!(coeffs.len(), n_taps);
+
+        // For minimum phase, most energy should be in the first portion
+        let total_energy = compute_total_energy(&coeffs);
+        let first_quarter_energy = compute_energy_in_range(&coeffs, 0.0, 0.25);
+        let first_half_energy = compute_energy_in_range(&coeffs, 0.0, 0.5);
+
+        // At least 50% of energy should be in first quarter for minimum phase
+        let first_quarter_ratio = first_quarter_energy / total_energy;
+        assert!(
+            first_quarter_ratio > 0.5,
+            "Minimum phase should have >50% energy in first quarter, got {:.1}%",
+            first_quarter_ratio * 100.0
+        );
+
+        // At least 90% in first half
+        let first_half_ratio = first_half_energy / total_energy;
+        assert!(
+            first_half_ratio > 0.9,
+            "Minimum phase should have >90% energy in first half, got {:.1}%",
+            first_half_ratio * 100.0
+        );
+    }
+
+    #[test]
+    fn test_flat_target_produces_near_impulse() {
+        // A flat 0dB target should produce something close to a unity impulse
+        let sample_rate = 48000.0;
+        let n_taps = 256;
+
+        let target_curve = create_flat_curve(20.0, 20000.0, 100, 0.0);
+
+        let coeffs = generate_fir_from_response(&target_curve, sample_rate, n_taps, FirPhase::Linear);
+
+        assert_eq!(coeffs.len(), n_taps);
+
+        // Find the peak coefficient (should be near center for linear phase)
+        let (max_idx, max_val) = coeffs
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.abs().partial_cmp(&b.1.abs()).unwrap())
+            .unwrap();
+
+        // Peak should be near center for linear phase
+        let center = n_taps / 2;
+        assert!(
+            (max_idx as isize - center as isize).abs() < 10,
+            "Peak should be near center for linear phase, got {} vs {}",
+            max_idx,
+            center
+        );
+
+        // Peak value should be positive and significant
+        assert!(
+            *max_val > 0.0,
+            "Peak coefficient should be positive, got {}",
+            max_val
+        );
+
+        // Most other coefficients should be small compared to peak
+        let sum_others: f64 = coeffs
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| (*i as isize - center as isize).abs() > 5)
+            .map(|(_, v)| v.abs())
+            .sum();
+
+        let peak_sum: f64 = coeffs
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| (*i as isize - center as isize).abs() <= 5)
+            .map(|(_, v)| v.abs())
+            .sum();
+
+        assert!(
+            peak_sum > sum_others,
+            "Peak region should have more magnitude than tails"
+        );
+    }
+
+    #[test]
+    fn test_blackman_window_properties() {
+        let window = make_blackman_window(128);
+
+        assert_eq!(window.len(), 128);
+
+        // Blackman window should have very small values at endpoints
+        assert!(
+            window[0] < 0.01,
+            "Blackman start should be near zero, got {}",
+            window[0]
+        );
+        assert!(
+            window[127] < 0.01,
+            "Blackman end should be near zero, got {}",
+            window[127]
+        );
+
+        // Maximum should be at center
+        let center_val = window[64];
+        assert!(
+            center_val > 0.99,
+            "Blackman center should be near 1.0, got {}",
+            center_val
+        );
+
+        // Should be symmetric
+        for i in 0..64 {
+            let diff = (window[i] - window[127 - i]).abs();
+            assert!(
+                diff < 0.001,
+                "Blackman window should be symmetric at index {}, diff = {}",
+                i,
+                diff
+            );
+        }
+    }
+
+    #[test]
+    fn test_small_tap_count() {
+        // Test with small number of taps (edge case)
+        let sample_rate = 48000.0;
+        let n_taps = 64;
+
+        let target_curve = create_flat_curve(100.0, 10000.0, 50, 0.0);
+
+        let coeffs = generate_fir_from_response(&target_curve, sample_rate, n_taps, FirPhase::Linear);
+
+        assert_eq!(coeffs.len(), n_taps);
+
+        // Should still produce valid output
+        let has_nonzero = coeffs.iter().any(|&x| x.abs() > 1e-10);
+        assert!(has_nonzero, "FIR should have non-zero coefficients");
+    }
+
+    #[test]
+    fn test_large_tap_count() {
+        // Test with large number of taps
+        let sample_rate = 96000.0;
+        let n_taps = 4096;
+
+        let target_curve = create_test_curve(
+            &[20.0, 50.0, 100.0, 500.0, 1000.0, 5000.0, 10000.0, 20000.0],
+            &[-6.0, 0.0, 3.0, 0.0, -2.0, -4.0, -6.0, -10.0],
+        );
+
+        let coeffs =
+            generate_fir_from_response(&target_curve, sample_rate, n_taps, FirPhase::Minimum);
+
+        assert_eq!(coeffs.len(), n_taps);
+
+        // Should produce valid output
+        let has_nonzero = coeffs.iter().any(|&x| x.abs() > 1e-10);
+        assert!(has_nonzero, "Large FIR should have non-zero coefficients");
+    }
+
+    #[test]
+    fn test_save_fir_to_wav_creates_valid_file() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let wav_path = temp_dir.path().join("test_fir.wav");
+
+        // Create some test coefficients
+        let coeffs: Vec<f64> = (0..256).map(|i| (i as f64 * 0.01).sin()).collect();
+
+        let result = save_fir_to_wav(&coeffs, 48000, &wav_path);
+        assert!(result.is_ok(), "save_fir_to_wav should succeed");
+
+        // Verify file was created and has correct size
+        assert!(wav_path.exists(), "WAV file should be created");
+
+        // Read back and verify
+        let reader = hound::WavReader::open(&wav_path).expect("Should open WAV file");
+        let spec = reader.spec();
+
+        assert_eq!(spec.channels, 1, "Should be mono");
+        assert_eq!(spec.sample_rate, 48000, "Sample rate should match");
+        assert_eq!(spec.bits_per_sample, 32, "Should be 32-bit float");
+        assert_eq!(reader.len() as usize, coeffs.len(), "Sample count should match");
+    }
+
+    #[test]
+    fn test_fir_phase_types_differ() {
+        // Linear and minimum phase should produce different results
+        let sample_rate = 48000.0;
+        let n_taps = 512;
+
+        let target_curve = create_test_curve(
+            &[20.0, 100.0, 1000.0, 10000.0, 20000.0],
+            &[0.0, 3.0, 0.0, -3.0, -6.0],
+        );
+
+        let linear_coeffs =
+            generate_fir_from_response(&target_curve, sample_rate, n_taps, FirPhase::Linear);
+        let minimum_coeffs =
+            generate_fir_from_response(&target_curve, sample_rate, n_taps, FirPhase::Minimum);
+
+        assert_eq!(linear_coeffs.len(), minimum_coeffs.len());
+
+        // They should be different
+        let sum_diff: f64 = linear_coeffs
+            .iter()
+            .zip(minimum_coeffs.iter())
+            .map(|(a, b)| (a - b).abs())
+            .sum();
+
+        assert!(
+            sum_diff > 0.1,
+            "Linear and minimum phase should produce different coefficients"
+        );
+    }
+}

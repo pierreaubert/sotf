@@ -199,6 +199,61 @@ fn validate_optimizer_config(opt: &OptimizerConfig, result: &mut ValidationResul
             ));
         }
     }
+
+    // Validate mixed mode configuration
+    if let Some(ref mixed_config) = opt.mixed_config {
+        // mixed_config is only relevant when mode == "mixed"
+        if opt.mode != "mixed" {
+            result.add_warning(
+                "mixed_config specified but mode is not 'mixed', configuration will be ignored"
+                    .to_string(),
+            );
+        }
+
+        // Validate crossover frequency
+        if mixed_config.crossover_freq <= 0.0 {
+            result.add_error(format!(
+                "mixed_config.crossover_freq ({}) must be positive",
+                mixed_config.crossover_freq
+            ));
+        }
+        if mixed_config.crossover_freq < opt.min_freq {
+            result.add_warning(format!(
+                "mixed_config.crossover_freq ({}) is below min_freq ({}), some frequencies may not be optimized",
+                mixed_config.crossover_freq, opt.min_freq
+            ));
+        }
+        if mixed_config.crossover_freq > opt.max_freq {
+            result.add_warning(format!(
+                "mixed_config.crossover_freq ({}) is above max_freq ({}), some frequencies may not be optimized",
+                mixed_config.crossover_freq, opt.max_freq
+            ));
+        }
+
+        // Validate crossover type
+        let valid_crossover_types = ["LR24", "LR48", "LR4", "LR8"];
+        if !valid_crossover_types
+            .iter()
+            .any(|&t| t.eq_ignore_ascii_case(&mixed_config.crossover_type))
+        {
+            result.add_error(format!(
+                "Unknown mixed_config.crossover_type '{}', must be one of {:?}",
+                mixed_config.crossover_type, valid_crossover_types
+            ));
+        }
+
+        // Validate fir_band
+        let valid_fir_bands = ["low", "high"];
+        if !valid_fir_bands
+            .iter()
+            .any(|&b| b.eq_ignore_ascii_case(&mixed_config.fir_band))
+        {
+            result.add_error(format!(
+                "Unknown mixed_config.fir_band '{}', must be 'low' or 'high'",
+                mixed_config.fir_band
+            ));
+        }
+    }
 }
 
 /// Validate speaker configurations

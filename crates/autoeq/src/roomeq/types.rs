@@ -373,6 +373,46 @@ pub struct FirConfig {
     pub phase: String,
 }
 
+/// Configuration for frequency-based mixed mode crossover
+///
+/// When specified with mode="mixed", the optimizer will use different filter types
+/// for different frequency bands separated by a crossover frequency.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MixedModeConfig {
+    /// Crossover frequency dividing IIR and FIR bands (Hz)
+    #[serde(default = "default_crossover_freq")]
+    pub crossover_freq: f64,
+
+    /// Crossover filter type: "LR24", "LR48"
+    #[serde(default = "default_crossover_type")]
+    pub crossover_type: String,
+
+    /// Which band uses FIR: "low" or "high" (default: "low")
+    /// FIR is typically better for low frequencies (bass room modes)
+    #[serde(default = "default_fir_band")]
+    pub fir_band: String,
+}
+
+fn default_crossover_freq() -> f64 {
+    300.0
+}
+fn default_crossover_type() -> String {
+    "LR24".to_string()
+}
+fn default_fir_band() -> String {
+    "low".to_string()
+}
+
+impl Default for MixedModeConfig {
+    fn default() -> Self {
+        Self {
+            crossover_freq: default_crossover_freq(),
+            crossover_type: default_crossover_type(),
+            fir_band: default_fir_band(),
+        }
+    }
+}
+
 /// Optimizer configuration
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct OptimizerConfig {
@@ -383,6 +423,12 @@ pub struct OptimizerConfig {
     /// FIR configuration (if mode is "fir" or "mixed")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fir: Option<FirConfig>,
+
+    /// Mixed mode configuration (frequency-based crossover)
+    /// When mode == "mixed" and this is Some, uses frequency-based crossover
+    /// (FIR on one band, IIR on the other). When None, uses legacy sequential mode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mixed_config: Option<MixedModeConfig>,
 
     /// Loss function type ("flat" or "score")
     #[serde(default = "default_loss_type")]
@@ -502,6 +548,7 @@ impl Default for OptimizerConfig {
             peq_model: default_peq_model(),
             mode: default_opt_mode(),
             fir: None,
+            mixed_config: None,
             seed: None,
         }
     }

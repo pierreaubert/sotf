@@ -1,7 +1,8 @@
 //! Output generation for room EQ DSP chains
 
 use super::types::{
-    ChannelDspChain, DriverDspChain, DspChainOutput, OptimizationMetadata, PluginConfigWrapper,
+    ChannelDspChain, DriverDspChain, DspChainOutput, MixedModeConfig, OptimizationMetadata,
+    PluginConfigWrapper,
 };
 use math_audio_iir_fir::Biquad;
 use serde_json::json;
@@ -423,6 +424,106 @@ pub fn add_delay_plugin(chain: &mut ChannelDspChain, delay_ms: f64) {
     let plugin = create_delay_plugin(delay_ms);
     // Insert at the beginning to ensure it applies before other processing (though usually commutative with linear filters)
     chain.plugins.insert(0, plugin);
+}
+
+/// Create a band split plugin configuration
+pub fn create_band_split_plugin(frequency: f64, crossover_type: &str) -> PluginConfigWrapper {
+    PluginConfigWrapper {
+        plugin_type: "band_split".to_string(),
+        parameters: json!({
+            "frequency": frequency,
+            "type": crossover_type
+        }),
+    }
+}
+
+/// Create a band merge plugin configuration
+pub fn create_band_merge_plugin(bands: usize) -> PluginConfigWrapper {
+    PluginConfigWrapper {
+        plugin_type: "band_merge".to_string(),
+        parameters: json!({
+            "bands": bands
+        }),
+    }
+}
+
+/// Build a DSP chain for frequency-based mixed mode crossover
+///
+/// This creates a chain that:
+/// 1. Splits the signal into low and high frequency bands
+/// 2. Applies FIR (convolution) to one band
+/// 3. Applies IIR (EQ) to the other band
+/// 4. Merges the bands back together
+///
+/// # Arguments
+/// * `channel_name` - Channel name (e.g., "left")
+/// * `mixed_config` - Mixed mode configuration with crossover settings
+/// * `eq_filters` - IIR EQ filters for the IIR band
+/// * `fir_wav_path` - Path to the FIR impulse response WAV file
+/// * `fir_uses_low` - If true, FIR is applied to low band, IIR to high band
+/// * `initial_curve` - Optional initial frequency response curve
+pub fn build_mixed_mode_crossover_chain(
+    channel_name: &str,
+    mixed_config: &MixedModeConfig,
+    eq_filters: &[Biquad],
+    fir_wav_path: &str,
+    fir_uses_low: bool,
+    initial_curve: Option<&crate::Curve>,
+) -> ChannelDspChain {
+    let mut plugins = Vec::new();
+
+    // 1. Split into low and high bands
+    plugins.push(create_band_split_plugin(
+        mixed_config.crossover_freq,
+        &mixed_config.crossover_type,
+    ));
+
+    // 2. Apply FIR to designated band (via convolution)
+    // After band_split, channels are: [low_L, low_R, high_L, high_R]
+    // We need to specify which channels the convolution should process
+    let fir_plugin = PluginConfigWrapper {
+        plugin_type: "convolution".to_string(),
+        parameters: json!({
+            "ir_file": fir_wav_path,
+            "channels": if fir_uses_low { [0, 1] } else { [2, 3] }
+        }),
+    };
+    plugins.push(fir_plugin);
+
+    // 3. Apply IIR EQ to the other band
+    if !eq_filters.is_empty() {
+        let filter_configs: Vec<serde_json::Value> = eq_filters
+            .iter()
+            .map(|biquad| {
+                json!({
+                    "filter_type": biquad.filter_type.long_name().to_lowercase(),
+                    "freq": biquad.freq,
+                    "q": biquad.q,
+                    "db_gain": biquad.db_gain,
+                })
+            })
+            .collect();
+
+        let eq_plugin = PluginConfigWrapper {
+            plugin_type: "eq".to_string(),
+            parameters: json!({
+                "filters": filter_configs,
+                "channels": if fir_uses_low { [2, 3] } else { [0, 1] }
+            }),
+        };
+        plugins.push(eq_plugin);
+    }
+
+    // 4. Merge bands back together
+    plugins.push(create_band_merge_plugin(2));
+
+    ChannelDspChain {
+        channel: channel_name.to_string(),
+        plugins,
+        drivers: None,
+        initial_curve: initial_curve.map(|c| c.into()),
+        final_curve: None, // Will be set by caller after computing response
+    }
 }
 
 #[cfg(test)]

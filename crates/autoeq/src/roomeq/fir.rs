@@ -432,4 +432,204 @@ mod tests {
         // This is a property test - Hann endpoints should be lower
         assert!(hann[0] < hamming[0]);
     }
+
+    // =========================================================================
+    // Additional tests for Kirkeby FIR correction and FIR generation
+    // =========================================================================
+
+    use crate::Curve;
+    use ndarray::Array1;
+
+    /// Helper to create a test curve
+    fn create_test_curve(freqs: &[f64], spl_values: &[f64]) -> Curve {
+        Curve {
+            freq: Array1::from(freqs.to_vec()),
+            spl: Array1::from(spl_values.to_vec()),
+            phase: None,
+        }
+    }
+
+    /// Create a curve with phase data
+    fn create_test_curve_with_phase(freqs: &[f64], spl_values: &[f64], phase_deg: &[f64]) -> Curve {
+        Curve {
+            freq: Array1::from(freqs.to_vec()),
+            spl: Array1::from(spl_values.to_vec()),
+            phase: Some(Array1::from(phase_deg.to_vec())),
+        }
+    }
+
+    /// Create a curve with a deep null at a specific frequency
+    #[allow(dead_code)]
+    fn create_curve_with_null(null_freq: f64, null_depth_db: f64) -> Curve {
+        // Create a frequency response with a deep null (typical room mode cancellation)
+        let freqs = vec![
+            20.0, 40.0, 60.0,
+            null_freq * 0.8, null_freq * 0.9, null_freq, null_freq * 1.1, null_freq * 1.2,
+            150.0, 200.0, 300.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0,
+        ];
+        let baseline = 85.0;
+        let spl = vec![
+            baseline - 5.0, baseline - 2.0, baseline,
+            baseline - 5.0, baseline - 15.0, baseline + null_depth_db, baseline - 15.0, baseline - 5.0,
+            baseline, baseline, baseline - 1.0, baseline - 2.0, baseline - 2.0, baseline - 3.0,
+            baseline - 5.0, baseline - 8.0, baseline - 12.0,
+        ];
+        create_test_curve(&freqs, &spl)
+    }
+
+    #[test]
+    fn test_kirkeby_with_phase_data() {
+        // Kirkeby should work better with phase data from measurement
+        let freqs = vec![20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0];
+        let spl = vec![75.0, 80.0, 85.0, 82.0, 80.0, 78.0, 76.0, 74.0, 70.0, 65.0];
+        let phase = vec![-180.0, -120.0, -60.0, -30.0, 0.0, 30.0, 60.0, 90.0, 120.0, 150.0];
+
+        let measurement = create_test_curve_with_phase(&freqs, &spl, &phase);
+
+        let target = create_test_curve(
+            &[20.0, 100.0, 1000.0, 10000.0, 20000.0],
+            &[80.0, 80.0, 80.0, 80.0, 80.0],
+        );
+
+        let sample_rate = 48000.0;
+        let n_taps = 4096;
+
+        let result = generate_kirkeby_correction(
+            &measurement,
+            &target,
+            sample_rate,
+            n_taps,
+            20.0,
+            1000.0,
+        );
+
+        assert!(result.is_ok(), "Kirkeby with phase should succeed");
+        let coeffs = result.unwrap();
+
+        assert_eq!(coeffs.len(), n_taps);
+        assert!(coeffs.iter().any(|&x| x.abs() > 1e-10));
+    }
+
+    #[test]
+    fn test_kirkeby_without_phase_data() {
+        // Kirkeby should also work without phase (assumes 0 phase)
+        let measurement = create_test_curve(
+            &[20.0, 100.0, 500.0, 1000.0, 5000.0, 20000.0],
+            &[75.0, 82.0, 80.0, 78.0, 72.0, 65.0],
+        );
+
+        let target = create_test_curve(
+            &[20.0, 100.0, 1000.0, 10000.0, 20000.0],
+            &[80.0, 80.0, 80.0, 80.0, 80.0],
+        );
+
+        let result = generate_kirkeby_correction(
+            &measurement,
+            &target,
+            48000.0,
+            4096,
+            20.0,
+            1000.0,
+        );
+
+        assert!(result.is_ok(), "Kirkeby without phase should succeed");
+        let coeffs = result.unwrap();
+        assert_eq!(coeffs.len(), 4096);
+    }
+
+    #[test]
+    fn test_generate_fir_correction_basic() {
+        // Test the high-level generate_fir_correction function with IIR mode config
+        use crate::roomeq::types::{FirConfig, OptimizerConfig};
+
+        let measurement = create_test_curve(
+            &[20.0, 100.0, 500.0, 1000.0, 5000.0, 20000.0],
+            &[78.0, 82.0, 80.0, 79.0, 75.0, 70.0],
+        );
+
+        let mut config = OptimizerConfig::default();
+        config.fir = Some(FirConfig {
+            taps: 1024,
+            phase: "linear".to_string(),
+        });
+        config.min_freq = 50.0;
+        config.max_freq = 2000.0;
+
+        let result = generate_fir_correction(&measurement, &config, None, 48000.0);
+
+        assert!(result.is_ok(), "FIR correction should succeed: {:?}", result.err());
+        let coeffs = result.unwrap();
+        assert_eq!(coeffs.len(), 1024);
+    }
+
+    #[test]
+    fn test_generate_fir_correction_kirkeby_mode() {
+        use crate::roomeq::types::{FirConfig, OptimizerConfig};
+
+        let measurement = create_test_curve(
+            &[20.0, 100.0, 500.0, 1000.0, 5000.0, 20000.0],
+            &[78.0, 82.0, 80.0, 79.0, 75.0, 70.0],
+        );
+
+        let mut config = OptimizerConfig::default();
+        config.fir = Some(FirConfig {
+            taps: 2048,
+            phase: "kirkeby".to_string(),
+        });
+        config.min_freq = 20.0;
+        config.max_freq = 500.0;
+
+        let result = generate_fir_correction(&measurement, &config, None, 48000.0);
+
+        assert!(result.is_ok(), "Kirkeby FIR correction should succeed");
+        let coeffs = result.unwrap();
+        assert_eq!(coeffs.len(), 2048);
+    }
+
+    #[test]
+    fn test_fir_config_missing_returns_error() {
+        use crate::roomeq::types::OptimizerConfig;
+
+        let measurement = create_test_curve(
+            &[20.0, 1000.0, 20000.0],
+            &[80.0, 80.0, 80.0],
+        );
+
+        let config = OptimizerConfig::default(); // fir is None by default
+
+        let result = generate_fir_correction(&measurement, &config, None, 48000.0);
+
+        assert!(result.is_err(), "Should error when FIR config is missing");
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("FIR configuration missing"),
+            "Error should mention missing FIR config"
+        );
+    }
+
+    #[test]
+    fn test_invalid_phase_type_returns_error() {
+        use crate::roomeq::types::{FirConfig, OptimizerConfig};
+
+        let measurement = create_test_curve(
+            &[20.0, 1000.0, 20000.0],
+            &[80.0, 80.0, 80.0],
+        );
+
+        let mut config = OptimizerConfig::default();
+        config.fir = Some(FirConfig {
+            taps: 1024,
+            phase: "invalid_phase_type".to_string(),
+        });
+
+        let result = generate_fir_correction(&measurement, &config, None, 48000.0);
+
+        assert!(result.is_err(), "Should error on invalid phase type");
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("Unknown FIR phase type"),
+            "Error should mention unknown phase type"
+        );
+    }
+
 }
