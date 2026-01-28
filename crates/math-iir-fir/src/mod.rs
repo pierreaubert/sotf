@@ -30,6 +30,7 @@
 pub mod denormals;
 mod error;
 mod fir;
+mod fir_design;
 mod iir;
 
 // Re-export error types
@@ -48,6 +49,12 @@ pub use iir::{
 pub use fir::{
     Fir, FirBank, FirFilterType, WindowType, compute_fir_bank_response, fir_bank_preamp_gain,
     fir_bank_spl, generate_window,
+};
+
+// Re-export FIR design types and functions (frequency response matching)
+pub use fir_design::{
+    FirDesignConfig, FirPhase, generate_fir_from_response, generate_kirkeby_correction,
+    save_fir_to_wav,
 };
 
 // ============================================================================

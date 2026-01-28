@@ -1,0 +1,601 @@
+//! FIR filter design from frequency response
+//!
+//! This module provides functions to generate FIR filters that match a target
+//! frequency response, with support for different phase types including
+//! Kirkeby regularized inversion for room correction.
+
+use num_complex::Complex64;
+use rustfft::num_traits::Zero;
+use rustfft::FftPlanner;
+use std::path::Path;
+
+use super::fir::{generate_window, WindowType};
+
+/// Phase type for FIR generation
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
+pub enum FirPhase {
+    /// Linear phase (symmetrical impulse response, constant delay)
+    #[default]
+    Linear,
+    /// Minimum phase (causal, minimum delay, concentrates energy at start)
+    Minimum,
+    /// Kirkeby regularized inversion (mixed phase, good for room correction)
+    Kirkeby,
+}
+
+impl FirPhase {
+    /// Returns the short string representation of the phase type.
+    pub fn short_name(&self) -> &'static str {
+        match self {
+            FirPhase::Linear => "LIN",
+            FirPhase::Minimum => "MIN",
+            FirPhase::Kirkeby => "KIRK",
+        }
+    }
+
+    /// Returns the long string representation of the phase type.
+    pub fn long_name(&self) -> &'static str {
+        match self {
+            FirPhase::Linear => "Linear",
+            FirPhase::Minimum => "Minimum",
+            FirPhase::Kirkeby => "Kirkeby",
+        }
+    }
+}
+
+/// Configuration for FIR filter generation
+#[derive(Debug, Clone)]
+pub struct FirDesignConfig {
+    /// Number of taps (coefficients)
+    pub n_taps: usize,
+    /// Sample rate in Hz
+    pub sample_rate: f64,
+    /// Phase type
+    pub phase: FirPhase,
+    /// Minimum frequency for in-band regularization (Kirkeby only)
+    pub min_freq: f64,
+    /// Maximum frequency for in-band regularization (Kirkeby only)
+    pub max_freq: f64,
+    /// Window type for final windowing
+    pub window: WindowType,
+}
+
+impl Default for FirDesignConfig {
+    fn default() -> Self {
+        Self {
+            n_taps: 4096,
+            sample_rate: 48000.0,
+            phase: FirPhase::Linear,
+            min_freq: 20.0,
+            max_freq: 20000.0,
+            window: WindowType::Blackman,
+        }
+    }
+}
+
+/// Generate an FIR filter to match a target frequency response
+///
+/// This function takes a target magnitude response (in dB) at specified frequencies
+/// and generates FIR coefficients that approximate that response.
+///
+/// # Arguments
+/// * `freqs` - Frequency points in Hz (must be positive, sorted ascending)
+/// * `magnitude_db` - Target magnitude in dB at each frequency point
+/// * `config` - FIR design configuration
+///
+/// # Returns
+/// * Vector of FIR coefficients
+///
+/// # Panics
+/// Panics if freqs and magnitude_db have different lengths
+pub fn generate_fir_from_response(
+    freqs: &[f64],
+    magnitude_db: &[f64],
+    config: &FirDesignConfig,
+) -> Vec<f64> {
+    assert_eq!(
+        freqs.len(),
+        magnitude_db.len(),
+        "freqs and magnitude_db must have same length"
+    );
+
+    let n_taps = config.n_taps;
+    let sample_rate = config.sample_rate;
+
+    // FFT size should be at least n_taps, preferably power of 2
+    let fft_size = (n_taps * 8).next_power_of_two().max(4096);
+    let n_bins = fft_size / 2 + 1;
+
+    // Create linear frequency grid (0 to Nyquist)
+    let freq_step = sample_rate / fft_size as f64;
+    let linear_freqs: Vec<f64> = (0..n_bins).map(|i| i as f64 * freq_step).collect();
+
+    // Interpolate target curve to this grid (log-space interpolation)
+    let interpolated_db = interpolate_log_space(freqs, magnitude_db, &linear_freqs);
+
+    // Convert dB to linear magnitude
+    let magnitude: Vec<f64> = interpolated_db
+        .iter()
+        .map(|db| 10.0_f64.powf(db / 20.0))
+        .collect();
+
+    // Construct complex spectrum based on phase type
+    let spectrum = match config.phase {
+        FirPhase::Linear => generate_linear_phase_spectrum(&magnitude),
+        FirPhase::Minimum => generate_minimum_phase_spectrum(&magnitude, fft_size),
+        FirPhase::Kirkeby => {
+            // For Kirkeby, we need measurement and target, not just target
+            // This path assumes the input IS the correction (target - measurement)
+            generate_linear_phase_spectrum(&magnitude)
+        }
+    };
+
+    // IFFT to get impulse response
+    let ir = spectrum_to_impulse_response(&spectrum, fft_size);
+
+    // Window and center the impulse response
+    finalize_impulse_response(&ir, n_taps, config.phase, &config.window)
+}
+
+/// Generate Kirkeby regularized FIR correction filter
+///
+/// Kirkeby inversion uses frequency-dependent regularization to create a stable
+/// inverse filter that doesn't over-boost deep nulls (common in room measurements).
+///
+/// # Arguments
+/// * `meas_freqs` - Measurement frequency points in Hz
+/// * `meas_magnitude_db` - Measurement magnitude in dB
+/// * `meas_phase_deg` - Measurement phase in degrees (optional, uses 0 if None)
+/// * `target_magnitude_db` - Target magnitude in dB at meas_freqs points
+/// * `config` - FIR design configuration
+///
+/// # Returns
+/// * Vector of FIR coefficients
+pub fn generate_kirkeby_correction(
+    meas_freqs: &[f64],
+    meas_magnitude_db: &[f64],
+    meas_phase_deg: Option<&[f64]>,
+    target_magnitude_db: &[f64],
+    config: &FirDesignConfig,
+) -> Vec<f64> {
+    let n_taps = config.n_taps;
+    let sample_rate = config.sample_rate;
+    let min_freq = config.min_freq;
+    let max_freq = config.max_freq;
+
+    // FFT size - use next power of 2 above n_taps, but at least 65536 for good low freq resolution
+    let fft_len = (n_taps * 4).max(65536).next_power_of_two();
+    let num_bins = fft_len / 2 + 1;
+    let freq_step = sample_rate / fft_len as f64;
+
+    // Linear frequency grid
+    let linear_freqs: Vec<f64> = (0..num_bins).map(|i| i as f64 * freq_step).collect();
+
+    // Interpolate measurement and target to linear grid
+    let meas_spl_interp = interpolate_log_space(meas_freqs, meas_magnitude_db, &linear_freqs);
+    let meas_phase_interp = meas_phase_deg
+        .map(|p| interpolate_log_space(meas_freqs, p, &linear_freqs))
+        .unwrap_or_else(|| vec![0.0; num_bins]);
+    let target_spl_interp = interpolate_log_space(meas_freqs, target_magnitude_db, &linear_freqs);
+
+    // Regularization parameters
+    let in_band_reg = 10.0_f64.powf(-30.0 / 10.0); // -30dB regularization
+    let out_band_reg = 1.0; // 0dB (don't boost out of band)
+
+    let mut h_inv = Vec::with_capacity(num_bins);
+
+    for i in 0..num_bins {
+        let f = linear_freqs[i];
+
+        // Reconstruct Measurement H(f)
+        let m_spl = meas_spl_interp[i];
+        let m_phase_deg = meas_phase_interp[i];
+        let m_mag = 10.0_f64.powf(m_spl / 20.0);
+        let m_phase_rad = m_phase_deg.to_radians();
+        let h = Complex64::from_polar(m_mag, m_phase_rad);
+
+        // Reconstruct Target T(f)
+        let t_spl = target_spl_interp[i];
+        let t_mag = 10.0_f64.powf(t_spl / 20.0);
+        let t = Complex64::new(t_mag, 0.0);
+
+        // Compute Regularization e(f)
+        let width = 10.0; // Hz transition width
+        let transition = if f < min_freq {
+            ((f - (min_freq - width)) / width).clamp(0.0, 1.0)
+        } else if f > max_freq {
+            1.0 - ((f - max_freq) / width).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+
+        let epsilon = out_band_reg + (in_band_reg - out_band_reg) * transition;
+
+        // Compute Inverse: C = (H* . T) / (|H|^2 + epsilon)
+        let numerator = h.conj() * t;
+        let denominator = h.norm_sqr() + epsilon;
+
+        let c = if denominator > 1e-12 {
+            numerator / denominator
+        } else {
+            Complex64::new(0.0, 0.0)
+        };
+
+        h_inv.push(c);
+    }
+
+    // IFFT to get impulse response
+    let mut spectrum = vec![Complex64::new(0.0, 0.0); fft_len];
+
+    // DC and Nyquist
+    spectrum[0] = h_inv[0];
+    spectrum[fft_len / 2] = h_inv[num_bins - 1];
+
+    // Fill positive freqs and conjugate symmetry
+    for i in 1..fft_len / 2 {
+        spectrum[i] = h_inv[i];
+        spectrum[fft_len - i] = h_inv[i].conj();
+    }
+
+    // Perform IFFT
+    let mut planner = FftPlanner::new();
+    let ifft = planner.plan_fft_inverse(fft_len);
+    ifft.process(&mut spectrum);
+
+    // Normalize
+    let mut impulse: Vec<f64> = spectrum.iter().map(|c| c.re / fft_len as f64).collect();
+
+    // Cyclic shift to center the impulse
+    let shift = fft_len / 2;
+    impulse.rotate_right(shift);
+
+    // Extract n_taps centered around shift
+    let start_idx = shift - n_taps / 2;
+    let window = generate_window(n_taps, WindowType::Hann, 0.0);
+    let mut coeffs = vec![0.0; n_taps];
+    for (i, coeff) in coeffs.iter_mut().enumerate() {
+        let src_idx = start_idx + i;
+        if src_idx < impulse.len() {
+            *coeff = impulse[src_idx] * window[i];
+        }
+    }
+
+    coeffs
+}
+
+/// Save FIR coefficients to a WAV file (32-bit float mono)
+///
+/// # Arguments
+/// * `coeffs` - FIR coefficients
+/// * `sample_rate` - Sample rate in Hz
+/// * `path` - Output file path
+pub fn save_fir_to_wav(
+    coeffs: &[f64],
+    sample_rate: u32,
+    path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate,
+        bits_per_sample: 32,
+        sample_format: hound::SampleFormat::Float,
+    };
+
+    let mut writer = hound::WavWriter::create(path, spec)?;
+    for &sample in coeffs {
+        writer.write_sample(sample as f32)?;
+    }
+    writer.finalize()?;
+
+    Ok(())
+}
+
+// ============================================================================
+// Internal helper functions
+// ============================================================================
+
+/// Interpolate values from source frequencies to target frequencies using log-space
+fn interpolate_log_space(src_freqs: &[f64], src_values: &[f64], target_freqs: &[f64]) -> Vec<f64> {
+    let mut result = Vec::with_capacity(target_freqs.len());
+
+    for &f in target_freqs {
+        if f <= 0.0 {
+            // DC: use first value or extrapolate
+            result.push(src_values.first().copied().unwrap_or(0.0));
+            continue;
+        }
+
+        let log_f = f.ln();
+
+        // Find bracketing indices in source
+        let mut lower_idx = 0;
+        let mut upper_idx = src_freqs.len() - 1;
+
+        // Binary search for position
+        for (i, &sf) in src_freqs.iter().enumerate() {
+            if sf <= f {
+                lower_idx = i;
+            }
+            if sf >= f && i < upper_idx {
+                upper_idx = i;
+                break;
+            }
+        }
+
+        if lower_idx == upper_idx || src_freqs[lower_idx] <= 0.0 || src_freqs[upper_idx] <= 0.0 {
+            result.push(src_values[lower_idx]);
+        } else {
+            // Log-linear interpolation
+            let log_f_low = src_freqs[lower_idx].ln();
+            let log_f_high = src_freqs[upper_idx].ln();
+            let t = (log_f - log_f_low) / (log_f_high - log_f_low);
+            let interp_val =
+                src_values[lower_idx] + t * (src_values[upper_idx] - src_values[lower_idx]);
+            result.push(interp_val);
+        }
+    }
+
+    result
+}
+
+/// Generate linear phase spectrum (zero phase, real-only)
+fn generate_linear_phase_spectrum(magnitude: &[f64]) -> Vec<Complex64> {
+    magnitude.iter().map(|&m| Complex64::new(m, 0.0)).collect()
+}
+
+/// Generate minimum phase spectrum using cepstrum method
+fn generate_minimum_phase_spectrum(magnitude: &[f64], fft_size: usize) -> Vec<Complex64> {
+    let n_bins = magnitude.len();
+
+    // Step 1: Log Magnitude (avoid log(0))
+    let log_mag: Vec<Complex64> = magnitude
+        .iter()
+        .map(|&m| Complex64::new(m.max(1e-9).ln(), 0.0))
+        .collect();
+
+    // Construct full symmetric spectrum for IFFT
+    let mut full_log_mag = vec![Complex64::zero(); fft_size];
+    full_log_mag[0] = log_mag[0];
+    for i in 1..n_bins {
+        full_log_mag[i] = log_mag[i];
+        full_log_mag[fft_size - i] = log_mag[i].conj();
+    }
+    // Nyquist
+    if fft_size % 2 == 0 {
+        full_log_mag[n_bins - 1] = log_mag[n_bins - 1];
+    }
+
+    // Step 2: IFFT
+    let mut planner = FftPlanner::new();
+    let ifft = planner.plan_fft_inverse(fft_size);
+    let mut cepstrum = full_log_mag;
+    ifft.process(&mut cepstrum);
+
+    // Normalize IFFT
+    for x in &mut cepstrum {
+        *x /= fft_size as f64;
+    }
+
+    // Step 3: Window Cepstrum to make it causal
+    let mut causal_cepstrum = vec![Complex64::zero(); fft_size];
+    causal_cepstrum[0] = cepstrum[0]; // DC
+    for i in 1..fft_size / 2 {
+        causal_cepstrum[i] = cepstrum[i] * 2.0;
+    }
+    causal_cepstrum[fft_size / 2] = cepstrum[fft_size / 2]; // Nyquist
+
+    // Step 4: FFT back
+    let fft = planner.plan_fft_forward(fft_size);
+    let mut analytic_log_spectrum = causal_cepstrum;
+    fft.process(&mut analytic_log_spectrum);
+
+    // Step 5: Exponentiate to get Min Phase Spectrum
+    analytic_log_spectrum[..n_bins]
+        .iter()
+        .map(|c| c.exp())
+        .collect()
+}
+
+/// Convert spectrum to impulse response via IFFT
+fn spectrum_to_impulse_response(spectrum: &[Complex64], fft_size: usize) -> Vec<f64> {
+    let n_bins = spectrum.len();
+
+    // Construct full symmetric spectrum
+    let mut full_spectrum = vec![Complex64::zero(); fft_size];
+    full_spectrum[0] = spectrum[0]; // DC must be real
+    for i in 1..n_bins {
+        full_spectrum[i] = spectrum[i];
+        full_spectrum[fft_size - i] = spectrum[i].conj();
+    }
+    // Nyquist must be real
+    if fft_size % 2 == 0 {
+        full_spectrum[n_bins - 1] = Complex64::new(spectrum[n_bins - 1].norm(), 0.0);
+    }
+
+    let mut planner = FftPlanner::new();
+    let ifft = planner.plan_fft_inverse(fft_size);
+    let mut ir_complex = full_spectrum;
+    ifft.process(&mut ir_complex);
+
+    // Extract real part and normalize
+    ir_complex
+        .iter()
+        .map(|c| c.re / fft_size as f64)
+        .collect()
+}
+
+/// Finalize impulse response with windowing and centering
+fn finalize_impulse_response(
+    ir: &[f64],
+    n_taps: usize,
+    phase: FirPhase,
+    window_type: &WindowType,
+) -> Vec<f64> {
+    let fft_size = ir.len();
+    let mut final_ir;
+
+    if phase == FirPhase::Linear {
+        // Rotate to center for linear phase
+        let center = n_taps / 2;
+        final_ir = vec![0.0; n_taps];
+
+        for (i, val) in final_ir.iter_mut().enumerate().take(n_taps) {
+            let shift = i as isize - center as isize;
+            let ir_idx = if shift < 0 {
+                fft_size as isize + shift
+            } else {
+                shift
+            };
+            *val = ir[ir_idx as usize];
+        }
+    } else {
+        // Minimum phase: Impulse is already at 0. Just truncate.
+        final_ir = ir[..n_taps].to_vec();
+    }
+
+    // Apply window
+    let window = generate_window(n_taps, *window_type, 0.0);
+    for (x, w) in final_ir.iter_mut().zip(window.iter()) {
+        *x *= w;
+    }
+
+    final_ir
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn approx_eq(a: f64, b: f64, tol: f64) -> bool {
+        (a - b).abs() <= tol
+    }
+
+    #[test]
+    fn test_fir_phase_names() {
+        assert_eq!(FirPhase::Linear.short_name(), "LIN");
+        assert_eq!(FirPhase::Minimum.short_name(), "MIN");
+        assert_eq!(FirPhase::Kirkeby.short_name(), "KIRK");
+
+        assert_eq!(FirPhase::Linear.long_name(), "Linear");
+        assert_eq!(FirPhase::Minimum.long_name(), "Minimum");
+        assert_eq!(FirPhase::Kirkeby.long_name(), "Kirkeby");
+    }
+
+    #[test]
+    fn test_fir_design_config_default() {
+        let config = FirDesignConfig::default();
+        assert_eq!(config.n_taps, 4096);
+        assert_eq!(config.sample_rate, 48000.0);
+        assert_eq!(config.phase, FirPhase::Linear);
+    }
+
+    #[test]
+    fn test_generate_fir_from_response_flat() {
+        let freqs = vec![20.0, 100.0, 1000.0, 10000.0, 20000.0];
+        let magnitude_db = vec![0.0, 0.0, 0.0, 0.0, 0.0];
+
+        let config = FirDesignConfig {
+            n_taps: 256,
+            sample_rate: 48000.0,
+            phase: FirPhase::Linear,
+            ..Default::default()
+        };
+
+        let coeffs = generate_fir_from_response(&freqs, &magnitude_db, &config);
+
+        assert_eq!(coeffs.len(), 256);
+        // Should have non-zero coefficients
+        assert!(coeffs.iter().any(|&x| x.abs() > 1e-10));
+    }
+
+    #[test]
+    fn test_generate_fir_minimum_phase() {
+        let freqs = vec![20.0, 100.0, 1000.0, 10000.0, 20000.0];
+        let magnitude_db = vec![-3.0, 0.0, 2.0, 0.0, -3.0];
+
+        let config = FirDesignConfig {
+            n_taps: 512,
+            sample_rate: 48000.0,
+            phase: FirPhase::Minimum,
+            ..Default::default()
+        };
+
+        let coeffs = generate_fir_from_response(&freqs, &magnitude_db, &config);
+
+        assert_eq!(coeffs.len(), 512);
+
+        // For minimum phase, first half should have more energy than second half
+        // (windowing affects the exact distribution)
+        let total_energy: f64 = coeffs.iter().map(|x| x * x).sum();
+        let first_half_energy: f64 = coeffs[..256].iter().map(|x| x * x).sum();
+        let second_half_energy: f64 = coeffs[256..].iter().map(|x| x * x).sum();
+
+        // First half should have more energy than second half for minimum phase
+        assert!(
+            first_half_energy > second_half_energy,
+            "Minimum phase should have more energy in first half: first={:.4}, second={:.4}",
+            first_half_energy / total_energy,
+            second_half_energy / total_energy
+        );
+    }
+
+    #[test]
+    fn test_generate_kirkeby_correction() {
+        let freqs = vec![20.0, 100.0, 500.0, 1000.0, 5000.0, 20000.0];
+        let meas_db = vec![75.0, 82.0, 80.0, 78.0, 72.0, 65.0];
+        let target_db = vec![80.0, 80.0, 80.0, 80.0, 80.0, 80.0];
+
+        let config = FirDesignConfig {
+            n_taps: 4096,
+            sample_rate: 48000.0,
+            phase: FirPhase::Kirkeby,
+            min_freq: 20.0,
+            max_freq: 1000.0,
+            ..Default::default()
+        };
+
+        let coeffs =
+            generate_kirkeby_correction(&freqs, &meas_db, None, &target_db, &config);
+
+        assert_eq!(coeffs.len(), 4096);
+        assert!(coeffs.iter().any(|&x| x.abs() > 1e-10));
+    }
+
+    #[test]
+    fn test_interpolate_log_space() {
+        let src_freqs = vec![100.0, 1000.0, 10000.0];
+        let src_values = vec![0.0, 10.0, 20.0];
+
+        // Test at known points
+        let target = vec![100.0, 1000.0, 10000.0];
+        let result = interpolate_log_space(&src_freqs, &src_values, &target);
+
+        assert!(approx_eq(result[0], 0.0, 0.1));
+        assert!(approx_eq(result[1], 10.0, 0.1));
+        assert!(approx_eq(result[2], 20.0, 0.1));
+
+        // Test interpolated point (geometric mean of 100 and 1000 is ~316)
+        let target2 = vec![316.0];
+        let result2 = interpolate_log_space(&src_freqs, &src_values, &target2);
+        // Should be approximately 5.0 (halfway in log space)
+        assert!(result2[0] > 3.0 && result2[0] < 7.0);
+    }
+
+    #[test]
+    fn test_save_fir_to_wav() {
+        let coeffs: Vec<f64> = (0..256).map(|i| (i as f64 * 0.01).sin()).collect();
+        let temp_dir = std::env::temp_dir();
+        let wav_path = temp_dir.join("test_fir_design.wav");
+
+        let result = save_fir_to_wav(&coeffs, 48000, &wav_path);
+        assert!(result.is_ok());
+        assert!(wav_path.exists());
+
+        // Clean up
+        let _ = std::fs::remove_file(&wav_path);
+    }
+}
