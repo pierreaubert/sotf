@@ -32,6 +32,7 @@ mod error;
 mod fir;
 mod fir_design;
 mod iir;
+mod phase_smooth;
 
 // Re-export error types
 pub use error::{IirError, Result};
@@ -56,6 +57,9 @@ pub use fir_design::{
     FirDesignConfig, FirPhase, generate_fir_from_response, generate_kirkeby_correction,
     save_fir_to_wav,
 };
+
+// Re-export phase smoothing functions
+pub use phase_smooth::{interpolate_phase_complex, smooth_phase_via_group_delay, unwrap_phase};
 
 // ============================================================================
 // Common Helper Functions and Constants

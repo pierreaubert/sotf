@@ -368,9 +368,20 @@ pub struct FirConfig {
     /// Number of taps (coefficients)
     #[serde(default = "default_fir_taps")]
     pub taps: usize,
-    /// Phase response type: "linear" or "minimum"
+    /// Phase response type: "linear" or "kirkeby"
     #[serde(default = "default_fir_phase")]
     pub phase: String,
+    /// Whether to correct excess phase (only applies to kirkeby mode)
+    /// When true, corrects both magnitude and excess phase (requires clean phase measurements).
+    /// When false (default), only corrects magnitude (produces linear-phase FIR, more robust).
+    #[serde(default)]
+    pub correct_excess_phase: bool,
+    /// Phase smoothing width in octaves (default: 0.167 = 1/6 octave)
+    /// Applied via group delay smoothing when excess phase correction is enabled.
+    /// Smoothing reduces noise artifacts in phase measurements.
+    /// Set to 0.0 to disable smoothing.
+    #[serde(default = "default_phase_smoothing")]
+    pub phase_smoothing: f64,
 }
 
 /// Configuration for frequency-based mixed mode crossover
@@ -502,6 +513,9 @@ fn default_fir_taps() -> usize {
 }
 fn default_fir_phase() -> String {
     "kirkeby".to_string()
+}
+fn default_phase_smoothing() -> f64 {
+    0.167 // 1/6 octave
 }
 fn default_num_filters() -> usize {
     7

@@ -65,12 +65,83 @@ pub fn generate_kirkeby_correction(
     min_freq: f64,
     max_freq: f64,
 ) -> Vec<f64> {
+    generate_kirkeby_correction_with_phase(
+        measurement,
+        target,
+        sample_rate,
+        n_taps,
+        min_freq,
+        max_freq,
+        false, // Default: magnitude-only correction
+    )
+}
+
+/// Generate Kirkeby regularized FIR correction filter with optional excess phase correction
+///
+/// # Arguments
+/// * `measurement` - Measurement curve (SPL and optionally phase)
+/// * `target` - Target curve (SPL)
+/// * `sample_rate` - Sample rate in Hz
+/// * `n_taps` - Number of taps
+/// * `min_freq` - Minimum frequency for in-band regularization
+/// * `max_freq` - Maximum frequency for in-band regularization
+/// * `correct_excess_phase` - Whether to correct excess phase (requires phase data in measurement)
+///
+/// # Returns
+/// * Vector of FIR coefficients
+pub fn generate_kirkeby_correction_with_phase(
+    measurement: &Curve,
+    target: &Curve,
+    sample_rate: f64,
+    n_taps: usize,
+    min_freq: f64,
+    max_freq: f64,
+    correct_excess_phase: bool,
+) -> Vec<f64> {
+    generate_kirkeby_correction_with_smoothing(
+        measurement,
+        target,
+        sample_rate,
+        n_taps,
+        min_freq,
+        max_freq,
+        correct_excess_phase,
+        0.167, // Default 1/6 octave smoothing
+    )
+}
+
+/// Generate Kirkeby regularized FIR correction filter with optional excess phase correction and smoothing
+///
+/// # Arguments
+/// * `measurement` - Measurement curve (SPL and optionally phase)
+/// * `target` - Target curve (SPL)
+/// * `sample_rate` - Sample rate in Hz
+/// * `n_taps` - Number of taps
+/// * `min_freq` - Minimum frequency for in-band regularization
+/// * `max_freq` - Maximum frequency for in-band regularization
+/// * `correct_excess_phase` - Whether to correct excess phase (requires phase data in measurement)
+/// * `phase_smoothing_octaves` - Phase smoothing width in octaves (0.0 to disable)
+///
+/// # Returns
+/// * Vector of FIR coefficients
+pub fn generate_kirkeby_correction_with_smoothing(
+    measurement: &Curve,
+    target: &Curve,
+    sample_rate: f64,
+    n_taps: usize,
+    min_freq: f64,
+    max_freq: f64,
+    correct_excess_phase: bool,
+    phase_smoothing_octaves: f64,
+) -> Vec<f64> {
     let config = FirDesignConfig {
         n_taps,
         sample_rate,
         phase: FirPhase::Kirkeby,
         min_freq,
         max_freq,
+        correct_excess_phase,
+        phase_smoothing_octaves,
         ..Default::default()
     };
 

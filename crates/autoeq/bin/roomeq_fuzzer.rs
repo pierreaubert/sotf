@@ -195,6 +195,8 @@ struct DBAConfig {
 struct FirConfig {
     taps: usize,
     phase: String,
+    #[serde(default)]
+    correct_excess_phase: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1042,6 +1044,7 @@ fn generate_random_config(
                 1 => "minimum".to_string(),
                 _ => "kirkeby".to_string(),
             },
+            correct_excess_phase: rng.random_range(0..5) == 0, // 20% chance to enable
         })
     } else {
         None

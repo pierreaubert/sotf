@@ -58,6 +58,15 @@ pub struct FirDesignConfig {
     pub max_freq: f64,
     /// Window type for final windowing
     pub window: WindowType,
+    /// Whether to correct excess phase in Kirkeby mode (default: false)
+    /// When true, the filter will correct both magnitude and excess phase.
+    /// When false, only magnitude is corrected (produces linear-phase FIR).
+    /// Note: Excess phase correction requires clean phase measurements to be effective.
+    pub correct_excess_phase: bool,
+    /// Phase smoothing width in octaves (default: 0.167 = 1/6 octave)
+    /// Applied via group delay smoothing when excess phase correction is enabled.
+    /// Set to 0.0 to disable smoothing.
+    pub phase_smoothing_octaves: f64,
 }
 
 impl Default for FirDesignConfig {
@@ -69,6 +78,8 @@ impl Default for FirDesignConfig {
             min_freq: 20.0,
             max_freq: 20000.0,
             window: WindowType::Blackman,
+            correct_excess_phase: false, // Magnitude-only by default (more robust)
+            phase_smoothing_octaves: 0.167, // 1/6 octave smoothing
         }
     }
 }
@@ -173,33 +184,78 @@ pub fn generate_kirkeby_correction(
 
     // Interpolate measurement and target to linear grid
     let meas_spl_interp = interpolate_log_space(meas_freqs, meas_magnitude_db, &linear_freqs);
-    let meas_phase_interp = meas_phase_deg
-        .map(|p| interpolate_log_space(meas_freqs, p, &linear_freqs))
-        .unwrap_or_else(|| vec![0.0; num_bins]);
     let target_spl_interp = interpolate_log_space(meas_freqs, target_magnitude_db, &linear_freqs);
 
-    // Regularization parameters
-    let in_band_reg = 10.0_f64.powf(-30.0 / 10.0); // -30dB regularization
-    let out_band_reg = 1.0; // 0dB (don't boost out of band)
+    // Compute excess phase correction if enabled and phase data is available
+    // Excess phase = measured phase - minimum phase (derived from magnitude)
+    // We only want to correct excess phase, not minimum phase
+    let excess_phase_correction: Option<Vec<f64>> =
+        if config.correct_excess_phase {
+            meas_phase_deg.map(|phase_deg| {
+                // Convert measured phase from degrees to radians
+                let meas_phase_rad: Vec<f64> = phase_deg.iter().map(|&d| d.to_radians()).collect();
+
+                // Apply phase smoothing via group delay if enabled
+                let smoothed_phase_rad = if config.phase_smoothing_octaves > 0.0 {
+                    super::phase_smooth::smooth_phase_via_group_delay(
+                        meas_freqs,
+                        &meas_phase_rad,
+                        config.phase_smoothing_octaves,
+                    )
+                } else {
+                    meas_phase_rad
+                };
+
+                // Interpolate smoothed phase to linear grid using complex interpolation
+                // (avoids wrap artifacts)
+                let meas_phase_interp = super::phase_smooth::interpolate_phase_complex(
+                    meas_freqs,
+                    &smoothed_phase_rad,
+                    &linear_freqs,
+                );
+
+                // Compute minimum phase from magnitude using Hilbert transform
+                let min_phase = compute_minimum_phase_from_magnitude(&meas_spl_interp);
+
+                // Excess phase = measured - minimum (both in radians for computation)
+                // Correction = -excess_phase (to cancel it out)
+                meas_phase_interp
+                    .iter()
+                    .zip(min_phase.iter())
+                    .map(|(&measured_rad, &min_rad)| {
+                        let excess_rad = measured_rad - min_rad;
+                        -excess_rad // Negative to invert/correct the excess phase
+                    })
+                    .collect()
+            })
+        } else {
+            None // Magnitude-only correction (linear-phase FIR)
+        };
+
+    // Maximum boost/cut limits for room correction
+    // Boost is limited more aggressively because boosting deep nulls:
+    // 1. Amplifies noise and distortion
+    // 2. Can cause speaker/amp damage
+    // 3. Deep nulls often can't be properly corrected anyway (they're spatial)
+    // Cuts are less dangerous but still limited to prevent over-attenuation
+    let max_boost_db = 15.0; // Conservative boost limit (safe for most systems)
+    let max_cut_db = 20.0; // More permissive cut limit
 
     let mut h_inv = Vec::with_capacity(num_bins);
 
     for i in 0..num_bins {
         let f = linear_freqs[i];
 
-        // Reconstruct Measurement H(f)
+        // Measurement level
         let m_spl = meas_spl_interp[i];
-        let m_phase_deg = meas_phase_interp[i];
-        let m_mag = 10.0_f64.powf(m_spl / 20.0);
-        let m_phase_rad = m_phase_deg.to_radians();
-        let h = Complex64::from_polar(m_mag, m_phase_rad);
 
-        // Reconstruct Target T(f)
+        // Target level
         let t_spl = target_spl_interp[i];
-        let t_mag = 10.0_f64.powf(t_spl / 20.0);
-        let t = Complex64::new(t_mag, 0.0);
 
-        // Compute Regularization e(f)
+        // Compute desired correction in dB: correction = target - measurement
+        let correction_db = t_spl - m_spl;
+
+        // Determine if we're in-band or out-of-band
         let width = 10.0; // Hz transition width
         let transition = if f < min_freq {
             ((f - (min_freq - width)) / width).clamp(0.0, 1.0)
@@ -209,17 +265,22 @@ pub fn generate_kirkeby_correction(
             1.0
         };
 
-        let epsilon = out_band_reg + (in_band_reg - out_band_reg) * transition;
+        // Apply limits based on band position
+        // In-band: apply full (limited) correction
+        // Out-of-band: taper to unity gain (0 dB correction)
+        let in_band_correction = correction_db.clamp(-max_cut_db, max_boost_db);
+        let limited_correction_db = in_band_correction * transition;
 
-        // Compute Inverse: C = (H* . T) / (|H|^2 + epsilon)
-        let numerator = h.conj() * t;
-        let denominator = h.norm_sqr() + epsilon;
+        // Convert limited correction to complex gain
+        let c_mag = 10.0_f64.powf(limited_correction_db / 20.0);
 
-        let c = if denominator > 1e-12 {
-            numerator / denominator
-        } else {
-            Complex64::new(0.0, 0.0)
-        };
+        // Apply excess phase correction if available, otherwise use zero phase (linear phase FIR)
+        let c_phase = excess_phase_correction
+            .as_ref()
+            .map(|epc| epc[i] * transition) // Taper phase correction at band edges too
+            .unwrap_or(0.0);
+
+        let c = Complex64::from_polar(c_mag, c_phase);
 
         h_inv.push(c);
     }
@@ -293,6 +354,92 @@ pub fn save_fir_to_wav(
 // ============================================================================
 // Internal helper functions
 // ============================================================================
+
+/// Compute minimum phase from magnitude response using Hilbert transform.
+///
+/// The minimum phase is the phase response that is mathematically determined
+/// by the magnitude response. It represents the "natural" phase for any passive
+/// system with the given magnitude.
+///
+/// Formula: φ_min(ω) = -H{ln|H(ω)|} where H{} is the Hilbert transform
+///
+/// # Arguments
+/// * `magnitude_db` - Magnitude values in dB (on linear frequency grid)
+///
+/// # Returns
+/// * Phase values in radians (minimum phase)
+fn compute_minimum_phase_from_magnitude(magnitude_db: &[f64]) -> Vec<f64> {
+    let n = magnitude_db.len();
+    if n == 0 {
+        return Vec::new();
+    }
+
+    // Convert dB to natural log of magnitude
+    // SPL = 20 * log10(|H|)
+    // ln(|H|) = SPL / 20 * ln(10)
+    let ln_mag: Vec<f64> = magnitude_db
+        .iter()
+        .map(|&db| db / 20.0 * 10.0_f64.ln())
+        .collect();
+
+    // Compute Hilbert transform of ln|H|
+    // This gives us the minimum phase
+    let phase_rad = hilbert_transform(&ln_mag);
+
+    // Negate to get minimum phase (by convention)
+    phase_rad.iter().map(|&p| -p).collect()
+}
+
+/// Compute the Hilbert transform of a signal using FFT.
+///
+/// The Hilbert transform is computed as:
+/// 1. Compute FFT of input
+/// 2. Zero negative frequencies, double positive frequencies
+/// 3. Take IFFT and return imaginary part
+fn hilbert_transform(signal: &[f64]) -> Vec<f64> {
+    let n = signal.len();
+    if n == 0 {
+        return Vec::new();
+    }
+
+    // Zero-pad to power of 2 for efficiency
+    let n_fft = n.next_power_of_two().max(n * 2);
+
+    // Create FFT planner
+    let mut planner = FftPlanner::new();
+    let fft = planner.plan_fft_forward(n_fft);
+    let ifft = planner.plan_fft_inverse(n_fft);
+
+    // Prepare input (zero-padded)
+    let mut spectrum: Vec<Complex64> = signal
+        .iter()
+        .map(|&x| Complex64::new(x, 0.0))
+        .chain(std::iter::repeat(Complex64::new(0.0, 0.0)).take(n_fft - n))
+        .collect();
+
+    // Forward FFT
+    fft.process(&mut spectrum);
+
+    // Apply frequency domain filter for Hilbert transform
+    // H(k) = { 1 for k = 0, N/2 (unchanged)
+    //        { 2 for 0 < k < N/2
+    //        { 0 for N/2 < k < N
+    let half = n_fft / 2;
+    // DC component (index 0) stays unchanged
+    for s in spectrum.iter_mut().take(half).skip(1) {
+        *s *= 2.0;
+    }
+    // Nyquist (index half) stays unchanged
+    for s in spectrum.iter_mut().skip(half + 1) {
+        *s = Complex64::new(0.0, 0.0);
+    }
+
+    // Inverse FFT
+    ifft.process(&mut spectrum);
+
+    // Normalize and extract imaginary part (the Hilbert transform)
+    spectrum[..n].iter().map(|c| c.im / n_fft as f64).collect()
+}
 
 /// Interpolate values from source frequencies to target frequencies using log-space
 fn interpolate_log_space(src_freqs: &[f64], src_values: &[f64], target_freqs: &[f64]) -> Vec<f64> {

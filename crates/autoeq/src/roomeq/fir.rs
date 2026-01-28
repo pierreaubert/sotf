@@ -9,7 +9,7 @@ use std::error::Error;
 
 use super::types::{OptimizerConfig, TargetCurveConfig};
 
-// Re-export window types and functions from math-iir-fir
+// Re-export window types and functions from math-iir-fir (used in tests)
 pub use math_audio_iir_fir::{generate_window, WindowType};
 
 // Re-export FirPhase from our fir module (which re-exports from math-iir-fir)
@@ -48,25 +48,43 @@ pub fn generate_fir_correction(
             let dummy_args = Args::parse_from(["autoeq", "--curve-name", name]);
             crate::workflow::build_target_curve(&dummy_args, &measurement.freq, measurement)?
         }
-        None => Curve {
-            freq: measurement.freq.clone(),
-            spl: Array1::zeros(measurement.freq.len()),
-            phase: None,
-        },
+        None => {
+            // Default target: flat at measurement's mean level (within the optimization band)
+            // This centers corrections around 0 dB, making boost/cut limits work properly
+            let min_freq = config.min_freq;
+            let max_freq = config.max_freq;
+            let mut sum = 0.0;
+            let mut count = 0;
+            for i in 0..measurement.freq.len() {
+                if measurement.freq[i] >= min_freq && measurement.freq[i] <= max_freq {
+                    sum += measurement.spl[i];
+                    count += 1;
+                }
+            }
+            let mean_level = if count > 0 { sum / count as f64 } else { 0.0 };
+
+            Curve {
+                freq: measurement.freq.clone(),
+                spl: Array1::from_elem(measurement.freq.len(), mean_level),
+                phase: None,
+            }
+        }
     };
 
     let fir_config = config.fir.as_ref().ok_or("FIR configuration missing")?;
     let n_taps = fir_config.taps;
 
     if fir_config.phase.to_lowercase() == "kirkeby" {
-        // Use Kirkeby regularized inversion
-        let coeffs = crate::fir::generate_kirkeby_correction(
+        // Use Kirkeby regularized inversion with optional excess phase correction
+        let coeffs = crate::fir::generate_kirkeby_correction_with_smoothing(
             measurement,
             &target_curve,
             sample_rate,
             n_taps,
             config.min_freq,
             config.max_freq,
+            fir_config.correct_excess_phase,
+            fir_config.phase_smoothing,
         );
         Ok(coeffs)
     } else {
@@ -238,6 +256,8 @@ mod tests {
         config.fir = Some(FirConfig {
             taps: 1024,
             phase: "linear".to_string(),
+            correct_excess_phase: false,
+            phase_smoothing: 0.167,
         });
         config.min_freq = 50.0;
         config.max_freq = 2000.0;
@@ -264,6 +284,8 @@ mod tests {
         config.fir = Some(FirConfig {
             taps: 2048,
             phase: "kirkeby".to_string(),
+            correct_excess_phase: false,
+            phase_smoothing: 0.167,
         });
         config.min_freq = 20.0;
         config.max_freq = 500.0;
@@ -299,6 +321,8 @@ mod tests {
         config.fir = Some(FirConfig {
             taps: 1024,
             phase: "invalid_phase_type".to_string(),
+            correct_excess_phase: false,
+            phase_smoothing: 0.167,
         });
 
         let result = generate_fir_correction(&measurement, &config, None, 48000.0);

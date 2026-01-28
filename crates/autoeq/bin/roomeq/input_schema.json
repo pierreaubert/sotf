@@ -362,9 +362,21 @@
         },
         "phase": {
           "type": "string",
-          "description": "Phase response type",
+          "description": "Phase response type: 'linear' produces symmetric FIR, 'kirkeby' applies magnitude limits",
           "enum": ["linear", "kirkeby"],
           "default": "kirkeby"
+        },
+        "correct_excess_phase": {
+          "type": "boolean",
+          "description": "Whether to correct excess phase (kirkeby mode only). When true, corrects both magnitude and excess phase (measured phase minus minimum phase derived from magnitude). When false (default), only corrects magnitude producing a linear-phase FIR. Excess phase correction requires clean phase measurements to be effective.",
+          "default": false
+        },
+        "phase_smoothing": {
+          "type": "number",
+          "description": "Phase smoothing width in octaves (default: 0.167 = 1/6 octave). Applied via group delay smoothing when excess phase correction is enabled. Smoothing reduces noise artifacts in phase measurements. Set to 0.0 to disable smoothing.",
+          "minimum": 0.0,
+          "maximum": 2.0,
+          "default": 0.167
         }
       },
       "additionalProperties": false
