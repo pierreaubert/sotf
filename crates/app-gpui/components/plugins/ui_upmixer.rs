@@ -157,8 +157,9 @@ pub fn render_upmixer_plugin(
                                 .on_toggle({
                                     let entity = entity.clone();
                                     move |is_open, _window, cx| {
-                                        entity.update(cx, |state, _| {
+                                        entity.update(cx, |state, cx| {
                                             state.app.upmixer_config_open = is_open;
+                                            cx.notify();
                                         });
                                     }
                                 })

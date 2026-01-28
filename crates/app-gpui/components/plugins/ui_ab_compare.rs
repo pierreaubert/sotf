@@ -513,12 +513,13 @@ fn render_path_selector(
         .on_toggle({
             let entity = entity.clone();
             move |open, _, cx| {
-                entity.update(cx, |state, _| {
+                entity.update(cx, |state, cx| {
                     if is_path_a {
                         state.app.plugin_state.ab_compare_dropdowns.path_a_open = open;
                     } else {
                         state.app.plugin_state.ab_compare_dropdowns.path_b_open = open;
                     }
+                    cx.notify();
                 });
             }
         })

@@ -703,8 +703,9 @@ pub fn render_spectrum_analyzer_plugin(
                                     .on_toggle({
                                         let entity = entity.clone();
                                         move |is_open, _window, cx| {
-                                            entity.update(cx, |state, _| {
+                                            entity.update(cx, |state, cx| {
                                                 state.app.spectrum_tilt_select_open = is_open;
+                                                cx.notify();
                                             });
                                         }
                                     })
@@ -756,8 +757,9 @@ pub fn render_spectrum_analyzer_plugin(
                                     .on_toggle({
                                         let entity = entity.clone();
                                         move |is_open, _window, cx| {
-                                            entity.update(cx, |state, _| {
+                                            entity.update(cx, |state, cx| {
                                                 state.app.spectrum_reference_select_open = is_open;
+                                                cx.notify();
                                             });
                                         }
                                     })
