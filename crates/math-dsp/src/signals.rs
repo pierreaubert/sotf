@@ -579,7 +579,7 @@ mod tests {
         assert_eq!(signal.len(), 48000);
         // Check that noise exists and has content
         assert!(signal.iter().any(|&x| x.abs() > 0.01));
-        // Check that values are clipped to prevent overflow (clip function limits to ±0.999999)
+        // Check that values are clipped to prevent overflow (clip function limits to +/- 0.999999)
         assert!(signal.iter().all(|&x| x.abs() < 1.0));
     }
 

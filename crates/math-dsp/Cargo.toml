@@ -1,0 +1,36 @@
+[package]
+name = "math-dsp"
+version = "0.3.0"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "DSP utilities: signal generation, FFT analysis, and audio analysis tools"
+license = { workspace = true }
+repository = { workspace = true }
+keywords = ["dsp", "signal", "fft", "audio", "analysis"]
+categories = ["science", "multimedia::audio"]
+
+[lib]
+name = "math_audio_dsp"
+path = "src/lib.rs"
+
+[[bin]]
+name = "wav2csv"
+path = "bin/wav2csv.rs"
+
+[dependencies]
+# FFT and math
+rustfft = { workspace = true }
+num-complex = { workspace = true }
+
+# Audio file I/O
+hound = { workspace = true }
+
+# Filters
+math-iir-fir = { workspace = true }
+
+# Utilities
+log = { workspace = true }
+clap = { workspace = true }
+
+[dev-dependencies]
+approx = "0.5"

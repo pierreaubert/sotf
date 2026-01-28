@@ -36,6 +36,7 @@ rusqlite = { workspace = true }
 walkdir = { workspace = true }
 autoeq-env = { workspace = true }
 math-iir-fir = { workspace = true }
+math-dsp = { workspace = true }
 plugins = { workspace = true }
 num-complex = { workspace = true }
 

@@ -1,0 +1,38 @@
+//! DSP utilities for audio signal processing
+//!
+//! This crate provides:
+//! - **Signal generation**: Test signals (tones, sweeps, noise)
+//! - **Signal analysis**: FFT-based frequency analysis, microphone compensation
+//! - **Acoustic metrics**: RT60, clarity (C50/C80), THD, spectrogram
+//!
+//! # Example
+//!
+//! ```rust
+//! use math_audio_dsp::{signals, analysis};
+//!
+//! // Generate a 1 kHz tone
+//! let signal = signals::gen_tone(1000.0, 0.5, 48000, 1.0);
+//!
+//! // Analyze a WAV file
+//! let config = analysis::WavAnalysisConfig::default();
+//! // let result = analysis::analyze_wav_buffer(&signal, 48000, &config);
+//! ```
+
+pub mod analysis;
+pub mod signals;
+
+// Re-export commonly used types
+pub use analysis::{
+    AnalysisResult, MicrophoneCompensation, WavAnalysisConfig, WavAnalysisOutput,
+    analyze_recording, analyze_wav_buffer, analyze_wav_file, compute_clarity_broadband,
+    compute_clarity_spectrum, compute_group_delay, compute_impulse_response_from_fr,
+    compute_rt60_broadband, compute_rt60_spectrum, compute_spectrogram, read_analysis_csv,
+    smooth_response_f32, smooth_response_f64, write_analysis_csv, write_wav_analysis_csv,
+};
+
+pub use signals::{
+    add_silence_padding, apply_fade_in, apply_fade_out, clip, frames_for, gen_log_sweep,
+    gen_m_noise, gen_pink_noise, gen_tone, gen_two_tone, gen_white_noise, interleave_per_channel,
+    mono_to_stereo, prepare_signal_for_playback, prepare_signal_for_playback_channels,
+    replicate_mono,
+};
