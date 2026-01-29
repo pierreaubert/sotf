@@ -56,7 +56,29 @@ enum AudioSource: String, CaseIterable, Identifiable {
 
 /// Client for communicating with the sotf-daemon via Unix socket
 class AudioEngineClient {
-    private let socketPath = "/tmp/autoeq_audio.sock"
+    /// Get the secure socket path (per-user directory)
+    private static func getSecureSocketPath() -> String {
+        // On macOS, TMPDIR is per-user and already secured
+        if let tmpdir = ProcessInfo.processInfo.environment["TMPDIR"] {
+            return (tmpdir as NSString).appendingPathComponent("sotf-daemon.sock")
+        }
+        // Fallback to UID-based path
+        return "/tmp/sotf-\(getuid())/daemon.sock"
+    }
+
+    /// Legacy socket path for backwards compatibility
+    private static let legacySocketPath = "/tmp/autoeq_audio.sock"
+
+    /// Try secure path first, then legacy path
+    private var socketPath: String {
+        let securePath = Self.getSecureSocketPath()
+        if FileManager.default.fileExists(atPath: securePath) {
+            return securePath
+        }
+        // Fall back to legacy path (might be a symlink to secure path)
+        return Self.legacySocketPath
+    }
+
     private var socketFD: Int32 = -1
 
     enum AudioState: String {
@@ -318,6 +340,183 @@ class AudioEngineClient {
         let command = ["command": "stop"]
         return sendCommand(command)?.success ?? false
     }
+
+    /// Loudness metering data from the daemon
+    struct LoudnessData {
+        var momentary: Double = -60.0
+        var shortTerm: Double = -60.0
+        var integrated: Double = -60.0
+        var peak: Double = 0.0
+        var channelPeaks: [Double] = []
+        var truePeaksDbtp: [Double] = []
+        var correlationLR: Double? = nil
+    }
+
+    func getLoudness() -> LoudnessData? {
+        let command = ["command": "get_loudness"]
+
+        guard let response = sendCommand(command),
+              response.success,
+              let data = response.data else {
+            return nil
+        }
+
+        var loudness = LoudnessData()
+        loudness.momentary = data["momentary"]?.value as? Double ?? -60.0
+        loudness.shortTerm = data["short_term"]?.value as? Double ?? -60.0
+        loudness.integrated = data["integrated"]?.value as? Double ?? -60.0
+        loudness.peak = data["peak"]?.value as? Double ?? 0.0
+
+        if let peaks = data["channel_peaks"]?.value as? [Any] {
+            loudness.channelPeaks = peaks.compactMap { $0 as? Double }
+        }
+        if let truePeaks = data["true_peaks_dbtp"]?.value as? [Any] {
+            loudness.truePeaksDbtp = truePeaks.compactMap { $0 as? Double }
+        }
+        if let correlation = data["correlation_lr"]?.value as? Double {
+            loudness.correlationLR = correlation
+        }
+
+        return loudness
+    }
+}
+
+// MARK: - Daemon Manager
+
+/// Manages the sotf_daemon process lifecycle
+class DaemonManager {
+    private var daemonProcess: Process?
+    private var watchdogTimer: Timer?
+    private let daemonPath: String
+    private var isShuttingDown = false
+
+    /// Callback when daemon status changes
+    var onStatusChange: ((Bool) -> Void)?
+
+    init() {
+        // Look for daemon in several locations (note: binary is named sotf-daemon with hyphen)
+        let possiblePaths = [
+            // In app bundle's Helpers directory
+            Bundle.main.bundlePath + "/Contents/Helpers/sotf-daemon",
+            // In same directory as app
+            (Bundle.main.bundlePath as NSString).deletingLastPathComponent + "/sotf-daemon",
+            // System-wide installation
+            "/usr/local/bin/sotf-daemon",
+            // Development build (cargo uses underscores)
+            FileManager.default.currentDirectoryPath + "/target/release/sotf_daemon"
+        ]
+
+        daemonPath = possiblePaths.first { FileManager.default.isExecutableFile(atPath: $0) } ?? possiblePaths[0]
+        print("DaemonManager: Using daemon path: \(daemonPath)")
+    }
+
+    /// Start the daemon if not already running
+    func startDaemon() {
+        guard !isShuttingDown else { return }
+
+        // Check if already running
+        if let process = daemonProcess, process.isRunning {
+            print("DaemonManager: Daemon already running (PID: \(process.processIdentifier))")
+            return
+        }
+
+        // Check if daemon exists
+        guard FileManager.default.isExecutableFile(atPath: daemonPath) else {
+            print("DaemonManager: Daemon not found at \(daemonPath)")
+            onStatusChange?(false)
+            return
+        }
+
+        print("DaemonManager: Starting daemon...")
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: daemonPath)
+        process.arguments = []
+
+        // Redirect output to console for debugging
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+
+        // Handle daemon termination
+        process.terminationHandler = { [weak self] proc in
+            DispatchQueue.main.async {
+                print("DaemonManager: Daemon terminated with status \(proc.terminationStatus)")
+                self?.daemonProcess = nil
+                self?.onStatusChange?(false)
+
+                // Restart if not shutting down and terminated unexpectedly
+                if !(self?.isShuttingDown ?? true) && proc.terminationStatus != 0 {
+                    print("DaemonManager: Restarting daemon in 2 seconds...")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                        self?.startDaemon()
+                    }
+                }
+            }
+        }
+
+        do {
+            try process.run()
+            daemonProcess = process
+            print("DaemonManager: Daemon started (PID: \(process.processIdentifier))")
+            onStatusChange?(true)
+
+            // Start watchdog
+            startWatchdog()
+        } catch {
+            print("DaemonManager: Failed to start daemon: \(error)")
+            onStatusChange?(false)
+        }
+    }
+
+    /// Stop the daemon
+    func stopDaemon() {
+        isShuttingDown = true
+        stopWatchdog()
+
+        if let process = daemonProcess, process.isRunning {
+            print("DaemonManager: Stopping daemon (PID: \(process.processIdentifier))...")
+            process.terminate()
+
+            // Give it a moment to clean up
+            DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
+                if process.isRunning {
+                    print("DaemonManager: Force killing daemon...")
+                    process.interrupt()
+                }
+            }
+        }
+        daemonProcess = nil
+    }
+
+    /// Check if daemon is running
+    var isDaemonRunning: Bool {
+        return daemonProcess?.isRunning ?? false
+    }
+
+    /// Start watchdog timer to monitor daemon health
+    private func startWatchdog() {
+        stopWatchdog()
+
+        watchdogTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            guard let self = self, !self.isShuttingDown else { return }
+
+            if self.daemonProcess == nil || !self.daemonProcess!.isRunning {
+                print("DaemonManager: Watchdog detected daemon not running, restarting...")
+                self.startDaemon()
+            }
+        }
+    }
+
+    /// Stop watchdog timer
+    private func stopWatchdog() {
+        watchdogTimer?.invalidate()
+        watchdogTimer = nil
+    }
+
+    deinit {
+        stopDaemon()
+    }
 }
 
 // MARK: - Status Bar Controller
@@ -330,6 +529,10 @@ class StatusBarController: NSObject, ObservableObject {
 
     private let client = AudioEngineClient()
     private var monitorTimer: Timer?
+
+    // Daemon management
+    private let daemonManager = DaemonManager()
+    @Published var daemonRunning = false
 
     override init() {
         super.init()
@@ -366,30 +569,20 @@ class StatusBarController: NSObject, ObservableObject {
 
         menu.addItem(NSMenuItem.separator())
 
+        let daemonStatusItem = NSMenuItem(title: "Daemon: Starting...", action: nil, keyEquivalent: "")
+        daemonStatusItem.tag = 102
+        menu.addItem(daemonStatusItem)
+
         let statusMenuItem = NSMenuItem(title: "Status: Idle", action: nil, keyEquivalent: "")
         statusMenuItem.tag = 100  // Tag for updating later
         menu.addItem(statusMenuItem)
 
         menu.addItem(NSMenuItem.separator())
 
-        // HAL Driver submenu
-        let halMenu = NSMenu()
-        let halStatusItem = NSMenuItem(title: isHALDriverInstalled() ? "✓ Installed" : "✗ Not Installed", action: nil, keyEquivalent: "")
+        // HAL Driver status
+        let halStatusItem = NSMenuItem(title: "HAL Driver: " + (isHALDriverInstalled() ? "✓ Installed" : "✗ Not Installed"), action: nil, keyEquivalent: "")
         halStatusItem.tag = 101
-        halMenu.addItem(halStatusItem)
-        halMenu.addItem(NSMenuItem.separator())
-
-        let installItem = NSMenuItem(title: "Install HAL Driver...", action: #selector(installHALDriver), keyEquivalent: "")
-        installItem.target = self
-        halMenu.addItem(installItem)
-
-        let uninstallItem = NSMenuItem(title: "Uninstall HAL Driver...", action: #selector(uninstallHALDriver), keyEquivalent: "")
-        uninstallItem.target = self
-        halMenu.addItem(uninstallItem)
-
-        let halMenuItem = NSMenuItem(title: "HAL Driver", action: nil, keyEquivalent: "")
-        halMenuItem.submenu = halMenu
-        menu.addItem(halMenuItem)
+        menu.addItem(halStatusItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -399,8 +592,20 @@ class StatusBarController: NSObject, ObservableObject {
 
         statusItem.menu = menu
 
-        // Connect to daemon
-        _ = client.connect()
+        // Setup daemon status callback
+        daemonManager.onStatusChange = { [weak self] running in
+            self?.daemonRunning = running
+            self?.updateDaemonStatus()
+            if running {
+                // Give daemon a moment to start, then connect
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    _ = self?.client.connect()
+                }
+            }
+        }
+
+        // Start daemon automatically
+        daemonManager.startDaemon()
 
         // Start monitoring
         startMonitoring()
@@ -408,6 +613,13 @@ class StatusBarController: NSObject, ObservableObject {
         updateIcon()
 
         print("StatusBarController initialized with menu")
+    }
+
+    private func updateDaemonStatus() {
+        if let menu = statusItem.menu,
+           let item = menu.item(withTag: 102) {
+            item.title = daemonRunning ? "Daemon: ✓ Running" : "Daemon: ✗ Not Running"
+        }
     }
 
     @objc func openConfiguration() {
@@ -420,111 +632,56 @@ class StatusBarController: NSObject, ObservableObject {
 
     // MARK: - HAL Driver Management
 
-    private let halDriverPath = "/Library/Audio/Plug-Ins/HAL/sotf.driver"
+    private let halDriverPath = "/Library/Audio/Plug-Ins/HAL/SotFHAL.driver"
 
     func isHALDriverInstalled() -> Bool {
-        return FileManager.default.fileExists(atPath: halDriverPath)
-    }
-
-    @objc func installHALDriver() {
-        // Find the bundled driver
-        guard let bundledDriver = Bundle.main.path(forResource: "sotf", ofType: "driver") else {
-            showAlert(title: "HAL Driver Not Found",
-                     message: "The HAL driver bundle was not found in the application.\n\nPlease reinstall SotF ConfigBar.")
-            return
-        }
-
-        let script = """
-        do shell script "mkdir -p /Library/Audio/Plug-Ins/HAL && \\
-            rm -rf '\(halDriverPath)' && \\
-            cp -R '\(bundledDriver)' /Library/Audio/Plug-Ins/HAL/ && \\
-            chmod -R 755 '\(halDriverPath)' && \\
-            codesign --force --deep --sign - '\(halDriverPath)'" with administrator privileges
-        """
-
-        var error: NSDictionary?
-        if let scriptObject = NSAppleScript(source: script) {
-            scriptObject.executeAndReturnError(&error)
-            if let error = error {
-                showAlert(title: "Installation Failed",
-                         message: "Failed to install HAL driver: \(error["NSAppleScriptErrorMessage"] ?? "Unknown error")")
-            } else {
-                // Restart coreaudiod
-                restartCoreAudio()
-                updateHALDriverStatus()
-                showAlert(title: "HAL Driver Installed",
-                         message: "The SotF HAL driver has been installed successfully.\n\nCore Audio is restarting. The driver will appear in Sound settings shortly.")
-            }
-        }
-    }
-
-    @objc func uninstallHALDriver() {
-        guard isHALDriverInstalled() else {
-            showAlert(title: "Not Installed", message: "The HAL driver is not currently installed.")
-            return
-        }
-
-        let script = """
-        do shell script "rm -rf '\(halDriverPath)'" with administrator privileges
-        """
-
-        var error: NSDictionary?
-        if let scriptObject = NSAppleScript(source: script) {
-            scriptObject.executeAndReturnError(&error)
-            if let error = error {
-                showAlert(title: "Uninstall Failed",
-                         message: "Failed to uninstall HAL driver: \(error["NSAppleScriptErrorMessage"] ?? "Unknown error")")
-            } else {
-                restartCoreAudio()
-                updateHALDriverStatus()
-                showAlert(title: "HAL Driver Uninstalled",
-                         message: "The SotF HAL driver has been removed.\n\nCore Audio is restarting.")
-            }
-        }
-    }
-
-    private func restartCoreAudio() {
-        let script = "do shell script \"killall coreaudiod 2>/dev/null || true\" with administrator privileges"
-        var error: NSDictionary?
-        if let scriptObject = NSAppleScript(source: script) {
-            scriptObject.executeAndReturnError(&error)
-        }
+        // Check for current driver or legacy driver
+        return FileManager.default.fileExists(atPath: halDriverPath) ||
+               FileManager.default.fileExists(atPath: "/Library/Audio/Plug-Ins/HAL/sotf.driver")
     }
 
     private func updateHALDriverStatus() {
         if let menu = statusItem.menu,
-           let halMenuItem = menu.items.first(where: { $0.title == "HAL Driver" }),
-           let halMenu = halMenuItem.submenu,
-           let statusItem = halMenu.item(withTag: 101) {
-            statusItem.title = isHALDriverInstalled() ? "✓ Installed" : "✗ Not Installed"
+           let halStatusItem = menu.item(withTag: 101) {
+            halStatusItem.title = "HAL Driver: " + (isHALDriverInstalled() ? "✓ Installed" : "✗ Not Installed")
         }
     }
 
     /// Load custom menubar icon from bundle or assets directory
     private func loadMenuBarIcon() -> NSImage? {
+        // Standard menubar icon size is 18-22 points
+        // We use 22pt which is common for menubar apps
+        let iconSize = NSSize(width: 22, height: 22)
+
         // Try loading from bundle resources first (for packaged app)
-        if let bundleIcon = Bundle.main.image(forResource: "icon_16") {
-            bundleIcon.isTemplate = true
-            return bundleIcon
+        // Try 22pt first, then fall back to 18pt
+        for resourceName in ["icon_22", "icon_18"] {
+            if let bundleIcon = Bundle.main.image(forResource: resourceName) {
+                bundleIcon.isTemplate = true
+                bundleIcon.size = iconSize
+                return bundleIcon
+            }
         }
 
         // Try loading from assets directory (for development)
         let assetPaths = [
             // Relative to executable (when running from build)
-            "../assets/icon_16@2x.png",
-            "../assets/icon_16.png",
+            "../assets/icon_22@2x.png",
+            "../assets/icon_22.png",
+            "../assets/icon_18@2x.png",
             // Relative to source (when running via swift directly)
-            "assets/icon_16@2x.png",
-            "assets/icon_16.png",
+            "assets/icon_22@2x.png",
+            "assets/icon_22.png",
+            "assets/icon_18@2x.png",
             // Absolute paths for development
-            "\(FileManager.default.currentDirectoryPath)/assets/icon_16@2x.png",
+            "\(FileManager.default.currentDirectoryPath)/assets/icon_22@2x.png",
         ]
 
         for path in assetPaths {
             if FileManager.default.fileExists(atPath: path),
                let image = NSImage(contentsOfFile: path) {
                 image.isTemplate = true
-                image.size = NSSize(width: 18, height: 18) // Standard menubar size
+                image.size = iconSize
                 return image
             }
         }
@@ -532,25 +689,18 @@ class StatusBarController: NSObject, ObservableObject {
         // Try loading from script directory
         let scriptPath = CommandLine.arguments[0]
         if let scriptDir = URL(string: scriptPath)?.deletingLastPathComponent().path {
-            let iconPath = "\(scriptDir)/assets/icon_16@2x.png"
-            if FileManager.default.fileExists(atPath: iconPath),
-               let image = NSImage(contentsOfFile: iconPath) {
-                image.isTemplate = true
-                image.size = NSSize(width: 18, height: 18)
-                return image
+            for iconName in ["icon_22@2x.png", "icon_22.png", "icon_18@2x.png"] {
+                let iconPath = "\(scriptDir)/assets/\(iconName)"
+                if FileManager.default.fileExists(atPath: iconPath),
+                   let image = NSImage(contentsOfFile: iconPath) {
+                    image.isTemplate = true
+                    image.size = iconSize
+                    return image
+                }
             }
         }
 
         return nil
-    }
-
-    private func showAlert(title: String, message: String) {
-        let alert = NSAlert()
-        alert.messageText = title
-        alert.informativeText = message
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
     }
 
     func startMonitoring() {
@@ -562,6 +712,10 @@ class StatusBarController: NSObject, ObservableObject {
     func stopMonitoring() {
         monitorTimer?.invalidate()
         monitorTimer = nil
+    }
+
+    func stopDaemon() {
+        daemonManager.stopDaemon()
     }
 
     private func updateStatus() {
@@ -623,6 +777,168 @@ class StatusBarController: NSObject, ObservableObject {
     }
 }
 
+// MARK: - Level Meter View
+
+/// Converts dB value to a normalized position (0.0 to 1.0) with non-linear scaling
+/// Emphasizes the upper range (closer to 0dB) where most action happens
+func dbToPosition(_ db: Double) -> Double {
+    // Non-linear mapping: -60dB = 0%, -30dB = 33%, -10dB = 66%, 0dB = 100%
+    if db <= -60.0 { return 0.0 }
+    if db <= -30.0 { return ((db + 60.0) / 30.0) * 0.33 }
+    if db <= -10.0 { return 0.33 + ((db + 30.0) / 20.0) * 0.33 }
+    return min(1.0, 0.66 + ((db + 10.0) / 10.0) * 0.34)
+}
+
+/// Single channel level meter bar with optional LUFS markers
+struct LevelMeterBar: View {
+    let level: Double  // Linear peak value (0.0 to 1.0+)
+    let momentaryLufs: Double?  // Momentary LUFS (-60 to 0)
+    let shortTermLufs: Double?  // Short-term LUFS (-60 to 0)
+    let width: CGFloat
+
+    init(level: Double, momentaryLufs: Double? = nil, shortTermLufs: Double? = nil, width: CGFloat = 16) {
+        self.level = level
+        self.momentaryLufs = momentaryLufs
+        self.shortTermLufs = shortTermLufs
+        self.width = width
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let height = geometry.size.height
+            // Convert linear to dB
+            let db = level > 0.00001 ? 20.0 * log10(level) : -60.0
+            let fillRatio = dbToPosition(db)
+            let fillHeight = CGFloat(fillRatio) * height
+
+            ZStack(alignment: .bottom) {
+                // Background
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color.black.opacity(0.3))
+
+                // Meter fill with gradient colors based on level
+                if fillRatio > 0 {
+                    let color: Color = fillRatio > 0.9 ? .red : (fillRatio > 0.6 ? .yellow : .green)
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(color)
+                        .frame(height: fillHeight)
+                }
+
+                // Momentary LUFS marker (cyan, thick)
+                if let mLufs = momentaryLufs, mLufs > -60 && !mLufs.isNaN && !mLufs.isInfinite {
+                    let mPos = dbToPosition(mLufs)
+                    let yOffset = height - (CGFloat(mPos) * height)
+                    Rectangle()
+                        .fill(Color.cyan)
+                        .frame(width: width, height: 3)
+                        .position(x: width / 2, y: yOffset)
+                }
+
+                // Short-term LUFS marker (blue, thick)
+                if let sLufs = shortTermLufs, sLufs > -60 && !sLufs.isNaN && !sLufs.isInfinite {
+                    let sPos = dbToPosition(sLufs)
+                    let yOffset = height - (CGFloat(sPos) * height)
+                    Rectangle()
+                        .fill(Color.blue)
+                        .frame(width: width, height: 3)
+                        .position(x: width / 2, y: yOffset)
+                }
+            }
+        }
+        .frame(width: width)
+    }
+}
+
+/// Level meter group showing peak meters with LUFS markers
+struct LevelMeterView: View {
+    let title: String
+    let channelPeaks: [Double]
+    let channelLabels: [String]
+    let momentaryLufs: Double
+    let shortTermLufs: Double
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Title
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.secondary)
+                .padding(.top, 8)
+                .padding(.bottom, 4)
+
+            // Main meter area - fills available space
+            GeometryReader { geometry in
+                HStack(spacing: 3) {
+                    // dB scale legend
+                    VStack(alignment: .trailing, spacing: 0) {
+                        Text("0").font(.system(size: 8)).foregroundColor(.secondary)
+                        Spacer()
+                        Text("-12").font(.system(size: 8)).foregroundColor(.secondary)
+                        Spacer()
+                        Text("-24").font(.system(size: 8)).foregroundColor(.secondary)
+                        Spacer()
+                        Text("-60").font(.system(size: 8)).foregroundColor(.secondary)
+                    }
+                    .frame(width: 18)
+
+                    // Peak meter bars with LUFS markers
+                    ForEach(Array(zip(channelPeaks.indices, channelPeaks)), id: \.0) { _, peak in
+                        LevelMeterBar(
+                            level: peak,
+                            momentaryLufs: momentaryLufs,
+                            shortTermLufs: shortTermLufs,
+                            width: 16
+                        )
+                    }
+                }
+            }
+
+            // Channel labels row
+            HStack(spacing: 3) {
+                Text("")
+                    .frame(width: 18)
+
+                ForEach(Array(channelPeaks.indices), id: \.self) { index in
+                    let label = index < channelLabels.count ? channelLabels[index] : "\(index + 1)"
+                    Text(label)
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .frame(width: 16)
+                }
+            }
+            .padding(.top, 4)
+
+            // LUFS legend and values
+            VStack(spacing: 2) {
+                HStack(spacing: 4) {
+                    Rectangle().fill(Color.cyan).frame(width: 12, height: 3)
+                    Text("M: \(formatLufs(momentaryLufs))")
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(.cyan)
+                }
+                HStack(spacing: 4) {
+                    Rectangle().fill(Color.blue).frame(width: 12, height: 3)
+                    Text("S: \(formatLufs(shortTermLufs))")
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(.blue)
+                }
+            }
+            .padding(.top, 4)
+            .padding(.bottom, 8)
+        }
+        .frame(maxHeight: .infinity)
+        .background(Color.black.opacity(0.1))
+        .cornerRadius(8)
+    }
+
+    private func formatLufs(_ lufs: Double) -> String {
+        if lufs.isNaN || lufs.isInfinite || lufs < -60 {
+            return "-∞"
+        }
+        return String(format: "%.1f", lufs)
+    }
+}
+
 // MARK: - Configuration View (SwiftUI)
 
 struct ConfigurationView: View {
@@ -647,22 +963,42 @@ struct ConfigurationView: View {
     @State private var showingError = false
     @State private var errorMessage = ""
 
+    // Level metering
+    @State private var inputPeaks: [Double] = [0.0, 0.0]
+    @State private var outputPeaks: [Double] = [0.0, 0.0]
+    @State private var momentaryLufs: Double = -60.0
+    @State private var shortTermLufs: Double = -60.0
+    @State private var meteringTimer: Timer? = nil
+
     let channelOptions = Array(1...16)
 
     var body: some View {
-        VStack(spacing: 20) {
-            // Header
-            HStack {
-                Text("AutoEQ Audio Configuration")
-                    .font(.title)
-                Spacer()
-                Button("Close") {
-                    onClose()
-                }
-            }
-            .padding()
+        HStack(spacing: 0) {
+            // Left level meter (Input)
+            LevelMeterView(
+                title: "Input",
+                channelPeaks: inputPeaks,
+                channelLabels: inputPeaks.count == 2 ? ["L", "R"] : (1...inputPeaks.count).map { "\($0)" },
+                momentaryLufs: momentaryLufs,
+                shortTermLufs: shortTermLufs
+            )
+            .frame(width: 70)
+            .padding(.leading, 8)
 
-            Divider()
+            // Main content
+            VStack(spacing: 20) {
+                // Header
+                HStack {
+                    Text("AutoEQ Audio Configuration")
+                        .font(.title)
+                    Spacer()
+                    Button("Close") {
+                        onClose()
+                    }
+                }
+                .padding()
+
+                Divider()
 
             // Audio Source Section
             GroupBox(label: Label("Audio Source", systemImage: "speaker.wave.3")) {
@@ -752,7 +1088,7 @@ struct ConfigurationView: View {
                         }
                         .pickerStyle(.menu)
                         .frame(width: 150)
-                        .onChange(of: halInputChannels) { _ in
+                        .onChange(of: halInputChannels) { _, _ in
                             applyHALConfiguration()
                         }
 
@@ -795,7 +1131,7 @@ struct ConfigurationView: View {
                         }
                     }
                     .pickerStyle(.menu)
-                    .onChange(of: selectedDevice) { newDevice in
+                    .onChange(of: selectedDevice) { _, newDevice in
                         _ = client.setDevice(newDevice)
                     }
                     .onAppear {
@@ -815,7 +1151,7 @@ struct ConfigurationView: View {
                         }
                         .pickerStyle(.menu)
                         .frame(width: 150)
-                        .onChange(of: halOutputChannels) { _ in
+                        .onChange(of: halOutputChannels) { _, _ in
                             applyHALConfiguration()
                         }
 
@@ -835,7 +1171,7 @@ struct ConfigurationView: View {
                     HStack {
                         Text("Volume:")
                         Slider(value: $volume, in: 0...1)
-                            .onChange(of: volume) { newVolume in
+                            .onChange(of: volume) { _, newVolume in
                                 _ = client.setVolume(newVolume)
                             }
                         Text("\(Int(volume * 100))%")
@@ -872,20 +1208,36 @@ struct ConfigurationView: View {
                 .padding()
             }
 
-            Spacer()
+                Spacer()
 
-            // Status
-            HStack {
-                Image(systemName: "circle.fill")
-                    .foregroundColor(.green)
-                Text("Connected to audio engine | Source: \(selectedSource.rawValue) | \(halInputChannels)ch in → \(halOutputChannels)ch out")
-                    .foregroundColor(.secondary)
-            }
-            .padding()
-        }
-        .frame(minWidth: 700, minHeight: 600)
+                // Status
+                HStack {
+                    Image(systemName: "circle.fill")
+                        .foregroundColor(.green)
+                    Text("Connected to audio engine | Source: \(selectedSource.rawValue) | \(halInputChannels)ch in → \(halOutputChannels)ch out")
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+            }  // End of main VStack
+
+            // Right level meter (Output)
+            LevelMeterView(
+                title: "Output",
+                channelPeaks: outputPeaks,
+                channelLabels: outputPeaks.count == 2 ? ["L", "R"] : (1...outputPeaks.count).map { "\($0)" },
+                momentaryLufs: momentaryLufs,
+                shortTermLufs: shortTermLufs
+            )
+            .frame(width: 70)
+            .padding(.trailing, 8)
+        }  // End of HStack
+        .frame(minWidth: 820, minHeight: 600)
         .onAppear {
             loadDevices()
+            startMeteringTimer()
+        }
+        .onDisappear {
+            stopMeteringTimer()
         }
         .alert("Configuration Error", isPresented: $showingError) {
             Button("OK", role: .cancel) { }
@@ -894,13 +1246,59 @@ struct ConfigurationView: View {
         }
     }
 
+    private func startMeteringTimer() {
+        meteringTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
+            updateMetering()
+        }
+    }
+
+    private func stopMeteringTimer() {
+        meteringTimer?.invalidate()
+        meteringTimer = nil
+    }
+
+    private func updateMetering() {
+        if let loudness = client.getLoudness() {
+            // Update output peaks from the loudness data
+            if !loudness.channelPeaks.isEmpty {
+                outputPeaks = loudness.channelPeaks
+            }
+            // For input, we currently show the same data
+            // TODO: Add separate input metering plugin
+            inputPeaks = loudness.channelPeaks
+
+            // Update LUFS values
+            momentaryLufs = loudness.momentary
+            shortTermLufs = loudness.shortTerm
+        }
+    }
+
+    /// Virtual device patterns that should not be used as output
+    private let virtualDevicePatterns = ["SotF", "BlackHole", "Loopback", "Virtual"]
+
+    /// Check if a device name matches a virtual device pattern
+    private func isVirtualDevice(_ name: String) -> Bool {
+        return virtualDevicePatterns.contains { name.contains($0) }
+    }
+
     private func loadDevices() {
         devices = client.listDevices()
 
-        // Select the default device if available, otherwise first device
-        if let defaultDevice = devices.first(where: { $0.is_default }) {
+        // Filter out virtual devices for output selection
+        let physicalDevices = devices.filter { !isVirtualDevice($0.name) }
+
+        // Prefer a physical device as output, avoiding virtual devices (HAL, BlackHole)
+        if let physicalDefault = physicalDevices.first(where: { $0.is_default }) {
+            // Use the physical default device
+            selectedDevice = physicalDefault.name
+        } else if let firstPhysical = physicalDevices.first {
+            // Use the first physical device
+            selectedDevice = firstPhysical.name
+        } else if let defaultDevice = devices.first(where: { $0.is_default }) {
+            // Fallback to system default if no physical devices found
             selectedDevice = defaultDevice.name
         } else if let firstDevice = devices.first {
+            // Last resort: use the first device
             selectedDevice = firstDevice.name
         }
 
@@ -992,20 +1390,22 @@ struct ConfigurationView: View {
             mElement: kAudioObjectPropertyElementMain
         )
 
-        var name: CFString?
-        var dataSize = UInt32(MemoryLayout<CFString?>.size)
+        var name: Unmanaged<CFString>?
+        var dataSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
 
-        let status = AudioObjectGetPropertyData(
-            deviceID,
-            &propertyAddress,
-            0,
-            nil,
-            &dataSize,
-            &name
-        )
+        let status = withUnsafeMutablePointer(to: &name) { namePtr in
+            AudioObjectGetPropertyData(
+                deviceID,
+                &propertyAddress,
+                0,
+                nil,
+                &dataSize,
+                namePtr
+            )
+        }
 
-        if status == noErr, let deviceName = name as String? {
-            return deviceName
+        if status == noErr, let cfName = name?.takeRetainedValue() {
+            return cfName as String
         }
         return nil
     }
@@ -1024,11 +1424,19 @@ struct ConfigurationView: View {
             return
         }
 
-        // Build HAL plugin chain with configured channels
+        // Build HAL plugin chain with configured channels and metering
         let plugins: [[String: Any]] = [
             [
                 "plugin_type": "hal_input",
                 "parameters": ["channels": halInputChannels]
+            ],
+            [
+                "plugin_type": "loudness_monitor",
+                "parameters": ["channels": halInputChannels, "position": "input"]
+            ],
+            [
+                "plugin_type": "loudness_monitor",
+                "parameters": ["channels": halOutputChannels, "position": "output"]
             ],
             [
                 "plugin_type": "hal_output",
@@ -1064,23 +1472,109 @@ struct ConfigurationView: View {
         if panel.runModal() == .OK, let url = panel.url {
             do {
                 let data = try Data(contentsOf: url)
-                guard let plugins = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-                    errorMessage = "Invalid configuration format: expected array of plugin objects"
+                let json = try JSONSerialization.jsonObject(with: data)
+
+                var plugins: [[String: Any]]
+
+                // Try parsing as simple array first (legacy format)
+                if let simplePlugins = json as? [[String: Any]] {
+                    plugins = simplePlugins
+                }
+                // Try parsing as complex format with channels (genelec.json format)
+                else if let configDict = json as? [String: Any],
+                        let channels = configDict["channels"] as? [String: Any] {
+                    // Extract plugins from all channels and flatten
+                    var allPlugins: [[String: Any]] = []
+
+                    // Sort channel names for consistent ordering (L before R)
+                    let sortedChannelNames = channels.keys.sorted()
+
+                    for channelName in sortedChannelNames {
+                        if let channelData = channels[channelName] as? [String: Any],
+                           let channelPlugins = channelData["plugins"] as? [[String: Any]] {
+                            // Add channel info to each plugin for context
+                            for var plugin in channelPlugins {
+                                plugin["_channel"] = channelName
+                                allPlugins.append(plugin)
+                            }
+                        }
+                    }
+
+                    if allPlugins.isEmpty {
+                        errorMessage = "No plugins found in channels configuration"
+                        showingError = true
+                        return
+                    }
+
+                    plugins = allPlugins
+
+                    // Log what we found
+                    if let version = configDict["version"] as? String {
+                        print("Loading config version: \(version)")
+                    }
+                    print("Found \(channels.count) channel(s) with \(plugins.count) total plugins")
+                }
+                else {
+                    errorMessage = "Invalid configuration format: expected array of plugins or object with 'channels'"
                     showingError = true
                     return
+                }
+
+                // Check if HAL plugins are already present
+                let hasHalInput = plugins.contains { ($0["plugin_type"] as? String) == "hal_input" }
+                let hasHalOutput = plugins.contains { ($0["plugin_type"] as? String) == "hal_output" }
+                let hasLoudnessMonitor = plugins.contains { ($0["plugin_type"] as? String) == "loudness_monitor" }
+
+                // Wrap with HAL plugins and metering if not present
+                var finalPlugins: [[String: Any]] = []
+
+                // HAL input
+                if !hasHalInput {
+                    finalPlugins.append([
+                        "plugin_type": "hal_input",
+                        "parameters": ["channels": halInputChannels]
+                    ])
+                }
+
+                // Input metering (right after HAL input)
+                if !hasLoudnessMonitor {
+                    finalPlugins.append([
+                        "plugin_type": "loudness_monitor",
+                        "parameters": ["channels": halInputChannels, "position": "input"]
+                    ])
+                }
+
+                // User's plugins
+                finalPlugins.append(contentsOf: plugins)
+
+                // Output metering (right before HAL output)
+                if !hasLoudnessMonitor {
+                    finalPlugins.append([
+                        "plugin_type": "loudness_monitor",
+                        "parameters": ["channels": halOutputChannels, "position": "output"]
+                    ])
+                }
+
+                // HAL output
+                if !hasHalOutput {
+                    finalPlugins.append([
+                        "plugin_type": "hal_output",
+                        "parameters": ["channels": halOutputChannels]
+                    ])
                 }
 
                 // Send plugins to daemon
                 let command: [String: Any] = [
                     "command": "load_plugins",
-                    "plugins": plugins
+                    "plugins": finalPlugins
                 ]
 
                 let response = client.sendCommand(command)
                 if let resp = response, resp.success {
                     print("✅ Plugin configuration loaded from: \(url.path)")
+                    print("   Total plugins: \(finalPlugins.count) (HAL wrapped: \(!hasHalInput || !hasHalOutput))")
 
-                    // Update local state if HAL plugins found
+                    // Update local state if HAL plugins found in original config
                     for plugin in plugins {
                         if let pluginType = plugin["plugin_type"] as? String,
                            let params = plugin["parameters"] as? [String: Any] {
@@ -1181,227 +1675,6 @@ struct PluginHostView: NSViewRepresentable {
     }
 }
 
-// MARK: - Daemon Manager
-
-/// Manages the embedded sotf-daemon process
-class DaemonManager {
-    static let shared = DaemonManager()
-
-    private var daemonProcess: Process?
-    private let socketPath = "/tmp/autoeq_audio.sock"
-
-    private init() {}
-
-    /// Check if daemon is already running by attempting to connect
-    func isDaemonRunning() -> Bool {
-        guard FileManager.default.fileExists(atPath: socketPath) else {
-            return false
-        }
-
-        // Try to actually connect to verify daemon is responsive
-        let testFD = socket(AF_UNIX, SOCK_STREAM, 0)
-        guard testFD >= 0 else {
-            return false
-        }
-        defer { close(testFD) }
-
-        var addr = sockaddr_un()
-        addr.sun_family = sa_family_t(AF_UNIX)
-
-        // Copy socket path into sun_path
-        let pathSize = MemoryLayout.size(ofValue: addr.sun_path)
-        _ = socketPath.withCString { pathCString in
-            withUnsafeMutablePointer(to: &addr.sun_path) { sunPathPtr in
-                sunPathPtr.withMemoryRebound(to: CChar.self, capacity: pathSize) { dest in
-                    strlcpy(dest, pathCString, pathSize)
-                }
-            }
-        }
-
-        let result = withUnsafePointer(to: &addr) { addrPtr in
-            addrPtr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPtr in
-                Darwin.connect(testFD, sockaddrPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
-            }
-        }
-
-        if result < 0 {
-            // Connection failed - socket file is stale, remove it
-            debugLog("Stale socket detected, removing...")
-            try? FileManager.default.removeItem(atPath: socketPath)
-            return false
-        }
-
-        return true
-    }
-
-    /// Write debug message to a log file
-    private func debugLog(_ message: String) {
-        let logPath = NSHomeDirectory() + "/sotf-configbar-debug.log"
-        let timestamp = ISO8601DateFormatter().string(from: Date())
-        let line = "[\(timestamp)] \(message)\n"
-        if let data = line.data(using: .utf8) {
-            if FileManager.default.fileExists(atPath: logPath) {
-                if let handle = FileHandle(forWritingAtPath: logPath) {
-                    handle.seekToEndOfFile()
-                    handle.write(data)
-                    handle.closeFile()
-                }
-            } else {
-                FileManager.default.createFile(atPath: logPath, contents: data)
-            }
-        }
-    }
-
-    /// Start the embedded daemon if not already running
-    func startDaemon() {
-        debugLog("startDaemon() called")
-
-        if isDaemonRunning() {
-            debugLog("Daemon already running (socket exists)")
-            return
-        }
-
-        // Find daemon binary in app bundle
-        debugLog("Looking for daemon binary...")
-        guard let daemonPath = findDaemonBinary() else {
-            debugLog("ERROR: Daemon binary not found in app bundle")
-            // Try system-wide daemon
-            if let systemDaemon = findSystemDaemon() {
-                debugLog("Found system daemon: \(systemDaemon)")
-                launchDaemon(at: systemDaemon)
-            } else {
-                debugLog("No system daemon found either")
-            }
-            return
-        }
-
-        launchDaemon(at: daemonPath)
-    }
-
-    /// Find daemon binary in app bundle
-    private func findDaemonBinary() -> String? {
-        debugLog("Bundle path: \(Bundle.main.bundlePath)")
-
-        // Check in Contents/Helpers (embedded in app bundle)
-        let helpersPath = "\(Bundle.main.bundlePath)/Contents/Helpers/sotf-daemon"
-        debugLog("Checking: \(helpersPath)")
-        if FileManager.default.fileExists(atPath: helpersPath) {
-            debugLog("Found daemon at: \(helpersPath)")
-            return helpersPath
-        } else {
-            debugLog("NOT FOUND at: \(helpersPath)")
-        }
-
-        // Check in bundle resources
-        if let path = Bundle.main.path(forResource: "sotf-daemon", ofType: nil) {
-            debugLog("Found daemon in resources: \(path)")
-            return path
-        }
-
-        debugLog("Daemon binary not found in bundle")
-        return nil
-    }
-
-    /// Find system-wide daemon installation
-    private func findSystemDaemon() -> String? {
-        let paths = [
-            "\(NSHomeDirectory())/.local/bin/sotf-daemon",
-            "/usr/local/bin/sotf-daemon",
-            "/opt/homebrew/bin/sotf-daemon"
-        ]
-
-        for path in paths {
-            if FileManager.default.fileExists(atPath: path) {
-                return path
-            }
-        }
-
-        return nil
-    }
-
-    /// Launch daemon process
-    private func launchDaemon(at path: String) {
-        debugLog("Starting daemon from: \(path)")
-
-        // Verify the binary exists and is executable
-        let fileManager = FileManager.default
-        guard fileManager.fileExists(atPath: path) else {
-            debugLog("ERROR: Daemon binary does not exist at: \(path)")
-            return
-        }
-        guard fileManager.isExecutableFile(atPath: path) else {
-            debugLog("ERROR: Daemon binary is not executable: \(path)")
-            return
-        }
-
-        debugLog("Binary exists and is executable")
-
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: path)
-        process.arguments = []
-
-        // Create a pipe to capture daemon output for debugging
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
-
-        // Set up termination handler to detect crashes
-        process.terminationHandler = { [weak self] proc in
-            let status = proc.terminationStatus
-            self?.debugLog("Daemon terminated with status: \(status)")
-            if status != 0 {
-                // Read any error output
-                let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-                if let errorStr = String(data: errorData, encoding: .utf8), !errorStr.isEmpty {
-                    self?.debugLog("Daemon stderr: \(errorStr)")
-                }
-            }
-        }
-
-        do {
-            try process.run()
-            daemonProcess = process
-            debugLog("Daemon started (PID: \(process.processIdentifier))")
-
-            // Wait a moment for socket to be created
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-                if self?.isDaemonRunning() == true {
-                    self?.debugLog("Daemon socket ready")
-                } else {
-                    self?.debugLog("Daemon started but socket not ready yet")
-                    // Check if process is still running
-                    if process.isRunning {
-                        self?.debugLog("Process still running, waiting...")
-                    } else {
-                        self?.debugLog("ERROR: Daemon process died immediately")
-                    }
-                }
-            }
-        } catch {
-            debugLog("ERROR: Failed to start daemon: \(error)")
-        }
-    }
-
-    /// Stop the daemon process
-    func stopDaemon() {
-        // Send shutdown command via socket first (graceful shutdown)
-        let client = AudioEngineClient()
-        if client.connect() {
-            _ = client.sendCommand(["command": "shutdown"])
-            print("Sent shutdown command to daemon")
-        }
-
-        // Also terminate our process if we started it
-        if let process = daemonProcess, process.isRunning {
-            process.terminate()
-            print("Terminated daemon process")
-        }
-
-        daemonProcess = nil
-    }
-}
-
 // MARK: - App Delegate
 
 class AppDelegate: NSObject, NSApplicationDelegate {
@@ -1419,10 +1692,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Hide dock icon (menu bar only app)
         NSApp.setActivationPolicy(.accessory)
 
-        // Start the daemon
-        DaemonManager.shared.startDaemon()
-
-        // Create status bar controller (must be on main thread, which we are)
+        // Create status bar controller (which starts the daemon automatically)
         statusBarController = StatusBarController()
         print("Created statusBarController: \(String(describing: statusBarController))")
 
@@ -1437,9 +1707,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         statusBarController?.stopMonitoring()
-
-        // Stop the daemon if we started it
-        DaemonManager.shared.stopDaemon()
+        statusBarController?.stopDaemon()
         print("AutoEQ menu bar app terminated")
     }
 }

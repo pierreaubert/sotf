@@ -1,6 +1,14 @@
 // SharedMemory.swift - Shared memory interface for communication with Rust audio engine
+//
+// Security model:
+// - Each user has their own shared memory region
+// - Path is based on the console user's UID
+// - Permissions allow only the user and _coreaudiod to access
+// - The HAL driver (running as _coreaudiod) gets the console user's UID
+//   to determine which shared memory region to use
 
 import Foundation
+import SystemConfiguration
 
 /// Magic number for shared memory header validation: 'SOTF'
 private let kSharedMemoryMagic: UInt32 = 0x534F5446
@@ -8,8 +16,63 @@ private let kSharedMemoryMagic: UInt32 = 0x534F5446
 /// Current protocol version
 private let kSharedMemoryVersion: UInt32 = 1
 
-/// Shared memory file path
-private let kSharedMemoryPath = "/tmp/sotf-audio-shm"
+/// Legacy shared memory file path (for backwards compatibility)
+private let kLegacySharedMemoryPath = "/tmp/sotf-audio-shm"
+
+/// Get the secure shared memory path for the current console user
+/// This is called from the HAL driver running as _coreaudiod
+private func getSecureSharedMemoryPath() -> String {
+    // Get the console user (the human logged in, not _coreaudiod)
+    var uid: uid_t = 0
+    var gid: gid_t = 0
+
+    if let username = SCDynamicStoreCopyConsoleUser(nil, &uid, &gid) as String? {
+        // Use the user's TMPDIR if available, otherwise use UID-based path
+        // Note: We can't easily get another user's TMPDIR, so use UID-based path
+        let userPath = "/tmp/sotf-\(uid)/audio.shm"
+
+        // Create the directory if it doesn't exist
+        let dirPath = "/tmp/sotf-\(uid)"
+        var isDir: ObjCBool = false
+        if !FileManager.default.fileExists(atPath: dirPath, isDirectory: &isDir) {
+            do {
+                try FileManager.default.createDirectory(atPath: dirPath, withIntermediateDirectories: true, attributes: [
+                    .posixPermissions: 0o770,  // rwxrwx--- (user + group)
+                    .ownerAccountID: uid,
+                    .groupOwnerAccountID: 202  // _coreaudiod GID (usually 202)
+                ])
+            } catch {
+                halLog("Failed to create secure directory: \(error)")
+                // Fall back to legacy path
+                return kLegacySharedMemoryPath
+            }
+        }
+
+        return userPath
+    }
+
+    // No console user, fall back to legacy path
+    halLog("No console user found, using legacy shared memory path")
+    return kLegacySharedMemoryPath
+}
+
+/// Get the shared memory path (secure if possible, legacy as fallback)
+private func getSharedMemoryPath() -> String {
+    let securePath = getSecureSharedMemoryPath()
+
+    // If secure path exists, use it
+    if FileManager.default.fileExists(atPath: securePath) {
+        return securePath
+    }
+
+    // If legacy path exists, use it (backwards compatibility)
+    if FileManager.default.fileExists(atPath: kLegacySharedMemoryPath) {
+        return kLegacySharedMemoryPath
+    }
+
+    // Create new secure path
+    return securePath
+}
 
 /// Header structure for shared memory region
 /// Must match the Rust side exactly
@@ -39,6 +102,9 @@ final class SharedAudioBuffer {
     private var sharedMemory: UnsafeMutableRawPointer?
     private var memorySize: Int = 0
     private var fileDescriptor: Int32 = -1
+
+    /// The path to the shared memory file (stored for cleanup)
+    private var currentPath: String = ""
 
     /// Number of audio buffers in the ring (power of 2 recommended)
     private let numBuffers = 8
@@ -84,10 +150,13 @@ final class SharedAudioBuffer {
         let audioSize = audioCapacity * MemoryLayout<Float>.size
         memorySize = alignedHeaderSize + audioSize
 
-        halLog("SharedMemory: initializing \(memorySize) bytes at \(kSharedMemoryPath)")
+        // Get the shared memory path (secure per-user path or legacy)
+        currentPath = getSharedMemoryPath()
+        halLog("SharedMemory: initializing \(memorySize) bytes at \(currentPath)")
 
-        // Open or create the file
-        fileDescriptor = Darwin.open(kSharedMemoryPath, O_RDWR | O_CREAT, 0644)
+        // Open or create the file with permissions for user and coreaudiod group
+        // Mode 0660 = rw-rw---- (owner + group can read/write)
+        fileDescriptor = Darwin.open(currentPath, O_RDWR | O_CREAT, 0660)
         if fileDescriptor < 0 {
             halLog("SharedMemory: open failed: \(String(cString: strerror(errno)))")
             return false
@@ -100,6 +169,10 @@ final class SharedAudioBuffer {
             fileDescriptor = -1
             return false
         }
+
+        // Ensure permissions are correct (override umask)
+        // Mode 0660 = rw-rw---- allows owner (user) and group (_coreaudiod) to read/write
+        chmod(currentPath, 0o660)
 
         // Map memory
         sharedMemory = mmap(nil, memorySize, PROT_READ | PROT_WRITE, MAP_SHARED, fileDescriptor, 0)

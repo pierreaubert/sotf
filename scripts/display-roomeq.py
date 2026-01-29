@@ -323,6 +323,57 @@ def compute_impulse_response(
     return time_ms, ir
 
 
+def extract_crossover_frequencies(channel_data: dict) -> list[float]:
+    """
+    Extract crossover frequencies from a channel's plugin configuration.
+
+    Looks for:
+    - "crossover" plugins in driver chains (active crossovers)
+    - "band_split" plugins in main chain (mixed mode crossovers)
+
+    Returns:
+        Sorted list of unique crossover frequencies in Hz
+    """
+    crossover_freqs = set()
+
+    # Check main plugins for band_split
+    plugins = channel_data.get("plugins", [])
+    for plugin in plugins:
+        if plugin.get("plugin_type") == "band_split":
+            freq = plugin.get("parameters", {}).get("frequency")
+            if freq:
+                crossover_freqs.add(float(freq))
+
+    # Check driver chains for crossover plugins
+    drivers = channel_data.get("drivers", [])
+    for driver in drivers:
+        driver_plugins = driver.get("plugins", [])
+        for plugin in driver_plugins:
+            if plugin.get("plugin_type") == "crossover":
+                freq = plugin.get("parameters", {}).get("frequency")
+                if freq:
+                    crossover_freqs.add(float(freq))
+
+    return sorted(crossover_freqs)
+
+
+def get_all_crossover_frequencies(data: dict) -> list[float]:
+    """
+    Extract all unique crossover frequencies from all channels.
+
+    Returns:
+        Sorted list of unique crossover frequencies in Hz
+    """
+    all_freqs = set()
+    channels = data.get("channels", {})
+
+    for channel_data in channels.values():
+        freqs = extract_crossover_frequencies(channel_data)
+        all_freqs.update(freqs)
+
+    return sorted(all_freqs)
+
+
 def get_freq_axis_config() -> dict:
     """Get standardized frequency axis configuration with k notation."""
     return dict(
@@ -854,6 +905,47 @@ def create_combined_figure(data: dict) -> go.Figure:
                 col=1,
             )
             trace_y_data.append([0, 0])  # Target line
+
+    # Add crossover frequency vertical lines to EQ and corrected curves plots
+    crossover_freqs = get_all_crossover_frequencies(data)
+    for xover_freq in crossover_freqs:
+        # Format frequency label
+        if xover_freq >= 1000:
+            freq_label = f"{xover_freq/1000:.1f}k"
+        else:
+            freq_label = f"{xover_freq:.0f}"
+
+        # Add to EQ plot (row 1)
+        fig.add_trace(
+            go.Scatter(
+                x=[xover_freq, xover_freq],
+                y=[-eq_y_limit, eq_y_limit],
+                mode="lines",
+                name=f"Xover {freq_label} Hz",
+                line=dict(color="rgba(180, 80, 180, 0.7)", width=1.5, dash="dashdot"),
+                showlegend=True,
+                legendgroup="crossover",
+            ),
+            row=1,
+            col=1,
+        )
+        trace_y_data.append([-eq_y_limit, eq_y_limit])
+
+        # Add to corrected curves plot (row 2)
+        fig.add_trace(
+            go.Scatter(
+                x=[xover_freq, xover_freq],
+                y=[final_y_min, final_y_max],
+                mode="lines",
+                name=f"Xover {freq_label} Hz",
+                line=dict(color="rgba(180, 80, 180, 0.7)", width=1.5, dash="dashdot"),
+                showlegend=False,
+                legendgroup="crossover",
+            ),
+            row=2,
+            col=1,
+        )
+        trace_y_data.append([final_y_min, final_y_max])
 
     # Plot impulse responses (row 3) - shifted vertically
     ir_shift = 1.5  # Vertical shift between impulse responses

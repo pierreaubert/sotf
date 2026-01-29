@@ -3,8 +3,8 @@
     "left": {
       "name": "Left Speaker (2-way)",
       "measurements": [
-        "tests/data/roomeq/test_woofer.csv",
-        "tests/data/roomeq/test_tweeter.csv"
+        "test_woofer.csv",
+        "test_tweeter.csv"
       ],
       "crossover": "default_lr24"
     }

@@ -809,7 +809,7 @@ private func driverDoIOOperation(_ driver: AudioServerPlugInDriverRef, _ deviceO
     switch operationID {
     case kIOOperation_ReadInput:
         // Provide audio to clients (recording from virtual device)
-        if state.sharedAudio.engineReady {
+        if state.sharedAudio.isConnected && state.sharedAudio.engineReady {
             // Read processed audio from Rust engine
             _ = state.sharedAudio.readAudio(floatBuffer, frameCount: frameCount, channelCount: channelCount)
         } else if state.loopbackEnabled, let outputBuffer = state.outputRingBuffer {
@@ -822,14 +822,14 @@ private func driverDoIOOperation(_ driver: AudioServerPlugInDriverRef, _ deviceO
 
     case kIOOperation_WriteMix:
         // Receive audio from clients (playback to virtual device)
-        if state.sharedAudio.isConnected {
-            // Send to Rust engine for processing
-            _ = state.sharedAudio.writeAudio(floatBuffer, frameCount: frameCount, channelCount: channelCount)
+        // Always store in loopback buffer first (ensures audio flows even without daemon)
+        if state.loopbackEnabled, let outputBuffer = state.outputRingBuffer {
+            _ = outputBuffer.writeInterleaved(floatBuffer, frameCount: frameCount)
         }
 
-        if state.loopbackEnabled, let outputBuffer = state.outputRingBuffer {
-            // Also store for loopback
-            _ = outputBuffer.writeInterleaved(floatBuffer, frameCount: frameCount)
+        // Also send to Rust engine if connected and ready
+        if state.sharedAudio.isConnected && state.sharedAudio.engineReady {
+            _ = state.sharedAudio.writeAudio(floatBuffer, frameCount: frameCount, channelCount: channelCount)
         }
 
     default:

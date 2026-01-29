@@ -55,7 +55,6 @@ if [ -z "$VERSION" ]; then
     exit 1
 fi
 
-BUILD_DIR="$PROJECT_ROOT/target/release"
 DMG_DIR="$PROJECT_ROOT/target/daemon-dmg"
 APP_BUNDLE="$DMG_DIR/$APP_NAME.app"
 DRIVER_BUNDLE="$DMG_DIR/$DRIVER_NAME"
@@ -348,10 +347,10 @@ create_app_bundle() {
 
     # Copy menubar icon assets to Resources
     local ICON_ASSETS_DIR="$CONFIGBAR_DIR/assets"
-    if [ -f "$ICON_ASSETS_DIR/icon_16.png" ]; then
+    if [ -f "$ICON_ASSETS_DIR/icon_22.png" ] || [ -f "$ICON_ASSETS_DIR/icon_18.png" ]; then
         log_info "Copying menubar icon assets..."
-        cp "$ICON_ASSETS_DIR/icon_16.png" "$APP_BUNDLE/Contents/Resources/"
-        cp "$ICON_ASSETS_DIR/icon_16@2x.png" "$APP_BUNDLE/Contents/Resources/" 2>/dev/null || true
+        cp "$ICON_ASSETS_DIR/icon_22.png" "$APP_BUNDLE/Contents/Resources/" 2>/dev/null || true
+        cp "$ICON_ASSETS_DIR/icon_22@2x.png" "$APP_BUNDLE/Contents/Resources/" 2>/dev/null || true
         cp "$ICON_ASSETS_DIR/icon_18.png" "$APP_BUNDLE/Contents/Resources/" 2>/dev/null || true
         cp "$ICON_ASSETS_DIR/icon_18@2x.png" "$APP_BUNDLE/Contents/Resources/" 2>/dev/null || true
         log_success "Menubar icon assets copied"
@@ -955,6 +954,42 @@ exit 0
 POSTINSTALL
     chmod +x "$pkg_scripts/postinstall"
 
+    # Create auto-launch scripts directory
+    local launch_scripts="$DMG_DIR/launch-scripts"
+    mkdir -p "$launch_scripts"
+
+    # Create postinstall script for auto-launch component
+    cat > "$launch_scripts/postinstall" << 'LAUNCHSCRIPT'
+#!/bin/bash
+# Launch SotF Toolbar after installation
+
+# Get the user who initiated the installation
+CONSOLE_USER=$(stat -f "%Su" /dev/console)
+
+if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ]; then
+    echo "Launching SotF Toolbar for user: $CONSOLE_USER"
+    # Use launchctl to run as the console user
+    sudo -u "$CONSOLE_USER" open -a "/Applications/SotF Toolbar.app" &
+else
+    echo "No console user found, skipping auto-launch"
+fi
+
+exit 0
+LAUNCHSCRIPT
+    chmod +x "$launch_scripts/postinstall"
+
+    # Create empty root for auto-launch package (it just runs the script)
+    local launch_root="$DMG_DIR/launch-root"
+    mkdir -p "$launch_root"
+
+    # Build auto-launch component package
+    pkgbuild \
+        --nopayload \
+        --identifier "org.spinorama.sotf.autolaunch" \
+        --version "$VERSION" \
+        --scripts "$launch_scripts" \
+        "$pkg_components/SotFAutoLaunch.pkg"
+
     # Create preinstall script to remove old versions
     cat > "$pkg_scripts/preinstall" << 'PREINSTALL'
 #!/bin/bash
@@ -1005,12 +1040,13 @@ PREINSTALL
     <title>SotF - Sound of the Future</title>
     <organization>org.spinorama</organization>
     <domains enable_localSystem="true"/>
-    <options customize="never" require-scripts="true" rootVolumeOnly="true"/>
+    <options customize="allow" require-scripts="true" rootVolumeOnly="true"/>
 
     <welcome file="welcome.html"/>
     <conclusion file="conclusion.html"/>
 
     <pkg-ref id="$TOOLBAR_BUNDLE_ID"/>
+    <pkg-ref id="org.spinorama.sotf.autolaunch"/>
 DISTXML
 
     if $BUILD_HAL; then
@@ -1024,37 +1060,39 @@ DISTXML
     <options hostArchitectures="arm64,x86_64"/>
 
     <choices-outline>
-        <line choice="default">
-            <line choice="$TOOLBAR_BUNDLE_ID"/>
+        <line choice="$TOOLBAR_BUNDLE_ID"/>
 DISTXML
 
     if $BUILD_HAL; then
         cat >> "$DMG_DIR/distribution.xml" << DISTXML
-            <line choice="$HAL_BUNDLE_ID"/>
+        <line choice="$HAL_BUNDLE_ID"/>
 DISTXML
     fi
 
     cat >> "$DMG_DIR/distribution.xml" << DISTXML
-        </line>
+        <line choice="org.spinorama.sotf.autolaunch"/>
     </choices-outline>
 
-    <choice id="default"/>
-    <choice id="$TOOLBAR_BUNDLE_ID" visible="false">
+    <choice id="$TOOLBAR_BUNDLE_ID" title="SotF Toolbar" description="Menu bar application for controlling the audio engine" enabled="false" selected="true">
         <pkg-ref id="$TOOLBAR_BUNDLE_ID"/>
     </choice>
 DISTXML
 
     if $BUILD_HAL; then
         cat >> "$DMG_DIR/distribution.xml" << DISTXML
-    <choice id="$HAL_BUNDLE_ID" visible="false">
+    <choice id="$HAL_BUNDLE_ID" title="HAL Audio Driver" description="Virtual audio driver for system-wide audio processing" enabled="false" selected="true">
         <pkg-ref id="$HAL_BUNDLE_ID"/>
     </choice>
 DISTXML
     fi
 
     cat >> "$DMG_DIR/distribution.xml" << DISTXML
+    <choice id="org.spinorama.sotf.autolaunch" title="Launch after installation" description="Start SotF Toolbar automatically after installation completes" selected="true">
+        <pkg-ref id="org.spinorama.sotf.autolaunch"/>
+    </choice>
 
     <pkg-ref id="$TOOLBAR_BUNDLE_ID" version="$VERSION" onConclusion="none">SotFToolbar.pkg</pkg-ref>
+    <pkg-ref id="org.spinorama.sotf.autolaunch" version="$VERSION" onConclusion="none">SotFAutoLaunch.pkg</pkg-ref>
 DISTXML
 
     if $BUILD_HAL; then

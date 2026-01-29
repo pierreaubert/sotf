@@ -24,7 +24,10 @@
 //! - {"command": "shutdown"} -> Gracefully shutdown daemon
 
 mod hal_manager;
+mod security;
+
 use hal_manager::{HalManager, get_hal_status};
+use security::{get_secure_socket_path, verify_peer_credentials, ensure_secure_socket_dir};
 
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
@@ -33,9 +36,21 @@ use sotf_audio::PluginConfig;
 use sotf_audio::manager::AudioEngineManager;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
+use std::path::PathBuf;
 use std::sync::Arc;
 
-const SOCKET_PATH: &str = "/tmp/autoeq_audio.sock";
+/// Legacy socket path for backwards compatibility
+const LEGACY_SOCKET_PATH: &str = "/tmp/autoeq_audio.sock";
+
+/// Get the socket path to use
+/// Uses secure per-user path, with fallback to legacy path if SOTF_LEGACY_SOCKET is set
+fn get_socket_path() -> PathBuf {
+    if std::env::var("SOTF_LEGACY_SOCKET").is_ok() {
+        PathBuf::from(LEGACY_SOCKET_PATH)
+    } else {
+        get_secure_socket_path()
+    }
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "command")]
@@ -275,7 +290,11 @@ impl AudioDaemon {
             Some(loudness) => Response::ok(serde_json::json!({
                 "momentary": loudness.momentary_lufs,
                 "short_term": loudness.shortterm_lufs,
+                "integrated": loudness.integrated_lufs,
                 "peak": loudness.peak,
+                "channel_peaks": loudness.channel_peaks,
+                "true_peaks_dbtp": loudness.true_peaks_dbtp,
+                "correlation_lr": loudness.correlation_lr,
             })),
             None => Response::err("Loudness monitoring not enabled"),
         }
@@ -330,11 +349,24 @@ impl AudioDaemon {
     }
 
     fn run(&self) -> Result<(), Box<dyn std::error::Error>> {
-        // Remove stale socket if exists
-        let _ = std::fs::remove_file(SOCKET_PATH);
+        let socket_path = get_socket_path();
 
-        let listener = UnixListener::bind(SOCKET_PATH)?;
-        println!("Audio daemon listening on {}", SOCKET_PATH);
+        // Ensure socket directory exists with secure permissions
+        ensure_secure_socket_dir(&socket_path)?;
+
+        // Remove stale socket if exists
+        let _ = std::fs::remove_file(&socket_path);
+
+        let listener = UnixListener::bind(&socket_path)?;
+        println!("Audio daemon listening on {}", socket_path.display());
+
+        // Also create legacy symlink for backwards compatibility with old clients
+        if socket_path.to_string_lossy() != LEGACY_SOCKET_PATH {
+            let _ = std::fs::remove_file(LEGACY_SOCKET_PATH);
+            if std::os::unix::fs::symlink(&socket_path, LEGACY_SOCKET_PATH).is_ok() {
+                println!("Legacy socket symlink: {}", LEGACY_SOCKET_PATH);
+            }
+        }
 
         // Accept connections
         for stream in listener.incoming() {
@@ -345,6 +377,17 @@ impl AudioDaemon {
 
             match stream {
                 Ok(stream) => {
+                    // Verify peer credentials before handling
+                    match verify_peer_credentials(&stream) {
+                        Ok(peer_uid) => {
+                            log::debug!("Accepted connection from UID {}", peer_uid);
+                        }
+                        Err(e) => {
+                            log::warn!("Rejected unauthorized connection: {}", e);
+                            continue;
+                        }
+                    }
+
                     // Clone daemon for client thread
                     // Note: hal_manager uses Arc, so Drop won't shutdown until last Arc drops
                     // Actual shutdown is called explicitly in main()
@@ -367,7 +410,8 @@ impl AudioDaemon {
         }
 
         // Cleanup
-        let _ = std::fs::remove_file(SOCKET_PATH);
+        let _ = std::fs::remove_file(&socket_path);
+        let _ = std::fs::remove_file(LEGACY_SOCKET_PATH);
         Ok(())
     }
 }

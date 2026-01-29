@@ -1,7 +1,7 @@
 {
   "speakers": {
-    "left": "tests/data/roomeq/test_speaker_left.csv",
-    "right": "tests/data/roomeq/test_speaker_right.csv"
+    "left": "test_speaker_left.csv",
+    "right": "test_speaker_right.csv"
   },
   "optimizer": {
     "num_filters": 3,

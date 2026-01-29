@@ -2552,6 +2552,7 @@ checksum = "75b325c5dbd37f80359721ad39aca5a29fb04c89279657cffdda8736d0c0b9d2"
 name = "driver-hal"
 version = "0.5.11"
 dependencies = [
+ "libc",
  "memmap2",
  "plugins",
  "tempfile",
@@ -5199,7 +5200,7 @@ dependencies = [
 
 [[package]]
 name = "math-iir-fir"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "base64 0.22.1",
  "byteorder",

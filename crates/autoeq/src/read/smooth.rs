@@ -46,6 +46,13 @@ impl Default for PsychoacousticSmoothingConfig {
 /// # Example
 /// ```
 /// use autoeq::read::{smooth_psychoacoustic, PsychoacousticSmoothingConfig};
+/// use autoeq_cea2034::Curve;
+/// use ndarray::Array1;
+///
+/// // Create a dummy curve
+/// let freqs = Array1::from(vec![20.0, 100.0, 1000.0, 10000.0]);
+/// let spl = Array1::from(vec![80.0, 82.0, 78.0, 75.0]);
+/// let curve = Curve { freq: freqs, spl, phase: None };
 ///
 /// let config = PsychoacousticSmoothingConfig::default();
 /// let smoothed = smooth_psychoacoustic(&curve, &config);

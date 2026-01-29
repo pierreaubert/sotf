@@ -4,42 +4,7 @@ use tempfile::TempDir;
 
 /// Get the path to the autoeq binary
 fn get_autoeq_binary() -> PathBuf {
-    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.pop(); // Go to workspace root
-    path.push("target");
-
-    let debug_path = path.join("debug/autoeq");
-    let release_path = path.join("release/autoeq");
-
-    if debug_path.exists() {
-        debug_path
-    } else if release_path.exists() {
-        release_path
-    } else {
-        // Fallback for when running via cargo test in the package directory
-        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        path.push("target");
-        let debug_path = path.join("debug/autoeq");
-        let release_path = path.join("release/autoeq");
-        if debug_path.exists() {
-            debug_path
-        } else if release_path.exists() {
-            release_path
-        } else {
-            // One last try: assume workspace target dir relative to current dir
-            let mut path = std::env::current_dir().unwrap();
-            path.push("target");
-            let debug_path = path.join("debug/autoeq");
-            let release_path = path.join("release/autoeq");
-            if debug_path.exists() {
-                debug_path
-            } else if release_path.exists() {
-                release_path
-            } else {
-                panic!("autoeq binary not found. Please build with 'cargo build --bin autoeq'");
-            }
-        }
-    }
+    PathBuf::from(env!("CARGO_BIN_EXE_autoeq"))
 }
 
 #[test]

@@ -5,14 +5,7 @@ use std::process::Command;
 
 /// Get the path to the autoeq binary
 fn get_autoeq_binary() -> PathBuf {
-    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.pop();
-    path.push("target");
-
-    let debug = path.join("debug/autoeq");
-    let release = path.join("release/autoeq");
-
-    if debug.exists() { debug } else { release }
+    PathBuf::from(env!("CARGO_BIN_EXE_autoeq"))
 }
 
 #[test]

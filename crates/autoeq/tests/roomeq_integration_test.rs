@@ -7,21 +7,7 @@ use tempfile::TempDir;
 
 /// Get the path to the roomeq binary
 fn get_roomeq_binary() -> PathBuf {
-    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.pop(); // Go to workspace root
-    path.push("target");
-
-    // Try debug first, then release
-    let debug_path = path.join("debug/roomeq");
-    let release_path = path.join("release/roomeq");
-
-    if debug_path.exists() {
-        debug_path
-    } else if release_path.exists() {
-        release_path
-    } else {
-        panic!("roomeq binary not found. Please build with 'cargo build --bin roomeq'");
-    }
+    PathBuf::from(env!("CARGO_BIN_EXE_roomeq"))
 }
 
 #[test]
@@ -34,6 +20,7 @@ fn test_roomeq_stereo_config() {
 
     // Run roomeq binary
     let output = Command::new(get_roomeq_binary())
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
         .arg("--config")
         .arg(&config_path)
         .arg("--output")
@@ -105,6 +92,7 @@ fn test_roomeq_multidriver_config() {
 
     // Run roomeq binary
     let output = Command::new(get_roomeq_binary())
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
         .arg("--config")
         .arg(&config_path)
         .arg("--output")

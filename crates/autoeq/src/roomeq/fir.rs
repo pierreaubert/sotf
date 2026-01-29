@@ -107,6 +107,7 @@ pub fn generate_fir_correction(
 
 #[cfg(test)]
 pub use math_audio_iir_fir::{generate_window, WindowType};
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::roomeq::types::FirConfig;

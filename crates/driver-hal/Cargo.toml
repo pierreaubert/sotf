@@ -14,6 +14,8 @@ crate-type = ["lib"]
 [target.'cfg(target_os = "macos")'.dependencies]
 # Shared memory mapping
 memmap2 = "0.9"
+# For getting user ID
+libc = "0.2"
 
 [dev-dependencies]
 tempfile = { workspace = true }

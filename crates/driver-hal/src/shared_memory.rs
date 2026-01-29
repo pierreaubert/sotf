@@ -14,9 +14,49 @@ use memmap2::MmapMut;
 const SHARED_MEMORY_MAGIC: u32 = 0x534F5446;
 
 /// Current protocol version
-const SHARED_MEMORY_VERSION: u32 = 1;
+/// Version 2: Added encryption fields (encrypted, key_fingerprint, frame_counter)
+const SHARED_MEMORY_VERSION: u32 = 2;
 
-/// Default shared memory file path
+/// Legacy shared memory file path (for backwards compatibility)
+pub const LEGACY_SHARED_MEMORY_PATH: &str = "/tmp/sotf-audio-shm";
+
+/// Get the secure shared memory path for the current user
+///
+/// Security model: each user has their own shared memory region.
+/// Path is based on the user's UID or TMPDIR environment variable.
+pub fn get_secure_shm_path() -> std::path::PathBuf {
+    // Try macOS per-user temp directory (already secured)
+    if let Ok(tmpdir) = std::env::var("TMPDIR") {
+        return std::path::PathBuf::from(tmpdir).join("sotf-audio.shm");
+    }
+
+    // Fallback: use UID-based path
+    let uid = unsafe { libc::getuid() };
+    std::path::PathBuf::from(format!("/tmp/sotf-{}/audio.shm", uid))
+}
+
+/// Get the shared memory path to use
+///
+/// Tries secure path first, then falls back to legacy path if it exists
+pub fn get_shared_memory_path() -> std::path::PathBuf {
+    let secure_path = get_secure_shm_path();
+
+    // If secure path exists, use it
+    if secure_path.exists() {
+        return secure_path;
+    }
+
+    // If legacy path exists, use it (backwards compatibility)
+    let legacy_path = std::path::Path::new(LEGACY_SHARED_MEMORY_PATH);
+    if legacy_path.exists() {
+        return legacy_path.to_path_buf();
+    }
+
+    // Default to secure path (will be created when HAL driver initializes)
+    secure_path
+}
+
+/// Default shared memory file path (for backwards compatibility)
 pub const SHARED_MEMORY_PATH: &str = "/tmp/sotf-audio-shm";
 
 /// Header structure for shared memory region
@@ -50,8 +90,13 @@ pub struct SharedAudioHeader {
     /// Rust engine is connected and ready
     pub engine_ready: AtomicU32,
 
-    /// Reserved for future use
-    pub reserved: [u32; 4],
+    // Encryption fields (version 2+)
+    /// Encryption enabled flag: 0 = disabled, 1 = enabled
+    pub encrypted: AtomicU32,
+    /// First 8 bytes of SHA256 hash of the encryption key (for key mismatch detection)
+    pub key_fingerprint: [u8; 8],
+    /// Frame counter for nonce generation (monotonically increasing, never reuse!)
+    pub frame_counter: AtomicU64,
 }
 
 /// Shared audio buffer for communication with Swift HAL driver
@@ -103,8 +148,10 @@ impl SharedAudioBuffer {
     }
 
     /// Open the default shared memory path
+    ///
+    /// Tries secure per-user path first, then falls back to legacy path
     pub fn open_default() -> io::Result<Self> {
-        Self::open(SHARED_MEMORY_PATH)
+        Self::open(get_shared_memory_path())
     }
 
     /// Get a reference to the header
