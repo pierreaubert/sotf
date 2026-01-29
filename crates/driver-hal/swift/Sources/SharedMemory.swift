@@ -14,7 +14,8 @@ import SystemConfiguration
 private let kSharedMemoryMagic: UInt32 = 0x534F5446
 
 /// Current protocol version
-private let kSharedMemoryVersion: UInt32 = 1
+/// Version 2: Added encryption fields (encrypted, key_fingerprint, frame_counter)
+private let kSharedMemoryVersion: UInt32 = 2
 
 /// Legacy shared memory file path (for backwards compatibility)
 private let kLegacySharedMemoryPath = "/tmp/sotf-audio-shm"
@@ -93,8 +94,10 @@ struct SharedAudioHeader {
     var driverReady: UInt32     // Driver is initialized (atomic)
     var engineReady: UInt32     // Rust engine is connected (atomic)
 
-    // Reserved for future use
-    var reserved: (UInt32, UInt32, UInt32, UInt32) = (0, 0, 0, 0)
+    // Encryption fields (version 2+)
+    var encrypted: UInt32       // 0 = disabled, 1 = enabled (atomic)
+    var keyFingerprint: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8) = (0, 0, 0, 0, 0, 0, 0, 0)  // First 8 bytes of SHA256 of key
+    var frameCounter: UInt64    // Monotonic counter for nonce generation (atomic)
 }
 
 /// Shared memory buffer for audio exchange with Rust engine
@@ -205,6 +208,10 @@ final class SharedAudioBuffer {
         header.pointee.active = 0
         header.pointee.configChanged = 0
         header.pointee.driverReady = 1
+        // Encryption fields (version 2+)
+        header.pointee.encrypted = 0
+        header.pointee.keyFingerprint = (0, 0, 0, 0, 0, 0, 0, 0)
+        header.pointee.frameCounter = 0
 
         OSMemoryBarrier()
 
@@ -252,6 +259,53 @@ final class SharedAudioBuffer {
         header.pointee.sampleRate = sampleRate
         signalConfigChange()
     }
+
+    // MARK: - Encryption Methods
+
+    /// Check if encryption is enabled
+    var isEncrypted: Bool {
+        guard let header = header else { return false }
+        return header.pointee.encrypted != 0
+    }
+
+    /// Enable or disable encryption
+    func setEncrypted(_ enabled: Bool) {
+        guard let header = header else { return }
+        header.pointee.encrypted = enabled ? 1 : 0
+        OSMemoryBarrier()
+    }
+
+    /// Get the key fingerprint
+    func getKeyFingerprint() -> [UInt8] {
+        guard let header = header else { return [0, 0, 0, 0, 0, 0, 0, 0] }
+        let fp = header.pointee.keyFingerprint
+        return [fp.0, fp.1, fp.2, fp.3, fp.4, fp.5, fp.6, fp.7]
+    }
+
+    /// Set the key fingerprint
+    func setKeyFingerprint(_ fingerprint: [UInt8]) {
+        guard let header = header, fingerprint.count >= 8 else { return }
+        header.pointee.keyFingerprint = (
+            fingerprint[0], fingerprint[1], fingerprint[2], fingerprint[3],
+            fingerprint[4], fingerprint[5], fingerprint[6], fingerprint[7]
+        )
+    }
+
+    /// Get the current frame counter
+    func getFrameCounter() -> UInt64 {
+        guard let header = header else { return 0 }
+        return header.pointee.frameCounter
+    }
+
+    /// Increment the frame counter and return the new value
+    func incrementFrameCounter() -> UInt64 {
+        guard let header = header else { return 0 }
+        OSMemoryBarrier()
+        header.pointee.frameCounter += 1
+        return header.pointee.frameCounter
+    }
+
+    // MARK: - Audio Read/Write
 
     /// Write audio to shared memory (called from DoIOOperation for output)
     /// Uses lock-free ring buffer algorithm

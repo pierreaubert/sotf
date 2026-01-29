@@ -379,6 +379,44 @@ class AudioEngineClient {
 
         return loudness
     }
+
+    // MARK: - Encryption Commands
+
+    /// Encryption status from the daemon
+    struct EncryptionStatusData {
+        var enabled: Bool = false
+        var fingerprint: String = ""
+        var keyPath: String = ""
+        var frameCount: UInt64 = 0
+    }
+
+    func setEncryption(enabled: Bool) -> Bool {
+        let command: [String: Any] = ["command": "set_encryption", "enabled": enabled]
+        return sendCommand(command)?.success ?? false
+    }
+
+    func getEncryptionStatus() -> EncryptionStatusData? {
+        let command = ["command": "encryption_status"]
+
+        guard let response = sendCommand(command),
+              response.success,
+              let data = response.data else {
+            return nil
+        }
+
+        var status = EncryptionStatusData()
+        status.enabled = data["enabled"]?.value as? Bool ?? false
+        status.fingerprint = data["fingerprint"]?.value as? String ?? ""
+        status.keyPath = data["key_path"]?.value as? String ?? ""
+        status.frameCount = (data["frame_count"]?.value as? Int).map { UInt64($0) } ?? 0
+
+        return status
+    }
+
+    func rotateEncryptionKey() -> Bool {
+        let command = ["command": "rotate_encryption_key"]
+        return sendCommand(command)?.success ?? false
+    }
 }
 
 // MARK: - Daemon Manager
@@ -970,6 +1008,11 @@ struct ConfigurationView: View {
     @State private var shortTermLufs: Double = -60.0
     @State private var meteringTimer: Timer? = nil
 
+    // Encryption state
+    @State private var encryptionEnabled: Bool = false
+    @State private var encryptionFingerprint: String = ""
+    @State private var encryptionError: String? = nil
+
     let channelOptions = Array(1...16)
 
     var body: some View {
@@ -1206,6 +1249,66 @@ struct ConfigurationView: View {
                     }
                 }
                 .padding()
+            }
+
+            // Security Section
+            GroupBox(label: Label("Security", systemImage: "lock.shield")) {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Toggle("Encrypt audio data", isOn: $encryptionEnabled)
+                            .onChange(of: encryptionEnabled) { _, newValue in
+                                setEncryption(enabled: newValue)
+                            }
+
+                        Spacer()
+
+                        // Status indicator
+                        HStack(spacing: 4) {
+                            Image(systemName: encryptionEnabled ? "lock.fill" : "lock.open")
+                                .foregroundColor(encryptionEnabled ? .green : .secondary)
+                            if !encryptionFingerprint.isEmpty {
+                                Text(encryptionFingerprint.prefix(8) + "...")
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+
+                    Text("When enabled, audio data is encrypted in memory to prevent other users or processes from accessing it. Recommended for multi-user systems.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.leading, 20)
+
+                    // Error state (conditional)
+                    if let error = encryptionError {
+                        HStack(spacing: 4) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.orange)
+                            Text(error)
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                        }
+                    }
+
+                    Divider()
+
+                    HStack {
+                        Button("Rotate Key") {
+                            rotateEncryptionKey()
+                        }
+                        .help("Generate a new encryption key")
+
+                        Spacer()
+
+                        Button("Refresh Status") {
+                            refreshEncryptionStatus()
+                        }
+                    }
+                }
+                .padding()
+            }
+            .onAppear {
+                refreshEncryptionStatus()
             }
 
                 Spacer()
@@ -1624,6 +1727,43 @@ struct ConfigurationView: View {
                 errorMessage = "Failed to save configuration: \(error.localizedDescription)"
                 showingError = true
             }
+        }
+    }
+
+    // MARK: - Encryption Methods
+
+    private func setEncryption(enabled: Bool) {
+        encryptionError = nil
+
+        if client.setEncryption(enabled: enabled) {
+            print("✅ Encryption \(enabled ? "enabled" : "disabled")")
+            refreshEncryptionStatus()
+        } else {
+            encryptionError = "Failed to \(enabled ? "enable" : "disable") encryption"
+            // Revert the toggle state
+            encryptionEnabled = !enabled
+        }
+    }
+
+    private func rotateEncryptionKey() {
+        encryptionError = nil
+
+        if client.rotateEncryptionKey() {
+            print("✅ Encryption key rotated")
+            refreshEncryptionStatus()
+        } else {
+            encryptionError = "Failed to rotate encryption key"
+        }
+    }
+
+    private func refreshEncryptionStatus() {
+        if let status = client.getEncryptionStatus() {
+            encryptionEnabled = status.enabled
+            encryptionFingerprint = status.fingerprint
+            encryptionError = nil
+        } else {
+            // Daemon might not be running
+            encryptionFingerprint = ""
         }
     }
 }

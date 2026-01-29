@@ -252,6 +252,46 @@ impl SharedAudioBuffer {
         self.set_config_changed();
     }
 
+    // =========================================================================
+    // Encryption methods
+    // =========================================================================
+
+    /// Check if encryption is enabled
+    pub fn is_encrypted(&self) -> bool {
+        self.header().encrypted.load(Ordering::Acquire) != 0
+    }
+
+    /// Enable or disable encryption
+    pub fn set_encrypted(&self, enabled: bool) {
+        self.header()
+            .encrypted
+            .store(if enabled { 1 } else { 0 }, Ordering::Release);
+    }
+
+    /// Get the key fingerprint
+    pub fn key_fingerprint(&self) -> [u8; 8] {
+        self.header().key_fingerprint
+    }
+
+    /// Set the key fingerprint
+    pub fn set_key_fingerprint(&mut self, fingerprint: [u8; 8]) {
+        self.header_mut().key_fingerprint = fingerprint;
+    }
+
+    /// Get the current frame counter (used as nonce base)
+    pub fn frame_counter(&self) -> u64 {
+        self.header().frame_counter.load(Ordering::Acquire)
+    }
+
+    /// Increment the frame counter and return the new value
+    pub fn increment_frame_counter(&self) -> u64 {
+        self.header().frame_counter.fetch_add(1, Ordering::AcqRel) + 1
+    }
+
+    // =========================================================================
+    // Configuration methods
+    // =========================================================================
+
     /// Set the configuration changed flag
     ///
     /// This signals the Swift HAL driver that configuration has changed
@@ -394,6 +434,178 @@ impl SharedAudioBuffer {
 
         let used = (write_pos - read_pos) as usize;
         (self.audio_capacity - used) / channel_count
+    }
+
+    // =========================================================================
+    // Encrypted audio I/O
+    // =========================================================================
+
+    /// Write audio with encryption
+    ///
+    /// When encryption is enabled, this encrypts the audio data before writing
+    /// to shared memory. The cipher and current frame counter are used for
+    /// authenticated encryption.
+    ///
+    /// # Arguments
+    /// * `buffer` - Audio samples to write
+    /// * `cipher` - The AudioCipher for encryption
+    ///
+    /// # Returns
+    /// Number of frames written
+    pub fn write_audio_encrypted(
+        &mut self,
+        buffer: &[f32],
+        cipher: &crate::encryption::AudioCipher,
+    ) -> usize {
+        if !self.is_encrypted() {
+            // Fall back to unencrypted write
+            return self.write_audio(buffer);
+        }
+
+        let header = self.header();
+        let channel_count = header.channel_count as usize;
+        let sample_count = buffer.len();
+
+        // Encrypt the samples
+        let frame_counter = self.increment_frame_counter();
+        let ciphertext = cipher.encrypt(buffer, frame_counter);
+
+        // Store encrypted data as raw bytes in the ring buffer
+        // We treat the f32 buffer as raw bytes for encrypted data
+        let encrypted_samples = crate::encryption::encrypted_to_samples(&ciphertext);
+
+        let write_pos = header.write_position.load(Ordering::Acquire);
+        let read_pos = header.read_position.load(Ordering::Acquire);
+
+        let used = (write_pos - read_pos) as usize;
+        let available = self.audio_capacity - used;
+        let to_write = encrypted_samples.len().min(available);
+
+        if to_write == 0 || to_write < encrypted_samples.len() {
+            // Not enough space for the full encrypted block
+            return 0;
+        }
+
+        let write_index = (write_pos as usize) % self.audio_capacity;
+        let first_part = to_write.min(self.audio_capacity - write_index);
+        let second_part = to_write - first_part;
+
+        unsafe {
+            let audio_data = self.audio_data_mut();
+
+            std::ptr::copy_nonoverlapping(
+                encrypted_samples.as_ptr(),
+                audio_data.add(write_index),
+                first_part,
+            );
+
+            if second_part > 0 {
+                std::ptr::copy_nonoverlapping(
+                    encrypted_samples.as_ptr().add(first_part),
+                    audio_data,
+                    second_part,
+                );
+            }
+        }
+
+        self.header()
+            .write_position
+            .store(write_pos + to_write as u64, Ordering::Release);
+
+        sample_count / channel_count
+    }
+
+    /// Read audio with decryption
+    ///
+    /// When encryption is enabled, this reads encrypted data from shared memory
+    /// and decrypts it. Returns silence if decryption fails (tampered data).
+    ///
+    /// # Arguments
+    /// * `buffer` - Buffer to fill with decrypted audio samples
+    /// * `cipher` - The AudioCipher for decryption
+    /// * `expected_frame_counter` - The expected frame counter for this block
+    ///
+    /// # Returns
+    /// Number of frames read
+    pub fn read_audio_encrypted(
+        &self,
+        buffer: &mut [f32],
+        cipher: &crate::encryption::AudioCipher,
+        expected_frame_counter: u64,
+    ) -> usize {
+        if !self.is_encrypted() {
+            // Fall back to unencrypted read
+            return self.read_audio(buffer);
+        }
+
+        let header = self.header();
+        let channel_count = header.channel_count as usize;
+        let sample_count = buffer.len();
+
+        // Calculate expected encrypted size
+        let encrypted_size =
+            crate::encryption::AudioCipher::ciphertext_size(sample_count) / std::mem::size_of::<f32>() + 1;
+
+        let write_pos = header.write_position.load(Ordering::Acquire);
+        let read_pos = header.read_position.load(Ordering::Acquire);
+
+        let available = (write_pos - read_pos) as usize;
+        if available < encrypted_size {
+            buffer.fill(0.0);
+            return 0;
+        }
+
+        // Read the encrypted data
+        let read_index = (read_pos as usize) % self.audio_capacity;
+        let first_part = encrypted_size.min(self.audio_capacity - read_index);
+        let second_part = encrypted_size - first_part;
+
+        let mut encrypted_samples = vec![0.0f32; encrypted_size];
+
+        unsafe {
+            let audio_data = self.audio_data();
+
+            std::ptr::copy_nonoverlapping(
+                audio_data.add(read_index),
+                encrypted_samples.as_mut_ptr(),
+                first_part,
+            );
+
+            if second_part > 0 {
+                std::ptr::copy_nonoverlapping(
+                    audio_data,
+                    encrypted_samples.as_mut_ptr().add(first_part),
+                    second_part,
+                );
+            }
+        }
+
+        // Convert samples back to ciphertext bytes
+        let ciphertext = crate::encryption::samples_to_encrypted(&encrypted_samples);
+
+        // Decrypt
+        match cipher.decrypt(&ciphertext, expected_frame_counter) {
+            Some(decrypted) => {
+                let to_copy = decrypted.len().min(sample_count);
+                buffer[..to_copy].copy_from_slice(&decrypted[..to_copy]);
+                if to_copy < sample_count {
+                    buffer[to_copy..].fill(0.0);
+                }
+
+                // Update read position
+                header
+                    .read_position
+                    .store(read_pos + encrypted_size as u64, Ordering::Release);
+
+                to_copy / channel_count
+            }
+            None => {
+                // Decryption failed - return silence
+                log::warn!("Audio decryption failed (frame {})", expected_frame_counter);
+                buffer.fill(0.0);
+                0
+            }
+        }
     }
 }
 
@@ -632,7 +844,9 @@ mod tests {
             config_changed: AtomicU32::new(0),
             driver_ready: AtomicU32::new(1),
             engine_ready: AtomicU32::new(0),
-            reserved: [0; 4],
+            encrypted: AtomicU32::new(0),
+            key_fingerprint: [0; 8],
+            frame_counter: AtomicU64::new(0),
         };
 
         // Create buffer with header bytes

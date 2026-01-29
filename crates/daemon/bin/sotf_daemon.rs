@@ -27,7 +27,7 @@ mod hal_manager;
 mod security;
 
 use hal_manager::{HalManager, get_hal_status};
-use security::{get_secure_socket_path, verify_peer_credentials, ensure_secure_socket_dir};
+use security::{get_secure_socket_path, verify_peer_credentials, ensure_secure_socket_dir, KeyManager};
 
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
@@ -81,6 +81,13 @@ enum Command {
     HalStatus,
     #[serde(rename = "shutdown")]
     Shutdown,
+    // Encryption commands
+    #[serde(rename = "set_encryption")]
+    SetEncryption { enabled: bool },
+    #[serde(rename = "encryption_status")]
+    EncryptionStatus,
+    #[serde(rename = "rotate_encryption_key")]
+    RotateEncryptionKey,
 }
 
 #[derive(Debug, Serialize)]
@@ -124,6 +131,8 @@ struct AudioDaemon {
     hal_manager: Arc<Mutex<HalManager>>,
     /// Selected output device name (None = use default device)
     selected_device: Arc<Mutex<Option<String>>>,
+    /// Encryption key manager
+    key_manager: Arc<Mutex<KeyManager>>,
 }
 
 impl AudioDaemon {
@@ -133,6 +142,7 @@ impl AudioDaemon {
             running: Arc::new(Mutex::new(true)),
             hal_manager: Arc::new(Mutex::new(HalManager::new())),
             selected_device: Arc::new(Mutex::new(None)),
+            key_manager: Arc::new(Mutex::new(KeyManager::default())),
         }
     }
 
@@ -154,6 +164,10 @@ impl AudioDaemon {
                 *self.running.lock() = false;
                 Response::ok_empty()
             }
+            // Encryption commands
+            Command::SetEncryption { enabled } => self.handle_set_encryption(enabled).await,
+            Command::EncryptionStatus => self.handle_encryption_status().await,
+            Command::RotateEncryptionKey => self.handle_rotate_encryption_key().await,
         }
     }
 
@@ -310,6 +324,76 @@ impl AudioDaemon {
         }))
     }
 
+    // =========================================================================
+    // Encryption handlers
+    // =========================================================================
+
+    async fn handle_set_encryption(&self, enabled: bool) -> Response {
+        let mut key_manager = self.key_manager.lock();
+        key_manager.set_enabled(enabled);
+
+        // Update shared memory encryption flag
+        #[cfg(target_os = "macos")]
+        {
+            if let Ok(mut buffer) = driver_hal::SharedAudioBuffer::open_default() {
+                buffer.set_encrypted(enabled);
+                if enabled {
+                    buffer.set_key_fingerprint(*key_manager.fingerprint());
+                }
+                buffer.set_config_changed();
+            }
+        }
+
+        Response::ok(serde_json::json!({
+            "enabled": enabled,
+            "fingerprint": key_manager.fingerprint_hex(),
+        }))
+    }
+
+    async fn handle_encryption_status(&self) -> Response {
+        let key_manager = self.key_manager.lock();
+        let status = key_manager.status();
+
+        // Also get frame counter from shared memory if available
+        #[cfg(target_os = "macos")]
+        let frame_count = driver_hal::SharedAudioBuffer::open_default()
+            .map(|b| b.frame_counter())
+            .unwrap_or(0);
+        #[cfg(not(target_os = "macos"))]
+        let frame_count: u64 = 0;
+
+        Response::ok(serde_json::json!({
+            "enabled": status.enabled,
+            "fingerprint": status.fingerprint,
+            "key_path": status.key_path,
+            "frame_count": frame_count,
+        }))
+    }
+
+    async fn handle_rotate_encryption_key(&self) -> Response {
+        let mut key_manager = self.key_manager.lock();
+
+        match key_manager.force_rotate() {
+            Ok(()) => {
+                // Update shared memory fingerprint if encryption is enabled
+                #[cfg(target_os = "macos")]
+                {
+                    if key_manager.is_enabled() {
+                        if let Ok(mut buffer) = driver_hal::SharedAudioBuffer::open_default() {
+                            buffer.set_key_fingerprint(*key_manager.fingerprint());
+                            buffer.set_config_changed();
+                        }
+                    }
+                }
+
+                Response::ok(serde_json::json!({
+                    "fingerprint": key_manager.fingerprint_hex(),
+                }))
+            }
+            Err(e) => Response::err(format!("Failed to rotate key: {}", e)),
+        }
+    }
+
     fn handle_client(&self, mut stream: UnixStream) {
         let mut reader = BufReader::new(stream.try_clone().unwrap());
         let mut line = String::new();
@@ -396,6 +480,7 @@ impl AudioDaemon {
                         running: Arc::clone(&self.running),
                         hal_manager: Arc::clone(&self.hal_manager),
                         selected_device: Arc::clone(&self.selected_device),
+                        key_manager: Arc::clone(&self.key_manager),
                     };
 
                     // Handle each client in a separate thread
@@ -541,6 +626,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("   HAL plugins will not be available");
             }
         }
+    }
+
+    // Show encryption status
+    {
+        let key_manager = daemon.key_manager.lock();
+        let status = key_manager.status();
+        println!();
+        println!("🔐 Encryption Status:");
+        println!(
+            "   Enabled:     {}",
+            if status.enabled {
+                "✅ Yes"
+            } else {
+                "❌ No (use set_encryption to enable)"
+            }
+        );
+        println!("   Fingerprint: {}", status.fingerprint);
+        println!("   Key path:    {}", status.key_path);
     }
 
     println!();

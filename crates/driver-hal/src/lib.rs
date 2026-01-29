@@ -42,9 +42,14 @@
 //!
 //! See the `volume` module for details.
 
+pub mod encryption;
 pub mod shared_memory;
 pub mod volume;
 
+pub use encryption::{
+    AudioCipher, AUTH_TAG_SIZE, compute_fingerprint, encrypted_to_samples, fingerprint_to_hex,
+    generate_key, samples_to_encrypted,
+};
 pub use shared_memory::{
     HalInputReader, HalOutputWriter, SharedAudioBuffer, SHARED_MEMORY_PATH,
 };
