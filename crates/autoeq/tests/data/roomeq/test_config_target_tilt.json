@@ -1,0 +1,26 @@
+{
+  "version": "1.2.0",
+  "speakers": {
+    "left": "test_speaker_left.csv",
+    "right": "test_speaker_right.csv"
+  },
+  "optimizer": {
+    "algorithm": "cobyla",
+    "num_filters": 7,
+    "max_iter": 1000,
+    "min_freq": 20.0,
+    "max_freq": 20000.0,
+    "min_q": 0.5,
+    "max_q": 8.0,
+    "min_db": -10.0,
+    "max_db": 10.0,
+    "loss_type": "flat",
+    "target_tilt": {
+      "tilt_type": "harman",
+      "slope_db_per_octave": -0.8,
+      "reference_freq": 1000,
+      "bass_shelf_db": 0,
+      "bass_shelf_freq": 200
+    }
+  }
+}

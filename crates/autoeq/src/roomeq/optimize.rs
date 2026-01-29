@@ -16,14 +16,17 @@ use super::config::validate_room_config;
 use super::crossover;
 use super::dba;
 use super::eq;
+use super::excursion;
 use super::fir;
 use super::group_delay;
 use super::multisub;
 use super::output;
+use super::phase_alignment;
+use super::target_tilt;
 use super::types::{
     ChannelDspChain, DspChainOutput, MeasurementSource, MixedModeConfig, MultiSubGroup,
     OptimizerConfig, OptimizationMetadata, RoomConfig, SpeakerConfig, SpeakerGroup,
-    TargetCurveConfig,
+    TargetCurveConfig, TiltType,
 };
 
 // ============================================================================
@@ -327,6 +330,79 @@ pub fn optimize_room(
         }
     }
 
+    // ========================================================================
+    // Phase Alignment Optimization (Scenario A: WITH Subwoofers)
+    // ========================================================================
+    // Phase alignment maximizes energy sum in the crossover region by optimizing
+    // delay and polarity. This runs BEFORE group delay optimization.
+    let mut phase_alignment_results: HashMap<String, (f64, bool)> = HashMap::new();
+
+    if let Some(phase_config) = &config.optimizer.phase_alignment {
+        if phase_config.enabled {
+            if let Some(gd_configs) = &config.group_delay {
+                info!("Running phase alignment optimization...");
+
+                for gd_config in gd_configs {
+                    let sub_curve = match curves.get(&gd_config.subwoofer) {
+                        Some(c) => c,
+                        None => {
+                            warn!(
+                                "Subwoofer channel '{}' not found for phase alignment",
+                                gd_config.subwoofer
+                            );
+                            continue;
+                        }
+                    };
+
+                    for speaker_name in &gd_config.speakers {
+                        if let Some(speaker_curve) = curves.get(speaker_name) {
+                            // Phase alignment requires phase data
+                            if sub_curve.phase.is_some() && speaker_curve.phase.is_some() {
+                                match phase_alignment::optimize_phase_alignment(
+                                    sub_curve,
+                                    speaker_curve,
+                                    phase_config,
+                                ) {
+                                    Ok(result) => {
+                                        info!(
+                                            "  Phase alignment '{}' with '{}': delay={:.2}ms, invert={}, improvement={:.2}dB",
+                                            speaker_name, gd_config.subwoofer,
+                                            result.delay_ms, result.invert_polarity, result.improvement_db
+                                        );
+                                        phase_alignment_results.insert(
+                                            speaker_name.clone(),
+                                            (result.delay_ms, result.invert_polarity),
+                                        );
+                                    }
+                                    Err(e) => {
+                                        warn!("  Phase alignment failed for '{}': {}", speaker_name, e);
+                                    }
+                                }
+                            } else {
+                                debug!(
+                                    "  Skipping phase alignment for '{}': no phase data available",
+                                    speaker_name
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Apply phase alignment results (polarity inversion)
+    for (speaker_name, (_delay, invert)) in &phase_alignment_results {
+        if *invert {
+            if let Some(chain) = channel_chains.get_mut(speaker_name) {
+                // Insert polarity inversion at the beginning of the chain
+                let invert_plugin = output::create_gain_plugin_with_invert(0.0, true);
+                chain.plugins.insert(0, invert_plugin);
+                info!("  Applied polarity inversion to '{}'", speaker_name);
+            }
+        }
+    }
+
     // Group Delay Optimization
     if let Some(gd_configs) = &config.group_delay {
         info!("Optimizing group delay alignments...");
@@ -406,16 +482,30 @@ pub fn optimize_room(
 
         for (sub_name, speaker_name, rel_delay) in calculated_rel_delays {
             let base_delay = *sub_base_delays.get(&sub_name).unwrap_or(&0.0);
-            let final_speaker_delay = rel_delay + base_delay;
+
+            // Include phase alignment delay if available
+            let phase_delay = phase_alignment_results
+                .get(&speaker_name)
+                .map(|(d, _)| *d)
+                .unwrap_or(0.0);
+
+            let final_speaker_delay = rel_delay + base_delay + phase_delay;
 
             if final_speaker_delay > 1e-3
                 && let Some(chain) = channel_chains.get_mut(&speaker_name)
             {
                 output::add_delay_plugin(chain, final_speaker_delay);
-                info!(
-                    "    Applied {:.3} ms delay to '{}' (rel: {:.3} + sub_base: {:.3})",
-                    final_speaker_delay, speaker_name, rel_delay, base_delay
-                );
+                if phase_delay.abs() > 0.01 {
+                    info!(
+                        "    Applied {:.3} ms delay to '{}' (rel: {:.3} + sub_base: {:.3} + phase: {:.3})",
+                        final_speaker_delay, speaker_name, rel_delay, base_delay, phase_delay
+                    );
+                } else {
+                    info!(
+                        "    Applied {:.3} ms delay to '{}' (rel: {:.3} + sub_base: {:.3})",
+                        final_speaker_delay, speaker_name, rel_delay, base_delay
+                    );
+                }
             }
         }
     }
@@ -601,6 +691,45 @@ fn process_single_speaker(
             }
         });
 
+    // ========================================================================
+    // Build target curve with tilt (if configured)
+    // ========================================================================
+    let target_tilt_curve = if let Some(tilt_config) = &room_config.optimizer.target_tilt {
+        if tilt_config.tilt_type != TiltType::Flat {
+            info!("  Building target curve with {:?} tilt ({:.2} dB/octave)",
+                  tilt_config.tilt_type, tilt_config.slope_db_per_octave);
+            Some(target_tilt::build_target_curve_with_tilt(&curve.freq, tilt_config))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    // ========================================================================
+    // Excursion Protection (detect F3, generate HPF)
+    // ========================================================================
+    let excursion_filters: Vec<Biquad> = if let Some(exc_config) = &room_config.optimizer.excursion_protection {
+        if exc_config.enabled {
+            info!("  Applying excursion protection...");
+            match excursion::generate_excursion_protection(&curve, exc_config, sample_rate) {
+                Ok(result) => {
+                    info!("  Excursion protection: F3={:.1}Hz, HPF={:.1}Hz ({} filters)",
+                          result.f3_hz, result.hpf_frequency, result.filters.len());
+                    result.filters
+                }
+                Err(e) => {
+                    warn!("  Excursion protection failed: {}. Continuing without protection.", e);
+                    Vec::new()
+                }
+            }
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    };
+
     // Compute pre-score
     let min_freq = room_config.optimizer.min_freq;
     let max_freq = room_config.optimizer.max_freq;
@@ -635,8 +764,9 @@ fn process_single_speaker(
 
             info!("  Saved FIR filter to {}", wav_path.display());
 
-            let _plugin = output::create_convolution_plugin(&filename);
-            let chain = output::build_channel_dsp_chain_with_curves(
+            // Build DSP chain with convolution plugin referencing the FIR WAV file
+            let convolution_plugin = output::create_convolution_plugin(&filename);
+            let mut chain = output::build_channel_dsp_chain_with_curves(
                 channel_name,
                 None,
                 Vec::new(),
@@ -644,6 +774,7 @@ fn process_single_speaker(
                 Some(&curve),
                 None,
             );
+            chain.plugins.push(convolution_plugin);
 
             let complex_resp =
                 response::compute_fir_complex_response(&coeffs, &curve.freq, sample_rate);
@@ -672,7 +803,6 @@ fn process_single_speaker(
                 pre_score, post_score
             );
 
-            let mut chain = chain;
             chain.final_curve = Some((&final_curve).into());
 
             Ok((chain, pre_score, post_score, curve.clone(), final_curve, vec![], mean, arrival_time_ms))
@@ -766,36 +896,108 @@ fn process_single_speaker(
             Ok((chain, pre_score, post_score, curve.clone(), final_curve, eq_filters, mean, arrival_time_ms))
         }
         _ => {
-            // Default IIR mode
-            let (eq_filters, _opt_loss) = eq::optimize_channel_eq(
-                &curve,
-                &room_config.optimizer,
-                room_config.target_curve.as_ref(),
-                sample_rate,
-            )
-            .map_err(|e| AutoeqError::OptimizationFailed { message: format!("EQ optimization failed for channel {}: {}", channel_name, e) })?;
+            // Default IIR mode with enhanced processing
+
+            // Apply target tilt to the curve (subtract tilt from measurement)
+            let optimization_curve = if let Some(ref tilt_curve) = target_tilt_curve {
+                Curve {
+                    freq: curve.freq.clone(),
+                    spl: &curve.spl - &tilt_curve.spl,
+                    phase: curve.phase.clone(),
+                }
+            } else {
+                curve.clone()
+            };
+
+            // ================================================================
+            // Schroeder Split Optimization (if configured)
+            // ================================================================
+            let eq_filters = if let Some(schroeder_config) = &room_config.optimizer.schroeder_split {
+                if schroeder_config.enabled {
+                    let schroeder_freq = if let Some(ref dims) = schroeder_config.room_dimensions {
+                        let calculated = dims.schroeder_frequency();
+                        info!("  Schroeder split: calculated frequency {:.1} Hz from room dimensions", calculated);
+                        calculated
+                    } else {
+                        schroeder_config.schroeder_freq
+                    };
+                    info!("  Schroeder split: optimizing below {:.1} Hz with max_q={:.1}, above with max_q={:.1}",
+                          schroeder_freq, schroeder_config.low_freq_config.max_q, schroeder_config.high_freq_config.max_q);
+
+                    // Two-pass optimization with different Q constraints
+                    let (low_filters, high_filters) = optimize_with_schroeder_split(
+                        &optimization_curve,
+                        &room_config.optimizer,
+                        schroeder_config,
+                        sample_rate,
+                    )?;
+
+                    let mut combined_filters = low_filters;
+                    combined_filters.extend(high_filters);
+                    info!("  Schroeder split: {} low-freq filters + {} high-freq filters",
+                          combined_filters.iter().filter(|f| f.freq < schroeder_freq).count(),
+                          combined_filters.iter().filter(|f| f.freq >= schroeder_freq).count());
+                    combined_filters
+                } else {
+                    // Standard optimization
+                    let (filters, _opt_loss) = eq::optimize_channel_eq(
+                        &optimization_curve,
+                        &room_config.optimizer,
+                        room_config.target_curve.as_ref(),
+                        sample_rate,
+                    )
+                    .map_err(|e| AutoeqError::OptimizationFailed { message: format!("EQ optimization failed for channel {}: {}", channel_name, e) })?;
+                    filters
+                }
+            } else {
+                // Standard optimization
+                let (filters, _opt_loss) = eq::optimize_channel_eq(
+                    &optimization_curve,
+                    &room_config.optimizer,
+                    room_config.target_curve.as_ref(),
+                    sample_rate,
+                )
+                .map_err(|e| AutoeqError::OptimizationFailed { message: format!("EQ optimization failed for channel {}: {}", channel_name, e) })?;
+                filters
+            };
 
             info!("  Optimized {} EQ filters", eq_filters.len());
+
+            // Combine excursion protection filters with EQ filters
+            let mut all_filters = excursion_filters.clone();
+            all_filters.extend(eq_filters.clone());
 
             let chain = output::build_channel_dsp_chain_with_curves(
                 channel_name,
                 None,
                 Vec::new(),
-                &eq_filters,
+                &all_filters,
                 Some(&curve),
                 None,
             );
 
-            let iir_resp =
-                response::compute_peq_complex_response(&eq_filters, &curve.freq, sample_rate);
-            let final_curve = response::apply_complex_response(&curve, &iir_resp);
+            // Compute final response including all filters
+            let all_resp =
+                response::compute_peq_complex_response(&all_filters, &curve.freq, sample_rate);
+            let final_curve = response::apply_complex_response(&curve, &all_resp);
 
             // Compute post_score consistently with pre_score (flatness of corrected response)
+            // If target tilt is applied, score against the tilt target
+            let score_curve = if let Some(ref tilt_curve) = target_tilt_curve {
+                Curve {
+                    freq: final_curve.freq.clone(),
+                    spl: &final_curve.spl - &tilt_curve.spl,
+                    phase: final_curve.phase.clone(),
+                }
+            } else {
+                final_curve.clone()
+            };
+
             let mut sum_final = 0.0;
             let mut count_final = 0;
-            for i in 0..final_curve.freq.len() {
-                if final_curve.freq[i] >= min_freq && final_curve.freq[i] <= max_freq {
-                    sum_final += final_curve.spl[i];
+            for i in 0..score_curve.freq.len() {
+                if score_curve.freq[i] >= min_freq && score_curve.freq[i] <= max_freq {
+                    sum_final += score_curve.spl[i];
                     count_final += 1;
                 }
             }
@@ -804,9 +1006,9 @@ fn process_single_speaker(
             } else {
                 0.0
             };
-            let normalized_final_spl = &final_curve.spl - mean_final;
+            let normalized_final_spl = &score_curve.spl - mean_final;
             let post_score =
-                crate::loss::flat_loss(&final_curve.freq, &normalized_final_spl, min_freq, max_freq);
+                crate::loss::flat_loss(&score_curve.freq, &normalized_final_spl, min_freq, max_freq);
 
             info!(
                 "  Pre-score: {:.6}, Post-score: {:.6}",
@@ -819,6 +1021,88 @@ fn process_single_speaker(
             Ok((chain, pre_score, post_score, curve.clone(), final_curve, eq_filters, mean, arrival_time_ms))
         }
     }
+}
+
+/// Optimize EQ with Schroeder frequency split
+///
+/// Performs two-pass optimization with different Q constraints:
+/// - Below Schroeder: high-Q narrow filters for room modes
+/// - Above Schroeder: low-Q broad filters for tonal adjustment
+fn optimize_with_schroeder_split(
+    curve: &Curve,
+    optimizer: &OptimizerConfig,
+    schroeder_config: &super::types::SchroederSplitConfig,
+    sample_rate: f64,
+) -> Result<(Vec<Biquad>, Vec<Biquad>)> {
+
+    let schroeder_freq = if let Some(ref dims) = schroeder_config.room_dimensions {
+        dims.schroeder_frequency()
+    } else {
+        schroeder_config.schroeder_freq
+    };
+
+    let low_config = &schroeder_config.low_freq_config;
+    let high_config = &schroeder_config.high_freq_config;
+
+    // Determine filter allocation (roughly proportional to frequency range)
+    let total_filters = optimizer.num_filters;
+    let log_range_total = (optimizer.max_freq / optimizer.min_freq).log2();
+    let log_range_low = (schroeder_freq / optimizer.min_freq).max(1.0).log2();
+    let low_ratio = log_range_low / log_range_total;
+
+    let low_filters = ((total_filters as f64 * low_ratio).round() as usize).max(1).min(total_filters - 1);
+    let high_filters = total_filters - low_filters;
+
+    debug!("  Schroeder split: {} filters below {:.1}Hz, {} filters above",
+           low_filters, schroeder_freq, high_filters);
+
+    // Low frequency optimization (below Schroeder)
+    let low_optimizer = OptimizerConfig {
+        num_filters: low_filters,
+        min_freq: optimizer.min_freq,
+        max_freq: schroeder_freq,
+        min_q: low_config.min_q,
+        max_q: low_config.max_q,
+        min_db: if low_config.allow_boost { optimizer.min_db } else { optimizer.min_db },
+        max_db: if low_config.allow_boost { optimizer.max_db } else { 0.0 }, // Cuts only if !allow_boost
+        ..optimizer.clone()
+    };
+
+    let (low_eq_filters, _) = eq::optimize_channel_eq(
+        curve,
+        &low_optimizer,
+        None, // No additional target for split optimization
+        sample_rate,
+    )
+    .map_err(|e| AutoeqError::OptimizationFailed {
+        message: format!("Low-frequency EQ optimization failed: {}", e),
+    })?;
+
+    // High frequency optimization (above Schroeder)
+    let high_optimizer = OptimizerConfig {
+        num_filters: high_filters,
+        min_freq: schroeder_freq,
+        max_freq: optimizer.max_freq,
+        min_q: optimizer.min_q.max(0.3), // Ensure minimum Q for broad filters
+        max_q: high_config.max_q,
+        ..optimizer.clone()
+    };
+
+    // Apply low-freq correction first, then optimize high-freq on residual
+    let low_resp = response::compute_peq_complex_response(&low_eq_filters, &curve.freq, sample_rate);
+    let curve_with_low_correction = response::apply_complex_response(curve, &low_resp);
+
+    let (high_eq_filters, _) = eq::optimize_channel_eq(
+        &curve_with_low_correction,
+        &high_optimizer,
+        None,
+        sample_rate,
+    )
+    .map_err(|e| AutoeqError::OptimizationFailed {
+        message: format!("High-frequency EQ optimization failed: {}", e),
+    })?;
+
+    Ok((low_eq_filters, high_eq_filters))
 }
 
 /// Process a speaker group with multiple drivers and crossovers

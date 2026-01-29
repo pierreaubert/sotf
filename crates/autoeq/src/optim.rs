@@ -19,7 +19,7 @@ use super::cli::PeqModel;
 use super::constraints::{viol_ceiling_from_spl, viol_min_gain_from_xs, viol_spacing_from_xs};
 use super::loss::{
     DriversLossData, HeadphoneLossData, LossType, SpeakerLossData, drivers_flat_loss, flat_loss,
-    headphone_loss, speaker_score_loss,
+    flat_loss_asymmetric, headphone_loss, speaker_score_loss,
 };
 use super::optim_de::optimize_filters_autoeq;
 use super::optim_mh::optimize_filters_mh;
@@ -465,6 +465,13 @@ pub fn compute_base_fitness(x: &[f64], data: &ObjectiveData) -> f64 {
             let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
             let error = &peq_spl - &data.deviation;
             flat_loss(&data.freqs, &error, data.min_freq, data.max_freq)
+        }
+        LossType::SpeakerFlatAsymmetric => {
+            // Asymmetric loss: peaks penalized 2x more than dips
+            // Use this for room correction where nulls cannot be fixed with EQ
+            let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);
+            let error = &peq_spl - &data.deviation;
+            flat_loss_asymmetric(&data.freqs, &error, data.min_freq, data.max_freq)
         }
         LossType::SpeakerScore => {
             let peq_spl = x2spl(&data.freqs, x, data.srate, data.peq_model);

@@ -41,5 +41,7 @@ pub use read_csv::load_frequency_response;
 pub use read_csv::read_curve_from_csv;
 pub use smooth::smooth_gaussian;
 pub use smooth::smooth_one_over_n_octave;
+pub use smooth::smooth_psychoacoustic;
+pub use smooth::PsychoacousticSmoothingConfig;
 pub use source::*;
 pub use speaker_suggestions::*;

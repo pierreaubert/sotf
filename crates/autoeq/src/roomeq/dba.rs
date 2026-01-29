@@ -1,9 +1,20 @@
 //! Double Bass Array (DBA) optimization
+//!
+//! # Phase Data Requirement
+//!
+//! DBA optimization relies on complex summation to model the interaction between
+//! front and rear subwoofer arrays. For accurate optimization, measurements should
+//! include phase data. Without phase data, the optimizer assumes 0° phase for all
+//! measurements, which may result in suboptimal delay and gain settings.
+//!
+//! The rear array is automatically inverted (180° phase shift) to create the
+//! pressure wave cancellation pattern characteristic of DBA systems.
 
 use crate::Curve;
 use crate::loss::{CrossoverType, DriverMeasurement, DriversLossData};
 use crate::workflow::DriverOptimizationResult;
 use clap::Parser;
+use log::warn;
 use ndarray::Array1;
 use std::error::Error;
 
@@ -20,6 +31,11 @@ use crate::read as load;
 /// # Returns
 /// * Tuple of (DriverOptimizationResult, Combined Curve)
 ///   Result contains 2 entries: Index 0 = Front, Index 1 = Rear
+///
+/// # Note on Phase Data
+/// For accurate DBA optimization, measurements should include phase data.
+/// The optimizer uses complex summation to model constructive/destructive
+/// interference between front and rear arrays.
 pub fn optimize_dba(
     dba_config: &DBAConfig,
     config: &OptimizerConfig,
@@ -145,6 +161,11 @@ pub fn optimize_dba(
 }
 
 /// Sum multiple measurements into a single curve (complex summation)
+///
+/// # Phase Data
+/// This function uses complex summation to properly model interference patterns.
+/// If any measurement is missing phase data, a warning is logged and 0° phase
+/// is assumed for that measurement.
 fn sum_array_response(
     sources: &[super::types::MeasurementSource],
 ) -> Result<Curve, Box<dyn Error>> {
@@ -152,10 +173,27 @@ fn sum_array_response(
         return Err("Empty array".into());
     }
 
-    // Load all
+    // Load all and check for phase data
     let mut curves = Vec::new();
+    let mut missing_phase_count = 0;
+
     for source in sources {
-        curves.push(load::load_source(source)?);
+        let curve = load::load_source(source)?;
+        if curve.phase.is_none() {
+            missing_phase_count += 1;
+        }
+        curves.push(curve);
+    }
+
+    // Warn if phase data is missing
+    if missing_phase_count > 0 {
+        warn!(
+            "DBA array summation: {} of {} measurements are missing phase data. \
+            Assuming 0° phase for these measurements, which may reduce optimization accuracy. \
+            For best results, include phase data in your measurements.",
+            missing_phase_count,
+            sources.len()
+        );
     }
 
     // Reference freq from first

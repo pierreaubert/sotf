@@ -1,7 +1,16 @@
 //! Crossover optimization for multi-driver groups
+//!
+//! # Phase Data Requirement
+//!
+//! Multi-driver crossover optimization uses complex summation to model
+//! interference between drivers at crossover frequencies. For accurate
+//! optimization, measurements should include phase data. Without phase data,
+//! the optimizer assumes 0° phase, which may result in suboptimal crossover
+//! frequencies, gains, and delays.
 
 use crate::Curve;
 use crate::loss::{CrossoverType, DriverMeasurement, DriversLossData};
+use log::warn;
 use std::error::Error;
 
 /// Parse crossover type from string
@@ -37,6 +46,11 @@ use super::types::OptimizerConfig;
 ///
 /// # Returns
 /// * Tuple of (optimal_gains, optimal_delays, optimal_crossover_freqs, combined_curve)
+///
+/// # Note on Phase Data
+/// For accurate crossover optimization, measurements should include phase data.
+/// The optimizer uses complex summation to model interference between drivers
+/// at crossover frequencies.
 #[allow(clippy::type_complexity)]
 pub fn optimize_crossover(
     drivers: Vec<Curve>,
@@ -45,6 +59,18 @@ pub fn optimize_crossover(
     config: &OptimizerConfig,
     fixed_freqs: Option<Vec<f64>>,
 ) -> Result<(Vec<f64>, Vec<f64>, Vec<f64>, Curve), Box<dyn Error>> {
+    // Check for missing phase data and warn
+    let missing_phase_count = drivers.iter().filter(|c| c.phase.is_none()).count();
+    if missing_phase_count > 0 {
+        warn!(
+            "Crossover optimization: {} of {} driver measurements are missing phase data. \
+            This may result in suboptimal crossover frequencies and driver alignment. \
+            For best results, include phase data in your measurements.",
+            missing_phase_count,
+            drivers.len()
+        );
+    }
+
     // Convert Curve to DriverMeasurement
     let driver_measurements: Vec<DriverMeasurement> = drivers
         .into_iter()

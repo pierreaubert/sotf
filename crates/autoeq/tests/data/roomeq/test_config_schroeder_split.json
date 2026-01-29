@@ -1,0 +1,33 @@
+{
+  "version": "1.2.0",
+  "speakers": {
+    "left": "test_speaker_left.csv",
+    "right": "test_speaker_right.csv"
+  },
+  "optimizer": {
+    "algorithm": "autoeq:de",
+    "num_filters": 12,
+    "max_iter": 5000,
+    "min_freq": 20.0,
+    "max_freq": 1000.0,
+    "min_q": 0.5,
+    "max_q": 10.0,
+    "min_db": -15.0,
+    "max_db": 6.0,
+    "loss_type": "flat",
+    "refine": true,
+    "schroeder_split": {
+      "enabled": true,
+      "schroeder_freq": 300,
+      "low_freq_config": {
+        "max_q": 10.0,
+        "min_q": 0.5,
+        "allow_boost": false
+      },
+      "high_freq_config": {
+        "max_q": 1.0,
+        "shelving_only": false
+      }
+    }
+  }
+}

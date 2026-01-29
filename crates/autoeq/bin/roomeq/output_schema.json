@@ -135,7 +135,7 @@
         "plugin_type": {
           "type": "string",
           "description": "Plugin type identifier",
-          "enum": ["gain", "eq", "crossover", "delay", "convolution"]
+          "enum": ["gain", "eq", "crossover", "delay", "convolution", "band_split", "band_merge"]
         },
         "parameters": {
           "description": "Plugin-specific parameters",
@@ -154,6 +154,12 @@
             },
             {
               "$ref": "#/$defs/ConvolutionParameters"
+            },
+            {
+              "$ref": "#/$defs/BandSplitParameters"
+            },
+            {
+              "$ref": "#/$defs/BandMergeParameters"
             }
           ]
         }
@@ -206,6 +212,26 @@
           "then": {
             "properties": {
               "parameters": { "$ref": "#/$defs/ConvolutionParameters" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "plugin_type": { "const": "band_split" } }
+          },
+          "then": {
+            "properties": {
+              "parameters": { "$ref": "#/$defs/BandSplitParameters" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "plugin_type": { "const": "band_merge" } }
+          },
+          "then": {
+            "properties": {
+              "parameters": { "$ref": "#/$defs/BandMergeParameters" }
             }
           }
         }
@@ -313,12 +339,52 @@
     },
     "ConvolutionParameters": {
       "type": "object",
-      "description": "Convolution plugin parameters",
+      "description": "Convolution plugin parameters for FIR filter correction. The WAV file contains the impulse response (FIR coefficients) generated during optimization. For FIR mode, each channel gets a separate WAV file (e.g., 'left_fir.wav', 'right_fir.wav').",
       "required": ["ir_file"],
       "properties": {
         "ir_file": {
           "type": "string",
-          "description": "Path to WAV file containing impulse response"
+          "description": "Path to WAV file containing impulse response (FIR coefficients). Path is relative to the output JSON file location. The WAV file is 32-bit float mono format at the configured sample rate."
+        },
+        "channels": {
+          "type": "array",
+          "description": "Optional: specific channel indices to apply convolution to (used in mixed mode with band splitting). If omitted, applies to all channels.",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "BandSplitParameters": {
+      "type": "object",
+      "description": "Band split plugin parameters for frequency-based mixed mode. Splits audio into low and high frequency bands using a crossover filter.",
+      "required": ["frequency", "type"],
+      "properties": {
+        "frequency": {
+          "type": "number",
+          "description": "Crossover frequency in Hz",
+          "minimum": 20,
+          "maximum": 20000
+        },
+        "type": {
+          "type": "string",
+          "description": "Crossover filter type",
+          "enum": ["LR24", "LR48", "Butterworth12", "Butterworth24"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "BandMergeParameters": {
+      "type": "object",
+      "description": "Band merge plugin parameters. Recombines frequency bands that were split by band_split.",
+      "required": ["bands"],
+      "properties": {
+        "bands": {
+          "type": "integer",
+          "description": "Number of bands to merge",
+          "minimum": 2
         }
       },
       "additionalProperties": false

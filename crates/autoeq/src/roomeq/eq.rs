@@ -38,11 +38,20 @@ pub fn optimize_channel_eq(
         }
     }
     let mean_spl = if count > 0 { sum / count as f64 } else { 0.0 };
-    let normalized_curve = Curve {
+    let mut normalized_curve = Curve {
         freq: curve.freq.clone(),
         spl: &curve.spl - mean_spl,
         phase: curve.phase.clone(),
     };
+
+    // Apply psychoacoustic smoothing if enabled
+    // This uses variable smoothing: fine resolution at low frequencies (preserve room modes)
+    // and coarse resolution at high frequencies (ignore comb filtering)
+    if config.psychoacoustic {
+        log::info!("  Applying psychoacoustic smoothing (1/48 oct < 100 Hz, 1/6 oct > 1 kHz)");
+        let smoothing_config = crate::read::PsychoacousticSmoothingConfig::default();
+        normalized_curve = crate::read::smooth_psychoacoustic(&normalized_curve, &smoothing_config);
+    }
 
     // Parse PEQ model
     let peq_model = PeqModel::from_str(&config.peq_model, true)
@@ -73,9 +82,16 @@ pub fn optimize_channel_eq(
         }
     };
 
-    // Parse loss type
+    // Parse loss type (with asymmetric option for room correction)
     let loss_type = match config.loss_type.as_str() {
-        "flat" => LossType::SpeakerFlat,
+        "flat" => {
+            if config.asymmetric_loss {
+                log::info!("  Using asymmetric loss (peaks penalized 2x more than dips)");
+                LossType::SpeakerFlatAsymmetric
+            } else {
+                LossType::SpeakerFlat
+            }
+        }
         "score" => LossType::SpeakerScore,
         _ => return Err(format!("Unknown loss type: {}", config.loss_type).into()),
     };
@@ -121,8 +137,8 @@ pub fn optimize_channel_eq(
         // Optimization parameters
         population: config.population,
         maxeval: config.max_iter,
-        refine: false,
-        local_algo: "cobyla".to_string(),
+        refine: config.refine,  // Hybrid optimization: DE + local refinement
+        local_algo: config.local_algo.clone(),
 
         // Spacing constraints
         min_spacing_oct: 0.2,

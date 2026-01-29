@@ -424,6 +424,401 @@ impl Default for MixedModeConfig {
     }
 }
 
+// ============================================================================
+// Target Curve Configuration
+// ============================================================================
+
+/// Target curve tilt type for room correction
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum TiltType {
+    /// Flat target (no tilt)
+    #[default]
+    Flat,
+    /// Harman-style tilt (-0.8 dB/octave with bass shelf)
+    Harman,
+    /// Custom tilt with user-specified parameters
+    Custom,
+}
+
+/// Target curve tilt configuration
+///
+/// Applies a frequency-dependent tilt to the target curve instead of flat.
+/// Harman-style tilt (-0.8 dB/octave) is psychoacoustically preferred for in-room listening.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct TargetTiltConfig {
+    /// Tilt type: flat, harman, or custom
+    #[serde(default)]
+    pub tilt_type: TiltType,
+
+    /// Slope in dB per octave (negative = downward tilt towards high frequencies)
+    /// Default: -0.8 for Harman-style tilt
+    #[serde(default = "default_tilt_slope")]
+    pub slope_db_per_octave: f64,
+
+    /// Reference frequency where tilt equals 0 dB (Hz)
+    /// Default: 1000.0 Hz
+    #[serde(default = "default_tilt_reference_freq")]
+    pub reference_freq: f64,
+
+    /// Bass shelf boost in dB (applied below bass_shelf_freq)
+    /// Default: 0.0 (no additional bass boost)
+    #[serde(default)]
+    pub bass_shelf_db: f64,
+
+    /// Bass shelf frequency in Hz
+    /// Default: 200.0 Hz
+    #[serde(default = "default_bass_shelf_freq")]
+    pub bass_shelf_freq: f64,
+}
+
+fn default_tilt_slope() -> f64 {
+    -0.8
+}
+
+fn default_tilt_reference_freq() -> f64 {
+    1000.0
+}
+
+fn default_bass_shelf_freq() -> f64 {
+    200.0
+}
+
+impl Default for TargetTiltConfig {
+    fn default() -> Self {
+        Self {
+            tilt_type: TiltType::Flat,
+            slope_db_per_octave: default_tilt_slope(),
+            reference_freq: default_tilt_reference_freq(),
+            bass_shelf_db: 0.0,
+            bass_shelf_freq: default_bass_shelf_freq(),
+        }
+    }
+}
+
+// ============================================================================
+// Excursion Protection Configuration
+// ============================================================================
+
+/// Highpass filter type for excursion protection
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum HighpassType {
+    /// Linkwitz-Riley (4th order = 24dB/oct)
+    #[default]
+    LinkwitzRiley,
+    /// Butterworth
+    Butterworth,
+}
+
+/// Excursion protection configuration
+///
+/// Detects the speaker's F3 rolloff point and automatically generates a highpass filter
+/// to prevent dangerous over-boost of bass frequencies on bookshelf speakers.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ExcursionProtectionConfig {
+    /// Enable excursion protection
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Auto-detect F3 from measurement
+    #[serde(default = "default_true")]
+    pub auto_detect_f3: bool,
+
+    /// Manual F3 override in Hz (used if auto_detect_f3 is false)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manual_f3_hz: Option<f64>,
+
+    /// Filter order (2 = 12dB/oct, 4 = 24dB/oct)
+    #[serde(default = "default_filter_order")]
+    pub filter_order: usize,
+
+    /// Highpass filter type
+    #[serde(default)]
+    pub filter_type: HighpassType,
+
+    /// Safety margin in octaves below F3 for HPF placement
+    /// Default: 0.25 (HPF placed at F3 * 2^(-0.25))
+    #[serde(default = "default_margin_octaves")]
+    pub margin_octaves: f64,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_filter_order() -> usize {
+    4
+}
+
+fn default_margin_octaves() -> f64 {
+    0.25
+}
+
+impl Default for ExcursionProtectionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            auto_detect_f3: true,
+            manual_f3_hz: None,
+            filter_order: default_filter_order(),
+            filter_type: HighpassType::LinkwitzRiley,
+            margin_octaves: default_margin_octaves(),
+        }
+    }
+}
+
+// ============================================================================
+// Schroeder Split Configuration
+// ============================================================================
+
+/// Low frequency filter configuration for Schroeder split
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct LowFreqFilterConfig {
+    /// Maximum Q factor for low frequency filters (allow high-Q for modes)
+    #[serde(default = "default_low_freq_max_q")]
+    pub max_q: f64,
+
+    /// Minimum Q factor
+    #[serde(default = "default_min_q")]
+    pub min_q: f64,
+
+    /// Allow boost (true) or cuts only (false)
+    /// Default: false (cuts only for low frequencies)
+    #[serde(default)]
+    pub allow_boost: bool,
+}
+
+fn default_low_freq_max_q() -> f64 {
+    10.0
+}
+
+impl Default for LowFreqFilterConfig {
+    fn default() -> Self {
+        Self {
+            max_q: default_low_freq_max_q(),
+            min_q: default_min_q(),
+            allow_boost: false,
+        }
+    }
+}
+
+/// High frequency filter configuration for Schroeder split
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct HighFreqFilterConfig {
+    /// Maximum Q factor for high frequency filters (tone controls only)
+    #[serde(default = "default_high_freq_max_q")]
+    pub max_q: f64,
+
+    /// Use shelving filters only
+    #[serde(default)]
+    pub shelving_only: bool,
+}
+
+fn default_high_freq_max_q() -> f64 {
+    1.0
+}
+
+impl Default for HighFreqFilterConfig {
+    fn default() -> Self {
+        Self {
+            max_q: default_high_freq_max_q(),
+            shelving_only: false,
+        }
+    }
+}
+
+/// Room dimensions for automatic Schroeder frequency calculation
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RoomDimensions {
+    /// Length in meters
+    pub length: f64,
+    /// Width in meters
+    pub width: f64,
+    /// Height in meters
+    pub height: f64,
+}
+
+impl RoomDimensions {
+    /// Calculate Schroeder frequency from room dimensions
+    /// Formula: fs = 2000 * sqrt(RT60 / V) where V = volume
+    /// Simplified: fs ≈ 11885 / sqrt(V) for typical rooms (RT60 ≈ 0.5s)
+    pub fn schroeder_frequency(&self) -> f64 {
+        let volume = self.length * self.width * self.height;
+        // Using simplified formula for typical domestic room (RT60 ≈ 0.5s)
+        11885.0 / volume.sqrt()
+    }
+}
+
+/// Schroeder frequency split configuration
+///
+/// Different Q constraints below and above the Schroeder frequency.
+/// Below Schroeder: high-Q narrow filters to address room modes
+/// Above Schroeder: low-Q broad filters for gentle tone control
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SchroederSplitConfig {
+    /// Enable Schroeder split optimization
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Schroeder frequency in Hz
+    /// Default: 300.0 Hz (typical for small/medium rooms)
+    #[serde(default = "default_schroeder_freq")]
+    pub schroeder_freq: f64,
+
+    /// Room dimensions for auto-calculation (optional)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub room_dimensions: Option<RoomDimensions>,
+
+    /// Low frequency filter configuration (below Schroeder)
+    #[serde(default)]
+    pub low_freq_config: LowFreqFilterConfig,
+
+    /// High frequency filter configuration (above Schroeder)
+    #[serde(default)]
+    pub high_freq_config: HighFreqFilterConfig,
+}
+
+fn default_schroeder_freq() -> f64 {
+    300.0
+}
+
+impl Default for SchroederSplitConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            schroeder_freq: default_schroeder_freq(),
+            room_dimensions: None,
+            low_freq_config: LowFreqFilterConfig::default(),
+            high_freq_config: HighFreqFilterConfig::default(),
+        }
+    }
+}
+
+// ============================================================================
+// Phase Alignment Configuration
+// ============================================================================
+
+/// Phase alignment configuration for subwoofer integration
+///
+/// Optimizes delay and polarity to maximize energy sum in the crossover region
+/// between subwoofer and main speakers.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct PhaseAlignmentConfig {
+    /// Enable phase alignment optimization
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+
+    /// Minimum frequency for optimization (Hz)
+    #[serde(default = "default_phase_min_freq")]
+    pub min_freq: f64,
+
+    /// Maximum frequency for optimization (Hz)
+    #[serde(default = "default_phase_max_freq")]
+    pub max_freq: f64,
+
+    /// Optimize polarity (normal vs inverted)
+    #[serde(default = "default_true")]
+    pub optimize_polarity: bool,
+
+    /// Maximum delay in milliseconds
+    #[serde(default = "default_max_delay_ms")]
+    pub max_delay_ms: f64,
+}
+
+fn default_phase_min_freq() -> f64 {
+    60.0
+}
+
+fn default_phase_max_freq() -> f64 {
+    100.0
+}
+
+fn default_max_delay_ms() -> f64 {
+    30.0
+}
+
+impl Default for PhaseAlignmentConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            min_freq: default_phase_min_freq(),
+            max_freq: default_phase_max_freq(),
+            optimize_polarity: true,
+            max_delay_ms: default_max_delay_ms(),
+        }
+    }
+}
+
+// ============================================================================
+// Multi-Seat Configuration
+// ============================================================================
+
+/// Strategy for multi-seat optimization
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum MultiSeatStrategy {
+    /// Minimize standard deviation across all seats (default)
+    #[default]
+    MinimizeVariance,
+    /// Optimize for primary seat with constraints on others
+    PrimaryWithConstraints,
+    /// Optimize for average response across all seats
+    Average,
+}
+
+/// Multi-seat measurement configuration
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MultiSeatMeasurement {
+    /// Name of this multi-seat configuration
+    pub name: String,
+
+    /// Measurements at each seat position
+    pub seat_measurements: Vec<MeasurementSource>,
+}
+
+/// Multi-seat optimization configuration
+///
+/// Optimizes subwoofer delays and gains to minimize response variance
+/// across multiple listening positions.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MultiSeatConfig {
+    /// Enable multi-seat optimization
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Optimization strategy
+    #[serde(default)]
+    pub strategy: MultiSeatStrategy,
+
+    /// Index of primary seat (0-based, used with PrimaryWithConstraints strategy)
+    #[serde(default)]
+    pub primary_seat: usize,
+
+    /// Maximum allowed deviation at non-primary seats (dB, used with PrimaryWithConstraints)
+    #[serde(default = "default_max_deviation_db")]
+    pub max_deviation_db: f64,
+}
+
+fn default_max_deviation_db() -> f64 {
+    6.0
+}
+
+impl Default for MultiSeatConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            strategy: MultiSeatStrategy::MinimizeVariance,
+            primary_seat: 0,
+            max_deviation_db: default_max_deviation_db(),
+        }
+    }
+}
+
+// ============================================================================
+// Optimizer Configuration
+// ============================================================================
+
 /// Optimizer configuration
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct OptimizerConfig {
@@ -493,6 +888,65 @@ pub struct OptimizerConfig {
     /// When set, the optimizer will produce deterministic results
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seed: Option<u64>,
+
+    /// Whether to run local refinement after global optimization (hybrid optimization)
+    /// When true, runs a two-stage optimization:
+    ///   Stage 1 (Global): DE finds approximate solution
+    ///   Stage 2 (Local): COBYLA fine-tunes the result
+    /// Default: true (recommended for best results)
+    #[serde(default = "default_refine")]
+    pub refine: bool,
+
+    /// Local optimizer algorithm for refinement stage
+    /// Used when `refine` is true. Default: "cobyla"
+    #[serde(default = "default_local_algo")]
+    pub local_algo: String,
+
+    /// Enable psychoacoustic preprocessing
+    /// When true, applies variable smoothing before optimization:
+    /// - 1/48 octave smoothing < 100 Hz (preserve room modes)
+    /// - 1/6 octave smoothing > 1 kHz (ignore comb filtering)
+    /// Default: true (recommended for room correction)
+    #[serde(default = "default_psychoacoustic")]
+    pub psychoacoustic: bool,
+
+    /// Enable asymmetric loss (peaks penalized 2x more than dips)
+    /// When true, the optimizer will prioritize reducing peaks over filling dips,
+    /// which is psychoacoustically correct since nulls cannot be fixed with EQ.
+    /// Default: true (recommended for room correction)
+    #[serde(default = "default_asymmetric_loss")]
+    pub asymmetric_loss: bool,
+
+    // ========================================================================
+    // Scenario B (WITHOUT Subwoofers) Configuration
+    // ========================================================================
+
+    /// Target curve tilt configuration
+    /// Default: flat (no tilt)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_tilt: Option<TargetTiltConfig>,
+
+    /// Excursion protection configuration
+    /// Auto-generates HPF to prevent over-boost on bookshelf speakers
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub excursion_protection: Option<ExcursionProtectionConfig>,
+
+    /// Schroeder frequency split configuration
+    /// Different Q constraints below/above Schroeder frequency
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schroeder_split: Option<SchroederSplitConfig>,
+
+    // ========================================================================
+    // Scenario A (WITH Subwoofers) Configuration
+    // ========================================================================
+
+    /// Phase alignment configuration for subwoofer integration
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase_alignment: Option<PhaseAlignmentConfig>,
+
+    /// Multi-seat optimization configuration
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub multi_seat: Option<MultiSeatConfig>,
 }
 
 // Default values for OptimizerConfig
@@ -544,6 +998,18 @@ fn default_max_iter() -> usize {
 fn default_population() -> usize {
     300
 }
+fn default_refine() -> bool {
+    true // Enable hybrid optimization by default for best results
+}
+fn default_local_algo() -> String {
+    "cobyla".to_string()
+}
+fn default_psychoacoustic() -> bool {
+    true // Enable psychoacoustic smoothing by default
+}
+fn default_asymmetric_loss() -> bool {
+    true // Enable asymmetric loss by default (peaks penalized more than dips)
+}
 
 impl Default for OptimizerConfig {
     fn default() -> Self {
@@ -564,6 +1030,17 @@ impl Default for OptimizerConfig {
             fir: None,
             mixed_config: None,
             seed: None,
+            refine: default_refine(),
+            local_algo: default_local_algo(),
+            psychoacoustic: default_psychoacoustic(),
+            asymmetric_loss: default_asymmetric_loss(),
+            // Scenario B configs
+            target_tilt: None,
+            excursion_protection: None,
+            schroeder_split: None,
+            // Scenario A configs
+            phase_alignment: None,
+            multi_seat: None,
         }
     }
 }

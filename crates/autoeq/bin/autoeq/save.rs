@@ -24,7 +24,9 @@ pub(super) async fn save_peq_to_file(
 
     // Determine filename based on loss type
     let filename = match loss_type {
-        autoeq::LossType::SpeakerFlat | autoeq::LossType::HeadphoneFlat => "iir-autoeq-flat.txt",
+        autoeq::LossType::SpeakerFlat
+        | autoeq::LossType::SpeakerFlatAsymmetric
+        | autoeq::LossType::HeadphoneFlat => "iir-autoeq-flat.txt",
         autoeq::LossType::SpeakerScore | autoeq::LossType::HeadphoneScore => "iir-autoeq-score.txt",
         autoeq::LossType::DriversFlat | autoeq::LossType::MultiSubFlat => {
             // Unreachable: DriversFlat mode uses a separate code path

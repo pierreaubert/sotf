@@ -1,0 +1,26 @@
+{
+  "version": "1.2.0",
+  "speakers": {
+    "left": "test_speaker_left.csv",
+    "right": "test_speaker_right.csv",
+    "sub": "test_woofer.csv"
+  },
+  "optimizer": {
+    "algorithm": "cobyla",
+    "num_filters": 10,
+    "max_iter": 5000,
+    "min_freq": 20.0,
+    "max_freq": 200.0,
+    "min_q": 0.5,
+    "max_q": 10.0,
+    "min_db": -12.0,
+    "max_db": 12.0,
+    "loss_type": "flat",
+    "multi_seat": {
+      "enabled": true,
+      "strategy": "minimize_variance",
+      "primary_seat": 0,
+      "max_deviation_db": 6
+    }
+  }
+}

@@ -25,7 +25,9 @@ pub(super) async fn compute_pre_optimization_metrics(
             // headphone_loss expects deviation from Harman target, not raw curve
             headphone_loss_val = Some(loss::headphone_loss(deviation_curve));
         }
-        autoeq::LossType::SpeakerFlat | autoeq::LossType::SpeakerScore => {
+        autoeq::LossType::SpeakerFlat
+        | autoeq::LossType::SpeakerFlatAsymmetric
+        | autoeq::LossType::SpeakerScore => {
             if use_cea {
                 let metrics = score::compute_cea2034_metrics(
                     &objective_data.freqs,

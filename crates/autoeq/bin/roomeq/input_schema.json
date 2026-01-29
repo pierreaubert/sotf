@@ -108,7 +108,7 @@
     },
     "SpeakerGroup": {
       "type": "object",
-      "description": "Multi-driver speaker group with crossover",
+      "description": "Multi-driver speaker group with crossover. IMPORTANT: For accurate crossover optimization, measurements should include phase data. The optimizer uses complex summation (vector sum) to model interference between drivers at crossover frequencies. Without phase data, the optimizer assumes 0° phase, which may result in suboptimal crossover frequencies and driver alignment.",
       "required": ["name", "measurements"],
       "properties": {
         "name": {
@@ -117,7 +117,7 @@
         },
         "measurements": {
           "type": "array",
-          "description": "Measurements for each driver (ordered from lowest to highest frequency)",
+          "description": "Measurements for each driver (ordered from lowest to highest frequency). Include phase data for accurate crossover optimization.",
           "items": {
             "$ref": "#/$defs/MeasurementSource"
           },
@@ -132,7 +132,7 @@
     },
     "MultiSubGroup": {
       "type": "object",
-      "description": "Multiple subwoofers with gain/delay optimization",
+      "description": "Multiple subwoofers with gain/delay optimization. IMPORTANT: For accurate optimization, measurements MUST include phase data. The optimizer uses complex summation (H_total = H_sub1 + H_sub2 * e^(-jωτ)) to model constructive/destructive interference between subwoofers. Without phase data, the optimizer cannot properly find delay settings that maximize summation at the listening position.",
       "required": ["name", "subwoofers"],
       "properties": {
         "name": {
@@ -141,7 +141,7 @@
         },
         "subwoofers": {
           "type": "array",
-          "description": "Measurements for each subwoofer",
+          "description": "Measurements for each subwoofer. MUST include phase data (e.g., export from REW with phase) for accurate delay optimization.",
           "items": {
             "$ref": "#/$defs/MeasurementSource"
           },
@@ -152,7 +152,7 @@
     },
     "DBAConfig": {
       "type": "object",
-      "description": "Double Bass Array with front and rear arrays",
+      "description": "Double Bass Array with front and rear arrays. IMPORTANT: For accurate DBA optimization, measurements MUST include phase data. The optimizer uses complex summation to model the interference between front and rear arrays. The rear array is automatically phase-inverted (180°) to create the pressure wave cancellation pattern characteristic of DBA systems.",
       "required": ["name", "front", "rear"],
       "properties": {
         "name": {
@@ -161,7 +161,7 @@
         },
         "front": {
           "type": "array",
-          "description": "Measurements for the front array",
+          "description": "Measurements for the front array. Include phase data for accurate optimization.",
           "items": {
             "$ref": "#/$defs/MeasurementSource"
           },
@@ -169,7 +169,7 @@
         },
         "rear": {
           "type": "array",
-          "description": "Measurements for the rear array (will be phase-inverted)",
+          "description": "Measurements for the rear array (will be phase-inverted by adding 180°). Include phase data for accurate optimization.",
           "items": {
             "$ref": "#/$defs/MeasurementSource"
           },
@@ -264,13 +264,13 @@
       "properties": {
         "mode": {
           "type": "string",
-          "description": "Optimization mode",
+          "description": "Optimization mode: 'iir' uses parametric EQ filters (biquads), 'fir' generates FIR impulse response files (WAV), 'mixed' combines both (IIR for high frequencies, FIR for low frequencies by default). For 'fir' and 'mixed' modes, a WAV file is generated per channel (e.g., 'left_fir.wav') and referenced in the output JSON via a 'convolution' plugin.",
           "enum": ["iir", "fir", "mixed"],
           "default": "iir"
         },
         "fir": {
           "$ref": "#/$defs/FirConfig",
-          "description": "FIR configuration (when mode is 'fir' or 'mixed')"
+          "description": "FIR configuration (when mode is 'fir' or 'mixed'). The generated FIR filter is saved as a WAV file and referenced in the output via a convolution plugin."
         },
         "loss_type": {
           "type": "string",
@@ -345,6 +345,47 @@
           "description": "PEQ model type",
           "enum": ["pk", "ls-pk-hs", "free"],
           "default": "pk"
+        },
+        "refine": {
+          "type": "boolean",
+          "description": "Enable hybrid two-stage optimization. Stage 1 (Global): Differential Evolution finds approximate solution. Stage 2 (Local): COBYLA fine-tunes the result for minimal residual error. Recommended for best results.",
+          "default": true
+        },
+        "local_algo": {
+          "type": "string",
+          "description": "Local optimizer algorithm for refinement stage (when refine=true)",
+          "enum": ["cobyla", "bobyqa", "sbplx"],
+          "default": "cobyla"
+        },
+        "psychoacoustic": {
+          "type": "boolean",
+          "description": "Enable psychoacoustic variable smoothing before optimization. Applies 1/48 octave smoothing below 100 Hz (preserves audible room modes) and 1/6 octave smoothing above 1 kHz (ignores inaudible comb filtering). Recommended for room correction.",
+          "default": true
+        },
+        "asymmetric_loss": {
+          "type": "boolean",
+          "description": "Enable asymmetric loss weighting where peaks are penalized 2x more than dips. This is psychoacoustically correct: we can hear and fix peaks with EQ cuts, but nulls/dips cannot be fixed with EQ boosts (boosting into a null just wastes amplifier power). Recommended for room correction.",
+          "default": true
+        },
+        "target_tilt": {
+          "$ref": "#/$defs/TargetTiltConfig",
+          "description": "Target curve tilt configuration for Harman-style room curves"
+        },
+        "excursion_protection": {
+          "$ref": "#/$defs/ExcursionProtectionConfig",
+          "description": "Excursion protection configuration for bookshelf speakers"
+        },
+        "schroeder_split": {
+          "$ref": "#/$defs/SchroederSplitConfig",
+          "description": "Schroeder frequency split for different Q constraints above/below transition frequency"
+        },
+        "phase_alignment": {
+          "$ref": "#/$defs/PhaseAlignmentConfig",
+          "description": "Phase alignment configuration for subwoofer integration"
+        },
+        "multi_seat": {
+          "$ref": "#/$defs/MultiSeatConfig",
+          "description": "Multi-seat variance optimization configuration"
         }
       },
       "additionalProperties": false
@@ -377,6 +418,260 @@
           "minimum": 0.0,
           "maximum": 2.0,
           "default": 0.167
+        }
+      },
+      "additionalProperties": false
+    },
+    "TargetTiltConfig": {
+      "type": "object",
+      "description": "Target curve tilt configuration. Applies a frequency-dependent tilt to the target curve instead of flat. Harman-style tilt (-0.8 dB/octave) is psychoacoustically preferred for in-room listening.",
+      "properties": {
+        "tilt_type": {
+          "type": "string",
+          "description": "Tilt type: 'flat' (no tilt), 'harman' (-0.8 dB/octave), or 'custom' (user-specified)",
+          "enum": ["flat", "harman", "custom"],
+          "default": "flat"
+        },
+        "slope_db_per_octave": {
+          "type": "number",
+          "description": "Slope in dB per octave (negative = downward tilt towards high frequencies). Used when tilt_type is 'custom'.",
+          "minimum": -3.0,
+          "maximum": 3.0,
+          "default": -0.8
+        },
+        "reference_freq": {
+          "type": "number",
+          "description": "Reference frequency where tilt equals 0 dB (Hz)",
+          "minimum": 100,
+          "maximum": 10000,
+          "default": 1000
+        },
+        "bass_shelf_db": {
+          "type": "number",
+          "description": "Bass shelf boost in dB (applied below bass_shelf_freq)",
+          "minimum": -6.0,
+          "maximum": 12.0,
+          "default": 0.0
+        },
+        "bass_shelf_freq": {
+          "type": "number",
+          "description": "Bass shelf frequency in Hz",
+          "minimum": 50,
+          "maximum": 500,
+          "default": 200
+        }
+      },
+      "additionalProperties": false
+    },
+    "ExcursionProtectionConfig": {
+      "type": "object",
+      "description": "Excursion protection configuration. Detects the speaker's F3 rolloff point and generates a highpass filter to prevent dangerous over-boost of bass frequencies on bookshelf speakers.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable excursion protection",
+          "default": false
+        },
+        "auto_detect_f3": {
+          "type": "boolean",
+          "description": "Auto-detect F3 from measurement",
+          "default": true
+        },
+        "manual_f3_hz": {
+          "type": "number",
+          "description": "Manual F3 override in Hz (used if auto_detect_f3 is false)",
+          "minimum": 20,
+          "maximum": 200
+        },
+        "filter_order": {
+          "type": "integer",
+          "description": "Filter order (2 = 12dB/oct, 4 = 24dB/oct)",
+          "enum": [2, 4, 6, 8],
+          "default": 4
+        },
+        "filter_type": {
+          "type": "string",
+          "description": "Highpass filter type",
+          "enum": ["linkwitzriley", "butterworth"],
+          "default": "linkwitzriley"
+        },
+        "margin_octaves": {
+          "type": "number",
+          "description": "Safety margin in octaves below F3 for HPF placement. HPF is placed at F3 * 2^(-margin_octaves)",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "default": 0.25
+        }
+      },
+      "additionalProperties": false
+    },
+    "SchroederSplitConfig": {
+      "type": "object",
+      "description": "Schroeder frequency split configuration. Different Q constraints below and above the Schroeder frequency. Below: high-Q narrow filters to address room modes. Above: low-Q broad filters for gentle tone control.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable Schroeder split optimization",
+          "default": false
+        },
+        "schroeder_freq": {
+          "type": "number",
+          "description": "Schroeder frequency in Hz (typical: 200-500 Hz for domestic rooms)",
+          "minimum": 100,
+          "maximum": 1000,
+          "default": 300
+        },
+        "room_dimensions": {
+          "$ref": "#/$defs/RoomDimensions",
+          "description": "Room dimensions for automatic Schroeder frequency calculation (optional)"
+        },
+        "low_freq_config": {
+          "$ref": "#/$defs/LowFreqFilterConfig",
+          "description": "Low frequency filter configuration (below Schroeder)"
+        },
+        "high_freq_config": {
+          "$ref": "#/$defs/HighFreqFilterConfig",
+          "description": "High frequency filter configuration (above Schroeder)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "RoomDimensions": {
+      "type": "object",
+      "description": "Room dimensions for Schroeder frequency calculation",
+      "required": ["length", "width", "height"],
+      "properties": {
+        "length": {
+          "type": "number",
+          "description": "Room length in meters",
+          "minimum": 1,
+          "maximum": 50
+        },
+        "width": {
+          "type": "number",
+          "description": "Room width in meters",
+          "minimum": 1,
+          "maximum": 50
+        },
+        "height": {
+          "type": "number",
+          "description": "Room height in meters",
+          "minimum": 1,
+          "maximum": 10
+        }
+      },
+      "additionalProperties": false
+    },
+    "LowFreqFilterConfig": {
+      "type": "object",
+      "description": "Low frequency filter configuration for Schroeder split (below Schroeder frequency)",
+      "properties": {
+        "max_q": {
+          "type": "number",
+          "description": "Maximum Q factor for low frequency filters (high-Q for mode correction)",
+          "minimum": 0.5,
+          "maximum": 20,
+          "default": 10.0
+        },
+        "min_q": {
+          "type": "number",
+          "description": "Minimum Q factor",
+          "minimum": 0.1,
+          "maximum": 5,
+          "default": 0.5
+        },
+        "allow_boost": {
+          "type": "boolean",
+          "description": "Allow boost (true) or cuts only (false). Cuts-only is recommended for room modes.",
+          "default": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "HighFreqFilterConfig": {
+      "type": "object",
+      "description": "High frequency filter configuration for Schroeder split (above Schroeder frequency)",
+      "properties": {
+        "max_q": {
+          "type": "number",
+          "description": "Maximum Q factor for high frequency filters (low-Q for tone control)",
+          "minimum": 0.3,
+          "maximum": 5,
+          "default": 1.0
+        },
+        "shelving_only": {
+          "type": "boolean",
+          "description": "Use shelving filters only (no parametric peaks)",
+          "default": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "PhaseAlignmentConfig": {
+      "type": "object",
+      "description": "Phase alignment configuration for subwoofer integration. Optimizes delay and polarity to maximize energy sum in the crossover region between subwoofer and main speakers.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable phase alignment optimization",
+          "default": true
+        },
+        "min_freq": {
+          "type": "number",
+          "description": "Minimum frequency for optimization (Hz)",
+          "minimum": 20,
+          "maximum": 200,
+          "default": 60
+        },
+        "max_freq": {
+          "type": "number",
+          "description": "Maximum frequency for optimization (Hz)",
+          "minimum": 50,
+          "maximum": 500,
+          "default": 100
+        },
+        "optimize_polarity": {
+          "type": "boolean",
+          "description": "Optimize polarity (normal vs inverted)",
+          "default": true
+        },
+        "max_delay_ms": {
+          "type": "number",
+          "description": "Maximum delay in milliseconds",
+          "minimum": 0,
+          "maximum": 50,
+          "default": 30
+        }
+      },
+      "additionalProperties": false
+    },
+    "MultiSeatConfig": {
+      "type": "object",
+      "description": "Multi-seat optimization configuration. Optimizes subwoofer delays and gains to minimize response variance across multiple listening positions.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable multi-seat optimization",
+          "default": false
+        },
+        "strategy": {
+          "type": "string",
+          "description": "Optimization strategy",
+          "enum": ["minimize_variance", "primary_with_constraints", "average"],
+          "default": "minimize_variance"
+        },
+        "primary_seat": {
+          "type": "integer",
+          "description": "Index of primary seat (0-based, used with primary_with_constraints strategy)",
+          "minimum": 0,
+          "default": 0
+        },
+        "max_deviation_db": {
+          "type": "number",
+          "description": "Maximum allowed deviation at non-primary seats (dB, used with primary_with_constraints)",
+          "minimum": 0,
+          "maximum": 20,
+          "default": 6
         }
       },
       "additionalProperties": false

@@ -76,3 +76,14 @@ mod time_align;
 mod weighted_loss;
 
 pub use time_align::{find_arrival_time, calculate_alignment_delays, ArrivalTimeResult};
+
+// Advanced room correction features (Scenario A & B)
+pub mod target_tilt;
+pub mod excursion;
+pub mod phase_alignment;
+pub mod multiseat;
+
+pub use target_tilt::{build_target_curve_with_tilt, build_harman_target_curve, build_harman_target_curve_with_bass_boost};
+pub use excursion::{detect_f3, generate_excursion_protection, ExcursionProtectionResult, F3DetectionResult};
+pub use phase_alignment::{optimize_phase_alignment, optimize_phase_alignment_batch, PhaseAlignmentResult};
+pub use multiseat::{optimize_multiseat, MultiSeatMeasurements, MultiSeatOptimizationResult};

@@ -35,6 +35,9 @@ pub mod phase_aware;
 pub enum LossType {
     /// Flat loss function (minimize deviation from target curve)
     SpeakerFlat,
+    /// Flat loss with asymmetric weighting (peaks penalized 2x more than dips)
+    /// Use this for room correction where nulls cannot be fixed with EQ
+    SpeakerFlatAsymmetric,
     /// Harmann/Olive Score-based loss function (maximize preference score)
     SpeakerScore,
     /// Flat loss function (minimize deviation from target curve)
@@ -358,6 +361,127 @@ fn weighted_mse(freqs: &Array1<f64>, error: &Array1<f64>, min_freq: f64, max_fre
         0.0
     };
     err1 + err2 / 3.0
+}
+
+/// Configuration for asymmetric loss weighting
+///
+/// Peaks (positive deviations from target) should be penalized more than dips
+/// because:
+/// - We can hear peaks clearly and fix them with EQ cuts
+/// - Dips/nulls are often caused by acoustic cancellation and cannot be fixed
+///   with EQ boosts (boosting into a null just wastes amplifier power)
+#[derive(Debug, Clone, Copy)]
+pub struct AsymmetricLossConfig {
+    /// Weight for positive errors (peaks) - default: 2.0
+    pub peak_weight: f64,
+    /// Weight for negative errors (dips) - default: 1.0
+    pub dip_weight: f64,
+}
+
+impl Default for AsymmetricLossConfig {
+    fn default() -> Self {
+        Self {
+            peak_weight: 2.0, // Penalize peaks 2x more than dips
+            dip_weight: 1.0,
+        }
+    }
+}
+
+/// Compute asymmetric weighted mean squared error
+///
+/// This loss function penalizes peaks (positive errors) more heavily than dips
+/// (negative errors), which aligns with psychoacoustic principles:
+/// - Peaks are audible and can be corrected with EQ cuts
+/// - Dips/nulls cannot be effectively corrected with EQ boosts
+///
+/// # Arguments
+/// * `freqs` - Frequency points in Hz
+/// * `error` - Error values at each frequency point (positive = peak, negative = dip)
+/// * `min_freq` - Minimum frequency in Hz (inclusive)
+/// * `max_freq` - Maximum frequency in Hz (inclusive)
+/// * `config` - Asymmetric weighting configuration
+///
+/// # Returns
+/// * Asymmetrically weighted error value
+///
+/// # Details
+/// For each error value:
+/// - If error > 0 (peak/overshoot): weighted by `peak_weight`
+/// - If error < 0 (dip/undershoot): weighted by `dip_weight`
+///
+/// Default config uses peak_weight=2.0, dip_weight=1.0 (peaks penalized 2x more)
+pub fn weighted_mse_asymmetric(
+    freqs: &Array1<f64>,
+    error: &Array1<f64>,
+    min_freq: f64,
+    max_freq: f64,
+    config: &AsymmetricLossConfig,
+) -> f64 {
+    // Create masks for frequency bands
+    let bass_band = freqs.mapv(|f| f < 3000.0 && f >= min_freq && f <= max_freq);
+    let treble_band = freqs.mapv(|f| f >= 3000.0 && f >= min_freq && f <= max_freq);
+
+    // Count points in each band
+    let n1: usize = bass_band.iter().filter(|&&b| b).count();
+    let n2: usize = treble_band.iter().filter(|&&b| b).count();
+
+    if n1 == 0 && n2 == 0 {
+        return 0.0;
+    }
+
+    // Compute asymmetrically weighted squared errors
+    // Peak (e > 0): weight * e²
+    // Dip (e < 0): weight * e²
+    let weighted_squared_errors = error.mapv(|e| {
+        let weight = if e > 0.0 {
+            config.peak_weight
+        } else {
+            config.dip_weight
+        };
+        weight * e * e
+    });
+
+    let ss1: f64 = Zip::from(&bass_band)
+        .and(&weighted_squared_errors)
+        .fold(0.0, |acc, &mask, &err| if mask { acc + err } else { acc });
+
+    let ss2: f64 = Zip::from(&treble_band)
+        .and(&weighted_squared_errors)
+        .fold(0.0, |acc, &mask, &err| if mask { acc + err } else { acc });
+
+    let err1 = if n1 > 0 {
+        (ss1 / n1 as f64).sqrt()
+    } else {
+        0.0
+    };
+    let err2 = if n2 > 0 {
+        (ss2 / n2 as f64).sqrt()
+    } else {
+        0.0
+    };
+    err1 + err2 / 3.0
+}
+
+/// Compute flat loss with asymmetric weighting (peaks penalized more than dips)
+///
+/// This is the asymmetric version of `flat_loss()`. Use this when you want the
+/// optimizer to prioritize reducing peaks over filling dips.
+///
+/// # Arguments
+/// * `freqs` - Frequency points in Hz
+/// * `error` - Error values (positive = peak, negative = dip)
+/// * `min_freq` - Minimum frequency in Hz
+/// * `max_freq` - Maximum frequency in Hz
+///
+/// # Returns
+/// * Loss value with peaks penalized 2x more than dips
+pub fn flat_loss_asymmetric(
+    freqs: &Array1<f64>,
+    error: &Array1<f64>,
+    min_freq: f64,
+    max_freq: f64,
+) -> f64 {
+    weighted_mse_asymmetric(freqs, error, min_freq, max_freq, &AsymmetricLossConfig::default())
 }
 
 /// Compute the slope (per octave) using linear regression of y against log2(f).

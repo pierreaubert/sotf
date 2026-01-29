@@ -9,9 +9,6 @@ use std::error::Error;
 
 use super::types::{OptimizerConfig, TargetCurveConfig};
 
-// Re-export window types and functions from math-iir-fir (used in tests)
-pub use math_audio_iir_fir::{generate_window, WindowType};
-
 // Re-export FirPhase from our fir module (which re-exports from math-iir-fir)
 pub use crate::fir::FirPhase;
 
@@ -109,6 +106,7 @@ pub fn generate_fir_correction(
 }
 
 #[cfg(test)]
+pub use math_audio_iir_fir::{generate_window, WindowType};
 mod tests {
     use super::*;
     use crate::roomeq::types::FirConfig;

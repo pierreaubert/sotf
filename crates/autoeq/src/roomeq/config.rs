@@ -253,6 +253,46 @@ fn validate_optimizer_config(opt: &OptimizerConfig, result: &mut ValidationResul
                 mixed_config.fir_band
             ));
         }
+
+        // Validate that each band (FIR and IIR) has a valid frequency range
+        let fir_uses_low = mixed_config.fir_band.eq_ignore_ascii_case("low");
+        let crossover = mixed_config.crossover_freq;
+
+        if fir_uses_low {
+            // FIR handles: min_freq to crossover_freq
+            // IIR handles: crossover_freq to max_freq
+            if crossover <= opt.min_freq {
+                result.add_error(format!(
+                    "In mixed mode with fir_band='low', crossover_freq ({}) must be greater than min_freq ({}) \
+                    to give the FIR band a valid range",
+                    crossover, opt.min_freq
+                ));
+            }
+            if crossover >= opt.max_freq {
+                result.add_error(format!(
+                    "In mixed mode with fir_band='low', crossover_freq ({}) must be less than max_freq ({}) \
+                    to give the IIR band a valid range",
+                    crossover, opt.max_freq
+                ));
+            }
+        } else {
+            // FIR handles: crossover_freq to max_freq
+            // IIR handles: min_freq to crossover_freq
+            if crossover <= opt.min_freq {
+                result.add_error(format!(
+                    "In mixed mode with fir_band='high', crossover_freq ({}) must be greater than min_freq ({}) \
+                    to give the IIR band a valid range",
+                    crossover, opt.min_freq
+                ));
+            }
+            if crossover >= opt.max_freq {
+                result.add_error(format!(
+                    "In mixed mode with fir_band='high', crossover_freq ({}) must be less than max_freq ({}) \
+                    to give the FIR band a valid range",
+                    crossover, opt.max_freq
+                ));
+            }
+        }
     }
 }
 

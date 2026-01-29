@@ -1,0 +1,47 @@
+{
+  "version": "1.2.0",
+  "description": "Scenario A: Full-range system WITH subwoofers - Phase alignment + multi-seat variance",
+  "speakers": {
+    "left": "test_speaker_left.csv",
+    "right": "test_speaker_right.csv",
+    "sub": "test_woofer.csv"
+  },
+  "optimizer": {
+    "algorithm": "autoeq:de",
+    "num_filters": 10,
+    "max_iter": 10000,
+    "min_freq": 20.0,
+    "max_freq": 20000.0,
+    "min_q": 0.5,
+    "max_q": 10.0,
+    "min_db": -12.0,
+    "max_db": 12.0,
+    "loss_type": "flat",
+    "refine": true,
+    "psychoacoustic": true,
+    "asymmetric_loss": true,
+    "target_tilt": {
+      "tilt_type": "harman",
+      "bass_shelf_db": 2
+    },
+    "phase_alignment": {
+      "enabled": true,
+      "min_freq": 60,
+      "max_freq": 100,
+      "optimize_polarity": true,
+      "max_delay_ms": 30
+    },
+    "multi_seat": {
+      "enabled": false,
+      "strategy": "minimize_variance"
+    }
+  },
+  "group_delay": [
+    {
+      "subwoofer": "sub",
+      "speakers": ["left", "right"],
+      "min_freq": 30.0,
+      "max_freq": 120.0
+    }
+  ]
+}

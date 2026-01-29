@@ -1,0 +1,44 @@
+{
+  "version": "1.2.0",
+  "description": "Scenario B: Bookshelf speakers WITHOUT subwoofers - Schroeder split + excursion protection + target tilt",
+  "speakers": {
+    "left": "test_speaker_left.csv",
+    "right": "test_speaker_right.csv"
+  },
+  "optimizer": {
+    "algorithm": "autoeq:de",
+    "num_filters": 12,
+    "max_iter": 10000,
+    "min_freq": 20.0,
+    "max_freq": 20000.0,
+    "min_q": 0.5,
+    "max_q": 10.0,
+    "min_db": -15.0,
+    "max_db": 6.0,
+    "loss_type": "flat",
+    "refine": true,
+    "psychoacoustic": true,
+    "asymmetric_loss": true,
+    "target_tilt": {
+      "tilt_type": "harman"
+    },
+    "excursion_protection": {
+      "enabled": true,
+      "auto_detect_f3": true,
+      "filter_order": 4,
+      "filter_type": "linkwitzriley",
+      "margin_octaves": 0.25
+    },
+    "schroeder_split": {
+      "enabled": true,
+      "schroeder_freq": 300,
+      "low_freq_config": {
+        "max_q": 10,
+        "allow_boost": false
+      },
+      "high_freq_config": {
+        "max_q": 1.0
+      }
+    }
+  }
+}
