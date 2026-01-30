@@ -93,6 +93,8 @@ fn plugin_color(plugin_type: &PluginType, theme: &crate::theme::Theme) -> Rgba {
         PluginType::Denoiser => theme.plugin_colors.eq,    // Reuse eq color for denoiser
         PluginType::Pnd => theme.plugin_colors.eq,         // Reuse eq color for pnd
         PluginType::ABCompare => theme.plugin_colors.compressor, // A/B Compare - use compressor color
+        PluginType::BandSplit => theme.plugin_colors.upmixer, // Reuse upmixer color for band split
+        PluginType::BandMerge => theme.plugin_colors.upmixer, // Reuse upmixer color for band merge
     }
 }
 
@@ -119,6 +121,8 @@ fn plugin_icon(plugin_type: &PluginType) -> &'static str {
         PluginType::Denoiser => "◌",
         PluginType::Pnd => "♪",
         PluginType::ABCompare => "⇄", // A/B Compare - bidirectional arrow
+        PluginType::BandSplit => "⊥", // Split - T-junction symbol
+        PluginType::BandMerge => "⊤", // Merge - inverted T-junction
     }
 }
 
@@ -145,6 +149,8 @@ fn short_name(plugin_type: &PluginType) -> &'static str {
         PluginType::Denoiser => "Denoiser",
         PluginType::Pnd => "PND",
         PluginType::ABCompare => "A/B Comp",
+        PluginType::BandSplit => "Split",
+        PluginType::BandMerge => "Merge",
     }
 }
 

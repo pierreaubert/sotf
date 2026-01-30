@@ -3164,6 +3164,17 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             ),
         ],
         PluginSettings::FletcherMunson { .. } => vec![],
+        PluginSettings::BandSplit {
+            frequency,
+            crossover_type,
+            ..
+        } => vec![
+            ("Frequency".to_string(), format!("{:.1} Hz", frequency)),
+            ("Type".to_string(), crossover_type.clone()),
+        ],
+        PluginSettings::BandMerge { bands, .. } => {
+            vec![("Bands".to_string(), format!("{}", bands))]
+        }
     }
 }
 

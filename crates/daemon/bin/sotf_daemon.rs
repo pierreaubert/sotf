@@ -438,7 +438,14 @@ impl AudioDaemon {
         // Ensure socket directory exists with secure permissions
         ensure_secure_socket_dir(&socket_path)?;
 
-        // Remove stale socket if exists
+        // Check if another instance is already running
+        if socket_path.exists() {
+            if let Ok(_stream) = UnixStream::connect(&socket_path) {
+                return Err("Another daemon instance is already running".into());
+            }
+            // Socket exists but no one is listening - stale socket, safe to remove
+        }
+
         let _ = std::fs::remove_file(&socket_path);
 
         let listener = UnixListener::bind(&socket_path)?;

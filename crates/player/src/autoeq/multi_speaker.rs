@@ -300,6 +300,15 @@ pub fn run_multi_speaker_optimization(
             fir: None,
             seed: None,
             mixed_config: None,
+            refine: true,
+            local_algo: "cobyla".to_string(),
+            psychoacoustic: true,
+            asymmetric_loss: true,
+            target_tilt: None,
+            excursion_protection: None,
+            schroeder_split: None,
+            phase_alignment: None,
+            multi_seat: None,
         },
         recording_config: None,
     };
@@ -437,6 +446,15 @@ pub fn optimizer_config_from_args(args: &autoeq::Args) -> OptimizerConfig {
         fir: None,
         seed: None,
         mixed_config: None,
+        refine: true,
+        local_algo: "cobyla".to_string(),
+        psychoacoustic: true,
+        asymmetric_loss: true,
+        target_tilt: None,
+        excursion_protection: None,
+        schroeder_split: None,
+        phase_alignment: None,
+        multi_seat: None,
     }
 }
 

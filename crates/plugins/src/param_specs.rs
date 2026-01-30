@@ -704,3 +704,28 @@ pub mod multiband_expander {
     pub const BAND_SOLO_DEFAULT: bool = false;
     pub const BAND_BYPASS_DEFAULT: bool = false;
 }
+
+// ============================================================================
+// Band Split Plugin
+// ============================================================================
+
+pub mod band_split {
+    /// Crossover frequency in Hz
+    pub const FREQUENCY_DEFAULT: f64 = 300.0;
+    pub const FREQUENCY_MIN: f64 = 20.0;
+    pub const FREQUENCY_MAX: f64 = 20000.0;
+
+    /// Crossover type: "LR24" (24 dB/oct) or "LR48" (48 dB/oct)
+    pub const CROSSOVER_TYPE_DEFAULT: &str = "LR24";
+}
+
+// ============================================================================
+// Band Merge Plugin
+// ============================================================================
+
+pub mod band_merge {
+    /// Number of bands to merge
+    pub const BANDS_DEFAULT: usize = 2;
+    pub const BANDS_MIN: usize = 2;
+    pub const BANDS_MAX: usize = 8;
+}

@@ -2174,6 +2174,33 @@ impl App {
                     // FletcherMunson parameters are not yet user-editable in TUI
                     false
                 }
+                PluginSettings::BandSplit {
+                    frequency,
+                    crossover_type,
+                    ..
+                } => match param_idx {
+                    0 => {
+                        *frequency = (*frequency + delta * 10.0).clamp(20.0, 20000.0);
+                        true
+                    }
+                    1 => {
+                        // Toggle between LR24 and LR48
+                        *crossover_type = if crossover_type == "LR24" {
+                            "LR48".to_string()
+                        } else {
+                            "LR24".to_string()
+                        };
+                        true
+                    }
+                    _ => false,
+                }
+                PluginSettings::BandMerge { bands, .. } => match param_idx {
+                    0 => {
+                        *bands = ((*bands as i32) + delta as i32).clamp(2, 8) as usize;
+                        true
+                    }
+                    _ => false,
+                }
             }
         } else {
             false
@@ -3400,6 +3427,8 @@ fn get_param_count(settings: &sotf_audio_player::PluginSettings) -> usize {
         PluginSettings::Pnd { .. } => 3, // correction_strength, analysis_window_ms, drift_smoothing
         PluginSettings::ABCompare { .. } => 11, // mix, mix_mode, selected_path, bypass, auto_gain_enabled, loudness_type, max_auto_gain_db, gain_smoothing_ms, mix_transition_ms, path_a, path_b
         PluginSettings::FletcherMunson { .. } => 0, // Not yet user-editable in TUI
+        PluginSettings::BandSplit { .. } => 2,     // frequency, crossover_type
+        PluginSettings::BandMerge { .. } => 1,     // bands
     }
 }
 

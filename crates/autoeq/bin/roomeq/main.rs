@@ -50,6 +50,10 @@ struct Args {
     /// Dump JSON schema for the output format
     #[arg(long)]
     schema: bool,
+
+    /// Path to optimizer config JSON file (overrides optimizer section from main config)
+    #[arg(long)]
+    optim_config: Option<PathBuf>,
 }
 
 fn main() -> Result<()> {
@@ -76,7 +80,7 @@ fn main() -> Result<()> {
         .output
         .ok_or_else(|| anyhow!("Output file is required"))?;
 
-    run(args.sample_rate, config_path, output_path)
+    run(args.sample_rate, config_path, output_path, args.optim_config)
 }
 
 /// Progress callback that logs to stderr
@@ -100,7 +104,12 @@ fn create_progress_callback() -> RoomOptimizationCallback {
     })
 }
 
-fn run(sample_rate: f64, config_path: PathBuf, output_path: PathBuf) -> Result<()> {
+fn run(
+    sample_rate: f64,
+    config_path: PathBuf,
+    output_path: PathBuf,
+    optim_config_path: Option<PathBuf>,
+) -> Result<()> {
     // Load room configuration
     info!("Loading room configuration from {:?}", config_path);
 
@@ -113,6 +122,37 @@ fn run(sample_rate: f64, config_path: PathBuf, output_path: PathBuf) -> Result<(
     // Resolve relative paths in the config relative to the config file's directory
     if let Some(config_dir) = config_path.parent() {
         room_config.resolve_paths(config_dir);
+    }
+
+    // Override optimizer config if provided
+    if let Some(optim_path) = optim_config_path {
+        info!("Loading optimizer config override from {:?}", optim_path);
+
+        let optim_json = std::fs::read_to_string(&optim_path)
+            .with_context(|| format!("Failed to read optim config file: {:?}", optim_path))?;
+
+        // Parse as JSON Value first to merge with existing config
+        let optim_override: serde_json::Value = serde_json::from_str(&optim_json)
+            .with_context(|| "Failed to parse optimizer config JSON")?;
+
+        // Serialize current optimizer config to JSON Value
+        let mut current_optim = serde_json::to_value(&room_config.optimizer)
+            .with_context(|| "Failed to serialize current optimizer config")?;
+
+        // Merge: override values from optim_config onto current config
+        if let (Some(current_obj), Some(override_obj)) =
+            (current_optim.as_object_mut(), optim_override.as_object())
+        {
+            for (key, value) in override_obj {
+                current_obj.insert(key.clone(), value.clone());
+            }
+        }
+
+        // Deserialize back to OptimizerConfig
+        room_config.optimizer = serde_json::from_value(current_optim)
+            .with_context(|| "Failed to parse merged optimizer config")?;
+
+        info!("Optimizer config overridden successfully");
     }
 
     info!("Found {} speakers", room_config.speakers.len());

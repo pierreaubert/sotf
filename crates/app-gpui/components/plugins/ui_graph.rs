@@ -511,6 +511,7 @@ fn plugin_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
         PluginType::Denoiser => theme.info,
         PluginType::Pnd => theme.info,
         PluginType::ABCompare => theme.warning, // A/B Compare - use warning color
+        PluginType::BandSplit | PluginType::BandMerge => theme.accent, // Band processing - use accent
     }
 }
 
@@ -544,6 +545,10 @@ fn plugin_channel_counts(plugin_type: &PluginType) -> (usize, usize) {
         PluginType::Matrix => (2, 2),
         // A/B Compare: stereo in/out
         PluginType::ABCompare => (2, 2),
+        // Band Split: 2 in, 4 out (2 bands x 2 channels)
+        PluginType::BandSplit => (2, 4),
+        // Band Merge: 4 in, 2 out (2 bands x 2 channels merged back)
+        PluginType::BandMerge => (4, 2),
     }
 }
 

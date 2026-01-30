@@ -29,6 +29,8 @@ pub enum PluginType {
     Denoiser,
     Pnd,
     ABCompare,
+    BandSplit,
+    BandMerge,
 }
 
 impl PluginType {
@@ -55,6 +57,8 @@ impl PluginType {
             Self::Denoiser => "Denoiser",
             Self::Pnd => "PND Varispeed",
             Self::ABCompare => "A/B Compare",
+            Self::BandSplit => "Band Split",
+            Self::BandMerge => "Band Merge",
         }
     }
 
@@ -81,6 +85,8 @@ impl PluginType {
             Self::Denoiser => "Wiener filter denoiser with MCRA noise estimation",
             Self::Pnd => "Polyphonic note detection and varispeed correction",
             Self::ABCompare => "A/B comparison with auto-gain loudness matching",
+            Self::BandSplit => "Split audio into low/high frequency bands",
+            Self::BandMerge => "Merge frequency bands back together",
         }
     }
 
@@ -107,6 +113,8 @@ impl PluginType {
             Self::Denoiser,
             Self::Pnd,
             Self::ABCompare,
+            Self::BandSplit,
+            Self::BandMerge,
         ]
     }
 
@@ -738,6 +746,24 @@ fn default_ab_path_config() -> String {
     r#"{"type":"None"}"#.to_string()
 }
 
+// Band Split defaults
+use sotf_plugins::param_specs::band_split as band_split_specs;
+
+fn default_band_split_frequency() -> f64 {
+    band_split_specs::FREQUENCY_DEFAULT
+}
+
+fn default_band_split_crossover_type() -> String {
+    band_split_specs::CROSSOVER_TYPE_DEFAULT.to_string()
+}
+
+// Band Merge defaults
+use sotf_plugins::param_specs::band_merge as band_merge_specs;
+
+fn default_band_merge_bands() -> usize {
+    band_merge_specs::BANDS_DEFAULT
+}
+
 fn default_channels() -> usize {
     2
 }
@@ -1154,6 +1180,25 @@ pub enum PluginSettings {
         #[serde(default = "default_ab_path_config")]
         path_b_config: String,
     },
+    BandSplit {
+        /// Number of input channels
+        #[serde(default = "default_channels")]
+        channels: usize,
+        /// Crossover frequency in Hz
+        #[serde(default = "default_band_split_frequency")]
+        frequency: f64,
+        /// Crossover type: "LR24" or "LR48"
+        #[serde(default = "default_band_split_crossover_type")]
+        crossover_type: String,
+    },
+    BandMerge {
+        /// Number of output channels
+        #[serde(default = "default_channels")]
+        channels: usize,
+        /// Number of bands to merge
+        #[serde(default = "default_band_merge_bands")]
+        bands: usize,
+    },
 }
 
 impl PluginSettings {
@@ -1180,6 +1225,8 @@ impl PluginSettings {
             Self::Denoiser { .. } => PluginType::Denoiser,
             Self::Pnd { .. } => PluginType::Pnd,
             Self::ABCompare { .. } => PluginType::ABCompare,
+            Self::BandSplit { .. } => PluginType::BandSplit,
+            Self::BandMerge { .. } => PluginType::BandMerge,
         }
     }
 
@@ -1737,6 +1784,25 @@ impl PluginSettings {
                     "path_b_config": path_b_config,
                 }),
             ),
+            Self::BandSplit {
+                channels,
+                frequency,
+                crossover_type,
+            } => PluginConfig::new(
+                "band_split",
+                json!({
+                    "channels": channels,
+                    "frequency": frequency,
+                    "type": crossover_type,
+                }),
+            ),
+            Self::BandMerge { channels, bands } => PluginConfig::new(
+                "band_merge",
+                json!({
+                    "channels": channels,
+                    "bands": bands,
+                }),
+            ),
         }
     }
 
@@ -1985,6 +2051,15 @@ impl PluginSettings {
                 mix_transition_ms: default_ab_mix_transition_ms(),
                 path_a_config: default_ab_path_config(),
                 path_b_config: default_ab_path_config(),
+            },
+            PluginType::BandSplit => Self::BandSplit {
+                channels: default_channels(),
+                frequency: default_band_split_frequency(),
+                crossover_type: default_band_split_crossover_type(),
+            },
+            PluginType::BandMerge => Self::BandMerge {
+                channels: default_channels(),
+                bands: default_band_merge_bands(),
             },
         }
     }

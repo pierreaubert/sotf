@@ -722,5 +722,114 @@ pub fn render_plugin_content(
             )
             .into_any_element()
         }
+        PluginSettings::BandSplit {
+            frequency,
+            crossover_type,
+            ..
+        } => render_band_split_plugin(*frequency, crossover_type, plugin_idx, is_editing, theme)
+            .into_any_element(),
+        PluginSettings::BandMerge { bands, .. } => {
+            render_band_merge_plugin(*bands, plugin_idx, is_editing, theme).into_any_element()
+        }
     }
+}
+
+/// Render a simple Band Split plugin display
+fn render_band_split_plugin(
+    frequency: f64,
+    crossover_type: &str,
+    _plugin_idx: usize,
+    _is_editing: bool,
+    theme: &Theme,
+) -> impl IntoElement {
+    div()
+        .flex()
+        .flex_col()
+        .gap_2()
+        .p_3()
+        .child(
+            div()
+                .flex()
+                .gap_4()
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(theme.text_muted)
+                                .child("Crossover"),
+                        )
+                        .child(
+                            div()
+                                .text_sm()
+                                .text_color(theme.text_primary)
+                                .child(format!("{:.0} Hz", frequency)),
+                        ),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(theme.text_muted)
+                                .child("Type"),
+                        )
+                        .child(
+                            div()
+                                .text_sm()
+                                .text_color(theme.text_primary)
+                                .child(crossover_type.to_string()),
+                        ),
+                ),
+        )
+        .child(
+            div()
+                .text_xs()
+                .text_color(theme.text_muted)
+                .child("Splits audio into low and high frequency bands"),
+        )
+}
+
+/// Render a simple Band Merge plugin display
+fn render_band_merge_plugin(
+    bands: usize,
+    _plugin_idx: usize,
+    _is_editing: bool,
+    theme: &Theme,
+) -> impl IntoElement {
+    div()
+        .flex()
+        .flex_col()
+        .gap_2()
+        .p_3()
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(theme.text_muted)
+                        .child("Bands"),
+                )
+                .child(
+                    div()
+                        .text_sm()
+                        .text_color(theme.text_primary)
+                        .child(format!("{}", bands)),
+                ),
+        )
+        .child(
+            div()
+                .text_xs()
+                .text_color(theme.text_muted)
+                .child("Merges frequency bands back together by summing"),
+        )
 }

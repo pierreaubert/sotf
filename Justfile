@@ -3,6 +3,9 @@
 #	  cargo install just
 # ----------------------------------------------------------------------
 
+# macos specific
+HDF5_DIR := '/opt/homebrew/Cellar/hdf5@1.10/1.10.11'
+
 # should be done automatically
 dyld_fallback_library_path := '/Applications/Xcode.app/Contents/Framework'
 
@@ -35,7 +38,7 @@ convert-sofa-to-sqlite:
 	done
 
 generate-audio-tests: prod-generate-audio-tests
-	cargo run --bin generate-audio-tests -p tools --release
+	cargo run --bin generate-audio-tests -p tools --release --no-default-features
 
 # ----------------------------------------------------------------------
 # TEST
@@ -61,7 +64,7 @@ test-proptest:
 # Note: --lib is intentionally omitted to respect `test = false` in crates like sotf-gpui
 # which have deeply nested GPUI macros that cause stack overflow in syn
 ntest:
-    RUST_MIN_STACK=16777216 cargo nextest run --release --no-fail-fast --workspace --lib
+	HDF5_DIR=/opt/homebrew/Cellar/hdf5@1.10/1.10.11 RUST_MIN_STACK=16777216 cargo nextest run --release --no-fail-fast --workspace --lib
 
 # ----------------------------------------------------------------------
 # RUN
