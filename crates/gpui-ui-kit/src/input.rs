@@ -1177,6 +1177,12 @@ impl RenderOnce for Input {
             let chars: Vec<char> = display_text.chars().collect();
             let len = chars.len();
 
+            // Clamp cursor_pos and selection_anchor to valid bounds.
+            // This can happen when the external value changes while editing,
+            // causing a mismatch between internal state and displayed text length.
+            let cursor_pos = cursor_pos.min(len);
+            let selection_anchor = selection_anchor.map(|a| a.min(len));
+
             // Normalize selection range (if any)
             let (sel_start, sel_end) = if let Some(anchor) = selection_anchor {
                 (cursor_pos.min(anchor), cursor_pos.max(anchor))

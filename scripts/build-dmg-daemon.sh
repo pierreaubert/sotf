@@ -258,6 +258,7 @@ build_hal_driver() {
         -framework CoreAudio \
         -framework CoreFoundation \
         -framework Foundation \
+        -framework SystemConfiguration \
         -O \
         "${SWIFT_FILES[@]}"
 
@@ -300,6 +301,7 @@ build_hal_driver() {
             -framework CoreAudio \
             -framework CoreFoundation \
             -framework Foundation \
+            -framework SystemConfiguration \
             "$BUILD_TMP"/*.o \
             -o "$DRIVER_BUNDLE/Contents/MacOS/SotFHAL"
 
@@ -341,9 +343,48 @@ build_toolbar() {
     log_success "Toolbar compiled successfully"
 }
 
+# Regenerate PNG icons from SVG if SVG is newer
+regenerate_icons_if_needed() {
+    local ICON_ASSETS_DIR="$CONFIGBAR_DIR/assets"
+    local SVG_FILE="$ICON_ASSETS_DIR/icon.svg"
+
+    # Check if SVG exists
+    if [ ! -f "$SVG_FILE" ]; then
+        return 0
+    fi
+
+    # Check if rsvg-convert is available
+    if ! command -v rsvg-convert &> /dev/null; then
+        log_warning "rsvg-convert not found, skipping icon regeneration (install with: brew install librsvg)"
+        return 0
+    fi
+
+    # Check if any PNG is missing or older than SVG
+    local NEED_REGEN=false
+    for png in "$ICON_ASSETS_DIR/icon_18.png" "$ICON_ASSETS_DIR/icon_18@2x.png" \
+               "$ICON_ASSETS_DIR/icon_22.png" "$ICON_ASSETS_DIR/icon_22@2x.png"; do
+        if [ ! -f "$png" ] || [ "$SVG_FILE" -nt "$png" ]; then
+            NEED_REGEN=true
+            break
+        fi
+    done
+
+    if $NEED_REGEN; then
+        log_info "Regenerating PNG icons from SVG..."
+        rsvg-convert -w 18 -h 18 "$SVG_FILE" -o "$ICON_ASSETS_DIR/icon_18.png"
+        rsvg-convert -w 36 -h 36 "$SVG_FILE" -o "$ICON_ASSETS_DIR/icon_18@2x.png"
+        rsvg-convert -w 22 -h 22 "$SVG_FILE" -o "$ICON_ASSETS_DIR/icon_22.png"
+        rsvg-convert -w 44 -h 44 "$SVG_FILE" -o "$ICON_ASSETS_DIR/icon_22@2x.png"
+        log_success "PNG icons regenerated from SVG"
+    fi
+}
+
 # Create app bundle with embedded daemon
 create_app_bundle() {
     log_info "Creating app bundle..."
+
+    # Regenerate icons from SVG if needed
+    regenerate_icons_if_needed
 
     # Copy menubar icon assets to Resources
     local ICON_ASSETS_DIR="$CONFIGBAR_DIR/assets"

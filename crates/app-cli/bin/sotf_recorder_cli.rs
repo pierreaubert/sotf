@@ -453,6 +453,7 @@ pub fn record_signal(
             device.as_deref(),                  // Optional output device name
             device.as_deref(),                  // Optional input device name
             microphone_compensation.as_deref(), // Optional microphone compensation file
+            None,                               // Optional sweep range
         )?;
 
         println!("  ✓ Recording complete");

@@ -487,6 +487,7 @@ impl PlayerView {
                 fir: None,
                 seed: None,
                 mixed_config: None,
+                ..Default::default()
             };
 
             let config = RoomConfig {

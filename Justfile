@@ -146,6 +146,62 @@ prod-math:
 prod-hal:
 	cargo build --release -p driver-hal
 
+# Build the sotf-daemon binary (macOS with HAL support)
+prod-daemon:
+	cargo build --release -p sotf-daemon --features hal
+
+# Build the ConfigBar/Toolbar Swift app
+prod-toolbar:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	CONFIGBAR_DIR="crates/daemon/configbar"
+	BUILD_DIR="target/release"
+	mkdir -p "$BUILD_DIR"
+	echo "Building ConfigBar/Toolbar..."
+	swiftc \
+		-o "$BUILD_DIR/sotf-toolbar" \
+		"$CONFIGBAR_DIR/src/ConfigBar.swift" \
+		-framework SwiftUI \
+		-framework WebKit \
+		-framework UserNotifications \
+		-framework CoreAudio \
+		-O
+	echo "✅ Toolbar built: $BUILD_DIR/sotf-toolbar"
+
+# Build the Swift HAL driver bundle
+prod-hal-driver:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	HAL_SWIFT_DIR="crates/driver-hal/swift"
+	BUILD_DIR="target/release/SotFHAL.driver"
+	mkdir -p "$BUILD_DIR/Contents/MacOS"
+	mkdir -p "$BUILD_DIR/Contents/Resources"
+	echo "Building Swift HAL driver..."
+	swiftc \
+		-emit-library \
+		-o "$BUILD_DIR/Contents/MacOS/SotFHAL" \
+		-module-name SotFHAL \
+		-import-objc-header "$HAL_SWIFT_DIR/Sources/BridgingHeader.h" \
+		-Xlinker -bundle \
+		-Xlinker -rpath -Xlinker @loader_path/../Frameworks \
+		-framework CoreAudio \
+		-framework CoreFoundation \
+		-framework Foundation \
+		-O \
+		"$HAL_SWIFT_DIR/Sources/Timing.swift" \
+		"$HAL_SWIFT_DIR/Sources/RingBuffer.swift" \
+		"$HAL_SWIFT_DIR/Sources/SharedMemory.swift" \
+		"$HAL_SWIFT_DIR/Sources/Encryption.swift" \
+		"$HAL_SWIFT_DIR/Sources/SotFHALDriver.swift"
+	cp "$HAL_SWIFT_DIR/Info.plist" "$BUILD_DIR/Contents/Info.plist"
+	chmod 755 "$BUILD_DIR/Contents/MacOS/SotFHAL"
+	chmod 644 "$BUILD_DIR/Contents/Info.plist"
+	echo "✅ HAL driver built: $BUILD_DIR"
+
+# Build all macOS daemon components (daemon + toolbar + HAL driver)
+prod-macos-daemon: prod-daemon prod-toolbar prod-hal-driver
+	@echo "✅ All macOS daemon components built"
+
 # shortcuts
 tui:
 	cargo run --release --bin sotf-tui -p sotf-tui

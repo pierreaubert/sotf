@@ -149,77 +149,123 @@ fn run_playback_thread(
             device_identifier
         );
 
-        let devices: Vec<_> = host
-            .output_devices()
-            .map_err(|e| format!("Failed to enumerate output devices: {}", e))?
-            .collect();
-
-        // Helper to get device display name
-        let get_display_name = |d: &Device| -> String {
-            d.description()
-                .map(|desc| desc.name().to_string())
-                .unwrap_or_else(|_| "Unknown Device".to_string())
-        };
-
-        // First try to match by device ID (preferred for persistence)
-        let found_device = devices
-            .iter()
-            .find(|d| {
-                if let Ok(id) = d.id() {
-                    id.to_string() == device_identifier
+        // HELPER: Find fallback device if requested one is invalid/virtual
+        let find_fallback = || -> Result<Device, String> {
+            let devices = host.output_devices().map_err(|e| e.to_string())?;
+            // Filter out virtual devices to prevent loops
+            let physical = devices.into_iter().find(|d| {
+                if let Ok(name) = d.name() {
+                    !name.contains("SotF") && 
+                    !name.contains("BlackHole") && 
+                    !name.contains("ZoomAudio") && 
+                    !name.contains("Loopback")
                 } else {
                     false
                 }
-            })
-            .cloned()
-            // Then try exact name match using description
-            .or_else(|| {
-                let target_pattern = device_identifier.to_lowercase();
-                devices
-                    .iter()
-                    .find(|d| get_display_name(d).to_lowercase() == target_pattern)
-                    .cloned()
-            })
-            // Then try partial match (starts with)
-            .or_else(|| {
-                let target_pattern = device_identifier.to_lowercase();
-                devices
-                    .iter()
-                    .find(|d| {
-                        get_display_name(d)
-                            .to_lowercase()
-                            .starts_with(&target_pattern)
-                    })
-                    .cloned()
-            })
-            // Finally try partial match (contains)
-            .or_else(|| {
-                let target_pattern = device_identifier.to_lowercase();
-                devices
-                    .iter()
-                    .find(|d| get_display_name(d).to_lowercase().contains(&target_pattern))
-                    .cloned()
             });
-
-        match found_device {
-            Some(dev) => {
-                let dev_name = get_display_name(&dev);
-                log::debug!("[Playback Thread] Using device: '{}'", dev_name);
-                dev
+            
+            if let Some(dev) = physical {
+                log::info!("[Playback Thread] Using fallback physical device: {}", dev.name().unwrap_or_default());
+                Ok(dev)
+            } else {
+                host.default_output_device().ok_or("No default device found".to_string())
             }
-            None => {
-                log::info!(
-                    "[Playback Thread] Device '{}' not found, using default",
-                    device_identifier
-                );
-                host.default_output_device()
-                    .ok_or("No default output device available")?
+        };
+
+        // If explicitly requested a virtual device (likely by accident due to it being default),
+        // force a fallback to avoid feedback loop
+        if device_identifier.contains("SotF") {
+            log::warn!("[Playback Thread] 'SotF' virtual device requested as output - forcing fallback to prevent feedback loop");
+            find_fallback().map_err(|e| format!("Failed to find fallback device: {}", e))?
+        } else {
+            let devices: Vec<_> = host
+                .output_devices()
+                .map_err(|e| format!("Failed to enumerate output devices: {}", e))?
+                .collect();
+
+            // Helper to get device display name
+            let get_display_name = |d: &Device| -> String {
+                d.description()
+                    .map(|desc| desc.name().to_string())
+                    .unwrap_or_else(|_| "Unknown Device".to_string())
+            };
+
+            // First try to match by device ID (preferred for persistence)
+            let found_device = devices
+                .iter()
+                .find(|d| {
+                    if let Ok(id) = d.id() {
+                        id.to_string() == device_identifier
+                    } else {
+                        false
+                    }
+                })
+                .cloned()
+                // Then try exact name match using description
+                .or_else(|| {
+                    let target_pattern = device_identifier.to_lowercase();
+                    devices
+                        .iter()
+                        .find(|d| get_display_name(d).to_lowercase() == target_pattern)
+                        .cloned()
+                })
+                // Then try partial match (starts with)
+                .or_else(|| {
+                    let target_pattern = device_identifier.to_lowercase();
+                    devices
+                        .iter()
+                        .find(|d| {
+                            get_display_name(d)
+                                .to_lowercase()
+                                .starts_with(&target_pattern)
+                        })
+                        .cloned()
+                })
+                // Finally try partial match (contains)
+                .or_else(|| {
+                    let target_pattern = device_identifier.to_lowercase();
+                    devices
+                        .iter()
+                        .find(|d| get_display_name(d).to_lowercase().contains(&target_pattern))
+                        .cloned()
+                });
+
+            match found_device {
+                Some(dev) => {
+                    let dev_name = get_display_name(&dev);
+                    log::debug!("[Playback Thread] Using device: '{}'", dev_name);
+                    dev
+                }
+                None => {
+                    log::info!(
+                        "[Playback Thread] Device '{}' not found, using default",
+                        device_identifier
+                    );
+                    host.default_output_device()
+                        .ok_or("No default output device available")?
+                }
             }
         }
     } else {
         // Use default device
-        host.default_output_device()
-            .ok_or("No output device available")?
+        // CHECK if default device is virtual -> if so, use fallback
+        let default_dev = host.default_output_device().ok_or("No output device available")?;
+        let name = default_dev.name().unwrap_or_default();
+        
+        if name.contains("SotF") || name.contains("BlackHole") {
+             log::warn!("[Playback Thread] Default device is '{}' (virtual) - finding fallback physical device", name);
+             let devices = host.output_devices().map_err(|e| format!("Failed to list devices: {}", e))?;
+             let physical = devices.into_iter().find(|d| {
+                if let Ok(n) = d.name() {
+                    !n.contains("SotF") && !n.contains("BlackHole") && !n.contains("Loopback")
+                } else {
+                    false
+                }
+            });
+            physical.unwrap_or(default_dev)
+        } else {
+            default_dev
+        }
     };
 
     // Track current channel count (can change dynamically)

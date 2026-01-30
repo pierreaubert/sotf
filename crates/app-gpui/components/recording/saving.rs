@@ -80,26 +80,35 @@ impl PlayerView {
                                 .color(theme.text_secondary),
                         )
                         .child(
-                            div().w(px(300.0)).child(
-                                Input::new("save_name_input")
-                                    .value(save_name.clone())
-                                    .placeholder("Enter recording name")
-                                    .on_change({
-                                        let view = view.clone();
-                                        move |value, _window, cx| {
-                                            view.update(cx, |this, cx| {
-                                                this.state.update(cx, |state, _| {
-                                                    state
-                                                        .app
-                                                        .measurement_state
-                                                        .recording_state
-                                                        .save_name = value.to_string();
+                            div()
+                                .w(px(300.0))
+                                // Stop keyboard/mouse events from propagating to global handlers
+                                .on_key_down(|_event, _window, cx| {
+                                    cx.stop_propagation();
+                                })
+                                .on_mouse_down(MouseButton::Left, |_event, _window, cx| {
+                                    cx.stop_propagation();
+                                })
+                                .child(
+                                    Input::new("save_name_input")
+                                        .value(save_name.clone())
+                                        .placeholder("Enter recording name")
+                                        .on_text_change({
+                                            let view = view.clone();
+                                            move |value, _window, cx| {
+                                                view.update(cx, |this, cx| {
+                                                    this.state.update(cx, |state, _| {
+                                                        state
+                                                            .app
+                                                            .measurement_state
+                                                            .recording_state
+                                                            .save_name = value;
+                                                    });
+                                                    cx.notify();
                                                 });
-                                                cx.notify();
-                                            });
-                                        }
-                                    }),
-                            ),
+                                            }
+                                        }),
+                                ),
                         ),
                 )
                 .child(

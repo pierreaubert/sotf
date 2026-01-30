@@ -8,7 +8,7 @@
 // Run with:
 // cargo run --example vision_test -p sotf-head-tracker --release
 
-use sotf_head_tracker::backend::{FaceDetection, MacOSVisionBackend};
+use sotf_head_tracker::backend::MacOSVisionBackend;
 use sotf_head_tracker::camera::CameraFrame;
 
 fn main() {
