@@ -40,6 +40,10 @@ type SpeakerProcessResult = std::result::Result<
     AutoeqError,
 >;
 
+/// Result type for mixed mode processing
+/// Returns: (chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms)
+type MixedModeResult = (ChannelDspChain, f64, f64, Curve, Curve, Vec<Biquad>, f64, Option<f64>);
+
 /// Threshold in dB above which to warn about channel level differences
 const LEVEL_DIFFERENCE_WARNING_THRESHOLD: f64 = 6.0;
 
@@ -275,15 +279,15 @@ pub fn optimize_room(
         // Add delay plugins at the BEGINNING of the chain (pre-EQ)
         for (channel_name, delay_ms) in &alignment_delays {
             // Only add delay plugin if the adjustment is significant (> 0.01 ms = ~0.5 samples at 48kHz)
-            if *delay_ms > 0.01 {
-                if let Some(chain) = channel_chains.get_mut(channel_name) {
-                    // Insert delay plugin at the beginning (before EQ)
-                    chain.plugins.insert(0, output::create_delay_plugin(*delay_ms));
-                    info!(
-                        "  Channel '{}': added {:.3} ms delay for time alignment",
-                        channel_name, delay_ms
-                    );
-                }
+            if *delay_ms > 0.01
+                && let Some(chain) = channel_chains.get_mut(channel_name)
+            {
+                // Insert delay plugin at the beginning (before EQ)
+                chain.plugins.insert(0, output::create_delay_plugin(*delay_ms));
+                info!(
+                    "  Channel '{}': added {:.3} ms delay for time alignment",
+                    channel_name, delay_ms
+                );
             }
         }
     } else if channel_arrivals.is_empty() && config.speakers.len() > 1 {
@@ -317,15 +321,15 @@ pub fn optimize_room(
             let alignment_gain = reference_level - mean_spl;
 
             // Only add gain plugin if the adjustment is significant (> 0.1 dB)
-            if alignment_gain.abs() > 0.1 {
-                if let Some(chain) = channel_chains.get_mut(channel_name) {
-                    // Insert gain plugin at the end (after EQ) to adjust final level
-                    chain.plugins.push(output::create_gain_plugin(alignment_gain));
-                    info!(
-                        "  Channel '{}': added {:.2} dB gain for level alignment",
-                        channel_name, alignment_gain
-                    );
-                }
+            if alignment_gain.abs() > 0.1
+                && let Some(chain) = channel_chains.get_mut(channel_name)
+            {
+                // Insert gain plugin at the end (after EQ) to adjust final level
+                chain.plugins.push(output::create_gain_plugin(alignment_gain));
+                info!(
+                    "  Channel '{}': added {:.2} dB gain for level alignment",
+                    channel_name, alignment_gain
+                );
             }
         }
     }
@@ -337,54 +341,53 @@ pub fn optimize_room(
     // delay and polarity. This runs BEFORE group delay optimization.
     let mut phase_alignment_results: HashMap<String, (f64, bool)> = HashMap::new();
 
-    if let Some(phase_config) = &config.optimizer.phase_alignment {
-        if phase_config.enabled {
-            if let Some(gd_configs) = &config.group_delay {
-                info!("Running phase alignment optimization...");
+    if let Some(phase_config) = &config.optimizer.phase_alignment
+        && phase_config.enabled
+        && let Some(gd_configs) = &config.group_delay
+    {
+        info!("Running phase alignment optimization...");
 
-                for gd_config in gd_configs {
-                    let sub_curve = match curves.get(&gd_config.subwoofer) {
-                        Some(c) => c,
-                        None => {
-                            warn!(
-                                "Subwoofer channel '{}' not found for phase alignment",
-                                gd_config.subwoofer
-                            );
-                            continue;
-                        }
-                    };
+        for gd_config in gd_configs {
+            let sub_curve = match curves.get(&gd_config.subwoofer) {
+                Some(c) => c,
+                None => {
+                    warn!(
+                        "Subwoofer channel '{}' not found for phase alignment",
+                        gd_config.subwoofer
+                    );
+                    continue;
+                }
+            };
 
-                    for speaker_name in &gd_config.speakers {
-                        if let Some(speaker_curve) = curves.get(speaker_name) {
-                            // Phase alignment requires phase data
-                            if sub_curve.phase.is_some() && speaker_curve.phase.is_some() {
-                                match phase_alignment::optimize_phase_alignment(
-                                    sub_curve,
-                                    speaker_curve,
-                                    phase_config,
-                                ) {
-                                    Ok(result) => {
-                                        info!(
-                                            "  Phase alignment '{}' with '{}': delay={:.2}ms, invert={}, improvement={:.2}dB",
-                                            speaker_name, gd_config.subwoofer,
-                                            result.delay_ms, result.invert_polarity, result.improvement_db
-                                        );
-                                        phase_alignment_results.insert(
-                                            speaker_name.clone(),
-                                            (result.delay_ms, result.invert_polarity),
-                                        );
-                                    }
-                                    Err(e) => {
-                                        warn!("  Phase alignment failed for '{}': {}", speaker_name, e);
-                                    }
-                                }
-                            } else {
-                                debug!(
-                                    "  Skipping phase alignment for '{}': no phase data available",
-                                    speaker_name
+            for speaker_name in &gd_config.speakers {
+                if let Some(speaker_curve) = curves.get(speaker_name) {
+                    // Phase alignment requires phase data
+                    if sub_curve.phase.is_some() && speaker_curve.phase.is_some() {
+                        match phase_alignment::optimize_phase_alignment(
+                            sub_curve,
+                            speaker_curve,
+                            phase_config,
+                        ) {
+                            Ok(result) => {
+                                info!(
+                                    "  Phase alignment '{}' with '{}': delay={:.2}ms, invert={}, improvement={:.2}dB",
+                                    speaker_name, gd_config.subwoofer,
+                                    result.delay_ms, result.invert_polarity, result.improvement_db
+                                );
+                                phase_alignment_results.insert(
+                                    speaker_name.clone(),
+                                    (result.delay_ms, result.invert_polarity),
                                 );
                             }
+                            Err(e) => {
+                                warn!("  Phase alignment failed for '{}': {}", speaker_name, e);
+                            }
                         }
+                    } else {
+                        debug!(
+                            "  Skipping phase alignment for '{}': no phase data available",
+                            speaker_name
+                        );
                     }
                 }
             }
@@ -393,13 +396,13 @@ pub fn optimize_room(
 
     // Apply phase alignment results (polarity inversion)
     for (speaker_name, (_delay, invert)) in &phase_alignment_results {
-        if *invert {
-            if let Some(chain) = channel_chains.get_mut(speaker_name) {
-                // Insert polarity inversion at the beginning of the chain
-                let invert_plugin = output::create_gain_plugin_with_invert(0.0, true);
-                chain.plugins.insert(0, invert_plugin);
-                info!("  Applied polarity inversion to '{}'", speaker_name);
-            }
+        if *invert
+            && let Some(chain) = channel_chains.get_mut(speaker_name)
+        {
+            // Insert polarity inversion at the beginning of the chain
+            let invert_plugin = output::create_gain_plugin_with_invert(0.0, true);
+            chain.plugins.insert(0, invert_plugin);
+            info!("  Applied polarity inversion to '{}'", speaker_name);
         }
     }
 
@@ -596,14 +599,13 @@ pub fn optimize_speaker(
 /// Process a single speaker (simple or group)
 ///
 /// Returns: (DSP chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms)
-#[allow(clippy::type_complexity)]
 fn process_speaker_internal(
     channel_name: &str,
     speaker_config: &SpeakerConfig,
     room_config: &RoomConfig,
     sample_rate: f64,
     output_dir: Option<&Path>,
-) -> Result<(ChannelDspChain, f64, f64, Curve, Curve, Vec<Biquad>, f64, Option<f64>)> {
+) -> Result<MixedModeResult> {
     let output_dir = output_dir.unwrap_or(Path::new("."));
 
     match speaker_config {
@@ -649,14 +651,13 @@ fn extract_wav_path(source: &MeasurementSource) -> Option<String> {
 /// Process a simple speaker with a single measurement
 ///
 /// Returns: (DSP chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms)
-#[allow(clippy::type_complexity)]
 fn process_single_speaker(
     channel_name: &str,
     source: &MeasurementSource,
     room_config: &RoomConfig,
     sample_rate: f64,
     output_dir: &Path,
-) -> Result<(ChannelDspChain, f64, f64, Curve, Curve, Vec<Biquad>, f64, Option<f64>)> {
+) -> Result<MixedModeResult> {
     // Load measurement
     let curve = load::load_source(source)
         .map_err(|e| AutoeqError::InvalidMeasurement { message: format!("Failed to load measurement for channel {}: {}", channel_name, e) })?;
@@ -1063,7 +1064,7 @@ fn optimize_with_schroeder_split(
         max_freq: schroeder_freq,
         min_q: low_config.min_q,
         max_q: low_config.max_q,
-        min_db: if low_config.allow_boost { optimizer.min_db } else { optimizer.min_db },
+        min_db: optimizer.min_db,
         max_db: if low_config.allow_boost { optimizer.max_db } else { 0.0 }, // Cuts only if !allow_boost
         ..optimizer.clone()
     };
@@ -1108,14 +1109,13 @@ fn optimize_with_schroeder_split(
 /// Process a speaker group with multiple drivers and crossovers
 ///
 /// Returns: (DSP chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms)
-#[allow(clippy::type_complexity)]
 fn process_speaker_group(
     channel_name: &str,
     group: &SpeakerGroup,
     room_config: &RoomConfig,
     sample_rate: f64,
     _output_dir: &Path,
-) -> Result<(ChannelDspChain, f64, f64, Curve, Curve, Vec<Biquad>, f64, Option<f64>)> {
+) -> Result<MixedModeResult> {
     // Load all measurements in the group
     let mut driver_curves = Vec::new();
     for (i, source) in group.measurements.iter().enumerate() {
@@ -1310,14 +1310,13 @@ fn process_speaker_group(
 /// Process multi-subwoofer group
 ///
 /// Returns: (DSP chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms)
-#[allow(clippy::type_complexity)]
 fn process_multisub_group(
     channel_name: &str,
     group: &MultiSubGroup,
     room_config: &RoomConfig,
     sample_rate: f64,
     _output_dir: &Path,
-) -> Result<(ChannelDspChain, f64, f64, Curve, Curve, Vec<Biquad>, f64, Option<f64>)> {
+) -> Result<MixedModeResult> {
     let (result, combined_curve) =
         multisub::optimize_multisub(&group.subwoofers, &room_config.optimizer, sample_rate)
             .map_err(|e| AutoeqError::OptimizationFailed { message: format!("Multi-sub optimization failed: {}", e) })?;
@@ -1387,14 +1386,13 @@ fn process_multisub_group(
 /// Process DBA configuration
 ///
 /// Returns: (DSP chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms)
-#[allow(clippy::type_complexity)]
 fn process_dba(
     channel_name: &str,
     dba_config: &super::types::DBAConfig,
     room_config: &RoomConfig,
     sample_rate: f64,
     _output_dir: &Path,
-) -> Result<(ChannelDspChain, f64, f64, Curve, Curve, Vec<Biquad>, f64, Option<f64>)> {
+) -> Result<MixedModeResult> {
     let (result, combined_curve) =
         dba::optimize_dba(dba_config, &room_config.optimizer, sample_rate)
             .map_err(|e| AutoeqError::OptimizationFailed { message: format!("DBA optimization failed: {}", e) })?;
@@ -1483,7 +1481,7 @@ fn process_mixed_mode_crossover(
     mean: f64,
     pre_score: f64,
     arrival_time_ms: Option<f64>,
-) -> Result<(ChannelDspChain, f64, f64, Curve, Curve, Vec<Biquad>, f64, Option<f64>)> {
+) -> Result<MixedModeResult> {
     let crossover_freq = mixed_config.crossover_freq;
     let fir_uses_low = mixed_config.fir_band.to_lowercase() == "low";
 

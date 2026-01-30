@@ -200,21 +200,20 @@ pub fn load_driver_measurement(
         let spl_idx = spl_col.unwrap_or(1);
 
         // Parse data
-        if parts.len() > freq_idx && parts.len() > spl_idx {
-            if let (Ok(freq), Ok(spl)) =
+        if parts.len() > freq_idx
+            && parts.len() > spl_idx
+            && let (Ok(freq), Ok(spl)) =
                 (parts[freq_idx].parse::<f64>(), parts[spl_idx].parse::<f64>())
-            {
-                frequencies.push(freq);
-                spl_values.push(spl);
+        {
+            frequencies.push(freq);
+            spl_values.push(spl);
 
-                // Parse phase if available
-                if let Some(phase_idx) = phase_col {
-                    if parts.len() > phase_idx {
-                        if let Ok(phase) = parts[phase_idx].parse::<f64>() {
-                            phase_values.push(phase);
-                        }
-                    }
-                }
+            // Parse phase if available
+            if let Some(phase_idx) = phase_col
+                && parts.len() > phase_idx
+                && let Ok(phase) = parts[phase_idx].parse::<f64>()
+            {
+                phase_values.push(phase);
             }
         }
     }

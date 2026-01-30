@@ -177,7 +177,7 @@ pub fn load_measurement(measurement: &MeasurementRef) -> Result<Curve, Box<dyn E
                 .into());
             }
 
-            let phase = inline.phase_deg.as_ref().map(|p| {
+            let phase = inline.phase_deg.as_ref().and_then(|p| {
                 if p.len() != inline.frequencies.len() {
                     eprintln!(
                         "Warning: phase array length ({}) doesn't match frequencies ({}), ignoring phase",
@@ -188,7 +188,7 @@ pub fn load_measurement(measurement: &MeasurementRef) -> Result<Curve, Box<dyn E
                 } else {
                     Some(Array1::from(p.clone()))
                 }
-            }).flatten();
+            });
 
             Ok(Curve {
                 freq: Array1::from(inline.frequencies.clone()),

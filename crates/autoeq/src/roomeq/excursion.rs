@@ -115,7 +115,7 @@ fn smooth_curve_simple(curve: &Curve, window_size: usize) -> Curve {
     let mut smoothed_spl = Array1::zeros(curve.spl.len());
 
     for i in 0..curve.spl.len() {
-        let start = if i >= half_window { i - half_window } else { 0 };
+        let start = i.saturating_sub(half_window);
         let end = (i + half_window + 1).min(curve.spl.len());
 
         let mut sum = 0.0;

@@ -73,7 +73,7 @@ impl From<CurveData> for Curve {
 
 /// Recording configuration stored with measurements
 /// Contains device settings and signal parameters used during measurement capture
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct RecordingConfiguration {
     /// Playback device name
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -132,30 +132,6 @@ pub struct RecordingConfiguration {
     pub sweep_end_freq: Option<f32>,
 }
 
-impl Default for RecordingConfiguration {
-    fn default() -> Self {
-        Self {
-            playback_device_name: None,
-            playback_device_id: None,
-            playback_sample_rate: None,
-            playback_channels: None,
-            speaker_configuration: None,
-            channel_names: None,
-            recording_device_name: None,
-            recording_device_id: None,
-            recording_sample_rate: None,
-            recording_channels: None,
-            mic_calibration_path: None,
-            recording_directory: None,
-            signal_type: None,
-            signal_duration_secs: None,
-            signal_level_db: None,
-            sweep_start_freq: None,
-            sweep_end_freq: None,
-        }
-    }
-}
-
 /// Complete room configuration
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct RoomConfig {
@@ -196,10 +172,10 @@ impl RoomConfig {
             speaker.resolve_paths(base_dir);
         }
         // Also resolve target_curve path if it's a file path
-        if let Some(TargetCurveConfig::Path(ref mut path)) = self.target_curve {
-            if path.is_relative() {
-                *path = base_dir.join(&*path);
-            }
+        if let Some(TargetCurveConfig::Path(ref mut path)) = self.target_curve
+            && path.is_relative()
+        {
+            *path = base_dir.join(&*path);
         }
     }
 }
@@ -906,6 +882,7 @@ pub struct OptimizerConfig {
     /// When true, applies variable smoothing before optimization:
     /// - 1/48 octave smoothing < 100 Hz (preserve room modes)
     /// - 1/6 octave smoothing > 1 kHz (ignore comb filtering)
+    ///
     /// Default: true (recommended for room correction)
     #[serde(default = "default_psychoacoustic")]
     pub psychoacoustic: bool,
