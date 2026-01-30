@@ -91,18 +91,21 @@ impl HalManager {
 
     /// Shutdown the HAL manager
     ///
-    /// With the Swift HAL driver architecture, there's nothing to clean up
-    /// on the Rust side - the Swift driver manages the shared memory lifecycle.
+    /// Clears the engine_ready flag to signal the Swift HAL driver that
+    /// the Rust engine is no longer processing audio.
     pub fn shutdown(&mut self) {
         #[cfg(target_os = "macos")]
         {
-            if !self.connected {
-                return;
+            // Clear engine_ready flag so Swift HAL driver stops sending audio
+            if let Ok(buffer) = SharedAudioBuffer::open_default() {
+                buffer.set_engine_ready(false);
+                log::info!("Cleared engine_ready flag in shared memory");
             }
 
-            log::info!("HAL manager shutting down");
-            self.connected = false;
-            log::info!("HAL manager shut down");
+            if self.connected {
+                log::info!("HAL manager shutting down");
+                self.connected = false;
+            }
         }
     }
 

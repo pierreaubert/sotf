@@ -43,14 +43,8 @@ pub fn get_secure_socket_path() -> PathBuf {
 /// Get the secure shared memory path for this user
 pub fn get_secure_shm_path() -> PathBuf {
     let uid = get_current_uid();
-
-    // Try macOS per-user temp directory
-    if let Ok(tmpdir) = std::env::var("TMPDIR") {
-        return PathBuf::from(tmpdir).join("sotf-audio.shm");
-    }
-
-    // Fallback with UID
-    PathBuf::from(format!("/tmp/sotf-audio-shm-{}", uid))
+    // Use UID-based path to match Swift HAL driver
+    PathBuf::from(format!("/tmp/sotf-{}/audio.shm", uid))
 }
 
 /// Get current user ID
@@ -331,16 +325,26 @@ impl KeyManager {
     /// Force rotation of the encryption key
     ///
     /// Generates a new key and saves it to the key file.
+    /// The in-memory state is only updated after the file write succeeds.
     pub fn force_rotate(&mut self) -> io::Result<()> {
         let key_path = get_key_path();
         log::info!("Force rotating encryption key...");
 
+        // Create the new key and write to file first
+        // Only update in-memory state if file write succeeds
         let key = Self::create_new_key(&key_path)?;
-        self.key = key;
-        self.fingerprint = compute_fingerprint(&key);
-        self.cipher = Some(AudioCipher::new(&key));
-        self.last_mtime = Self::get_mtime(&key_path);
 
+        // File write succeeded, now update in-memory state
+        let fingerprint = compute_fingerprint(&key);
+        let cipher = AudioCipher::new(&key);
+        let mtime = Self::get_mtime(&key_path);
+
+        self.key = key;
+        self.fingerprint = fingerprint;
+        self.cipher = Some(cipher);
+        self.last_mtime = mtime;
+
+        log::info!("Encryption key rotated successfully, fingerprint: {}", self.fingerprint_hex());
         Ok(())
     }
 
@@ -422,7 +426,7 @@ mod tests {
 
         // Should contain TMPDIR, XDG_RUNTIME_DIR, or UID
         let uid = get_current_uid();
-        let has_user_isolation = path_str.contains("TMPDIR")
+        let _has_user_isolation = path_str.contains("TMPDIR")
             || path_str.contains(&format!("/{}/", uid))
             || std::env::var("TMPDIR").map(|t| path_str.contains(&t)).unwrap_or(false)
             || std::env::var("XDG_RUNTIME_DIR").map(|t| path_str.contains(&t)).unwrap_or(false);
@@ -455,5 +459,145 @@ mod tests {
         let status = manager.status();
         assert!(!status.enabled);
         assert_eq!(status.fingerprint.len(), 16); // Hex encoding doubles the length
+    }
+
+    // ==========================================================================
+    // Additional Security Tests - catch regressions in key management
+    // ==========================================================================
+
+    #[test]
+    fn test_key_manager_enable_disable() {
+        let mut manager = KeyManager::default();
+
+        // Initially disabled
+        assert!(!manager.is_enabled());
+
+        // Enable
+        manager.set_enabled(true);
+        assert!(manager.is_enabled());
+
+        // Disable
+        manager.set_enabled(false);
+        assert!(!manager.is_enabled());
+    }
+
+    #[test]
+    fn test_key_manager_cipher_available() {
+        let manager = KeyManager::default();
+
+        // Cipher should be available after creation (key is auto-generated)
+        assert!(
+            manager.cipher().is_some(),
+            "Cipher should be available after KeyManager creation"
+        );
+    }
+
+    #[test]
+    fn test_key_fingerprint_consistency() {
+        let manager = KeyManager::default();
+
+        // Fingerprint should be consistent across calls
+        let fp1 = manager.fingerprint();
+        let fp2 = manager.fingerprint();
+        assert_eq!(fp1, fp2, "Fingerprint should be consistent");
+
+        // Hex fingerprint should match raw fingerprint
+        let fp_hex = manager.fingerprint_hex();
+        let fp_from_raw: String = fp1.iter().map(|b| format!("{:02x}", b)).collect();
+        assert_eq!(fp_hex, fp_from_raw, "Hex fingerprint should match raw");
+    }
+
+    #[test]
+    fn test_key_rotation_changes_fingerprint() {
+        let mut manager = KeyManager::default();
+
+        let fp_before = manager.fingerprint_hex();
+
+        // Force rotate
+        manager.force_rotate().expect("Key rotation should succeed");
+
+        let fp_after = manager.fingerprint_hex();
+
+        // Fingerprint should change (extremely unlikely to be the same)
+        assert_ne!(
+            fp_before, fp_after,
+            "Fingerprint should change after rotation"
+        );
+
+        // Cipher should still be available
+        assert!(
+            manager.cipher().is_some(),
+            "Cipher should be available after rotation"
+        );
+    }
+
+    #[test]
+    fn test_key_manager_check_and_reload_no_change() {
+        let mut manager = KeyManager::default();
+
+        let fp_before = manager.fingerprint_hex();
+
+        // Check and reload when no change
+        let reloaded = manager.check_and_reload().expect("Check should succeed");
+        assert!(!reloaded, "Should not reload if file unchanged");
+
+        let fp_after = manager.fingerprint_hex();
+        assert_eq!(fp_before, fp_after, "Fingerprint should not change");
+    }
+
+    #[test]
+    fn test_security_config_defaults() {
+        let config = SecurityConfig::default();
+
+        assert!(config.verify_credentials, "Should verify credentials by default");
+        assert!(config.per_user_sockets, "Should use per-user sockets by default");
+        assert!(config.per_user_shm, "Should use per-user shared memory by default");
+    }
+
+    #[test]
+    fn test_socket_path_deterministic() {
+        // Socket path should be deterministic (same each call)
+        let path1 = get_secure_socket_path();
+        let path2 = get_secure_socket_path();
+        assert_eq!(path1, path2, "Socket path should be deterministic");
+    }
+
+    #[test]
+    fn test_shm_path_deterministic() {
+        // Shared memory path should be deterministic
+        let path1 = get_secure_shm_path();
+        let path2 = get_secure_shm_path();
+        assert_eq!(path1, path2, "Shared memory path should be deterministic");
+    }
+
+    #[test]
+    fn test_shm_path_contains_uid() {
+        let path = get_secure_shm_path();
+        let uid = get_current_uid();
+
+        // Path should contain the UID
+        let path_str = path.to_string_lossy();
+        assert!(
+            path_str.contains(&uid.to_string()),
+            "Shared memory path should contain UID: {}",
+            path_str
+        );
+    }
+
+    #[test]
+    fn test_socket_path_under_tmpdir_or_contains_uid() {
+        let path = get_secure_socket_path();
+        let path_str = path.to_string_lossy();
+
+        // Path should either be under TMPDIR/XDG_RUNTIME_DIR or contain UID
+        let uid = get_current_uid();
+        let tmpdir = std::env::var("TMPDIR").ok();
+        let xdg_runtime = std::env::var("XDG_RUNTIME_DIR").ok();
+
+        let is_secure = tmpdir.map(|t| path_str.starts_with(&t)).unwrap_or(false)
+            || xdg_runtime.map(|x| path_str.starts_with(&x)).unwrap_or(false)
+            || path_str.contains(&format!("sotf-{}", uid));
+
+        assert!(is_secure, "Socket path should be user-isolated: {}", path_str);
     }
 }

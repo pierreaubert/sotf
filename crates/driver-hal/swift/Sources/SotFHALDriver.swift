@@ -143,6 +143,13 @@ final class DriverState {
     // Loopback mode (when Rust engine not connected)
     var loopbackEnabled: Bool = true
 
+    // Flag to indicate driver is being disposed (prevents race conditions in StartIO)
+    private var _isDisposed: Int32 = 0
+    var isDisposed: Bool {
+        get { OSAtomicAdd32(0, &_isDisposed) != 0 }
+        set { OSAtomicCompareAndSwap32(_isDisposed, newValue ? 1 : 0, &_isDisposed) }
+    }
+
     static let shared = DriverState()
     private init() {
         // Initialize ring buffers
@@ -742,6 +749,13 @@ private func driverStartIO(_ driver: AudioServerPlugInDriverRef, _ deviceObjectI
     halLog("StartIO: device=\(deviceObjectID) client=\(clientID)")
 
     let state = DriverState.shared
+
+    // Check if driver is being disposed to prevent race conditions
+    if state.isDisposed {
+        halLog("StartIO rejected: driver is being disposed")
+        return kAudioHardwareIllegalOperationError
+    }
+
     state.ioClientCount += 1
 
     if state.ioClientCount == 1 {
@@ -845,24 +859,26 @@ private func driverEndIOOperation(_ driver: AudioServerPlugInDriverRef, _ device
 
 // MARK: - COM Interface
 
-private var gRefCount: UInt32 = 1
+// Reference count using atomic operations for thread safety
+// Multiple CoreAudio clients can call AddRef/Release concurrently
+private var gRefCount: Int32 = 1
 
 private func queryInterface(_ self_: UnsafeMutableRawPointer?, _ iid: REFIID, _ ppv: UnsafeMutablePointer<LPVOID?>?) -> HRESULT {
     halLog("QueryInterface")
     guard let ppv = ppv else { return -2147467261 }  // E_POINTER
     ppv.pointee = self_
-    gRefCount += 1
+    OSAtomicIncrement32(&gRefCount)
     return 0  // S_OK
 }
 
 private func addRef(_ self_: UnsafeMutableRawPointer?) -> ULONG {
-    gRefCount += 1
-    return gRefCount
+    let newCount = OSAtomicIncrement32(&gRefCount)
+    return ULONG(newCount)
 }
 
 private func release(_ self_: UnsafeMutableRawPointer?) -> ULONG {
-    if gRefCount > 0 { gRefCount -= 1 }
-    return gRefCount
+    let newCount = OSAtomicDecrement32(&gRefCount)
+    return ULONG(max(0, newCount))
 }
 
 // MARK: - Driver Interface

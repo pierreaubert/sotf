@@ -106,9 +106,9 @@ impl AtomicVolume {
         self.volume_bits.store(gain.to_bits(), Ordering::Release);
     }
 
-    /// Set volume from dB value
+    /// Set volume from dB value (clamped to -60 to +20 dB range)
     pub fn set_db(&self, db: f32) {
-        self.set_linear(db_to_linear(db));
+        self.set_linear(db_to_linear(clamp_volume_db(db)));
     }
 
     /// Get current volume as linear gain
@@ -178,12 +178,12 @@ impl AtomicChannelVolumes {
         }
     }
 
-    /// Create with initial per-channel dB values
+    /// Create with initial per-channel dB values (clamped to -60 to +20 dB range)
     pub fn with_db(channel_volumes_db: &[f32]) -> Self {
         Self {
             channels: channel_volumes_db
                 .iter()
-                .map(|&db| AtomicU32::new(db_to_linear(db).to_bits()))
+                .map(|&db| AtomicU32::new(db_to_linear(clamp_volume_db(db)).to_bits()))
                 .collect(),
             muted: std::sync::atomic::AtomicBool::new(false),
         }
@@ -194,10 +194,10 @@ impl AtomicChannelVolumes {
         self.channels.len()
     }
 
-    /// Set volume for a specific channel in dB
+    /// Set volume for a specific channel in dB (clamped to -60 to +20 dB range)
     pub fn set_channel_db(&self, channel: usize, db: f32) {
         if channel < self.channels.len() {
-            self.channels[channel].store(db_to_linear(db).to_bits(), Ordering::Release);
+            self.channels[channel].store(db_to_linear(clamp_volume_db(db)).to_bits(), Ordering::Release);
         }
     }
 
@@ -222,9 +222,9 @@ impl AtomicChannelVolumes {
         linear_to_db(self.get_channel_linear(channel))
     }
 
-    /// Set all channels to the same dB value
+    /// Set all channels to the same dB value (clamped to -60 to +20 dB range)
     pub fn set_all_db(&self, db: f32) {
-        let linear = db_to_linear(db);
+        let linear = db_to_linear(clamp_volume_db(db));
         for ch in &self.channels {
             ch.store(linear.to_bits(), Ordering::Release);
         }
@@ -456,5 +456,136 @@ mod tests {
         assert!((buffer[3] - 0.316).abs() < 0.01);    // LFE at -10dB
         assert!((buffer[4] - 0.501).abs() < 0.01);    // SL at -6dB
         assert!((buffer[5] - 0.501).abs() < 0.01);    // SR at -6dB
+    }
+
+    // ==========================================================================
+    // Volume Validation Tests - catch out-of-range values and clamping issues
+    // ==========================================================================
+
+    #[test]
+    fn test_clamp_volume_db_within_range() {
+        // Values within range should pass through unchanged
+        assert!((clamp_volume_db(0.0) - 0.0).abs() < 0.001);
+        assert!((clamp_volume_db(-6.0) - (-6.0)).abs() < 0.001);
+        assert!((clamp_volume_db(10.0) - 10.0).abs() < 0.001);
+        assert!((clamp_volume_db(-60.0) - (-60.0)).abs() < 0.001);
+        assert!((clamp_volume_db(20.0) - 20.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_clamp_volume_db_out_of_range() {
+        // Values below minimum should clamp to -60
+        assert!((clamp_volume_db(-100.0) - (-60.0)).abs() < 0.001);
+        assert!((clamp_volume_db(-1000.0) - (-60.0)).abs() < 0.001);
+        assert!((clamp_volume_db(f32::NEG_INFINITY) - (-60.0)).abs() < 0.001);
+
+        // Values above maximum should clamp to +20
+        assert!((clamp_volume_db(50.0) - 20.0).abs() < 0.001);
+        assert!((clamp_volume_db(100.0) - 20.0).abs() < 0.001);
+        // Note: f32::INFINITY.clamp() returns the max, which is correct
+        assert!((clamp_volume_db(f32::INFINITY) - 20.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_clamp_volume_linear_within_range() {
+        // Values within range should pass through unchanged
+        assert!((clamp_volume_linear(0.0) - 0.0).abs() < 0.001);
+        assert!((clamp_volume_linear(0.5) - 0.5).abs() < 0.001);
+        assert!((clamp_volume_linear(1.0) - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_clamp_volume_linear_out_of_range() {
+        // Negative values should clamp to 0
+        assert!((clamp_volume_linear(-1.0) - 0.0).abs() < 0.001);
+        assert!((clamp_volume_linear(-100.0) - 0.0).abs() < 0.001);
+
+        // Values above +20dB (10.0 linear) should clamp
+        let max_linear = db_to_linear(20.0);
+        assert!((clamp_volume_linear(100.0) - max_linear).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_atomic_volume_clamps_extreme_values() {
+        let vol = AtomicVolume::new();
+
+        // Test extremely low dB value gets clamped
+        vol.set_db(-200.0);
+        assert!(vol.get_db() >= -60.0, "Volume should be clamped to -60dB minimum");
+        assert!(vol.get_db() <= -59.9, "Volume should be at -60dB after clamping");
+
+        // Test extremely high dB value gets clamped
+        vol.set_db(100.0);
+        assert!(vol.get_db() <= 20.0, "Volume should be clamped to +20dB maximum");
+        assert!(vol.get_db() >= 19.9, "Volume should be at +20dB after clamping");
+
+        // Test infinity gets clamped
+        vol.set_db(f32::INFINITY);
+        assert!(vol.get_db() <= 20.0, "Infinity should be clamped to +20dB");
+        assert!(!vol.get_db().is_infinite(), "Volume should not be infinite");
+    }
+
+    #[test]
+    fn test_channel_volumes_clamps_extreme_values() {
+        let vols = AtomicChannelVolumes::new(2);
+
+        // Test extremely low dB value gets clamped
+        vols.set_channel_db(0, -200.0);
+        assert!(vols.get_channel_db(0) >= -60.0, "Channel volume should be clamped to -60dB");
+
+        // Test extremely high dB value gets clamped
+        vols.set_channel_db(1, 100.0);
+        assert!(vols.get_channel_db(1) <= 20.0, "Channel volume should be clamped to +20dB");
+    }
+
+    #[test]
+    fn test_channel_volumes_with_db_clamps_input() {
+        // Initialize with extreme values - they should all be clamped
+        let vols = AtomicChannelVolumes::with_db(&[-200.0, 100.0, 0.0]);
+
+        assert!(vols.get_channel_db(0) >= -60.0, "Initial value should be clamped to -60dB");
+        assert!(vols.get_channel_db(1) <= 20.0, "Initial value should be clamped to +20dB");
+        assert!((vols.get_channel_db(2) - 0.0).abs() < 0.001, "Normal value should pass through");
+    }
+
+    #[test]
+    fn test_set_all_db_clamps_value() {
+        let vols = AtomicChannelVolumes::new(4);
+
+        // Set all to extreme high value
+        vols.set_all_db(100.0);
+        for ch in 0..4 {
+            assert!(vols.get_channel_db(ch) <= 20.0, "All channels should be clamped to +20dB");
+        }
+
+        // Set all to extreme low value
+        vols.set_all_db(-200.0);
+        for ch in 0..4 {
+            assert!(vols.get_channel_db(ch) >= -60.0, "All channels should be clamped to -60dB");
+        }
+    }
+
+    #[test]
+    fn test_volume_with_nan_input() {
+        let vol = AtomicVolume::new();
+
+        // NaN should be handled gracefully (clamp returns NaN for NaN input)
+        // This test documents current behavior - NaN passes through
+        vol.set_db(f32::NAN);
+        // We just verify it doesn't crash and the value is retrievable
+        let _ = vol.get_db();
+        let _ = vol.get_linear();
+    }
+
+    #[test]
+    fn test_channel_out_of_bounds_access() {
+        let vols = AtomicChannelVolumes::new(2);
+
+        // Setting out-of-bounds channel should be no-op (not panic)
+        vols.set_channel_db(99, -6.0); // Should not panic
+
+        // Getting out-of-bounds channel should return unity gain
+        assert!((vols.get_channel_linear(99) - 1.0).abs() < 0.001);
+        assert!((vols.get_channel_db(99) - 0.0).abs() < 0.001);
     }
 }

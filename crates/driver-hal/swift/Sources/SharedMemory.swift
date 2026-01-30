@@ -15,7 +15,8 @@ private let kSharedMemoryMagic: UInt32 = 0x534F5446
 
 /// Current protocol version
 /// Version 2: Added encryption fields (encrypted, key_fingerprint, frame_counter)
-private let kSharedMemoryVersion: UInt32 = 2
+/// Version 3: Added config negotiation fields for bidirectional HAL-Daemon sync
+private let kSharedMemoryVersion: UInt32 = 3
 
 /// Legacy shared memory file path (for backwards compatibility)
 private let kLegacySharedMemoryPath = "/tmp/sotf-audio-shm"
@@ -33,19 +34,30 @@ private func getSecureSharedMemoryPath() -> String {
         let userPath = "/tmp/sotf-\(uid)/audio.shm"
 
         // Create the directory if it doesn't exist
+        // Note: Running as _coreaudiod, we cannot set ownership to the console user.
+        // The directory will be owned by _coreaudiod with permissions allowing
+        // both _coreaudiod and the user to access it.
         let dirPath = "/tmp/sotf-\(uid)"
         var isDir: ObjCBool = false
         if !FileManager.default.fileExists(atPath: dirPath, isDirectory: &isDir) {
             do {
+                // Create directory with permissions that allow both _coreaudiod and user access
+                // 0777 allows anyone to read/write/execute (files inside will have restricted perms)
                 try FileManager.default.createDirectory(atPath: dirPath, withIntermediateDirectories: true, attributes: [
-                    .posixPermissions: 0o770,  // rwxrwx--- (user + group)
-                    .ownerAccountID: uid,
-                    .groupOwnerAccountID: 202  // _coreaudiod GID (usually 202)
+                    .posixPermissions: 0o777
                 ])
             } catch {
                 halLog("Failed to create secure directory: \(error)")
                 // Fall back to legacy path
                 return kLegacySharedMemoryPath
+            }
+        } else {
+            // Directory exists, ensure permissions are correct (0777)
+            // This fixes the issue where a previous version created it with restrictive permissions (0770)
+            do {
+                try FileManager.default.setAttributes([.posixPermissions: 0o777], ofItemAtPath: dirPath)
+            } catch {
+                halLog("Failed to update directory permissions: \(error)")
             }
         }
 
@@ -76,7 +88,7 @@ private func getSharedMemoryPath() -> String {
 }
 
 /// Header structure for shared memory region
-/// Must match the Rust side exactly
+/// Must match the Rust side exactly (SharedAudioHeader in shared_memory.rs)
 struct SharedAudioHeader {
     var magic: UInt32           // 0x534F5446 ('SOTF')
     var version: UInt32         // Protocol version
@@ -84,20 +96,29 @@ struct SharedAudioHeader {
     var bufferFrames: UInt32    // Frames per buffer
     var channelCount: UInt32    // Number of channels
 
-    // Ring buffer state (these are atomic on both sides)
+    // Ring buffer state (atomic on both sides)
     var writePosition: UInt64   // Write position in samples
     var readPosition: UInt64    // Read position in samples
 
-    // Control flags
-    var active: UInt32          // IO is running (atomic)
-    var configChanged: UInt32   // Rust should reload config (atomic)
-    var driverReady: UInt32     // Driver is initialized (atomic)
-    var engineReady: UInt32     // Rust engine is connected (atomic)
+    // Control flags (atomic)
+    var active: UInt32          // IO is running
+    var configChanged: UInt32   // Config change notification
+    var driverReady: UInt32     // Driver is initialized
+    var engineReady: UInt32     // Rust engine is connected
 
     // Encryption fields (version 2+)
-    var encrypted: UInt32       // 0 = disabled, 1 = enabled (atomic)
-    var keyFingerprint: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8) = (0, 0, 0, 0, 0, 0, 0, 0)  // First 8 bytes of SHA256 of key
-    var frameCounter: UInt64    // Monotonic counter for nonce generation (atomic)
+    var encrypted: UInt32       // 0 = disabled, 1 = enabled
+    var keyFingerprint: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8) // First 8 bytes of SHA256
+    var frameCounter: UInt64    // Frame counter for nonce generation
+
+    // Config negotiation fields (version 3+)
+    var requestedSampleRate: UInt32     // Requested sample rate
+    var requestedBufferFrames: UInt32   // Requested buffer frames
+    var actualSampleRate: UInt32        // Actual sample rate in use
+    var actualBufferFrames: UInt32      // Actual buffer frames in use
+    var configStatus: UInt32            // 0=pending, 1=accepted, 2=negotiated, 3=error
+    var configSource: UInt32            // 1=HAL initiated, 2=Daemon initiated
+    var configErrorCode: UInt32         // Error code if configStatus=3
 }
 
 /// Shared memory buffer for audio exchange with Rust engine
@@ -158,8 +179,11 @@ final class SharedAudioBuffer {
         halLog("SharedMemory: initializing \(memorySize) bytes at \(currentPath)")
 
         // Open or create the file with permissions for user and coreaudiod group
-        // Mode 0660 = rw-rw---- (owner + group can read/write)
-        fileDescriptor = Darwin.open(currentPath, O_RDWR | O_CREAT, 0660)
+        // Mode 0666 = rw-rw-rw- (allow all users to read/write)
+        // REQUIRED because _coreaudiod creates the file (owner=_coreaudiod) but the daemon
+        // runs as the user (who is not in _coreaudiod group).
+        // The directory itself is already protected by being in /tmp/sotf-{uid}/
+        fileDescriptor = Darwin.open(currentPath, O_RDWR | O_CREAT, 0666)
         if fileDescriptor < 0 {
             halLog("SharedMemory: open failed: \(String(cString: strerror(errno)))")
             return false
@@ -174,8 +198,8 @@ final class SharedAudioBuffer {
         }
 
         // Ensure permissions are correct (override umask)
-        // Mode 0660 = rw-rw---- allows owner (user) and group (_coreaudiod) to read/write
-        chmod(currentPath, 0o660)
+        // Mode 0666 = rw-rw-rw- allows owner (_coreaudiod) and user to read/write
+        chmod(currentPath, 0o666)
 
         // Map memory
         sharedMemory = mmap(nil, memorySize, PROT_READ | PROT_WRITE, MAP_SHARED, fileDescriptor, 0)
@@ -208,14 +232,25 @@ final class SharedAudioBuffer {
         header.pointee.active = 0
         header.pointee.configChanged = 0
         header.pointee.driverReady = 1
+        header.pointee.engineReady = 0
+
         // Encryption fields (version 2+)
         header.pointee.encrypted = 0
         header.pointee.keyFingerprint = (0, 0, 0, 0, 0, 0, 0, 0)
         header.pointee.frameCounter = 0
 
+        // Config negotiation fields (version 3+)
+        header.pointee.requestedSampleRate = 0
+        header.pointee.requestedBufferFrames = 0
+        header.pointee.actualSampleRate = sampleRate
+        header.pointee.actualBufferFrames = bufferFrames
+        header.pointee.configStatus = 0
+        header.pointee.configSource = 0
+        header.pointee.configErrorCode = 0
+
         OSMemoryBarrier()
 
-        halLog("SharedMemory: initialized successfully")
+        halLog("SharedMemory: initialized successfully (version \(kSharedMemoryVersion))")
         return true
     }
 
@@ -259,53 +294,6 @@ final class SharedAudioBuffer {
         header.pointee.sampleRate = sampleRate
         signalConfigChange()
     }
-
-    // MARK: - Encryption Methods
-
-    /// Check if encryption is enabled
-    var isEncrypted: Bool {
-        guard let header = header else { return false }
-        return header.pointee.encrypted != 0
-    }
-
-    /// Enable or disable encryption
-    func setEncrypted(_ enabled: Bool) {
-        guard let header = header else { return }
-        header.pointee.encrypted = enabled ? 1 : 0
-        OSMemoryBarrier()
-    }
-
-    /// Get the key fingerprint
-    func getKeyFingerprint() -> [UInt8] {
-        guard let header = header else { return [0, 0, 0, 0, 0, 0, 0, 0] }
-        let fp = header.pointee.keyFingerprint
-        return [fp.0, fp.1, fp.2, fp.3, fp.4, fp.5, fp.6, fp.7]
-    }
-
-    /// Set the key fingerprint
-    func setKeyFingerprint(_ fingerprint: [UInt8]) {
-        guard let header = header, fingerprint.count >= 8 else { return }
-        header.pointee.keyFingerprint = (
-            fingerprint[0], fingerprint[1], fingerprint[2], fingerprint[3],
-            fingerprint[4], fingerprint[5], fingerprint[6], fingerprint[7]
-        )
-    }
-
-    /// Get the current frame counter
-    func getFrameCounter() -> UInt64 {
-        guard let header = header else { return 0 }
-        return header.pointee.frameCounter
-    }
-
-    /// Increment the frame counter and return the new value
-    func incrementFrameCounter() -> UInt64 {
-        guard let header = header else { return 0 }
-        OSMemoryBarrier()
-        header.pointee.frameCounter += 1
-        return header.pointee.frameCounter
-    }
-
-    // MARK: - Audio Read/Write
 
     /// Write audio to shared memory (called from DoIOOperation for output)
     /// Uses lock-free ring buffer algorithm
@@ -383,6 +371,102 @@ final class SharedAudioBuffer {
         header.pointee.readPosition = readPos + UInt64(toRead)
 
         return toRead / channelCount
+    }
+
+    // MARK: - Config Negotiation Methods (version 3+)
+
+    /// Check if configuration change is pending
+    func configChanged() -> Bool {
+        OSMemoryBarrier()
+        return header?.pointee.configChanged != 0
+    }
+
+    /// Get config source (1=HAL initiated, 2=Daemon initiated)
+    func configSource() -> UInt32 {
+        OSMemoryBarrier()
+        return header?.pointee.configSource ?? 0
+    }
+
+    /// Get actual sample rate (set by responder after negotiation)
+    ///
+    /// Caller should check `getConfigStatus()` first, which performs a memory barrier.
+    func getActualSampleRate() -> UInt32 {
+        OSMemoryBarrier()
+        return header?.pointee.actualSampleRate ?? 0
+    }
+
+    /// Get actual buffer frames (set by responder after negotiation)
+    ///
+    /// Caller should check `getConfigStatus()` first, which performs a memory barrier.
+    func getActualBufferFrames() -> UInt32 {
+        OSMemoryBarrier()
+        return header?.pointee.actualBufferFrames ?? 0
+    }
+
+    /// Get config status (0=pending, 1=accepted, 2=negotiated, 3=error)
+    ///
+    /// This function includes a memory barrier to ensure visibility of
+    /// the status and all related config values from the responder.
+    func getConfigStatus() -> UInt32 {
+        OSMemoryBarrier()
+        return header?.pointee.configStatus ?? 0
+    }
+
+    /// Get config error code (only valid when configStatus=3)
+    ///
+    /// Caller should check `getConfigStatus()` first, which performs a memory barrier.
+    func getConfigErrorCode() -> UInt32 {
+        OSMemoryBarrier()
+        return header?.pointee.configErrorCode ?? 0
+    }
+
+    /// Request a configuration change (called by HAL when client changes sample rate)
+    /// Sets configSource=1 (HAL initiated) and configChanged=1
+    ///
+    /// Memory ordering: All non-atomic fields are written first, then a memory
+    /// barrier ensures they are visible before setting configChanged. The
+    /// configChanged flag acts as the notification point for the responder.
+    func requestConfigChange(sampleRate: UInt32, bufferFrames: UInt32) {
+        guard let header = header else { return }
+        header.pointee.requestedSampleRate = sampleRate
+        header.pointee.requestedBufferFrames = bufferFrames
+        header.pointee.configStatus = 0  // pending
+        header.pointee.configSource = 1  // HAL initiated
+        // Memory barrier ensures non-atomic writes are visible before flag
+        OSMemoryBarrier()
+        header.pointee.configChanged = 1
+        // Note: No trailing barrier needed - configChanged acts as the release point
+    }
+
+    /// Wait for daemon to acknowledge config change
+    /// Returns true if accepted (status=1), false otherwise
+    func waitForConfigAck(timeout: Int) -> Bool {
+        let start = DispatchTime.now()
+        while true {
+            OSMemoryBarrier()
+            let status = header?.pointee.configStatus ?? 0
+            if status != 0 {  // Not pending anymore
+                return status == 1  // 1 = accepted
+            }
+            if DispatchTime.now() > start + .milliseconds(timeout) {
+                return false  // Timeout
+            }
+            usleep(10_000)  // 10ms
+        }
+    }
+
+    /// Set config status (atomic)
+    func setConfigStatus(_ status: UInt32) {
+        guard let header = header else { return }
+        header.pointee.configStatus = status
+        OSMemoryBarrier()
+    }
+
+    /// Clear config changed flag (called after handling daemon-initiated change)
+    func clearConfigChanged() {
+        guard let header = header else { return }
+        header.pointee.configChanged = 0
+        OSMemoryBarrier()
     }
 
     deinit {

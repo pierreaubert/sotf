@@ -141,7 +141,20 @@ class AudioEngineClient {
                 try container.encode(stringVal)
             } else if let boolVal = value as? Bool {
                 try container.encode(boolVal)
+            } else if let arrayVal = value as? [Any] {
+                let codableArray = arrayVal.map { AnyCodable(wrapping: $0) }
+                try container.encode(codableArray)
+            } else if let dictVal = value as? [String: Any] {
+                let codableDict = dictVal.mapValues { AnyCodable(wrapping: $0) }
+                try container.encode(codableDict)
+            } else if value is NSNull {
+                try container.encodeNil()
             }
+        }
+
+        /// Initialize with a value to wrap
+        init(wrapping value: Any) {
+            self.value = value
         }
     }
 
@@ -226,24 +239,57 @@ class AudioEngineClient {
                 return nil
             }
 
-            // Give the daemon a moment to process
-            usleep(10000) // 10ms
-
-            // Read response (read until newline or buffer full)
+            // Read response with buffered line-based parsing
+            // TCP streams may fragment data, so we need to read until we find a newline
             var responseData = Data()
             var buffer = [UInt8](repeating: 0, count: 4096)
             let bufferCount = buffer.count
+            let maxResponseSize = 65536 // 64KB max response size
+            let timeoutMs: useconds_t = 5000000 // 5 second timeout
 
-            let bytesRead = buffer.withUnsafeMutableBufferPointer { bufferPtr in
-                Darwin.recv(socketFD, bufferPtr.baseAddress, bufferCount, 0)
+            // Set socket to non-blocking for timeout handling
+            var flags = fcntl(socketFD, F_GETFL, 0)
+            fcntl(socketFD, F_SETFL, flags | O_NONBLOCK)
+
+            var totalWaitTime: useconds_t = 0
+            let pollInterval: useconds_t = 10000 // 10ms poll interval
+
+            while responseData.count < maxResponseSize && totalWaitTime < timeoutMs {
+                let bytesRead = buffer.withUnsafeMutableBufferPointer { bufferPtr in
+                    Darwin.recv(socketFD, bufferPtr.baseAddress, bufferCount, 0)
+                }
+
+                if bytesRead > 0 {
+                    responseData.append(contentsOf: buffer[0..<bytesRead])
+
+                    // Check if we have a complete line
+                    if responseData.contains(UInt8(ascii: "\n")) {
+                        break
+                    }
+                } else if bytesRead == 0 {
+                    // Connection closed by peer
+                    break
+                } else {
+                    let err = errno
+                    if err == EAGAIN || err == EWOULDBLOCK {
+                        // No data available yet, wait a bit
+                        usleep(pollInterval)
+                        totalWaitTime += pollInterval
+                    } else {
+                        // Real error
+                        print("Failed to read response: \(String(cString: strerror(err)))")
+                        return nil
+                    }
+                }
             }
 
-            guard bytesRead > 0 else {
-                print("Failed to read response: \(String(cString: strerror(errno)))")
+            // Restore blocking mode
+            fcntl(socketFD, F_SETFL, flags)
+
+            guard !responseData.isEmpty else {
+                print("Empty response from daemon (timeout or connection closed)")
                 return nil
             }
-
-            responseData.append(contentsOf: buffer[0..<bytesRead])
 
             // Parse response (find JSON line)
             if let newlineIndex = responseData.firstIndex(of: UInt8(ascii: "\n")) {
@@ -417,6 +463,57 @@ class AudioEngineClient {
         let command = ["command": "rotate_encryption_key"]
         return sendCommand(command)?.success ?? false
     }
+
+    // MARK: - HAL Config Commands
+
+    /// HAL configuration data from the daemon
+    struct HalConfigData {
+        var sampleRate: UInt32 = 48000
+        var actualSampleRate: UInt32 = 48000
+        var bufferFrames: UInt32 = 512
+        var actualBufferFrames: UInt32 = 512
+        var channelCount: UInt32 = 2
+        var active: Bool = false
+        var driverReady: Bool = false
+        var configStatus: UInt32 = 0  // 0=pending, 1=accepted, 2=negotiated, 3=error
+        var configSource: UInt32 = 0  // 1=HAL, 2=Daemon
+    }
+
+    /// Get HAL driver configuration
+    func getHalConfig() -> HalConfigData? {
+        let command = ["command": "get_hal_config"]
+
+        guard let response = sendCommand(command),
+              response.success,
+              let data = response.data else {
+            return nil
+        }
+
+        var config = HalConfigData()
+        config.sampleRate = (data["sample_rate"]?.value as? Int).map { UInt32($0) } ?? 48000
+        config.actualSampleRate = (data["actual_sample_rate"]?.value as? Int).map { UInt32($0) } ?? config.sampleRate
+        config.bufferFrames = (data["buffer_frames"]?.value as? Int).map { UInt32($0) } ?? 512
+        config.actualBufferFrames = (data["actual_buffer_frames"]?.value as? Int).map { UInt32($0) } ?? config.bufferFrames
+        config.channelCount = (data["channel_count"]?.value as? Int).map { UInt32($0) } ?? 2
+        config.active = data["active"]?.value as? Bool ?? false
+        config.driverReady = data["driver_ready"]?.value as? Bool ?? false
+        config.configStatus = (data["config_status"]?.value as? Int).map { UInt32($0) } ?? 0
+        config.configSource = (data["config_source"]?.value as? Int).map { UInt32($0) } ?? 0
+
+        return config
+    }
+
+    /// Set HAL driver sample rate
+    func setSampleRate(_ rate: UInt32) -> Bool {
+        let command: [String: Any] = ["command": "set_sample_rate", "rate": rate]
+        return sendCommand(command)?.success ?? false
+    }
+
+    /// Set HAL driver buffer frames
+    func setBufferFrames(_ frames: UInt32) -> Bool {
+        let command: [String: Any] = ["command": "set_buffer_frames", "frames": frames]
+        return sendCommand(command)?.success ?? false
+    }
 }
 
 // MARK: - Daemon Manager
@@ -448,15 +545,42 @@ class DaemonManager {
         print("DaemonManager: Using daemon path: \(daemonPath)")
     }
 
+    /// Kill any existing sotf-daemon processes (not managed by us)
+    private func killExistingDaemons() {
+        // Find and kill any existing sotf-daemon or sotf_daemon processes
+        let processNames = ["sotf-daemon", "sotf_daemon"]
+
+        for processName in processNames {
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+            task.arguments = ["-9", "-f", processName]
+
+            do {
+                try task.run()
+                task.waitUntilExit()
+                if task.terminationStatus == 0 {
+                    print("DaemonManager: Killed existing \(processName) process(es)")
+                    // Give the OS a moment to clean up
+                    usleep(100000) // 100ms
+                }
+            } catch {
+                // pkill failing is fine - means no matching processes
+            }
+        }
+    }
+
     /// Start the daemon if not already running
     func startDaemon() {
         guard !isShuttingDown else { return }
 
-        // Check if already running
+        // Check if already running (our managed process)
         if let process = daemonProcess, process.isRunning {
             print("DaemonManager: Daemon already running (PID: \(process.processIdentifier))")
             return
         }
+
+        // Kill any existing daemon processes not managed by us
+        killExistingDaemons()
 
         // Check if daemon exists
         guard FileManager.default.isExecutableFile(atPath: daemonPath) else {
@@ -539,7 +663,9 @@ class DaemonManager {
         watchdogTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
             guard let self = self, !self.isShuttingDown else { return }
 
-            if self.daemonProcess == nil || !self.daemonProcess!.isRunning {
+            // Safe check: use optional chaining to avoid force unwrap race
+            let isRunning = self.daemonProcess?.isRunning ?? false
+            if !isRunning {
                 print("DaemonManager: Watchdog detected daemon not running, restarting...")
                 self.startDaemon()
             }
@@ -790,27 +916,43 @@ class StatusBarController: NSObject, ObservableObject {
     }
 
     private func showConfigWindow() {
+        // If window already exists, just bring it to front
+        if let existingWindow = configWindow, existingWindow.isVisible {
+            existingWindow.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
-            styleMask: [.titled, .closable, .resizable],
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 700),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered,
             defer: false
         )
 
         window.title = "AutoEQ Configuration"
         window.center()
+        window.minSize = NSSize(width: 800, height: 500)
+
+        // IMPORTANT: Don't release window when closed, just hide it
+        // This prevents the app from quitting when the window is closed
+        window.isReleasedWhenClosed = false
 
         let contentView = ConfigurationView(
             client: client,
-            onClose: { [weak self] in
-                self?.showingWindow = false
+            onClose: { [weak window] in
+                window?.close()
             }
         )
 
         window.contentView = NSHostingView(rootView: contentView)
         window.makeKeyAndOrderFront(nil)
 
-        // Keep window open
+        // Store reference to window
+        configWindow = window
+        showingWindow = true
+
+        // Bring app to front
         NSApp.activate(ignoringOtherApps: true)
     }
 }
@@ -1013,7 +1155,15 @@ struct ConfigurationView: View {
     @State private var encryptionFingerprint: String = ""
     @State private var encryptionError: String? = nil
 
+    // HAL Configuration state
+    @State private var halConfig: AudioEngineClient.HalConfigData = AudioEngineClient.HalConfigData()
+    @State private var selectedSampleRate: UInt32 = 48000
+    @State private var selectedBufferFrames: UInt32 = 512
+    @State private var halConfigError: String? = nil
+
     let channelOptions = Array(1...16)
+    let sampleRateOptions: [UInt32] = [44100, 48000, 96000]
+    let bufferFramesOptions: [UInt32] = [128, 256, 512, 1024, 2048]
 
     var body: some View {
         HStack(spacing: 0) {
@@ -1028,9 +1178,9 @@ struct ConfigurationView: View {
             .frame(width: 70)
             .padding(.leading, 8)
 
-            // Main content
-            VStack(spacing: 20) {
-                // Header
+            // Main content with scroll
+            VStack(spacing: 0) {
+                // Header (fixed, not scrollable)
                 HStack {
                     Text("AutoEQ Audio Configuration")
                         .font(.title)
@@ -1042,6 +1192,10 @@ struct ConfigurationView: View {
                 .padding()
 
                 Divider()
+
+                // Scrollable configuration content
+                ScrollView(.vertical, showsIndicators: true) {
+                    VStack(spacing: 20) {
 
             // Audio Source Section
             GroupBox(label: Label("Audio Source", systemImage: "speaker.wave.3")) {
@@ -1311,9 +1465,157 @@ struct ConfigurationView: View {
                 refreshEncryptionStatus()
             }
 
-                Spacer()
+            // HAL Driver Configuration Section
+            GroupBox(label: Label("HAL Driver Configuration", systemImage: "cpu")) {
+                VStack(alignment: .leading, spacing: 12) {
+                    // Status row
+                    HStack {
+                        // Driver status
+                        HStack(spacing: 4) {
+                            Image(systemName: halConfig.driverReady ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                .foregroundColor(halConfig.driverReady ? .green : .red)
+                            Text(halConfig.driverReady ? "Driver Ready" : "Driver Not Ready")
+                                .font(.caption)
+                        }
 
-                // Status
+                        Spacer()
+
+                        // Active status
+                        HStack(spacing: 4) {
+                            Image(systemName: halConfig.active ? "waveform" : "waveform.slash")
+                                .foregroundColor(halConfig.active ? .green : .secondary)
+                            Text(halConfig.active ? "Audio Active" : "No Audio")
+                                .font(.caption)
+                                .foregroundColor(halConfig.active ? .primary : .secondary)
+                        }
+
+                        Spacer()
+
+                        Button(action: refreshHalConfig) {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .help("Refresh HAL status")
+                    }
+
+                    Divider()
+
+                    // Sample Rate
+                    HStack {
+                        Text("Sample Rate:")
+                            .frame(width: 100, alignment: .leading)
+
+                        Picker("", selection: $selectedSampleRate) {
+                            ForEach(sampleRateOptions, id: \.self) { rate in
+                                Text("\(rate) Hz").tag(rate)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 250)
+                        .onChange(of: selectedSampleRate) { _, newRate in
+                            setSampleRate(newRate)
+                        }
+
+                        Spacer()
+
+                        // Show actual rate if different from requested
+                        if halConfig.actualSampleRate != selectedSampleRate && halConfig.actualSampleRate != 0 {
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.right")
+                                    .foregroundColor(.orange)
+                                Text("Actual: \(halConfig.actualSampleRate) Hz")
+                                    .font(.caption)
+                                    .foregroundColor(.orange)
+                            }
+                        }
+                    }
+
+                    // Buffer Frames
+                    HStack {
+                        Text("Buffer Size:")
+                            .frame(width: 100, alignment: .leading)
+
+                        Picker("", selection: $selectedBufferFrames) {
+                            ForEach(bufferFramesOptions, id: \.self) { frames in
+                                Text("\(frames) frames").tag(frames)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .frame(width: 150)
+                        .onChange(of: selectedBufferFrames) { _, newFrames in
+                            setBufferFrames(newFrames)
+                        }
+
+                        // Calculate latency
+                        let latencyMs = Double(selectedBufferFrames) / Double(selectedSampleRate) * 1000.0
+                        Text(String(format: "≈ %.1f ms latency", latencyMs))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        Spacer()
+
+                        // Show actual buffer if different
+                        if halConfig.actualBufferFrames != selectedBufferFrames && halConfig.actualBufferFrames != 0 {
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.right")
+                                    .foregroundColor(.orange)
+                                Text("Actual: \(halConfig.actualBufferFrames)")
+                                    .font(.caption)
+                                    .foregroundColor(.orange)
+                            }
+                        }
+                    }
+
+                    // Config negotiation status
+                    if halConfig.configStatus != 0 {
+                        HStack(spacing: 4) {
+                            let (statusIcon, statusText, statusColor) = configStatusDisplay(halConfig.configStatus)
+                            Image(systemName: statusIcon)
+                                .foregroundColor(statusColor)
+                            Text(statusText)
+                                .font(.caption)
+                                .foregroundColor(statusColor)
+
+                            if halConfig.configSource == 1 {
+                                Text("(HAL initiated)")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            } else if halConfig.configSource == 2 {
+                                Text("(Daemon initiated)")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+
+                    // Error display
+                    if let error = halConfigError {
+                        HStack(spacing: 4) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.orange)
+                            Text(error)
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                        }
+                    }
+
+                    // Info text
+                    Text("Sample rate and buffer size affect audio quality and latency. Lower buffer sizes reduce latency but may cause audio glitches on slower systems.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.top, 4)
+                }
+                .padding()
+            }
+            .onAppear {
+                refreshHalConfig()
+            }
+                    }  // End of scrollable VStack
+                    .padding(.horizontal)
+                    .padding(.bottom)
+                }  // End of ScrollView
+
+                // Status bar (fixed at bottom, not scrollable)
+                Divider()
                 HStack {
                     Image(systemName: "circle.fill")
                         .foregroundColor(.green)
@@ -1764,6 +2066,73 @@ struct ConfigurationView: View {
         } else {
             // Daemon might not be running
             encryptionFingerprint = ""
+        }
+    }
+
+    // MARK: - HAL Configuration Methods
+
+    private func refreshHalConfig() {
+        halConfigError = nil
+
+        if let config = client.getHalConfig() {
+            halConfig = config
+            // Update UI to match actual values
+            if config.actualSampleRate != 0 {
+                selectedSampleRate = config.actualSampleRate
+            }
+            if config.actualBufferFrames != 0 {
+                selectedBufferFrames = config.actualBufferFrames
+            }
+        } else {
+            halConfigError = "Failed to get HAL config (daemon may not be running)"
+        }
+    }
+
+    private func setSampleRate(_ rate: UInt32) {
+        halConfigError = nil
+
+        if client.setSampleRate(rate) {
+            print("Sample rate set to \(rate) Hz")
+            // Refresh to get actual values after negotiation
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                refreshHalConfig()
+            }
+        } else {
+            halConfigError = "Failed to set sample rate"
+            // Revert to previous value
+            selectedSampleRate = halConfig.actualSampleRate != 0 ? halConfig.actualSampleRate : 48000
+        }
+    }
+
+    private func setBufferFrames(_ frames: UInt32) {
+        halConfigError = nil
+
+        if client.setBufferFrames(frames) {
+            print("Buffer frames set to \(frames)")
+            // Refresh to get actual values after negotiation
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                refreshHalConfig()
+            }
+        } else {
+            halConfigError = "Failed to set buffer frames"
+            // Revert to previous value
+            selectedBufferFrames = halConfig.actualBufferFrames != 0 ? halConfig.actualBufferFrames : 512
+        }
+    }
+
+    /// Get display info for config status code
+    private func configStatusDisplay(_ status: UInt32) -> (icon: String, text: String, color: Color) {
+        switch status {
+        case 0:
+            return ("clock", "Pending...", .orange)
+        case 1:
+            return ("checkmark.circle", "Accepted", .green)
+        case 2:
+            return ("arrow.triangle.2.circlepath", "Negotiated", .blue)
+        case 3:
+            return ("xmark.circle", "Error", .red)
+        default:
+            return ("questionmark.circle", "Unknown", .secondary)
         }
     }
 }

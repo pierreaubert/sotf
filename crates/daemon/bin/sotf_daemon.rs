@@ -88,6 +88,13 @@ enum Command {
     EncryptionStatus,
     #[serde(rename = "rotate_encryption_key")]
     RotateEncryptionKey,
+    // HAL config commands
+    #[serde(rename = "set_sample_rate")]
+    SetSampleRate { rate: u32 },
+    #[serde(rename = "set_buffer_frames")]
+    SetBufferFrames { frames: u32 },
+    #[serde(rename = "get_hal_config")]
+    GetHalConfig,
 }
 
 #[derive(Debug, Serialize)]
@@ -168,6 +175,10 @@ impl AudioDaemon {
             Command::SetEncryption { enabled } => self.handle_set_encryption(enabled).await,
             Command::EncryptionStatus => self.handle_encryption_status().await,
             Command::RotateEncryptionKey => self.handle_rotate_encryption_key().await,
+            // HAL config commands
+            Command::SetSampleRate { rate } => self.handle_set_sample_rate(rate).await,
+            Command::SetBufferFrames { frames } => self.handle_set_buffer_frames(frames).await,
+            Command::GetHalConfig => self.handle_get_hal_config().await,
         }
     }
 
@@ -209,6 +220,16 @@ impl AudioDaemon {
 
     async fn handle_stop(&self) -> Response {
         let mut manager = self.manager.lock();
+
+        // Clear engine_ready flag so Swift HAL driver stops sending audio
+        #[cfg(target_os = "macos")]
+        {
+            if let Ok(buffer) = driver_hal::SharedAudioBuffer::open_default() {
+                buffer.set_engine_ready(false);
+                log::debug!("Cleared engine_ready flag in shared memory");
+            }
+        }
+
         match manager.stop() {
             Ok(_) => Response::ok_empty(),
             Err(e) => Response::err(format!("Failed to stop: {}", e)),
@@ -265,7 +286,15 @@ impl AudioDaemon {
 
     async fn handle_load_plugins(&self, plugins: Vec<PluginConfig>) -> Response {
         let mut manager = self.manager.lock();
-        let output_device = self.selected_device.lock().clone();
+        let mut output_device = self.selected_device.lock().clone();
+
+        // If no device selected (or it's the virtual device), find a safe physical fallback
+        if output_device.is_none() || output_device.as_ref().map(|d| d.contains("SotF")).unwrap_or(false) {
+            output_device = find_fallback_output_device();
+            if let Some(ref dev) = output_device {
+                log::info!("Using fallback output device for HAL playback: {}", dev);
+            }
+        }
 
         // Stop current playback if running
         let _ = manager.stop();
@@ -289,6 +318,18 @@ impl AudioDaemon {
         match manager.start_hal_playback(output_device, plugins, output_channels) {
             Ok(_) => {
                 log::info!("HAL plugin chain loaded successfully");
+
+                // CRITICAL: Set engine_ready flag so Swift HAL driver starts sending audio
+                #[cfg(target_os = "macos")]
+                {
+                    if let Ok(buffer) = driver_hal::SharedAudioBuffer::open_default() {
+                        buffer.set_engine_ready(true);
+                        log::info!("Set engine_ready=true in shared memory");
+                    } else {
+                        log::warn!("Could not open shared memory to set engine_ready flag");
+                    }
+                }
+
                 Response::ok_empty()
             }
             Err(e) => {
@@ -394,8 +435,133 @@ impl AudioDaemon {
         }
     }
 
+    // =========================================================================
+    // HAL config handlers
+    // =========================================================================
+
+    /// Set sample rate and notify HAL driver
+    async fn handle_set_sample_rate(&self, rate: u32) -> Response {
+        #[cfg(target_os = "macos")]
+        {
+            const SUPPORTED: [u32; 3] = [44100, 48000, 96000];
+
+            if !SUPPORTED.contains(&rate) {
+                return Response::err(format!(
+                    "Unsupported sample rate: {}. Supported: {:?}",
+                    rate, SUPPORTED
+                ));
+            }
+
+            // Reconfigure audio pipeline if needed
+            let manager = self.manager.lock();
+            let state = manager.get_state();
+            drop(manager); // Release lock before potential reconfiguration
+
+            if state != sotf_audio::manager::StreamingState::Idle {
+                // Active playback - would need to restart with new rate
+                log::warn!("Cannot change sample rate during active playback, will apply on next start");
+            }
+
+            // Notify HAL driver via shared memory
+            if let Ok(mut buffer) = driver_hal::SharedAudioBuffer::open_default() {
+                buffer.set_actual_sample_rate(rate);
+                buffer.set_actual_buffer_frames(buffer.buffer_frames());
+                buffer.set_config_source(2); // Daemon initiated
+                buffer.set_config_changed();
+
+                log::info!("Sample rate set to {}Hz, HAL driver notified", rate);
+
+                Response::ok(serde_json::json!({
+                    "sample_rate": rate,
+                }))
+            } else {
+                Response::err("Failed to open shared memory")
+            }
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = rate;
+            Response::err("HAL driver only available on macOS")
+        }
+    }
+
+    /// Set buffer frames and notify HAL driver
+    async fn handle_set_buffer_frames(&self, frames: u32) -> Response {
+        #[cfg(target_os = "macos")]
+        {
+            if frames < 64 || frames > 4096 {
+                return Response::err(format!(
+                    "Buffer frames must be between 64 and 4096, got: {}",
+                    frames
+                ));
+            }
+
+            // Notify HAL driver via shared memory
+            // Note: Only update buffer_frames, preserve the current sample rate
+            // to avoid accidentally reverting concurrent sample rate changes
+            if let Ok(mut buffer) = driver_hal::SharedAudioBuffer::open_default() {
+                // Read current actual sample rate to preserve it
+                let current_rate = buffer.actual_sample_rate();
+                let rate_to_use = if current_rate > 0 { current_rate } else { buffer.sample_rate() };
+
+                buffer.set_actual_sample_rate(rate_to_use);
+                buffer.set_actual_buffer_frames(frames);
+                buffer.set_config_source(2); // Daemon initiated
+                buffer.set_config_changed();
+
+                log::info!("Buffer frames set to {}, HAL driver notified (sample rate preserved at {})", frames, rate_to_use);
+
+                Response::ok(serde_json::json!({
+                    "buffer_frames": frames,
+                }))
+            } else {
+                Response::err("Failed to open shared memory")
+            }
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = frames;
+            Response::err("HAL driver only available on macOS")
+        }
+    }
+
+    /// Get current HAL driver configuration
+    async fn handle_get_hal_config(&self) -> Response {
+        #[cfg(target_os = "macos")]
+        {
+            match driver_hal::SharedAudioBuffer::open_default() {
+                Ok(buffer) => Response::ok(serde_json::json!({
+                    "sample_rate": buffer.sample_rate(),
+                    "actual_sample_rate": buffer.actual_sample_rate(),
+                    "buffer_frames": buffer.buffer_frames(),
+                    "actual_buffer_frames": buffer.actual_buffer_frames(),
+                    "channel_count": buffer.channel_count(),
+                    "active": buffer.is_active(),
+                    "driver_ready": buffer.driver_ready(),
+                    "config_status": buffer.config_status(),
+                    "config_source": buffer.config_source(),
+                })),
+                Err(e) => Response::err(format!("Failed to open shared memory: {}", e)),
+            }
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            Response::err("HAL driver only available on macOS")
+        }
+    }
+
     fn handle_client(&self, mut stream: UnixStream) {
-        let mut reader = BufReader::new(stream.try_clone().unwrap());
+        let reader_stream = match stream.try_clone() {
+            Ok(s) => s,
+            Err(e) => {
+                log::error!("Failed to clone stream for reading: {}", e);
+                return;
+            }
+        };
+        let mut reader = BufReader::new(reader_stream);
         let mut line = String::new();
 
         loop {
@@ -420,12 +586,12 @@ impl AudioDaemon {
 
                     let json = serde_json::to_string(&response).unwrap();
                     if let Err(e) = writeln!(stream, "{}", json) {
-                        eprintln!("Failed to write response: {}", e);
+                        log::error!("Failed to write response: {}", e);
                         break;
                     }
                 }
                 Err(e) => {
-                    eprintln!("Failed to read from client: {}", e);
+                    log::error!("Failed to read from client: {}", e);
                     break;
                 }
             }
@@ -438,17 +604,30 @@ impl AudioDaemon {
         // Ensure socket directory exists with secure permissions
         ensure_secure_socket_dir(&socket_path)?;
 
-        // Check if another instance is already running
-        if socket_path.exists() {
-            if let Ok(_stream) = UnixStream::connect(&socket_path) {
-                return Err("Another daemon instance is already running".into());
+        // Start HAL config watcher thread (macOS only)
+        #[cfg(target_os = "macos")]
+        let hal_config_watcher = {
+            let manager = Arc::clone(&self.manager);
+            let running = Arc::clone(&self.running);
+            spawn_hal_config_watcher(manager, running)
+        };
+
+        // Try to bind the socket, handling TOCTOU race properly
+        // Instead of check-then-remove-then-bind, we attempt bind directly
+        // and handle AddrInUse by checking if another daemon is actually running
+        let listener = match UnixListener::bind(&socket_path) {
+            Ok(l) => l,
+            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
+                // Socket exists - check if another daemon is running
+                if let Ok(_stream) = UnixStream::connect(&socket_path) {
+                    return Err("Another daemon instance is already running".into());
+                }
+                // Stale socket - remove it and try again
+                let _ = std::fs::remove_file(&socket_path);
+                UnixListener::bind(&socket_path)?
             }
-            // Socket exists but no one is listening - stale socket, safe to remove
-        }
-
-        let _ = std::fs::remove_file(&socket_path);
-
-        let listener = UnixListener::bind(&socket_path)?;
+            Err(e) => return Err(e.into()),
+        };
         println!("Audio daemon listening on {}", socket_path.display());
 
         // Also create legacy symlink for backwards compatibility with old clients
@@ -496,7 +675,7 @@ impl AudioDaemon {
                     });
                 }
                 Err(e) => {
-                    eprintln!("Failed to accept connection: {}", e);
+                    log::error!("Failed to accept connection: {}", e);
                 }
             }
         }
@@ -504,8 +683,205 @@ impl AudioDaemon {
         // Cleanup
         let _ = std::fs::remove_file(&socket_path);
         let _ = std::fs::remove_file(LEGACY_SOCKET_PATH);
+
+        // Wait for HAL config watcher to finish
+        #[cfg(target_os = "macos")]
+        {
+            let _ = hal_config_watcher.join();
+        }
+
         Ok(())
     }
+}
+
+// =============================================================================
+// HAL Config Watcher (macOS only)
+// =============================================================================
+
+/// Supported sample rates for HAL driver
+#[cfg(target_os = "macos")]
+const SUPPORTED_SAMPLE_RATES: [u32; 3] = [44100, 48000, 96000];
+
+/// Spawn a background thread that polls shared memory for HAL-initiated config changes
+#[cfg(target_os = "macos")]
+fn spawn_hal_config_watcher(
+    audio_manager: Arc<Mutex<AudioEngineManager>>,
+    running: Arc<Mutex<bool>>,
+) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        use std::time::Duration;
+
+        let poll_interval = Duration::from_millis(50);
+
+        log::info!("HAL config watcher thread started");
+
+        loop {
+            if !*running.lock() {
+                break;
+            }
+
+            // Try to open shared memory
+            if let Ok(mut buffer) = driver_hal::SharedAudioBuffer::open_default() {
+                // Atomically check for pending config change from HAL
+                // Read config_changed first (which has an Acquire barrier), then
+                // check source. The order matters for memory visibility.
+                let changed = buffer.config_changed();
+                if changed {
+                    let source = buffer.config_source();
+                    // Only handle HAL-initiated changes (source=1)
+                    if source == 1 {
+                        handle_hal_config_change(&mut buffer, &audio_manager);
+                    }
+                }
+            }
+
+            std::thread::sleep(poll_interval);
+        }
+
+        log::info!("HAL config watcher thread stopped");
+    })
+}
+
+/// Handle a HAL-initiated config change
+///
+/// # Thread Safety
+/// This function takes `&mut SharedAudioBuffer` because `acknowledge_config_change`
+/// writes non-atomic fields. The mutable borrow is safe because:
+/// 1. Only the config watcher thread calls this function
+/// 2. The SharedAudioBuffer is opened fresh in each iteration, not shared
+/// 3. Synchronization with HAL driver is via atomic flags + memory fences
+#[cfg(target_os = "macos")]
+fn handle_hal_config_change(
+    buffer: &mut driver_hal::SharedAudioBuffer,
+    audio_manager: &Arc<Mutex<AudioEngineManager>>,
+) {
+    let requested_rate = buffer.requested_sample_rate();
+    let requested_frames = buffer.requested_buffer_frames();
+
+    log::info!(
+        "HAL config change request: sample_rate={}, buffer_frames={}",
+        requested_rate,
+        requested_frames
+    );
+
+    // Validate requested values
+    if requested_rate == 0 {
+        log::warn!("Invalid config request: sample_rate=0, ignoring");
+        buffer.acknowledge_config_change(48000, requested_frames, 3, 2); // Error code 2 = invalid rate
+        return;
+    }
+    if requested_frames == 0 || requested_frames > 65536 {
+        log::warn!("Invalid config request: buffer_frames={}, out of range", requested_frames);
+        buffer.acknowledge_config_change(requested_rate, 512, 3, 3); // Error code 3 = invalid frames
+        return;
+    }
+
+    // Check if we support this sample rate
+    if SUPPORTED_SAMPLE_RATES.contains(&requested_rate) {
+        // Accept the config and reconfigure pipeline
+        match reconfigure_audio_pipeline(audio_manager, requested_rate, requested_frames) {
+            Ok(()) => {
+                buffer.acknowledge_config_change(requested_rate, requested_frames, 1, 0);
+                log::info!(
+                    "Config accepted: {}Hz, {} frames",
+                    requested_rate,
+                    requested_frames
+                );
+            }
+            Err(e) => {
+                log::error!("Pipeline reconfiguration failed: {}", e);
+                buffer.acknowledge_config_change(requested_rate, requested_frames, 3, 1);
+            }
+        }
+    } else {
+        // Negotiate to closest supported rate
+        let actual_rate = SUPPORTED_SAMPLE_RATES
+            .iter()
+            .min_by_key(|&&r| (r as i32 - requested_rate as i32).abs())
+            .copied()
+            .unwrap_or(48000);
+
+        log::info!(
+            "Config negotiated: requested {}Hz, using {}Hz",
+            requested_rate,
+            actual_rate
+        );
+
+        match reconfigure_audio_pipeline(audio_manager, actual_rate, requested_frames) {
+            Ok(()) => {
+                buffer.acknowledge_config_change(actual_rate, requested_frames, 2, 0);
+            }
+            Err(e) => {
+                log::error!("Pipeline reconfiguration with negotiated rate failed: {}", e);
+                buffer.acknowledge_config_change(actual_rate, requested_frames, 3, 1);
+            }
+        }
+    }
+}
+
+/// Reconfigure the audio pipeline with new sample rate and buffer size
+///
+/// # Arguments
+/// * `audio_manager` - The audio engine manager
+/// * `sample_rate` - New sample rate in Hz
+/// * `buffer_frames` - New buffer size in frames (currently unused, reserved for future use)
+///
+/// # Note
+/// The `buffer_frames` parameter is not yet used because buffer size changes
+/// require more complex pipeline reconfiguration. The parameter is kept for
+/// API completeness and future implementation.
+#[cfg(target_os = "macos")]
+fn reconfigure_audio_pipeline(
+    audio_manager: &Arc<Mutex<AudioEngineManager>>,
+    sample_rate: u32,
+    #[allow(unused_variables)]
+    buffer_frames: u32,
+) -> Result<(), String> {
+    let mut manager = audio_manager.lock();
+
+    // Check if we have an active HAL playback session
+    let state = manager.get_state();
+    if state == sotf_audio::manager::StreamingState::Idle {
+        // No active playback - just acknowledge, HAL driver will update its state
+        log::debug!("No active playback, acknowledging config change");
+        return Ok(());
+    }
+
+    // For HAL playback, we need to restart with the new sample rate
+    log::info!("Reconfiguring HAL playback to {}Hz (buffer_frames={} reserved for future)", sample_rate, buffer_frames);
+
+    // Stop current playback
+    if let Err(e) = manager.stop() {
+        log::warn!("Failed to stop current playback: {}", e);
+    }
+
+    // TODO(#future): Implement buffer_frames reconfiguration
+    // This would require:
+    // 1. Storing the current plugin chain configuration
+    // 2. Stopping the playback
+    // 3. Recreating the engine with new buffer size
+    // 4. Restoring the plugin chain
+    // For now, we just stop and let the next load_plugins command use the new settings.
+
+    Ok(())
+}
+
+fn find_fallback_output_device() -> Option<String> {
+    if let Ok(devices) = list_audio_devices() {
+        // Filter out virtual devices
+        let physical_device = devices.iter().find(|d| {
+            let name = d.get("name").and_then(|n| n.as_str()).unwrap_or("");
+            !name.contains("SotF") && 
+            !name.contains("BlackHole") && 
+            !name.contains("ZoomAudio") && 
+            !name.contains("Loopback")
+        });
+
+        if let Some(device) = physical_device {
+            return device.get("name").and_then(|n| n.as_str()).map(|s| s.to_string());
+        }
+    }
+    None
 }
 
 fn list_audio_devices() -> Result<Vec<serde_json::Value>, String> {
@@ -629,8 +1005,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             Err(e) => {
-                eprintln!("⚠️  Warning: Failed to initialize HAL: {}", e);
-                eprintln!("   HAL plugins will not be available");
+                log::warn!("Failed to initialize HAL: {}", e);
+                log::warn!("HAL plugins will not be available");
             }
         }
     }
@@ -657,6 +1033,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("===============================================================================");
     println!("🚀 Starting daemon...");
     println!("===============================================================================");
+
+    // Auto-start HAL playback with default config (2ch passthrough)
+    // This ensures audio flows immediately without waiting for toolbar configuration
+    {
+        println!("▶️  Auto-starting HAL playback (2ch passthrough)...");
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let plugins = vec![
+            PluginConfig {
+                plugin_type: "hal_input".to_string(),
+                parameters: serde_json::json!({"channels": 2}),
+            },
+            PluginConfig {
+                plugin_type: "hal_output".to_string(),
+                parameters: serde_json::json!({"channels": 2}),
+            }
+        ];
+        
+        runtime.block_on(daemon.handle_load_plugins(plugins));
+    }
 
     daemon.run()?;
 

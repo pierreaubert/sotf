@@ -28,14 +28,24 @@ final class AudioRingBuffer {
     }
 
     /// Number of samples available to read
+    ///
+    /// Note: This reads two positions non-atomically, which is safe for SPSC
+    /// (single-producer single-consumer) usage where this is called from
+    /// the consumer side. For MPMC usage, atomic snapshot would be required.
     var availableToRead: Int {
+        // Memory barrier to ensure we see the latest writePosition
+        OSMemoryBarrier()
         let write = writePosition
         let read = readPosition
         return Int(write - read)
     }
 
     /// Number of samples available to write
+    ///
+    /// Note: This reads two positions non-atomically, which is safe for SPSC
+    /// usage where this is called from the producer side.
     var availableToWrite: Int {
+        OSMemoryBarrier()
         return capacity - availableToRead
     }
 
@@ -157,16 +167,30 @@ final class MultiChannelRingBuffer {
     }
 
     /// Write interleaved audio data
+    ///
+    /// - Parameters:
+    ///   - samples: Pointer to interleaved audio samples
+    ///   - frameCount: Number of frames to write
+    /// - Returns: Number of frames actually written
+    ///
+    /// - Note: The input buffer must contain at least `frameCount * channelCount` samples
     func writeInterleaved(_ samples: UnsafePointer<Float>, frameCount: Int) -> Int {
+        guard frameCount > 0 && channelCount > 0 else { return 0 }
+
         let available = availableFramesToWrite
         let toWrite = min(frameCount, available)
 
         if toWrite == 0 { return 0 }
 
+        // Use UnsafeBufferPointer for bounds-safe access
+        let sampleBuffer = UnsafeBufferPointer(start: samples, count: toWrite * channelCount)
+
         // Deinterleave and write to each channel
         for frame in 0..<toWrite {
             for channel in 0..<channelCount {
-                var sample = samples[frame * channelCount + channel]
+                let index = frame * channelCount + channel
+                guard index < sampleBuffer.count else { break }
+                var sample = sampleBuffer[index]
                 channelBuffers[channel].write(&sample, count: 1)
             }
         }
@@ -175,7 +199,16 @@ final class MultiChannelRingBuffer {
     }
 
     /// Read to interleaved audio data
+    ///
+    /// - Parameters:
+    ///   - samples: Pointer to output buffer for interleaved samples
+    ///   - frameCount: Number of frames to read
+    /// - Returns: Number of frames actually read
+    ///
+    /// - Note: The output buffer must have space for at least `frameCount * channelCount` samples
     func readInterleaved(_ samples: UnsafeMutablePointer<Float>, frameCount: Int) -> Int {
+        guard frameCount > 0 && channelCount > 0 else { return 0 }
+
         let available = availableFramesToRead
         let toRead = min(frameCount, available)
 
@@ -184,19 +217,26 @@ final class MultiChannelRingBuffer {
             return 0
         }
 
+        // Use UnsafeMutableBufferPointer for bounds-safe access
+        let sampleBuffer = UnsafeMutableBufferPointer(start: samples, count: frameCount * channelCount)
+
         // Read from each channel and interleave
         for frame in 0..<toRead {
             for channel in 0..<channelCount {
+                let index = frame * channelCount + channel
+                guard index < sampleBuffer.count else { break }
                 var sample: Float = 0
                 channelBuffers[channel].read(&sample, count: 1)
-                samples[frame * channelCount + channel] = sample
+                sampleBuffer[index] = sample
             }
         }
 
         // Fill remaining with silence
         if toRead < frameCount {
-            let remaining = (frameCount - toRead) * channelCount
-            memset(samples.advanced(by: toRead * channelCount), 0, remaining * MemoryLayout<Float>.size)
+            let startIndex = toRead * channelCount
+            for i in startIndex..<sampleBuffer.count {
+                sampleBuffer[i] = 0
+            }
         }
 
         return toRead

@@ -249,6 +249,17 @@ final class EncryptionKeyManager {
         }
 
         do {
+            // Check file permissions - should be 0600 or 0640 (owner read/write only)
+            let attrs = try FileManager.default.attributesOfItem(atPath: keyPath)
+            if let permissions = attrs[.posixPermissions] as? Int {
+                // Allow 0600 (owner rw) or 0640 (owner rw, group r)
+                let mode = permissions & 0o777
+                if mode != 0o600 && mode != 0o640 {
+                    halLog("Warning: Key file has insecure permissions \(String(mode, radix: 8)) (expected 600 or 640)")
+                    // Continue loading but warn - daemon may have created with different permissions
+                }
+            }
+
             let keyData = try Data(contentsOf: URL(fileURLWithPath: keyPath))
             guard keyData.count == 32 else {
                 halLog("Invalid key file size: \(keyData.count) bytes (expected 32)")
@@ -258,7 +269,7 @@ final class EncryptionKeyManager {
 
             let keyBytes = [UInt8](keyData)
             cipher = AudioCipher(keyBytes: keyBytes)
-            lastMtime = try? FileManager.default.attributesOfItem(atPath: keyPath)[.modificationDate] as? Date
+            lastMtime = attrs[.modificationDate] as? Date
             halLog("Loaded encryption key, fingerprint: \(cipher?.getFingerprintHex() ?? "nil")")
         } catch {
             halLog("Failed to load encryption key: \(error)")
@@ -298,12 +309,25 @@ final class EncryptionKeyManager {
         return cipher?.getFingerprint()
     }
 
-    /// Check if encryption is enabled
+    /// Check if encryption is enabled AND cipher is available
+    ///
+    /// Returns true only if both `enabled` flag is set AND a valid cipher
+    /// has been loaded. This prevents the case where encryption is "enabled"
+    /// but no key is available.
     var isEnabled: Bool {
-        get { enabled }
+        get { enabled && cipher != nil }
         set {
             enabled = newValue
-            halLog("Encryption \(enabled ? "enabled" : "disabled")")
+            if newValue && cipher == nil {
+                halLog("Warning: Encryption enabled but no cipher available (key may not be loaded)")
+            } else {
+                halLog("Encryption \(enabled ? "enabled" : "disabled")")
+            }
         }
+    }
+
+    /// Check if encryption is available (cipher loaded, regardless of enabled state)
+    var isAvailable: Bool {
+        return cipher != nil
     }
 }

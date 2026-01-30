@@ -12,7 +12,8 @@ use tempfile::NamedTempFile;
 
 /// Magic number for shared memory header validation: 'SOTF'
 const SHARED_MEMORY_MAGIC: u32 = 0x534F5446;
-const SHARED_MEMORY_VERSION: u32 = 1;
+/// Version 3: Added config negotiation fields
+const SHARED_MEMORY_VERSION: u32 = 3;
 
 /// Shared audio header structure (must match driver_hal::SharedAudioHeader)
 #[repr(C)]
@@ -28,7 +29,18 @@ struct SharedAudioHeader {
     config_changed: AtomicU32,
     driver_ready: AtomicU32,
     engine_ready: AtomicU32,
-    reserved: [u32; 4],
+    // Encryption fields (version 2+)
+    encrypted: AtomicU32,
+    key_fingerprint: [u8; 8],
+    frame_counter: AtomicU64,
+    // Config negotiation fields (version 3+)
+    requested_sample_rate: u32,
+    requested_buffer_frames: u32,
+    actual_sample_rate: u32,
+    actual_buffer_frames: u32,
+    config_status: AtomicU32,
+    config_source: AtomicU32,
+    config_error_code: u32,
 }
 
 /// Create a mock shared memory file for testing
@@ -56,7 +68,18 @@ fn create_mock_shared_memory(
         config_changed: AtomicU32::new(0),
         driver_ready: AtomicU32::new(1),
         engine_ready: AtomicU32::new(0),
-        reserved: [0; 4],
+        // Encryption fields (version 2+)
+        encrypted: AtomicU32::new(0),
+        key_fingerprint: [0; 8],
+        frame_counter: AtomicU64::new(0),
+        // Config negotiation fields (version 3+)
+        requested_sample_rate: 0,
+        requested_buffer_frames: 0,
+        actual_sample_rate: sample_rate,
+        actual_buffer_frames: buffer_frames,
+        config_status: AtomicU32::new(0),
+        config_source: AtomicU32::new(0),
+        config_error_code: 0,
     };
 
     let header_bytes: &[u8] =
