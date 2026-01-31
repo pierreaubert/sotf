@@ -40,13 +40,6 @@ pub fn get_secure_socket_path() -> PathBuf {
     PathBuf::from(format!("/tmp/sotf-{}/daemon.sock", uid))
 }
 
-/// Get the secure shared memory path for this user
-pub fn get_secure_shm_path() -> PathBuf {
-    let uid = get_current_uid();
-    // Use UID-based path to match Swift HAL driver
-    PathBuf::from(format!("/tmp/sotf-{}/audio.shm", uid))
-}
-
 /// Get current user ID
 fn get_current_uid() -> u32 {
     #[cfg(unix)]
@@ -167,27 +160,6 @@ pub fn ensure_secure_socket_dir(socket_path: &PathBuf) -> std::io::Result<()> {
         }
     }
     Ok(())
-}
-
-/// Security configuration
-#[derive(Debug, Clone)]
-pub struct SecurityConfig {
-    /// Whether to verify peer credentials on connection
-    pub verify_credentials: bool,
-    /// Whether to use per-user socket paths
-    pub per_user_sockets: bool,
-    /// Whether to use per-user shared memory
-    pub per_user_shm: bool,
-}
-
-impl Default for SecurityConfig {
-    fn default() -> Self {
-        Self {
-            verify_credentials: true,
-            per_user_sockets: true,
-            per_user_shm: true,
-        }
-    }
 }
 
 // =============================================================================
@@ -560,28 +532,6 @@ mod tests {
         let path1 = get_secure_socket_path();
         let path2 = get_secure_socket_path();
         assert_eq!(path1, path2, "Socket path should be deterministic");
-    }
-
-    #[test]
-    fn test_shm_path_deterministic() {
-        // Shared memory path should be deterministic
-        let path1 = get_secure_shm_path();
-        let path2 = get_secure_shm_path();
-        assert_eq!(path1, path2, "Shared memory path should be deterministic");
-    }
-
-    #[test]
-    fn test_shm_path_contains_uid() {
-        let path = get_secure_shm_path();
-        let uid = get_current_uid();
-
-        // Path should contain the UID
-        let path_str = path.to_string_lossy();
-        assert!(
-            path_str.contains(&uid.to_string()),
-            "Shared memory path should contain UID: {}",
-            path_str
-        );
     }
 
     #[test]

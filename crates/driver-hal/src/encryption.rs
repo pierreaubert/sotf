@@ -199,6 +199,22 @@ pub fn samples_to_encrypted(samples: &[f32]) -> Vec<u8> {
     bytes
 }
 
+/// Get the path to the session encryption key (~/.config/sotf/session.key)
+pub fn get_session_key_path() -> std::path::PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    std::path::PathBuf::from(home).join(".config/sotf/session.key")
+}
+
+/// Load the session encryption key from disk
+pub fn load_session_key() -> std::io::Result<[u8; 32]> {
+    use std::io::Read;
+    let path = get_session_key_path();
+    let mut file = std::fs::File::open(path)?;
+    let mut key = [0u8; 32];
+    file.read_exact(&mut key)?;
+    Ok(key)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

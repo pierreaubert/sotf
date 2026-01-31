@@ -52,6 +52,7 @@ pub use encryption::{
 };
 pub use shared_memory::{
     HalInputReader, HalOutputWriter, SharedAudioBuffer, SHARED_MEMORY_PATH,
+    get_shared_memory_path, get_secure_shm_path,
 };
 pub use volume::{
     AtomicChannelVolumes, AtomicVolume, SharedChannelVolumes, SharedVolume, VolumeConfig,

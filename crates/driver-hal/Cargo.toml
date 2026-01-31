@@ -27,3 +27,5 @@ log = "0.4"
 [dev-dependencies]
 tempfile = { workspace = true }
 plugins = { path = "../plugins", default-features = false }
+serde_json = { workspace = true }
+libc = "0.2"

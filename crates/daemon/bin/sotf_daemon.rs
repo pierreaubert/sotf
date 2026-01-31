@@ -140,16 +140,54 @@ struct AudioDaemon {
     selected_device: Arc<Mutex<Option<String>>>,
     /// Encryption key manager
     key_manager: Arc<Mutex<KeyManager>>,
+    /// Cached shared audio buffer (opened lazily)
+    #[cfg(target_os = "macos")]
+    shared_buffer: Arc<Mutex<Option<driver_hal::SharedAudioBuffer>>>,
+    /// Shared Tokio runtime for async operations
+    runtime: Arc<tokio::runtime::Runtime>,
 }
 
 impl AudioDaemon {
     fn new() -> Self {
+        let runtime = tokio::runtime::Runtime::new()
+            .expect("Failed to create Tokio runtime");
+
         Self {
             manager: Arc::new(Mutex::new(AudioEngineManager::new())),
             running: Arc::new(Mutex::new(true)),
             hal_manager: Arc::new(Mutex::new(HalManager::new())),
             selected_device: Arc::new(Mutex::new(None)),
             key_manager: Arc::new(Mutex::new(KeyManager::default())),
+            #[cfg(target_os = "macos")]
+            shared_buffer: Arc::new(Mutex::new(None)),
+            runtime: Arc::new(runtime),
+        }
+    }
+
+    /// Get the cached shared audio buffer, opening lazily if needed
+    #[cfg(target_os = "macos")]
+    fn get_shared_buffer(
+        &self,
+    ) -> Option<parking_lot::MappedMutexGuard<'_, driver_hal::SharedAudioBuffer>> {
+        let mut guard = self.shared_buffer.lock();
+        if guard.is_none() {
+            match driver_hal::SharedAudioBuffer::open_default() {
+                Ok(buffer) => {
+                    *guard = Some(buffer);
+                }
+                Err(e) => {
+                    log::debug!("Shared buffer not available: {}", e);
+                    return None;
+                }
+            }
+        }
+        // Use MutexGuard::map to return guard over the inner buffer
+        if guard.is_some() {
+            Some(parking_lot::MutexGuard::map(guard, |opt| {
+                opt.as_mut().unwrap()
+            }))
+        } else {
+            None
         }
     }
 
@@ -224,7 +262,7 @@ impl AudioDaemon {
         // Clear engine_ready flag so Swift HAL driver stops sending audio
         #[cfg(target_os = "macos")]
         {
-            if let Ok(buffer) = driver_hal::SharedAudioBuffer::open_default() {
+            if let Some(buffer) = self.get_shared_buffer() {
                 buffer.set_engine_ready(false);
                 log::debug!("Cleared engine_ready flag in shared memory");
             }
@@ -322,7 +360,7 @@ impl AudioDaemon {
                 // CRITICAL: Set engine_ready flag so Swift HAL driver starts sending audio
                 #[cfg(target_os = "macos")]
                 {
-                    if let Ok(buffer) = driver_hal::SharedAudioBuffer::open_default() {
+                    if let Some(buffer) = self.get_shared_buffer() {
                         buffer.set_engine_ready(true);
                         log::info!("Set engine_ready=true in shared memory");
                     } else {
@@ -376,7 +414,7 @@ impl AudioDaemon {
         // Update shared memory encryption flag
         #[cfg(target_os = "macos")]
         {
-            if let Ok(mut buffer) = driver_hal::SharedAudioBuffer::open_default() {
+            if let Some(mut buffer) = self.get_shared_buffer() {
                 buffer.set_encrypted(enabled);
                 if enabled {
                     buffer.set_key_fingerprint(*key_manager.fingerprint());
@@ -397,7 +435,7 @@ impl AudioDaemon {
 
         // Also get frame counter from shared memory if available
         #[cfg(target_os = "macos")]
-        let frame_count = driver_hal::SharedAudioBuffer::open_default()
+        let frame_count = self.get_shared_buffer()
             .map(|b| b.frame_counter())
             .unwrap_or(0);
         #[cfg(not(target_os = "macos"))]
@@ -420,7 +458,7 @@ impl AudioDaemon {
                 #[cfg(target_os = "macos")]
                 {
                     if key_manager.is_enabled() {
-                        if let Ok(mut buffer) = driver_hal::SharedAudioBuffer::open_default() {
+                        if let Some(mut buffer) = self.get_shared_buffer() {
                             buffer.set_key_fingerprint(*key_manager.fingerprint());
                             buffer.set_config_changed();
                         }
@@ -463,9 +501,10 @@ impl AudioDaemon {
             }
 
             // Notify HAL driver via shared memory
-            if let Ok(mut buffer) = driver_hal::SharedAudioBuffer::open_default() {
+            if let Some(mut buffer) = self.get_shared_buffer() {
+                let current_frames = buffer.buffer_frames();
                 buffer.set_actual_sample_rate(rate);
-                buffer.set_actual_buffer_frames(buffer.buffer_frames());
+                buffer.set_actual_buffer_frames(current_frames);
                 buffer.set_config_source(2); // Daemon initiated
                 buffer.set_config_changed();
 
@@ -500,7 +539,7 @@ impl AudioDaemon {
             // Notify HAL driver via shared memory
             // Note: Only update buffer_frames, preserve the current sample rate
             // to avoid accidentally reverting concurrent sample rate changes
-            if let Ok(mut buffer) = driver_hal::SharedAudioBuffer::open_default() {
+            if let Some(mut buffer) = self.get_shared_buffer() {
                 // Read current actual sample rate to preserve it
                 let current_rate = buffer.actual_sample_rate();
                 let rate_to_use = if current_rate > 0 { current_rate } else { buffer.sample_rate() };
@@ -531,8 +570,8 @@ impl AudioDaemon {
     async fn handle_get_hal_config(&self) -> Response {
         #[cfg(target_os = "macos")]
         {
-            match driver_hal::SharedAudioBuffer::open_default() {
-                Ok(buffer) => Response::ok(serde_json::json!({
+            if let Some(buffer) = self.get_shared_buffer() {
+                Response::ok(serde_json::json!({
                     "sample_rate": buffer.sample_rate(),
                     "actual_sample_rate": buffer.actual_sample_rate(),
                     "buffer_frames": buffer.buffer_frames(),
@@ -542,8 +581,9 @@ impl AudioDaemon {
                     "driver_ready": buffer.driver_ready(),
                     "config_status": buffer.config_status(),
                     "config_source": buffer.config_source(),
-                })),
-                Err(e) => Response::err(format!("Failed to open shared memory: {}", e)),
+                }))
+            } else {
+                Response::err("Failed to open shared memory")
             }
         }
 
@@ -576,10 +616,8 @@ impl AudioDaemon {
 
                     let response = match serde_json::from_str::<Command>(trimmed) {
                         Ok(cmd) => {
-                            // Use tokio runtime for async operations
-                            tokio::runtime::Runtime::new()
-                                .unwrap()
-                                .block_on(self.handle_command(cmd))
+                            // Use shared runtime for async operations
+                            self.runtime.block_on(self.handle_command(cmd))
                         }
                         Err(e) => Response::err(format!("Invalid command: {}", e)),
                     };
@@ -667,6 +705,9 @@ impl AudioDaemon {
                         hal_manager: Arc::clone(&self.hal_manager),
                         selected_device: Arc::clone(&self.selected_device),
                         key_manager: Arc::clone(&self.key_manager),
+                        #[cfg(target_os = "macos")]
+                        shared_buffer: Arc::clone(&self.shared_buffer),
+                        runtime: Arc::clone(&self.runtime),
                     };
 
                     // Handle each client in a separate thread
@@ -1038,7 +1079,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // This ensures audio flows immediately without waiting for toolbar configuration
     {
         println!("▶️  Auto-starting HAL playback (2ch passthrough)...");
-        let runtime = tokio::runtime::Runtime::new().unwrap();
         let plugins = vec![
             PluginConfig {
                 plugin_type: "hal_input".to_string(),
@@ -1049,8 +1089,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 parameters: serde_json::json!({"channels": 2}),
             }
         ];
-        
-        runtime.block_on(daemon.handle_load_plugins(plugins));
+
+        // Use the daemon's shared runtime instead of creating a new one
+        daemon.runtime.block_on(daemon.handle_load_plugins(plugins));
     }
 
     daemon.run()?;

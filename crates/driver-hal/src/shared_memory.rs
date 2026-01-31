@@ -556,11 +556,23 @@ impl SharedAudioBuffer {
         }
 
         // Update read position
+        let new_read_pos = read_pos + to_read as u64;
         header
             .read_position
-            .store(read_pos + to_read as u64, Ordering::Release);
+            .store(new_read_pos, Ordering::Release);
 
-        to_read / channel_count
+        // TRACE: Log frames consumed from shared memory by Rust daemon
+        let frames_read = to_read / channel_count;
+        if frames_read > 0 {
+            log::debug!(
+                "[SHM TRACE] Rust read: {} frames, wpos={}, rpos={}",
+                frames_read,
+                write_pos,
+                new_read_pos
+            );
+        }
+
+        frames_read
     }
 
     /// Write audio to the shared memory ring buffer
@@ -606,11 +618,23 @@ impl SharedAudioBuffer {
         }
 
         // Update write position
+        let new_write_pos = write_pos + to_write as u64;
         self.header()
             .write_position
-            .store(write_pos + to_write as u64, Ordering::Release);
+            .store(new_write_pos, Ordering::Release);
 
-        to_write / channel_count
+        // TRACE: Log frames pushed to shared memory by Rust daemon
+        let frames_written = to_write / channel_count;
+        if frames_written > 0 {
+            log::debug!(
+                "[SHM TRACE] Rust write: {} frames, wpos={}, rpos={}",
+                frames_written,
+                new_write_pos,
+                read_pos
+            );
+        }
+
+        frames_written
     }
 
     /// Get available frames to read
@@ -641,8 +665,8 @@ impl SharedAudioBuffer {
     /// Write audio with encryption
     ///
     /// When encryption is enabled, this encrypts the audio data before writing
-    /// to shared memory. The cipher and current frame counter are used for
-    /// authenticated encryption.
+    /// to shared memory. The nonce (frame counter) is prepended to the encrypted
+    /// block so the reader can decrypt without external state.
     ///
     /// # Arguments
     /// * `buffer` - Audio samples to write
@@ -668,18 +692,22 @@ impl SharedAudioBuffer {
         let frame_counter = self.increment_frame_counter();
         let ciphertext = cipher.encrypt(buffer, frame_counter);
 
-        // Store encrypted data as raw bytes in the ring buffer
-        // We treat the f32 buffer as raw bytes for encrypted data
-        let encrypted_samples = crate::encryption::encrypted_to_samples(&ciphertext);
+        // Prepend nonce (8 bytes big-endian) to ciphertext
+        let mut payload = Vec::with_capacity(8 + ciphertext.len());
+        payload.extend_from_slice(&frame_counter.to_be_bytes());
+        payload.extend_from_slice(&ciphertext);
+
+        // Store as f32 slots in the ring buffer
+        let encrypted_samples = crate::encryption::encrypted_to_samples(&payload);
 
         let write_pos = header.write_position.load(Ordering::Acquire);
         let read_pos = header.read_position.load(Ordering::Acquire);
 
         let used = (write_pos - read_pos) as usize;
         let available = self.audio_capacity - used;
-        let to_write = encrypted_samples.len().min(available);
+        let to_write = encrypted_samples.len();
 
-        if to_write == 0 || to_write < encrypted_samples.len() {
+        if to_write > available {
             // Not enough space for the full encrypted block
             return 0;
         }
@@ -718,10 +746,12 @@ impl SharedAudioBuffer {
     /// When encryption is enabled, this reads encrypted data from shared memory
     /// and decrypts it. Returns silence if decryption fails (tampered data).
     ///
+    /// The nonce (frame counter) is stored at the start of each encrypted block,
+    /// so no external tracking is needed.
+    ///
     /// # Arguments
     /// * `buffer` - Buffer to fill with decrypted audio samples
     /// * `cipher` - The AudioCipher for decryption
-    /// * `expected_frame_counter` - The expected frame counter for this block
     ///
     /// # Returns
     /// Number of frames read
@@ -729,7 +759,6 @@ impl SharedAudioBuffer {
         &self,
         buffer: &mut [f32],
         cipher: &crate::encryption::AudioCipher,
-        expected_frame_counter: u64,
     ) -> usize {
         if !self.is_encrypted() {
             // Fall back to unencrypted read
@@ -741,12 +770,11 @@ impl SharedAudioBuffer {
         let sample_count = buffer.len();
 
         // Calculate expected encrypted size in f32 "slots"
-        // ciphertext_size returns bytes, we divide by sizeof(f32) to get slot count.
-        // The +1 accounts for rounding up when the ciphertext size is not evenly
-        // divisible by sizeof(f32) (4 bytes). This ensures we have enough slots
-        // to hold the full ciphertext including the 16-byte authentication tag.
+        // Format: [8-byte nonce] [ciphertext + 16-byte tag]
+        // ciphertext_size returns bytes for samples + tag, add 8 for nonce
         let ciphertext_bytes = crate::encryption::AudioCipher::ciphertext_size(sample_count);
-        let encrypted_size = (ciphertext_bytes + std::mem::size_of::<f32>() - 1) / std::mem::size_of::<f32>();
+        let total_bytes = 8 + ciphertext_bytes; // 8 bytes for nonce prefix
+        let encrypted_size = (total_bytes + std::mem::size_of::<f32>() - 1) / std::mem::size_of::<f32>();
 
         let write_pos = header.write_position.load(Ordering::Acquire);
         let read_pos = header.read_position.load(Ordering::Acquire);
@@ -757,7 +785,7 @@ impl SharedAudioBuffer {
             return 0;
         }
 
-        // Read the encrypted data
+        // Read the encrypted data (includes nonce prefix)
         let read_index = (read_pos as usize) % self.audio_capacity;
         let first_part = encrypted_size.min(self.audio_capacity - read_index);
         let second_part = encrypted_size - first_part;
@@ -782,11 +810,21 @@ impl SharedAudioBuffer {
             }
         }
 
-        // Convert samples back to ciphertext bytes
-        let ciphertext = crate::encryption::samples_to_encrypted(&encrypted_samples);
+        // Convert samples back to bytes
+        let all_bytes = crate::encryption::samples_to_encrypted(&encrypted_samples);
+
+        // Extract nonce (first 8 bytes) and ciphertext (rest)
+        if all_bytes.len() < 8 {
+            log::warn!("Encrypted block too small for nonce");
+            buffer.fill(0.0);
+            return 0;
+        }
+
+        let frame_counter = u64::from_be_bytes(all_bytes[..8].try_into().unwrap());
+        let ciphertext = &all_bytes[8..8 + ciphertext_bytes];
 
         // Decrypt
-        match cipher.decrypt(&ciphertext, expected_frame_counter) {
+        match cipher.decrypt(ciphertext, frame_counter) {
             Some(decrypted) => {
                 let to_copy = decrypted.len().min(sample_count);
                 buffer[..to_copy].copy_from_slice(&decrypted[..to_copy]);
@@ -803,7 +841,7 @@ impl SharedAudioBuffer {
             }
             None => {
                 // Decryption failed - return silence
-                log::warn!("Audio decryption failed (frame {})", expected_frame_counter);
+                log::warn!("Audio decryption failed (frame {})", frame_counter);
                 buffer.fill(0.0);
                 0
             }
@@ -818,6 +856,7 @@ impl SharedAudioBuffer {
 /// Reader adapter for HAL input (compatible with old HalInputReader API)
 pub struct HalInputReader {
     buffer: Option<SharedAudioBuffer>,
+    cipher: Option<crate::encryption::AudioCipher>,
 }
 
 impl HalInputReader {
@@ -826,6 +865,7 @@ impl HalInputReader {
         match SharedAudioBuffer::open_default() {
             Ok(buffer) => Some(Self {
                 buffer: Some(buffer),
+                cipher: None,
             }),
             Err(_) => None,
         }
@@ -840,11 +880,50 @@ impl HalInputReader {
     }
 
     /// Read audio samples from the HAL
-    pub fn read(&self, buffer: &mut [f32]) -> usize {
-        self.buffer
-            .as_ref()
-            .map(|b| b.read_audio(buffer))
-            .unwrap_or(0)
+    pub fn read(&mut self, buffer: &mut [f32]) -> usize {
+        if let Some(buf) = &self.buffer {
+            if buf.is_encrypted() {
+                // Check if we need to load/reload cipher
+                let header_fingerprint = buf.key_fingerprint();
+                let need_reload = self.cipher.as_ref().map_or(true, |c| c.fingerprint() != &header_fingerprint);
+
+                if need_reload {
+                    log::debug!("Encryption enabled/changed, loading key...");
+                    match crate::encryption::load_session_key() {
+                        Ok(key) => {
+                            let cipher = crate::encryption::AudioCipher::new(&key);
+                            if cipher.fingerprint() == &header_fingerprint {
+                                self.cipher = Some(cipher);
+                                log::debug!("Loaded encryption key, fingerprint matches");
+                            } else {
+                                log::error!("Loaded key fingerprint mismatch! Expected {:?}, got {:?}", header_fingerprint, cipher.fingerprint());
+                                // Don't use this cipher
+                                self.cipher = None;
+                            }
+                        }
+                        Err(e) => {
+                            log::error!("Failed to load encryption key: {}", e);
+                            self.cipher = None;
+                        }
+                    }
+                }
+
+                if let Some(cipher) = &self.cipher {
+                    // The nonce is now stored with each encrypted block, so we don't need
+                    // to track frame counters externally
+                    return buf.read_audio_encrypted(buffer, cipher);
+                } else {
+                    // Encrypted but no key -> return silence
+                    buffer.fill(0.0);
+                    return 0;
+                }
+            }
+
+            // Not encrypted
+            buf.read_audio(buffer)
+        } else {
+            0
+        }
     }
 
     /// Get sample rate
@@ -863,7 +942,7 @@ impl HalInputReader {
 
 impl Default for HalInputReader {
     fn default() -> Self {
-        Self { buffer: None }
+        Self { buffer: None, cipher: None }
     }
 }
 
@@ -873,6 +952,7 @@ impl Default for HalInputReader {
 /// and buffer frames.
 pub struct HalOutputWriter {
     buffer: Option<SharedAudioBuffer>,
+    cipher: Option<crate::encryption::AudioCipher>,
 }
 
 impl HalOutputWriter {
@@ -881,6 +961,7 @@ impl HalOutputWriter {
         match SharedAudioBuffer::open_default() {
             Ok(buffer) => Some(Self {
                 buffer: Some(buffer),
+                cipher: None,
             }),
             Err(_) => None,
         }
@@ -896,10 +977,43 @@ impl HalOutputWriter {
 
     /// Write audio samples to the HAL
     pub fn write(&mut self, buffer: &[f32]) -> usize {
-        self.buffer
-            .as_mut()
-            .map(|b| b.write_audio(buffer))
-            .unwrap_or(0)
+        if let Some(buf) = &mut self.buffer {
+            if buf.is_encrypted() {
+                // Check if we need to load/reload cipher
+                let header_fingerprint = buf.key_fingerprint();
+                let need_reload = self.cipher.as_ref().map_or(true, |c| c.fingerprint() != &header_fingerprint);
+
+                if need_reload {
+                     match crate::encryption::load_session_key() {
+                        Ok(key) => {
+                            let cipher = crate::encryption::AudioCipher::new(&key);
+                            if cipher.fingerprint() == &header_fingerprint {
+                                self.cipher = Some(cipher);
+                            } else {
+                                self.cipher = None;
+                            }
+                        }
+                        Err(_) => {
+                            self.cipher = None;
+                        }
+                    }
+                }
+
+                if let Some(cipher) = &self.cipher {
+                    return buf.write_audio_encrypted(buffer, cipher);
+                } else {
+                    // Encrypted but no key -> write silence to avoid blasting noise
+                    // Or fall back to unencrypted write? No, that would leak data.
+                    // We just don't write.
+                    return 0;
+                }
+            }
+
+            // Not encrypted
+            buf.write_audio(buffer)
+        } else {
+            0
+        }
     }
 
     /// Get sample rate
@@ -1003,7 +1117,7 @@ impl HalOutputWriter {
 
 impl Default for HalOutputWriter {
     fn default() -> Self {
-        Self { buffer: None }
+        Self { buffer: None, cipher: None }
     }
 }
 

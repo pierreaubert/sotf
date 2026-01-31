@@ -197,150 +197,78 @@ clean_build() {
 
 BUILD_DIR="$PROJECT_ROOT/target/$BUILD_TYPE"
 
-# Build the daemon binary
-build_daemon() {
-    log_info "Building daemon binary ($BUILD_TYPE)..."
+# Build all components using just (reuses Justfile logic)
+build_components() {
+    log_info "Building all components via Justfile..."
 
     cd "$PROJECT_ROOT"
 
-    # Build with HAL support on macOS
-    cargo build $CARGO_FLAGS -p sotf-daemon --features hal
+    if $DEBUG; then
+        # Debug builds - call cargo directly since Justfile only has release targets
+        log_info "Building daemon binary (debug)..."
+        cargo build -p sotf-daemon --features hal
 
+        if $BUILD_HAL; then
+            log_info "Building HAL driver (debug)..."
+            # For debug, we still use the same optimized Swift build
+            just prod-hal-driver
+        fi
+
+        log_info "Building toolbar (debug)..."
+        just prod-toolbar
+    else
+        # Release builds - use Justfile targets
+        if $BUILD_HAL; then
+            just prod-macos-daemon
+        else
+            just prod-daemon
+            just prod-toolbar
+        fi
+    fi
+
+    # Verify daemon binary exists
     if [ ! -f "$BUILD_DIR/$DAEMON_BINARY" ]; then
         log_error "Daemon binary not found at $BUILD_DIR/$DAEMON_BINARY"
         exit 1
     fi
 
-    log_success "Daemon binary built successfully"
+    log_success "All components built successfully"
 }
 
-# Build the HAL driver bundle (Swift)
-build_hal_driver() {
+# Copy HAL driver from target to DMG directory
+copy_hal_driver() {
     if ! $BUILD_HAL; then
-        log_warning "Skipping HAL driver build (--no-hal specified)"
+        log_warning "Skipping HAL driver (--no-hal specified)"
         return 0
     fi
 
-    log_info "Building Swift HAL driver..."
+    local HAL_BUILD_DIR="$PROJECT_ROOT/target/release/SotFHAL.driver"
 
-    local HAL_SWIFT_DIR="$HAL_DRIVER_DIR/swift"
-    local HAL_SOURCES_DIR="$HAL_SWIFT_DIR/Sources"
-
-    # Check for Swift sources
-    if [ ! -d "$HAL_SOURCES_DIR" ]; then
-        log_warning "Swift HAL driver sources not found at $HAL_SOURCES_DIR"
+    if [ ! -d "$HAL_BUILD_DIR" ]; then
+        log_warning "HAL driver not found at $HAL_BUILD_DIR"
         BUILD_HAL=false
         return 0
     fi
 
-    # Create driver bundle structure
-    mkdir -p "$DRIVER_BUNDLE/Contents/MacOS"
-    mkdir -p "$DRIVER_BUNDLE/Contents/Resources"
-
-    # Find all Swift source files
-    local SWIFT_FILES=(
-        "$HAL_SOURCES_DIR/Timing.swift"
-        "$HAL_SOURCES_DIR/RingBuffer.swift"
-        "$HAL_SOURCES_DIR/SharedMemory.swift"
-        "$HAL_SOURCES_DIR/SotFHALDriver.swift"
-    )
-
-    log_info "Compiling Swift HAL driver..."
-
-    # Compile Swift to a bundle
-    swiftc \
-        -emit-library \
-        -o "$DRIVER_BUNDLE/Contents/MacOS/SotFHAL" \
-        -module-name SotFHAL \
-        -import-objc-header "$HAL_SOURCES_DIR/BridgingHeader.h" \
-        -Xlinker -bundle \
-        -Xlinker -rpath -Xlinker @loader_path/../Frameworks \
-        -framework CoreAudio \
-        -framework CoreFoundation \
-        -framework Foundation \
-        -framework SystemConfiguration \
-        -O \
-        "${SWIFT_FILES[@]}"
-
-    # Verify it's a bundle
-    local FILETYPE=$(otool -hv "$DRIVER_BUNDLE/Contents/MacOS/SotFHAL" | grep -A1 filetype | tail -1 | awk '{print $5}')
-    if [ "$FILETYPE" != "BUNDLE" ]; then
-        log_warning "Binary is $FILETYPE instead of BUNDLE, trying alternative linking..."
-
-        # Compile to object files first
-        local BUILD_TMP="$DMG_DIR/hal_build"
-        mkdir -p "$BUILD_TMP"
-
-        for f in "${SWIFT_FILES[@]}"; do
-            local BASENAME=$(basename "$f" .swift)
-            swiftc \
-                -c \
-                -o "$BUILD_TMP/$BASENAME.o" \
-                -module-name SotFHAL \
-                -import-objc-header "$HAL_SOURCES_DIR/BridgingHeader.h" \
-                -framework CoreAudio \
-                -framework CoreFoundation \
-                -framework Foundation \
-                -O \
-                "$f"
-        done
-
-        # Link all object files as bundle
-        ld -bundle \
-            -arch arm64 \
-            -platform_version macos 14.0.0 15.0.0 \
-            -syslibroot /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk \
-            -L/usr/lib/swift \
-            -lSystem \
-            -lswiftCore \
-            -lswiftFoundation \
-            -lswiftCoreFoundation \
-            -lswiftDarwin \
-            -lswiftDispatch \
-            -lswiftObjectiveC \
-            -framework CoreAudio \
-            -framework CoreFoundation \
-            -framework Foundation \
-            -framework SystemConfiguration \
-            "$BUILD_TMP"/*.o \
-            -o "$DRIVER_BUNDLE/Contents/MacOS/SotFHAL"
-
-        rm -rf "$BUILD_TMP"
-        FILETYPE=$(otool -hv "$DRIVER_BUNDLE/Contents/MacOS/SotFHAL" | grep -A1 filetype | tail -1 | awk '{print $5}')
-    fi
-
-    log_info "HAL driver binary type: $FILETYPE"
-
-    # Copy Info.plist from Swift sources (already configured)
-    cp "$HAL_SWIFT_DIR/Info.plist" "$DRIVER_BUNDLE/Contents/Info.plist"
-
-    # Set permissions
-    chmod 755 "$DRIVER_BUNDLE/Contents/MacOS/SotFHAL"
-    chmod 644 "$DRIVER_BUNDLE/Contents/Info.plist"
-
-    log_success "Swift HAL driver bundle created"
+    log_info "Copying HAL driver to DMG directory..."
+    cp -R "$HAL_BUILD_DIR" "$DRIVER_BUNDLE"
+    log_success "HAL driver copied"
 }
 
-# Build the Toolbar Swift app
-build_toolbar() {
-    log_info "Building Toolbar Swift app..."
+# Set up the Toolbar app bundle structure
+setup_toolbar_bundle() {
+    log_info "Setting up Toolbar app bundle..."
 
     # Create app bundle structure
     mkdir -p "$APP_BUNDLE/Contents/MacOS"
     mkdir -p "$APP_BUNDLE/Contents/Resources"
     mkdir -p "$APP_BUNDLE/Contents/Helpers"
 
-    # Compile Swift source
-    swiftc \
-        -o "$APP_BUNDLE/Contents/MacOS/sotf-toolbar" \
-        "$CONFIGBAR_DIR/src/ConfigBar.swift" \
-        -framework SwiftUI \
-        -framework WebKit \
-        -framework UserNotifications \
-        -framework CoreAudio \
-        -O
+    # Copy the compiled toolbar binary
+    cp "$BUILD_DIR/sotf-toolbar" "$APP_BUNDLE/Contents/MacOS/"
+    chmod +x "$APP_BUNDLE/Contents/MacOS/sotf-toolbar"
 
-    log_success "Toolbar compiled successfully"
+    log_success "Toolbar bundle structure created"
 }
 
 # Regenerate PNG icons from SVG if SVG is newer
@@ -1311,9 +1239,9 @@ main() {
 
     check_prerequisites
     clean_build
-    build_daemon
-    build_hal_driver
-    build_toolbar
+    build_components
+    copy_hal_driver
+    setup_toolbar_bundle
     create_app_bundle
 
     if $BUILD_DMG; then

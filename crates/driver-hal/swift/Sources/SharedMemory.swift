@@ -69,7 +69,13 @@ private func getSecureSharedMemoryPath() -> String {
     return kLegacySharedMemoryPath
 }
 
-/// Get the shared memory path (secure if possible, legacy as fallback)
+/// Get the shared memory path (always prefer secure path)
+///
+/// Migration strategy:
+/// - Always use the secure UID-based path for new creates
+/// - If legacy path exists but secure doesn't, migrate by using secure path
+///   (the legacy file will remain but become stale)
+/// - This ensures new installations use the secure path immediately
 private func getSharedMemoryPath() -> String {
     let securePath = getSecureSharedMemoryPath()
 
@@ -78,12 +84,15 @@ private func getSharedMemoryPath() -> String {
         return securePath
     }
 
-    // If legacy path exists, use it (backwards compatibility)
+    // If legacy path exists, log migration and still use secure path
+    // This forces migration to the new secure path
     if FileManager.default.fileExists(atPath: kLegacySharedMemoryPath) {
-        return kLegacySharedMemoryPath
+        halLog("Migrating from legacy path \(kLegacySharedMemoryPath) to secure path \(securePath)")
+        // Optionally try to remove legacy file (may fail if owned by different user)
+        try? FileManager.default.removeItem(atPath: kLegacySharedMemoryPath)
     }
 
-    // Create new secure path
+    // Always use secure path for new creates
     return securePath
 }
 
@@ -300,6 +309,53 @@ final class SharedAudioBuffer {
     func writeAudio(_ buffer: UnsafePointer<Float>, frameCount: Int, channelCount: Int) -> Int {
         guard let header = header, let audioData = audioData else { return 0 }
 
+        // Check for encryption
+        if header.pointee.encrypted != 0 {
+            if let cipher = EncryptionKeyManager.shared.getCipher() {
+                // Verify fingerprint
+                let headerFingerprint = header.pointee.keyFingerprint
+                let cipherFingerprint = cipher.getFingerprint()
+                let match = headerFingerprint.0 == cipherFingerprint[0] &&
+                           headerFingerprint.1 == cipherFingerprint[1] &&
+                           headerFingerprint.2 == cipherFingerprint[2] &&
+                           headerFingerprint.3 == cipherFingerprint[3] &&
+                           headerFingerprint.4 == cipherFingerprint[4] &&
+                           headerFingerprint.5 == cipherFingerprint[5] &&
+                           headerFingerprint.6 == cipherFingerprint[6] &&
+                           headerFingerprint.7 == cipherFingerprint[7]
+
+                if match {
+                    // Encrypt to temporary buffer
+                    let sampleCount = frameCount * channelCount
+                    let ciphertextLen = sampleCount * 4 + 16
+                    var ciphertext = [UInt8](repeating: 0, count: ciphertextLen)
+
+                    let frameCounter = UInt64(OSAtomicAdd64(1, &header.pointee.frameCounter))
+
+                    let bytesWritten = ciphertext.withUnsafeMutableBufferPointer { ptr in
+                        return cipher.encryptToBuffer(buffer, sampleCount: sampleCount, frameCounter: frameCounter, output: ptr.baseAddress!)
+                    }
+
+                    if bytesWritten > 0 {
+                        // Prepend nonce (8 bytes big-endian) to ciphertext
+                        var payload = [UInt8](repeating: 0, count: 8 + bytesWritten)
+                        withUnsafeBytes(of: frameCounter.bigEndian) { nonceBytes in
+                            for (i, byte) in nonceBytes.enumerated() {
+                                payload[i] = byte
+                            }
+                        }
+                        payload[8..<(8 + bytesWritten)] = ciphertext[..<bytesWritten]
+
+                        // Write payload (nonce + ciphertext) to ring buffer
+                        return writeRawBytes(payload, originalFrameCount: frameCount)
+                    }
+                }
+            }
+            // If encryption enabled but failed, write silence or return 0
+            return 0
+        }
+
+        // Standard unencrypted write
         let sampleCount = frameCount * channelCount
         let writePos = header.pointee.writePosition
         let readPos = header.pointee.readPosition
@@ -325,7 +381,56 @@ final class SharedAudioBuffer {
         OSMemoryBarrier()
         header.pointee.writePosition = writePos + UInt64(toWrite)
 
+        // TRACE: Log successful write to shared memory ring buffer
+        // Note: Avoid logging every frame in production (use os_signpost for performance tracing)
+        #if DEBUG
+        if toWrite > 0 {
+            let newWritePos = writePos + UInt64(toWrite)
+            halLog("[SHM TRACE] write: \(toWrite/channelCount) frames, wpos=\(newWritePos), rpos=\(readPos)")
+        }
+        #endif
+
         return toWrite / channelCount
+    }
+
+    /// Helper to write raw bytes (ciphertext) to ring buffer
+    private func writeRawBytes(_ bytes: [UInt8], originalFrameCount: Int) -> Int {
+        guard let header = header, let audioData = audioData else { return 0 }
+        
+        // Calculate required space in floats (rounded up)
+        let floatCount = (bytes.count + 3) / 4
+        
+        let writePos = header.pointee.writePosition
+        let readPos = header.pointee.readPosition
+        let available = audioCapacity - Int(writePos - readPos)
+        
+        if floatCount > available { return 0 }
+        
+        let writeIndex = Int(writePos % UInt64(audioCapacity))
+        let firstPartFloats = min(floatCount, audioCapacity - writeIndex)
+        let firstPartBytes = firstPartFloats * 4
+        
+        let bytesToWriteFirst = min(bytes.count, firstPartBytes)
+        let bytesToWriteSecond = bytes.count - bytesToWriteFirst
+        
+        bytes.withUnsafeBufferPointer { ptr in
+            guard let base = ptr.baseAddress else { return }
+            
+            // First part
+            let destFirst = UnsafeMutableRawPointer(audioData.advanced(by: writeIndex))
+            memcpy(destFirst, base, bytesToWriteFirst)
+            
+            // Second part (wrap)
+            if bytesToWriteSecond > 0 {
+                let destSecond = UnsafeMutableRawPointer(audioData) // Start of buffer
+                memcpy(destSecond, base.advanced(by: bytesToWriteFirst), bytesToWriteSecond)
+            }
+        }
+        
+        OSMemoryBarrier()
+        header.pointee.writePosition = writePos + UInt64(floatCount)
+        
+        return originalFrameCount
     }
 
     /// Read audio from shared memory (called from DoIOOperation for input)
@@ -337,6 +442,69 @@ final class SharedAudioBuffer {
             return 0
         }
 
+        // Check for encryption
+        if header.pointee.encrypted != 0 {
+            if let cipher = EncryptionKeyManager.shared.getCipher() {
+                // Verify fingerprint
+                let headerFingerprint = header.pointee.keyFingerprint
+                let cipherFingerprint = cipher.getFingerprint()
+                let match = headerFingerprint.0 == cipherFingerprint[0] &&
+                           headerFingerprint.1 == cipherFingerprint[1] &&
+                           headerFingerprint.2 == cipherFingerprint[2] &&
+                           headerFingerprint.3 == cipherFingerprint[3] &&
+                           headerFingerprint.4 == cipherFingerprint[4] &&
+                           headerFingerprint.5 == cipherFingerprint[5] &&
+                           headerFingerprint.6 == cipherFingerprint[6] &&
+                           headerFingerprint.7 == cipherFingerprint[7]
+
+                if match {
+                    // Determine encrypted size: 8-byte nonce + ciphertext + 16-byte tag
+                    let sampleCount = frameCount * channelCount
+                    let ciphertextBytes = sampleCount * 4 + 16
+                    let totalBytes = 8 + ciphertextBytes  // 8 bytes for nonce prefix
+                    let floatCount = (totalBytes + 3) / 4
+
+                    // Check availability
+                    let writePos = header.pointee.writePosition
+                    let readPos = header.pointee.readPosition
+                    let available = Int(writePos - readPos)
+
+                    if available >= floatCount {
+                        // Read payload (nonce + ciphertext)
+                        var payload = [UInt8](repeating: 0, count: totalBytes)
+                        readRawBytes(&payload, floatCount: floatCount)
+
+                        // Extract nonce (first 8 bytes, big-endian)
+                        var frameCounter: UInt64 = 0
+                        withUnsafeMutableBytes(of: &frameCounter) { ptr in
+                            for i in 0..<8 {
+                                ptr[i] = payload[i]
+                            }
+                        }
+                        frameCounter = UInt64(bigEndian: frameCounter)
+
+                        // Decrypt ciphertext (after nonce)
+                        let ciphertext = Array(payload[8..<(8 + ciphertextBytes)])
+                        let decryptedCount = ciphertext.withUnsafeBufferPointer { ptr in
+                            return cipher.decryptFromBuffer(ptr.baseAddress!, ciphertextLen: ciphertextBytes, frameCounter: frameCounter, output: buffer)
+                        }
+
+                        if decryptedCount > 0 {
+                            // Fill remainder with silence if needed
+                            if decryptedCount < sampleCount {
+                                memset(buffer.advanced(by: decryptedCount), 0, (sampleCount - decryptedCount) * MemoryLayout<Float>.size)
+                            }
+                            return decryptedCount / channelCount
+                        }
+                    }
+                }
+            }
+            // Decryption failed or no key
+            memset(buffer, 0, frameCount * channelCount * MemoryLayout<Float>.size)
+            return 0
+        }
+
+        // Standard unencrypted read
         let sampleCount = frameCount * channelCount
         let writePos = header.pointee.writePosition
         let readPos = header.pointee.readPosition
@@ -370,7 +538,45 @@ final class SharedAudioBuffer {
         OSMemoryBarrier()
         header.pointee.readPosition = readPos + UInt64(toRead)
 
+        // TRACE: Log successful read from shared memory ring buffer
+        #if DEBUG
+        if toRead > 0 {
+            let newReadPos = readPos + UInt64(toRead)
+            halLog("[SHM TRACE] read: \(toRead/channelCount) frames, wpos=\(writePos), rpos=\(newReadPos)")
+        }
+        #endif
+
         return toRead / channelCount
+    }
+
+    /// Helper to read raw bytes (ciphertext) from ring buffer
+    private func readRawBytes(_ buffer: inout [UInt8], floatCount: Int) {
+        guard let header = header, let audioData = audioData else { return }
+        
+        let readPos = header.pointee.readPosition
+        let readIndex = Int(readPos % UInt64(audioCapacity))
+        let firstPartFloats = min(floatCount, audioCapacity - readIndex)
+        let firstPartBytes = firstPartFloats * 4
+        
+        let bytesToReadFirst = min(buffer.count, firstPartBytes)
+        let bytesToReadSecond = buffer.count - bytesToReadFirst
+        
+        buffer.withUnsafeMutableBufferPointer { ptr in
+            guard let base = ptr.baseAddress else { return }
+            
+            // First part
+            let srcFirst = UnsafeRawPointer(audioData.advanced(by: readIndex))
+            memcpy(base, srcFirst, bytesToReadFirst)
+            
+            // Second part (wrap)
+            if bytesToReadSecond > 0 {
+                let srcSecond = UnsafeRawPointer(audioData)
+                memcpy(base.advanced(by: bytesToReadFirst), srcSecond, bytesToReadSecond)
+            }
+        }
+        
+        OSMemoryBarrier()
+        header.pointee.readPosition = readPos + UInt64(floatCount)
     }
 
     // MARK: - Config Negotiation Methods (version 3+)

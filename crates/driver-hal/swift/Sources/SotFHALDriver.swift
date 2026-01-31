@@ -128,7 +128,33 @@ final class DriverState {
     var sampleRate: Float64 = 48000.0
     var bufferFrameSize: UInt32 = 512
     var channelCount: UInt32 = 2
-    var ioClientCount: Int = 0
+
+    // IO client count - accessed atomically for thread safety
+    // Multiple CoreAudio threads can call StartIO/StopIO concurrently
+    // Using fileprivate to allow atomic operations from driver callbacks
+    fileprivate var _ioClientCount: Int32 = 0
+
+    var ioClientCount: Int32 {
+        get { OSAtomicAdd32(0, &_ioClientCount) }
+    }
+
+    func incrementIOClientCount() -> Int32 {
+        return OSAtomicIncrement32(&_ioClientCount)
+    }
+
+    func decrementIOClientCount() -> Int32 {
+        return OSAtomicDecrement32(&_ioClientCount)
+    }
+
+    func resetIOClientCount() {
+        // Reset to 0 atomically
+        while true {
+            let current = _ioClientCount
+            if OSAtomicCompareAndSwap32(current, 0, &_ioClientCount) {
+                break
+            }
+        }
+    }
 
     // Timing
     let clock = DriverClock()
@@ -756,9 +782,9 @@ private func driverStartIO(_ driver: AudioServerPlugInDriverRef, _ deviceObjectI
         return kAudioHardwareIllegalOperationError
     }
 
-    state.ioClientCount += 1
+    let newCount = state.incrementIOClientCount()
 
-    if state.ioClientCount == 1 {
+    if newCount == 1 {
         // First client - start the clock
         state.clock.start(sampleRate: state.sampleRate)
         state.inputRingBuffer?.reset()
@@ -774,11 +800,15 @@ private func driverStopIO(_ driver: AudioServerPlugInDriverRef, _ deviceObjectID
     halLog("StopIO: device=\(deviceObjectID) client=\(clientID)")
 
     let state = DriverState.shared
-    if state.ioClientCount > 0 {
-        state.ioClientCount -= 1
+    let newCount = state.decrementIOClientCount()
+
+    // Guard against underflow (shouldn't happen, but be safe)
+    if newCount < 0 {
+        halLog("StopIO warning: ioClientCount underflow, resetting to 0")
+        state.resetIOClientCount()
     }
 
-    if state.ioClientCount == 0 {
+    if newCount <= 0 {
         state.clock.stop()
         state.sharedAudio.setActive(false)
         halLog("IO stopped")
@@ -824,8 +854,13 @@ private func driverDoIOOperation(_ driver: AudioServerPlugInDriverRef, _ deviceO
     case kIOOperation_ReadInput:
         // Provide audio to clients (recording from virtual device)
         if state.sharedAudio.isConnected && state.sharedAudio.engineReady {
-            // Read processed audio from Rust engine
-            _ = state.sharedAudio.readAudio(floatBuffer, frameCount: frameCount, channelCount: channelCount)
+            // Read processed audio from Rust engine (this goes to hardware output)
+            let framesRead = state.sharedAudio.readAudio(floatBuffer, frameCount: frameCount, channelCount: channelCount)
+            // TRACE: Log frames consumed from shared memory and sent to hardware
+            if framesRead > 0 {
+                // Use os_log for real-time safe logging (halLog uses NSLog which can block)
+                os_log("[AUDIO FLOW] HAL ReadInput: %d frames from shm -> hw output", log: logger, type: .debug, framesRead)
+            }
         } else if state.loopbackEnabled, let outputBuffer = state.outputRingBuffer {
             // Loopback mode: return what was written to output
             _ = outputBuffer.readInterleaved(floatBuffer, frameCount: frameCount)
@@ -843,7 +878,14 @@ private func driverDoIOOperation(_ driver: AudioServerPlugInDriverRef, _ deviceO
 
         // Also send to Rust engine if connected and ready
         if state.sharedAudio.isConnected && state.sharedAudio.engineReady {
-            _ = state.sharedAudio.writeAudio(floatBuffer, frameCount: frameCount, channelCount: channelCount)
+            let framesWritten = state.sharedAudio.writeAudio(floatBuffer, frameCount: frameCount, channelCount: channelCount)
+            // TRACE: Log frames received from macOS apps and written to shared memory
+            if framesWritten > 0 {
+                // Use os_log for real-time safe logging
+                os_log("[AUDIO FLOW] HAL WriteMix: %d frames from app -> shm", log: logger, type: .debug, framesWritten)
+            } else if framesWritten == 0 {
+                os_log("[AUDIO FLOW] HAL WriteMix: buffer full, dropped %d frames", log: logger, type: .error, frameCount)
+            }
         }
 
     default:

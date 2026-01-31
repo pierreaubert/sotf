@@ -177,12 +177,21 @@ impl InPlacePlugin for HalOutputPlugin {
             if let Some(ref mut writer) = self.writer {
                 let written = writer.write(buffer);
 
-                // Log warning if we couldn't write all samples
+                // TRACE: Log frames pushed to HAL shared memory by daemon
+                if written > 0 {
+                    log::debug!(
+                        "[AUDIO FLOW] Daemon->HAL: pushed {} frames to shared memory",
+                        written
+                    );
+                }
+
+                // Log warning if we couldn't write all samples (buffer full)
                 if written < buffer.len() {
-                    log::trace!(
-                        "HAL output buffer full: wrote {}/{} samples",
+                    log::warn!(
+                        "[AUDIO FLOW] Daemon->HAL: buffer overrun, wrote {}/{} samples (dropped {})",
                         written,
-                        buffer.len()
+                        buffer.len(),
+                        buffer.len() - written
                     );
                 }
             } else {

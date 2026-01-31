@@ -176,6 +176,17 @@ impl Plugin for HalInputPlugin {
             if let Some(ref mut reader) = self.reader {
                 let samples_read = reader.read(output);
 
+                // TRACE: Log frames consumed from HAL shared memory by daemon
+                if samples_read > 0 {
+                    log::debug!(
+                        "[AUDIO FLOW] HAL->Daemon: consumed {} frames from shared memory (expected {})",
+                        samples_read / self.channels,
+                        context.num_frames
+                    );
+                } else {
+                    log::trace!("[AUDIO FLOW] HAL->Daemon: no frames available (underrun)");
+                }
+
                 // Zero-fill any remaining samples if we didn't read enough
                 if samples_read < output.len() {
                     log::trace!(
