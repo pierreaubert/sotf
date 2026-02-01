@@ -542,7 +542,8 @@ impl DawHost {
     /// Get input channel count (PluginHost-compatible API)
     pub fn input_channels(&self) -> usize {
         if self.chain_nodes.is_empty() {
-            self.initial_input_channels
+            // Default to 2 channels for HAL mode when initial_input_channels is 0
+            if self.initial_input_channels == 0 { 2 } else { self.initial_input_channels }
         } else {
             // First plugin's input channels
             let first_node_id = self.chain_nodes[0];
@@ -553,7 +554,8 @@ impl DawHost {
     /// Get output channel count (PluginHost-compatible API)
     pub fn output_channels(&self) -> usize {
         if self.chain_nodes.is_empty() {
-            self.initial_input_channels
+            // Default to 2 channels for HAL mode when initial_input_channels is 0
+            if self.initial_input_channels == 0 { 2 } else { self.initial_input_channels }
         } else {
             // Last plugin's output channels
             let last_node_id = *self.chain_nodes.last().unwrap();
@@ -610,7 +612,10 @@ impl DawHost {
                 ));
             }
             output.copy_from_slice(input);
-            return Ok(input.len() / self.initial_input_channels);
+            // Avoid division by zero when initial_input_channels is 0 (HAL mode)
+            // In this case, assume the input contains complete frames
+            let channels = if self.initial_input_channels == 0 { 2 } else { self.initial_input_channels };
+            return Ok(input.len() / channels);
         }
 
         if self.input_nodes.is_empty() {

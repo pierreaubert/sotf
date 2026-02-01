@@ -13,8 +13,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
 
-#[cfg(all(target_os = "macos", feature = "hal"))]
-use driver_hal::HalOutputWriter;
+// HAL writer removed - audio flows: HAL input → decoder thread → processing → cpal output
+// No loopback to HAL needed
 
 const SPIN_MS_RINGBUFFER: u64 = 5;
 const SPIN_MS_SIGNAL: u64 = 10;
@@ -101,21 +101,10 @@ struct PlaybackState {
     muted: Arc<AtomicBool>,
     underrun_count: Arc<AtomicU64>,
     last_buffer_level: Arc<AtomicU64>, // For tracking buffer fill percentage
-
-    #[cfg(all(target_os = "macos", feature = "hal"))]
-    hal_writer: parking_lot::Mutex<Option<HalOutputWriter>>,
 }
 
 impl PlaybackState {
     fn new(consumer: Consumer<f32>, capacity: usize) -> Self {
-        #[cfg(all(target_os = "macos", feature = "hal"))]
-        let hal_writer = HalOutputWriter::new();
-
-        #[cfg(all(target_os = "macos", feature = "hal"))]
-        if hal_writer.is_none() {
-            log::warn!("[Playback Thread] Failed to initialize HAL output writer");
-        }
-
         Self {
             ring_buffer_consumer: parking_lot::Mutex::new(Some(consumer)),
             capacity,
@@ -123,8 +112,6 @@ impl PlaybackState {
             muted: Arc::new(AtomicBool::new(false)),
             underrun_count: Arc::new(AtomicU64::new(0)),
             last_buffer_level: Arc::new(AtomicU64::new(100)), // Start at 100%
-            #[cfg(all(target_os = "macos", feature = "hal"))]
-            hal_writer: parking_lot::Mutex::new(hal_writer),
         }
     }
 }
@@ -294,11 +281,26 @@ fn run_playback_thread(
         .play()
         .map_err(|e| format!("Failed to start stream: {}", e))?;
 
+    // Get device name for logging
+    let device_name = device
+        .description()
+        .map(|d| d.name().to_string())
+        .unwrap_or_else(|_| device.name().unwrap_or_else(|_| "Unknown".to_string()));
+
     log::info!(
-        "[Playback Thread] Started - {}Hz, {} channels",
+        "[Playback Thread] Started - {}Hz, {} channels, device: '{}'",
         sample_rate,
-        channels
+        channels,
+        device_name
     );
+
+    // Warn if the device name looks like a virtual device
+    if device_name.contains("SotF") || device_name.contains("BlackHole") {
+        log::error!(
+            "[Playback Thread] WARNING: Output device '{}' appears to be a virtual device! This will cause a feedback loop.",
+            device_name
+        );
+    }
 
     // Main loop: read from queue and write to ring buffer
     loop {
@@ -487,9 +489,34 @@ fn run_playback_thread(
             continue;
         }
 
+        // Static counter for periodic logging
+        static FRAME_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
         // Read from message queue (non-blocking since we checked space)
         match message_rx.recv_timeout(std::time::Duration::from_millis(SPIN_MS_SIGNAL)) {
             Ok(ProcessingMessage::Frame(frame)) => {
+                let count = FRAME_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+                // Log every 100 frames
+                if count % 100 == 0 {
+                    // Calculate RMS to check if we have actual audio
+                    let rms: f32 = if !frame.data.is_empty() {
+                        let sum: f32 = frame.data.iter().map(|s| s * s).sum();
+                        (sum / frame.data.len() as f32).sqrt()
+                    } else {
+                        0.0
+                    };
+                    let has_audio = rms > 0.0001;
+
+                    log::info!(
+                        "[AUDIO FLOW] Playback recv: {} samples, {} frames, {} ch, RMS={:.6}, has_audio={}",
+                        frame.data.len(),
+                        frame.num_frames,
+                        frame.num_channels,
+                        rms,
+                        has_audio
+                    );
+                }
                 // Track consecutive channel mismatches to detect stuck state vs transient hot-reload
                 static CHANNEL_MISMATCH_COUNT: std::sync::atomic::AtomicU32 =
                     std::sync::atomic::AtomicU32::new(0);
@@ -702,17 +729,7 @@ fn build_output_stream(
                     }
                 }
 
-                // Write to HAL (loopback) - only available with 'hal' feature
-                #[cfg(all(target_os = "macos", feature = "hal"))]
-                {
-                    let mut writer_guard = state_clone.hal_writer.lock();
-                    if let Some(writer) = &mut *writer_guard {
-                        let written = writer.write(data);
-                        if written < data.len() {
-                            // Optional: log trace if needed
-                        }
-                    }
-                }
+                // Audio flows directly to hardware via cpal - no HAL loopback needed
             },
             move |err| {
                 log::warn!("[Playback Thread] Stream error: {}", err);

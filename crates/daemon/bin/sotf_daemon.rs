@@ -323,6 +323,10 @@ impl AudioDaemon {
     }
 
     async fn handle_load_plugins(&self, plugins: Vec<PluginConfig>) -> Response {
+        self.handle_load_plugins_with_channels(plugins, 2).await
+    }
+
+    async fn handle_load_plugins_with_channels(&self, plugins: Vec<PluginConfig>, output_channels: usize) -> Response {
         let mut manager = self.manager.lock();
         let mut output_device = self.selected_device.lock().clone();
 
@@ -337,13 +341,9 @@ impl AudioDaemon {
         // Stop current playback if running
         let _ = manager.stop();
 
-        // Extract output channel count from hal_output plugin
-        let output_channels = plugins
-            .iter()
-            .find(|p| p.plugin_type == "hal_output")
-            .and_then(|p| p.parameters.get("channels"))
-            .and_then(|v| v.as_u64())
-            .unwrap_or(2) as usize;
+        // Note: hal_input/hal_output plugins are no longer required.
+        // The decoder thread's HalInputReader is the audio source, and cpal is the output.
+        // Any plugins in the chain are purely for processing (EQ, upmixer, etc.)
 
         log::info!(
             "Loading HAL plugin chain: {} plugins, {} output channels, device: {:?}",
@@ -360,11 +360,31 @@ impl AudioDaemon {
                 // CRITICAL: Set engine_ready flag so Swift HAL driver starts sending audio
                 #[cfg(target_os = "macos")]
                 {
+                    use std::sync::atomic::Ordering;
+
                     if let Some(buffer) = self.get_shared_buffer() {
+                        // Log the current state before setting
+                        log::info!(
+                            "[AUDIO FLOW] SharedMemory state BEFORE: driver_ready={}, engine_ready={}, active={}, wpos={}, rpos={}",
+                            buffer.driver_ready(),
+                            buffer.header().engine_ready.load(Ordering::Acquire) != 0,
+                            buffer.is_active(),
+                            buffer.header().write_position.load(Ordering::Acquire),
+                            buffer.header().read_position.load(Ordering::Acquire)
+                        );
+
                         buffer.set_engine_ready(true);
+
+                        // Log the state after setting
+                        log::info!(
+                            "[AUDIO FLOW] SharedMemory state AFTER: engine_ready={}",
+                            buffer.header().engine_ready.load(Ordering::Acquire) != 0
+                        );
+
                         log::info!("Set engine_ready=true in shared memory");
                     } else {
-                        log::warn!("Could not open shared memory to set engine_ready flag");
+                        log::error!("[AUDIO FLOW] CRITICAL: Could not open shared memory to set engine_ready flag!");
+                        log::error!("[AUDIO FLOW] Expected path: /tmp/sotf-{}/audio.shm", unsafe { libc::getuid() });
                     }
                 }
 
@@ -1040,9 +1060,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 if status.is_ready() {
                     println!();
-                    println!("💡 HAL plugins available:");
-                    println!("   - hal_input:  Read audio from macOS apps");
-                    println!("   - hal_output: Write processed audio back (loopback)");
+                    println!("💡 Audio flow (capture mode):");
+                    println!("   macOS Apps → HAL Driver → SharedMemory → Daemon → cpal → Hardware");
+                    println!();
+                    println!("   Note: hal_output plugin is NOT needed for direct hardware output.");
+                    println!("         The daemon reads from SharedMemory and outputs via cpal.");
                 }
             }
             Err(e) => {
@@ -1075,23 +1097,43 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🚀 Starting daemon...");
     println!("===============================================================================");
 
-    // Auto-start HAL playback with default config (2ch passthrough)
+    // Auto-start HAL playback with empty plugin chain
+    // Audio flow: HAL input (via decoder thread's HalInputReader) → processing → cpal output
     // This ensures audio flows immediately without waiting for toolbar configuration
     {
-        println!("▶️  Auto-starting HAL playback (2ch passthrough)...");
-        let plugins = vec![
-            PluginConfig {
-                plugin_type: "hal_input".to_string(),
-                parameters: serde_json::json!({"channels": 2}),
-            },
-            PluginConfig {
-                plugin_type: "hal_output".to_string(),
-                parameters: serde_json::json!({"channels": 2}),
-            }
-        ];
+        println!("▶️  Auto-starting HAL playback (2ch)...");
+
+        // Check if SharedMemory file exists
+        let uid = unsafe { libc::getuid() };
+        let shm_path = format!("/tmp/sotf-{}/audio.shm", uid);
+        let shm_exists = std::path::Path::new(&shm_path).exists();
+        println!("   SharedMemory path: {}", shm_path);
+        println!("   SharedMemory exists: {}", shm_exists);
+
+        if !shm_exists {
+            println!("   ⚠️  WARNING: SharedMemory file does not exist!");
+            println!("   ⚠️  The HAL driver may not be installed or hasn't started IO yet.");
+            println!("   ⚠️  Try: sudo launchctl kickstart -k system/com.apple.audio.coreaudiod");
+        }
+
+        // Find a physical output device (not the HAL virtual device)
+        let output_device = find_fallback_output_device();
+        println!("   Output device: {:?}", output_device);
+
+        if output_device.is_none() {
+            println!("   ⚠️  WARNING: No physical output device found!");
+        }
+
+        // Empty plugin chain - decoder thread reads from HAL, cpal outputs to hardware
+        let plugins: Vec<PluginConfig> = vec![];
 
         // Use the daemon's shared runtime instead of creating a new one
-        daemon.runtime.block_on(daemon.handle_load_plugins(plugins));
+        let result = daemon.runtime.block_on(daemon.handle_load_plugins_with_channels(plugins, 2));
+        if result.success {
+            println!("   ✅ HAL playback started successfully");
+        } else {
+            println!("   ❌ HAL playback failed: {:?}", result.error);
+        }
     }
 
     daemon.run()?;

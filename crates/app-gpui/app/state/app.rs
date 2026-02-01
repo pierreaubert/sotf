@@ -560,9 +560,7 @@ impl App {
                     // For recording config, prefer a device that's not virtual
                     let recording_device_idx = output_devices
                         .iter()
-                        .position(|d| {
-                            d.is_default && !AudioDeviceState::is_virtual_device(&d.name)
-                        })
+                        .position(|d| d.is_default && !AudioDeviceState::is_virtual_device(&d.name))
                         .or_else(|| {
                             output_devices
                                 .iter()

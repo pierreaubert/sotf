@@ -113,13 +113,13 @@ private let kScope_Input: UInt32                  = 0x696E7074  // 'inpt'
 private let kScope_Output: UInt32                 = 0x6F757470  // 'outp'
 private let kScope_Wildcard: UInt32               = 0x2A2A2A2A  // '****'
 
-// IO Operation IDs
-private let kIOOperation_ReadInput: UInt32 = 1
-private let kIOOperation_WriteMix: UInt32 = 2
+// IO Operation IDs (FourCC codes from AudioServerPlugIn.h)
+private let kIOOperation_ReadInput: UInt32 = 0x72656164  // 'read'
+private let kIOOperation_WriteMix: UInt32 = 0x72697465   // 'rite'
 
 // MARK: - Supported Sample Rates
 
-private let kSupportedSampleRates: [Float64] = [44100.0, 48000.0, 96000.0]
+private let kSupportedSampleRates: [Float64] = [44100.0, 48000.0, 88200.0, 96000.0]
 
 // MARK: - Driver State
 
@@ -219,11 +219,13 @@ private func driverInitialize(
     _ driver: AudioServerPlugInDriverRef,
     _ host: AudioServerPlugInHostRef
 ) -> OSStatus {
-    halLog("Initialize called")
+    halLog("Initialize called - VERSION 2026-02-01-A")
     DriverState.shared.host = host
 
     // Initialize shared memory for Rust engine communication
     let state = DriverState.shared
+    halLog("Initializing SharedMemory: sampleRate=\(state.sampleRate), bufferFrames=\(state.bufferFrameSize), channels=\(state.channelCount)")
+
     let success = state.sharedAudio.initialize(
         sampleRate: UInt32(state.sampleRate),
         bufferFrames: state.bufferFrameSize,
@@ -231,12 +233,13 @@ private func driverInitialize(
     )
 
     if success {
-        halLog("Shared memory initialized")
+        halLog("Shared memory initialized successfully")
+        halLog("SharedMemory state after init: \(state.sharedAudio.connectionStateDebug)")
     } else {
-        halLog("Shared memory init failed, using loopback mode")
+        halLog("ERROR: Shared memory init failed, using loopback mode only")
     }
 
-    halLog("Initialize complete")
+    halLog("Initialize complete - isConnected=\(state.sharedAudio.isConnected), engineReady=\(state.sharedAudio.engineReady)")
     return noErr
 }
 
@@ -791,6 +794,12 @@ private func driverStartIO(_ driver: AudioServerPlugInDriverRef, _ deviceObjectI
         state.outputRingBuffer?.reset()
         state.sharedAudio.setActive(true)
         halLog("IO started, clock running")
+
+        // Log SharedMemory state for debugging
+        halLog("SharedMemory state: \(state.sharedAudio.connectionStateDebug)")
+
+        // Log device configuration
+        halLog("Device config: sampleRate=\(state.sampleRate), bufferFrameSize=\(state.bufferFrameSize), channels=\(state.channelCount)")
     }
 
     return noErr
@@ -825,6 +834,15 @@ private func driverGetZeroTimeStamp(_ driver: AudioServerPlugInDriverRef, _ devi
     outHostTime.pointee = hostTime
     outSeed.pointee = seed
 
+    // Log periodically (every ~1000 calls to avoid spam)
+    struct ZeroTimeLogger {
+        static var callCount: UInt64 = 0
+    }
+    ZeroTimeLogger.callCount += 1
+    if ZeroTimeLogger.callCount == 1 || ZeroTimeLogger.callCount % 1000 == 0 {
+        halLog("GetZeroTimeStamp[#\(ZeroTimeLogger.callCount)]: sampleTime=\(sampleTime), hostTime=\(hostTime), seed=\(seed)")
+    }
+
     return noErr
 }
 
@@ -833,6 +851,12 @@ private func driverWillDoIOOperation(_ driver: AudioServerPlugInDriverRef, _ dev
     let willDo = (operationID == kIOOperation_ReadInput || operationID == kIOOperation_WriteMix)
     outWillDo.pointee = DarwinBoolean(willDo)
     outWillDoInPlace.pointee = DarwinBoolean(true)
+
+    // ALWAYS log every call for debugging
+    let opName = operationID == kIOOperation_ReadInput ? "ReadInput" :
+                 operationID == kIOOperation_WriteMix ? "WriteMix" : "Unknown"
+    halLog("WillDoIOOperation: op=\(opName) (0x\(String(format: "%08X", operationID)) '\(fourCC(operationID))'), willDo=\(willDo)")
+
     return noErr
 }
 
@@ -841,6 +865,17 @@ private func driverBeginIOOperation(_ driver: AudioServerPlugInDriverRef, _ devi
 }
 
 private func driverDoIOOperation(_ driver: AudioServerPlugInDriverRef, _ deviceObjectID: AudioObjectID, _ streamObjectID: AudioObjectID, _ clientID: UInt32, _ operationID: UInt32, _ ioBufferFrameSize: UInt32, _ ioCycleInfo: UnsafePointer<AudioServerPlugInIOCycleInfo>, _ ioMainBuffer: UnsafeMutableRawPointer?, _ ioSecondaryBuffer: UnsafeMutableRawPointer?) -> OSStatus {
+
+    // Log first call for each operation type
+    struct DoIOLogger {
+        static var loggedOps: Set<UInt32> = []
+    }
+    if !DoIOLogger.loggedOps.contains(operationID) {
+        DoIOLogger.loggedOps.insert(operationID)
+        let opName = operationID == kIOOperation_ReadInput ? "ReadInput" :
+                     operationID == kIOOperation_WriteMix ? "WriteMix" : "Unknown(\(operationID))"
+        halLog("DoIOOperation: FIRST CALL for op=\(opName), stream=\(streamObjectID), frames=\(ioBufferFrameSize)")
+    }
 
     guard let buffer = ioMainBuffer else { return noErr }
 
@@ -876,16 +911,51 @@ private func driverDoIOOperation(_ driver: AudioServerPlugInDriverRef, _ deviceO
             _ = outputBuffer.writeInterleaved(floatBuffer, frameCount: frameCount)
         }
 
+        // Periodic diagnostic logging (every ~2 seconds at 48kHz with 512 frame buffers)
+        // Use a simple counter to avoid logging every frame
+        struct DiagCounter {
+            static var count: UInt64 = 0
+            static var firstCallLogged: Bool = false
+        }
+        DiagCounter.count += 1
+
+        // Log on very first call to confirm WriteMix is being invoked
+        if !DiagCounter.firstCallLogged {
+            DiagCounter.firstCallLogged = true
+            halLog("WriteMix: FIRST CALL - frameCount=\(frameCount), channels=\(channelCount)")
+        }
+
+        let shouldLogDiag = (DiagCounter.count % 200) == 0
+
+        let isConnected = state.sharedAudio.isConnected
+        let engineReady = state.sharedAudio.engineReady
+
+        if shouldLogDiag {
+            // Log diagnostic state using .error so it appears in Console.app
+            os_log("[DIAG] WriteMix: isConnected=%{public}d, engineReady=%{public}d, loopback=%{public}d",
+                   log: logger, type: .error,
+                   isConnected ? 1 : 0,
+                   engineReady ? 1 : 0,
+                   state.loopbackEnabled ? 1 : 0)
+        }
+
         // Also send to Rust engine if connected and ready
-        if state.sharedAudio.isConnected && state.sharedAudio.engineReady {
+        if isConnected && engineReady {
             let framesWritten = state.sharedAudio.writeAudio(floatBuffer, frameCount: frameCount, channelCount: channelCount)
             // TRACE: Log frames received from macOS apps and written to shared memory
             if framesWritten > 0 {
-                // Use os_log for real-time safe logging
-                os_log("[AUDIO FLOW] HAL WriteMix: %d frames from app -> shm", log: logger, type: .debug, framesWritten)
+                if shouldLogDiag {
+                    os_log("[AUDIO FLOW] HAL WriteMix: %d frames from app -> shm", log: logger, type: .error, framesWritten)
+                }
             } else if framesWritten == 0 {
                 os_log("[AUDIO FLOW] HAL WriteMix: buffer full, dropped %d frames", log: logger, type: .error, frameCount)
             }
+        } else if shouldLogDiag {
+            // Log why we're not sending to daemon
+            os_log("[AUDIO FLOW] HAL WriteMix: NOT sending to daemon (isConnected=%{public}d, engineReady=%{public}d)",
+                   log: logger, type: .error,
+                   isConnected ? 1 : 0,
+                   engineReady ? 1 : 0)
         }
 
     default:

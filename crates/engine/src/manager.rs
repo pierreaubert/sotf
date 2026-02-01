@@ -329,12 +329,8 @@ impl AudioEngineManager {
             sample_rate
         );
 
-        // Validate that we have a HAL input plugin
-        if !plugins.iter().any(|p| p.plugin_type == "hal_input") {
-            return Err(AudioDecoderError::ConfigError(
-                "HAL playback requires hal_input plugin in chain".to_string(),
-            ));
-        }
+        // No plugin validation required - decoder thread's HalInputReader is the audio source,
+        // not the hal_input plugin. Empty plugin chains are valid.
 
         // Create engine config for HAL (no file source) with preserved volume
         let volume = *self.current_volume.lock();

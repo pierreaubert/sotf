@@ -18,47 +18,20 @@ const SHARED_MEMORY_MAGIC: u32 = 0x534F5446;
 /// Version 3: Added config negotiation fields for bidirectional HAL-Daemon sync
 const SHARED_MEMORY_VERSION: u32 = 3;
 
-/// Legacy shared memory file path (for backwards compatibility)
-pub const LEGACY_SHARED_MEMORY_PATH: &str = "/tmp/sotf-audio-shm";
-
-/// Get the secure shared memory path for the current user
+/// Get the shared memory path for the current user
 ///
 /// Security model: each user has their own shared memory region.
 /// Path is based on the user's UID to match the Swift HAL driver's path.
 ///
 /// IMPORTANT: This must match the Swift side in SharedMemory.swift which uses:
 /// `/tmp/sotf-{uid}/audio.shm`
-pub fn get_secure_shm_path() -> std::path::PathBuf {
+pub fn get_shared_memory_path() -> std::path::PathBuf {
     // Use UID-based path to match Swift HAL driver
     // Note: Swift HAL driver runs as _coreaudiod but uses the console user's UID
     // via SCDynamicStoreCopyConsoleUser to determine the path
     let uid = unsafe { libc::getuid() };
     std::path::PathBuf::from(format!("/tmp/sotf-{}/audio.shm", uid))
 }
-
-/// Get the shared memory path to use
-///
-/// Tries secure path first, then falls back to legacy path if it exists
-pub fn get_shared_memory_path() -> std::path::PathBuf {
-    let secure_path = get_secure_shm_path();
-
-    // If secure path exists, use it
-    if secure_path.exists() {
-        return secure_path;
-    }
-
-    // If legacy path exists, use it (backwards compatibility)
-    let legacy_path = std::path::Path::new(LEGACY_SHARED_MEMORY_PATH);
-    if legacy_path.exists() {
-        return legacy_path.to_path_buf();
-    }
-
-    // Default to secure path (will be created when HAL driver initializes)
-    secure_path
-}
-
-/// Default shared memory file path (for backwards compatibility)
-pub const SHARED_MEMORY_PATH: &str = "/tmp/sotf-audio-shm";
 
 /// Header structure for shared memory region
 /// Must match the Swift side exactly
@@ -862,12 +835,28 @@ pub struct HalInputReader {
 impl HalInputReader {
     /// Create a new HAL input reader
     pub fn new() -> Option<Self> {
+        let path = get_shared_memory_path();
+        log::info!("[HAL INPUT] Attempting to open SharedMemory at: {:?}", path);
+
         match SharedAudioBuffer::open_default() {
-            Ok(buffer) => Some(Self {
-                buffer: Some(buffer),
-                cipher: None,
-            }),
-            Err(_) => None,
+            Ok(buffer) => {
+                log::info!(
+                    "[HAL INPUT] SharedMemory opened successfully: sample_rate={}, buffer_frames={}, channels={}, driver_ready={}, active={}",
+                    buffer.sample_rate(),
+                    buffer.buffer_frames(),
+                    buffer.channel_count(),
+                    buffer.driver_ready(),
+                    buffer.is_active()
+                );
+                Some(Self {
+                    buffer: Some(buffer),
+                    cipher: None,
+                })
+            }
+            Err(e) => {
+                log::error!("[HAL INPUT] Failed to open SharedMemory: {}", e);
+                None
+            }
         }
     }
 
@@ -881,7 +870,31 @@ impl HalInputReader {
 
     /// Read audio samples from the HAL
     pub fn read(&mut self, buffer: &mut [f32]) -> usize {
+        // Static counter for periodic logging
+        static READ_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let count = READ_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
         if let Some(buf) = &self.buffer {
+            // Log state every 100 reads (~2 seconds)
+            if count % 100 == 0 {
+                let header = buf.header();
+                let write_pos = header.write_position.load(std::sync::atomic::Ordering::Acquire);
+                let read_pos = header.read_position.load(std::sync::atomic::Ordering::Acquire);
+                let available = (write_pos - read_pos) as usize;
+                let channel_count = header.channel_count as usize;
+                let available_frames = if channel_count > 0 { available / channel_count } else { 0 };
+
+                log::info!(
+                    "[HAL INPUT] State: wpos={}, rpos={}, available={} frames, driver_ready={}, engine_ready={}, active={}",
+                    write_pos,
+                    read_pos,
+                    available_frames,
+                    header.driver_ready.load(std::sync::atomic::Ordering::Acquire) != 0,
+                    header.engine_ready.load(std::sync::atomic::Ordering::Acquire) != 0,
+                    header.active.load(std::sync::atomic::Ordering::Acquire) != 0
+                );
+            }
+
             if buf.is_encrypted() {
                 // Check if we need to load/reload cipher
                 let header_fingerprint = buf.key_fingerprint();
@@ -922,6 +935,9 @@ impl HalInputReader {
             // Not encrypted
             buf.read_audio(buffer)
         } else {
+            if count % 100 == 0 {
+                log::warn!("[HAL INPUT] No buffer available for read");
+            }
             0
         }
     }

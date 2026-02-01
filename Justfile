@@ -196,7 +196,14 @@ prod-hal-driver:
 	cp "$HAL_SWIFT_DIR/Info.plist" "$BUILD_DIR/Contents/Info.plist"
 	chmod 755 "$BUILD_DIR/Contents/MacOS/SotFHAL"
 	chmod 644 "$BUILD_DIR/Contents/Info.plist"
-	echo "✅ HAL driver built: $BUILD_DIR"
+	# Sign the driver bundle with hardened runtime
+	echo "Signing HAL driver..."
+	codesign --force --sign "Apple Development: Pierre Aubert (YU8PC9PYUP)" \
+		--options runtime \
+		--timestamp \
+		--deep \
+		"$BUILD_DIR"
+	echo "✅ HAL driver built and signed: $BUILD_DIR"
 
 # Build all macOS daemon components (daemon + toolbar + HAL driver)
 prod-macos-daemon: prod-daemon prod-toolbar prod-hal-driver

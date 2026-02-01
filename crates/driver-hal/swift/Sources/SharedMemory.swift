@@ -18,26 +18,23 @@ private let kSharedMemoryMagic: UInt32 = 0x534F5446
 /// Version 3: Added config negotiation fields for bidirectional HAL-Daemon sync
 private let kSharedMemoryVersion: UInt32 = 3
 
-/// Legacy shared memory file path (for backwards compatibility)
-private let kLegacySharedMemoryPath = "/tmp/sotf-audio-shm"
-
-/// Get the secure shared memory path for the current console user
-/// This is called from the HAL driver running as _coreaudiod
-private func getSecureSharedMemoryPath() -> String {
+/// Get the shared memory path for the current console user
+///
+/// Security model: each user has their own shared memory region.
+/// Path is based on the console user's UID.
+///
+/// IMPORTANT: This must match the Rust side in shared_memory.rs which uses:
+/// `/tmp/sotf-{uid}/audio.shm`
+private func getSharedMemoryPath() -> String {
     // Get the console user (the human logged in, not _coreaudiod)
     var uid: uid_t = 0
     var gid: gid_t = 0
 
-    if let username = SCDynamicStoreCopyConsoleUser(nil, &uid, &gid) as String? {
-        // Use the user's TMPDIR if available, otherwise use UID-based path
-        // Note: We can't easily get another user's TMPDIR, so use UID-based path
-        let userPath = "/tmp/sotf-\(uid)/audio.shm"
+    if SCDynamicStoreCopyConsoleUser(nil, &uid, &gid) != nil {
+        let dirPath = "/tmp/sotf-\(uid)"
+        let filePath = "\(dirPath)/audio.shm"
 
         // Create the directory if it doesn't exist
-        // Note: Running as _coreaudiod, we cannot set ownership to the console user.
-        // The directory will be owned by _coreaudiod with permissions allowing
-        // both _coreaudiod and the user to access it.
-        let dirPath = "/tmp/sotf-\(uid)"
         var isDir: ObjCBool = false
         if !FileManager.default.fileExists(atPath: dirPath, isDirectory: &isDir) {
             do {
@@ -47,13 +44,10 @@ private func getSecureSharedMemoryPath() -> String {
                     .posixPermissions: 0o777
                 ])
             } catch {
-                halLog("Failed to create secure directory: \(error)")
-                // Fall back to legacy path
-                return kLegacySharedMemoryPath
+                halLog("Failed to create shared memory directory: \(error)")
             }
         } else {
             // Directory exists, ensure permissions are correct (0777)
-            // This fixes the issue where a previous version created it with restrictive permissions (0770)
             do {
                 try FileManager.default.setAttributes([.posixPermissions: 0o777], ofItemAtPath: dirPath)
             } catch {
@@ -61,39 +55,13 @@ private func getSecureSharedMemoryPath() -> String {
             }
         }
 
-        return userPath
+        return filePath
     }
 
-    // No console user, fall back to legacy path
-    halLog("No console user found, using legacy shared memory path")
-    return kLegacySharedMemoryPath
-}
-
-/// Get the shared memory path (always prefer secure path)
-///
-/// Migration strategy:
-/// - Always use the secure UID-based path for new creates
-/// - If legacy path exists but secure doesn't, migrate by using secure path
-///   (the legacy file will remain but become stale)
-/// - This ensures new installations use the secure path immediately
-private func getSharedMemoryPath() -> String {
-    let securePath = getSecureSharedMemoryPath()
-
-    // If secure path exists, use it
-    if FileManager.default.fileExists(atPath: securePath) {
-        return securePath
-    }
-
-    // If legacy path exists, log migration and still use secure path
-    // This forces migration to the new secure path
-    if FileManager.default.fileExists(atPath: kLegacySharedMemoryPath) {
-        halLog("Migrating from legacy path \(kLegacySharedMemoryPath) to secure path \(securePath)")
-        // Optionally try to remove legacy file (may fail if owned by different user)
-        try? FileManager.default.removeItem(atPath: kLegacySharedMemoryPath)
-    }
-
-    // Always use secure path for new creates
-    return securePath
+    // No console user - this shouldn't happen in normal operation
+    halLog("ERROR: No console user found, cannot determine shared memory path")
+    // Return a path that will fail to open, forcing proper error handling
+    return "/tmp/sotf-unknown/audio.shm"
 }
 
 /// Header structure for shared memory region
@@ -161,12 +129,24 @@ final class SharedAudioBuffer {
 
     /// Whether we're connected to shared memory
     var isConnected: Bool {
-        return sharedMemory != nil && header?.pointee.magic == kSharedMemoryMagic
+        let hasMem = sharedMemory != nil
+        let hasMagic = header?.pointee.magic == kSharedMemoryMagic
+        return hasMem && hasMagic
     }
 
     /// Whether the Rust engine is connected
     var engineReady: Bool {
         return header?.pointee.engineReady != 0
+    }
+
+    /// Debug: get connection state details
+    var connectionStateDebug: String {
+        let hasMem = sharedMemory != nil
+        let magic = header?.pointee.magic ?? 0
+        let expectedMagic = kSharedMemoryMagic
+        let magicMatch = magic == expectedMagic
+        let engineFlag = header?.pointee.engineReady ?? 0
+        return "mem=\(hasMem), magic=0x\(String(format: "%08X", magic)) (expected 0x\(String(format: "%08X", expectedMagic))), magicMatch=\(magicMatch), engineReady=\(engineFlag)"
     }
 
     /// Initialize shared memory

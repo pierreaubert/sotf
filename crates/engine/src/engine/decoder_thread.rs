@@ -470,6 +470,10 @@ impl DecoderState {
         frame_size: usize,
         sample_rate: u32,
     ) -> Result<(), String> {
+        // Static counter for periodic logging (avoid log spam)
+        static LOG_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let count = LOG_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
         #[cfg(all(target_os = "macos", feature = "hal"))]
         if let Some(reader) = &mut self.hal_reader {
             // Read from HAL
@@ -482,6 +486,29 @@ impl DecoderState {
             }
 
             let samples_read = reader.read(&mut self.hal_input_buffer);
+
+            // Calculate RMS for audio level detection
+            let rms: f32 = if samples_read > 0 {
+                let sum: f32 = self.hal_input_buffer[..samples_read]
+                    .iter()
+                    .map(|s| s * s)
+                    .sum();
+                (sum / samples_read as f32).sqrt()
+            } else {
+                0.0
+            };
+
+            // Log every 100 frames (~2 seconds at 48kHz/1024 frames)
+            if count % 100 == 0 {
+                let has_audio = rms > 0.0001;
+                log::info!(
+                    "[AUDIO FLOW] Decoder HAL read: {} samples, RMS={:.6}, has_audio={}, connected={}",
+                    samples_read,
+                    rms,
+                    has_audio,
+                    reader.is_connected()
+                );
+            }
 
             if samples_read < buffer_len {
                 // Zero-fill remaining
@@ -499,6 +526,11 @@ impl DecoderState {
                 .map_err(|_| "Failed to send HAL frame")?;
 
             return Ok(());
+        }
+
+        // Log that we don't have a HAL reader
+        if count % 100 == 0 {
+            log::warn!("[AUDIO FLOW] Decoder: No HAL reader available, sending silent frames");
         }
 
         // Fallback to silent frame if no reader (or not macOS)

@@ -4,8 +4,9 @@
 //! for communicating with the Swift HAL driver.
 //!
 //! The Swift HAL driver (in swift/) creates a virtual audio device on macOS
-//! and uses shared memory at /tmp/sotf-audio-shm to exchange audio data
-//! with the Rust audio engine.
+//! and uses shared memory at `/tmp/sotf-{uid}/audio.shm` to exchange audio data
+//! with the Rust audio engine. Each user has their own shared memory region
+//! for security isolation.
 //!
 //! # Data Flow
 //!
@@ -51,8 +52,7 @@ pub use encryption::{
     generate_key, samples_to_encrypted,
 };
 pub use shared_memory::{
-    HalInputReader, HalOutputWriter, SharedAudioBuffer, SHARED_MEMORY_PATH,
-    get_shared_memory_path, get_secure_shm_path,
+    HalInputReader, HalOutputWriter, SharedAudioBuffer, get_shared_memory_path,
 };
 pub use volume::{
     AtomicChannelVolumes, AtomicVolume, SharedChannelVolumes, SharedVolume, VolumeConfig,
