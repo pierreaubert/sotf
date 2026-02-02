@@ -6,7 +6,7 @@ edition.workspace = true
 
 [features]
 default = []
-hal = ["driver-hal", "plugins/hal"]
+hal = ["driver-hal", "plugins/hal", "engine/hal"]
 
 [[bin]]
 name = "sotf-daemon"

@@ -616,12 +616,24 @@ fn run_decoder_thread(
                 log::debug!("[Decoder Thread] HAL input error: {}", e);
                 state.stop();
             }
-            // Sleep to maintain target frame rate (e.g., ~21ms for 1024 samples @ 48kHz)
-            // Note: If HAL read blocks, this sleep might be redundant or need adjustment,
-            // but HalInputReader is typically non-blocking or fast enough.
-            // Ideally we should sync with HAL, but for now simple sleep is safer to avoid busy loop.
-            let frame_duration_ms = (frame_size as f64 / target_sample_rate as f64 * 1000.0) as u64;
-            std::thread::sleep(std::time::Duration::from_millis(frame_duration_ms));
+            // For HAL input: only sleep briefly when no data is available to avoid busy-looping.
+            // The HAL driver provides data in real-time, so we should consume it as fast as possible.
+            // Don't sleep after successful reads - the processing/playback pipeline provides backpressure.
+            #[cfg(all(target_os = "macos", feature = "hal"))]
+            {
+                // If HAL reader got no data, sleep briefly to avoid busy loop
+                // The channel send to processing thread provides natural backpressure when data is available
+                if state.hal_reader.as_ref().map_or(true, |r| !r.is_connected()) {
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+                // When connected and data flowing, the mpsc channel backpressure handles timing
+            }
+            #[cfg(not(all(target_os = "macos", feature = "hal")))]
+            {
+                // Non-HAL silent source mode: sleep to maintain frame rate
+                let frame_duration_ms = (frame_size as f64 / target_sample_rate as f64 * 1000.0) as u64;
+                std::thread::sleep(std::time::Duration::from_millis(frame_duration_ms));
+            }
         } else if state.decoder.is_some() && !state.paused {
             // File playback mode: decode from file
             match state.decode_chunk(

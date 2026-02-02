@@ -114,8 +114,16 @@ private let kScope_Output: UInt32                 = 0x6F757470  // 'outp'
 private let kScope_Wildcard: UInt32               = 0x2A2A2A2A  // '****'
 
 // IO Operation IDs (FourCC codes from AudioServerPlugIn.h)
-private let kIOOperation_ReadInput: UInt32 = 0x72656164  // 'read'
-private let kIOOperation_WriteMix: UInt32 = 0x72697465   // 'rite'
+private let kIOOperation_Thread: UInt32 = 0x74687264       // 'thrd' - Thread begin/end
+private let kIOOperation_Cycle: UInt32 = 0x6379636C        // 'cycl' - IO cycle begin/end
+private let kIOOperation_ReadInput: UInt32 = 0x72656164    // 'read' - Read from input device
+private let kIOOperation_ConvertInput: UInt32 = 0x63696E70 // 'cinp' - Convert input format
+private let kIOOperation_ProcessInput: UInt32 = 0x70696E70 // 'pinp' - Process input (DSP)
+private let kIOOperation_ProcessOutput: UInt32 = 0x706F7574 // 'pout' - Process output (DSP)
+private let kIOOperation_MixOutput: UInt32 = 0x6D69786F    // 'mixo' - Mix output streams
+private let kIOOperation_ProcessMix: UInt32 = 0x706D6978   // 'pmix' - Process mixed output
+private let kIOOperation_ConvertMix: UInt32 = 0x636D6978   // 'cmix' - Convert mix format
+private let kIOOperation_WriteMix: UInt32 = 0x72697465     // 'rite' - Write mixed output
 
 // MARK: - Supported Sample Rates
 
@@ -846,15 +854,35 @@ private func driverGetZeroTimeStamp(_ driver: AudioServerPlugInDriverRef, _ devi
     return noErr
 }
 
+private func ioOperationName(_ operationID: UInt32) -> String {
+    switch operationID {
+    case kIOOperation_Thread: return "Thread"
+    case kIOOperation_Cycle: return "Cycle"
+    case kIOOperation_ReadInput: return "ReadInput"
+    case kIOOperation_ConvertInput: return "ConvertInput"
+    case kIOOperation_ProcessInput: return "ProcessInput"
+    case kIOOperation_ProcessOutput: return "ProcessOutput"
+    case kIOOperation_MixOutput: return "MixOutput"
+    case kIOOperation_ProcessMix: return "ProcessMix"
+    case kIOOperation_ConvertMix: return "ConvertMix"
+    case kIOOperation_WriteMix: return "WriteMix"
+    default: return "Unknown"
+    }
+}
+
 private func driverWillDoIOOperation(_ driver: AudioServerPlugInDriverRef, _ deviceObjectID: AudioObjectID, _ clientID: UInt32, _ operationID: UInt32, _ outWillDo: UnsafeMutablePointer<DarwinBoolean>, _ outWillDoInPlace: UnsafeMutablePointer<DarwinBoolean>) -> OSStatus {
-    // We support both read (input) and write (output) operations
-    let willDo = (operationID == kIOOperation_ReadInput || operationID == kIOOperation_WriteMix)
+    // We support:
+    // - Cycle: IO timing notifications
+    // - ReadInput: Provide audio to recording clients
+    // - WriteMix: Receive audio from playback clients
+    let willDo = (operationID == kIOOperation_Cycle ||
+                  operationID == kIOOperation_ReadInput ||
+                  operationID == kIOOperation_WriteMix)
     outWillDo.pointee = DarwinBoolean(willDo)
     outWillDoInPlace.pointee = DarwinBoolean(true)
 
     // ALWAYS log every call for debugging
-    let opName = operationID == kIOOperation_ReadInput ? "ReadInput" :
-                 operationID == kIOOperation_WriteMix ? "WriteMix" : "Unknown"
+    let opName = ioOperationName(operationID)
     halLog("WillDoIOOperation: op=\(opName) (0x\(String(format: "%08X", operationID)) '\(fourCC(operationID))'), willDo=\(willDo)")
 
     return noErr
@@ -872,9 +900,13 @@ private func driverDoIOOperation(_ driver: AudioServerPlugInDriverRef, _ deviceO
     }
     if !DoIOLogger.loggedOps.contains(operationID) {
         DoIOLogger.loggedOps.insert(operationID)
-        let opName = operationID == kIOOperation_ReadInput ? "ReadInput" :
-                     operationID == kIOOperation_WriteMix ? "WriteMix" : "Unknown(\(operationID))"
-        halLog("DoIOOperation: FIRST CALL for op=\(opName), stream=\(streamObjectID), frames=\(ioBufferFrameSize)")
+        halLog("DoIOOperation: FIRST CALL for op=\(ioOperationName(operationID)), stream=\(streamObjectID), frames=\(ioBufferFrameSize)")
+    }
+
+    // Handle Cycle operation (no buffer needed)
+    if operationID == kIOOperation_Cycle {
+        // Cycle operations notify us about IO timing - no action needed
+        return noErr
     }
 
     guard let buffer = ioMainBuffer else { return noErr }
@@ -1021,7 +1053,13 @@ private var gDriverInterface = AudioServerPlugInDriverInterface(
     EndIOOperation: { d, id, c, op, bs, ci in driverEndIOOperation(d, id, c, op, bs, ci) }
 )
 
+// Stable global pointer to the interface struct
 private var gDriverInterfacePtr: UnsafeMutablePointer<AudioServerPlugInDriverInterface>? = nil
+
+// Stable global "pointer to pointer" - this is what CoreAudio expects as AudioServerPlugInDriverRef
+// AudioServerPlugInDriverRef = const AudioServerPlugInDriverInterface**
+// We need a stable memory location that contains the pointer to the interface
+private var gDriverRef: UnsafeMutablePointer<UnsafeMutablePointer<AudioServerPlugInDriverInterface>?>? = nil
 
 // MARK: - Factory Function
 
@@ -1036,11 +1074,18 @@ public func SotFHALDriverFactory(_ allocator: CFAllocator?, _ requestedTypeUUID:
         return nil
     }
 
-    if gDriverInterfacePtr == nil {
+    if gDriverRef == nil {
+        // Allocate the interface struct
         gDriverInterfacePtr = UnsafeMutablePointer<AudioServerPlugInDriverInterface>.allocate(capacity: 1)
         gDriverInterfacePtr!.pointee = gDriverInterface
+
+        // Allocate the pointer-to-pointer (AudioServerPlugInDriverRef)
+        // This must be a stable memory location that persists for the lifetime of the driver
+        gDriverRef = UnsafeMutablePointer<UnsafeMutablePointer<AudioServerPlugInDriverInterface>?>.allocate(capacity: 1)
+        gDriverRef!.pointee = gDriverInterfacePtr
     }
 
-    halLog("Factory returning interface")
-    return UnsafeMutableRawPointer(&gDriverInterfacePtr)
+    halLog("Factory returning interface at \(String(describing: gDriverRef))")
+    // Return the stable pointer-to-pointer (not &gDriverInterfacePtr which is temporary!)
+    return UnsafeMutableRawPointer(gDriverRef!)
 }

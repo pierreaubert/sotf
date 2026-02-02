@@ -676,7 +676,8 @@ fn build_output_stream(
                     chunk.commit_all();
                 } else {
                     // Not enough data (underrun)
-                    let available = consumer.slots();
+                    // Cap available to requested to avoid buffer overflow
+                    let available = consumer.slots().min(requested);
 
                     // Read what we have
                     if let Ok(chunk) = consumer.read_chunk(available) {

@@ -1002,6 +1002,11 @@ fn list_audio_devices() -> Result<Vec<serde_json::Value>, String> {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize logger from RUST_LOG environment variable
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+        .format_timestamp_millis()
+        .init();
+
     // Setup signal handling for graceful shutdown
     let running = Arc::new(Mutex::new(true));
     let r = Arc::clone(&running);
