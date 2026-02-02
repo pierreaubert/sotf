@@ -529,6 +529,22 @@ impl RoomEqOptimizationMode {
             }
         }
     }
+
+    pub fn to_code(&self) -> &'static str {
+        match self {
+            RoomEqOptimizationMode::Iir => "iir",
+            RoomEqOptimizationMode::Fir => "fir",
+            RoomEqOptimizationMode::Mixed => "mixed",
+        }
+    }
+
+    pub fn from_code(code: &str) -> Self {
+        match code {
+            "fir" => RoomEqOptimizationMode::Fir,
+            "mixed" => RoomEqOptimizationMode::Mixed,
+            _ => RoomEqOptimizationMode::Iir,
+        }
+    }
 }
 
 /// FIR configuration
@@ -562,6 +578,8 @@ pub struct RoomEqOptimizerConfig {
     pub multi_speaker_mode: MultiSpeakerMode,
     /// Optimization algorithm
     pub algorithm: RoomEqAlgorithm,
+    /// Sample rate in Hz
+    pub sample_rate: u32,
     /// Number of PEQ filters per channel
     pub num_filters: usize,
     /// Minimum Q factor
@@ -606,6 +624,10 @@ pub struct RoomEqOptimizerConfig {
     pub atolerance: f64,
     /// Loss function type (e.g., "flat", "score")
     pub loss_type: String,
+    /// Enable psychoacoustic smoothing
+    pub psychoacoustic: bool,
+    /// Enable asymmetric loss (penalize peaks more than dips)
+    pub asymmetric_loss: bool,
     /// Target curve (e.g., "flat", "harman")
     pub target_curve: String,
     /// System type (e.g., "stereo", "multichannel")
@@ -619,6 +641,7 @@ impl Default for RoomEqOptimizerConfig {
             fir: RoomEqFirConfig::default(),
             multi_speaker_mode: MultiSpeakerMode::Combined,
             algorithm: RoomEqAlgorithm::DifferentialEvolution,
+            sample_rate: 48000,
             num_filters: 5,
             min_q: 0.5,
             max_q: 6.0,
@@ -641,6 +664,8 @@ impl Default for RoomEqOptimizerConfig {
             tolerance: 0.00001,
             atolerance: 0.00001,
             loss_type: "flat".to_string(),
+            psychoacoustic: true,
+            asymmetric_loss: true,
             target_curve: "flat".to_string(),
             system_type: "stereo".to_string(),
         }
@@ -931,6 +956,8 @@ impl CustomTargetCurve {
 #[derive(Debug, Clone, Default)]
 pub struct RoomEqDropdowns {
     pub data_source_open: bool,
+    pub opt_mode_open: bool,
+    pub fir_phase_open: bool,
     pub algorithm_open: bool,
     pub peq_model_open: bool,
     pub crossover_type_open: bool,

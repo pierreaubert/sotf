@@ -347,6 +347,9 @@ fn run_processing_thread(
                 if process_buffer.len() != output_samples {
                     process_buffer.resize(output_samples, 0.0);
                 }
+                // Zero-fill buffer before processing to avoid garbage in unused portions
+                // (resampler may produce fewer frames than output_frames_max())
+                process_buffer.fill(0.0);
 
                 let start_time = std::time::Instant::now();
                 match state.process_frame(&frame.data, &mut process_buffer) {

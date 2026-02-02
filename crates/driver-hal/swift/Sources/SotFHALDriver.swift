@@ -127,7 +127,7 @@ private let kIOOperation_WriteMix: UInt32 = 0x72697465     // 'rite' - Write mix
 
 // MARK: - Supported Sample Rates
 
-private let kSupportedSampleRates: [Float64] = [44100.0, 48000.0, 88200.0, 96000.0]
+private let kSupportedSampleRates: [Float64] = [44100.0, 48000.0, 88200.0, 96000.0, 176400.0, 192000.0]
 
 // MARK: - Driver State
 

@@ -369,11 +369,13 @@ impl AudioDaemon {
                     );
 
                     // Prepend resampler as first plugin
+                    // chunk_size must match engine's frame_size (default 1024)
                     let resampler_config = PluginConfig {
                         plugin_type: "resampler".to_string(),
                         parameters: serde_json::json!({
                             "input_sample_rate": hal_rate,
                             "output_sample_rate": target_rate,
+                            "chunk_size": 1024,
                         }),
                     };
                     plugins.insert(0, resampler_config);
@@ -537,7 +539,7 @@ impl AudioDaemon {
     async fn handle_set_sample_rate(&self, rate: u32) -> Response {
         #[cfg(target_os = "macos")]
         {
-            const SUPPORTED: [u32; 4] = [44100, 48000, 88200, 96000];
+            const SUPPORTED: [u32; 6] = [44100, 48000, 88200, 96000, 176400, 192000];
 
             if !SUPPORTED.contains(&rate) {
                 return Response::err(format!(
@@ -801,7 +803,7 @@ impl AudioDaemon {
 
 /// Supported sample rates for HAL driver
 #[cfg(target_os = "macos")]
-const SUPPORTED_SAMPLE_RATES: [u32; 4] = [44100, 48000, 88200, 96000];
+const SUPPORTED_SAMPLE_RATES: [u32; 6] = [44100, 48000, 88200, 96000, 176400, 192000];
 
 /// Spawn a background thread that polls shared memory for HAL-initiated config changes
 #[cfg(target_os = "macos")]
@@ -1006,11 +1008,13 @@ fn reconfigure_audio_pipeline(
             hal_sample_rate,
             target_rate
         );
+        // chunk_size must match engine's frame_size (default 1024)
         let resampler_config = PluginConfig {
             plugin_type: "resampler".to_string(),
             parameters: serde_json::json!({
                 "input_sample_rate": hal_sample_rate,
                 "output_sample_rate": target_rate,
+                "chunk_size": 1024,
             }),
         };
         // Prepend resampler before user plugins
