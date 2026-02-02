@@ -277,11 +277,19 @@ final class SharedAudioBuffer {
         OSMemoryBarrier()
     }
 
-    /// Update sample rate
+    /// Update sample rate (called when CoreAudio changes the device sample rate)
+    /// This uses the config negotiation protocol to notify the daemon
     func updateSampleRate(_ sampleRate: UInt32) {
         guard let header = header else { return }
         header.pointee.sampleRate = sampleRate
-        signalConfigChange()
+        // Use config negotiation so daemon knows to reconfigure
+        header.pointee.requestedSampleRate = sampleRate
+        header.pointee.requestedBufferFrames = header.pointee.bufferFrames
+        header.pointee.configStatus = 0  // pending
+        header.pointee.configSource = 1  // HAL initiated
+        OSMemoryBarrier()
+        header.pointee.configChanged = 1
+        halLog("updateSampleRate: requested \(sampleRate)Hz via config negotiation")
     }
 
     /// Write audio to shared memory (called from DoIOOperation for output)

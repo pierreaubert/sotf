@@ -313,6 +313,123 @@ fn run_playback_thread(
                 PlaybackCommand::Mute(muted) => {
                     state.muted.store(muted, Ordering::Relaxed);
                 }
+                PlaybackCommand::UpdateSampleRate(new_sample_rate) => {
+                    log::warn!(
+                        "[Playback Thread] RECEIVED UpdateSampleRate({}) command, current sample_rate={}",
+                        new_sample_rate,
+                        config.sample_rate
+                    );
+                    if new_sample_rate != config.sample_rate {
+                        log::info!(
+                            "[Playback Thread] Updating sample rate: {} -> {}",
+                            config.sample_rate,
+                            new_sample_rate
+                        );
+
+                        // CRITICAL: Drain all pending frames from the message queue
+                        let mut drained_count = 0;
+                        while message_rx.try_recv().is_ok() {
+                            drained_count += 1;
+                        }
+                        if drained_count > 0 {
+                            log::debug!(
+                                "[Playback Thread] Drained {} stale frames during sample rate update",
+                                drained_count
+                            );
+                        }
+
+                        // Build new config with new sample rate
+                        let new_config = StreamConfig {
+                            channels: config.channels,
+                            sample_rate: new_sample_rate,
+                            buffer_size: config.buffer_size.clone(),
+                        };
+
+                        // Create new ring buffer
+                        let new_buffer_capacity =
+                            (new_sample_rate as usize * 200) / 1000 * channels;
+                        let (new_producer, new_consumer) =
+                            RingBuffer::<f32>::new(new_buffer_capacity);
+
+                        let new_state =
+                            Arc::new(PlaybackState::new(new_consumer, new_buffer_capacity));
+
+                        // Drain any frames that arrived during setup
+                        while message_rx.try_recv().is_ok() {
+                            drained_count += 1;
+                        }
+
+                        // Stop the old stream
+                        if let Err(e) = stream.pause() {
+                            log::warn!("[Playback Thread] Failed to pause old stream: {}", e);
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+
+                        // Final drain after stopping
+                        while message_rx.try_recv().is_ok() {
+                            drained_count += 1;
+                        }
+
+                        log::info!(
+                            "[Playback Thread] Building new stream with sample rate: {}Hz (drained {} frames)",
+                            new_sample_rate,
+                            drained_count
+                        );
+
+                        match build_output_stream(
+                            &device,
+                            &new_config,
+                            Arc::clone(&new_state),
+                            event_tx.clone(),
+                        ) {
+                            Ok(new_stream) => {
+                                if let Err(e) = new_stream.play() {
+                                    log::error!(
+                                        "[Playback Thread] Failed to start new stream: {}",
+                                        e
+                                    );
+                                    event_tx
+                                        .send(ThreadEvent::ProcessingError(format!(
+                                            "Playback stream start failed for {} sample rate: {}",
+                                            new_sample_rate, e
+                                        )))
+                                        .ok();
+                                } else {
+                                    stream = new_stream;
+                                    config = new_config;
+                                    state = new_state;
+                                    producer = new_producer;
+
+                                    // Final drain
+                                    while message_rx.try_recv().is_ok() {}
+
+                                    log::warn!(
+                                        "[Playback Thread] STREAM REBUILT successfully with sample rate {}Hz",
+                                        new_sample_rate
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                log::error!(
+                                    "[Playback Thread] Failed to build stream for sample rate {}: {}",
+                                    new_sample_rate,
+                                    e
+                                );
+                                event_tx
+                                    .send(ThreadEvent::ProcessingError(format!(
+                                        "Playback stream rebuild failed for sample rate {}: {}",
+                                        new_sample_rate, e
+                                    )))
+                                    .ok();
+                            }
+                        }
+                    } else {
+                        log::debug!(
+                            "[Playback Thread] UpdateSampleRate({}) - no change needed",
+                            new_sample_rate
+                        );
+                    }
+                }
                 PlaybackCommand::UpdateChannels(new_channels) => {
                     log::warn!(
                         "[Playback Thread] RECEIVED UpdateChannels({}) command, current channels={}",

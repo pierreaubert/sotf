@@ -152,6 +152,8 @@ struct ProcessingState {
     channels: usize,
     bypassed: bool,
     process_buffer: Vec<f32>,
+    /// Pre-allocated buffer for frame sending (avoids allocation in hot path)
+    frame_send_buffer: Vec<f32>,
 }
 
 impl ProcessingState {
@@ -161,12 +163,34 @@ impl ProcessingState {
             channels,
             bypassed: false,
             process_buffer: Vec::new(),
+            // Pre-allocate for typical frame size (1024 frames * 8 channels)
+            frame_send_buffer: Vec::with_capacity(1024 * 8),
         }
     }
 
     /// Get the actual output channel count
     fn output_channels(&self) -> usize {
         self.host.output_channels()
+    }
+
+    /// Get the output frame count for a given input frame count.
+    /// Accounts for plugins that change frame count (like resamplers).
+    fn output_frames_for_input(&self, input_frames: usize) -> usize {
+        if self.bypassed || self.host.plugin_count() == 0 {
+            input_frames
+        } else {
+            self.host.output_frames_for_input(input_frames)
+        }
+    }
+
+    /// Get the output sample rate for a given input rate.
+    /// Accounts for plugins that change sample rate (like resamplers).
+    fn output_sample_rate(&self, input_rate: u32) -> u32 {
+        if self.bypassed || self.host.plugin_count() == 0 {
+            input_rate
+        } else {
+            self.host.output_sample_rate(input_rate)
+        }
     }
 
     /// Process a frame
@@ -311,7 +335,13 @@ fn run_processing_thread(
         match decoder_rx.recv_timeout(std::time::Duration::from_millis(SPIN_MS_SIGNAL)) {
             Ok(DecoderMessage::Frame(frame)) => {
                 let output_channels = state.output_channels();
-                let output_samples = frame.num_frames * output_channels;
+
+                // Query plugin chain for actual output size (accounts for resampler)
+                let output_frames = state.output_frames_for_input(frame.num_frames);
+                let output_samples = output_frames * output_channels;
+
+                // Query plugin chain for actual output sample rate
+                let output_sample_rate = state.output_sample_rate(frame.sample_rate);
 
                 let mut process_buffer = std::mem::take(&mut state.process_buffer);
                 if process_buffer.len() != output_samples {
@@ -330,11 +360,24 @@ fn run_processing_thread(
                             );
                         }
 
+                        // Copy to frame_send_buffer and use take/restore (avoids .clone() allocation)
+                        if state.frame_send_buffer.len() < output_samples {
+                            state.frame_send_buffer.resize(output_samples, 0.0);
+                        }
+                        state.frame_send_buffer[..output_samples]
+                            .copy_from_slice(&process_buffer[..output_samples]);
+
+                        let mut frame_data = std::mem::take(&mut state.frame_send_buffer);
+                        frame_data.truncate(output_samples);
+                        // Restore buffer for next iteration
+                        state.frame_send_buffer = Vec::with_capacity(output_samples);
+
+                        // Use actual output frame count and sample rate (accounts for resampler)
                         let processed_frame = super::AudioFrame::new(
-                            process_buffer.clone(),
-                            frame.num_frames,
+                            frame_data,
+                            output_frames,
                             output_channels,
-                            frame.sample_rate,
+                            output_sample_rate,
                         );
 
                         match send_or_interrupt(
@@ -788,6 +831,34 @@ fn create_plugin(
 
             let mut plugin = ABComparePlugin::from_params(channels, params)?;
             plugin.initialize(sample_rate)?;
+            Ok(Box::new(plugin))
+        }
+
+        "resampler" => {
+            use sotf_plugins::ResamplerPlugin;
+
+            #[derive(serde::Deserialize)]
+            struct ResamplerParams {
+                input_sample_rate: u32,
+                output_sample_rate: u32,
+                #[serde(default = "default_chunk_size")]
+                chunk_size: usize,
+            }
+            fn default_chunk_size() -> usize {
+                1024
+            }
+
+            let params: ResamplerParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| format!("Failed to parse resampler plugin parameters: {}", e))?;
+
+            let plugin = ResamplerPlugin::new(
+                channels,
+                params.input_sample_rate,
+                params.output_sample_rate,
+                params.chunk_size,
+            )
+            .map_err(|e| format!("Failed to create resampler: {}", e))?;
+
             Ok(Box::new(plugin))
         }
 

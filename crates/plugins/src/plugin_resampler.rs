@@ -256,6 +256,21 @@ impl Plugin for ResamplerPlugin {
         // This is approximately half the sinc filter length
         128
     }
+
+    fn output_frames_for_input(&self, input_frames: usize) -> usize {
+        // Use the resampler's actual max output frames if available
+        if let Some(ref resampler) = self.resampler {
+            resampler.output_frames_max()
+        } else {
+            // Estimate based on ratio
+            let ratio = self.output_sample_rate as f64 / self.input_sample_rate as f64;
+            (input_frames as f64 * ratio).ceil() as usize
+        }
+    }
+
+    fn output_sample_rate(&self, _input_rate: u32) -> u32 {
+        self.output_sample_rate
+    }
 }
 
 #[cfg(test)]

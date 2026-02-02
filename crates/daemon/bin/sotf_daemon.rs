@@ -145,6 +145,10 @@ struct AudioDaemon {
     shared_buffer: Arc<Mutex<Option<driver_hal::SharedAudioBuffer>>>,
     /// Shared Tokio runtime for async operations
     runtime: Arc<tokio::runtime::Runtime>,
+    /// Current plugin configuration (user plugins, excluding auto-added resampler)
+    current_plugins: Arc<Mutex<Vec<PluginConfig>>>,
+    /// Current output channel count
+    current_output_channels: Arc<Mutex<usize>>,
 }
 
 impl AudioDaemon {
@@ -161,6 +165,8 @@ impl AudioDaemon {
             #[cfg(target_os = "macos")]
             shared_buffer: Arc::new(Mutex::new(None)),
             runtime: Arc::new(runtime),
+            current_plugins: Arc::new(Mutex::new(Vec::new())),
+            current_output_channels: Arc::new(Mutex::new(2)),
         }
     }
 
@@ -326,7 +332,11 @@ impl AudioDaemon {
         self.handle_load_plugins_with_channels(plugins, 2).await
     }
 
-    async fn handle_load_plugins_with_channels(&self, plugins: Vec<PluginConfig>, output_channels: usize) -> Response {
+    async fn handle_load_plugins_with_channels(&self, mut plugins: Vec<PluginConfig>, output_channels: usize) -> Response {
+        // Store user's plugin configuration BEFORE adding resampler
+        *self.current_plugins.lock() = plugins.clone();
+        *self.current_output_channels.lock() = output_channels;
+
         let mut manager = self.manager.lock();
         let mut output_device = self.selected_device.lock().clone();
 
@@ -344,6 +354,32 @@ impl AudioDaemon {
         // Note: hal_input/hal_output plugins are no longer required.
         // The decoder thread's HalInputReader is the audio source, and cpal is the output.
         // Any plugins in the chain are purely for processing (EQ, upmixer, etc.)
+
+        // Check HAL sample rate and add resampler if needed
+        #[cfg(target_os = "macos")]
+        {
+            if let Some(buffer) = self.get_shared_buffer() {
+                let hal_rate = buffer.sample_rate();
+                let target_rate = 48000u32; // Engine's target sample rate
+
+                if hal_rate != 0 && hal_rate != target_rate {
+                    log::info!(
+                        "HAL sample rate ({}Hz) differs from target ({}Hz), adding resampler plugin",
+                        hal_rate, target_rate
+                    );
+
+                    // Prepend resampler as first plugin
+                    let resampler_config = PluginConfig {
+                        plugin_type: "resampler".to_string(),
+                        parameters: serde_json::json!({
+                            "input_sample_rate": hal_rate,
+                            "output_sample_rate": target_rate,
+                        }),
+                    };
+                    plugins.insert(0, resampler_config);
+                }
+            }
+        }
 
         log::info!(
             "Loading HAL plugin chain: {} plugins, {} output channels, device: {:?}",
@@ -501,7 +537,7 @@ impl AudioDaemon {
     async fn handle_set_sample_rate(&self, rate: u32) -> Response {
         #[cfg(target_os = "macos")]
         {
-            const SUPPORTED: [u32; 3] = [44100, 48000, 96000];
+            const SUPPORTED: [u32; 4] = [44100, 48000, 88200, 96000];
 
             if !SUPPORTED.contains(&rate) {
                 return Response::err(format!(
@@ -667,7 +703,9 @@ impl AudioDaemon {
         let hal_config_watcher = {
             let manager = Arc::clone(&self.manager);
             let running = Arc::clone(&self.running);
-            spawn_hal_config_watcher(manager, running)
+            let current_plugins = Arc::clone(&self.current_plugins);
+            let current_output_channels = Arc::clone(&self.current_output_channels);
+            spawn_hal_config_watcher(manager, running, current_plugins, current_output_channels)
         };
 
         // Try to bind the socket, handling TOCTOU race properly
@@ -728,6 +766,8 @@ impl AudioDaemon {
                         #[cfg(target_os = "macos")]
                         shared_buffer: Arc::clone(&self.shared_buffer),
                         runtime: Arc::clone(&self.runtime),
+                        current_plugins: Arc::clone(&self.current_plugins),
+                        current_output_channels: Arc::clone(&self.current_output_channels),
                     };
 
                     // Handle each client in a separate thread
@@ -761,13 +801,15 @@ impl AudioDaemon {
 
 /// Supported sample rates for HAL driver
 #[cfg(target_os = "macos")]
-const SUPPORTED_SAMPLE_RATES: [u32; 3] = [44100, 48000, 96000];
+const SUPPORTED_SAMPLE_RATES: [u32; 4] = [44100, 48000, 88200, 96000];
 
 /// Spawn a background thread that polls shared memory for HAL-initiated config changes
 #[cfg(target_os = "macos")]
 fn spawn_hal_config_watcher(
     audio_manager: Arc<Mutex<AudioEngineManager>>,
     running: Arc<Mutex<bool>>,
+    current_plugins: Arc<Mutex<Vec<PluginConfig>>>,
+    current_output_channels: Arc<Mutex<usize>>,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         use std::time::Duration;
@@ -791,7 +833,12 @@ fn spawn_hal_config_watcher(
                     let source = buffer.config_source();
                     // Only handle HAL-initiated changes (source=1)
                     if source == 1 {
-                        handle_hal_config_change(&mut buffer, &audio_manager);
+                        handle_hal_config_change(
+                            &mut buffer,
+                            &audio_manager,
+                            &current_plugins,
+                            &current_output_channels,
+                        );
                     }
                 }
             }
@@ -815,6 +862,8 @@ fn spawn_hal_config_watcher(
 fn handle_hal_config_change(
     buffer: &mut driver_hal::SharedAudioBuffer,
     audio_manager: &Arc<Mutex<AudioEngineManager>>,
+    current_plugins: &Arc<Mutex<Vec<PluginConfig>>>,
+    current_output_channels: &Arc<Mutex<usize>>,
 ) {
     let requested_rate = buffer.requested_sample_rate();
     let requested_frames = buffer.requested_buffer_frames();
@@ -840,11 +889,19 @@ fn handle_hal_config_change(
     // Check if we support this sample rate
     if SUPPORTED_SAMPLE_RATES.contains(&requested_rate) {
         // Accept the config and reconfigure pipeline
-        match reconfigure_audio_pipeline(audio_manager, requested_rate, requested_frames) {
+        match reconfigure_audio_pipeline(
+            audio_manager,
+            requested_rate,
+            requested_frames,
+            current_plugins,
+            current_output_channels,
+        ) {
             Ok(()) => {
+                // Set engine_ready so HAL driver continues sending audio
+                buffer.set_engine_ready(true);
                 buffer.acknowledge_config_change(requested_rate, requested_frames, 1, 0);
                 log::info!(
-                    "Config accepted: {}Hz, {} frames",
+                    "Config accepted: {}Hz, {} frames, engine_ready=true",
                     requested_rate,
                     requested_frames
                 );
@@ -868,9 +925,22 @@ fn handle_hal_config_change(
             actual_rate
         );
 
-        match reconfigure_audio_pipeline(audio_manager, actual_rate, requested_frames) {
+        match reconfigure_audio_pipeline(
+            audio_manager,
+            actual_rate,
+            requested_frames,
+            current_plugins,
+            current_output_channels,
+        ) {
             Ok(()) => {
+                // Set engine_ready so HAL driver continues sending audio
+                buffer.set_engine_ready(true);
                 buffer.acknowledge_config_change(actual_rate, requested_frames, 2, 0);
+                log::info!(
+                    "Config negotiated: {}Hz, {} frames, engine_ready=true",
+                    actual_rate,
+                    requested_frames
+                );
             }
             Err(e) => {
                 log::error!("Pipeline reconfiguration with negotiated rate failed: {}", e);
@@ -884,19 +954,22 @@ fn handle_hal_config_change(
 ///
 /// # Arguments
 /// * `audio_manager` - The audio engine manager
-/// * `sample_rate` - New sample rate in Hz
+/// * `hal_sample_rate` - The HAL's sample rate in Hz (what apps are sending)
 /// * `buffer_frames` - New buffer size in frames (currently unused, reserved for future use)
+/// * `current_plugins` - The stored user plugin configuration
+/// * `current_output_channels` - The stored output channel count
 ///
-/// # Note
-/// The `buffer_frames` parameter is not yet used because buffer size changes
-/// require more complex pipeline reconfiguration. The parameter is kept for
-/// API completeness and future implementation.
+/// This function restarts the HAL playback pipeline, adding a resampler plugin
+/// if the HAL sample rate differs from the engine's target rate (48kHz).
+/// It preserves the user's plugin configuration (EQ, upmixer, etc.) across restarts.
 #[cfg(target_os = "macos")]
 fn reconfigure_audio_pipeline(
     audio_manager: &Arc<Mutex<AudioEngineManager>>,
-    sample_rate: u32,
+    hal_sample_rate: u32,
     #[allow(unused_variables)]
     buffer_frames: u32,
+    current_plugins: &Arc<Mutex<Vec<PluginConfig>>>,
+    current_output_channels: &Arc<Mutex<usize>>,
 ) -> Result<(), String> {
     let mut manager = audio_manager.lock();
 
@@ -909,22 +982,61 @@ fn reconfigure_audio_pipeline(
     }
 
     // For HAL playback, we need to restart with the new sample rate
-    log::info!("Reconfiguring HAL playback to {}Hz (buffer_frames={} reserved for future)", sample_rate, buffer_frames);
+    log::info!(
+        "Reconfiguring HAL playback: HAL rate={}Hz, target=48000Hz",
+        hal_sample_rate
+    );
 
     // Stop current playback
     if let Err(e) = manager.stop() {
         log::warn!("Failed to stop current playback: {}", e);
     }
 
-    // TODO(#future): Implement buffer_frames reconfiguration
-    // This would require:
-    // 1. Storing the current plugin chain configuration
-    // 2. Stopping the playback
-    // 3. Recreating the engine with new buffer size
-    // 4. Restoring the plugin chain
-    // For now, we just stop and let the next load_plugins command use the new settings.
+    // Get stored user plugins (clone to avoid holding lock)
+    let user_plugins = current_plugins.lock().clone();
+    let output_channels = *current_output_channels.lock();
 
-    Ok(())
+    // Build plugin chain: resampler (if needed) + user plugins
+    let target_rate = 48000u32;
+    let mut plugins = user_plugins;
+
+    if hal_sample_rate != 0 && hal_sample_rate != target_rate {
+        log::info!(
+            "Adding resampler plugin: {}Hz -> {}Hz",
+            hal_sample_rate,
+            target_rate
+        );
+        let resampler_config = PluginConfig {
+            plugin_type: "resampler".to_string(),
+            parameters: serde_json::json!({
+                "input_sample_rate": hal_sample_rate,
+                "output_sample_rate": target_rate,
+            }),
+        };
+        // Prepend resampler before user plugins
+        plugins.insert(0, resampler_config);
+    }
+
+    // Find output device
+    let output_device = find_fallback_output_device();
+    log::info!(
+        "Restarting HAL playback with {} plugins, {} output channels, device: {:?}",
+        plugins.len(),
+        output_channels,
+        output_device
+    );
+
+    // Restart HAL playback with preserved output channel count
+    match manager.start_hal_playback(output_device, plugins, output_channels) {
+        Ok(_) => {
+            log::info!("HAL playback restarted successfully");
+            Ok(())
+        }
+        Err(e) => {
+            log::error!("Failed to restart HAL playback: {}", e);
+            Err(format!("Failed to restart HAL playback: {}", e))
+        }
+    }
 }
 
 fn find_fallback_output_device() -> Option<String> {

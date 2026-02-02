@@ -173,6 +173,8 @@ pub enum PlaybackCommand {
     Mute(bool),
     /// Update output channel count (requires rebuilding stream)
     UpdateChannels(usize),
+    /// Update output sample rate (requires rebuilding stream)
+    UpdateSampleRate(u32),
     /// Stop playback
     Stop,
     /// Shutdown the thread

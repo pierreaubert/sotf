@@ -115,6 +115,10 @@ struct DecoderState {
     silent_source: bool, // For HAL input plugins (no file source)
     decode_buffer: Option<DecodedAudio>,
     resample_output_buffer: Vec<f32>,
+    /// Pre-allocated buffer for chunk processing (avoids allocation in hot path)
+    chunk_buffer: Vec<f32>,
+    /// Pre-allocated buffer for frame sending (avoids allocation in hot path)
+    frame_send_buffer: Vec<f32>,
 
     #[cfg(all(target_os = "macos", feature = "hal"))]
     hal_input_buffer: Vec<f32>,
@@ -134,6 +138,9 @@ impl DecoderState {
             silent_source: false,
             decode_buffer: None,
             resample_output_buffer: Vec::new(),
+            // Pre-allocate for typical frame size (1024 frames * 8 channels)
+            chunk_buffer: Vec::with_capacity(1024 * 8),
+            frame_send_buffer: Vec::with_capacity(1024 * 8),
             #[cfg(all(target_os = "macos", feature = "hal"))]
             hal_input_buffer: Vec::new(),
             #[cfg(all(target_os = "macos", feature = "hal"))]
@@ -235,17 +242,22 @@ impl DecoderState {
                     // But here we simplify: just process fixed input chunks
 
                     let s_start = Instant::now();
+                    let chunk_len = frame_size * channels;
+
                     let frame_to_send = if let Some(resampler) = &mut self.resampler {
-                        let chunk: Vec<f32> = self
-                            .resampler_buffer
-                            .drain(..frame_size * channels)
-                            .collect();
+                        // Copy chunk to pre-allocated buffer (avoids drain().collect() allocation)
+                        if self.chunk_buffer.len() < chunk_len {
+                            self.chunk_buffer.resize(chunk_len, 0.0);
+                        }
+                        self.chunk_buffer[..chunk_len]
+                            .copy_from_slice(&self.resampler_buffer[..chunk_len]);
+                        self.resampler_buffer.drain(..chunk_len);
 
                         // Resample
                         let max_output_frames = resampler.output_frames_for_input(frame_size);
                         let output_len = max_output_frames * channels;
 
-                        if self.resample_output_buffer.len() != output_len {
+                        if self.resample_output_buffer.len() < output_len {
                             self.resample_output_buffer.resize(output_len, 0.0);
                         }
 
@@ -256,27 +268,49 @@ impl DecoderState {
 
                         let r_start = Instant::now();
                         resampler
-                            .process(&chunk, &mut self.resample_output_buffer, &context)
+                            .process(
+                                &self.chunk_buffer[..chunk_len],
+                                &mut self.resample_output_buffer,
+                                &context,
+                            )
                             .map_err(|e| format!("Resampling failed: {}", e))?;
                         total_resample_time += r_start.elapsed();
 
                         // Calculate actual output frames
                         let expected_frames =
                             (frame_size as f64 * resampler.ratio()).ceil() as usize;
+                        let frame_len = expected_frames * channels;
 
-                        // Send resampled frame - cloning from reusable buffer
-                        let frame_data =
-                            self.resample_output_buffer[..expected_frames * channels].to_vec();
+                        // Copy to frame_send_buffer and take ownership (avoids .to_vec() allocation)
+                        if self.frame_send_buffer.len() < frame_len {
+                            self.frame_send_buffer.resize(frame_len, 0.0);
+                        }
+                        self.frame_send_buffer[..frame_len]
+                            .copy_from_slice(&self.resample_output_buffer[..frame_len]);
+
+                        // Take the buffer, truncate to exact size, create frame
+                        let mut frame_data = std::mem::take(&mut self.frame_send_buffer);
+                        frame_data.truncate(frame_len);
+                        // Restore a new buffer for next iteration
+                        self.frame_send_buffer = Vec::with_capacity(frame_len);
 
                         AudioFrame::new(frame_data, expected_frames, channels, target_sample_rate)
                     } else {
-                        // No resampling - just take a chunk
-                        let chunk: Vec<f32> = self
-                            .resampler_buffer
-                            .drain(..frame_size * channels)
-                            .collect();
+                        // No resampling - copy chunk to frame_send_buffer and take ownership
+                        if self.frame_send_buffer.len() < chunk_len {
+                            self.frame_send_buffer.resize(chunk_len, 0.0);
+                        }
+                        self.frame_send_buffer[..chunk_len]
+                            .copy_from_slice(&self.resampler_buffer[..chunk_len]);
+                        self.resampler_buffer.drain(..chunk_len);
 
-                        AudioFrame::new(chunk, frame_size, channels, source_sample_rate)
+                        // Take the buffer, truncate to exact size, create frame
+                        let mut frame_data = std::mem::take(&mut self.frame_send_buffer);
+                        frame_data.truncate(chunk_len);
+                        // Restore a new buffer for next iteration
+                        self.frame_send_buffer = Vec::with_capacity(chunk_len);
+
+                        AudioFrame::new(frame_data, frame_size, channels, source_sample_rate)
                     };
 
                     // Send with interruption support
@@ -320,22 +354,30 @@ impl DecoderState {
                 {
                     let channels = spec.channels as usize;
                     let source_sample_rate = spec.sample_rate;
-                    let remaining_frames = self.resampler_buffer.len() / channels;
+                    let remaining_samples = self.resampler_buffer.len();
+                    let remaining_frames = remaining_samples / channels;
 
                     log::info!(
                         "[Decoder Thread] Flushing {} remaining samples ({} frames)",
-                        self.resampler_buffer.len(),
+                        remaining_samples,
                         remaining_frames
                     );
 
-                    // Pad remaining samples to frame_size for resampler
-                    let mut padded_chunk = self.resampler_buffer.clone();
-                    padded_chunk.resize(frame_size * channels, 0.0);
+                    // Use chunk_buffer for padded chunk (avoids .clone() allocation)
+                    let padded_len = frame_size * channels;
+                    if self.chunk_buffer.len() < padded_len {
+                        self.chunk_buffer.resize(padded_len, 0.0);
+                    }
+                    // Copy remaining samples and zero-pad
+                    let copy_len = remaining_samples.min(padded_len);
+                    self.chunk_buffer[..copy_len]
+                        .copy_from_slice(&self.resampler_buffer[..copy_len]);
+                    self.chunk_buffer[copy_len..padded_len].fill(0.0);
 
                     let max_output_frames = resampler.output_frames_for_input(frame_size);
                     let output_len = max_output_frames * channels;
 
-                    if self.resample_output_buffer.len() != output_len {
+                    if self.resample_output_buffer.len() < output_len {
                         self.resample_output_buffer.resize(output_len, 0.0);
                     }
 
@@ -346,7 +388,11 @@ impl DecoderState {
 
                     // Process padded chunk to flush resampler state
                     if resampler
-                        .process(&padded_chunk, &mut self.resample_output_buffer, &context)
+                        .process(
+                            &self.chunk_buffer[..padded_len],
+                            &mut self.resample_output_buffer,
+                            &context,
+                        )
                         .is_ok()
                     {
                         // Calculate actual output frames (may be more due to the resampling ratio)
@@ -354,8 +400,18 @@ impl DecoderState {
                             (frame_size as f64 * resampler.ratio()).ceil() as usize;
 
                         if expected_frames > 0 {
-                            let frame_data =
-                                self.resample_output_buffer[..expected_frames * channels].to_vec();
+                            let frame_len = expected_frames * channels;
+                            // Use frame_send_buffer (avoids .to_vec() allocation)
+                            if self.frame_send_buffer.len() < frame_len {
+                                self.frame_send_buffer.resize(frame_len, 0.0);
+                            }
+                            self.frame_send_buffer[..frame_len]
+                                .copy_from_slice(&self.resample_output_buffer[..frame_len]);
+
+                            let mut frame_data = std::mem::take(&mut self.frame_send_buffer);
+                            frame_data.truncate(frame_len);
+                            self.frame_send_buffer = Vec::with_capacity(frame_len);
+
                             let frame = AudioFrame::new(
                                 frame_data,
                                 expected_frames,
@@ -476,10 +532,10 @@ impl DecoderState {
 
         #[cfg(all(target_os = "macos", feature = "hal"))]
         if let Some(reader) = &mut self.hal_reader {
-            // Read from HAL
-            // HAL usually provides 2 channels
-            let channels = 2;
-            let buffer_len = frame_size * channels;
+            // Read from HAL - use actual HAL config, not hardcoded values!
+            let hal_sample_rate = reader.sample_rate();
+            let hal_channels = reader.channel_count() as usize;
+            let buffer_len = frame_size * hal_channels;
 
             if self.hal_input_buffer.len() != buffer_len {
                 self.hal_input_buffer.resize(buffer_len, 0.0);
@@ -502,11 +558,13 @@ impl DecoderState {
             if count % 100 == 0 {
                 let has_audio = rms > 0.0001;
                 log::info!(
-                    "[AUDIO FLOW] Decoder HAL read: {} samples, RMS={:.6}, has_audio={}, connected={}",
+                    "[AUDIO FLOW] Decoder HAL read: {} samples, RMS={:.6}, has_audio={}, connected={}, HAL config: {}Hz {}ch",
                     samples_read,
                     rms,
                     has_audio,
-                    reader.is_connected()
+                    reader.is_connected(),
+                    hal_sample_rate,
+                    hal_channels
                 );
             }
 
@@ -515,12 +573,15 @@ impl DecoderState {
                 self.hal_input_buffer[samples_read..].fill(0.0);
             }
 
-            let frame = AudioFrame::new(
-                self.hal_input_buffer.clone(),
-                frame_size,
-                channels,
-                sample_rate,
-            );
+            // Use take/restore pattern to avoid .clone() allocation
+            let mut frame_data = std::mem::take(&mut self.hal_input_buffer);
+            frame_data.truncate(buffer_len);
+            // CRITICAL: Use HAL sample rate, not the config's target sample rate!
+            let frame = AudioFrame::new(frame_data, frame_size, hal_channels, hal_sample_rate);
+
+            // Restore buffer for next iteration
+            self.hal_input_buffer = Vec::with_capacity(buffer_len);
+
             message_tx
                 .send(DecoderMessage::Frame(frame))
                 .map_err(|_| "Failed to send HAL frame")?;
@@ -534,7 +595,18 @@ impl DecoderState {
         }
 
         // Fallback to silent frame if no reader (or not macOS)
-        let frame = AudioFrame::new(vec![], frame_size, 0, sample_rate);
+        // Use frame_send_buffer to avoid allocation for silent frames
+        let silent_len = frame_size * 2; // Assume stereo
+        if self.frame_send_buffer.len() < silent_len {
+            self.frame_send_buffer.resize(silent_len, 0.0);
+        }
+        self.frame_send_buffer[..silent_len].fill(0.0);
+
+        let mut frame_data = std::mem::take(&mut self.frame_send_buffer);
+        frame_data.truncate(silent_len);
+        self.frame_send_buffer = Vec::with_capacity(silent_len);
+
+        let frame = AudioFrame::new(frame_data, frame_size, 2, sample_rate);
         message_tx
             .send(DecoderMessage::Frame(frame))
             .map_err(|_| "Failed to send silent frame")?;

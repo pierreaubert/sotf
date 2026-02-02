@@ -19,13 +19,23 @@
 //! - Resistance to timing attacks
 
 use chacha20poly1305::{
-    aead::{Aead, KeyInit},
-    ChaCha20Poly1305, Nonce,
+    aead::{Aead, AeadInPlace, KeyInit},
+    ChaCha20Poly1305, Nonce, Tag,
 };
 use sha2::{Digest, Sha256};
 
 /// Size of the authentication tag appended to each encrypted block
 pub const AUTH_TAG_SIZE: usize = 16;
+
+/// Required byte buffer size for encrypting N samples (samples * 4 + auth tag)
+pub const fn encrypted_byte_size(sample_count: usize) -> usize {
+    sample_count * 4 + AUTH_TAG_SIZE
+}
+
+/// Required f32 buffer size for storing encrypted data (ceiling division)
+pub const fn encrypted_sample_slots(sample_count: usize) -> usize {
+    (encrypted_byte_size(sample_count) + 3) / 4
+}
 
 /// Audio encryption cipher using ChaCha20-Poly1305
 pub struct AudioCipher {
@@ -115,24 +125,129 @@ impl AudioCipher {
     pub fn ciphertext_size(sample_count: usize) -> usize {
         sample_count * std::mem::size_of::<f32>() + AUTH_TAG_SIZE
     }
+
+    /// Encrypt audio samples into a pre-allocated byte buffer (allocation-free hot path)
+    ///
+    /// # Arguments
+    /// * `samples` - Audio samples as f32 slice
+    /// * `frame_counter` - Unique counter for nonce generation
+    /// * `output` - Pre-allocated buffer, must be at least `encrypted_byte_size(samples.len())` bytes
+    ///
+    /// # Returns
+    /// Number of bytes written to output, or None if output buffer too small
+    pub fn encrypt_into(&self, samples: &[f32], frame_counter: u64, output: &mut [u8]) -> Option<usize> {
+        let required_size = encrypted_byte_size(samples.len());
+        if output.len() < required_size {
+            return None;
+        }
+
+        // Copy samples as bytes directly into output buffer
+        let sample_bytes = samples.len() * 4;
+        samples_to_bytes_into(samples, &mut output[..sample_bytes]);
+
+        // Create nonce from frame counter
+        let mut nonce_bytes = [0u8; 12];
+        nonce_bytes[4..12].copy_from_slice(&frame_counter.to_be_bytes());
+        let nonce = Nonce::from_slice(&nonce_bytes);
+
+        // Encrypt in place and get auth tag
+        let tag = self
+            .cipher
+            .encrypt_in_place_detached(nonce, &[], &mut output[..sample_bytes])
+            .expect("encryption should not fail");
+
+        // Append auth tag
+        output[sample_bytes..sample_bytes + AUTH_TAG_SIZE].copy_from_slice(&tag);
+
+        Some(required_size)
+    }
+
+    /// Decrypt ciphertext into a pre-allocated f32 buffer (allocation-free hot path)
+    ///
+    /// # Arguments
+    /// * `ciphertext` - Encrypted data with authentication tag
+    /// * `frame_counter` - Same counter used during encryption
+    /// * `output` - Pre-allocated buffer for decrypted samples
+    ///
+    /// # Returns
+    /// Number of samples written, or None if decryption failed or buffer too small
+    pub fn decrypt_into(&self, ciphertext: &[u8], frame_counter: u64, output: &mut [f32]) -> Option<usize> {
+        if ciphertext.len() < AUTH_TAG_SIZE {
+            return None;
+        }
+
+        let sample_bytes = ciphertext.len() - AUTH_TAG_SIZE;
+        let sample_count = sample_bytes / 4;
+
+        if output.len() < sample_count {
+            return None;
+        }
+
+        // Create nonce from frame counter
+        let mut nonce_bytes = [0u8; 12];
+        nonce_bytes[4..12].copy_from_slice(&frame_counter.to_be_bytes());
+        let nonce = Nonce::from_slice(&nonce_bytes);
+
+        // Extract auth tag
+        let tag = Tag::from_slice(&ciphertext[sample_bytes..]);
+
+        // Copy ciphertext (without tag) to output buffer as bytes, then decrypt in place
+        // We need a mutable byte view of the output f32 slice
+        let output_bytes = samples_as_bytes_mut(&mut output[..sample_count]);
+        output_bytes.copy_from_slice(&ciphertext[..sample_bytes]);
+
+        // Decrypt in place
+        self.cipher
+            .decrypt_in_place_detached(nonce, &[], output_bytes, tag)
+            .ok()?;
+
+        Some(sample_count)
+    }
 }
 
-/// Convert f32 samples to bytes (native endian)
+/// Convert f32 samples to bytes (native endian) - allocating version
 fn samples_to_bytes(samples: &[f32]) -> Vec<u8> {
     let byte_len = samples.len() * std::mem::size_of::<f32>();
     let mut bytes = vec![0u8; byte_len];
-
-    // SAFETY: We're reinterpreting the byte slice as a mutable f32 slice
-    // for a direct copy. The alignment is handled by starting from a Vec<u8>.
-    for (i, sample) in samples.iter().enumerate() {
-        let sample_bytes = sample.to_ne_bytes();
-        bytes[i * 4..(i + 1) * 4].copy_from_slice(&sample_bytes);
-    }
-
+    samples_to_bytes_into(samples, &mut bytes);
     bytes
 }
 
-/// Convert bytes back to f32 samples (native endian)
+/// Convert f32 samples to bytes into a pre-allocated buffer (allocation-free)
+///
+/// # Panics
+/// Panics if output buffer is smaller than samples.len() * 4
+fn samples_to_bytes_into(samples: &[f32], output: &mut [u8]) {
+    debug_assert!(output.len() >= samples.len() * 4);
+    for (i, sample) in samples.iter().enumerate() {
+        output[i * 4..(i + 1) * 4].copy_from_slice(&sample.to_ne_bytes());
+    }
+}
+
+/// Get a mutable byte view of f32 samples (zero-copy)
+///
+/// # Safety
+/// This reinterprets f32 memory as bytes. The resulting bytes are in native endian.
+fn samples_as_bytes_mut(samples: &mut [f32]) -> &mut [u8] {
+    // SAFETY: f32 can always be safely reinterpreted as bytes
+    // The alignment of f32 (4) is >= alignment of u8 (1)
+    let ptr = samples.as_mut_ptr() as *mut u8;
+    let len = samples.len() * 4;
+    // SAFETY: The resulting slice covers the same memory as the input slice
+    unsafe { std::slice::from_raw_parts_mut(ptr, len) }
+}
+
+/// Get an immutable byte view of f32 samples (zero-copy)
+#[allow(dead_code)]
+fn samples_as_bytes(samples: &[f32]) -> &[u8] {
+    // SAFETY: f32 can always be safely reinterpreted as bytes
+    let ptr = samples.as_ptr() as *const u8;
+    let len = samples.len() * 4;
+    // SAFETY: The resulting slice covers the same memory as the input slice
+    unsafe { std::slice::from_raw_parts(ptr, len) }
+}
+
+/// Convert bytes back to f32 samples (native endian) - allocating version
 fn bytes_to_samples(bytes: &[u8]) -> Vec<f32> {
     let sample_count = bytes.len() / std::mem::size_of::<f32>();
     let mut samples = Vec::with_capacity(sample_count);
@@ -145,6 +260,25 @@ fn bytes_to_samples(bytes: &[u8]) -> Vec<f32> {
     }
 
     samples
+}
+
+/// Convert bytes to f32 samples into a pre-allocated buffer (allocation-free)
+///
+/// # Returns
+/// Number of samples written
+#[allow(dead_code)]
+fn bytes_to_samples_into(bytes: &[u8], output: &mut [f32]) -> usize {
+    let sample_count = bytes.len() / 4;
+    let to_write = sample_count.min(output.len());
+
+    for i in 0..to_write {
+        let sample_bytes: [u8; 4] = bytes[i * 4..(i + 1) * 4]
+            .try_into()
+            .expect("slice should be exactly 4 bytes");
+        output[i] = f32::from_ne_bytes(sample_bytes);
+    }
+
+    to_write
 }
 
 /// Generate a new random 256-bit encryption key
@@ -178,14 +312,25 @@ pub fn encrypted_to_samples(ciphertext: &[u8]) -> Vec<f32> {
     // Round up to ensure we have space for all bytes
     let sample_count = (ciphertext.len() + 3) / 4;
     let mut samples = vec![0.0f32; sample_count];
+    encrypted_to_samples_into(ciphertext, &mut samples);
+    samples
+}
 
-    for (i, chunk) in ciphertext.chunks(4).enumerate() {
+/// Convert encrypted ciphertext bytes to f32 samples into a pre-allocated buffer (allocation-free)
+///
+/// # Returns
+/// Number of f32 slots written
+pub fn encrypted_to_samples_into(ciphertext: &[u8], output: &mut [f32]) -> usize {
+    let sample_count = (ciphertext.len() + 3) / 4;
+    let to_write = sample_count.min(output.len());
+
+    for (i, chunk) in ciphertext.chunks(4).take(to_write).enumerate() {
         let mut bytes = [0u8; 4];
         bytes[..chunk.len()].copy_from_slice(chunk);
-        samples[i] = f32::from_ne_bytes(bytes);
+        output[i] = f32::from_ne_bytes(bytes);
     }
 
-    samples
+    to_write
 }
 
 /// Convert f32 samples back to encrypted ciphertext bytes
@@ -197,6 +342,21 @@ pub fn samples_to_encrypted(samples: &[f32]) -> Vec<u8> {
         bytes.extend_from_slice(&sample.to_ne_bytes());
     }
     bytes
+}
+
+/// Convert f32 samples to encrypted ciphertext bytes into a pre-allocated buffer (allocation-free)
+///
+/// # Returns
+/// Number of bytes written (always samples.len() * 4)
+pub fn samples_to_encrypted_into(samples: &[f32], output: &mut [u8]) -> usize {
+    let byte_count = samples.len() * 4;
+    debug_assert!(output.len() >= byte_count);
+
+    for (i, sample) in samples.iter().enumerate() {
+        output[i * 4..(i + 1) * 4].copy_from_slice(&sample.to_ne_bytes());
+    }
+
+    byte_count
 }
 
 /// Get the path to the session encryption key (~/.config/sotf/session.key)
@@ -338,5 +498,87 @@ mod tests {
         assert_eq!(AudioCipher::ciphertext_size(0), AUTH_TAG_SIZE);
         assert_eq!(AudioCipher::ciphertext_size(1), 4 + AUTH_TAG_SIZE);
         assert_eq!(AudioCipher::ciphertext_size(1024), 4096 + AUTH_TAG_SIZE);
+    }
+
+    #[test]
+    fn test_encrypt_into_decrypt_into_roundtrip() {
+        let key = generate_key();
+        let cipher = AudioCipher::new(&key);
+
+        // Test with various audio patterns
+        let samples: Vec<f32> = (0..1024)
+            .map(|i| (i as f32 / 1024.0 * std::f32::consts::PI * 2.0).sin())
+            .collect();
+
+        let frame_counter = 42;
+
+        // Encrypt into pre-allocated buffer
+        let mut ciphertext = vec![0u8; encrypted_byte_size(samples.len())];
+        let encrypted_len = cipher
+            .encrypt_into(&samples, frame_counter, &mut ciphertext)
+            .expect("encryption should succeed");
+        assert_eq!(encrypted_len, ciphertext.len());
+
+        // Decrypt into pre-allocated buffer
+        let mut decrypted = vec![0.0f32; samples.len()];
+        let sample_count = cipher
+            .decrypt_into(&ciphertext, frame_counter, &mut decrypted)
+            .expect("decryption should succeed");
+        assert_eq!(sample_count, samples.len());
+
+        // Verify bit-for-bit accuracy
+        for (orig, dec) in samples.iter().zip(decrypted.iter()) {
+            assert_eq!(orig.to_bits(), dec.to_bits(), "Sample mismatch");
+        }
+    }
+
+    #[test]
+    fn test_encrypt_into_buffer_too_small() {
+        let key = generate_key();
+        let cipher = AudioCipher::new(&key);
+        let samples = vec![0.5f32; 100];
+
+        let mut too_small = vec![0u8; 10];
+        assert!(cipher.encrypt_into(&samples, 1, &mut too_small).is_none());
+    }
+
+    #[test]
+    fn test_decrypt_into_buffer_too_small() {
+        let key = generate_key();
+        let cipher = AudioCipher::new(&key);
+        let samples = vec![0.5f32; 100];
+
+        let ciphertext = cipher.encrypt(&samples, 1);
+
+        let mut too_small = vec![0.0f32; 10];
+        assert!(cipher.decrypt_into(&ciphertext, 1, &mut too_small).is_none());
+    }
+
+    #[test]
+    fn test_encrypted_to_samples_into() {
+        let ciphertext = vec![1u8, 2, 3, 4, 5, 6, 7, 8, 9];
+        let mut output = vec![0.0f32; 10];
+
+        let written = encrypted_to_samples_into(&ciphertext, &mut output);
+        assert_eq!(written, 3); // 9 bytes = 3 f32 slots (rounded up)
+
+        // Compare with allocating version
+        let expected = encrypted_to_samples(&ciphertext);
+        for i in 0..written {
+            assert_eq!(output[i].to_bits(), expected[i].to_bits());
+        }
+    }
+
+    #[test]
+    fn test_samples_to_encrypted_into() {
+        let samples = vec![1.0f32, 2.0, 3.0];
+        let mut output = vec![0u8; 20];
+
+        let written = samples_to_encrypted_into(&samples, &mut output);
+        assert_eq!(written, 12); // 3 f32 = 12 bytes
+
+        // Compare with allocating version
+        let expected = samples_to_encrypted(&samples);
+        assert_eq!(&output[..written], &expected[..]);
     }
 }

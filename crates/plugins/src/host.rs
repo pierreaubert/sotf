@@ -563,6 +563,32 @@ impl DawHost {
         }
     }
 
+    /// Calculate the number of output frames for a given number of input frames.
+    /// Accounts for plugins that change frame count (like resamplers).
+    pub fn output_frames_for_input(&self, input_frames: usize) -> usize {
+        let mut frames = input_frames;
+        for node_id in &self.chain_nodes {
+            if let Some(node) = self.nodes.get(node_id) {
+                let plugin = node.plugin.lock().unwrap();
+                frames = plugin.output_frames_for_input(frames);
+            }
+        }
+        frames
+    }
+
+    /// Get the output sample rate after all plugins.
+    /// Returns input rate if no rate-changing plugins exist.
+    pub fn output_sample_rate(&self, input_rate: u32) -> u32 {
+        let mut rate = input_rate;
+        for node_id in &self.chain_nodes {
+            if let Some(node) = self.nodes.get(node_id) {
+                let plugin = node.plugin.lock().unwrap();
+                rate = plugin.output_sample_rate(rate);
+            }
+        }
+        rate
+    }
+
     /// Set a parameter on a plugin at the given index (PluginHost-compatible API)
     pub fn set_plugin_parameter(
         &mut self,

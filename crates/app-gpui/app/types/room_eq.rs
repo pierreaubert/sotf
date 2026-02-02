@@ -46,13 +46,15 @@ pub enum RoomEqStep {
     /// Step 1: Load/import measurement data
     #[default]
     LoadData,
-    /// Step 2: Configure channels and optimizer settings
+    /// Step 2: Select optimization mode (IIR/FIR)
+    SelectMode,
+    /// Step 3: Configure channels and optimizer settings
     Configure,
-    /// Step 3: Run optimization (per-channel, then combined)
+    /// Step 4: Run optimization (per-channel, then combined)
     Optimize,
-    /// Step 4: Review results and visualizations
+    /// Step 5: Review results and visualizations
     Review,
-    /// Step 5: Export DSP chain and apply
+    /// Step 6: Export DSP chain and apply
     Export,
 }
 
@@ -61,6 +63,7 @@ impl RoomEqStep {
     pub fn all() -> &'static [RoomEqStep] {
         &[
             RoomEqStep::LoadData,
+            RoomEqStep::SelectMode,
             RoomEqStep::Configure,
             RoomEqStep::Optimize,
             RoomEqStep::Review,
@@ -72,10 +75,11 @@ impl RoomEqStep {
     pub fn index(&self) -> usize {
         match self {
             RoomEqStep::LoadData => 0,
-            RoomEqStep::Configure => 1,
-            RoomEqStep::Optimize => 2,
-            RoomEqStep::Review => 3,
-            RoomEqStep::Export => 4,
+            RoomEqStep::SelectMode => 1,
+            RoomEqStep::Configure => 2,
+            RoomEqStep::Optimize => 3,
+            RoomEqStep::Review => 4,
+            RoomEqStep::Export => 5,
         }
     }
 
@@ -83,6 +87,7 @@ impl RoomEqStep {
     pub fn label(&self) -> &'static str {
         match self {
             RoomEqStep::LoadData => "Load Data",
+            RoomEqStep::SelectMode => "Mode",
             RoomEqStep::Configure => "Configure",
             RoomEqStep::Optimize => "Optimize",
             RoomEqStep::Review => "Review",
@@ -93,7 +98,8 @@ impl RoomEqStep {
     /// Get next step
     pub fn next(&self) -> Option<RoomEqStep> {
         match self {
-            RoomEqStep::LoadData => Some(RoomEqStep::Configure),
+            RoomEqStep::LoadData => Some(RoomEqStep::SelectMode),
+            RoomEqStep::SelectMode => Some(RoomEqStep::Configure),
             RoomEqStep::Configure => Some(RoomEqStep::Optimize),
             RoomEqStep::Optimize => Some(RoomEqStep::Review),
             RoomEqStep::Review => Some(RoomEqStep::Export),
@@ -105,7 +111,8 @@ impl RoomEqStep {
     pub fn previous(&self) -> Option<RoomEqStep> {
         match self {
             RoomEqStep::LoadData => None,
-            RoomEqStep::Configure => Some(RoomEqStep::LoadData),
+            RoomEqStep::SelectMode => Some(RoomEqStep::LoadData),
+            RoomEqStep::Configure => Some(RoomEqStep::SelectMode),
             RoomEqStep::Optimize => Some(RoomEqStep::Configure),
             RoomEqStep::Review => Some(RoomEqStep::Optimize),
             RoomEqStep::Export => Some(RoomEqStep::Review),
@@ -482,9 +489,75 @@ impl From<CrossoverType> for sotf_audio_player::room_eq::CrossoverType {
 
 // Algorithm conversion removed - Algorithm type no longer exported from library
 
+/// Optimization mode
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum RoomEqOptimizationMode {
+    /// IIR (Parametric EQ)
+    #[default]
+    Iir,
+    /// FIR (Convolution)
+    Fir,
+    /// Mixed (IIR + FIR)
+    Mixed,
+}
+
+impl RoomEqOptimizationMode {
+    pub fn all() -> &'static [RoomEqOptimizationMode] {
+        &[
+            RoomEqOptimizationMode::Iir,
+            RoomEqOptimizationMode::Fir,
+            RoomEqOptimizationMode::Mixed,
+        ]
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RoomEqOptimizationMode::Iir => "IIR (Parametric EQ)",
+            RoomEqOptimizationMode::Fir => "FIR (Convolution)",
+            RoomEqOptimizationMode::Mixed => "Mixed (IIR + FIR)",
+        }
+    }
+
+    pub fn description(&self) -> &'static str {
+        match self {
+            RoomEqOptimizationMode::Iir => "Uses standard biquad filters. Low latency, efficient.",
+            RoomEqOptimizationMode::Fir => {
+                "Uses impulse response convolution. Can correct phase, but higher latency."
+            }
+            RoomEqOptimizationMode::Mixed => {
+                "Combines IIR for high frequencies and FIR for low frequencies."
+            }
+        }
+    }
+}
+
+/// FIR configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoomEqFirConfig {
+    /// Number of taps
+    pub taps: usize,
+    /// Phase type ("linear" or "kirkeby")
+    pub phase: String,
+}
+
+impl Default for RoomEqFirConfig {
+    fn default() -> Self {
+        Self {
+            taps: 4096,
+            phase: "kirkeby".to_string(),
+        }
+    }
+}
+
 /// Optimizer configuration for Room EQ
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoomEqOptimizerConfig {
+    /// Optimization mode
+    #[serde(default)]
+    pub mode: RoomEqOptimizationMode,
+    /// FIR configuration
+    #[serde(default)]
+    pub fir: RoomEqFirConfig,
     /// Multi-speaker optimization mode
     pub multi_speaker_mode: MultiSpeakerMode,
     /// Optimization algorithm
@@ -542,6 +615,8 @@ pub struct RoomEqOptimizerConfig {
 impl Default for RoomEqOptimizerConfig {
     fn default() -> Self {
         Self {
+            mode: RoomEqOptimizationMode::default(),
+            fir: RoomEqFirConfig::default(),
             multi_speaker_mode: MultiSpeakerMode::Combined,
             algorithm: RoomEqAlgorithm::DifferentialEvolution,
             num_filters: 5,

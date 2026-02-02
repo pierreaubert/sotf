@@ -129,6 +129,20 @@ pub trait Plugin: Send {
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
         None
     }
+
+    /// Returns the number of output frames for given input frames.
+    /// Default: returns input unchanged (no frame count change).
+    /// Plugins that change frame count (like resamplers) should override this.
+    fn output_frames_for_input(&self, input_frames: usize) -> usize {
+        input_frames
+    }
+
+    /// Returns the output sample rate given an input rate.
+    /// Default: returns input unchanged (no rate change).
+    /// Plugins that change sample rate (like resamplers) should override this.
+    fn output_sample_rate(&self, input_rate: u32) -> u32 {
+        input_rate
+    }
 }
 
 /// Helper trait for plugins that process audio in-place (input channels == output channels)
