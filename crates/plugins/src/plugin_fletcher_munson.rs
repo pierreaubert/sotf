@@ -870,7 +870,7 @@ impl Plugin for FletcherMunsonPlugin {
         input: &[f32],
         output: &mut [f32],
         context: &ProcessContext,
-    ) -> PluginResult<()> {
+    ) -> Result<usize, String> {
         // Validate buffer sizes
         let expected_samples = context.num_frames * self.num_channels;
         if input.len() != expected_samples {
@@ -891,7 +891,7 @@ impl Plugin for FletcherMunsonPlugin {
         // If disabled, passthrough
         if !self.enabled {
             output.copy_from_slice(input);
-            return Ok(());
+            return Ok(context.num_frames);
         }
 
         // Ensure filters are initialized
@@ -949,7 +949,7 @@ impl Plugin for FletcherMunsonPlugin {
         // IIR biquad filter calculations can produce denormal numbers
         flush_denormals_inplace(output);
 
-        Ok(())
+        Ok(context.num_frames)
     }
 
     fn latency_samples(&self) -> usize {

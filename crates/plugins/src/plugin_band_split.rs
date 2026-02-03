@@ -255,7 +255,7 @@ impl Plugin for BandSplitPlugin {
         input: &[f32],
         output: &mut [f32],
         context: &ProcessContext,
-    ) -> PluginResult<()> {
+    ) -> Result<usize, String> {
         let num_frames = context.num_frames;
         let in_ch = self.input_channels;
         let out_ch = self.output_channels();
@@ -308,7 +308,7 @@ impl Plugin for BandSplitPlugin {
         // Flush denormals
         flush_denormals_inplace(output);
 
-        Ok(())
+        Ok(context.num_frames)
     }
 
     fn latency_samples(&self) -> usize {

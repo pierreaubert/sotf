@@ -551,7 +551,7 @@ impl Plugin for SpectrumAnalyzerPlugin {
         input: &[f32],
         output: &mut [f32],
         context: &ProcessContext,
-    ) -> PluginResult<()> {
+    ) -> Result<usize, String> {
         // Verify input/output size
         let expected_samples = context.num_frames * self.num_channels;
         if input.len() != expected_samples {
@@ -577,7 +577,7 @@ impl Plugin for SpectrumAnalyzerPlugin {
             .add_frames(input)
             .map_err(|e| format!("Failed to add frames to spectrum analyzer: {}", e))?;
 
-        Ok(())
+        Ok(context.num_frames)
     }
 
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {

@@ -646,7 +646,7 @@ impl Plugin for ABComparePlugin {
         input: &[f32],
         output: &mut [f32],
         context: &ProcessContext,
-    ) -> PluginResult<()> {
+    ) -> Result<usize, String> {
         let expected_samples = context.num_frames * self.num_channels;
 
         // Verify input/output size
@@ -668,7 +668,7 @@ impl Plugin for ABComparePlugin {
         // Handle bypass
         if self.bypass {
             output.copy_from_slice(input);
-            return Ok(());
+            return Ok(context.num_frames);
         }
 
         // Resize buffers if needed
@@ -730,7 +730,7 @@ impl Plugin for ABComparePlugin {
             }
         }
 
-        Ok(())
+        Ok(context.num_frames)
     }
 
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {

@@ -159,7 +159,7 @@ impl Plugin for HalInputPlugin {
         _input: &[f32],
         output: &mut [f32],
         context: &ProcessContext,
-    ) -> PluginResult<()> {
+    ) -> Result<usize, String> {
         // Verify output buffer size
         let expected_len = context.num_frames * self.channels;
         if output.len() != expected_len {
@@ -208,7 +208,7 @@ impl Plugin for HalInputPlugin {
             return Err("HAL input plugin is only supported on macOS".to_string());
         }
 
-        Ok(())
+        Ok(context.num_frames)
     }
 }
 

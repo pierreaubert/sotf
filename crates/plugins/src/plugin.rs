@@ -110,7 +110,7 @@ pub trait Plugin: Send {
         input: &[f32],
         output: &mut [f32],
         context: &ProcessContext,
-    ) -> PluginResult<()>;
+    ) -> Result<usize, String>;
 
     /// Get the processing latency in samples (if any)
     /// This is used to compensate for algorithmic delays
@@ -142,6 +142,13 @@ pub trait Plugin: Send {
     /// Plugins that change sample rate (like resamplers) should override this.
     fn output_sample_rate(&self, input_rate: u32) -> u32 {
         input_rate
+    }
+
+    /// Returns the actual number of output frames from the last process() call.
+    /// Default: returns None (unknown/not tracked).
+    /// Plugins that produce variable output (like resamplers) should override this.
+    fn last_output_frames(&self) -> Option<usize> {
+        None
     }
 }
 
@@ -246,10 +253,11 @@ impl<T: InPlacePlugin> Plugin for InPlacePluginAdapter<T> {
         input: &[f32],
         output: &mut [f32],
         context: &ProcessContext,
-    ) -> PluginResult<()> {
+    ) -> Result<usize, String> {
         // Copy input to output, then process in-place
         output.copy_from_slice(input);
-        self.plugin.process_in_place(output, context)
+        self.plugin.process_in_place(output, context)?;
+        Ok(context.num_frames)
     }
 
     fn latency_samples(&self) -> usize {

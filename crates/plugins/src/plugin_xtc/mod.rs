@@ -695,7 +695,7 @@ impl Plugin for XtcPlugin {
         input: &[f32],
         output: &mut [f32],
         context: &ProcessContext,
-    ) -> PluginResult<()> {
+    ) -> Result<usize, String> {
         let num_frames = context.num_frames;
 
         // Verify buffer sizes (stereo: 2 channels)
@@ -717,7 +717,7 @@ impl Plugin for XtcPlugin {
         // Bypass if disabled
         if !self.params.enabled {
             output.copy_from_slice(input);
-            return Ok(());
+            return Ok(context.num_frames);
         }
 
         // Ensure temp buffers are large enough
@@ -811,7 +811,7 @@ impl Plugin for XtcPlugin {
             }
         }
 
-        Ok(())
+        Ok(context.num_frames)
     }
 
     fn latency_samples(&self) -> usize {

@@ -194,17 +194,16 @@ impl ProcessingState {
     }
 
     /// Process a frame
-    fn process_frame(&mut self, input: &[f32], output: &mut [f32]) -> Result<(), String> {
+    /// Returns the actual number of output frames written
+    fn process_frame(&mut self, input: &[f32], output: &mut [f32], input_frames: usize) -> Result<usize, String> {
         if self.bypassed {
             // Bypass - just copy
             output.copy_from_slice(input);
-            return Ok(());
+            return Ok(input_frames);
         }
 
-        // Normal processing
-        self.host.process(input, output)?;
-
-        Ok(())
+        // Normal processing - returns actual output frames
+        self.host.process(input, output)
     }
 }
 
@@ -348,12 +347,11 @@ fn run_processing_thread(
                     process_buffer.resize(output_samples, 0.0);
                 }
                 // Zero-fill buffer before processing to avoid garbage in unused portions
-                // (resampler may produce fewer frames than output_frames_max())
                 process_buffer.fill(0.0);
 
                 let start_time = std::time::Instant::now();
-                match state.process_frame(&frame.data, &mut process_buffer) {
-                    Ok(_) => {
+                match state.process_frame(&frame.data, &mut process_buffer, frame.num_frames) {
+                    Ok(actual_output_frames) => {
                         let elapsed = start_time.elapsed();
                         if elapsed > std::time::Duration::from_millis(5) {
                             log::warn!(
@@ -363,22 +361,25 @@ fn run_processing_thread(
                             );
                         }
 
+                        // Use actual output frame count from processing (not max)
+                        let actual_output_samples = actual_output_frames * output_channels;
+
                         // Copy to frame_send_buffer and use take/restore (avoids .clone() allocation)
-                        if state.frame_send_buffer.len() < output_samples {
-                            state.frame_send_buffer.resize(output_samples, 0.0);
+                        if state.frame_send_buffer.len() < actual_output_samples {
+                            state.frame_send_buffer.resize(actual_output_samples, 0.0);
                         }
-                        state.frame_send_buffer[..output_samples]
-                            .copy_from_slice(&process_buffer[..output_samples]);
+                        state.frame_send_buffer[..actual_output_samples]
+                            .copy_from_slice(&process_buffer[..actual_output_samples]);
 
                         let mut frame_data = std::mem::take(&mut state.frame_send_buffer);
-                        frame_data.truncate(output_samples);
+                        frame_data.truncate(actual_output_samples);
                         // Restore buffer for next iteration
-                        state.frame_send_buffer = Vec::with_capacity(output_samples);
+                        state.frame_send_buffer = Vec::with_capacity(actual_output_samples);
 
                         // Use actual output frame count and sample rate (accounts for resampler)
                         let processed_frame = super::AudioFrame::new(
                             frame_data,
-                            output_frames,
+                            actual_output_frames,
                             output_channels,
                             output_sample_rate,
                         );

@@ -550,8 +550,8 @@ impl Plugin for ConvolutionPlugin {
         &mut self,
         input: &[f32],
         output: &mut [f32],
-        _context: &ProcessContext,
-    ) -> PluginResult<()> {
+        context: &ProcessContext,
+    ) -> Result<usize, String> {
         if input.len() != output.len() {
             return Err("Input and output buffers must be same size".to_string());
         }
@@ -659,7 +659,7 @@ impl Plugin for ConvolutionPlugin {
         // FFT convolution and overlap-add can produce denormal numbers
         flush_denormals_inplace(output);
 
-        Ok(())
+        Ok(context.num_frames)
     }
 }
 

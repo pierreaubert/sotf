@@ -291,6 +291,11 @@ pub struct AutoEqConfig {
     /// Smoothing window size (1-24)
     pub smooth_n: usize,
 
+    /// Enable psychoacoustic variable smoothing
+    pub psychoacoustic: bool,
+    /// Enable asymmetric loss weighting
+    pub asymmetric_loss: bool,
+
     // Goals & Configuration
     /// Loss function type (e.g., "flat", "score")
     pub loss_type: String,
@@ -329,6 +334,8 @@ impl Default for AutoEqConfig {
             local_algo: "cobyla".to_string(),
             smooth: false,
             smooth_n: 6,
+            psychoacoustic: true,
+            asymmetric_loss: true,
             loss_type: "flat".to_string(),
             target_curve: "flat".to_string(),
             system_type: "stereo".to_string(),
@@ -484,6 +491,8 @@ pub struct AutoEqForm {
     on_local_algo_toggle: Option<ToggleCallback>,
     on_smooth_change: Option<BoolCallback>,
     on_smooth_n_change: Option<UsizeCallback>,
+    on_psychoacoustic_change: Option<BoolCallback>,
+    on_asymmetric_loss_change: Option<BoolCallback>,
 
     // Goals callbacks
     on_loss_type_change: Option<StringCallback>,
@@ -909,6 +918,24 @@ impl AutoEqForm {
         self
     }
 
+    /// Set psychoacoustic toggle handler
+    pub fn on_psychoacoustic_change(
+        mut self,
+        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_psychoacoustic_change = Some(Box::new(handler));
+        self
+    }
+
+    /// Set asymmetric loss toggle handler
+    pub fn on_asymmetric_loss_change(
+        mut self,
+        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_asymmetric_loss_change = Some(Box::new(handler));
+        self
+    }
+
     // Goals callbacks
 
     /// Set loss type change handler
@@ -1017,6 +1044,8 @@ impl RenderOnce for AutoEqForm {
         let on_local_algo_toggle_rc = self.on_local_algo_toggle.map(std::rc::Rc::new);
         let on_smooth_change_rc = self.on_smooth_change.map(std::rc::Rc::new);
         let on_smooth_n_change_rc = self.on_smooth_n_change.map(std::rc::Rc::new);
+        let on_psychoacoustic_change_rc = self.on_psychoacoustic_change.map(std::rc::Rc::new);
+        let on_asymmetric_loss_change_rc = self.on_asymmetric_loss_change.map(std::rc::Rc::new);
         let on_loss_type_change_rc = self.on_loss_type_change.map(std::rc::Rc::new);
         let on_loss_type_toggle_rc = self.on_loss_type_toggle.map(std::rc::Rc::new);
         let on_target_curve_change_rc = self.on_target_curve_change.map(std::rc::Rc::new);
@@ -1861,6 +1890,70 @@ impl RenderOnce for AutoEqForm {
 
                 opt_tuning_content = opt_tuning_content.child(smooth_n_input);
             }
+
+            // Psychoacoustic toggle
+            let mut psycho_toggle = Toggle::new("autoeq-psychoacoustic")
+                .size(ToggleSize::Sm)
+                .checked(config.psychoacoustic)
+                .theme(toggle_theme.clone());
+
+            if let Some(ref handler) = on_psychoacoustic_change_rc {
+                let h = handler.clone();
+                psycho_toggle = psycho_toggle.on_change(move |v, w, cx| h(v, w, cx));
+            }
+
+            opt_tuning_content = opt_tuning_content.child(
+                HStack::new()
+                    .spacing(StackSpacing::Md)
+                    .justify(StackJustify::SpaceBetween)
+                    .child(
+                        VStack::new()
+                            .spacing(StackSpacing::None)
+                            .child(
+                                Text::new("Psychoacoustic Smoothing")
+                                    .size(TextSize::Xs)
+                                    .color(theme.label_color),
+                            )
+                            .child(
+                                Text::new("1/48 oct bass, 1/6 oct treble")
+                                    .size(TextSize::Xss)
+                                    .color(theme.description_color),
+                            ),
+                    )
+                    .child(psycho_toggle),
+            );
+
+            // Asymmetric Loss toggle
+            let mut asymmetric_toggle = Toggle::new("autoeq-asymmetric-loss")
+                .size(ToggleSize::Sm)
+                .checked(config.asymmetric_loss)
+                .theme(toggle_theme);
+
+            if let Some(ref handler) = on_asymmetric_loss_change_rc {
+                let h = handler.clone();
+                asymmetric_toggle = asymmetric_toggle.on_change(move |v, w, cx| h(v, w, cx));
+            }
+
+            opt_tuning_content = opt_tuning_content.child(
+                HStack::new()
+                    .spacing(StackSpacing::Md)
+                    .justify(StackJustify::SpaceBetween)
+                    .child(
+                        VStack::new()
+                            .spacing(StackSpacing::None)
+                            .child(
+                                Text::new("Asymmetric Loss")
+                                    .size(TextSize::Xs)
+                                    .color(theme.label_color),
+                            )
+                            .child(
+                                Text::new("Penalize peaks more than dips")
+                                    .size(TextSize::Xss)
+                                    .color(theme.description_color),
+                            ),
+                    )
+                    .child(asymmetric_toggle),
+            );
 
             form = form.child(Card::new().content(opt_tuning_content));
         }

@@ -952,7 +952,7 @@ impl Plugin for LoudnessCompensationPlugin {
         input: &[f32],
         output: &mut [f32],
         context: &ProcessContext,
-    ) -> PluginResult<()> {
+    ) -> Result<usize, String> {
         // Verify input size
         let input_samples = context.num_frames * self.num_channels;
         if input.len() != input_samples {
@@ -1063,7 +1063,7 @@ impl Plugin for LoudnessCompensationPlugin {
         // IIR biquad filter calculations can produce denormal numbers
         flush_denormals_inplace(output);
 
-        Ok(())
+        Ok(context.num_frames)
     }
 
     fn latency_samples(&self) -> usize {

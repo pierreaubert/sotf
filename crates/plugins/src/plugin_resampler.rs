@@ -31,6 +31,8 @@ pub struct ResamplerPlugin {
     chunk_size: usize,
     /// Input buffer (planar: one vec per channel)
     input_buffer: Vec<Vec<f32>>,
+    /// Actual output frames from last process() call
+    last_output_frames: usize,
 }
 
 impl ResamplerPlugin {
@@ -72,6 +74,7 @@ impl ResamplerPlugin {
             resampler: Some(resampler),
             chunk_size,
             input_buffer: vec![vec![0.0; chunk_size]; num_channels],
+            last_output_frames: 0,
         })
     }
 
@@ -131,14 +134,14 @@ impl ResamplerPlugin {
     }
 
     /// Get the number of output frames for a given number of input frames
+    ///
+    /// Returns an estimated output frame count based on the resampling ratio.
+    /// Adds a small safety margin (+1) to ensure buffer is always large enough.
     pub fn output_frames_for_input(&self, input_frames: usize) -> usize {
-        if let Some(ref resampler) = self.resampler {
-            resampler.output_frames_max()
-        } else {
-            // Estimate based on ratio
-            let ratio = self.output_sample_rate as f64 / self.input_sample_rate as f64;
-            (input_frames as f64 * ratio).ceil() as usize
-        }
+        // Use ratio-based calculation for accurate estimation
+        // The +1 margin ensures buffer is never too small
+        let ratio = self.output_sample_rate as f64 / self.input_sample_rate as f64;
+        (input_frames as f64 * ratio).ceil() as usize + 1
     }
 
     /// Get the resampling ratio (output_rate / input_rate)
@@ -197,7 +200,7 @@ impl Plugin for ResamplerPlugin {
         input: &[f32],
         output: &mut [f32],
         context: &ProcessContext,
-    ) -> PluginResult<()> {
+    ) -> Result<usize, String> {
         let num_input_frames = context.num_frames;
         let expected_input_samples = num_input_frames * self.num_channels;
 
@@ -230,8 +233,9 @@ impl Plugin for ResamplerPlugin {
             .process(&self.input_buffer, None)
             .map_err(|e| format!("Resampling failed: {:?}", e))?;
 
-        // Get output frame count
+        // Get output frame count and store it
         let output_frames = output_planar[0].len();
+        self.last_output_frames = output_frames;
 
         // Check output buffer size
         let expected_output_samples = output_frames * self.num_channels;
@@ -248,7 +252,7 @@ impl Plugin for ResamplerPlugin {
         // Convert planar to interleaved
         self.planar_to_interleaved(&output_planar, output, output_frames);
 
-        Ok(())
+        Ok(output_frames)
     }
 
     fn latency_samples(&self) -> usize {
@@ -258,18 +262,22 @@ impl Plugin for ResamplerPlugin {
     }
 
     fn output_frames_for_input(&self, input_frames: usize) -> usize {
-        // Use the resampler's actual max output frames if available
-        if let Some(ref resampler) = self.resampler {
-            resampler.output_frames_max()
-        } else {
-            // Estimate based on ratio
-            let ratio = self.output_sample_rate as f64 / self.input_sample_rate as f64;
-            (input_frames as f64 * ratio).ceil() as usize
-        }
+        // Use ratio-based calculation for accurate estimation
+        // The +1 margin ensures buffer is never too small
+        let ratio = self.output_sample_rate as f64 / self.input_sample_rate as f64;
+        (input_frames as f64 * ratio).ceil() as usize + 1
     }
 
     fn output_sample_rate(&self, _input_rate: u32) -> u32 {
         self.output_sample_rate
+    }
+
+    fn last_output_frames(&self) -> Option<usize> {
+        if self.last_output_frames > 0 {
+            Some(self.last_output_frames)
+        } else {
+            None
+        }
     }
 }
 

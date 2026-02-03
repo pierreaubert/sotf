@@ -200,9 +200,8 @@ impl ProcessingStage {
 struct AudioBuffer {
     /// Audio data (interleaved)
     data: Arc<Mutex<Vec<f32>>>,
-    /// Number of frames
-    #[allow(dead_code)]
-    num_frames: usize,
+    /// Actual number of samples written (may be less than buffer capacity)
+    actual_len: Arc<Mutex<usize>>,
     /// Number of channels
     num_channels: usize,
 }
@@ -211,19 +210,30 @@ impl AudioBuffer {
     fn new(num_frames: usize, num_channels: usize) -> Self {
         Self {
             data: Arc::new(Mutex::new(vec![0.0; num_frames * num_channels])),
-            num_frames,
+            actual_len: Arc::new(Mutex::new(0)),
             num_channels,
         }
     }
 
     fn write(&self, data: &[f32]) {
         let mut buffer = self.data.lock().unwrap();
-        buffer.copy_from_slice(data);
+        // Resize if needed (shouldn't happen if buffers are pre-allocated correctly)
+        if buffer.len() < data.len() {
+            buffer.resize(data.len(), 0.0);
+        }
+        buffer[..data.len()].copy_from_slice(data);
+        *self.actual_len.lock().unwrap() = data.len();
     }
 
     fn read(&self) -> Vec<f32> {
         let buffer = self.data.lock().unwrap();
-        buffer.clone()
+        let actual_len = *self.actual_len.lock().unwrap();
+        if actual_len == 0 {
+            // Return full buffer if nothing written yet
+            buffer.clone()
+        } else {
+            buffer[..actual_len].to_vec()
+        }
     }
 
     #[allow(dead_code)]
@@ -238,11 +248,12 @@ impl AudioBuffer {
     fn clear(&self) {
         let mut buffer = self.data.lock().unwrap();
         buffer.fill(0.0);
+        *self.actual_len.lock().unwrap() = 0;
     }
 
     #[allow(dead_code)]
     fn size(&self) -> usize {
-        self.num_frames * self.num_channels
+        *self.actual_len.lock().unwrap()
     }
 }
 
@@ -589,6 +600,22 @@ impl DawHost {
         rate
     }
 
+    /// Get the actual output frames from the last process() call.
+    /// This queries the last plugin in the chain that implements last_output_frames().
+    /// Returns None if no plugins track output frames or chain is empty.
+    pub fn last_output_frames(&self) -> Option<usize> {
+        // Iterate through chain in reverse to find a plugin that tracks output frames
+        for node_id in self.chain_nodes.iter().rev() {
+            if let Some(node) = self.nodes.get(node_id) {
+                let plugin = node.plugin.lock().unwrap();
+                if let Some(frames) = plugin.last_output_frames() {
+                    return Some(frames);
+                }
+            }
+        }
+        None
+    }
+
     /// Set a parameter on a plugin at the given index (PluginHost-compatible API)
     pub fn set_plugin_parameter(
         &mut self,
@@ -656,54 +683,69 @@ impl DawHost {
         let input_channels = first_input_node.input_channels();
         let num_frames = input.len() / input_channels;
 
-        // Create processing context
-        let context = ProcessContext {
-            sample_rate: self.sample_rate,
-            num_frames,
-        };
+        // Calculate max output frames (accounts for resamplers)
+        let max_output_frames = self.output_frames_for_input(num_frames);
 
-        // Allocate buffers for each node
+        // Use the larger of input or output frames for buffer allocation
+        // This ensures buffers are large enough for plugins that change frame count
+        let buffer_frames = num_frames.max(max_output_frames);
+
+        // Allocate buffers for each node with enough space for resampling
         let node_buffers: HashMap<NodeId, AudioBuffer> = self
             .nodes
             .iter()
             .map(|(&id, node)| {
-                let buffer = AudioBuffer::new(num_frames, node.output_channels());
+                let buffer = AudioBuffer::new(buffer_frames, node.output_channels());
                 (id, buffer)
             })
             .collect();
 
-        // Pre-allocate scratch buffers (reused to avoid heap allocations per node)
-        let mut scratch_input = Vec::with_capacity(input.len().max(4096));
-        let mut scratch_output = Vec::with_capacity(
-            4096 * self
-                .nodes
-                .values()
-                .map(|n| n.output_channels())
-                .max()
-                .unwrap_or(2),
-        );
+        // Pre-allocate scratch buffers large enough for max output frames
+        let max_channels = self
+            .nodes
+            .values()
+            .map(|n| n.output_channels())
+            .max()
+            .unwrap_or(2);
+        let mut scratch_input = Vec::with_capacity(buffer_frames * max_channels);
+        let mut scratch_output = Vec::with_capacity(buffer_frames * max_channels);
+
+        // Track current frame count through the chain (may change after resamplers)
+        let mut current_frames = num_frames;
 
         // Process each stage (sequential for scratch buffer reuse)
         for stage in &self.stages {
             for &node_id in &stage.nodes {
-                self.process_node(
+                // Create context with current frame count
+                let context = ProcessContext {
+                    sample_rate: self.sample_rate,
+                    num_frames: current_frames,
+                };
+
+                self.process_node_with_context(
                     node_id,
                     input,
                     &node_buffers,
                     &context,
                     &mut scratch_input,
                     &mut scratch_output,
+                    &mut current_frames,
                 )?;
             }
         }
 
         // Collect output from output nodes
-        self.collect_output(&node_buffers, output, num_frames)?;
+        self.collect_output(&node_buffers, output, current_frames)?;
 
-        Ok(num_frames)
+        // Return actual output frames if available (e.g., from resampler),
+        // otherwise return input frames
+        let actual_output_frames = self.last_output_frames().unwrap_or(num_frames);
+        Ok(actual_output_frames)
     }
 
     /// Process a single node using pre-allocated scratch buffers
+    /// Note: This method is kept for reference but replaced by process_node_with_context
+    #[allow(dead_code)]
     fn process_node(
         &self,
         node_id: NodeId,
@@ -754,6 +796,77 @@ impl DawHost {
 
         // Write to node buffer
         node_buffers[&node_id].write(&scratch_output[..output_size]);
+
+        Ok(())
+    }
+
+    /// Process a single node with context, updating frame count for plugins that change it
+    fn process_node_with_context(
+        &self,
+        node_id: NodeId,
+        graph_input: &[f32],
+        node_buffers: &HashMap<NodeId, AudioBuffer>,
+        context: &ProcessContext,
+        scratch_input: &mut Vec<f32>,
+        scratch_output: &mut Vec<f32>,
+        current_frames: &mut usize,
+    ) -> Result<(), String> {
+        let node = self
+            .nodes
+            .get(&node_id)
+            .ok_or_else(|| format!("Node {} not found", node_id))?;
+
+        // Determine input buffer
+        let input_data: &[f32] = if self.input_nodes.contains(&node_id) {
+            // Input node - use graph input directly (no allocation needed)
+            graph_input
+        } else {
+            // Internal node - merge inputs from predecessors
+            let merged = self.merge_inputs(node_id, node_buffers, context.num_frames)?;
+            // Reuse scratch buffer for merged input
+            if scratch_input.len() < merged.len() {
+                scratch_input.resize(merged.len(), 0.0);
+            }
+            scratch_input[..merged.len()].copy_from_slice(&merged);
+            &scratch_input[..merged.len()]
+        };
+
+        // Query the plugin for max output frames (accounts for resamplers)
+        let max_output_frames = {
+            let plugin = node
+                .plugin
+                .lock()
+                .map_err(|e| format!("Plugin '{}' lock poisoned: {}", node.name, e))?;
+            plugin.output_frames_for_input(context.num_frames)
+        };
+
+        // Allocate output buffer for max possible output frames
+        let output_channels = node.output_channels();
+        let output_size = max_output_frames * output_channels;
+        if scratch_output.len() < output_size {
+            scratch_output.resize(output_size, 0.0);
+        }
+        // Zero out the buffer
+        scratch_output[..output_size].fill(0.0);
+
+        // Process (lock the plugin for processing)
+        let actual_output_frames = {
+            let mut plugin = node
+                .plugin
+                .lock()
+                .map_err(|e| format!("Plugin '{}' lock poisoned: {}", node.name, e))?;
+            plugin.process(input_data, &mut scratch_output[..output_size], context)?;
+
+            // Query actual output frames if plugin tracks them (e.g., resampler)
+            plugin.last_output_frames().unwrap_or(context.num_frames)
+        };
+
+        // Write actual output to node buffer
+        let actual_output_size = actual_output_frames * output_channels;
+        node_buffers[&node_id].write(&scratch_output[..actual_output_size]);
+
+        // Update frame count for subsequent plugins
+        *current_frames = actual_output_frames;
 
         Ok(())
     }
@@ -873,7 +986,9 @@ impl DawHost {
             let node_id = self.output_nodes[0];
             let buffer = &node_buffers[&node_id];
             let data = buffer.read();
-            output.copy_from_slice(&data);
+            // Copy only what fits, handling variable output sizes
+            let copy_len = data.len().min(output.len());
+            output[..copy_len].copy_from_slice(&data[..copy_len]);
         } else {
             // Multiple outputs - mix them
             output.fill(0.0);
@@ -881,7 +996,9 @@ impl DawHost {
                 let buffer = &node_buffers[&node_id];
                 let data = buffer.read();
 
-                for (dst, src) in output.iter_mut().zip(data.iter()) {
+                // Mix with proper length handling
+                let mix_len = data.len().min(output.len());
+                for (dst, src) in output[..mix_len].iter_mut().zip(data[..mix_len].iter()) {
                     *dst += src;
                 }
             }

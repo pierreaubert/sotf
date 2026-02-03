@@ -561,7 +561,7 @@ impl Plugin for MatrixPlugin {
         input: &[f32],
         output: &mut [f32],
         context: &ProcessContext,
-    ) -> PluginResult<()> {
+    ) -> Result<usize, String> {
         let num_frames = context.num_frames;
 
         // Validate buffer sizes
@@ -645,7 +645,7 @@ impl Plugin for MatrixPlugin {
             }
         }
 
-        Ok(())
+        Ok(context.num_frames)
     }
 }
 

@@ -1605,7 +1605,7 @@ Upper bound for dialogue detection analysis.",
         input: &[f32],
         output: &mut [f32],
         context: &ProcessContext,
-    ) -> PluginResult<()> {
+    ) -> Result<usize, String> {
         // Update smoothers once per block
         // (For optimal quality this would be per-sample, but block-rate is acceptable for these gains)
         self.gain_front_direct.next();
@@ -1639,7 +1639,7 @@ Upper bound for dialogue detection analysis.",
                     output[i * self.num_output_channels + ch] = 0.0;
                 }
             }
-            return Ok(());
+            return Ok(context.num_frames);
         }
 
         // Verify input size
@@ -2082,7 +2082,7 @@ Upper bound for dialogue detection analysis.",
             );
         }
 
-        Ok(())
+        Ok(context.num_frames)
     }
 
     fn latency_samples(&self) -> usize {

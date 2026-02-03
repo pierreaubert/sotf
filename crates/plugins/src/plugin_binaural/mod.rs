@@ -997,7 +997,7 @@ impl Plugin for BinauralDecoderPlugin {
         input: &[f32],
         output: &mut [f32],
         context: &ProcessContext,
-    ) -> PluginResult<()> {
+    ) -> Result<usize, String> {
         let input_samples = context.num_frames * self.input_channels;
         let output_samples = context.num_frames * 2;
 
@@ -1050,7 +1050,7 @@ impl Plugin for BinauralDecoderPlugin {
                 output[frame * 2] = left;
                 output[frame * 2 + 1] = right;
             }
-            return Ok(());
+            return Ok(context.num_frames);
         }
 
         // let start_time = std::time::Instant::now();
@@ -1095,7 +1095,7 @@ impl Plugin for BinauralDecoderPlugin {
         //     );
         // }
 
-        Ok(())
+        Ok(context.num_frames)
     }
 
     fn latency_samples(&self) -> usize {

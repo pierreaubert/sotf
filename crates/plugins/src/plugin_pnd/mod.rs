@@ -167,7 +167,7 @@ impl Plugin for PndPlugin {
         input: &[f32],
         output: &mut [f32],
         context: &ProcessContext,
-    ) -> PluginResult<()> {
+    ) -> Result<usize, String> {
         let num_frames = context.num_frames;
 
         // 1. Analyze input for drift
@@ -207,7 +207,7 @@ impl Plugin for PndPlugin {
             if num_frames != resampler.input_frames_next() {
                 // Pass through if block size mismatch
                 output.copy_from_slice(input);
-                return Ok(());
+                return Ok(context.num_frames);
             }
 
             resampler
@@ -254,6 +254,6 @@ impl Plugin for PndPlugin {
             }
         }
 
-        Ok(())
+        Ok(context.num_frames)
     }
 }

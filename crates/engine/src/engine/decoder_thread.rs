@@ -267,7 +267,7 @@ impl DecoderState {
                         };
 
                         let r_start = Instant::now();
-                        resampler
+                        let actual_output_frames = resampler
                             .process(
                                 &self.chunk_buffer[..chunk_len],
                                 &mut self.resample_output_buffer,
@@ -276,10 +276,8 @@ impl DecoderState {
                             .map_err(|e| format!("Resampling failed: {}", e))?;
                         total_resample_time += r_start.elapsed();
 
-                        // Calculate actual output frames
-                        let expected_frames =
-                            (frame_size as f64 * resampler.ratio()).ceil() as usize;
-                        let frame_len = expected_frames * channels;
+                        // Use actual output frames returned by resampler.process()
+                        let frame_len = actual_output_frames * channels;
 
                         // Copy to frame_send_buffer and take ownership (avoids .to_vec() allocation)
                         if self.frame_send_buffer.len() < frame_len {
@@ -294,7 +292,7 @@ impl DecoderState {
                         // Restore a new buffer for next iteration
                         self.frame_send_buffer = Vec::with_capacity(frame_len);
 
-                        AudioFrame::new(frame_data, expected_frames, channels, target_sample_rate)
+                        AudioFrame::new(frame_data, actual_output_frames, channels, target_sample_rate)
                     } else {
                         // No resampling - copy chunk to frame_send_buffer and take ownership
                         if self.frame_send_buffer.len() < chunk_len {
@@ -387,20 +385,14 @@ impl DecoderState {
                     };
 
                     // Process padded chunk to flush resampler state
-                    if resampler
-                        .process(
-                            &self.chunk_buffer[..padded_len],
-                            &mut self.resample_output_buffer,
-                            &context,
-                        )
-                        .is_ok()
-                    {
-                        // Calculate actual output frames (may be more due to the resampling ratio)
-                        let expected_frames =
-                            (frame_size as f64 * resampler.ratio()).ceil() as usize;
-
-                        if expected_frames > 0 {
-                            let frame_len = expected_frames * channels;
+                    if let Ok(actual_output_frames) = resampler.process(
+                        &self.chunk_buffer[..padded_len],
+                        &mut self.resample_output_buffer,
+                        &context,
+                    ) {
+                        // Use actual output frames returned by resampler.process()
+                        if actual_output_frames > 0 {
+                            let frame_len = actual_output_frames * channels;
                             // Use frame_send_buffer (avoids .to_vec() allocation)
                             if self.frame_send_buffer.len() < frame_len {
                                 self.frame_send_buffer.resize(frame_len, 0.0);
@@ -414,7 +406,7 @@ impl DecoderState {
 
                             let frame = AudioFrame::new(
                                 frame_data,
-                                expected_frames,
+                                actual_output_frames,
                                 channels,
                                 target_sample_rate,
                             );
@@ -430,7 +422,7 @@ impl DecoderState {
 
                             log::debug!(
                                 "[Decoder Thread] Flushed {} frames through resampler",
-                                expected_frames
+                                actual_output_frames
                             );
                         }
                     } else {
