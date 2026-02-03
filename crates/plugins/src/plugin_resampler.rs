@@ -133,15 +133,21 @@ impl ResamplerPlugin {
         }
     }
 
-    /// Get the number of output frames for a given number of input frames
+    /// Get the maximum number of output frames for a given number of input frames
     ///
-    /// Returns an estimated output frame count based on the resampling ratio.
-    /// Adds a small safety margin (+1) to ensure buffer is always large enough.
-    pub fn output_frames_for_input(&self, input_frames: usize) -> usize {
-        // Use ratio-based calculation for accurate estimation
-        // The +1 margin ensures buffer is never too small
-        let ratio = self.output_sample_rate as f64 / self.input_sample_rate as f64;
-        (input_frames as f64 * ratio).ceil() as usize + 1
+    /// Returns the maximum possible output frame count from rubato.
+    /// This should be used for buffer allocation to ensure the buffer is always large enough.
+    /// The actual output frame count may be less and is returned by process().
+    pub fn output_frames_for_input(&self, _input_frames: usize) -> usize {
+        // Use rubato's output_frames_max() for safe buffer allocation
+        // The actual output varies based on resampler internal state
+        if let Some(ref resampler) = self.resampler {
+            resampler.output_frames_max()
+        } else {
+            // Fallback estimate if resampler not initialized
+            let ratio = self.output_sample_rate as f64 / self.input_sample_rate as f64;
+            (_input_frames as f64 * ratio).ceil() as usize + 1
+        }
     }
 
     /// Get the resampling ratio (output_rate / input_rate)
@@ -261,11 +267,16 @@ impl Plugin for ResamplerPlugin {
         128
     }
 
-    fn output_frames_for_input(&self, input_frames: usize) -> usize {
-        // Use ratio-based calculation for accurate estimation
-        // The +1 margin ensures buffer is never too small
-        let ratio = self.output_sample_rate as f64 / self.input_sample_rate as f64;
-        (input_frames as f64 * ratio).ceil() as usize + 1
+    fn output_frames_for_input(&self, _input_frames: usize) -> usize {
+        // Use rubato's output_frames_max() for safe buffer allocation
+        // The actual output varies based on resampler internal state
+        if let Some(ref resampler) = self.resampler {
+            resampler.output_frames_max()
+        } else {
+            // Fallback estimate if resampler not initialized
+            let ratio = self.output_sample_rate as f64 / self.input_sample_rate as f64;
+            (_input_frames as f64 * ratio).ceil() as usize + 1
+        }
     }
 
     fn output_sample_rate(&self, _input_rate: u32) -> u32 {

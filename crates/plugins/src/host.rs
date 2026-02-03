@@ -850,15 +850,13 @@ impl DawHost {
         scratch_output[..output_size].fill(0.0);
 
         // Process (lock the plugin for processing)
+        // The process() method returns the actual number of output frames
         let actual_output_frames = {
             let mut plugin = node
                 .plugin
                 .lock()
                 .map_err(|e| format!("Plugin '{}' lock poisoned: {}", node.name, e))?;
-            plugin.process(input_data, &mut scratch_output[..output_size], context)?;
-
-            // Query actual output frames if plugin tracks them (e.g., resampler)
-            plugin.last_output_frames().unwrap_or(context.num_frames)
+            plugin.process(input_data, &mut scratch_output[..output_size], context)?
         };
 
         // Write actual output to node buffer
