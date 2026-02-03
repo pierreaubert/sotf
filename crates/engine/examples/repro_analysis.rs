@@ -1,4 +1,4 @@
-use sotf_audio::signal_analysis::{WavAnalysisConfig, analyze_recording};
+use sotf_audio::signal_analysis::analyze_recording;
 use sotf_audio::signals;
 
 fn main() {
@@ -27,7 +27,7 @@ fn main() {
     writer.finalize().unwrap();
 
     // Analyze
-    let result = analyze_recording(path, &sweep, sample_rate).unwrap();
+    let result = analyze_recording(path, &sweep, sample_rate, Some((20.0, 20000.0))).unwrap();
 
     println!("Frequencies: {}", result.frequencies.len());
     println!("Distortion DB len: {}", result.harmonic_distortion_db.len());

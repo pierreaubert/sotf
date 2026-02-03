@@ -49,8 +49,6 @@ impl PlayerView {
             min_spacing_oct: config.min_spacing_oct,
             tolerance: config.tolerance,
             atolerance: config.atolerance,
-            smooth: config.smooth,
-            smooth_n: config.smooth_n,
             psychoacoustic: config.psychoacoustic,
             asymmetric_loss: config.asymmetric_loss,
             loss_type: config.loss_type.clone(),

@@ -1165,6 +1165,14 @@ impl HalInputReader {
             .map(|b| b.channel_count())
             .unwrap_or(2)
     }
+
+    /// Get available frames to read
+    pub fn available_read_frames(&self) -> usize {
+        self.buffer
+            .as_ref()
+            .map(|b| b.available_read_frames())
+            .unwrap_or(0)
+    }
 }
 
 impl Default for HalInputReader {

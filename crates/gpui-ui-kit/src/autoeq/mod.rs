@@ -556,6 +556,8 @@ impl AutoEqForm {
             on_target_curve_toggle: None,
             on_system_type_change: None,
             on_system_type_toggle: None,
+            on_psychoacoustic_change: None,
+            on_asymmetric_loss_change: None,
         }
     }
 
@@ -1849,7 +1851,7 @@ impl RenderOnce for AutoEqForm {
             let mut smooth_toggle = Toggle::new("autoeq-smooth")
                 .size(ToggleSize::Sm)
                 .checked(config.smooth)
-                .theme(toggle_theme);
+                .theme(toggle_theme.clone());
 
             if let Some(ref handler) = on_smooth_change_rc {
                 let h = handler.clone();
@@ -1916,7 +1918,7 @@ impl RenderOnce for AutoEqForm {
                             )
                             .child(
                                 Text::new("1/48 oct bass, 1/6 oct treble")
-                                    .size(TextSize::Xss)
+                                    .size(TextSize::Xs)
                                     .color(theme.description_color),
                             ),
                     )
@@ -1948,7 +1950,7 @@ impl RenderOnce for AutoEqForm {
                             )
                             .child(
                                 Text::new("Penalize peaks more than dips")
-                                    .size(TextSize::Xss)
+                                    .size(TextSize::Xs)
                                     .color(theme.description_color),
                             ),
                     )

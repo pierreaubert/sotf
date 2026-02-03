@@ -1,7 +1,7 @@
 //! Common test utilities for audio engine tests
 //!
-//! All tests should use BlackHole virtual audio device to avoid playing sound
-//! on real audio devices during testing.
+//! All tests should use a virtual audio device (BlackHole or SotF HAL driver)
+//! to avoid playing sound on real audio devices during testing.
 
 #![allow(dead_code)] // Test utilities may not be used in all test files
 
@@ -10,14 +10,20 @@ use sotf_audio::engine::EngineConfig;
 use std::sync::OnceLock;
 use tempfile::NamedTempFile;
 
-/// BlackHole device names to try (in order of preference)
-const BLACKHOLE_DEVICES: &[&str] = &["BlackHole 2ch", "BlackHole 16ch", "BlackHole 64ch"];
+/// Virtual audio device names to try (in order of preference)
+/// SotF HAL driver is preferred, then BlackHole variants
+const VIRTUAL_DEVICES: &[&str] = &[
+    "SotF Virtual Audio",
+    "BlackHole 2ch",
+    "BlackHole 16ch",
+    "BlackHole 64ch",
+];
 
-/// Cached BlackHole device name (checked once per test run)
-static BLACKHOLE_DEVICE: OnceLock<Option<String>> = OnceLock::new();
+/// Cached virtual device name (checked once per test run)
+static VIRTUAL_DEVICE: OnceLock<Option<String>> = OnceLock::new();
 
-/// Find an available BlackHole device
-pub fn find_blackhole_device() -> Option<String> {
+/// Find an available virtual audio device (SotF HAL or BlackHole)
+pub fn find_virtual_device() -> Option<String> {
     use cpal::traits::{DeviceTrait, HostTrait};
 
     let host = cpal::default_host();
@@ -26,11 +32,11 @@ pub fn find_blackhole_device() -> Option<String> {
         .map(|d| d.collect())
         .unwrap_or_default();
 
-    for blackhole_name in BLACKHOLE_DEVICES {
+    for virtual_name in VIRTUAL_DEVICES {
         for device in &devices {
             if let Ok(desc) = device.description() {
                 let name = desc.name().to_string();
-                if name.contains(blackhole_name) {
+                if name.contains(virtual_name) {
                     return Some(name);
                 }
             }
@@ -40,44 +46,61 @@ pub fn find_blackhole_device() -> Option<String> {
     None
 }
 
-/// Get the BlackHole device name, panicking if not available.
+/// Get the virtual device name, panicking if not available.
 ///
 /// This ensures all tests use a virtual audio device instead of real speakers.
-/// Install BlackHole from: https://existential.audio/blackhole/
-pub fn require_blackhole_device() -> String {
-    BLACKHOLE_DEVICE
-        .get_or_init(find_blackhole_device)
+/// Supports both SotF HAL driver and BlackHole.
+pub fn require_virtual_device() -> String {
+    VIRTUAL_DEVICE
+        .get_or_init(find_virtual_device)
         .clone()
         .expect(
             "\n\n\
             ╔═══════════════════════════════════════════════════════════════════════╗\n\
-            ║  AUDIO ENGINE TESTS REQUIRE BLACKHOLE VIRTUAL AUDIO DEVICE            ║\n\
+            ║  AUDIO ENGINE TESTS REQUIRE A VIRTUAL AUDIO DEVICE                    ║\n\
             ╠═══════════════════════════════════════════════════════════════════════╣\n\
-            ║  BlackHole is not installed or not available.                         ║\n\
+            ║  No virtual audio device found (SotF HAL or BlackHole).               ║\n\
             ║                                                                       ║\n\
-            ║  Tests use BlackHole to avoid playing sound on real audio devices.    ║\n\
+            ║  Tests use virtual devices to avoid playing sound on real speakers.   ║\n\
             ║                                                                       ║\n\
-            ║  Install BlackHole from: https://existential.audio/blackhole/         ║\n\
-            ║  Or via Homebrew: brew install blackhole-2ch                          ║\n\
+            ║  Options:                                                             ║\n\
+            ║  1. Install the SotF HAL driver (preferred)                           ║\n\
+            ║  2. Install BlackHole: brew install blackhole-2ch                     ║\n\
+            ║     or from: https://existential.audio/blackhole/                     ║\n\
             ╚═══════════════════════════════════════════════════════════════════════╝\n\n",
         )
 }
 
-/// Get the BlackHole device name as an Option for PlaybackThread tests.
-pub fn blackhole_device_option() -> Option<String> {
-    Some(require_blackhole_device())
+/// Backwards compatibility alias for require_virtual_device
+pub fn require_blackhole_device() -> String {
+    require_virtual_device()
 }
 
-/// Create an EngineConfig configured for testing with BlackHole device.
+/// Find an available BlackHole device (legacy alias)
+pub fn find_blackhole_device() -> Option<String> {
+    find_virtual_device()
+}
+
+/// Get the virtual device name as an Option for PlaybackThread tests.
+pub fn virtual_device_option() -> Option<String> {
+    Some(require_virtual_device())
+}
+
+/// Backwards compatibility alias
+pub fn blackhole_device_option() -> Option<String> {
+    virtual_device_option()
+}
+
+/// Create an EngineConfig configured for testing with a virtual audio device.
 ///
-/// Panics if BlackHole is not available.
+/// Panics if no virtual device (SotF HAL or BlackHole) is available.
 pub fn test_engine_config() -> EngineConfig {
     let mut config = EngineConfig::default();
-    config.output_device = Some(require_blackhole_device());
+    config.output_device = Some(require_virtual_device());
     config
 }
 
-/// Create an EngineConfig with specific settings, using BlackHole device.
+/// Create an EngineConfig with specific settings, using a virtual audio device.
 pub fn test_engine_config_with<F>(configure: F) -> EngineConfig
 where
     F: FnOnce(&mut EngineConfig),

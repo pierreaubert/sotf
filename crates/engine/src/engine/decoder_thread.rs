@@ -124,6 +124,8 @@ struct DecoderState {
     hal_input_buffer: Vec<f32>,
     #[cfg(all(target_os = "macos", feature = "hal"))]
     hal_reader: Option<HalInputReader>,
+    #[cfg(all(target_os = "macos", feature = "hal"))]
+    last_hal_sample_rate: Option<u32>,
 }
 
 impl DecoderState {
@@ -145,6 +147,8 @@ impl DecoderState {
             hal_input_buffer: Vec::new(),
             #[cfg(all(target_os = "macos", feature = "hal"))]
             hal_reader: None,
+            #[cfg(all(target_os = "macos", feature = "hal"))]
+            last_hal_sample_rate: None,
         }
     }
 
@@ -516,15 +520,20 @@ impl DecoderState {
         &mut self,
         message_tx: &SyncSender<DecoderMessage>,
         frame_size: usize,
-        sample_rate: u32,
-    ) -> Result<(), String> {
+        target_sample_rate: u32,
+    ) -> Result<bool, String> {
         // Static counter for periodic logging (avoid log spam)
         static LOG_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let count = LOG_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         #[cfg(all(target_os = "macos", feature = "hal"))]
         if let Some(reader) = &mut self.hal_reader {
-            // Read from HAL - use actual HAL config, not hardcoded values!
+            // Check if we have enough frames available
+            if reader.available_read_frames() < frame_size {
+                return Ok(false);
+            }
+
+            // Read from HAL - use actual HAL config
             let hal_sample_rate = reader.sample_rate();
             let hal_channels = reader.channel_count() as usize;
             let buffer_len = frame_size * hal_channels;
@@ -550,35 +559,113 @@ impl DecoderState {
             if count % 100 == 0 {
                 let has_audio = rms > 0.0001;
                 log::info!(
-                    "[AUDIO FLOW] Decoder HAL read: {} samples, RMS={:.6}, has_audio={}, connected={}, HAL config: {}Hz {}ch",
+                    "[AUDIO FLOW] Decoder HAL read: {} samples, RMS={:.6}, has_audio={}, connected={}, HAL config: {}Hz {}ch, Target: {}Hz",
                     samples_read,
                     rms,
                     has_audio,
                     reader.is_connected(),
                     hal_sample_rate,
-                    hal_channels
+                    hal_channels,
+                    target_sample_rate
                 );
             }
 
             if samples_read < buffer_len {
-                // Zero-fill remaining
                 self.hal_input_buffer[samples_read..].fill(0.0);
             }
 
-            // Use take/restore pattern to avoid .clone() allocation
-            let mut frame_data = std::mem::take(&mut self.hal_input_buffer);
-            frame_data.truncate(buffer_len);
-            // CRITICAL: Use HAL sample rate, not the config's target sample rate!
-            let frame = AudioFrame::new(frame_data, frame_size, hal_channels, hal_sample_rate);
+            // Check if resampling is needed
+            if hal_sample_rate != target_sample_rate {
+                // Initialize or re-initialize resampler if needed
+                if self.resampler.is_none() || self.last_hal_sample_rate != Some(hal_sample_rate) {
+                    log::info!(
+                        "[Decoder Thread] Creating HAL resampler: {}Hz -> {}Hz",
+                        hal_sample_rate,
+                        target_sample_rate
+                    );
+                    self.resampler = Some(
+                        ResamplerPlugin::new(
+                            hal_channels,
+                            hal_sample_rate,
+                            target_sample_rate,
+                            frame_size,
+                        )
+                        .map_err(|e| format!("Failed to create HAL resampler: {}", e))?,
+                    );
+                    self.last_hal_sample_rate = Some(hal_sample_rate);
+                    // Clear any previous resampler buffer to avoid glitches
+                    self.resample_output_buffer.clear();
+                }
 
-            // Restore buffer for next iteration
-            self.hal_input_buffer = Vec::with_capacity(buffer_len);
+                let resampler = self.resampler.as_mut().unwrap();
+                let max_output_frames = resampler.output_frames_for_input(frame_size);
+                let output_len = max_output_frames * hal_channels;
 
-            message_tx
-                .send(DecoderMessage::Frame(frame))
-                .map_err(|_| "Failed to send HAL frame")?;
+                if self.resample_output_buffer.len() < output_len {
+                    self.resample_output_buffer.resize(output_len, 0.0);
+                }
 
-            return Ok(());
+                let context = ProcessContext {
+                    sample_rate: hal_sample_rate,
+                    num_frames: frame_size,
+                };
+
+                // Process resampling
+                let actual_output_frames = resampler
+                    .process(
+                        &self.hal_input_buffer[..buffer_len],
+                        &mut self.resample_output_buffer,
+                        &context,
+                    )
+                    .map_err(|e| format!("HAL resampling failed: {}", e))?;
+
+                // Copy to frame_send_buffer
+                let frame_len = actual_output_frames * hal_channels;
+                if self.frame_send_buffer.len() < frame_len {
+                    self.frame_send_buffer.resize(frame_len, 0.0);
+                }
+                self.frame_send_buffer[..frame_len]
+                    .copy_from_slice(&self.resample_output_buffer[..frame_len]);
+
+                // Prepare frame
+                let mut frame_data = std::mem::take(&mut self.frame_send_buffer);
+                frame_data.truncate(frame_len);
+                self.frame_send_buffer = Vec::with_capacity(frame_len);
+
+                // Send frame with TARGET sample rate
+                let frame = AudioFrame::new(
+                    frame_data,
+                    actual_output_frames,
+                    hal_channels,
+                    target_sample_rate,
+                );
+
+                message_tx
+                    .send(DecoderMessage::Frame(frame))
+                    .map_err(|_| "Failed to send resampled HAL frame")?;
+
+            } else {
+                // No resampling needed
+                if self.resampler.is_some() {
+                    log::info!("[Decoder Thread] Removing HAL resampler (rates match)");
+                    self.resampler = None;
+                    self.last_hal_sample_rate = Some(hal_sample_rate);
+                }
+
+                // Use take/restore pattern for zero-copy where possible
+                let mut frame_data = std::mem::take(&mut self.hal_input_buffer);
+                frame_data.truncate(buffer_len);
+                self.hal_input_buffer = Vec::with_capacity(buffer_len);
+
+                // Send frame with HAL sample rate (which matches target)
+                let frame = AudioFrame::new(frame_data, frame_size, hal_channels, hal_sample_rate);
+
+                message_tx
+                    .send(DecoderMessage::Frame(frame))
+                    .map_err(|_| "Failed to send HAL frame")?;
+            }
+
+            return Ok(true);
         }
 
         // Log that we don't have a HAL reader
@@ -598,12 +685,12 @@ impl DecoderState {
         frame_data.truncate(silent_len);
         self.frame_send_buffer = Vec::with_capacity(silent_len);
 
-        let frame = AudioFrame::new(frame_data, frame_size, 2, sample_rate);
+        let frame = AudioFrame::new(frame_data, frame_size, 2, target_sample_rate);
         message_tx
             .send(DecoderMessage::Frame(frame))
             .map_err(|_| "Failed to send silent frame")?;
 
-        Ok(())
+        Ok(true)
     }
 }
 
@@ -676,21 +763,28 @@ fn run_decoder_thread(
         // Generate frames based on mode
         if state.silent_source && !state.paused {
             // HAL Input / Silent Source mode
-            if let Err(e) = state.process_hal_input(&message_tx, frame_size, target_sample_rate) {
-                log::debug!("[Decoder Thread] HAL input error: {}", e);
-                state.stop();
+            match state.process_hal_input(&message_tx, frame_size, target_sample_rate) {
+                Ok(true) => {
+                    // Frame processed successfully
+                    // Don't sleep if connected - rely on backpressure from message_tx
+                }
+                Ok(false) => {
+                    // No frame processed (not enough data yet)
+                    // Sleep briefly to avoid busy loop
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
+                Err(e) => {
+                    log::debug!("[Decoder Thread] HAL input error: {}", e);
+                    state.stop();
+                }
             }
-            // For HAL input: only sleep briefly when no data is available to avoid busy-looping.
-            // The HAL driver provides data in real-time, so we should consume it as fast as possible.
-            // Don't sleep after successful reads - the processing/playback pipeline provides backpressure.
+            
+            // Handle sleep for non-HAL mode or disconnected HAL
             #[cfg(all(target_os = "macos", feature = "hal"))]
             {
-                // If HAL reader got no data, sleep briefly to avoid busy loop
-                // The channel send to processing thread provides natural backpressure when data is available
                 if state.hal_reader.as_ref().map_or(true, |r| !r.is_connected()) {
                     std::thread::sleep(std::time::Duration::from_millis(5));
                 }
-                // When connected and data flowing, the mpsc channel backpressure handles timing
             }
             #[cfg(not(all(target_os = "macos", feature = "hal")))]
             {
