@@ -712,3 +712,126 @@ pub fn get_device_properties(
 
     Ok(properties)
 }
+
+/// Helper to match a device from a list of (id, name) tuples based on identifier
+///
+/// Priority:
+/// 1. Exact ID match
+/// 2. Exact Name match (case-insensitive)
+/// 3. Starts With match (case-insensitive)
+/// 4. Contains match (case-insensitive)
+fn match_device_priority(devices: &[(String, String)], identifier: &str) -> Option<usize> {
+    let target = identifier.to_lowercase();
+
+    // 1. Exact ID match
+    if let Some(idx) = devices.iter().position(|(id, _)| id == identifier) {
+        log::debug!("[find_device] Found device by ID match: {}", devices[idx].0);
+        return Some(idx);
+    }
+
+    // 2. Exact Name match (case-insensitive)
+    if let Some(idx) = devices.iter().position(|(_, name)| name.to_lowercase() == target) {
+        log::debug!("[find_device] Found device by Exact Name match: {}", devices[idx].1);
+        return Some(idx);
+    }
+
+    // 3. Starts With match (case-insensitive)
+    if let Some(idx) = devices.iter().position(|(_, name)| name.to_lowercase().starts_with(&target)) {
+        log::debug!("[find_device] Found device by Starts With match: {}", devices[idx].1);
+        return Some(idx);
+    }
+
+    // 4. Contains match (case-insensitive)
+    if let Some(idx) = devices.iter().position(|(_, name)| name.to_lowercase().contains(&target)) {
+        log::debug!("[find_device] Found device by Contains match: {}", devices[idx].1);
+        return Some(idx);
+    }
+
+    None
+}
+
+/// Find an audio device by name or ID with prioritization
+pub fn find_device(
+    host: &cpal::Host,
+    identifier: &str,
+    is_input: bool,
+) -> Result<cpal::Device, String> {
+    let devices: Vec<cpal::Device> = if is_input {
+        host.input_devices()
+            .map_err(|e| format!("Failed to enumerate input devices: {}", e))?
+            .collect()
+    } else {
+        host.output_devices()
+            .map_err(|e| format!("Failed to enumerate output devices: {}", e))?
+            .collect()
+    };
+
+    // Extract info for matching
+    let device_info: Vec<(String, String)> = devices
+        .iter()
+        .map(|d| {
+            let id = d.id().ok().map(|i| i.to_string()).unwrap_or_default();
+            let name = d.description().ok().map(|desc| desc.name().to_string()).unwrap_or_default();
+            (id, name)
+        })
+        .collect();
+
+    if let Some(idx) = match_device_priority(&device_info, identifier) {
+        Ok(devices[idx].clone())
+    } else {
+         // Device not found - provide helpful error message with available devices
+        let available_names: Vec<String> = device_info.iter().map(|(_, name)| name.clone()).collect();
+        let device_type = if is_input { "input" } else { "output" };
+        Err(format!(
+            "Audio device '{}' not found. Available {} devices: {}",
+            identifier,
+            device_type,
+            available_names.join(", ")
+        ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_match_device_priority() {
+        let devices = vec![
+            ("id1".to_string(), "My Microphone".to_string()),
+            ("id2".to_string(), "Built-in Microphone".to_string()),
+            ("id3".to_string(), "Microphone (USB)".to_string()),
+            ("id4".to_string(), "Speakers".to_string()),
+        ];
+
+        // 1. Exact ID
+        assert_eq!(match_device_priority(&devices, "id2"), Some(1));
+
+        // 2. Exact Name
+        assert_eq!(match_device_priority(&devices, "Speakers"), Some(3));
+        assert_eq!(match_device_priority(&devices, "speakers"), Some(3)); // Case insensitive
+
+        // 3. Starts With
+        // "Microphone" should match "Microphone (USB)" (idx 2) NOT "My Microphone" (idx 0) or "Built-in" (idx 1)
+        // Wait, "Microphone" as exact match doesn't exist.
+        // "Microphone (USB)" starts with "Microphone".
+        // "My Microphone" contains "Microphone".
+        // "Built-in Microphone" contains "Microphone".
+        // The logic prioritizes Starts With.
+        assert_eq!(match_device_priority(&devices, "Microphone"), Some(2));
+
+        // 4. Contains
+        assert_eq!(match_device_priority(&devices, "Built-in"), Some(1));
+        
+        // Edge case: "Micro"
+        // "Microphone (USB)" starts with it -> idx 2
+        assert_eq!(match_device_priority(&devices, "Micro"), Some(2));
+        
+        // Edge case: "USB"
+        // "Microphone (USB)" contains it -> idx 2
+        assert_eq!(match_device_priority(&devices, "USB"), Some(2));
+        
+        // Non-matching
+        assert_eq!(match_device_priority(&devices, "Not Found"), None);
+    }
+}

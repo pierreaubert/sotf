@@ -167,68 +167,20 @@ fn run_playback_thread(
             log::warn!("[Playback Thread] 'SotF' virtual device requested as output - forcing fallback to prevent feedback loop");
             find_fallback().map_err(|e| format!("Failed to find fallback device: {}", e))?
         } else {
-            let devices: Vec<_> = host
-                .output_devices()
-                .map_err(|e| format!("Failed to enumerate output devices: {}", e))?
-                .collect();
-
-            // Helper to get device display name
-            let get_display_name = |d: &Device| -> String {
-                d.description()
-                    .map(|desc| desc.name().to_string())
-                    .unwrap_or_else(|_| "Unknown Device".to_string())
-            };
-
-            // First try to match by device ID (preferred for persistence)
-            let found_device = devices
-                .iter()
-                .find(|d| {
-                    if let Ok(id) = d.id() {
-                        id.to_string() == device_identifier
-                    } else {
-                        false
-                    }
-                })
-                .cloned()
-                // Then try exact name match using description
-                .or_else(|| {
-                    let target_pattern = device_identifier.to_lowercase();
-                    devices
-                        .iter()
-                        .find(|d| get_display_name(d).to_lowercase() == target_pattern)
-                        .cloned()
-                })
-                // Then try partial match (starts with)
-                .or_else(|| {
-                    let target_pattern = device_identifier.to_lowercase();
-                    devices
-                        .iter()
-                        .find(|d| {
-                            get_display_name(d)
-                                .to_lowercase()
-                                .starts_with(&target_pattern)
-                        })
-                        .cloned()
-                })
-                // Finally try partial match (contains)
-                .or_else(|| {
-                    let target_pattern = device_identifier.to_lowercase();
-                    devices
-                        .iter()
-                        .find(|d| get_display_name(d).to_lowercase().contains(&target_pattern))
-                        .cloned()
-                });
-
-            match found_device {
-                Some(dev) => {
-                    let dev_name = get_display_name(&dev);
+            // Try to find the device using shared logic
+            match crate::devices::find_device(&host, &device_identifier, false) {
+                Ok(dev) => {
+                    let dev_name = dev
+                        .description()
+                        .map(|d| d.name().to_string())
+                        .unwrap_or_else(|_| "Unknown Device".to_string());
                     log::debug!("[Playback Thread] Using device: '{}'", dev_name);
                     dev
                 }
-                None => {
+                Err(e) => {
                     log::info!(
-                        "[Playback Thread] Device '{}' not found, using default",
-                        device_identifier
+                        "[Playback Thread] Device '{}' not found (error: {}), using default",
+                        device_identifier, e
                     );
                     host.default_output_device()
                         .ok_or("No default output device available")?
