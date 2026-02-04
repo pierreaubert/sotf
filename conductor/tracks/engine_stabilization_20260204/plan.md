@@ -1,7 +1,7 @@
 # Implementation Plan - Refactor and Stabilize Core Audio Engine
 
 ## Phase 1: Engine Core Stabilization
-- [ ] Task: Audit and Fix Device Matching Logic
+- [x] Task: Audit and Fix Device Matching Logic 0900a97
     - [ ] Review prioritization logic in signal_recorder.rs and playback_thread.rs
     - [ ] Add unit tests for device name matching edge cases
 - [ ] Task: Refine HAL Input and Resampling
