@@ -126,6 +126,8 @@ struct DecoderState {
     hal_reader: Option<HalInputReader>,
     #[cfg(all(target_os = "macos", feature = "hal"))]
     last_hal_sample_rate: Option<u32>,
+    #[cfg(all(target_os = "macos", feature = "hal"))]
+    last_hal_channels: Option<usize>,
 }
 
 impl DecoderState {
@@ -149,6 +151,8 @@ impl DecoderState {
             hal_reader: None,
             #[cfg(all(target_os = "macos", feature = "hal"))]
             last_hal_sample_rate: None,
+            #[cfg(all(target_os = "macos", feature = "hal"))]
+            last_hal_channels: None,
         }
     }
 
@@ -577,10 +581,15 @@ impl DecoderState {
             // Check if resampling is needed
             if hal_sample_rate != target_sample_rate {
                 // Initialize or re-initialize resampler if needed
-                if self.resampler.is_none() || self.last_hal_sample_rate != Some(hal_sample_rate) {
+                let config_changed = self.resampler.is_none()
+                    || self.last_hal_sample_rate != Some(hal_sample_rate)
+                    || self.last_hal_channels != Some(hal_channels);
+
+                if config_changed {
                     log::info!(
-                        "[Decoder Thread] Creating HAL resampler: {}Hz -> {}Hz",
+                        "[Decoder Thread] Creating HAL resampler: {}Hz {}ch -> {}Hz",
                         hal_sample_rate,
+                        hal_channels,
                         target_sample_rate
                     );
                     self.resampler = Some(
@@ -593,6 +602,7 @@ impl DecoderState {
                         .map_err(|e| format!("Failed to create HAL resampler: {}", e))?,
                     );
                     self.last_hal_sample_rate = Some(hal_sample_rate);
+                    self.last_hal_channels = Some(hal_channels);
                     // Clear any previous resampler buffer to avoid glitches
                     self.resample_output_buffer.clear();
                 }

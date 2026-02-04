@@ -617,6 +617,10 @@ impl SharedAudioBuffer {
         let read_pos = header.read_position.load(Ordering::Acquire);
         let channel_count = header.channel_count as usize;
 
+        if channel_count == 0 {
+            return 0;
+        }
+
         ((write_pos - read_pos) as usize) / channel_count
     }
 
