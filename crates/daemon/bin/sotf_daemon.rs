@@ -364,21 +364,9 @@ impl AudioDaemon {
 
                 if hal_rate != 0 && hal_rate != target_rate {
                     log::info!(
-                        "HAL sample rate ({}Hz) differs from target ({}Hz), adding resampler plugin",
+                        "HAL sample rate ({}Hz) differs from target ({}Hz), but DecoderThread handles resampling internally.",
                         hal_rate, target_rate
                     );
-
-                    // Prepend resampler as first plugin
-                    // chunk_size must match engine's frame_size (default 1024)
-                    let resampler_config = PluginConfig {
-                        plugin_type: "resampler".to_string(),
-                        parameters: serde_json::json!({
-                            "input_sample_rate": hal_rate,
-                            "output_sample_rate": target_rate,
-                            "chunk_size": 1024,
-                        }),
-                    };
-                    plugins.insert(0, resampler_config);
                 }
             }
         }
@@ -1004,21 +992,10 @@ fn reconfigure_audio_pipeline(
 
     if hal_sample_rate != 0 && hal_sample_rate != target_rate {
         log::info!(
-            "Adding resampler plugin: {}Hz -> {}Hz",
+            "HAL sample rate ({}Hz) differs from target ({}Hz), DecoderThread will handle resampling.",
             hal_sample_rate,
             target_rate
         );
-        // chunk_size must match engine's frame_size (default 1024)
-        let resampler_config = PluginConfig {
-            plugin_type: "resampler".to_string(),
-            parameters: serde_json::json!({
-                "input_sample_rate": hal_sample_rate,
-                "output_sample_rate": target_rate,
-                "chunk_size": 1024,
-            }),
-        };
-        // Prepend resampler before user plugins
-        plugins.insert(0, resampler_config);
     }
 
     // Find output device

@@ -140,19 +140,21 @@ fn run_playback_thread(
         let find_fallback = || -> Result<Device, String> {
             let devices = host.output_devices().map_err(|e| e.to_string())?;
             // Filter out virtual devices to prevent loops
+            let get_device_name = |d: &Device| -> String {
+                d.description()
+                    .map(|desc| desc.name().to_string())
+                    .unwrap_or_else(|_| "Unknown".to_string())
+            };
             let physical = devices.into_iter().find(|d| {
-                if let Ok(name) = d.name() {
-                    !name.contains("SotF") && 
-                    !name.contains("BlackHole") && 
-                    !name.contains("ZoomAudio") && 
-                    !name.contains("Loopback")
-                } else {
-                    false
-                }
+                let name = get_device_name(d);
+                !name.contains("SotF") &&
+                !name.contains("BlackHole") &&
+                !name.contains("ZoomAudio") &&
+                !name.contains("Loopback")
             });
-            
+
             if let Some(dev) = physical {
-                log::info!("[Playback Thread] Using fallback physical device: {}", dev.name().unwrap_or_default());
+                log::info!("[Playback Thread] Using fallback physical device: {}", get_device_name(&dev));
                 Ok(dev)
             } else {
                 host.default_output_device().ok_or("No default device found".to_string())
@@ -237,17 +239,19 @@ fn run_playback_thread(
         // Use default device
         // CHECK if default device is virtual -> if so, use fallback
         let default_dev = host.default_output_device().ok_or("No output device available")?;
-        let name = default_dev.name().unwrap_or_default();
-        
+        let get_name = |d: &Device| -> String {
+            d.description()
+                .map(|desc| desc.name().to_string())
+                .unwrap_or_else(|_| "Unknown".to_string())
+        };
+        let name = get_name(&default_dev);
+
         if name.contains("SotF") || name.contains("BlackHole") {
-             log::warn!("[Playback Thread] Default device is '{}' (virtual) - finding fallback physical device", name);
-             let devices = host.output_devices().map_err(|e| format!("Failed to list devices: {}", e))?;
-             let physical = devices.into_iter().find(|d| {
-                if let Ok(n) = d.name() {
-                    !n.contains("SotF") && !n.contains("BlackHole") && !n.contains("Loopback")
-                } else {
-                    false
-                }
+            log::warn!("[Playback Thread] Default device is '{}' (virtual) - finding fallback physical device", name);
+            let devices = host.output_devices().map_err(|e| format!("Failed to list devices: {}", e))?;
+            let physical = devices.into_iter().find(|d| {
+                let n = get_name(d);
+                !n.contains("SotF") && !n.contains("BlackHole") && !n.contains("Loopback")
             });
             physical.unwrap_or(default_dev)
         } else {
@@ -285,7 +289,7 @@ fn run_playback_thread(
     let device_name = device
         .description()
         .map(|d| d.name().to_string())
-        .unwrap_or_else(|_| device.name().unwrap_or_else(|_| "Unknown".to_string()));
+        .unwrap_or_else(|_| "Unknown".to_string());
 
     log::info!(
         "[Playback Thread] Started - {}Hz, {} channels, device: '{}'",
