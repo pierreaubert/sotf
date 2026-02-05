@@ -764,4 +764,135 @@ mod tests {
             reduction_db
         );
     }
+
+    #[test]
+    fn test_gate_various_sample_rates() {
+        for &sample_rate in &[22050, 44100, 48000, 96000, 192000] {
+            let mut gate = GatePlugin::new(2, -40.0, 10.0, 1.0, 10.0, 100.0);
+            gate.initialize(sample_rate).unwrap();
+
+            let num_frames = 512;
+            let mut buffer: Vec<f32> = (0..num_frames * 2)
+                .map(|i| {
+                    let t = i as f32 / (sample_rate as f32 * 2.0);
+                    (t * 440.0 * 2.0 * std::f32::consts::PI).sin() * 0.5
+                })
+                .collect();
+
+            let context = ProcessContext {
+                sample_rate,
+                num_frames,
+            };
+
+            gate.process_in_place(&mut buffer, &context).unwrap();
+
+            for s in &buffer {
+                assert!(s.is_finite(), "Non-finite value at sample rate {}", sample_rate);
+            }
+        }
+    }
+
+    #[test]
+    fn test_gate_time_to_coeff() {
+        let coeff = GatePlugin::time_to_coeff(0.0, 48000);
+        assert_eq!(coeff, 0.0);
+
+        let coeff = GatePlugin::time_to_coeff(50.0, 48000);
+        assert!(coeff > 0.0 && coeff < 1.0);
+
+        // Higher sample rate should give different coefficient for same time
+        let coeff_44k = GatePlugin::time_to_coeff(10.0, 44100);
+        let coeff_96k = GatePlugin::time_to_coeff(10.0, 96000);
+        assert!((coeff_44k - coeff_96k).abs() > 0.0001);
+    }
+
+    #[test]
+    fn test_gate_from_params() {
+        let params = GatePluginParams {
+            threshold_db: -30.0,
+            ratio: 20.0,
+            attack_ms: 0.5,
+            hold_ms: 20.0,
+            release_ms: 200.0,
+            mix: 0.8,
+            link_channels: false,
+            sidechain_hpf_hz: 100.0,
+        };
+        let gate = GatePlugin::from_params(2, params);
+        assert_eq!(gate.threshold_db, -30.0);
+        assert_eq!(gate.ratio, 20.0);
+        assert_eq!(gate.mix, 0.8);
+        assert!(!gate.link_channels);
+        assert_eq!(gate.sidechain_hpf_hz, 100.0);
+    }
+
+    #[test]
+    fn test_gate_reset() {
+        let mut gate = GatePlugin::new(2, -40.0, 10.0, 1.0, 10.0, 100.0);
+        gate.initialize(48000).unwrap();
+
+        // Process some data
+        let num_frames = 256;
+        let mut buffer = vec![0.5_f32; num_frames * 2];
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+        gate.process_in_place(&mut buffer, &context).unwrap();
+
+        gate.reset();
+
+        // Envelope should be reset
+        for &env in &gate.envelope {
+            assert_eq!(env, 0.0);
+        }
+        for &hc in &gate.hold_counter {
+            assert_eq!(hc, 0);
+        }
+    }
+
+    #[test]
+    fn test_gate_get_data() {
+        let gate = GatePlugin::new(2, -40.0, 10.0, 1.0, 10.0, 100.0);
+        let data = gate.get_data();
+        assert!(data.is_some());
+        let data = data.unwrap();
+        let gate_data = data.downcast_ref::<GateData>().unwrap();
+        assert_eq!(gate_data.attenuation_db.len(), 2);
+    }
+
+    #[test]
+    fn test_gate_unlinked_channels() {
+        let mut gate = GatePlugin::new(2, -20.0, 100.0, 1.0, 5.0, 50.0);
+        gate.link_channels = false;
+        gate.initialize(48000).unwrap();
+
+        let num_frames = 1024;
+        let mut buffer = vec![0.0_f32; num_frames * 2];
+
+        // Left channel loud, right channel quiet
+        for i in 0..num_frames {
+            let t = i as f32 / 48000.0;
+            buffer[i * 2] = (t * 440.0 * 2.0 * std::f32::consts::PI).sin() * 0.5; // -6dB
+            buffer[i * 2 + 1] = (t * 440.0 * 2.0 * std::f32::consts::PI).sin() * 0.01; // -40dB
+        }
+
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+
+        gate.process_in_place(&mut buffer, &context).unwrap();
+
+        // With unlinked channels, left should be louder than right
+        let left_energy: f32 = (0..num_frames).map(|i| buffer[i * 2] * buffer[i * 2]).sum();
+        let right_energy: f32 = (0..num_frames)
+            .map(|i| buffer[i * 2 + 1] * buffer[i * 2 + 1])
+            .sum();
+
+        assert!(
+            left_energy > right_energy * 10.0,
+            "Left should be much louder than right with unlinked gate"
+        );
+    }
 }

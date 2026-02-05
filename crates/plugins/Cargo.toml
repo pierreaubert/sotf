@@ -89,3 +89,7 @@ harness = false
 [[bench]]
 name = "compressor-benchmark"
 harness = false
+
+[[bench]]
+name = "all-plugins-benchmark"
+harness = false
