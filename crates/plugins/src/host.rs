@@ -7,6 +7,74 @@ use std::any::Any;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 
+// ============================================================================
+// Node Buffer - Simple non-thread-safe buffer for audio data (zero-allocation)
+// ============================================================================
+
+/// Simple audio buffer without synchronization overhead.
+/// Used within `process()` which takes `&mut self` (single-threaded).
+struct NodeBuffer {
+    /// Audio data (interleaved), pre-allocated to max expected size
+    data: Vec<f32>,
+    /// Actual number of samples written (may be less than buffer capacity)
+    actual_len: usize,
+    /// Number of channels
+    num_channels: usize,
+}
+
+impl NodeBuffer {
+    fn new(num_frames: usize, num_channels: usize) -> Self {
+        Self {
+            data: vec![0.0; num_frames * num_channels],
+            actual_len: 0,
+            num_channels,
+        }
+    }
+
+    fn write(&mut self, data: &[f32]) {
+        if self.data.len() < data.len() {
+            self.data.resize(data.len(), 0.0);
+        }
+        self.data[..data.len()].copy_from_slice(data);
+        self.actual_len = data.len();
+    }
+
+    fn read(&self) -> &[f32] {
+        if self.actual_len == 0 {
+            &self.data
+        } else {
+            &self.data[..self.actual_len]
+        }
+    }
+
+    fn clear(&mut self) {
+        self.actual_len = 0;
+    }
+
+    /// Ensure the buffer can hold at least `num_frames * num_channels` samples.
+    fn ensure_capacity(&mut self, num_frames: usize) {
+        let required = num_frames * self.num_channels;
+        if self.data.len() < required {
+            self.data.resize(required, 0.0);
+        }
+    }
+}
+
+/// Pre-allocated processing buffers, extracted from DawHost to avoid borrow conflicts.
+/// Taken out of DawHost via `Option::take()` during `process()`, put back after.
+struct ProcessBuffers {
+    /// Pre-allocated buffer for each node (reused across frames)
+    node_buffers: HashMap<NodeId, NodeBuffer>,
+    /// Pre-allocated scratch input buffer
+    scratch_input: Vec<f32>,
+    /// Pre-allocated scratch output buffer
+    scratch_output: Vec<f32>,
+    /// Pre-allocated merge buffer
+    merge_buffer: Vec<f32>,
+    /// Pre-allocated channel map buffer
+    channel_map_buffer: Vec<f32>,
+}
+
 /// Common trait for plugin hosts
 ///
 /// Plugin hosts manage a collection of audio plugins and route audio through them.
@@ -191,71 +259,7 @@ impl ProcessingStage {
     }
 }
 
-// ============================================================================
-// Audio Buffer - Thread-safe buffer for audio data
-// ============================================================================
-
-/// Thread-safe audio buffer with synchronization
-#[derive(Clone)]
-struct AudioBuffer {
-    /// Audio data (interleaved)
-    data: Arc<Mutex<Vec<f32>>>,
-    /// Actual number of samples written (may be less than buffer capacity)
-    actual_len: Arc<Mutex<usize>>,
-    /// Number of channels
-    num_channels: usize,
-}
-
-impl AudioBuffer {
-    fn new(num_frames: usize, num_channels: usize) -> Self {
-        Self {
-            data: Arc::new(Mutex::new(vec![0.0; num_frames * num_channels])),
-            actual_len: Arc::new(Mutex::new(0)),
-            num_channels,
-        }
-    }
-
-    fn write(&self, data: &[f32]) {
-        let mut buffer = self.data.lock().unwrap();
-        // Resize if needed (shouldn't happen if buffers are pre-allocated correctly)
-        if buffer.len() < data.len() {
-            buffer.resize(data.len(), 0.0);
-        }
-        buffer[..data.len()].copy_from_slice(data);
-        *self.actual_len.lock().unwrap() = data.len();
-    }
-
-    fn read(&self) -> Vec<f32> {
-        let buffer = self.data.lock().unwrap();
-        let actual_len = *self.actual_len.lock().unwrap();
-        if actual_len == 0 {
-            // Return full buffer if nothing written yet
-            buffer.clone()
-        } else {
-            buffer[..actual_len].to_vec()
-        }
-    }
-
-    #[allow(dead_code)]
-    fn mix(&self, data: &[f32]) {
-        let mut buffer = self.data.lock().unwrap();
-        for (dst, &src) in buffer.iter_mut().zip(data.iter()) {
-            *dst += src;
-        }
-    }
-
-    #[allow(dead_code)]
-    fn clear(&self) {
-        let mut buffer = self.data.lock().unwrap();
-        buffer.fill(0.0);
-        *self.actual_len.lock().unwrap() = 0;
-    }
-
-    #[allow(dead_code)]
-    fn size(&self) -> usize {
-        *self.actual_len.lock().unwrap()
-    }
-}
+// (AudioBuffer removed - replaced by NodeBuffer above)
 
 // ============================================================================
 // DAW Host - Main graph structure
@@ -289,6 +293,8 @@ pub struct DawHost {
     initial_input_channels: usize,
     /// Graph has been built
     built: bool,
+    /// Pre-allocated processing buffers (taken during process(), put back after)
+    process_buffers: Option<ProcessBuffers>,
 }
 
 impl DawHost {
@@ -320,6 +326,7 @@ impl DawHost {
             chain_nodes: Vec::new(),
             initial_input_channels: channels,
             built: false,
+            process_buffers: None,
         }
     }
 
@@ -432,6 +439,32 @@ impl DawHost {
             );
         }
 
+        // Pre-allocate processing buffers based on graph topology
+        let max_channels = self
+            .nodes
+            .values()
+            .map(|n| n.output_channels().max(n.input_channels()))
+            .max()
+            .unwrap_or(2);
+        // Use a generous default frame count; will grow if needed
+        let default_buffer_frames = 2048;
+        let node_buffers: HashMap<NodeId, NodeBuffer> = self
+            .nodes
+            .iter()
+            .map(|(&id, node)| {
+                let buf = NodeBuffer::new(default_buffer_frames, node.output_channels());
+                (id, buf)
+            })
+            .collect();
+        let scratch_size = default_buffer_frames * max_channels;
+        self.process_buffers = Some(ProcessBuffers {
+            node_buffers,
+            scratch_input: vec![0.0; scratch_size],
+            scratch_output: vec![0.0; scratch_size],
+            merge_buffer: vec![0.0; scratch_size],
+            channel_map_buffer: vec![0.0; scratch_size],
+        });
+
         self.built = true;
         Ok(())
     }
@@ -482,8 +515,9 @@ impl DawHost {
         // Add to chain
         self.chain_nodes.push(node_id);
 
-        // Mark as not built (needs rebuild)
+        // Mark as not built (needs rebuild, buffers will be re-created)
         self.built = false;
+        self.process_buffers = None;
 
         Ok(())
     }
@@ -528,8 +562,9 @@ impl DawHost {
             .into_inner()
             .unwrap();
 
-        // Mark as not built
+        // Mark as not built (buffers will be re-created)
         self.built = false;
+        self.process_buffers = None;
 
         Ok(plugin)
     }
@@ -687,148 +722,118 @@ impl DawHost {
         let max_output_frames = self.output_frames_for_input(num_frames);
 
         // Use the larger of input or output frames for buffer allocation
-        // This ensures buffers are large enough for plugins that change frame count
         let buffer_frames = num_frames.max(max_output_frames);
 
-        // Allocate buffers for each node with enough space for resampling
-        let node_buffers: HashMap<NodeId, AudioBuffer> = self
-            .nodes
-            .iter()
-            .map(|(&id, node)| {
-                let buffer = AudioBuffer::new(buffer_frames, node.output_channels());
-                (id, buffer)
-            })
-            .collect();
+        // Take pre-allocated buffers (avoids borrow conflicts with &self for graph topology)
+        let mut bufs = self.process_buffers.take().unwrap_or_else(|| {
+            // Fallback: create fresh buffers if somehow missing
+            let max_ch = self.nodes.values().map(|n| n.output_channels().max(n.input_channels())).max().unwrap_or(2);
+            let node_buffers = self.nodes.iter().map(|(&id, node)| {
+                (id, NodeBuffer::new(buffer_frames, node.output_channels()))
+            }).collect();
+            let sz = buffer_frames * max_ch;
+            ProcessBuffers {
+                node_buffers,
+                scratch_input: vec![0.0; sz],
+                scratch_output: vec![0.0; sz],
+                merge_buffer: vec![0.0; sz],
+                channel_map_buffer: vec![0.0; sz],
+            }
+        });
 
-        // Pre-allocate scratch buffers large enough for max output frames
-        let max_channels = self
-            .nodes
-            .values()
-            .map(|n| n.output_channels())
-            .max()
-            .unwrap_or(2);
-        let mut scratch_input = Vec::with_capacity(buffer_frames * max_channels);
-        let mut scratch_output = Vec::with_capacity(buffer_frames * max_channels);
+        // Ensure node buffers are large enough and cleared for this frame
+        for (&id, node) in &self.nodes {
+            let nb = bufs.node_buffers.entry(id).or_insert_with(|| {
+                NodeBuffer::new(buffer_frames, node.output_channels())
+            });
+            nb.ensure_capacity(buffer_frames);
+            nb.clear();
+        }
 
         // Track current frame count through the chain (may change after resamplers)
         let mut current_frames = num_frames;
 
         // Process each stage (sequential for scratch buffer reuse)
-        for stage in &self.stages {
-            for &node_id in &stage.nodes {
-                // Create context with current frame count
+        for stage_idx in 0..self.stages.len() {
+            let stage_nodes: Vec<NodeId> = self.stages[stage_idx].nodes.clone();
+            for &node_id in &stage_nodes {
                 let context = ProcessContext {
                     sample_rate: self.sample_rate,
                     num_frames: current_frames,
                 };
 
-                self.process_node_with_context(
+                Self::process_node_with_buffers(
+                    &self.nodes,
+                    &self.input_nodes,
+                    &self.edges,
                     node_id,
                     input,
-                    &node_buffers,
+                    &mut bufs,
                     &context,
-                    &mut scratch_input,
-                    &mut scratch_output,
                     &mut current_frames,
                 )?;
             }
         }
 
         // Collect output from output nodes
-        self.collect_output(&node_buffers, output, current_frames)?;
+        Self::collect_output_from_buffers(
+            &self.output_nodes,
+            &bufs.node_buffers,
+            output,
+            current_frames,
+        )?;
 
         // Return actual output frames if available (e.g., from resampler),
         // otherwise return input frames
         let actual_output_frames = self.last_output_frames().unwrap_or(num_frames);
+
+        // Put buffers back for reuse next frame
+        self.process_buffers = Some(bufs);
+
         Ok(actual_output_frames)
     }
 
-    /// Process a single node using pre-allocated scratch buffers
-    /// Note: This method is kept for reference but replaced by process_node_with_context
-    #[allow(dead_code)]
-    fn process_node(
-        &self,
+    /// Process a single node using pre-allocated buffers (static method to avoid borrow conflicts).
+    fn process_node_with_buffers(
+        nodes: &HashMap<NodeId, GraphNode>,
+        input_nodes: &[NodeId],
+        edges: &[GraphEdge],
         node_id: NodeId,
         graph_input: &[f32],
-        node_buffers: &HashMap<NodeId, AudioBuffer>,
+        bufs: &mut ProcessBuffers,
         context: &ProcessContext,
-        scratch_input: &mut Vec<f32>,
-        scratch_output: &mut Vec<f32>,
-    ) -> Result<(), String> {
-        let node = self
-            .nodes
-            .get(&node_id)
-            .ok_or_else(|| format!("Node {} not found", node_id))?;
-
-        // Determine input buffer
-        let input_data: &[f32] = if self.input_nodes.contains(&node_id) {
-            // Input node - use graph input directly (no allocation needed)
-            graph_input
-        } else {
-            // Internal node - merge inputs from predecessors
-            let merged = self.merge_inputs(node_id, node_buffers, context.num_frames)?;
-            // Reuse scratch buffer for merged input
-            if scratch_input.len() < merged.len() {
-                scratch_input.resize(merged.len(), 0.0);
-            }
-            scratch_input[..merged.len()].copy_from_slice(&merged);
-            &scratch_input
-        };
-
-        // Allocate output buffer (reuse scratch buffer)
-        let output_channels = node.output_channels();
-        let output_size = context.num_frames * output_channels;
-        if scratch_output.len() < output_size {
-            scratch_output.resize(output_size, 0.0);
-        } else {
-            // Zero out the buffer for this frame
-            scratch_output[..output_size].fill(0.0);
-        }
-
-        // Process (lock the plugin for processing)
-        {
-            let mut plugin = node
-                .plugin
-                .lock()
-                .map_err(|e| format!("Plugin '{}' lock poisoned: {}", node.name, e))?;
-            plugin.process(input_data, &mut scratch_output[..output_size], context)?;
-        }
-
-        // Write to node buffer
-        node_buffers[&node_id].write(&scratch_output[..output_size]);
-
-        Ok(())
-    }
-
-    /// Process a single node with context, updating frame count for plugins that change it
-    fn process_node_with_context(
-        &self,
-        node_id: NodeId,
-        graph_input: &[f32],
-        node_buffers: &HashMap<NodeId, AudioBuffer>,
-        context: &ProcessContext,
-        scratch_input: &mut Vec<f32>,
-        scratch_output: &mut Vec<f32>,
         current_frames: &mut usize,
     ) -> Result<(), String> {
-        let node = self
-            .nodes
+        let node = nodes
             .get(&node_id)
             .ok_or_else(|| format!("Node {} not found", node_id))?;
 
-        // Determine input buffer
-        let input_data: &[f32] = if self.input_nodes.contains(&node_id) {
-            // Input node - use graph input directly (no allocation needed)
-            graph_input
-        } else {
-            // Internal node - merge inputs from predecessors
-            let merged = self.merge_inputs(node_id, node_buffers, context.num_frames)?;
-            // Reuse scratch buffer for merged input
-            if scratch_input.len() < merged.len() {
-                scratch_input.resize(merged.len(), 0.0);
+        // Determine input data
+        let input_len = if input_nodes.contains(&node_id) {
+            // Input node - copy graph input into scratch_input for uniform handling
+            let len = graph_input.len();
+            if bufs.scratch_input.len() < len {
+                bufs.scratch_input.resize(len, 0.0);
             }
-            scratch_input[..merged.len()].copy_from_slice(&merged);
-            &scratch_input[..merged.len()]
+            bufs.scratch_input[..len].copy_from_slice(graph_input);
+            len
+        } else {
+            // Internal node - merge inputs from predecessors into merge_buffer,
+            // then copy to scratch_input
+            let merged_len = Self::merge_inputs_into(
+                nodes,
+                edges,
+                node_id,
+                &bufs.node_buffers,
+                context.num_frames,
+                &mut bufs.merge_buffer,
+                &mut bufs.channel_map_buffer,
+            )?;
+            if bufs.scratch_input.len() < merged_len {
+                bufs.scratch_input.resize(merged_len, 0.0);
+            }
+            bufs.scratch_input[..merged_len].copy_from_slice(&bufs.merge_buffer[..merged_len]);
+            merged_len
         };
 
         // Query the plugin for max output frames (accounts for resamplers)
@@ -840,28 +845,32 @@ impl DawHost {
             plugin.output_frames_for_input(context.num_frames)
         };
 
-        // Allocate output buffer for max possible output frames
+        // Prepare output scratch buffer
         let output_channels = node.output_channels();
         let output_size = max_output_frames * output_channels;
-        if scratch_output.len() < output_size {
-            scratch_output.resize(output_size, 0.0);
+        if bufs.scratch_output.len() < output_size {
+            bufs.scratch_output.resize(output_size, 0.0);
         }
-        // Zero out the buffer
-        scratch_output[..output_size].fill(0.0);
+        bufs.scratch_output[..output_size].fill(0.0);
 
         // Process (lock the plugin for processing)
-        // The process() method returns the actual number of output frames
         let actual_output_frames = {
             let mut plugin = node
                 .plugin
                 .lock()
                 .map_err(|e| format!("Plugin '{}' lock poisoned: {}", node.name, e))?;
-            plugin.process(input_data, &mut scratch_output[..output_size], context)?
+            plugin.process(
+                &bufs.scratch_input[..input_len],
+                &mut bufs.scratch_output[..output_size],
+                context,
+            )?
         };
 
         // Write actual output to node buffer
         let actual_output_size = actual_output_frames * output_channels;
-        node_buffers[&node_id].write(&scratch_output[..actual_output_size]);
+        if let Some(nb) = bufs.node_buffers.get_mut(&node_id) {
+            nb.write(&bufs.scratch_output[..actual_output_size]);
+        }
 
         // Update frame count for subsequent plugins
         *current_frames = actual_output_frames;
@@ -869,134 +878,99 @@ impl DawHost {
         Ok(())
     }
 
-    /// Process a stage in parallel using scoped threads
-    ///
-    /// DEPRECATED: This function is no longer used as scratch buffer reuse
-    /// requires sequential processing. Kept for API compatibility.
-    #[deprecated(
-        since = "0.5.10",
-        note = "Parallel processing disabled for scratch buffer reuse"
-    )]
-    #[allow(dead_code)]
-    fn process_stage_parallel(
-        &self,
-        stage: &ProcessingStage,
-        graph_input: &[f32],
-        node_buffers: &HashMap<NodeId, AudioBuffer>,
-        context: &ProcessContext,
-        _scratch_input: &mut Vec<f32>,
-        _scratch_output: &mut Vec<f32>,
-    ) -> Result<(), String> {
-        let _ = (
-            stage,
-            graph_input,
-            node_buffers,
-            context,
-            _scratch_input,
-            _scratch_output,
-        );
-        // Parallel processing disabled - scratch buffer reuse requires sequential processing
-        Ok(())
-    }
-
-    /// Merge inputs from multiple predecessor nodes
-    ///
-    /// When multiple nodes feed into one node (stream join/merge point),
-    /// this function synchronously waits for all inputs and mixes them together.
-    fn merge_inputs(
-        &self,
+    /// Merge inputs from predecessor nodes into `merge_buffer` (zero-allocation).
+    /// Returns the number of samples written into `merge_buffer`.
+    fn merge_inputs_into(
+        nodes: &HashMap<NodeId, GraphNode>,
+        edges: &[GraphEdge],
         node_id: NodeId,
-        node_buffers: &HashMap<NodeId, AudioBuffer>,
+        node_buffers: &HashMap<NodeId, NodeBuffer>,
         num_frames: usize,
-    ) -> Result<Vec<f32>, String> {
-        let node = &self.nodes[&node_id];
+        merge_buffer: &mut Vec<f32>,
+        channel_map_buffer: &mut Vec<f32>,
+    ) -> Result<usize, String> {
+        let node = &nodes[&node_id];
         let input_channels = node.input_channels();
         let input_size = num_frames * input_channels;
 
-        // Find all incoming edges
-        let incoming_edges: Vec<&GraphEdge> =
-            self.edges.iter().filter(|e| e.to_node == node_id).collect();
-
-        if incoming_edges.is_empty() {
-            return Err(format!("Node {} has no inputs", node_id));
+        // Ensure merge buffer is large enough and zeroed
+        if merge_buffer.len() < input_size {
+            merge_buffer.resize(input_size, 0.0);
         }
+        merge_buffer[..input_size].fill(0.0);
 
-        // Initialize merged buffer with zeros
-        let mut merged = vec![0.0; input_size];
-
-        // Mix all inputs (this is the synchronization point)
-        for edge in incoming_edges {
+        // Find and mix all incoming edges
+        let mut found_input = false;
+        for edge in edges.iter().filter(|e| e.to_node == node_id) {
+            found_input = true;
             let src_buffer = &node_buffers[&edge.from_node];
 
             if let Some(ref channel_map) = edge.channel_map {
-                // Apply channel mapping
-                let mapped_data = self.apply_channel_map(src_buffer, channel_map, num_frames);
+                // Apply channel mapping into channel_map_buffer
+                let src_data = src_buffer.read();
+                let src_channels = src_buffer.num_channels;
+                let dst_channels = channel_map.len();
+                let mapped_size = num_frames * dst_channels;
+                if channel_map_buffer.len() < mapped_size {
+                    channel_map_buffer.resize(mapped_size, 0.0);
+                }
 
-                // Mix into merged buffer
-                for (dst, src) in merged.iter_mut().zip(mapped_data.iter()) {
+                for frame in 0..num_frames {
+                    for (dst_ch, &src_ch) in channel_map.iter().enumerate() {
+                        let src_idx = frame * src_channels + src_ch;
+                        let dst_idx = frame * dst_channels + dst_ch;
+                        channel_map_buffer[dst_idx] = src_data[src_idx];
+                    }
+                }
+
+                // Mix into merge buffer
+                for (dst, &src) in merge_buffer[..input_size]
+                    .iter_mut()
+                    .zip(channel_map_buffer[..mapped_size].iter())
+                {
                     *dst += src;
                 }
             } else {
-                // Direct mix
+                // Direct mix from node buffer (no clone - reads a slice)
                 let src_data = src_buffer.read();
-
-                for (dst, src) in merged.iter_mut().zip(src_data.iter()) {
+                for (dst, &src) in merge_buffer[..input_size]
+                    .iter_mut()
+                    .zip(src_data.iter())
+                {
                     *dst += src;
                 }
             }
         }
 
-        Ok(merged)
-    }
-
-    /// Apply channel mapping to audio data
-    fn apply_channel_map(
-        &self,
-        src_buffer: &AudioBuffer,
-        channel_map: &[usize],
-        num_frames: usize,
-    ) -> Vec<f32> {
-        let src_data = src_buffer.read();
-        let src_channels = src_buffer.num_channels;
-        let dst_channels = channel_map.len();
-        let mut output = vec![0.0; num_frames * dst_channels];
-
-        for frame in 0..num_frames {
-            for (dst_ch, &src_ch) in channel_map.iter().enumerate() {
-                let src_idx = frame * src_channels + src_ch;
-                let dst_idx = frame * dst_channels + dst_ch;
-                output[dst_idx] = src_data[src_idx];
-            }
+        if !found_input {
+            return Err(format!("Node {} has no inputs", node_id));
         }
 
-        output
+        Ok(input_size)
     }
 
-    /// Collect output from output nodes
-    fn collect_output(
-        &self,
-        node_buffers: &HashMap<NodeId, AudioBuffer>,
+    /// Collect output from output nodes (static method, no borrow conflicts).
+    fn collect_output_from_buffers(
+        output_nodes: &[NodeId],
+        node_buffers: &HashMap<NodeId, NodeBuffer>,
         output: &mut [f32],
         _num_frames: usize,
     ) -> Result<(), String> {
-        if self.output_nodes.len() == 1 {
-            // Single output - direct copy
-            let node_id = self.output_nodes[0];
+        if output_nodes.len() == 1 {
+            // Single output - direct copy (slice, no allocation)
+            let node_id = output_nodes[0];
             let buffer = &node_buffers[&node_id];
             let data = buffer.read();
-            // Copy only what fits, handling variable output sizes
             let copy_len = data.len().min(output.len());
             output[..copy_len].copy_from_slice(&data[..copy_len]);
         } else {
             // Multiple outputs - mix them
             output.fill(0.0);
-            for &node_id in &self.output_nodes {
+            for &node_id in output_nodes {
                 let buffer = &node_buffers[&node_id];
                 let data = buffer.read();
-
-                // Mix with proper length handling
                 let mix_len = data.len().min(output.len());
-                for (dst, src) in output[..mix_len].iter_mut().zip(data[..mix_len].iter()) {
+                for (dst, &src) in output[..mix_len].iter_mut().zip(data[..mix_len].iter()) {
                     *dst += src;
                 }
             }

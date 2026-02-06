@@ -28,11 +28,12 @@ pub use app::{
 
 // Re-export additional types for testing
 pub use app::types::{
-    CalibrationData, ChannelMapping, ChannelRecording, ChannelRecordingState, CrossoverType,
-    HeadphoneEqStep, LibraryStats, MeasureState, MeterDisplayMode, PlaybackDeviceConfig,
-    PlotSmoothing, PluginViewMode, RecordingDeviceConfig, RecordingSignalType, RecordingState,
-    RecordingStep, ReplayGainMode, RoomEqAlgorithm, RoomEqMeasurementsFile, RoomEqOptimizerConfig,
-    RoomEqState, RoomEqStep, SpeakerConfiguration,
+    CalibrationData, ChannelMapping, ChannelMeasurement, ChannelRecording, ChannelRecordingState,
+    CrossoverType, HeadphoneEqStep, LibraryStats, MeasureState, MeterDisplayMode, MultiSpeakerMode,
+    PlaybackDeviceConfig, PlotSmoothing, PluginViewMode, RecordingDeviceConfig, RecordingResult,
+    RecordingSignalType, RecordingState, RecordingStep, ReplayGainMode, RoomEqAlgorithm,
+    RoomEqMeasurementsFile, RoomEqOptimizationMode, RoomEqOptimizerConfig, RoomEqSpeakerConfig,
+    RoomEqState, RoomEqStep, SpeakerConfigType, SpeakerConfiguration,
 };
 
 // Re-export config types for testing

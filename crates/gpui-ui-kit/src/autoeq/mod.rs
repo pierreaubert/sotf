@@ -94,6 +94,26 @@ pub const SYSTEM_TYPE_OPTIONS: &[(&str, &str)] = &[
     ("dba", "Double Bass Array"),
 ];
 
+/// Tilt Type options
+pub const TILT_TYPE_OPTIONS: &[(&str, &str)] = &[
+    ("flat", "Flat (None)"),
+    ("harman", "Harman (-0.8 dB/oct)"),
+    ("custom", "Custom Tilt"),
+];
+
+/// Highpass Filter options
+pub const HIGHPASS_TYPE_OPTIONS: &[(&str, &str)] = &[
+    ("lr", "Linkwitz-Riley"),
+    ("bw", "Butterworth"),
+];
+
+/// Multi-Seat Strategy options
+pub const MULTI_SEAT_STRATEGY_OPTIONS: &[(&str, &str)] = &[
+    ("variance", "Minimize Variance"),
+    ("primary", "Primary + Constraints"),
+    ("average", "Average Response"),
+];
+
 /// Algorithm options for optimization
 pub const ALGORITHM_OPTIONS: &[(&str, &str)] = &[
     ("autoeq:de", "Auto DE (Recommended)"),
@@ -220,6 +240,26 @@ impl ParamLimits {
         max: 1.0,
         step: 0.01,
     };
+    pub const TILT_SLOPE: Self = Self {
+        min: -3.0,
+        max: 3.0,
+        step: 0.1,
+    };
+    pub const BASS_SHELF: Self = Self {
+        min: 0.0,
+        max: 12.0,
+        step: 0.5,
+    };
+    pub const SCHROEDER_FREQ: Self = Self {
+        min: 50.0,
+        max: 1000.0,
+        step: 10.0,
+    };
+    pub const DELAY_MS: Self = Self {
+        min: 0.0,
+        max: 100.0,
+        step: 0.1,
+    };
 }
 
 // ============================================================================
@@ -303,6 +343,69 @@ pub struct AutoEqConfig {
     pub target_curve: String,
     /// System type (e.g., "stereo", "multisub")
     pub system_type: String,
+
+    // --- Advanced Room Correction (Scenario B) ---
+
+    /// Enable target tilt
+    pub use_target_tilt: bool,
+    /// Tilt type: flat, harman, custom
+    pub tilt_type: String,
+    /// Tilt slope in dB/octave
+    pub tilt_slope: f64,
+    /// Tilt reference frequency in Hz
+    pub tilt_reference_freq: f64,
+    /// Bass shelf boost in dB
+    pub tilt_bass_shelf_db: f64,
+    /// Bass shelf frequency in Hz
+    pub tilt_bass_shelf_freq: f64,
+
+    /// Enable excursion protection
+    pub use_excursion_protection: bool,
+    /// Auto-detect F3 from measurement
+    pub excursion_auto_detect_f3: bool,
+    /// Manual F3 override in Hz
+    pub excursion_manual_f3: f64,
+    /// HPF filter order (2 or 4)
+    pub excursion_filter_order: usize,
+    /// HPF filter type (lr, bw)
+    pub excursion_filter_type: String,
+    /// HPF margin in octaves
+    pub excursion_margin_octaves: f64,
+
+    /// Enable Schroeder split
+    pub use_schroeder_split: bool,
+    /// Schroeder frequency in Hz
+    pub schroeder_freq: f64,
+    /// Low freq max Q
+    pub schroeder_low_max_q: f64,
+    /// Low freq allow boost
+    pub schroeder_low_allow_boost: bool,
+    /// High freq max Q
+    pub schroeder_high_max_q: f64,
+    /// High freq shelving only
+    pub schroeder_high_shelving_only: bool,
+
+    // --- Advanced System Optimization (Scenario A) ---
+
+    /// Enable phase alignment
+    pub use_phase_alignment: bool,
+    /// Phase alignment min freq
+    pub phase_min_freq: f64,
+    /// Phase alignment max freq
+    pub phase_max_freq: f64,
+    /// Optimize polarity
+    pub phase_optimize_polarity: bool,
+    /// Maximum delay in ms
+    pub phase_max_delay_ms: f64,
+
+    /// Enable multi-seat optimization
+    pub use_multi_seat: bool,
+    /// Multi-seat strategy
+    pub multi_seat_strategy: String,
+    /// Primary seat index
+    pub multi_seat_primary_seat: usize,
+    /// Max deviation in dB
+    pub multi_seat_max_deviation_db: f64,
 }
 
 impl Default for AutoEqConfig {
@@ -339,6 +442,40 @@ impl Default for AutoEqConfig {
             loss_type: "flat".to_string(),
             target_curve: "flat".to_string(),
             system_type: "stereo".to_string(),
+
+            // Scenario B defaults
+            use_target_tilt: false,
+            tilt_type: "flat".to_string(),
+            tilt_slope: -0.8,
+            tilt_reference_freq: 1000.0,
+            tilt_bass_shelf_db: 0.0,
+            tilt_bass_shelf_freq: 200.0,
+
+            use_excursion_protection: false,
+            excursion_auto_detect_f3: true,
+            excursion_manual_f3: 40.0,
+            excursion_filter_order: 4,
+            excursion_filter_type: "lr".to_string(),
+            excursion_margin_octaves: 0.25,
+
+            use_schroeder_split: false,
+            schroeder_freq: 300.0,
+            schroeder_low_max_q: 10.0,
+            schroeder_low_allow_boost: false,
+            schroeder_high_max_q: 1.0,
+            schroeder_high_shelving_only: false,
+
+            // Scenario A defaults
+            use_phase_alignment: false,
+            phase_min_freq: 60.0,
+            phase_max_freq: 100.0,
+            phase_optimize_polarity: true,
+            phase_max_delay_ms: 30.0,
+
+            use_multi_seat: false,
+            multi_seat_strategy: "variance".to_string(),
+            multi_seat_primary_seat: 0,
+            multi_seat_max_deviation_db: 6.0,
         }
     }
 }
@@ -364,6 +501,13 @@ pub struct AutoEqFormUiState {
     pub target_curve_open: bool,
     /// System type dropdown open state
     pub system_type_open: bool,
+
+    /// Tilt type dropdown open state
+    pub tilt_type_open: bool,
+    /// Excursion filter type dropdown open state
+    pub excursion_filter_type_open: bool,
+    /// Multi-seat strategy dropdown open state
+    pub multi_seat_strategy_open: bool,
 }
 
 // ============================================================================
@@ -501,6 +645,42 @@ pub struct AutoEqForm {
     on_target_curve_toggle: Option<ToggleCallback>,
     on_system_type_change: Option<StringCallback>,
     on_system_type_toggle: Option<ToggleCallback>,
+
+    // Advanced callbacks
+    on_use_target_tilt_change: Option<BoolCallback>,
+    on_tilt_type_change: Option<StringCallback>,
+    on_tilt_type_toggle: Option<ToggleCallback>,
+    on_tilt_slope_change: Option<F64Callback>,
+    on_tilt_reference_freq_change: Option<F64Callback>,
+    on_tilt_bass_shelf_db_change: Option<F64Callback>,
+    on_tilt_bass_shelf_freq_change: Option<F64Callback>,
+
+    on_use_excursion_protection_change: Option<BoolCallback>,
+    on_excursion_auto_detect_f3_change: Option<BoolCallback>,
+    on_excursion_manual_f3_change: Option<F64Callback>,
+    on_excursion_filter_order_change: Option<UsizeCallback>,
+    on_excursion_filter_type_change: Option<StringCallback>,
+    on_excursion_filter_type_toggle: Option<ToggleCallback>,
+    on_excursion_margin_octaves_change: Option<F64Callback>,
+
+    on_use_schroeder_split_change: Option<BoolCallback>,
+    on_schroeder_freq_change: Option<F64Callback>,
+    on_schroeder_low_max_q_change: Option<F64Callback>,
+    on_schroeder_low_allow_boost_change: Option<BoolCallback>,
+    on_schroeder_high_max_q_change: Option<F64Callback>,
+    on_schroeder_high_shelving_only_change: Option<BoolCallback>,
+
+    on_use_phase_alignment_change: Option<BoolCallback>,
+    on_phase_min_freq_change: Option<F64Callback>,
+    on_phase_max_freq_change: Option<F64Callback>,
+    on_phase_optimize_polarity_change: Option<BoolCallback>,
+    on_phase_max_delay_ms_change: Option<F64Callback>,
+
+    on_use_multi_seat_change: Option<BoolCallback>,
+    on_multi_seat_strategy_change: Option<StringCallback>,
+    on_multi_seat_strategy_toggle: Option<ToggleCallback>,
+    on_multi_seat_primary_seat_change: Option<UsizeCallback>,
+    on_multi_seat_max_deviation_db_change: Option<F64Callback>,
 }
 
 impl AutoEqForm {
@@ -558,6 +738,36 @@ impl AutoEqForm {
             on_system_type_toggle: None,
             on_psychoacoustic_change: None,
             on_asymmetric_loss_change: None,
+            on_use_target_tilt_change: None,
+            on_tilt_type_change: None,
+            on_tilt_type_toggle: None,
+            on_tilt_slope_change: None,
+            on_tilt_reference_freq_change: None,
+            on_tilt_bass_shelf_db_change: None,
+            on_tilt_bass_shelf_freq_change: None,
+            on_use_excursion_protection_change: None,
+            on_excursion_auto_detect_f3_change: None,
+            on_excursion_manual_f3_change: None,
+            on_excursion_filter_order_change: None,
+            on_excursion_filter_type_change: None,
+            on_excursion_filter_type_toggle: None,
+            on_excursion_margin_octaves_change: None,
+            on_use_schroeder_split_change: None,
+            on_schroeder_freq_change: None,
+            on_schroeder_low_max_q_change: None,
+            on_schroeder_low_allow_boost_change: None,
+            on_schroeder_high_max_q_change: None,
+            on_schroeder_high_shelving_only_change: None,
+            on_use_phase_alignment_change: None,
+            on_phase_min_freq_change: None,
+            on_phase_max_freq_change: None,
+            on_phase_optimize_polarity_change: None,
+            on_phase_max_delay_ms_change: None,
+            on_use_multi_seat_change: None,
+            on_multi_seat_strategy_change: None,
+            on_multi_seat_strategy_toggle: None,
+            on_multi_seat_primary_seat_change: None,
+            on_multi_seat_max_deviation_db_change: None,
         }
     }
 
@@ -993,6 +1203,250 @@ impl AutoEqForm {
         self.on_system_type_toggle = Some(Box::new(handler));
         self
     }
+
+    // Advanced Room Correction (Scenario B) callbacks
+
+    pub fn on_use_target_tilt_change(
+        mut self,
+        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_use_target_tilt_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_tilt_type_change(
+        mut self,
+        handler: impl Fn(&str, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_tilt_type_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_tilt_type_toggle(
+        mut self,
+        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_tilt_type_toggle = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_tilt_slope_change(
+        mut self,
+        handler: impl Fn(f64, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_tilt_slope_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_tilt_reference_freq_change(
+        mut self,
+        handler: impl Fn(f64, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_tilt_reference_freq_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_tilt_bass_shelf_db_change(
+        mut self,
+        handler: impl Fn(f64, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_tilt_bass_shelf_db_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_tilt_bass_shelf_freq_change(
+        mut self,
+        handler: impl Fn(f64, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_tilt_bass_shelf_freq_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_use_excursion_protection_change(
+        mut self,
+        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_use_excursion_protection_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_excursion_auto_detect_f3_change(
+        mut self,
+        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_excursion_auto_detect_f3_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_excursion_manual_f3_change(
+        mut self,
+        handler: impl Fn(f64, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_excursion_manual_f3_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_excursion_filter_order_change(
+        mut self,
+        handler: impl Fn(usize, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_excursion_filter_order_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_excursion_filter_type_change(
+        mut self,
+        handler: impl Fn(&str, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_excursion_filter_type_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_excursion_filter_type_toggle(
+        mut self,
+        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_excursion_filter_type_toggle = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_excursion_margin_octaves_change(
+        mut self,
+        handler: impl Fn(f64, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_excursion_margin_octaves_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_use_schroeder_split_change(
+        mut self,
+        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_use_schroeder_split_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_schroeder_freq_change(
+        mut self,
+        handler: impl Fn(f64, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_schroeder_freq_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_schroeder_low_max_q_change(
+        mut self,
+        handler: impl Fn(f64, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_schroeder_low_max_q_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_schroeder_low_allow_boost_change(
+        mut self,
+        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_schroeder_low_allow_boost_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_schroeder_high_max_q_change(
+        mut self,
+        handler: impl Fn(f64, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_schroeder_high_max_q_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_schroeder_high_shelving_only_change(
+        mut self,
+        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_schroeder_high_shelving_only_change = Some(Box::new(handler));
+        self
+    }
+
+    // Advanced System Optimization (Scenario A) callbacks
+
+    pub fn on_use_phase_alignment_change(
+        mut self,
+        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_use_phase_alignment_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_phase_min_freq_change(
+        mut self,
+        handler: impl Fn(f64, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_phase_min_freq_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_phase_max_freq_change(
+        mut self,
+        handler: impl Fn(f64, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_phase_max_freq_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_phase_optimize_polarity_change(
+        mut self,
+        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_phase_optimize_polarity_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_phase_max_delay_ms_change(
+        mut self,
+        handler: impl Fn(f64, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_phase_max_delay_ms_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_use_multi_seat_change(
+        mut self,
+        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_use_multi_seat_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_multi_seat_strategy_change(
+        mut self,
+        handler: impl Fn(&str, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_multi_seat_strategy_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_multi_seat_strategy_toggle(
+        mut self,
+        handler: impl Fn(bool, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_multi_seat_strategy_toggle = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_multi_seat_primary_seat_change(
+        mut self,
+        handler: impl Fn(usize, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_multi_seat_primary_seat_change = Some(Box::new(handler));
+        self
+    }
+
+    pub fn on_multi_seat_max_deviation_db_change(
+        mut self,
+        handler: impl Fn(f64, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.on_multi_seat_max_deviation_db_change = Some(Box::new(handler));
+        self
+    }
 }
 
 impl RenderOnce for AutoEqForm {
@@ -1054,6 +1508,38 @@ impl RenderOnce for AutoEqForm {
         let on_target_curve_toggle_rc = self.on_target_curve_toggle.map(std::rc::Rc::new);
         let on_system_type_change_rc = self.on_system_type_change.map(std::rc::Rc::new);
         let on_system_type_toggle_rc = self.on_system_type_toggle.map(std::rc::Rc::new);
+
+        // Advanced callbacks Rc
+        let on_use_target_tilt_change_rc = self.on_use_target_tilt_change.map(std::rc::Rc::new);
+        let on_tilt_type_change_rc = self.on_tilt_type_change.map(std::rc::Rc::new);
+        let on_tilt_type_toggle_rc = self.on_tilt_type_toggle.map(std::rc::Rc::new);
+        let on_tilt_slope_change_rc = self.on_tilt_slope_change.map(std::rc::Rc::new);
+        let on_tilt_reference_freq_change_rc = self.on_tilt_reference_freq_change.map(std::rc::Rc::new);
+        let on_tilt_bass_shelf_db_change_rc = self.on_tilt_bass_shelf_db_change.map(std::rc::Rc::new);
+        let on_tilt_bass_shelf_freq_change_rc = self.on_tilt_bass_shelf_freq_change.map(std::rc::Rc::new);
+        let on_use_excursion_protection_change_rc = self.on_use_excursion_protection_change.map(std::rc::Rc::new);
+        let on_excursion_auto_detect_f3_change_rc = self.on_excursion_auto_detect_f3_change.map(std::rc::Rc::new);
+        let on_excursion_manual_f3_change_rc = self.on_excursion_manual_f3_change.map(std::rc::Rc::new);
+        let on_excursion_filter_order_change_rc = self.on_excursion_filter_order_change.map(std::rc::Rc::new);
+        let on_excursion_filter_type_change_rc = self.on_excursion_filter_type_change.map(std::rc::Rc::new);
+        let on_excursion_filter_type_toggle_rc = self.on_excursion_filter_type_toggle.map(std::rc::Rc::new);
+        let on_excursion_margin_octaves_change_rc = self.on_excursion_margin_octaves_change.map(std::rc::Rc::new);
+        let on_use_schroeder_split_change_rc = self.on_use_schroeder_split_change.map(std::rc::Rc::new);
+        let on_schroeder_freq_change_rc = self.on_schroeder_freq_change.map(std::rc::Rc::new);
+        let on_schroeder_low_max_q_change_rc = self.on_schroeder_low_max_q_change.map(std::rc::Rc::new);
+        let on_schroeder_low_allow_boost_change_rc = self.on_schroeder_low_allow_boost_change.map(std::rc::Rc::new);
+        let on_schroeder_high_max_q_change_rc = self.on_schroeder_high_max_q_change.map(std::rc::Rc::new);
+        let on_schroeder_high_shelving_only_change_rc = self.on_schroeder_high_shelving_only_change.map(std::rc::Rc::new);
+        let on_use_phase_alignment_change_rc = self.on_use_phase_alignment_change.map(std::rc::Rc::new);
+        let on_phase_min_freq_change_rc = self.on_phase_min_freq_change.map(std::rc::Rc::new);
+        let on_phase_max_freq_change_rc = self.on_phase_max_freq_change.map(std::rc::Rc::new);
+        let on_phase_optimize_polarity_change_rc = self.on_phase_optimize_polarity_change.map(std::rc::Rc::new);
+        let on_phase_max_delay_ms_change_rc = self.on_phase_max_delay_ms_change.map(std::rc::Rc::new);
+        let on_use_multi_seat_change_rc = self.on_use_multi_seat_change.map(std::rc::Rc::new);
+        let on_multi_seat_strategy_change_rc = self.on_multi_seat_strategy_change.map(std::rc::Rc::new);
+        let on_multi_seat_strategy_toggle_rc = self.on_multi_seat_strategy_toggle.map(std::rc::Rc::new);
+        let on_multi_seat_primary_seat_change_rc = self.on_multi_seat_primary_seat_change.map(std::rc::Rc::new);
+        let on_multi_seat_max_deviation_db_change_rc = self.on_multi_seat_max_deviation_db_change.map(std::rc::Rc::new);
 
         let mut form = VStack::new().spacing(StackSpacing::Lg);
 
@@ -1958,6 +2444,457 @@ impl RenderOnce for AutoEqForm {
             );
 
             form = form.child(Card::new().content(opt_tuning_content));
+        }
+
+        // ========================================
+        // Advanced Room Correction (Scenario B)
+        // ========================================
+        if optimization_type == OptimizationType::Speaker {
+            let mut advanced_b_content = VStack::new().spacing(StackSpacing::Sm);
+
+            // Header
+            advanced_b_content = advanced_b_content.child(
+                VStack::new()
+                    .spacing(StackSpacing::None)
+                    .child(
+                        Text::new("Advanced Room Correction")
+                            .size(TextSize::Sm)
+                            .weight(TextWeight::Semibold)
+                            .color(theme.header_color),
+                    )
+                    .child(
+                        Text::new("Acoustic correction for speakers (Scenario B)")
+                            .size(TextSize::Xs)
+                            .color(theme.description_color),
+                    ),
+            );
+
+            let toggle_theme = ToggleTheme {
+                checked_bg: theme.toggle_checked_bg,
+                unchecked_bg: theme.toggle_unchecked_bg,
+                knob: theme.toggle_knob,
+                knob_on_checked: theme.card_bg,
+                track_border: theme.border,
+                label: theme.label_color,
+                accent: theme.accent,
+                accent_muted: theme.accent,
+                success: theme.accent,
+                border: theme.border,
+                text_on_accent: theme.toggle_knob,
+                text_muted: theme.text_muted,
+                text_primary: theme.header_color,
+                surface_hover: theme.toggle_unchecked_bg,
+                background: theme.card_bg,
+            };
+
+            // --- Target Tilt ---
+            let mut tilt_toggle = Toggle::new("autoeq-tilt-enabled")
+                .size(ToggleSize::Sm)
+                .checked(config.use_target_tilt)
+                .theme(toggle_theme.clone());
+
+            if let Some(ref h) = on_use_target_tilt_change_rc {
+                let h = h.clone();
+                tilt_toggle = tilt_toggle.on_change(move |v, w, cx| h(v, w, cx));
+            }
+
+            advanced_b_content = advanced_b_content.child(
+                HStack::new()
+                    .justify(StackJustify::SpaceBetween)
+                    .child(Text::new("Target Tilt").size(TextSize::Xs).color(theme.label_color))
+                    .child(tilt_toggle)
+            );
+
+            if config.use_target_tilt {
+                let tilt_options: Vec<SelectOption> = TILT_TYPE_OPTIONS
+                    .iter()
+                    .map(|(val, lbl)| SelectOption::new(*val, *lbl))
+                    .collect();
+
+                let mut tilt_select = Select::new("autoeq-tilt-type")
+                    .options(tilt_options)
+                    .selected(&config.tilt_type)
+                    .is_open(ui_state.tilt_type_open)
+                    .theme(theme.select_theme.clone());
+
+                if let Some(ref h) = on_tilt_type_toggle_rc {
+                    let h = h.clone();
+                    tilt_select = tilt_select.on_toggle(move |open, w, cx| h(open, w, cx));
+                }
+
+                if let Some(ref h) = on_tilt_type_change_rc {
+                    let h = h.clone();
+                    tilt_select = tilt_select.on_change(move |val, w, cx| h(val.as_ref(), w, cx));
+                }
+
+                advanced_b_content = advanced_b_content.child(tilt_select);
+
+                if config.tilt_type == "custom" || config.tilt_type == "harman" {
+                    let mut slope_input = NumberInput::new("autoeq-tilt-slope")
+                        .value(config.tilt_slope)
+                        .min(ParamLimits::TILT_SLOPE.min)
+                        .max(ParamLimits::TILT_SLOPE.max)
+                        .step(ParamLimits::TILT_SLOPE.step)
+                        .decimals(1)
+                        .label("Slope (dB/oct)")
+                        .size(NumberInputSize::Sm)
+                        .theme(theme.number_input_theme.clone());
+
+                    if let Some(ref h) = on_tilt_slope_change_rc {
+                        let h = h.clone();
+                        slope_input = slope_input.on_change(move |v, w, cx| h(v, w, cx));
+                    }
+
+                    let mut ref_freq_input = NumberInput::new("autoeq-tilt-ref-freq")
+                        .value(config.tilt_reference_freq)
+                        .min(20.0)
+                        .max(20000.0)
+                        .step(10.0)
+                        .decimals(0)
+                        .label("Ref Freq (Hz)")
+                        .size(NumberInputSize::Sm)
+                        .theme(theme.number_input_theme.clone());
+
+                    if let Some(ref h) = on_tilt_reference_freq_change_rc {
+                        let h = h.clone();
+                        ref_freq_input = ref_freq_input.on_change(move |v, w, cx| h(v, w, cx));
+                    }
+
+                    advanced_b_content = advanced_b_content.child(
+                        HStack::new()
+                            .spacing(StackSpacing::Md)
+                            .child(slope_input)
+                            .child(ref_freq_input)
+                    );
+
+                    let mut shelf_db_input = NumberInput::new("autoeq-tilt-shelf-db")
+                        .value(config.tilt_bass_shelf_db)
+                        .min(ParamLimits::BASS_SHELF.min)
+                        .max(ParamLimits::BASS_SHELF.max)
+                        .step(ParamLimits::BASS_SHELF.step)
+                        .decimals(1)
+                        .label("Bass Boost (dB)")
+                        .size(NumberInputSize::Sm)
+                        .theme(theme.number_input_theme.clone());
+
+                    if let Some(ref h) = on_tilt_bass_shelf_db_change_rc {
+                        let h = h.clone();
+                        shelf_db_input = shelf_db_input.on_change(move |v, w, cx| h(v, w, cx));
+                    }
+
+                    let mut shelf_freq_input = NumberInput::new("autoeq-tilt-shelf-freq")
+                        .value(config.tilt_bass_shelf_freq)
+                        .min(20.0)
+                        .max(1000.0)
+                        .step(10.0)
+                        .decimals(0)
+                        .label("Shelf Freq (Hz)")
+                        .size(NumberInputSize::Sm)
+                        .theme(theme.number_input_theme.clone());
+
+                    if let Some(ref h) = on_tilt_bass_shelf_freq_change_rc {
+                        let h = h.clone();
+                        shelf_freq_input = shelf_freq_input.on_change(move |v, w, cx| h(v, w, cx));
+                    }
+
+                    advanced_b_content = advanced_b_content.child(
+                        HStack::new()
+                            .spacing(StackSpacing::Md)
+                            .child(shelf_db_input)
+                            .child(shelf_freq_input)
+                    );
+                }
+            }
+
+            // --- Excursion Protection ---
+            let mut excursion_toggle = Toggle::new("autoeq-excursion-enabled")
+                .size(ToggleSize::Sm)
+                .checked(config.use_excursion_protection)
+                .theme(toggle_theme.clone());
+
+            if let Some(ref h) = on_use_excursion_protection_change_rc {
+                let h = h.clone();
+                excursion_toggle = excursion_toggle.on_change(move |v, w, cx| h(v, w, cx));
+            }
+
+            advanced_b_content = advanced_b_content.child(
+                HStack::new()
+                    .justify(StackJustify::SpaceBetween)
+                    .child(Text::new("Excursion Protection").size(TextSize::Xs).color(theme.label_color))
+                    .child(excursion_toggle)
+            );
+
+            if config.use_excursion_protection {
+                let mut auto_f3_toggle = Toggle::new("autoeq-excursion-auto-f3")
+                    .size(ToggleSize::Sm)
+                    .checked(config.excursion_auto_detect_f3)
+                    .theme(toggle_theme.clone());
+
+                if let Some(ref h) = on_excursion_auto_detect_f3_change_rc {
+                    let h = h.clone();
+                    auto_f3_toggle = auto_f3_toggle.on_change(move |v, w, cx| h(v, w, cx));
+                }
+
+                advanced_b_content = advanced_b_content.child(
+                    HStack::new()
+                        .justify(StackJustify::SpaceBetween)
+                        .child(Text::new("Auto-detect F3").size(TextSize::Xs).color(theme.label_color))
+                        .child(auto_f3_toggle)
+                );
+
+                if !config.excursion_auto_detect_f3 {
+                    let mut f3_input = NumberInput::new("autoeq-excursion-manual-f3")
+                        .value(config.excursion_manual_f3)
+                        .min(10.0)
+                        .max(500.0)
+                        .step(1.0)
+                        .decimals(0)
+                        .label("Manual F3 (Hz)")
+                        .size(NumberInputSize::Sm)
+                        .theme(theme.number_input_theme.clone());
+
+                    if let Some(ref h) = on_excursion_manual_f3_change_rc {
+                        let h = h.clone();
+                        f3_input = f3_input.on_change(move |v, w, cx| h(v, w, cx));
+                    }
+                    advanced_b_content = advanced_b_content.child(f3_input);
+                }
+
+                let hp_options: Vec<SelectOption> = HIGHPASS_TYPE_OPTIONS
+                    .iter()
+                    .map(|(val, lbl)| SelectOption::new(*val, *lbl))
+                    .collect();
+
+                let mut hp_select = Select::new("autoeq-excursion-hp-type")
+                    .options(hp_options)
+                    .selected(&config.excursion_filter_type)
+                    .is_open(ui_state.excursion_filter_type_open)
+                    .theme(theme.select_theme.clone());
+
+                if let Some(ref h) = on_excursion_filter_type_toggle_rc {
+                    let h = h.clone();
+                    hp_select = hp_select.on_toggle(move |open, w, cx| h(open, w, cx));
+                }
+
+                if let Some(ref h) = on_excursion_filter_type_change_rc {
+                    let h = h.clone();
+                    hp_select = hp_select.on_change(move |val, w, cx| h(val.as_ref(), w, cx));
+                }
+
+                advanced_b_content = advanced_b_content.child(hp_select);
+
+                let mut margin_input = NumberInput::new("autoeq-excursion-margin")
+                    .value(config.excursion_margin_octaves)
+                    .min(0.0)
+                    .max(1.0)
+                    .step(0.05)
+                    .decimals(2)
+                    .label("Safety Margin (oct)")
+                    .size(NumberInputSize::Sm)
+                    .theme(theme.number_input_theme.clone());
+
+                if let Some(ref h) = on_excursion_margin_octaves_change_rc {
+                    let h = h.clone();
+                    margin_input = margin_input.on_change(move |v, w, cx| h(v, w, cx));
+                }
+
+                advanced_b_content = advanced_b_content.child(margin_input);
+            }
+
+            // --- Schroeder Split ---
+            let mut schroeder_toggle = Toggle::new("autoeq-schroeder-enabled")
+                .size(ToggleSize::Sm)
+                .checked(config.use_schroeder_split)
+                .theme(toggle_theme.clone());
+
+            if let Some(ref h) = on_use_schroeder_split_change_rc {
+                let h = h.clone();
+                schroeder_toggle = schroeder_toggle.on_change(move |v, w, cx| h(v, w, cx));
+            }
+
+            advanced_b_content = advanced_b_content.child(
+                HStack::new()
+                    .justify(StackJustify::SpaceBetween)
+                    .child(Text::new("Schroeder Split").size(TextSize::Xs).color(theme.label_color))
+                    .child(schroeder_toggle)
+            );
+
+            if config.use_schroeder_split {
+                let mut s_freq_input = NumberInput::new("autoeq-schroeder-freq")
+                    .value(config.schroeder_freq)
+                    .min(ParamLimits::SCHROEDER_FREQ.min)
+                    .max(ParamLimits::SCHROEDER_FREQ.max)
+                    .step(ParamLimits::SCHROEDER_FREQ.step)
+                    .decimals(0)
+                    .label("Split Freq (Hz)")
+                    .size(NumberInputSize::Sm)
+                    .theme(theme.number_input_theme.clone());
+
+                if let Some(ref h) = on_schroeder_freq_change_rc {
+                    let h = h.clone();
+                    s_freq_input = s_freq_input.on_change(move |v, w, cx| h(v, w, cx));
+                }
+
+                advanced_b_content = advanced_b_content.child(s_freq_input);
+
+                let mut low_q_input = NumberInput::new("autoeq-schroeder-low-q")
+                    .value(config.schroeder_low_max_q)
+                    .min(1.0)
+                    .max(20.0)
+                    .step(0.5)
+                    .decimals(1)
+                    .label("LF Max Q")
+                    .size(NumberInputSize::Sm)
+                    .theme(theme.number_input_theme.clone());
+
+                if let Some(ref h) = on_schroeder_low_max_q_change_rc {
+                    let h = h.clone();
+                    low_q_input = low_q_input.on_change(move |v, w, cx| h(v, w, cx));
+                }
+
+                let mut high_q_input = NumberInput::new("autoeq-schroeder-high-q")
+                    .value(config.schroeder_high_max_q)
+                    .min(0.5)
+                    .max(5.0)
+                    .step(0.1)
+                    .decimals(1)
+                    .label("HF Max Q")
+                    .size(NumberInputSize::Sm)
+                    .theme(theme.number_input_theme.clone());
+
+                if let Some(ref h) = on_schroeder_high_max_q_change_rc {
+                    let h = h.clone();
+                    high_q_input = high_q_input.on_change(move |v, w, cx| h(v, w, cx));
+                }
+
+                advanced_b_content = advanced_b_content.child(
+                    HStack::new()
+                        .spacing(StackSpacing::Md)
+                        .child(low_q_input)
+                        .child(high_q_input)
+                );
+            }
+
+            form = form.child(Card::new().content(advanced_b_content));
+
+            // ========================================
+            // Advanced System Optimization (Scenario A)
+            // ========================================
+            let mut advanced_a_content = VStack::new().spacing(StackSpacing::Sm);
+
+            // Header
+            advanced_a_content = advanced_a_content.child(
+                VStack::new()
+                    .spacing(StackSpacing::None)
+                    .child(
+                        Text::new("Advanced System Optimization")
+                            .size(TextSize::Sm)
+                            .weight(TextWeight::Semibold)
+                            .color(theme.header_color),
+                    )
+                    .child(
+                        Text::new("Multi-speaker and subwoofer alignment (Scenario A)")
+                            .size(TextSize::Xs)
+                            .color(theme.description_color),
+                    ),
+            );
+
+            // --- Phase Alignment ---
+            let mut phase_toggle = Toggle::new("autoeq-phase-enabled")
+                .size(ToggleSize::Sm)
+                .checked(config.use_phase_alignment)
+                .theme(toggle_theme.clone());
+
+            if let Some(ref h) = on_use_phase_alignment_change_rc {
+                let h = h.clone();
+                phase_toggle = phase_toggle.on_change(move |v, w, cx| h(v, w, cx));
+            }
+
+            advanced_a_content = advanced_a_content.child(
+                HStack::new()
+                    .justify(StackJustify::SpaceBetween)
+                    .child(Text::new("Phase Alignment").size(TextSize::Xs).color(theme.label_color))
+                    .child(phase_toggle)
+            );
+
+            if config.use_phase_alignment {
+                let mut p_max_delay = NumberInput::new("autoeq-phase-max-delay")
+                    .value(config.phase_max_delay_ms)
+                    .min(ParamLimits::DELAY_MS.min)
+                    .max(ParamLimits::DELAY_MS.max)
+                    .step(ParamLimits::DELAY_MS.step)
+                    .decimals(1)
+                    .label("Max Delay (ms)")
+                    .size(NumberInputSize::Sm)
+                    .theme(theme.number_input_theme.clone());
+
+                if let Some(ref h) = on_phase_max_delay_ms_change_rc {
+                    let h = h.clone();
+                    p_max_delay = p_max_delay.on_change(move |v, w, cx| h(v, w, cx));
+                }
+                advanced_a_content = advanced_a_content.child(p_max_delay);
+            }
+
+            // --- Multi-Seat ---
+            let mut multi_seat_toggle = Toggle::new("autoeq-multi-seat-enabled")
+                .size(ToggleSize::Sm)
+                .checked(config.use_multi_seat)
+                .theme(toggle_theme.clone());
+
+            if let Some(ref h) = on_use_multi_seat_change_rc {
+                let h = h.clone();
+                multi_seat_toggle = multi_seat_toggle.on_change(move |v, w, cx| h(v, w, cx));
+            }
+
+            advanced_a_content = advanced_a_content.child(
+                HStack::new()
+                    .justify(StackJustify::SpaceBetween)
+                    .child(Text::new("Multi-Seat Optimization").size(TextSize::Xs).color(theme.label_color))
+                    .child(multi_seat_toggle)
+            );
+
+            if config.use_multi_seat {
+                let strategy_options: Vec<SelectOption> = MULTI_SEAT_STRATEGY_OPTIONS
+                    .iter()
+                    .map(|(val, lbl)| SelectOption::new(*val, *lbl))
+                    .collect();
+
+                let mut strategy_select = Select::new("autoeq-multi-seat-strategy")
+                    .options(strategy_options)
+                    .selected(&config.multi_seat_strategy)
+                    .is_open(ui_state.multi_seat_strategy_open)
+                    .theme(theme.select_theme.clone());
+
+                if let Some(ref h) = on_multi_seat_strategy_toggle_rc {
+                    let h = h.clone();
+                    strategy_select = strategy_select.on_toggle(move |open, w, cx| h(open, w, cx));
+                }
+
+                if let Some(ref h) = on_multi_seat_strategy_change_rc {
+                    let h = h.clone();
+                    strategy_select = strategy_select.on_change(move |val, w, cx| h(val.as_ref(), w, cx));
+                }
+
+                advanced_a_content = advanced_a_content.child(strategy_select);
+
+                let mut dev_input = NumberInput::new("autoeq-multi-seat-max-dev")
+                    .value(config.multi_seat_max_deviation_db)
+                    .min(1.0)
+                    .max(12.0)
+                    .step(0.5)
+                    .decimals(1)
+                    .label("Max Deviation (dB)")
+                    .size(NumberInputSize::Sm)
+                    .theme(theme.number_input_theme);
+
+                if let Some(ref h) = on_multi_seat_max_deviation_db_change_rc {
+                    let h = h.clone();
+                    dev_input = dev_input.on_change(move |v, w, cx| h(v, w, cx));
+                }
+                advanced_a_content = advanced_a_content.child(dev_input);
+            }
+
+            form = form.child(Card::new().content(advanced_a_content));
         }
 
         div().id(id).child(form)

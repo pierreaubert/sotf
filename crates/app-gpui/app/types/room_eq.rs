@@ -5,6 +5,15 @@
 use serde::{Deserialize, Serialize};
 
 use super::recording::{RecordingResult, RecordingState};
+use autoeq::roomeq::{
+    CrossoverConfig as BackendCrossoverConfig, ExcursionProtectionConfig as BackendExcursionProtectionConfig,
+    FirConfig as BackendFirConfig, HighFreqFilterConfig, HighpassType, LowFreqFilterConfig,
+    MeasurementSource, MultiSeatConfig as BackendMultiSeatConfig, MultiSeatStrategy,
+    OptimizerConfig as BackendOptimizerConfig, PhaseAlignmentConfig as BackendPhaseAlignmentConfig,
+    RoomConfig, SchroederSplitConfig as BackendSchroederSplitConfig, SpeakerConfig,
+    SpeakerGroup, TargetTiltConfig as BackendTargetTiltConfig, TiltType,
+};
+use std::collections::HashMap;
 
 /// Wrapper for InteractiveChartState that implements Debug
 #[derive(Clone)]
@@ -565,6 +574,120 @@ impl Default for RoomEqFirConfig {
     }
 }
 
+/// Target curve tilt configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TargetTiltConfig {
+    pub enabled: bool,
+    pub tilt_type: String, // "flat", "harman", "custom"
+    pub slope: f64,
+    pub reference_freq: f64,
+    pub bass_shelf_db: f64,
+    pub bass_shelf_freq: f64,
+}
+
+impl Default for TargetTiltConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            tilt_type: "flat".to_string(),
+            slope: -0.8,
+            reference_freq: 1000.0,
+            bass_shelf_db: 0.0,
+            bass_shelf_freq: 200.0,
+        }
+    }
+}
+
+/// Excursion protection configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExcursionProtectionConfig {
+    pub enabled: bool,
+    pub auto_detect_f3: bool,
+    pub manual_f3_hz: f64,
+    pub filter_order: usize,
+    pub filter_type: String, // "lr", "bw"
+    pub margin_octaves: f64,
+}
+
+impl Default for ExcursionProtectionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            auto_detect_f3: true,
+            manual_f3_hz: 40.0,
+            filter_order: 4,
+            filter_type: "lr".to_string(),
+            margin_octaves: 0.25,
+        }
+    }
+}
+
+/// Schroeder split configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SchroederSplitConfig {
+    pub enabled: bool,
+    pub schroeder_freq: f64,
+    pub low_freq_max_q: f64,
+    pub low_freq_allow_boost: bool,
+    pub high_freq_max_q: f64,
+    pub high_freq_shelving_only: bool,
+}
+
+impl Default for SchroederSplitConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            schroeder_freq: 300.0,
+            low_freq_max_q: 10.0,
+            low_freq_allow_boost: false,
+            high_freq_max_q: 1.0,
+            high_freq_shelving_only: false,
+        }
+    }
+}
+
+/// Phase alignment configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PhaseAlignmentConfig {
+    pub enabled: bool,
+    pub min_freq: f64,
+    pub max_freq: f64,
+    pub optimize_polarity: bool,
+    pub max_delay_ms: f64,
+}
+
+impl Default for PhaseAlignmentConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            min_freq: 60.0,
+            max_freq: 100.0,
+            optimize_polarity: true,
+            max_delay_ms: 30.0,
+        }
+    }
+}
+
+/// Multi-seat configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MultiSeatConfig {
+    pub enabled: bool,
+    pub strategy: String, // "variance", "primary", "average"
+    pub primary_seat: usize,
+    pub max_deviation_db: f64,
+}
+
+impl Default for MultiSeatConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            strategy: "variance".to_string(),
+            primary_seat: 0,
+            max_deviation_db: 6.0,
+        }
+    }
+}
+
 /// Optimizer configuration for Room EQ
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoomEqOptimizerConfig {
@@ -632,6 +755,20 @@ pub struct RoomEqOptimizerConfig {
     pub target_curve: String,
     /// System type (e.g., "stereo", "multichannel")
     pub system_type: String,
+
+    // --- Advanced Room Correction (Scenario B) ---
+    #[serde(default)]
+    pub target_tilt: TargetTiltConfig,
+    #[serde(default)]
+    pub excursion_protection: ExcursionProtectionConfig,
+    #[serde(default)]
+    pub schroeder_split: SchroederSplitConfig,
+
+    // --- Advanced System Optimization (Scenario A) ---
+    #[serde(default)]
+    pub phase_alignment: PhaseAlignmentConfig,
+    #[serde(default)]
+    pub multi_seat: MultiSeatConfig,
 }
 
 impl Default for RoomEqOptimizerConfig {
@@ -668,6 +805,11 @@ impl Default for RoomEqOptimizerConfig {
             asymmetric_loss: true,
             target_curve: "flat".to_string(),
             system_type: "stereo".to_string(),
+            target_tilt: TargetTiltConfig::default(),
+            excursion_protection: ExcursionProtectionConfig::default(),
+            schroeder_split: SchroederSplitConfig::default(),
+            phase_alignment: PhaseAlignmentConfig::default(),
+            multi_seat: MultiSeatConfig::default(),
         }
     }
 }
@@ -972,6 +1114,12 @@ pub struct RoomEqDropdowns {
     pub target_curve_open: bool,
     /// System type dropdown
     pub system_type_open: bool,
+
+    // Advanced dropdowns
+    pub tilt_type_open: bool,
+    pub excursion_filter_type_open: bool,
+    pub multi_seat_strategy_open: bool,
+
     /// Review step smoothing dropdown
     pub review_smoothing_open: bool,
     /// AutoEQ form editing state
@@ -1187,5 +1335,211 @@ impl RoomEqState {
                 .sum::<f64>()
                 / self.channel_results.len() as f64
         }
+    }
+
+    /// Convert UI state to backend RoomConfig
+    pub fn to_room_config(&self) -> RoomConfig {
+        let mut speakers: HashMap<String, SpeakerConfig> = HashMap::new();
+        let mut crossovers: HashMap<String, BackendCrossoverConfig> = HashMap::new();
+
+        // Helper to convert measurement to curve
+        let to_curve = |meas: &ChannelMeasurement| -> autoeq::Curve {
+            let frequencies: Vec<f64> = meas.measurement.frequencies.iter().map(|&f| f as f64).collect();
+            let magnitude_db: Vec<f64> = meas.measurement.magnitude_db.iter().map(|&db| db as f64).collect();
+
+            autoeq::Curve {
+                freq: ndarray::Array1::from_vec(frequencies),
+                spl: ndarray::Array1::from_vec(magnitude_db),
+                phase: None,
+            }
+        };
+
+        // Helper to convert recording result to curve
+        let result_to_curve = |res: &RecordingResult| -> autoeq::Curve {
+            let frequencies: Vec<f64> = res.frequencies.iter().map(|&f| f as f64).collect();
+            let magnitude_db: Vec<f64> = res.magnitude_db.iter().map(|&db| db as f64).collect();
+
+            autoeq::Curve {
+                freq: ndarray::Array1::from_vec(frequencies),
+                spl: ndarray::Array1::from_vec(magnitude_db),
+                phase: None,
+            }
+        };
+
+        // Iterate over configured speakers
+        for speaker_config in &self.speaker_configs {
+            let channel_name = &speaker_config.channel_name;
+            
+            // Find corresponding measurement
+            if let Some(meas) = self.channel_measurements.iter().find(|m| &m.channel_name == channel_name) {
+                match speaker_config.config_type {
+                    SpeakerConfigType::Single => {
+                        let curve = to_curve(meas);
+                        speakers.insert(
+                            channel_name.clone(),
+                            SpeakerConfig::Single(MeasurementSource::InMemory(curve)),
+                        );
+                    }
+                    SpeakerConfigType::MultiDriver => {
+                        let mut driver_measurements = Vec::new();
+                        if meas.is_group && !meas.group_drivers.is_empty() {
+                            for driver_res in &meas.group_drivers {
+                                driver_measurements.push(MeasurementSource::InMemory(result_to_curve(driver_res)));
+                            }
+                        } else {
+                            driver_measurements.push(MeasurementSource::InMemory(to_curve(meas)));
+                        }
+
+                        let xover_id = format!("xover_{}", channel_name);
+                        let xover_type = match speaker_config.crossover_type {
+                            CrossoverType::LR12 => "LR12",
+                            CrossoverType::LR24 => "LR24",
+                            CrossoverType::LR48 => "LR48",
+                            CrossoverType::Butterworth12 => "Butterworth12",
+                            CrossoverType::Butterworth24 => "Butterworth24",
+                        };
+
+                        crossovers.insert(xover_id.clone(), BackendCrossoverConfig {
+                            crossover_type: xover_type.to_string(),
+                            frequency: None,
+                            frequencies: None,
+                            frequency_range: None,
+                        });
+
+                        speakers.insert(
+                            channel_name.clone(),
+                            SpeakerConfig::Group(SpeakerGroup {
+                                name: channel_name.clone(),
+                                measurements: driver_measurements,
+                                crossover: Some(xover_id),
+                            }),
+                        );
+                    }
+                }
+            }
+        }
+
+        let algorithm = self.optimizer_config.algorithm.to_autoeq_string().to_string();
+
+        let optimizer = BackendOptimizerConfig {
+            loss_type: self.optimizer_config.loss_type.clone(),
+            algorithm,
+            num_filters: self.optimizer_config.num_filters,
+            min_q: self.optimizer_config.min_q,
+            max_q: self.optimizer_config.max_q,
+            min_db: self.optimizer_config.min_db,
+            max_db: self.optimizer_config.max_db,
+            min_freq: self.optimizer_config.min_freq,
+            max_freq: self.optimizer_config.max_freq,
+            max_iter: self.optimizer_config.max_iter,
+            population: self.optimizer_config.population,
+            peq_model: self.optimizer_config.peq_model.clone(),
+            mode: self.optimizer_config.mode.to_code().to_string(),
+            fir: Some(BackendFirConfig {
+                taps: self.optimizer_config.fir.taps,
+                phase: self.optimizer_config.fir.phase.clone(),
+                correct_excess_phase: false,
+                phase_smoothing: 0.167,
+            }),
+            seed: None,
+            mixed_config: None,
+            refine: self.optimizer_config.refine,
+            local_algo: self.optimizer_config.local_algo.clone(),
+            psychoacoustic: self.optimizer_config.psychoacoustic,
+            asymmetric_loss: self.optimizer_config.asymmetric_loss,
+            target_tilt: if self.optimizer_config.target_tilt.enabled {
+                let tilt_type = match self.optimizer_config.target_tilt.tilt_type.as_str() {
+                    "harman" => TiltType::Harman,
+                    "custom" => TiltType::Custom,
+                    _ => TiltType::Flat,
+                };
+                Some(BackendTargetTiltConfig {
+                    tilt_type,
+                    slope_db_per_octave: self.optimizer_config.target_tilt.slope,
+                    reference_freq: self.optimizer_config.target_tilt.reference_freq,
+                    bass_shelf_db: self.optimizer_config.target_tilt.bass_shelf_db,
+                    bass_shelf_freq: self.optimizer_config.target_tilt.bass_shelf_freq,
+                })
+            } else {
+                None
+            },
+            excursion_protection: if self.optimizer_config.excursion_protection.enabled {
+                let filter_type = if self.optimizer_config.excursion_protection.filter_type == "bw" {
+                    HighpassType::Butterworth
+                } else {
+                    HighpassType::LinkwitzRiley
+                };
+                Some(BackendExcursionProtectionConfig {
+                    enabled: true,
+                    auto_detect_f3: self.optimizer_config.excursion_protection.auto_detect_f3,
+                    manual_f3_hz: Some(self.optimizer_config.excursion_protection.manual_f3_hz),
+                    filter_order: self.optimizer_config.excursion_protection.filter_order,
+                    filter_type,
+                    margin_octaves: self.optimizer_config.excursion_protection.margin_octaves,
+                })
+            } else {
+                None
+            },
+            schroeder_split: if self.optimizer_config.schroeder_split.enabled {
+                Some(BackendSchroederSplitConfig {
+                    enabled: true,
+                    schroeder_freq: self.optimizer_config.schroeder_split.schroeder_freq,
+                    room_dimensions: None,
+                    low_freq_config: LowFreqFilterConfig {
+                        max_q: self.optimizer_config.schroeder_split.low_freq_max_q,
+                        min_q: 0.5,
+                        allow_boost: self.optimizer_config.schroeder_split.low_freq_allow_boost,
+                    },
+                    high_freq_config: HighFreqFilterConfig {
+                        max_q: self.optimizer_config.schroeder_split.high_freq_max_q,
+                        shelving_only: self.optimizer_config.schroeder_split.high_freq_shelving_only,
+                    },
+                })
+            } else {
+                None
+            },
+            phase_alignment: if self.optimizer_config.phase_alignment.enabled {
+                Some(BackendPhaseAlignmentConfig {
+                    enabled: true,
+                    min_freq: self.optimizer_config.phase_alignment.min_freq,
+                    max_freq: self.optimizer_config.phase_alignment.max_freq,
+                    optimize_polarity: self.optimizer_config.phase_alignment.optimize_polarity,
+                    max_delay_ms: self.optimizer_config.phase_alignment.max_delay_ms,
+                })
+            } else {
+                None
+            },
+            multi_seat: if self.optimizer_config.multi_seat.enabled {
+                let strategy = match self.optimizer_config.multi_seat.strategy.as_str() {
+                    "primary" => MultiSeatStrategy::PrimaryWithConstraints,
+                    "average" => MultiSeatStrategy::Average,
+                    _ => MultiSeatStrategy::MinimizeVariance,
+                };
+                Some(BackendMultiSeatConfig {
+                    enabled: true,
+                    strategy,
+                    primary_seat: self.optimizer_config.multi_seat.primary_seat,
+                    max_deviation_db: self.optimizer_config.multi_seat.max_deviation_db,
+                })
+            } else {
+                None
+            },
+        };
+
+        RoomConfig {
+            version: autoeq::roomeq::default_config_version(),
+            speakers,
+            crossovers: Some(crossovers),
+            target_curve: None,
+            group_delay: None,
+            optimizer,
+            recording_config: None,
+        }
+    }
+
+    /// Validate the current configuration
+    pub fn validate(&self) -> autoeq::roomeq::ValidationResult {
+        let config = self.to_room_config();
+        autoeq::roomeq::validate_room_config(&config)
     }
 }

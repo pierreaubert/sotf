@@ -54,6 +54,40 @@ impl PlayerView {
             loss_type: config.loss_type.clone(),
             target_curve: config.target_curve.clone(),
             system_type: config.system_type.clone(),
+
+            // Scenario B
+            use_target_tilt: config.target_tilt.enabled,
+            tilt_type: config.target_tilt.tilt_type.clone(),
+            tilt_slope: config.target_tilt.slope,
+            tilt_reference_freq: config.target_tilt.reference_freq,
+            tilt_bass_shelf_db: config.target_tilt.bass_shelf_db,
+            tilt_bass_shelf_freq: config.target_tilt.bass_shelf_freq,
+
+            use_excursion_protection: config.excursion_protection.enabled,
+            excursion_auto_detect_f3: config.excursion_protection.auto_detect_f3,
+            excursion_manual_f3: config.excursion_protection.manual_f3_hz,
+            excursion_filter_order: config.excursion_protection.filter_order,
+            excursion_filter_type: config.excursion_protection.filter_type.clone(),
+            excursion_margin_octaves: config.excursion_protection.margin_octaves,
+
+            use_schroeder_split: config.schroeder_split.enabled,
+            schroeder_freq: config.schroeder_split.schroeder_freq,
+            schroeder_low_max_q: config.schroeder_split.low_freq_max_q,
+            schroeder_low_allow_boost: config.schroeder_split.low_freq_allow_boost,
+            schroeder_high_max_q: config.schroeder_split.high_freq_max_q,
+            schroeder_high_shelving_only: config.schroeder_split.high_freq_shelving_only,
+
+            // Scenario A
+            use_phase_alignment: config.phase_alignment.enabled,
+            phase_min_freq: config.phase_alignment.min_freq,
+            phase_max_freq: config.phase_alignment.max_freq,
+            phase_optimize_polarity: config.phase_alignment.optimize_polarity,
+            phase_max_delay_ms: config.phase_alignment.max_delay_ms,
+
+            use_multi_seat: config.multi_seat.enabled,
+            multi_seat_strategy: config.multi_seat.strategy.clone(),
+            multi_seat_primary_seat: config.multi_seat.primary_seat,
+            multi_seat_max_deviation_db: config.multi_seat.max_deviation_db,
         };
 
         // Build AutoEqFormUiState from our dropdowns
@@ -67,6 +101,9 @@ impl PlayerView {
             loss_type_open: room_eq.dropdowns.loss_type_open,
             target_curve_open: room_eq.dropdowns.target_curve_open,
             system_type_open: room_eq.dropdowns.system_type_open,
+            tilt_type_open: room_eq.dropdowns.tilt_type_open,
+            excursion_filter_type_open: room_eq.dropdowns.excursion_filter_type_open,
+            multi_seat_strategy_open: room_eq.dropdowns.multi_seat_strategy_open,
         };
 
         // Build the AutoEQ form with handlers
@@ -673,6 +710,257 @@ impl PlayerView {
                         cx.notify();
                     });
                 }
+            })
+            // Target Tilt
+            .on_use_target_tilt_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.measurement_state.room_eq_state.optimizer_config.target_tilt.enabled = v;
+                    });
+                }
+            })
+            .on_tilt_type_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.measurement_state.room_eq_state.optimizer_config.target_tilt.tilt_type = v.to_string();
+                        state.app.measurement_state.room_eq_state.dropdowns.tilt_type_open = false;
+                    });
+                }
+            })
+            .on_tilt_type_toggle({
+                let state = self.state.clone();
+                move |open, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state.app.measurement_state.room_eq_state.dropdowns.tilt_type_open = open;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_tilt_slope_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.measurement_state.room_eq_state.optimizer_config.target_tilt.slope = v;
+                    });
+                }
+            })
+            .on_tilt_reference_freq_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.measurement_state.room_eq_state.optimizer_config.target_tilt.reference_freq = v;
+                    });
+                }
+            })
+            .on_tilt_bass_shelf_db_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.measurement_state.room_eq_state.optimizer_config.target_tilt.bass_shelf_db = v;
+                    });
+                }
+            })
+            .on_tilt_bass_shelf_freq_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.measurement_state.room_eq_state.optimizer_config.target_tilt.bass_shelf_freq = v;
+                    });
+                }
+            })
+            // Excursion Protection
+            .on_use_excursion_protection_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.measurement_state.room_eq_state.optimizer_config.excursion_protection.enabled = v;
+                    });
+                }
+            })
+            .on_excursion_auto_detect_f3_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.measurement_state.room_eq_state.optimizer_config.excursion_protection.auto_detect_f3 = v;
+                    });
+                }
+            })
+            .on_excursion_manual_f3_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.measurement_state.room_eq_state.optimizer_config.excursion_protection.manual_f3_hz = v;
+                    });
+                }
+            })
+            .on_excursion_filter_order_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.measurement_state.room_eq_state.optimizer_config.excursion_protection.filter_order = v;
+                    });
+                }
+            })
+            .on_excursion_filter_type_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.measurement_state.room_eq_state.optimizer_config.excursion_protection.filter_type = v.to_string();
+                        state.app.measurement_state.room_eq_state.dropdowns.excursion_filter_type_open = false;
+                    });
+                }
+            })
+            .on_excursion_filter_type_toggle({
+                let state = self.state.clone();
+                move |open, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state.app.measurement_state.room_eq_state.dropdowns.excursion_filter_type_open = open;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_excursion_margin_octaves_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.measurement_state.room_eq_state.optimizer_config.excursion_protection.margin_octaves = v;
+                    });
+                }
+            })
+            // Schroeder Split
+            .on_use_schroeder_split_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.measurement_state.room_eq_state.optimizer_config.schroeder_split.enabled = v;
+                    });
+                }
+            })
+            .on_schroeder_freq_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.measurement_state.room_eq_state.optimizer_config.schroeder_split.schroeder_freq = v;
+                    });
+                }
+            })
+            .on_schroeder_low_max_q_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.measurement_state.room_eq_state.optimizer_config.schroeder_split.low_freq_max_q = v;
+                    });
+                }
+            })
+            .on_schroeder_low_allow_boost_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.measurement_state.room_eq_state.optimizer_config.schroeder_split.low_freq_allow_boost = v;
+                    });
+                }
+            })
+            .on_schroeder_high_max_q_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.measurement_state.room_eq_state.optimizer_config.schroeder_split.high_freq_max_q = v;
+                    });
+                }
+            })
+            .on_schroeder_high_shelving_only_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.measurement_state.room_eq_state.optimizer_config.schroeder_split.high_freq_shelving_only = v;
+                    });
+                }
+            })
+            // Phase Alignment
+            .on_use_phase_alignment_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.measurement_state.room_eq_state.optimizer_config.phase_alignment.enabled = v;
+                    });
+                }
+            })
+            .on_phase_min_freq_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.measurement_state.room_eq_state.optimizer_config.phase_alignment.min_freq = v;
+                    });
+                }
+            })
+            .on_phase_max_freq_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.measurement_state.room_eq_state.optimizer_config.phase_alignment.max_freq = v;
+                    });
+                }
+            })
+            .on_phase_optimize_polarity_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.measurement_state.room_eq_state.optimizer_config.phase_alignment.optimize_polarity = v;
+                    });
+                }
+            })
+            .on_phase_max_delay_ms_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.measurement_state.room_eq_state.optimizer_config.phase_alignment.max_delay_ms = v;
+                    });
+                }
+            })
+            // Multi-Seat
+            .on_use_multi_seat_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.measurement_state.room_eq_state.optimizer_config.multi_seat.enabled = v;
+                    });
+                }
+            })
+            .on_multi_seat_strategy_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.measurement_state.room_eq_state.optimizer_config.multi_seat.strategy = v.to_string();
+                        state.app.measurement_state.room_eq_state.dropdowns.multi_seat_strategy_open = false;
+                    });
+                }
+            })
+            .on_multi_seat_strategy_toggle({
+                let state = self.state.clone();
+                move |open, _window, cx| {
+                    state.update(cx, |state, cx| {
+                        state.app.measurement_state.room_eq_state.dropdowns.multi_seat_strategy_open = open;
+                        cx.notify();
+                    });
+                }
+            })
+            .on_multi_seat_primary_seat_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.measurement_state.room_eq_state.optimizer_config.multi_seat.primary_seat = v;
+                    });
+                }
+            })
+            .on_multi_seat_max_deviation_db_change({
+                let state = self.state.clone();
+                move |v, _window, cx| {
+                    state.update(cx, |state, _cx| {
+                        state.app.measurement_state.room_eq_state.optimizer_config.multi_seat.max_deviation_db = v;
+                    });
+                }
             });
 
         VStack::new()
@@ -708,6 +996,54 @@ impl PlayerView {
                     )
                     .content(self.render_channel_config_list(cx)),
             )
+            .child(self.render_room_eq_validation_summary(cx))
+    }
+
+    /// Render validation summary based on current config
+    fn render_room_eq_validation_summary(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let state = self.state.read(cx);
+        let theme = state.app.ui_state.theme.clone();
+        let validation = state.app.measurement_state.room_eq_state.validate();
+
+        if validation.is_valid && validation.warnings.is_empty() {
+            return div().into_any_element();
+        }
+
+        let mut content = VStack::new().spacing(StackSpacing::Sm);
+
+        for error in &validation.errors {
+            content = content.child(
+                HStack::new()
+                    .spacing(StackSpacing::Sm)
+                    .child(Text::new("!").color(theme.error).weight(TextWeight::Bold))
+                    .child(Text::new(error.clone()).size(TextSize::Sm).color(theme.error)),
+            );
+        }
+
+        for warning in &validation.warnings {
+            content = content.child(
+                HStack::new()
+                    .spacing(StackSpacing::Sm)
+                    .child(Text::new("?").color(theme.warning).weight(TextWeight::Bold))
+                    .child(Text::new(warning.clone()).size(TextSize::Sm).color(theme.warning)),
+            );
+        }
+
+        Card::new()
+            .background(theme.surface)
+            .header_background(theme.background_secondary)
+            .border(if !validation.is_valid {
+                theme.error
+            } else {
+                theme.warning
+            })
+            .header(
+                Text::new("Configuration Check")
+                    .color(theme.text_primary)
+                    .weight(TextWeight::Semibold),
+            )
+            .content(content)
+            .into_any_element()
     }
 
     /// Render the list of channel configurations

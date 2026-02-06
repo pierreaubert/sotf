@@ -342,165 +342,26 @@ impl PlayerView {
     }
 
     fn start_room_eq_optimization(&mut self, cx: &mut Context<Self>) {
-        use crate::app::types::{ChannelOptResult, EqFilterConfig, OptimizationStatus, SpeakerConfigType};
+        use crate::app::types::{ChannelOptResult, EqFilterConfig, OptimizationStatus};
         use autoeq::roomeq::CallbackAction;
         use sotf_audio_player::autoeq::{
-            CrossoverConfig, MeasurementSource, OptimizerConfig, RoomConfig,
-            RoomOptimizationCallback, RoomOptimizationProgress, SpeakerConfig, SpeakerGroup,
-            run_room_optimization,
+            RoomOptimizationCallback, RoomOptimizationProgress, run_room_optimization,
         };
-        use std::collections::HashMap;
 
         log::info!("Starting room EQ optimization using roomeq");
 
-        // Build RoomConfig from state
+        // Build RoomConfig from state using the unified helper
         let (room_config, channel_names, max_iter) = {
             let state = self.state.read(cx);
             let room_eq = &state.app.measurement_state.room_eq_state;
-
-            // Build speakers map and crossover map
-            let mut speakers: HashMap<String, SpeakerConfig> = HashMap::new();
-            let mut crossovers: HashMap<String, CrossoverConfig> = HashMap::new();
-
-            // Helper to convert measurement to curve
-            let to_curve = |meas: &crate::app::types::ChannelMeasurement| -> autoeq::Curve {
-                let frequencies: Vec<f64> = meas
-                    .measurement
-                    .frequencies
-                    .iter()
-                    .map(|&f| f as f64)
-                    .collect();
-                let magnitude_db: Vec<f64> = meas
-                    .measurement
-                    .magnitude_db
-                    .iter()
-                    .map(|&db| db as f64)
-                    .collect();
-
-                autoeq::Curve {
-                    freq: ndarray::Array1::from_vec(frequencies),
-                    spl: ndarray::Array1::from_vec(magnitude_db),
-                    phase: None,
-                }
-            };
-
-            // Helper to convert recording result to curve
-            let result_to_curve = |res: &crate::app::types::recording::RecordingResult| -> autoeq::Curve {
-                let frequencies: Vec<f64> = res.frequencies.iter().map(|&f| f as f64).collect();
-                let magnitude_db: Vec<f64> = res.magnitude_db.iter().map(|&db| db as f64).collect();
-
-                autoeq::Curve {
-                    freq: ndarray::Array1::from_vec(frequencies),
-                    spl: ndarray::Array1::from_vec(magnitude_db),
-                    phase: None,
-                }
-            };
-
-            // Iterate over configured speakers
-            for speaker_config in &room_eq.speaker_configs {
-                let channel_name = &speaker_config.channel_name;
-                
-                // Find corresponding measurement
-                if let Some(meas) = room_eq.channel_measurements.iter().find(|m| &m.channel_name == channel_name) {
-                    match speaker_config.config_type {
-                        SpeakerConfigType::Single => {
-                            let curve = to_curve(meas);
-                            speakers.insert(
-                                channel_name.clone(),
-                                SpeakerConfig::Single(MeasurementSource::InMemory(curve)),
-                            );
-                        }
-                        SpeakerConfigType::MultiDriver => {
-                            // Collect driver measurements
-                            let mut driver_measurements = Vec::new();
-                            
-                            // If measurement has group drivers, use them
-                            if meas.is_group && !meas.group_drivers.is_empty() {
-                                for driver_res in &meas.group_drivers {
-                                    driver_measurements.push(MeasurementSource::InMemory(result_to_curve(driver_res)));
-                                }
-                            } else {
-                                // Fallback if no individual drivers found (should not happen if configured correctly)
-                                log::warn!("Multi-driver config for {} but no driver measurements found, using main measurement", channel_name);
-                                driver_measurements.push(MeasurementSource::InMemory(to_curve(meas)));
-                            }
-
-                            // Create crossover config
-                            let xover_id = format!("xover_{}", channel_name);
-                            let xover_type = match speaker_config.crossover_type {
-                                crate::app::types::CrossoverType::LR12 => "LR12",
-                                crate::app::types::CrossoverType::LR24 => "LR24",
-                                crate::app::types::CrossoverType::LR48 => "LR48",
-                                crate::app::types::CrossoverType::Butterworth12 => "Butterworth12",
-                                crate::app::types::CrossoverType::Butterworth24 => "Butterworth24",
-                            };
-
-                            crossovers.insert(xover_id.clone(), CrossoverConfig {
-                                crossover_type: xover_type.to_string(),
-                                frequency: None, // Auto-detect
-                                frequencies: None, // Auto-detect
-                                frequency_range: None,
-                            });
-
-                            speakers.insert(
-                                channel_name.clone(),
-                                SpeakerConfig::Group(SpeakerGroup {
-                                    name: channel_name.clone(),
-                                    measurements: driver_measurements,
-                                    crossover: Some(xover_id),
-                                }),
-                            );
-                        }
-                    }
-                }
-            }
-
+            
             let channel_names: Vec<String> = room_eq
                 .channel_measurements
                 .iter()
                 .map(|m| m.channel_name.clone())
                 .collect();
 
-            // Build optimizer config
-            let algorithm = match room_eq.optimizer_config.algorithm {
-                crate::app::types::RoomEqAlgorithm::Cobyla => "nlopt:cobyla".to_string(),
-                crate::app::types::RoomEqAlgorithm::DifferentialEvolution => {
-                    "autoeq:de".to_string()
-                }
-                crate::app::types::RoomEqAlgorithm::NelderMead => "nlopt:neldermead".to_string(),
-            };
-
-            let optimizer = OptimizerConfig {
-                loss_type: "flat".to_string(),
-                algorithm,
-                num_filters: room_eq.optimizer_config.num_filters,
-                min_q: room_eq.optimizer_config.min_q,
-                max_q: room_eq.optimizer_config.max_q,
-                min_db: room_eq.optimizer_config.min_db,
-                max_db: room_eq.optimizer_config.max_db,
-                min_freq: room_eq.optimizer_config.min_freq,
-                max_freq: room_eq.optimizer_config.max_freq,
-                max_iter: room_eq.optimizer_config.max_iter,
-                population: room_eq.optimizer_config.population,
-                peq_model: "pk".to_string(),
-                mode: "iir".to_string(),
-                fir: None,
-                seed: None,
-                mixed_config: None,
-                ..Default::default()
-            };
-
-            let config = RoomConfig {
-                version: autoeq::roomeq::default_config_version(),
-                speakers,
-                crossovers: Some(crossovers),
-                target_curve: None,
-                group_delay: None,
-                optimizer,
-                recording_config: None,
-            };
-
-            (config, channel_names, room_eq.optimizer_config.max_iter)
+            (room_eq.to_room_config(), channel_names, room_eq.optimizer_config.max_iter)
         };
 
         if channel_names.is_empty() {

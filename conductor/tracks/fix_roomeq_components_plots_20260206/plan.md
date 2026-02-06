@@ -9,8 +9,8 @@ This plan addresses the misalignment between the GPUI Room EQ interface and the 
 - [x] Task: Conductor - User Manual Verification 'Investigation and Data Mapping' (Protocol in workflow.md) 786a02f
 
 ## Phase 2: Form Alignment and Validation
-- [ ] Task: Update Room EQ form models to include missing parameters (e.g., target curve, freq range, gain limits).
-- [ ] Task: Implement validation logic for form inputs based on backend constraints.
+- [x] Task: Update Room EQ form models to include missing parameters (e.g., target curve, freq range, gain limits). 7f8a1b2
+- [x] Task: Implement validation logic for form inputs based on backend constraints. 7f8a1b2
 - [ ] Task: Write Tests: Verify form data serialization matches `roomeq` input format.
 - [ ] Task: Implement: Refactor Room EQ UI components to display the updated form fields.
 - [ ] Task: Conductor - User Manual Verification 'Form Alignment and Validation' (Protocol in workflow.md)
