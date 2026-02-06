@@ -3,7 +3,8 @@ impl PlayerView {
     fn render_split_view(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let (theme, queue_ratio) = {
             let state = self.state.read(cx);
-            (state.app.ui_state.theme.clone(), state.app.queue_panel_ratio)
+            let layout = state.layout.read(cx);
+            (state.app.ui_state.theme.clone(), layout.queue_panel_ratio)
         };
 
         div()
@@ -24,16 +25,17 @@ impl PlayerView {
                     meters_ratio,
                 ) = {
                     let state = view.state.read(cx);
+                    let layout = state.layout.read(cx);
                     (
-                        state.app.is_dragging_queue_divider,
-                        state.app.is_dragging_queue_list_divider,
-                        state.app.is_dragging_meters_divider,
-                        state.app.is_dragging_lufs_divider,
+                        layout.is_dragging_queue_divider,
+                        layout.is_dragging_queue_list_divider,
+                        layout.is_dragging_meters_divider,
+                        layout.is_dragging_lufs_divider,
                         state.app.is_dragging_volume,
                         state.app.volume_drag_start_y,
                         state.app.volume_drag_start_value,
                         state.app.ui_state.window_height,
-                        state.app.meters_panel_ratio,
+                        layout.meters_panel_ratio,
                     )
                 };
 
@@ -47,40 +49,43 @@ impl PlayerView {
                     let window_h: f32 = window_height.into();
                     // Calculate new ratio (inverted because queue is at bottom)
                     let new_ratio = (1.0 - (mouse_y / window_h)).clamp(0.15, 0.6);
-                    view.state.update(cx, |state, _cx| {
-                        state.app.queue_panel_ratio = new_ratio;
+                    view.state.update(cx, |state, cx| {
+                        state.layout.update(cx, |layout, _| {
+                            layout.queue_panel_ratio = new_ratio;
+                        });
                     });
-                    cx.notify();
                 }
 
                 if is_dragging_queue_list {
                     let window_width: f32 = window_size.width.into();
                     let mouse_x: f32 = mouse_pos.x.into();
                     let new_ratio = (mouse_x / window_width).clamp(0.1, 0.5);
-                    view.state.update(cx, |state, _cx| {
-                        state.app.queue_list_ratio = new_ratio;
+                    view.state.update(cx, |state, cx| {
+                        state.layout.update(cx, |layout, _| {
+                            layout.queue_list_ratio = new_ratio;
+                        });
                     });
-                    cx.notify();
                 }
 
                 if is_dragging_meters {
                     let window_width: f32 = window_size.width.into();
                     let mouse_x: f32 = mouse_pos.x.into();
                     // Meters are on the right, so ratio is from the right edge
-                    let right_edge_ratio = (1.0 - (mouse_x / window_width)).clamp(0.1, 0.8);
+                    let right_edge_ratio: f32 = (1.0 - (mouse_x / window_width)).clamp(0.1, 0.8);
 
-                    view.state.update(cx, |state, _cx| {
-                        if is_compact_height {
-                            // In 4-col mode, Divider 2 controls total right width (LUFS + Meters)
-                            // lufs_ratio = total - meters_ratio
-                            let new_lufs = (right_edge_ratio - meters_ratio).max(0.05);
-                            state.app.lufs_panel_ratio = new_lufs;
-                        } else {
-                            // Standard mode: controls combined panel width
-                            state.app.meters_panel_ratio = right_edge_ratio.clamp(0.1, 0.5);
-                        }
+                    view.state.update(cx, |state, cx| {
+                        state.layout.update(cx, |layout, _| {
+                            if is_compact_height {
+                                // In 4-col mode, Divider 2 controls total right width (LUFS + Meters)
+                                // lufs_ratio = total - meters_ratio
+                                let new_lufs = (right_edge_ratio - layout.meters_panel_ratio).max(0.05);
+                                layout.lufs_panel_ratio = new_lufs;
+                            } else {
+                                // Standard mode: controls combined panel width
+                                layout.meters_panel_ratio = right_edge_ratio.clamp(0.1, 0.5);
+                            }
+                        });
                     });
-                    cx.notify();
                 }
 
                 if is_dragging_lufs {
@@ -88,10 +93,11 @@ impl PlayerView {
                     let mouse_x: f32 = mouse_pos.x.into();
                     // Divider 3 (LUFS <-> Meters) controls meters_panel_ratio
                     let new_meters = (1.0 - (mouse_x / window_width)).clamp(0.05, 0.5);
-                    view.state.update(cx, |state, _cx| {
-                        state.app.meters_panel_ratio = new_meters;
+                    view.state.update(cx, |state, cx| {
+                        state.layout.update(cx, |layout, _| {
+                            layout.meters_panel_ratio = new_meters;
+                        });
                     });
-                    cx.notify();
                 }
 
                 // Handle volume dragging (drag up = increase, drag down = decrease)
@@ -101,7 +107,7 @@ impl PlayerView {
                         let delta_y = start_y - mouse_y; // Inverted: up = positive
                         // Scale: 100px drag = full volume range
                         let volume_delta = delta_y / 100.0;
-                        let new_volume = (volume_start_value + volume_delta).clamp(0.0, 1.0);
+                        let new_volume: f32 = (volume_start_value + volume_delta).clamp(0.0, 1.0);
                         view.state.update(cx, |state, _cx| {
                             state.app.playback.volume = new_volume;
                             let _ = state.player.lock().set_volume(new_volume);
@@ -114,65 +120,67 @@ impl PlayerView {
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(|view, _: &MouseUpEvent, _window, cx| {
-                    view.state.update(cx, |state, _cx| {
-                        if state.app.is_dragging_queue_divider {
-                            state.app.is_dragging_queue_divider = false;
-                            // Save the new layout
-                            if let Err(e) = state.app.save_config() {
-                                log::warn!("Failed to save panel layout: {}", e);
+                    let mut needs_save = false;
+                    view.state.update(cx, |state, cx| {
+                        state.layout.update(cx, |layout, _| {
+                            if layout.is_dragging_queue_divider {
+                                layout.is_dragging_queue_divider = false;
+                                needs_save = true;
                             }
-                        }
-                        if state.app.is_dragging_queue_list_divider {
-                            // Check for click vs drag
-                            let was_click = state
-                                .app
-                                .divider_click_start
-                                .map(|start| start.elapsed().as_millis() < 200)
-                                .unwrap_or(false);
+                            if layout.is_dragging_queue_list_divider {
+                                // Check for click vs drag
+                                let was_click = state
+                                    .app
+                                    .divider_click_start
+                                    .map(|start| start.elapsed().as_millis() < 200)
+                                    .unwrap_or(false);
 
-                            if was_click {
-                                if state.app.queue_list_ratio > 0.05 {
-                                    state.app.queue_list_ratio = 0.0;
-                                } else {
-                                    state.app.queue_list_ratio = 0.30; // Restore default
+                                if was_click {
+                                    if layout.queue_list_ratio > 0.05 {
+                                        layout.queue_list_ratio = 0.0;
+                                    } else {
+                                        layout.queue_list_ratio = 0.30; // Restore default
+                                    }
                                 }
-                            }
 
-                            state.app.is_dragging_queue_list_divider = false;
-                            if let Err(e) = state.app.save_config() {
-                                log::warn!("Failed to save panel layout: {}", e);
+                                layout.is_dragging_queue_list_divider = false;
+                                needs_save = true;
                             }
-                        }
-                        if state.app.is_dragging_meters_divider {
-                            // Check for click vs drag
-                            let was_click = state
-                                .app
-                                .divider_click_start
-                                .map(|start| start.elapsed().as_millis() < 200)
-                                .unwrap_or(false);
+                            if layout.is_dragging_meters_divider {
+                                // Check for click vs drag
+                                let was_click = state
+                                    .app
+                                    .divider_click_start
+                                    .map(|start| start.elapsed().as_millis() < 200)
+                                    .unwrap_or(false);
 
-                            if was_click {
-                                if state.app.meters_panel_ratio > 0.05 {
-                                    state.app.meters_panel_ratio = 0.0;
-                                } else {
-                                    state.app.meters_panel_ratio = 0.25; // Restore default
+                                if was_click {
+                                    if layout.meters_panel_ratio > 0.05 {
+                                        layout.meters_panel_ratio = 0.0;
+                                    } else {
+                                        layout.meters_panel_ratio = 0.25; // Restore default
+                                    }
                                 }
-                            }
 
-                            state.app.is_dragging_meters_divider = false;
-                            if let Err(e) = state.app.save_config() {
-                                log::warn!("Failed to save panel layout: {}", e);
+                                layout.is_dragging_meters_divider = false;
+                                needs_save = true;
                             }
-                        }
-                        if state.app.is_dragging_lufs_divider {
-                            state.app.is_dragging_lufs_divider = false;
-                            if let Err(e) = state.app.save_config() {
-                                log::warn!("Failed to save panel layout: {}", e);
+                            if layout.is_dragging_lufs_divider {
+                                layout.is_dragging_lufs_divider = false;
+                                needs_save = true;
                             }
-                        }
+                        });
+
                         if state.app.is_dragging_volume {
                             state.app.is_dragging_volume = false;
                             state.app.volume_drag_start_y = None;
+                        }
+
+                        if needs_save {
+                            let layout = state.layout.read(cx);
+                            if let Err(e) = state.app.save_config(&layout) {
+                                log::warn!("Failed to save panel layout: {}", e);
+                            }
                         }
                     });
                 }),
@@ -200,20 +208,23 @@ impl PlayerView {
                     .collapsed(library_collapsed)
                     .theme(divider_theme)
                     .on_toggle({
-                        let state = self.state.clone();
+                        let state_handle = self.state.clone();
                         move |collapsed, _window, cx| {
-                            state.update(cx, |state, _| {
-                                state.app.queue_panel_ratio = if collapsed { 0.95 } else { 0.35 };
-                                let _ = state.app.save_config();
+                            state_handle.update(cx, |state, cx| {
+                                state.layout.update(cx, |layout, _| {
+                                    layout.queue_panel_ratio = if collapsed { 0.95 } else { 0.35 };
+                                    let _ = state.app.save_config(layout);
+                                });
                             });
                         }
                     })
                     .on_drag_start({
-                        let state = self.state.clone();
+                        let state_handle = self.state.clone();
                         move |_pos, _window, cx| {
-                            state.update(cx, |state, _| {
-                                state.app.is_dragging_queue_divider = true;
-                                state.app.divider_click_start = Some(std::time::Instant::now());
+                            state_handle.update(cx, |state, cx| {
+                                state.layout.update(cx, |layout, _| {
+                                    layout.is_dragging_queue_divider = true;
+                                });
                             });
                         }
                     })

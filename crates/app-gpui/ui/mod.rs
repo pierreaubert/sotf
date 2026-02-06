@@ -38,8 +38,12 @@ impl PlayerView {
         let search_focus_handle = cx.focus_handle();
         let volume_focus_handle = cx.focus_handle();
 
-        // Register plugin interactions
-        // Register plugin interactions - moved to render
+        // Subscribe to layout changes for granular re-renders
+        let layout = state.read(cx).layout.clone();
+        cx.subscribe(&layout, |view, _, _, cx| {
+            cx.notify();
+        })
+        .detach();
 
         // Note: We don't use cx.observe() + cx.notify() here because it can cause
         // re-entrant update issues when state is updated during effect processing.
@@ -176,11 +180,30 @@ impl PlayerView {
                         state.app.update_library_scan();
                         state.app.update_toast();
 
-                        // Infinite scroll - load more albums if needed
-                        if scroll_check_data == Some(true) {
-                            state.app.load_more_albums();
+                        // Ensure library cache is valid (recomputes if invalidated by events)
+                        state.app.library_state.ensure_cache_valid();
+
+                        // Check for pending stats from background task
+                        let pending = state.app.pending_library_stats.lock().take();
+                        if let Some(stats) = pending {
+                            state.app.library_stats = stats;
+                            state.app.library_stats_computing = false;
                         }
                     });
+
+                    // Background stats computation (outside state update)
+                    let (needs_stats, is_stats_computing) = {
+                        let state = view.state.read(cx);
+                        (!state.app.library_stats.valid, state.app.library_stats_computing)
+                    };
+                    if needs_stats && !is_stats_computing {
+                        view.compute_library_stats_async(cx);
+                    }
+
+                    // Infinite scroll - load more albums if needed (outside state update)
+                    if scroll_check_data == Some(true) {
+                        view.load_more_albums(cx);
+                    }
 
                     cx.notify();
                 });
@@ -204,6 +227,34 @@ impl PlayerView {
         }
     }
 
+    /// Spawn a background task to compute library statistics
+    pub(crate) fn compute_library_stats_async(&self, cx: &mut Context<Self>) {
+        let (albums, pending_stats) = {
+            let state = self.state.read(cx);
+            (state.app.library_state.library.albums.clone(), state.app.pending_library_stats.clone())
+        };
+
+        // Mark as computing
+        self.state.update(cx, |state, _cx| {
+            state.app.library_stats_computing = true;
+        });
+
+        // Spawn background task
+        cx.background_executor().spawn(async move {
+            log::info!("[Stats] Starting background stats computation...");
+            let start = std::time::Instant::now();
+
+            // Run expensive O(N) computation
+            let stats = crate::app::App::compute_library_stats_static(&albums);
+
+            let duration = start.elapsed();
+            log::info!("[Stats] Background stats computation complete in {:?}", duration);
+
+            // Store result for main loop to pick up
+            *pending_stats.lock() = Some(stats);
+        }).detach();
+    }
+
     fn open_config(&mut self, _: &OpenConfig, _: &mut Window, cx: &mut Context<Self>) {
         self.switch_screen(Screen::Settings, cx);
     }
@@ -220,9 +271,10 @@ impl PlayerView {
             height: window_bounds.size.height.into(),
         };
 
-        self.state.update(cx, |state, _cx| {
+        self.state.update(cx, |state, cx| {
+            let layout = state.layout.read(cx);
             // Save configuration
-            if let Err(e) = state.app.save_config_with_geometry(Some(geometry)) {
+            if let Err(e) = state.app.save_config_with_geometry(&layout, Some(geometry)) {
                 log::error!("Failed to save config on quit: {}", e);
             }
 
@@ -237,22 +289,25 @@ impl PlayerView {
             }
         });
 
-        log::info!("Services stopped, quitting application...");
+        log::info!("Services stopped, requesting GPUI quit...");
 
         // Request GPUI to quit
         cx.quit();
 
-        // Force immediate process exit
-        // cx.quit() may not terminate if background threads (audio engine, etc.) are still running.
-        // We've already stopped the services above, so it's safe to exit immediately.
-        log::info!("Force exiting process");
-        std::process::exit(0);
+        // Give GPUI and background threads a very short time to clean up
+        // before forcing exit (to ensure we don't hang indefinitely)
+        std::thread::spawn(|| {
+            std::thread::sleep(Duration::from_millis(500));
+            log::info!("Cleanup timeout reached, forcing exit");
+            std::process::exit(0);
+        });
     }
 
     fn cycle_theme(&mut self, _: &CycleTheme, _: &mut Window, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _cx| {
+        self.state.update(cx, |state, cx| {
             state.app.next_theme();
-            if let Err(e) = state.app.save_config() {
+            let layout = state.layout.read(cx);
+            if let Err(e) = state.app.save_config(&layout) {
                 log::error!("Failed to save config: {}", e);
             }
         });
@@ -260,9 +315,10 @@ impl PlayerView {
     }
 
     fn cycle_language(&mut self, _: &CycleLanguage, _: &mut Window, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _cx| {
+        self.state.update(cx, |state, cx| {
             state.app.next_language();
-            if let Err(e) = state.app.save_config() {
+            let layout = state.layout.read(cx);
+            if let Err(e) = state.app.save_config(&layout) {
                 log::error!("Failed to save config: {}", e);
             }
         });
@@ -270,10 +326,11 @@ impl PlayerView {
     }
 
     fn increase_font_size(&mut self, _: &IncreaseFontSize, _: &mut Window, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _cx| {
+        self.state.update(cx, |state, cx| {
             // Increase by 10%, max 2.0 (200%)
             state.app.ui_state.font_scale = (state.app.ui_state.font_scale * 1.1).min(2.0);
-            if let Err(e) = state.app.save_config() {
+            let layout = state.layout.read(cx);
+            if let Err(e) = state.app.save_config(&layout) {
                 log::error!("Failed to save config: {}", e);
             }
         });
@@ -281,10 +338,11 @@ impl PlayerView {
     }
 
     fn decrease_font_size(&mut self, _: &DecreaseFontSize, _: &mut Window, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _cx| {
+        self.state.update(cx, |state, cx| {
             // Decrease by 10%, min 0.5 (50%)
             state.app.ui_state.font_scale = (state.app.ui_state.font_scale / 1.1).max(0.5);
-            if let Err(e) = state.app.save_config() {
+            let layout = state.layout.read(cx);
+            if let Err(e) = state.app.save_config(&layout) {
                 log::error!("Failed to save config: {}", e);
             }
         });
@@ -292,9 +350,10 @@ impl PlayerView {
     }
 
     fn reset_font_size(&mut self, _: &ResetFontSize, _: &mut Window, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _cx| {
+        self.state.update(cx, |state, cx| {
             state.app.ui_state.font_scale = 1.0;
-            if let Err(e) = state.app.save_config() {
+            let layout = state.layout.read(cx);
+            if let Err(e) = state.app.save_config(&layout) {
                 log::error!("Failed to save config: {}", e);
             }
         });
@@ -451,7 +510,8 @@ impl PlayerView {
                 )));
             }
             // Save directories to config after successful scan
-            if let Err(e) = state.app.save_config() {
+            let layout = state.layout.read(_cx);
+            if let Err(e) = state.app.save_config(&layout) {
                 log::warn!("Failed to save config: {}", e);
             }
         });
@@ -474,7 +534,8 @@ impl PlayerView {
                 ));
             }
             // Save directories to config after successful scan
-            if let Err(e) = state.app.save_config() {
+            let layout = state.layout.read(_cx);
+            if let Err(e) = state.app.save_config(&layout) {
                 log::warn!("Failed to save config: {}", e);
             }
         });
@@ -585,6 +646,48 @@ impl PlayerView {
             state.app.knob_drag_max = action.max;
         });
         cx.notify();
+    }
+
+    /// Recalculate library pagination based on current layout
+    pub(crate) fn recalculate_pagination(&self, cx: &mut Context<Self>, force_reset: bool) {
+        let (window_width, window_height) = {
+            let state = self.state.read(cx);
+            (state.app.ui_state.window_width, state.app.ui_state.window_height)
+        };
+
+        self.state.update(cx, |state, _cx| {
+            let app = &mut state.app;
+            let available_width = window_width - 32.0; // Minus padding
+            let columns = (available_width / 176.0).floor().max(1.0) as usize;
+            app.library_state.library_columns = columns;
+
+            // Estimate available height for grid
+            // Header (40) + Stats (100) + Filter (40) + Pagination (50) + Footer (60) = ~290px
+            let available_height = (window_height - 290.0).max(256.0);
+            let rows = (available_height / 256.0).floor().max(1.0) as usize;
+
+            // Initial load: 3 screens worth of items
+            let new_items_per_page = columns * rows * 3;
+
+            // Only update if we are initializing, resizing significantly, or forcing reset
+            if force_reset || app.library_state.items_per_page < new_items_per_page {
+                app.library_state.items_per_page = new_items_per_page;
+            }
+        });
+    }
+
+    /// Load more albums (infinite scroll)
+    pub(crate) fn load_more_albums(&self, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, _cx| {
+            let app = &mut state.app;
+            let total = app.filtered_albums().len();
+            if app.library_state.items_per_page < total {
+                // Add 5 rows worth of items
+                let more = app.library_state.library_columns * 5;
+                app.library_state.items_per_page =
+                    (app.library_state.items_per_page + more).min(total);
+            }
+        });
     }
 }
 

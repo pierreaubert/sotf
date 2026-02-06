@@ -147,6 +147,10 @@ pub struct LibraryState {
     pub scan_in_progress: bool,
     pub scan_progress_tracks: usize,
     pub scan_progress_albums: usize,
+
+    /// Cache for filtered and sorted albums
+    pub cached_albums: Vec<Album>,
+    pub cache_dirty: bool,
 }
 
 impl Default for LibraryState {
@@ -191,6 +195,8 @@ impl LibraryState {
             scan_in_progress: false,
             scan_progress_tracks: 0,
             scan_progress_albums: 0,
+            cached_albums: Vec::new(),
+            cache_dirty: true,
         }
     }
 
@@ -203,8 +209,20 @@ impl LibraryState {
     // Filtering and Sorting
     // =========================================================================
 
-    /// Get filtered and sorted albums
-    pub fn filtered_albums(&self) -> Vec<&Album> {
+    /// Mark the cache as dirty so it will be recomputed next time it's needed
+    pub fn invalidate_cache(&mut self) {
+        self.cache_dirty = true;
+    }
+
+    /// Ensure the cached filtered albums are up to date
+    pub fn ensure_cache_valid(&mut self) {
+        if self.cache_dirty {
+            self.recompute_cache();
+        }
+    }
+
+    /// Recompute the filtered and sorted albums cache
+    fn recompute_cache(&mut self) {
         let mut albums: Vec<&Album> = if self.search_query.is_empty() {
             self.library.albums.iter().collect()
         } else {
@@ -217,7 +235,19 @@ impl LibraryState {
         // Apply sort
         self.sort_albums(&mut albums);
 
-        albums
+        // Update the cache by cloning the references into owned items
+        // Note: This is still a clone, but it only happens when filters change,
+        // and we avoid it on every render.
+        self.cached_albums = albums.into_iter().cloned().collect();
+        self.cache_dirty = false;
+    }
+
+    /// Get filtered and sorted albums (uses cache)
+    pub fn filtered_albums(&self) -> Vec<&Album> {
+        // If dirty, we can't recompute here because &self is immutable.
+        // Callers should call ensure_cache_valid() before this if they have &mut self.
+        // If they only have &self, they get the last cached version.
+        self.cached_albums.iter().collect()
     }
 
     /// Check if album matches current filter
@@ -310,12 +340,14 @@ impl LibraryState {
     pub fn set_sort_order(&mut self, order: LibrarySortOrder) {
         self.sort_order = order;
         self.selected_index = 0;
+        self.invalidate_cache();
     }
 
     /// Set channel filter and reset selection
     pub fn set_filter(&mut self, filter: ChannelFilter) {
         self.filter = filter;
         self.selected_index = 0;
+        self.invalidate_cache();
     }
 
     /// Cycle to next channel filter
@@ -330,18 +362,21 @@ impl LibraryState {
             ChannelFilter::Mixed | ChannelFilter::Specific(_) => ChannelFilter::All,
         };
         self.selected_index = 0;
+        self.invalidate_cache();
     }
 
     /// Set search query and reset selection
     pub fn set_search_query(&mut self, query: String) {
         self.search_query = query;
         self.selected_index = 0;
+        self.invalidate_cache();
     }
 
     /// Clear search query
     pub fn clear_search(&mut self) {
         self.search_query.clear();
         self.selected_index = 0;
+        self.invalidate_cache();
     }
 
     // =========================================================================
@@ -544,6 +579,7 @@ impl LibraryState {
     /// Load library from database
     pub fn load_from_database(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.library.load_from_database()?;
+        self.invalidate_cache();
         Ok(())
     }
 }

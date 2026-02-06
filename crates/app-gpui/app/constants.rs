@@ -111,8 +111,8 @@ pub mod ui {
     /// Default volume on startup (10%)
     pub const DEFAULT_STARTUP_VOLUME: f32 = 0.1;
 
-    /// Default volume for new configs (50%)
-    pub const DEFAULT_CONFIG_VOLUME: f32 = 0.5;
+    /// Default volume for new configs (10%)
+    pub const DEFAULT_CONFIG_VOLUME: f32 = 0.1;
 
     /// Window geometry change threshold in pixels (debouncing)
     pub const WINDOW_CHANGE_THRESHOLD_PX: f32 = 1.0;

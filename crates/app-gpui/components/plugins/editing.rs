@@ -1088,6 +1088,10 @@ impl PluginEditingManager for App {
                     release_ms,
                     low_latency,
                     polyphonic_detection,
+                    dd_enabled,
+                    dd_alpha,
+                    psychoacoustic_masking,
+                    use_captured_profile,
                 } => {
                     use sotf_audio_player::param_specs::denoiser::*;
                     match param_idx {
@@ -1124,6 +1128,25 @@ impl PluginEditingManager for App {
                             *polyphonic_detection = !*polyphonic_detection;
                             true
                         }
+                        7 => {
+                            *dd_enabled = !*dd_enabled;
+                            true
+                        }
+                        8 => {
+                            *dd_alpha = (*dd_alpha + delta * 0.01)
+                                .clamp(DD_ALPHA_MIN as f64, DD_ALPHA_MAX as f64);
+                            true
+                        }
+                        9 => {
+                            *psychoacoustic_masking = !*psychoacoustic_masking;
+                            true
+                        }
+                        10 => true, // learn_noise trigger — handled by set_parameter_value
+                        11 => {
+                            *use_captured_profile = !*use_captured_profile;
+                            true
+                        }
+                        12 => true, // clear_profile trigger — handled by set_parameter_value
                         _ => false,
                     }
                 }
@@ -2199,6 +2222,10 @@ impl PluginEditingManager for App {
                     release_ms,
                     low_latency,
                     polyphonic_detection,
+                    dd_enabled,
+                    dd_alpha,
+                    psychoacoustic_masking,
+                    use_captured_profile,
                 } => {
                     use sotf_audio_player::param_specs::denoiser::*;
                     match param_idx {
@@ -2231,6 +2258,31 @@ impl PluginEditingManager for App {
                         }
                         6 => {
                             *polyphonic_detection = value > 0.5;
+                            update_needed = true;
+                        }
+                        7 => {
+                            *dd_enabled = value > 0.5;
+                            update_needed = true;
+                        }
+                        8 => {
+                            *dd_alpha =
+                                value.clamp(DD_ALPHA_MIN as f64, DD_ALPHA_MAX as f64);
+                            update_needed = true;
+                        }
+                        9 => {
+                            *psychoacoustic_masking = value > 0.5;
+                            update_needed = true;
+                        }
+                        10 => {
+                            // learn_noise trigger: value > 0.5 starts learning
+                            update_needed = true;
+                        }
+                        11 => {
+                            *use_captured_profile = value > 0.5;
+                            update_needed = true;
+                        }
+                        12 => {
+                            // clear_profile trigger: value > 0.5 clears
                             update_needed = true;
                         }
                         _ => {}
@@ -2646,6 +2698,10 @@ impl PluginEditingManager for App {
                 release_ms,
                 low_latency,
                 polyphonic_detection,
+                dd_enabled,
+                dd_alpha,
+                psychoacoustic_masking,
+                use_captured_profile,
             } => match param_idx {
                 0 => *reduction_db,
                 1 => *floor_db,
@@ -2666,6 +2722,30 @@ impl PluginEditingManager for App {
                         0.0
                     }
                 }
+                7 => {
+                    if *dd_enabled {
+                        1.0
+                    } else {
+                        0.0
+                    }
+                }
+                8 => *dd_alpha,
+                9 => {
+                    if *psychoacoustic_masking {
+                        1.0
+                    } else {
+                        0.0
+                    }
+                }
+                10 => 0.0, // learn_noise trigger — always reads as 0
+                11 => {
+                    if *use_captured_profile {
+                        1.0
+                    } else {
+                        0.0
+                    }
+                }
+                12 => 0.0, // clear_profile trigger — always reads as 0
                 _ => return,
             },
             PluginSettings::Pnd {
@@ -3351,7 +3431,7 @@ pub fn get_param_count(settings: &PluginSettings) -> usize {
         PluginSettings::MultibandCompressor { .. } => 13, // num_bands, crossover_preset, crossover_freq_1-4, threshold, ratio, attack, release, knee, mix, link_channels
         PluginSettings::MultibandExpander { .. } => 16, // num_bands, crossover_preset, crossover_freq_1-4, threshold, ratio, attack, release, range, knee, hysteresis, hold, mix, link_channels
         PluginSettings::XTC { .. } => 8, // distance, angle, head_radius, beta_base, beta_low_freq_boost, beta_high_freq_boost, head_shadow_cutoff, head_shadow_slope
-        PluginSettings::Denoiser { .. } => 7, // reduction_db, floor_db, smoothing, attack_ms, release_ms, low_latency, polyphonic_detection
+        PluginSettings::Denoiser { .. } => 13, // reduction_db, floor_db, smoothing, attack_ms, release_ms, low_latency, polyphonic_detection, dd_enabled, dd_alpha, psychoacoustic_masking, learn_noise, use_captured_profile, clear_profile
         PluginSettings::Pnd { .. } => 3, // correction_strength, analysis_window_ms, drift_smoothing
         PluginSettings::ABCompare { .. } => 9, // mix, mix_mode, selected_path, bypass, auto_gain_enabled, loudness_type, max_auto_gain_db, gain_smoothing_ms, mix_transition_ms
         PluginSettings::FletcherMunson { .. } => 22, // reference_level, smoothing, 4 bands x 4 params each, + 4 auto-gain params

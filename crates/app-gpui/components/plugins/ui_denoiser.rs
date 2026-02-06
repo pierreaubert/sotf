@@ -6,6 +6,9 @@
 //! - Smoothing - Spectral smoothing factor
 //! - Attack/Release timing
 //! - Low latency mode toggle
+//! - Decision-Directed SNR estimation
+//! - Psychoacoustic masking
+//! - Noise profile capture
 
 use super::common::{
     render_knob, render_section_title, render_toggle_button, render_vertical_slider_sized,
@@ -25,6 +28,10 @@ pub struct DenoiserRenderState {
     pub release_ms: f64,
     pub low_latency: bool,
     pub polyphonic_detection: bool,
+    pub dd_enabled: bool,
+    pub dd_alpha: f64,
+    pub psychoacoustic_masking: bool,
+    pub use_captured_profile: bool,
     pub is_editing: bool,
     pub selected_param: usize,
 }
@@ -134,7 +141,7 @@ pub fn render_denoiser_plugin(
                                 )),
                         ),
                 )
-                // Column 3: Smoothing knob and Low Latency toggle
+                // Column 3: Smoothing knob, toggles, and DD controls
                 .child(
                     div()
                         .flex()
@@ -160,7 +167,24 @@ pub fn render_denoiser_plugin(
                                     state.is_editing,
                                     Some('s'),
                                     theme,
-                                )),
+                                ))
+                                // DD Alpha knob (only visible when DD enabled)
+                                .when(state.dd_enabled, |d| {
+                                    d.child(render_knob(
+                                        entity.clone(),
+                                        plugin_idx,
+                                        "DD Alpha",
+                                        state.dd_alpha * 1000.0,
+                                        DD_ALPHA_MIN as f64 * 1000.0,
+                                        DD_ALPHA_MAX as f64 * 1000.0,
+                                        "",
+                                        8,
+                                        state.selected_param,
+                                        state.is_editing,
+                                        None,
+                                        theme,
+                                    ))
+                                }),
                         )
                         .child(
                             div()
@@ -212,9 +236,117 @@ pub fn render_denoiser_plugin(
                                             state.is_editing,
                                             theme,
                                         )),
+                                )
+                                // DD SNR toggle
+                                .child(
+                                    div()
+                                        .flex()
+                                        .justify_between()
+                                        .items_center()
+                                        .w_full()
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(theme.text_muted)
+                                                .child("DD SNR"),
+                                        )
+                                        .child(render_toggle_button(
+                                            entity.clone(),
+                                            plugin_idx,
+                                            state.dd_enabled,
+                                            7,
+                                            state.selected_param,
+                                            state.is_editing,
+                                            theme,
+                                        )),
+                                )
+                                // Psychoacoustic Masking toggle
+                                .child(
+                                    div()
+                                        .flex()
+                                        .justify_between()
+                                        .items_center()
+                                        .w_full()
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(theme.text_muted)
+                                                .child("Masking"),
+                                        )
+                                        .child(render_toggle_button(
+                                            entity.clone(),
+                                            plugin_idx,
+                                            state.psychoacoustic_masking,
+                                            9,
+                                            state.selected_param,
+                                            state.is_editing,
+                                            theme,
+                                        )),
                                 ),
+                        ),
+                )
+                // Column 4: Noise Profile
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(render_section_title("NOISE PROFILE", theme))
+                        // Learn Noise button (trigger)
+                        .child(render_toggle_button(
+                            entity.clone(),
+                            plugin_idx,
+                            false, // Trigger — always shows as off
+                            10,
+                            state.selected_param,
+                            state.is_editing,
+                            theme,
+                        ))
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(theme.text_muted)
+                                .child("Learn"),
+                        )
+                        // Use Captured Profile toggle
+                        .child(
+                            div()
+                                .flex()
+                                .justify_between()
+                                .items_center()
+                                .w_full()
+                                .child(
+                                    div()
+                                        .text_xs()
+                                        .text_color(theme.text_muted)
+                                        .child("Use Profile"),
+                                )
+                                .child(render_toggle_button(
+                                    entity.clone(),
+                                    plugin_idx,
+                                    state.use_captured_profile,
+                                    11,
+                                    state.selected_param,
+                                    state.is_editing,
+                                    theme,
+                                )),
+                        )
+                        // Clear Profile button (trigger)
+                        .child(render_toggle_button(
+                            entity.clone(),
+                            plugin_idx,
+                            false, // Trigger — always shows as off
+                            12,
+                            state.selected_param,
+                            state.is_editing,
+                            theme,
+                        ))
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(theme.text_muted)
+                                .child("Clear"),
                         ),
                 ),
         )
-    // .when(state.is_editing, |d| d.child(render_edit_hints(theme)))
 }

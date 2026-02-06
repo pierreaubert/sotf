@@ -302,7 +302,7 @@ impl AudioDaemon {
     }
 
     async fn handle_set_device(&self, device: &str) -> Response {
-        use cpal::traits::HostTrait;
+        use cpal::traits::DeviceTrait;
         let host = cpal::default_host();
 
         // Try to find the device using the same logic as the engine (ID, Exact, StartsWith, Contains)

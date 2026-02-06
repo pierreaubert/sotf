@@ -1452,7 +1452,7 @@ impl PlayerView {
                     }),
                 )
                 .child(
-                    AlbumCard::new(Arc::new(album.clone()), idx, is_selected, card_theme)
+                    AlbumCard::new(Arc::new((*album).clone()), idx, is_selected, card_theme)
                         .mode(AlbumCardMode::Grid),
                 );
 

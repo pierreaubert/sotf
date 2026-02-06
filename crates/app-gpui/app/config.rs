@@ -211,7 +211,7 @@ fn default_font_scale() -> f32 {
 }
 
 fn default_volume() -> f32 {
-    0.5
+    crate::app::constants::ui::DEFAULT_CONFIG_VOLUME
 }
 
 impl Config {

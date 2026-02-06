@@ -9,6 +9,60 @@ use crate::app::keybindings::KeymapPreset;
 use crate::app::theme::{Theme, ThemeId};
 use crate::app::types::{ContextMenuState, ToastMessage};
 use crate::app::{ActiveMenu, InputMode, LayoutMode, Screen, SettingsTab};
+use gpui::EventEmitter;
+
+#[derive(Debug, Clone)]
+pub struct LayoutState {
+    pub queue_panel_ratio: f32,
+    pub queue_list_ratio: f32,
+    pub meters_panel_ratio: f32,
+    pub lufs_panel_ratio: f32,
+    pub lufs_visible: bool,
+    pub library_h_ratio: f32,
+    pub queue_h_ratio: f32,
+    pub rack_h_ratio: f32,
+    pub library_v_ratio: f32,
+    pub queue_v_ratio: f32,
+    pub rack_v_ratio: f32,
+    pub library_panel_collapsed: bool,
+    pub queue_panel_collapsed: bool,
+    pub rack_panel_collapsed: bool,
+    pub is_dragging_queue_divider: bool,
+    pub is_dragging_queue_list_divider: bool,
+    pub is_dragging_meters_divider: bool,
+    pub is_dragging_lufs_divider: bool,
+    pub is_dragging_library_queue_divider: bool,
+    pub is_dragging_queue_rack_divider: bool,
+}
+
+impl EventEmitter<()> for LayoutState {}
+
+impl Default for LayoutState {
+    fn default() -> Self {
+        Self {
+            queue_panel_ratio: constants::ui::QUEUE_PANEL_DEFAULT_RATIO,
+            queue_list_ratio: constants::ui::QUEUE_LIST_DEFAULT_RATIO,
+            meters_panel_ratio: constants::ui::METERS_PANEL_DEFAULT_RATIO,
+            lufs_panel_ratio: constants::ui::LUFS_PANEL_DEFAULT_RATIO,
+            lufs_visible: true,
+            library_h_ratio: 0.30,
+            queue_h_ratio: 0.40,
+            rack_h_ratio: 0.30,
+            library_v_ratio: 0.40,
+            queue_v_ratio: 0.35,
+            rack_v_ratio: 0.25,
+            library_panel_collapsed: false,
+            queue_panel_collapsed: false,
+            rack_panel_collapsed: false,
+            is_dragging_queue_divider: false,
+            is_dragging_queue_list_divider: false,
+            is_dragging_meters_divider: false,
+            is_dragging_lufs_divider: false,
+            is_dragging_library_queue_divider: false,
+            is_dragging_queue_rack_divider: false,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct UIState {

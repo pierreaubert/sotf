@@ -25,9 +25,9 @@ impl App {
         let was_empty = self.queue.is_empty();
         let was_not_playing = !self.playback.is_playing;
 
-        // Get the selected album from the grid view
+        // Get the selected album from the grid view (returns references)
         let albums = self.filtered_albums();
-        let selected_album = albums.get(self.library_state.selected_index).cloned();
+        let selected_album = albums.get(self.library_state.selected_index).copied();
 
         if let Some(album) = selected_album {
             self.queue.push(QueueItem::new(album.clone()));
@@ -45,9 +45,9 @@ impl App {
     /// Add album to queue and immediately jump to it and start playing
     /// (used for "Play Now" context menu action)
     pub fn play_album_now(&mut self) -> Option<PathBuf> {
-        // Get the selected album from the grid view
+        // Get the selected album from the grid view (returns references)
         let albums = self.filtered_albums();
-        let selected_album = albums.get(self.library_state.selected_index).cloned();
+        let selected_album = albums.get(self.library_state.selected_index).copied();
 
         if let Some(album) = selected_album {
             // Add to queue
@@ -276,18 +276,21 @@ impl App {
 
         let mut added_count = 0;
 
+        // Optimization: Build a lookup map of track path to album index
+        // This avoids O(N_albums * M_tracks) search for each recommendation
+        let mut path_to_album = std::collections::HashMap::new();
+        for (idx, album) in self.library_state.library.albums.iter().enumerate() {
+            for track in &album.tracks {
+                path_to_album.insert(&track.path, idx);
+            }
+        }
+
         // Add recommended tracks to queue
         for path in recommendations {
-            // Find the album containing this track
-            // We search in the loaded library albums
-            // Note: This linear search might be slow for very large libraries.
-            // Optimization: Build a map of path -> album_index if needed.
-            let found_album = self
-                .library_state
-                .library
-                .albums
-                .iter()
-                .find(|album| album.tracks.iter().any(|t| t.path == path));
+            // Find the album containing this track using the lookup map
+            let found_album = path_to_album
+                .get(&path)
+                .and_then(|&idx| self.library_state.library.albums.get(idx));
 
             if let Some(album) = found_album {
                 // Clone the album and keep only the recommended track

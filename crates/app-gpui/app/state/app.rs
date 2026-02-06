@@ -5,6 +5,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use gpui::prelude::*;
+use gpui::Entity;
 use gpui_ui_kit::workflow::NodeId;
 use sotf_audio_player::Player;
 
@@ -20,6 +22,7 @@ use crate::app::types::{
 };
 
 use super::{InputState, LibraryState, PlaybackState, PluginState, UIState};
+use super::ui::LayoutState;
 use crate::app::manager::{Manager, ManagerError};
 use crate::app::state::library::LibraryEvent;
 use crate::components::plugins::editing::PluginEditingManager;
@@ -95,6 +98,7 @@ pub struct App {
     pub level_meter_peak_hold: Vec<f64>,
     /// Last update time for peak hold decay
     pub level_meter_peak_hold_last_update: Option<std::time::Instant>,
+    pub meter_display_mode: MeterDisplayMode, // Which meter to show (LUFS or Levels)
 
     // Spectrum analyzer
     pub spectrum_visible: bool,
@@ -102,43 +106,20 @@ pub struct App {
     // Flags
     pub needs_rescan: bool,
     pub is_loading_initial_data: bool,
+    pub library_stats_computing: bool,
+    pub pending_library_stats: Arc<parking_lot::Mutex<Option<LibraryStats>>>,
 
     // Scan progress modal (for library, bliss, waveform, replaygain scans)
     pub scan_progress_modal: Option<crate::app::types::ScanProgressModal>,
 
-    // Panel layout (resizable)
-    pub queue_panel_ratio: f32, // Height ratio for Queue section in split view (Library on top, Queue on bottom)
-    pub queue_list_ratio: f32,  // Width ratio for queue list in Queue screen
-    pub meters_panel_ratio: f32, // Width ratio for level meters panel in Queue screen
-    pub lufs_panel_ratio: f32,  // Width ratio for LUFS panel in Queue screen (4-col mode)
-    pub lufs_visible: bool,     // Whether LUFS panel is visible (when separated from meters)
-    pub meter_display_mode: MeterDisplayMode, // Which meter to show (LUFS or Levels)
-    pub is_dragging_queue_divider: bool,
-    pub is_dragging_queue_list_divider: bool,
-    pub is_dragging_meters_divider: bool,
-    pub is_dragging_lufs_divider: bool,
+    // Layout configuration is now managed via AppState.layout entity
     pub divider_click_start: Option<std::time::Instant>,
 
     // 3-Panel Layout (Library | Queue | Rack)
     pub layout_orientation: LayoutOrientation,
     pub rack_display_mode: RackDisplayMode,
-    // Panel ratios for horizontal layout (side-by-side)
-    pub library_h_ratio: f32,
-    pub queue_h_ratio: f32,
-    pub rack_h_ratio: f32,
-    // Panel ratios for vertical layout (stacked)
-    pub library_v_ratio: f32,
-    pub queue_v_ratio: f32,
-    pub rack_v_ratio: f32,
-    // Panel visibility (user can collapse via dividers)
-    pub library_panel_collapsed: bool,
-    pub queue_panel_collapsed: bool,
-    pub rack_panel_collapsed: bool,
     // Hide queue meters when rack is visible in 3-panel layout
     pub hide_queue_meters_for_rack: bool,
-    // Divider drag states for 3-panel layout
-    pub is_dragging_library_queue_divider: bool,
-    pub is_dragging_queue_rack_divider: bool,
 
     // Scan progress for threaded scanning
     pub scan_total_files: usize,
@@ -222,6 +203,7 @@ pub struct App {
 /// GPUI-compatible state wrapper
 pub struct AppState {
     pub app: App,
+    pub layout: Entity<LayoutState>,
     pub player: Arc<parking_lot::Mutex<Player>>,
 }
 
@@ -252,36 +234,18 @@ impl App {
             level_meter_last_speaker_config: None,
             level_meter_peak_hold: Vec::new(),
             level_meter_peak_hold_last_update: None,
+            meter_display_mode: MeterDisplayMode::default(),
             spectrum_visible: false,
             needs_rescan: false,
             is_loading_initial_data: true,
+            library_stats_computing: false,
+            pending_library_stats: Arc::new(parking_lot::Mutex::new(None)),
             scan_progress_modal: None,
-            queue_panel_ratio: 0.35,
-            queue_list_ratio: 0.30,
-            meters_panel_ratio: 0.25,
-            lufs_panel_ratio: 0.25,
-            lufs_visible: true,
-            meter_display_mode: MeterDisplayMode::default(),
-            is_dragging_queue_divider: false,
-            is_dragging_queue_list_divider: false,
-            is_dragging_meters_divider: false,
-            is_dragging_lufs_divider: false,
             divider_click_start: None,
             // 3-Panel Layout defaults
             layout_orientation: LayoutOrientation::default(),
             rack_display_mode: RackDisplayMode::default(),
-            library_h_ratio: 0.30,
-            queue_h_ratio: 0.40,
-            rack_h_ratio: 0.30,
-            library_v_ratio: 0.40,
-            queue_v_ratio: 0.35,
-            rack_v_ratio: 0.25,
-            library_panel_collapsed: false,
-            queue_panel_collapsed: false,
-            rack_panel_collapsed: false,
             hide_queue_meters_for_rack: false,
-            is_dragging_library_queue_divider: false,
-            is_dragging_queue_rack_divider: false,
             scan_total_files: 0,
             is_dragging_volume: false,
             volume_drag_start_y: None,
@@ -486,6 +450,7 @@ impl App {
     /// Load library from database if available
     pub fn load_library_from_database(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.library_state.library.load_from_database()?;
+        self.library_state.ensure_cache_valid();
         // Update last scan times for directories from database
         self.update_directory_scan_times();
         // Invalidate cached stats since library content changed
@@ -642,7 +607,7 @@ impl App {
         }
     }
 
-    pub fn load_config(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn load_config(&mut self) -> Result<LayoutState, Box<dyn std::error::Error>> {
         use crate::config::Config;
         let config = Config::load()?;
 
@@ -663,18 +628,20 @@ impl App {
         // Restore font scale
         self.ui_state.font_scale = config.font_scale;
 
-        // Restore panel layout
-        self.queue_panel_ratio = config.panel_layout.queue_ratio;
-        self.meters_panel_ratio = config.panel_layout.meters_ratio;
-        self.queue_list_ratio = config.panel_layout.queue_list_ratio;
-        self.lufs_panel_ratio = config.panel_layout.lufs_ratio;
-        // Restore 3-panel layout ratios
-        self.library_h_ratio = config.panel_layout.library_h_ratio;
-        self.queue_h_ratio = config.panel_layout.queue_h_ratio;
-        self.rack_h_ratio = config.panel_layout.rack_h_ratio;
-        self.library_v_ratio = config.panel_layout.library_v_ratio;
-        self.queue_v_ratio = config.panel_layout.queue_v_ratio;
-        self.rack_v_ratio = config.panel_layout.rack_v_ratio;
+        // Build LayoutState from config
+        let layout_state = LayoutState {
+            queue_panel_ratio: config.panel_layout.queue_ratio,
+            meters_panel_ratio: config.panel_layout.meters_ratio,
+            queue_list_ratio: config.panel_layout.queue_list_ratio,
+            lufs_panel_ratio: config.panel_layout.lufs_ratio,
+            library_h_ratio: config.panel_layout.library_h_ratio,
+            queue_h_ratio: config.panel_layout.queue_h_ratio,
+            rack_h_ratio: config.panel_layout.rack_h_ratio,
+            library_v_ratio: config.panel_layout.library_v_ratio,
+            queue_v_ratio: config.panel_layout.queue_v_ratio,
+            rack_v_ratio: config.panel_layout.rack_v_ratio,
+            ..Default::default()
+        };
 
         // Restore volume and muted state
         // self.playback.volume = config.volume; // Always start at default (10%) per requirement
@@ -717,7 +684,7 @@ impl App {
             // Load the preset file
             let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() else {
                 log::warn!("Could not find presets directory, skipping preset restore");
-                return Ok(());
+                return Ok(layout_state);
             };
             match self
                 .plugin_state
@@ -736,16 +703,17 @@ impl App {
             }
         }
 
-        Ok(())
+        Ok(layout_state)
     }
 
-    pub fn save_config(&self) -> Result<(), Box<dyn std::error::Error>> {
-        self.save_config_with_geometry(None)
+    pub fn save_config(&self, layout: &LayoutState) -> Result<(), Box<dyn std::error::Error>> {
+        self.save_config_with_geometry(layout, None)
     }
 
     /// Save config with optional window geometry
     pub fn save_config_with_geometry(
         &self,
+        layout: &LayoutState,
         window_geometry: Option<crate::config::WindowGeometry>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         use crate::config::{Config, PanelLayout};
@@ -756,17 +724,17 @@ impl App {
             language: self.ui_state.language,
             keymap_preset: self.ui_state.keymap_preset,
             panel_layout: PanelLayout {
-                queue_ratio: self.queue_panel_ratio,
-                meters_ratio: self.meters_panel_ratio,
-                queue_list_ratio: self.queue_list_ratio,
-                lufs_ratio: self.lufs_panel_ratio,
+                queue_ratio: layout.queue_panel_ratio,
+                meters_ratio: layout.meters_panel_ratio,
+                queue_list_ratio: layout.queue_list_ratio,
+                lufs_ratio: layout.lufs_panel_ratio,
                 // 3-Panel Layout ratios
-                library_h_ratio: self.library_h_ratio,
-                queue_h_ratio: self.queue_h_ratio,
-                rack_h_ratio: self.rack_h_ratio,
-                library_v_ratio: self.library_v_ratio,
-                queue_v_ratio: self.queue_v_ratio,
-                rack_v_ratio: self.rack_v_ratio,
+                library_h_ratio: layout.library_h_ratio,
+                queue_h_ratio: layout.queue_h_ratio,
+                rack_h_ratio: layout.rack_h_ratio,
+                library_v_ratio: layout.library_v_ratio,
+                queue_v_ratio: layout.queue_v_ratio,
+                rack_v_ratio: layout.rack_v_ratio,
             },
             window_geometry: window_geometry.unwrap_or_else(|| {
                 // If no geometry provided, use current saved value or default
@@ -875,19 +843,9 @@ impl App {
         self.library_stats.valid = false;
     }
 
-    /// Get library statistics, computing them if not cached.
-    /// This is an O(n) operation when stats are invalid, but returns cached
-    /// values on subsequent calls until invalidate_library_stats() is called.
-    pub fn get_library_stats(&mut self) -> &LibraryStats {
-        if !self.library_stats.valid {
-            self.compute_library_stats();
-        }
-        &self.library_stats
-    }
-
     /// Compute library statistics from scratch.
     /// This is expensive - O(n) over all albums and tracks.
-    fn compute_library_stats(&mut self) {
+    pub fn compute_library_stats_static(albums: &[sotf_audio_player::Album]) -> LibraryStats {
         use std::collections::{HashMap, HashSet};
 
         let mut artists: HashSet<String> = HashSet::new();
@@ -910,7 +868,7 @@ impl App {
         let mut surround71_count = 0usize;
         let mut surround_plus_count = 0usize;
 
-        for album in &self.library_state.library.albums {
+        for album in albums {
             // Count channels
             if let Some(channels) = album.uniform_channel_count() {
                 match channels {
@@ -1025,7 +983,7 @@ impl App {
         // Build decade counts from year_counts
         let decade_counts = Self::build_decade_counts(&year_counts);
 
-        self.library_stats = LibraryStats {
+        LibraryStats {
             artists_count: artists.len(),
             composers_count: composers.len(),
             total_tracks,
@@ -1047,7 +1005,13 @@ impl App {
             surround71_count,
             surround_plus_count,
             valid: true,
-        };
+        }
+    }
+
+    /// Get library statistics, returning currently cached values.
+    /// If stats are invalid, they should be updated via compute_library_stats_async.
+    pub fn get_library_stats(&self) -> &LibraryStats {
+        &self.library_stats
     }
 
     /// Build decade counts from year counts
@@ -1123,38 +1087,38 @@ impl App {
     }
 
     /// Calculate the width of the queue list panel.
-    fn queue_list_width(&self) -> f32 {
-        self.ui_state.window_width * self.queue_list_ratio
+    fn queue_list_width(&self, layout: &LayoutState) -> f32 {
+        self.ui_state.window_width * layout.queue_list_ratio
     }
 
     /// Calculate the width of the center panel (remaining after queue list and meters).
-    fn center_panel_width(&self) -> f32 {
-        let center_ratio = 1.0 - self.queue_list_ratio - self.meters_panel_ratio;
+    fn center_panel_width(&self, layout: &LayoutState) -> f32 {
+        let center_ratio = 1.0 - layout.queue_list_ratio - layout.meters_panel_ratio;
         self.ui_state.window_width * center_ratio
     }
 
     /// Maximum characters for queue list album title (text_sm ~7px).
-    pub fn max_chars_queue_list_title(&self) -> usize {
-        Self::calculate_max_chars(self.queue_list_width(), 56.0, 50.0, 7.0, 15, 100)
+    pub fn max_chars_queue_list_title(&self, layout: &LayoutState) -> usize {
+        Self::calculate_max_chars(self.queue_list_width(layout), 56.0, 50.0, 7.0, 15, 100)
     }
 
     /// Maximum characters for queue list artist (text_xs ~6px).
-    pub fn max_chars_queue_list_artist(&self) -> usize {
-        Self::calculate_max_chars(self.queue_list_width(), 56.0, 50.0, 6.0, 15, 120)
+    pub fn max_chars_queue_list_artist(&self, layout: &LayoutState) -> usize {
+        Self::calculate_max_chars(self.queue_list_width(layout), 56.0, 50.0, 6.0, 15, 120)
     }
 
     /// Maximum characters for Now Playing album title (text_lg ~9px).
-    pub fn max_chars_now_playing_title(&self) -> usize {
-        Self::calculate_max_chars(self.center_panel_width(), 192.0, 100.0, 9.0, 20, 150)
+    pub fn max_chars_now_playing_title(&self, layout: &LayoutState) -> usize {
+        Self::calculate_max_chars(self.center_panel_width(layout), 192.0, 100.0, 9.0, 20, 150)
     }
 
     /// Maximum characters for Now Playing artist (text_sm ~7px).
-    pub fn max_chars_now_playing_artist(&self) -> usize {
-        Self::calculate_max_chars(self.center_panel_width(), 192.0, 100.0, 7.0, 20, 180)
+    pub fn max_chars_now_playing_artist(&self, layout: &LayoutState) -> usize {
+        Self::calculate_max_chars(self.center_panel_width(layout), 192.0, 100.0, 7.0, 20, 180)
     }
 
     /// Maximum characters for track titles (text_sm ~7px).
-    pub fn max_chars_track_title(&self) -> usize {
-        Self::calculate_max_chars(self.center_panel_width(), 120.0, 100.0, 7.0, 20, 200)
+    pub fn max_chars_track_title(&self, layout: &LayoutState) -> usize {
+        Self::calculate_max_chars(self.center_panel_width(layout), 120.0, 100.0, 7.0, 20, 200)
     }
 }

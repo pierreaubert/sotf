@@ -22,51 +22,55 @@ impl Render for PlayerView {
         };
 
         if needs_dimension_update {
-            let state = self.state.clone();
+            let view_handle = cx.entity().clone();
             cx.defer(move |cx| {
-                state.update(cx, |state, _cx| {
-                    state.app.ui_state.window_height = window_height;
-                    state.app.ui_state.window_width = window_width;
-                    state.app.ui_state.layout_mode = if window_height >= 800.0 {
-                        crate::app::LayoutMode::Expanded
-                    } else {
-                        crate::app::LayoutMode::Compact
-                    };
+                view_handle.update(cx, |view, cx| {
+                    view.state.update(cx, |state, cx| {
+                        state.layout.update(cx, |layout, _cx| {
+                            state.app.ui_state.window_height = window_height;
+                            state.app.ui_state.window_width = window_width;
+                            state.app.ui_state.layout_mode = if window_height >= 800.0 {
+                                crate::app::LayoutMode::Expanded
+                            } else {
+                                crate::app::LayoutMode::Compact
+                            };
 
-                    // Update 3-panel layout orientation based on aspect ratio
-                    state.app.layout_orientation = if window_width > window_height {
-                        crate::app::LayoutOrientation::Horizontal
-                    } else {
-                        crate::app::LayoutOrientation::Vertical
-                    };
+                            // Update 3-panel layout orientation based on aspect ratio
+                            state.app.layout_orientation = if window_width > window_height {
+                                crate::app::LayoutOrientation::Horizontal
+                            } else {
+                                crate::app::LayoutOrientation::Vertical
+                            };
 
-                    // Determine rack display mode based on available space
-                    let rack_dimension = match state.app.layout_orientation {
-                        crate::app::LayoutOrientation::Horizontal => {
-                            window_width * state.app.rack_h_ratio
-                        }
-                        crate::app::LayoutOrientation::Vertical => {
-                            window_height * state.app.rack_v_ratio
-                        }
-                    };
-                    state.app.rack_display_mode = if state.app.rack_panel_collapsed {
-                        crate::app::RackDisplayMode::Collapsed
-                    } else if rack_dimension < 100.0 {
-                        crate::app::RackDisplayMode::Collapsed
-                    } else if rack_dimension < 200.0 {
-                        crate::app::RackDisplayMode::Mini
-                    } else {
-                        crate::app::RackDisplayMode::Full
-                    };
+                            // Determine rack display mode based on available space
+                            let rack_dimension = match state.app.layout_orientation {
+                                crate::app::LayoutOrientation::Horizontal => {
+                                    window_width * layout.rack_h_ratio
+                                }
+                                crate::app::LayoutOrientation::Vertical => {
+                                    window_height * layout.rack_v_ratio
+                                }
+                            };
+                            state.app.rack_display_mode = if layout.rack_panel_collapsed {
+                                crate::app::RackDisplayMode::Collapsed
+                            } else if rack_dimension < 100.0 {
+                                crate::app::RackDisplayMode::Collapsed
+                            } else if rack_dimension < 200.0 {
+                                crate::app::RackDisplayMode::Mini
+                            } else {
+                                crate::app::RackDisplayMode::Full
+                            };
 
-                    // Hide queue meters when rack is visible to avoid duplicate meters
-                    state.app.hide_queue_meters_for_rack = matches!(
-                        state.app.rack_display_mode,
-                        crate::app::RackDisplayMode::Full | crate::app::RackDisplayMode::Mini
-                    );
-
+                            // Hide queue meters when rack is visible to avoid duplicate meters
+                            state.app.hide_queue_meters_for_rack = matches!(
+                                state.app.rack_display_mode,
+                                crate::app::RackDisplayMode::Full | crate::app::RackDisplayMode::Mini
+                            );
+                        });
+                    });
+                    
                     // Recalculate pagination based on new window size
-                    state.app.recalculate_pagination(false);
+                    view.recalculate_pagination(cx, false);
                 });
             });
         }
@@ -94,8 +98,9 @@ impl Render for PlayerView {
 
             let state = self.state.clone();
             cx.defer(move |cx| {
-                state.update(cx, |state, _cx| {
-                    if let Err(e) = state.app.save_config_with_geometry(Some(geometry)) {
+                state.update(cx, |state, cx| {
+                    let layout = state.layout.read(cx);
+                    if let Err(e) = state.app.save_config_with_geometry(&layout, Some(geometry)) {
                         log::warn!("Failed to save window geometry: {}", e);
                     }
                 });
@@ -103,6 +108,11 @@ impl Render for PlayerView {
 
             self.last_saved_window_bounds = Some(window_bounds);
         }
+
+        // Ensure library cache is valid before reading from state
+        self.state.update(cx, |state, _cx| {
+            state.app.library_state.ensure_cache_valid();
+        });
 
         let (current_screen, input_mode, theme, layout_mode, active_menu, font_scale) = {
             let state = self.state.read(cx);
@@ -122,7 +132,8 @@ impl Render for PlayerView {
 
         // Keep gpui-ui-kit global theme in sync with app theme so components get consistent defaults.
         // This allows builder overrides but ensures out-of-the-box colors match the app theme.
-        let ui_kit_theme = theme.to_ui_kit_theme(self.state.read(cx).app.ui_state.theme_id);
+        let theme_id = self.state.read(cx).app.ui_state.theme_id;
+        let ui_kit_theme: gpui_ui_kit::Theme = theme.to_ui_kit_theme(theme_id);
         cx.set_global(UiKitThemeState {
             theme: ui_kit_theme,
         });

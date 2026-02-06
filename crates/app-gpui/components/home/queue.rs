@@ -22,12 +22,13 @@ use crate::ui::PlayerView;
 impl PlayerView {
     pub(crate) fn render_queue_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
+        let layout = state.layout.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
 
         // Use ratios for panel widths (layout will compute actual sizes)
-        let queue_list_ratio = state.app.queue_list_ratio;
-        let meters_ratio = state.app.meters_panel_ratio;
+        let queue_list_ratio = layout.queue_list_ratio;
+        let meters_ratio = layout.meters_panel_ratio;
         let meter_display_mode = state.app.meter_display_mode;
         let hide_meters_for_rack = state.app.hide_queue_meters_for_rack;
 
@@ -176,8 +177,8 @@ impl PlayerView {
                                         )
                                         .child({
                                             // Dynamic truncation based on panel width
-                                            let max_title_chars = state.app.max_chars_queue_list_title();
-                                            let max_artist_chars = state.app.max_chars_queue_list_artist();
+                                            let max_title_chars = state.app.max_chars_queue_list_title(&layout);
+                                            let max_artist_chars = state.app.max_chars_queue_list_artist(&layout);
 
                                             let album_title = item.album.title.clone();
                                             let album_title_truncated = if album_title.chars().count() > max_title_chars {
@@ -263,20 +264,23 @@ impl PlayerView {
                     .collapsed(queue_collapsed)
                     .theme(divider_theme)
                     .on_toggle({
-                        let state = self.state.clone();
+                        let state_handle = self.state.clone();
                         move |collapsed, _window, cx| {
-                            state.update(cx, |state, _| {
-                                state.app.queue_list_ratio = if collapsed { 0.0 } else { 0.30 };
-                                let _ = state.app.save_config();
+                            state_handle.update(cx, |state, cx| {
+                                state.layout.update(cx, |layout, _| {
+                                    layout.queue_list_ratio = if collapsed { 0.0 } else { 0.30 };
+                                    let _ = state.app.save_config(layout);
+                                });
                             });
                         }
                     })
                     .on_drag_start({
-                        let state = self.state.clone();
+                        let state_handle = self.state.clone();
                         move |_pos, _window, cx| {
-                            state.update(cx, |state, _| {
-                                state.app.is_dragging_queue_list_divider = true;
-                                state.app.divider_click_start = Some(std::time::Instant::now());
+                            state_handle.update(cx, |state, cx| {
+                                state.layout.update(cx, |layout, _| {
+                                    layout.is_dragging_queue_list_divider = true;
+                                });
                             });
                         }
                     })
@@ -300,20 +304,23 @@ impl PlayerView {
                     .collapsed(meters_collapsed)
                     .theme(divider_theme)
                     .on_toggle({
-                        let state = self.state.clone();
+                        let state_handle = self.state.clone();
                         move |collapsed, _window, cx| {
-                            state.update(cx, |state, _| {
-                                state.app.meters_panel_ratio = if collapsed { 0.0 } else { 0.25 };
-                                let _ = state.app.save_config();
+                            state_handle.update(cx, |state, cx| {
+                                state.layout.update(cx, |layout, _| {
+                                    layout.meters_panel_ratio = if collapsed { 0.0 } else { 0.25 };
+                                    let _ = state.app.save_config(layout);
+                                });
                             });
                         }
                     })
                     .on_drag_start({
-                        let state = self.state.clone();
+                        let state_handle = self.state.clone();
                         move |_pos, _window, cx| {
-                            state.update(cx, |state, _| {
-                                state.app.is_dragging_meters_divider = true;
-                                state.app.divider_click_start = Some(std::time::Instant::now());
+                            state_handle.update(cx, |state, cx| {
+                                state.layout.update(cx, |layout, _| {
+                                    layout.is_dragging_meters_divider = true;
+                                });
                             });
                         }
                     })
@@ -449,6 +456,7 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let state = self.state.read(cx);
+        let layout = state.layout.read(cx);
         let theme = state.app.ui_state.theme.clone();
         // Clone theme for use in closures (moved into flat_map)
         let theme_for_closure = theme.clone();
@@ -479,8 +487,8 @@ impl PlayerView {
             let art_path = album.album_art_path.clone();
 
             // Dynamic truncation based on window/panel size
-            let max_title_chars = state.app.max_chars_now_playing_title();
-            let max_artist_chars = state.app.max_chars_now_playing_artist();
+            let max_title_chars = state.app.max_chars_now_playing_title(&layout);
+            let max_artist_chars = state.app.max_chars_now_playing_artist(&layout);
 
             let album_title = if album_title_full.chars().count() > max_title_chars {
                 album_title_full
@@ -689,7 +697,9 @@ impl PlayerView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         // Get dynamic max chars for track titles based on window size
-        let max_track_chars = self.state.read(cx).app.max_chars_track_title();
+        let state = self.state.read(cx);
+        let layout = state.layout.read(cx);
+        let max_track_chars = state.app.max_chars_track_title(&layout);
 
         // Find common prefix to strip from track names
         // For albums like "Monteverdi: Vespro della Beata...", tracks often start with "Vespro della Beata..."

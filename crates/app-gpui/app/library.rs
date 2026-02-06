@@ -11,16 +11,8 @@ use super::state::library::{ChannelFilter, LibrarySortOrder};
 use super::types::ToastMessage;
 
 impl App {
-    pub fn filtered_albums(&self) -> Vec<Album> {
-        // Convert state types to library types
-        let sort_order = self.library_state.sort_order.to_library_sort_order();
-        let channel_filter = self.library_state.filter.to_library_channel_filter();
-
-        let mut albums = self.library_state.library.get_filtered_albums(
-            &self.library_state.search_query,
-            sort_order,
-            channel_filter,
-        );
+    pub fn filtered_albums(&self) -> Vec<&Album> {
+        let mut albums = self.library_state.filtered_albums();
 
         // When there's an active search query, skip all selection filters.
         // This ensures search results are not filtered by letter/genre/decade/etc
@@ -180,7 +172,7 @@ impl App {
     }
 
     /// Get paginated albums for grid view
-    pub fn get_paginated_albums(&self) -> Vec<Album> {
+    pub fn get_paginated_albums(&self) -> Vec<&Album> {
         let all_albums = self.filtered_albums();
         if all_albums.is_empty() {
             return Vec::new();
@@ -191,32 +183,7 @@ impl App {
 
     /// Reset to first page
     pub fn reset_page(&mut self) {
-        self.recalculate_pagination(true);
-    }
-
-    /// Recalculate items per page based on window size
-    pub fn recalculate_pagination(&mut self, force_reset: bool) {
-        // Estimate grid dimensions
-        // Card min width is 160px + 16px gap = 176px
-        // Card height is approx 240px + 16px gap = 256px
-        // Sidebar is approx 0 in compact, or split in expanded
-
-        let available_width = self.ui_state.window_width - 32.0; // Minus padding
-        let columns = (available_width / 176.0).floor().max(1.0) as usize;
-        self.library_state.library_columns = columns;
-
-        // Estimate available height for grid
-        // Header (40) + Stats (100) + Filter (40) + Pagination (50) + Footer (60) = ~290px
-        let available_height = (self.ui_state.window_height - 290.0).max(256.0);
-        let rows = (available_height / 256.0).floor().max(1.0) as usize;
-
-        // Initial load: 3 screens worth of items
-        let new_items_per_page = columns * rows * 3;
-
-        // Only update if we are initializing, resizing significantly, or forcing reset
-        if force_reset || self.library_state.items_per_page < new_items_per_page {
-            self.library_state.items_per_page = new_items_per_page;
-        }
+        self.library_state.current_page = 0;
     }
 
     /// Load more albums (infinite scroll)

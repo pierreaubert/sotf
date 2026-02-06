@@ -5,6 +5,7 @@ use mimalloc::MiMalloc;
 use rust_embed::RustEmbed;
 use sotf_audio_player::Player;
 use sotf_audio_player_gpui::app::actions::*;
+use sotf_audio_player_gpui::app::state::ui::LayoutState;
 use sotf_audio_player_gpui::app::{
     App, AppState,
     i18n::{Language, Translations},
@@ -86,12 +87,12 @@ fn main() {
             cx.text_system().add_fonts(font_data).unwrap();
         }
 
-        // Load configuration to get language and keymap preset
-        let (language, keymap_preset) = if let Ok(config) = Config::load() {
-            (config.language, config.keymap_preset)
-        } else {
-            (Language::default(), KeymapPreset::default())
-        };
+        // Load configuration to get language, keymap preset, and window geometry
+        let config = Config::load().ok();
+        let (language, keymap_preset) = config
+            .as_ref()
+            .map(|c| (c.language, c.keymap_preset))
+            .unwrap_or_else(|| (Language::default(), KeymapPreset::default()));
 
         let translations = Translations::for_language(language);
 
@@ -132,10 +133,10 @@ fn main() {
             },
         ]);
 
-        // Load window geometry from config
-        let window_geometry = Config::load()
-            .ok()
-            .map(|c| c.window_geometry)
+        // Use window geometry from already loaded config
+        let window_geometry = config
+            .as_ref()
+            .map(|c| c.window_geometry.clone())
             .unwrap_or_default();
 
         // Create window with app state
@@ -167,29 +168,36 @@ fn main() {
                 window_min_size: None,
             },
             |_, cx| {
+                // Load configuration (directories, theme, etc.) before creating entities
+                let mut temp_app = App::new();
+                let layout_state = match temp_app.load_config() {
+                    Ok(l) => l,
+                    Err(e) => {
+                        log::warn!("Could not load saved configuration: {}", e);
+                        LayoutState::default()
+                    }
+                };
+
+                let player = Player::new();
+                // Apply loaded volume to player
+                if let Err(e) = player.set_volume(temp_app.playback.volume) {
+                    log::warn!("Failed to set initial volume: {}", e);
+                }
+
+                let layout = cx.new(|_| layout_state);
+                let player_arc = Arc::new(parking_lot::Mutex::new(player));
+
                 // Create application state
                 // Note: Database loading is deferred to after UI renders via check_library_on_startup()
                 let app_state = cx.new(|_cx| {
-                    let mut app = App::new();
-
+                    let mut app = temp_app;
                     // Load output devices
                     app.load_audio_devices();
 
-                    // Load configuration (directories, theme, etc.)
-                    if let Err(e) = app.load_config() {
-                        log::warn!("Could not load saved configuration: {}", e);
-                    }
-
-                    let player = Player::new();
-
-                    // Apply loaded volume to player
-                    if let Err(e) = player.set_volume(app.playback.volume) {
-                        log::warn!("Failed to set initial volume: {}", e);
-                    }
-
                     AppState {
                         app,
-                        player: Arc::new(parking_lot::Mutex::new(player)),
+                        layout,
+                        player: player_arc,
                     }
                 });
 

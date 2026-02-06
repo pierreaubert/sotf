@@ -711,6 +711,18 @@ fn default_denoiser_low_latency() -> bool {
 fn default_denoiser_polyphonic_detection() -> bool {
     false
 }
+fn default_denoiser_psychoacoustic_masking() -> bool {
+    true
+}
+fn default_denoiser_use_captured_profile() -> bool {
+    false
+}
+fn default_denoiser_dd_enabled() -> bool {
+    false
+}
+fn default_denoiser_dd_alpha() -> f64 {
+    0.98
+}
 
 // PND defaults
 fn default_pnd_correction_strength() -> f64 {
@@ -1136,6 +1148,14 @@ pub enum PluginSettings {
         low_latency: bool,
         #[serde(default = "default_denoiser_polyphonic_detection")]
         polyphonic_detection: bool,
+        #[serde(default = "default_denoiser_dd_enabled")]
+        dd_enabled: bool,
+        #[serde(default = "default_denoiser_dd_alpha")]
+        dd_alpha: f64,
+        #[serde(default = "default_denoiser_psychoacoustic_masking")]
+        psychoacoustic_masking: bool,
+        #[serde(default = "default_denoiser_use_captured_profile")]
+        use_captured_profile: bool,
     },
     Pnd {
         #[serde(default = "default_pnd_correction_strength")]
@@ -1732,6 +1752,10 @@ impl PluginSettings {
                 release_ms,
                 low_latency,
                 polyphonic_detection,
+                dd_enabled,
+                dd_alpha,
+                psychoacoustic_masking,
+                use_captured_profile,
             } => PluginConfig::new(
                 "denoiser",
                 json!({
@@ -1742,6 +1766,10 @@ impl PluginSettings {
                     "release_ms": release_ms,
                     "low_latency": low_latency,
                     "polyphonic_detection": polyphonic_detection,
+                    "dd_enabled": dd_enabled,
+                    "dd_alpha": dd_alpha,
+                    "psychoacoustic_masking": psychoacoustic_masking,
+                    "use_captured_profile": use_captured_profile,
                 }),
             ),
             Self::Pnd {
@@ -2033,6 +2061,10 @@ impl PluginSettings {
                 release_ms: default_denoiser_release_ms(),
                 low_latency: default_denoiser_low_latency(),
                 polyphonic_detection: default_denoiser_polyphonic_detection(),
+                dd_enabled: default_denoiser_dd_enabled(),
+                dd_alpha: default_denoiser_dd_alpha(),
+                psychoacoustic_masking: default_denoiser_psychoacoustic_masking(),
+                use_captured_profile: default_denoiser_use_captured_profile(),
             },
             PluginType::Pnd => Self::Pnd {
                 correction_strength: default_pnd_correction_strength(),

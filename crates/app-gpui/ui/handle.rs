@@ -402,44 +402,353 @@ impl PlayerView {
         cx.notify();
     }
 
-    fn handle_directory_input(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
-        // Handle text input for add directory mode
-        match event.keystroke.key.as_str() {
-            "backspace" => {
-                self.state.update(cx, |state, _cx| {
-                    state.app.input_state.directory_input.pop();
-                    state.app.clear_autocomplete();
-                });
-                cx.notify();
+        fn handle_directory_input(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
+
+            // ... (existing code)
+
+            match event.keystroke.key.as_str() {
+
+                "backspace" => {
+
+                    self.state.update(cx, |state, _cx| {
+
+                        state.app.input_state.directory_input.pop();
+
+                        state.app.clear_autocomplete();
+
+                    });
+
+                    cx.notify();
+
+                }
+
+                "tab" => {
+
+                    // Tab autocomplete
+
+                    self.state.update(cx, |state, _cx| {
+
+                        if state.app.input_state.autocomplete_suggestions.is_empty() {
+
+                            state.app.generate_autocomplete_suggestions();
+
+                        } else {
+
+                            state.app.next_autocomplete();
+
+                        }
+
+                    });
+
+                    cx.notify();
+
+                }
+
+                "escape" => {
+
+                    // Already handled by Cancel action
+
+                }
+
+                "enter" => {
+
+                    // Already handled by Enter action (adds directory)
+
+                }
+
+                _ => {
+
+                    // Add character to directory input
+
+                    if let Some(text) = event.keystroke.key_char.as_ref() {
+
+                        self.state.update(cx, |state, _cx| {
+
+                            state.app.input_state.directory_input.push_str(text);
+
+                            state.app.clear_autocomplete();
+
+                        });
+
+                        cx.notify();
+
+                    }
+
+                }
+
             }
-            "tab" => {
-                // Tab autocomplete
+
+        }
+
+    
+
+        pub(crate) fn select_next(&mut self, _: &SelectNext, _: &mut Window, cx: &mut Context<Self>) {
+
+            let screen = self.state.read(cx).app.ui_state.current_screen;
+
+            match screen {
+
+                Screen::Library => self.state.update(cx, |state, _cx| state.app.select_next_album()),
+
+                Screen::Queue => self.state.update(cx, |state, _cx| state.app.select_next_queue_item()),
+
+                Screen::Settings => {
+
+                    self.state.update(cx, |state, _cx| state.app.select_next_directory())
+
+                }
+
+                _ => {}
+
+            }
+
+            cx.notify();
+
+        }
+
+    
+
+        pub(crate) fn select_prev(&mut self, _: &SelectPrev, _: &mut Window, cx: &mut Context<Self>) {
+
+            let screen = self.state.read(cx).app.ui_state.current_screen;
+
+            match screen {
+
+                Screen::Library => self.state.update(cx, |state, _cx| state.app.select_previous_album()),
+
+                Screen::Queue => {
+
+                    self.state.update(cx, |state, _cx| state.app.select_previous_queue_item())
+
+                }
+
+                Screen::Settings => {
+
+                    self.state.update(cx, |state, _cx| state.app.select_previous_directory())
+
+                }
+
+                _ => {}
+
+            }
+
+            cx.notify();
+
+        }
+
+    
+
+        pub(crate) fn select_next_page(
+
+            &mut self,
+
+            _: &SelectNextPage,
+
+            _: &mut Window,
+
+            cx: &mut Context<Self>,
+
+        ) {
+
+            let screen = self.state.read(cx).app.ui_state.current_screen;
+
+            match screen {
+
+                Screen::Library => self.state.update(cx, |state, _cx| {
+
+                    let page_size = state.app.library_state.items_per_page;
+
+                    state.app.page_up_albums(page_size); // Corrected from page_down which was removed
+
+                }),
+
+                Screen::Queue => self.state.update(cx, |state, _cx| {
+
+                    state.app.page_down_queue(10);
+
+                }),
+
+                Screen::Settings => self.state.update(cx, |state, _cx| {
+
+                    state.app.page_down_directories(10);
+
+                }),
+
+                _ => {}
+
+            }
+
+            cx.notify();
+
+        }
+
+    
+
+        pub(crate) fn select_prev_page(
+
+            &mut self,
+
+            _: &SelectPrevPage,
+
+            _: &mut Window,
+
+            cx: &mut Context<Self>,
+
+        ) {
+
+            let screen = self.state.read(cx).app.ui_state.current_screen;
+
+            match screen {
+
+                Screen::Library => self.state.update(cx, |state, _cx| {
+
+                    let page_size = state.app.library_state.items_per_page;
+
+                    state.app.page_up_albums(page_size);
+
+                }),
+
+                Screen::Queue => self.state.update(cx, |state, _cx| {
+
+                    state.app.page_up_queue(10);
+
+                }),
+
+                Screen::Settings => self.state.update(cx, |state, _cx| {
+
+                    state.app.page_up_directories(10);
+
+                }),
+
+                _ => {}
+
+            }
+
+            cx.notify();
+
+        }
+
+    
+
+        pub(crate) fn select_left(&mut self, _: &SelectLeft, _: &mut Window, cx: &mut Context<Self>) {
+
+            let (screen, cols) = {
+
+                let state = self.state.read(cx);
+
+                let app = &state.app;
+
+                (app.ui_state.current_screen, app.library_state.library_columns)
+
+            };
+
+            if screen == Screen::Library {
+
                 self.state.update(cx, |state, _cx| {
-                    if state.app.input_state.autocomplete_suggestions.is_empty() {
-                        state.app.generate_autocomplete_suggestions();
+
+                    state.app.library_state.select_grid_left(cols);
+
+                });
+
+            }
+
+            cx.notify();
+
+        }
+
+    
+
+        pub(crate) fn select_right(&mut self, _: &SelectRight, _: &mut Window, cx: &mut Context<Self>) {
+            let (screen, cols) = {
+                let state = self.state.read(cx);
+                let app = &state.app;
+                (app.ui_state.current_screen, app.library_state.library_columns)
+            };
+
+            if screen == Screen::Library {
+                let mut should_load_more = false;
+                self.state.update(cx, |state, _cx| {
+                    let total = state.app.filtered_albums().len();
+                    if state.app.library_state.selected_index < total - 1 {
+                        state.app.library_state.select_grid_right(cols);
                     } else {
-                        state.app.next_autocomplete();
+                        should_load_more = true;
                     }
                 });
-                cx.notify();
-            }
-            "escape" => {
-                // Already handled by Cancel action
-            }
-            "enter" => {
-                // Already handled by Enter action (adds directory)
-            }
-            _ => {
-                // Add character to directory input
-                if let Some(text) = event.keystroke.key_char.as_ref() {
-                    self.state.update(cx, |state, _cx| {
-                        state.app.input_state.directory_input.push_str(text);
-                        state.app.clear_autocomplete();
-                    });
-                    cx.notify();
+
+                if should_load_more {
+                    self.load_more_albums(cx);
                 }
             }
+            cx.notify();
         }
+
+    
+
+        pub(crate) fn select_up(&mut self, _: &SelectUp, _: &mut Window, cx: &mut Context<Self>) {
+
+            let (screen, cols) = {
+
+                let state = self.state.read(cx);
+
+                let app = &state.app;
+
+                (app.ui_state.current_screen, app.library_state.library_columns)
+
+            };
+
+            if screen == Screen::Library {
+
+                self.state.update(cx, |state, _cx| {
+
+                    state.app.library_state.select_grid_up(cols);
+
+                });
+
+            }
+
+            cx.notify();
+
+        }
+
+    
+
+        pub(crate) fn select_down(&mut self, _: &SelectDown, _: &mut Window, cx: &mut Context<Self>) {
+            let (screen, cols) = {
+                let state = self.state.read(cx);
+                let app = &state.app;
+                (app.ui_state.current_screen, app.library_state.library_columns)
+            };
+
+            if screen == Screen::Library {
+                let mut should_load_more = false;
+                self.state.update(cx, |state, _cx| {
+                    let current_count = state.app.get_paginated_albums().len();
+                    let next_row_index = state.app.library_state.selected_index + cols;
+
+                    if next_row_index < current_count {
+                        state.app.library_state.select_grid_down(cols);
+                    } else {
+                        should_load_more = true;
+                    }
+                });
+
+                if should_load_more {
+                    self.load_more_albums(cx);
+                    // After load more, we try to move down again
+                    self.state.update(cx, |state, _cx| {
+                        let total = state.app.filtered_albums().len();
+                        if state.app.library_state.selected_index + cols < total {
+                            state.app.library_state.select_grid_down(cols);
+                        } else {
+                            state.app.library_state.selected_index = total.saturating_sub(1);
+                        }
+                    });
+                }
+            }
+            cx.notify();
+        }
+
     }
 
-}
+    
