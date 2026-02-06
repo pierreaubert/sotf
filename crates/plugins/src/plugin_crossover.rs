@@ -238,3 +238,344 @@ impl InPlacePlugin for CrossoverPlugin {
         0
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_crossover_creation_lowpass() {
+        let plugin = CrossoverPlugin::new(2, "LR24", 1000.0, "low").unwrap();
+        assert_eq!(plugin.channels(), 2);
+        assert!(!plugin.is_highpass);
+        assert_eq!(plugin.frequency, 1000.0);
+    }
+
+    #[test]
+    fn test_crossover_creation_highpass() {
+        let plugin = CrossoverPlugin::new(2, "LR24", 1000.0, "high").unwrap();
+        assert!(plugin.is_highpass);
+    }
+
+    #[test]
+    fn test_crossover_output_aliases() {
+        // Test all valid output string aliases
+        assert!(CrossoverPlugin::new(1, "LR24", 1000.0, "high").is_ok());
+        assert!(CrossoverPlugin::new(1, "LR24", 1000.0, "highpass").is_ok());
+        assert!(CrossoverPlugin::new(1, "LR24", 1000.0, "hp").is_ok());
+        assert!(CrossoverPlugin::new(1, "LR24", 1000.0, "low").is_ok());
+        assert!(CrossoverPlugin::new(1, "LR24", 1000.0, "lowpass").is_ok());
+        assert!(CrossoverPlugin::new(1, "LR24", 1000.0, "lp").is_ok());
+    }
+
+    #[test]
+    fn test_crossover_invalid_output() {
+        let result = CrossoverPlugin::new(2, "LR24", 1000.0, "invalid");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_crossover_from_params() {
+        let params = CrossoverPluginParams {
+            crossover_type: "LR24".to_string(),
+            frequency: 2000.0,
+            output: "high".to_string(),
+        };
+        let plugin = CrossoverPlugin::from_params(2, &params).unwrap();
+        assert!(plugin.is_highpass);
+        assert_eq!(plugin.frequency, 2000.0);
+    }
+
+    #[test]
+    fn test_crossover_build_filters_lr24() {
+        let mut plugin = CrossoverPlugin::new(2, "LR24", 1000.0, "low").unwrap();
+        plugin.build_filters("LR24").unwrap();
+        // LR24 = 2 cascaded 2nd-order sections per channel
+        assert_eq!(plugin.filters.len(), 2);
+        assert_eq!(plugin.filters[0].len(), 2);
+        assert_eq!(plugin.filters[1].len(), 2);
+    }
+
+    #[test]
+    fn test_crossover_build_filters_lr48() {
+        let mut plugin = CrossoverPlugin::new(2, "LR48", 1000.0, "low").unwrap();
+        plugin.build_filters("LR48").unwrap();
+        // LR48 = 4 cascaded 2nd-order sections per channel
+        assert_eq!(plugin.filters[0].len(), 4);
+    }
+
+    #[test]
+    fn test_crossover_build_filters_bw12() {
+        let mut plugin = CrossoverPlugin::new(1, "BW12", 500.0, "high").unwrap();
+        plugin.build_filters("BW12").unwrap();
+        // Butterworth12 = 1 section
+        assert_eq!(plugin.filters[0].len(), 1);
+    }
+
+    #[test]
+    fn test_crossover_build_filters_invalid_type() {
+        let mut plugin = CrossoverPlugin::new(1, "invalid", 1000.0, "low").unwrap();
+        assert!(plugin.build_filters("invalid_type").is_err());
+    }
+
+    #[test]
+    fn test_crossover_initialize_sets_sample_rate() {
+        let mut plugin = CrossoverPlugin::new(2, "LR24", 1000.0, "low").unwrap();
+        plugin.initialize(96000).unwrap();
+        assert_eq!(plugin.sample_rate, 96000);
+        // Filters should be built after initialize
+        assert_eq!(plugin.filters[0].len(), 2);
+    }
+
+    #[test]
+    fn test_crossover_no_parameters() {
+        let plugin = CrossoverPlugin::new(1, "LR24", 1000.0, "low").unwrap();
+        assert!(plugin.parameters().is_empty());
+        assert!(plugin.get_parameter(&ParameterId::from("frequency")).is_none());
+    }
+
+    #[test]
+    fn test_crossover_set_parameter_returns_error() {
+        let mut plugin = CrossoverPlugin::new(1, "LR24", 1000.0, "low").unwrap();
+        let result = plugin.set_parameter(
+            ParameterId::from("frequency"),
+            ParameterValue::Float(2000.0),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_crossover_lowpass_attenuates_high_frequencies() {
+        let mut plugin = CrossoverPlugin::new(1, "LR24", 1000.0, "low").unwrap();
+        plugin.initialize(48000).unwrap();
+
+        let sample_rate = 48000.0;
+        let num_frames = 4096;
+
+        // Generate a high-frequency sine (10kHz, well above 1kHz crossover)
+        let mut buffer: Vec<f32> = (0..num_frames)
+            .map(|i| {
+                let t = i as f32 / sample_rate as f32;
+                (t * 10000.0 * 2.0 * std::f32::consts::PI).sin() * 0.5
+            })
+            .collect();
+
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+
+        // Measure input energy
+        let input_energy: f32 = buffer.iter().map(|s| s * s).sum();
+
+        plugin.process_in_place(&mut buffer, &context).unwrap();
+
+        // Measure output energy (skip first 256 samples for filter settling)
+        let output_energy: f32 = buffer[256..].iter().map(|s| s * s).sum();
+        let input_energy_tail: f32 = (0..num_frames)
+            .skip(256)
+            .map(|i| {
+                let t = i as f32 / sample_rate as f32;
+                let s = (t * 10000.0 * 2.0 * std::f32::consts::PI).sin() * 0.5;
+                s * s
+            })
+            .sum();
+
+        // A 24dB/oct lowpass at 1kHz should heavily attenuate 10kHz
+        let ratio = output_energy / input_energy_tail;
+        assert!(
+            ratio < 0.01,
+            "Lowpass should heavily attenuate 10kHz signal (ratio: {:.6})",
+            ratio
+        );
+        // Input had energy
+        assert!(input_energy > 0.0);
+    }
+
+    #[test]
+    fn test_crossover_highpass_attenuates_low_frequencies() {
+        let mut plugin = CrossoverPlugin::new(1, "LR24", 1000.0, "high").unwrap();
+        plugin.initialize(48000).unwrap();
+
+        let sample_rate = 48000.0;
+        let num_frames = 4096;
+
+        // Generate a low-frequency sine (100Hz, well below 1kHz crossover)
+        let mut buffer: Vec<f32> = (0..num_frames)
+            .map(|i| {
+                let t = i as f32 / sample_rate as f32;
+                (t * 100.0 * 2.0 * std::f32::consts::PI).sin() * 0.5
+            })
+            .collect();
+
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+
+        let input_energy_tail: f32 = (0..num_frames)
+            .skip(512)
+            .map(|i| {
+                let t = i as f32 / sample_rate as f32;
+                let s = (t * 100.0 * 2.0 * std::f32::consts::PI).sin() * 0.5;
+                s * s
+            })
+            .sum();
+
+        plugin.process_in_place(&mut buffer, &context).unwrap();
+
+        let output_energy: f32 = buffer[512..].iter().map(|s| s * s).sum();
+
+        // A 24dB/oct highpass at 1kHz should heavily attenuate 100Hz
+        let ratio = output_energy / input_energy_tail;
+        assert!(
+            ratio < 0.01,
+            "Highpass should heavily attenuate 100Hz signal (ratio: {:.6})",
+            ratio
+        );
+    }
+
+    #[test]
+    fn test_crossover_lowpass_passes_low_frequencies() {
+        let mut plugin = CrossoverPlugin::new(1, "LR24", 1000.0, "low").unwrap();
+        plugin.initialize(48000).unwrap();
+
+        let sample_rate = 48000.0;
+        let num_frames = 4096;
+
+        // Generate a low-frequency sine (100Hz, well below 1kHz crossover)
+        let mut buffer: Vec<f32> = (0..num_frames)
+            .map(|i| {
+                let t = i as f32 / sample_rate as f32;
+                (t * 100.0 * 2.0 * std::f32::consts::PI).sin() * 0.5
+            })
+            .collect();
+
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+
+        let input_energy_tail: f32 = (0..num_frames)
+            .skip(512)
+            .map(|i| {
+                let t = i as f32 / sample_rate as f32;
+                let s = (t * 100.0 * 2.0 * std::f32::consts::PI).sin() * 0.5;
+                s * s
+            })
+            .sum();
+
+        plugin.process_in_place(&mut buffer, &context).unwrap();
+
+        let output_energy: f32 = buffer[512..].iter().map(|s| s * s).sum();
+
+        // 100Hz should pass through a 1kHz lowpass with minimal attenuation
+        let ratio = output_energy / input_energy_tail;
+        assert!(
+            ratio > 0.9,
+            "Lowpass should pass 100Hz with minimal attenuation (ratio: {:.4})",
+            ratio
+        );
+    }
+
+    #[test]
+    fn test_crossover_multichannel() {
+        let mut plugin = CrossoverPlugin::new(4, "LR24", 1000.0, "low").unwrap();
+        plugin.initialize(48000).unwrap();
+
+        let num_frames = 512;
+        let channels = 4;
+        let mut buffer = vec![0.5_f32; num_frames * channels];
+
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+
+        // Should not error
+        plugin.process_in_place(&mut buffer, &context).unwrap();
+
+        // All channels should have been processed
+        for ch in 0..channels {
+            let ch_energy: f32 = (0..num_frames)
+                .map(|f| buffer[f * channels + ch] * buffer[f * channels + ch])
+                .sum();
+            assert!(ch_energy > 0.0, "Channel {} should have energy", ch);
+        }
+    }
+
+    #[test]
+    fn test_crossover_reset() {
+        let mut plugin = CrossoverPlugin::new(2, "LR24", 1000.0, "low").unwrap();
+        plugin.initialize(48000).unwrap();
+
+        // Process some data to build up filter state
+        let num_frames = 256;
+        let mut buffer = vec![1.0_f32; num_frames * 2];
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+        plugin.process_in_place(&mut buffer, &context).unwrap();
+
+        // Reset should not panic
+        plugin.reset();
+
+        // Process again - should work cleanly
+        let mut buffer2 = vec![0.5_f32; num_frames * 2];
+        plugin.process_in_place(&mut buffer2, &context).unwrap();
+    }
+
+    #[test]
+    fn test_crossover_various_sample_rates() {
+        for &sample_rate in &[22050, 44100, 48000, 96000, 192000] {
+            let mut plugin = CrossoverPlugin::new(2, "LR24", 1000.0, "low").unwrap();
+            plugin.initialize(sample_rate).unwrap();
+            assert_eq!(plugin.sample_rate, sample_rate);
+
+            let num_frames = 256;
+            let mut buffer = vec![0.5_f32; num_frames * 2];
+            let context = ProcessContext {
+                sample_rate,
+                num_frames,
+            };
+
+            plugin.process_in_place(&mut buffer, &context).unwrap();
+        }
+    }
+
+    #[test]
+    fn test_crossover_buffer_size_validation() {
+        let mut plugin = CrossoverPlugin::new(2, "LR24", 1000.0, "low").unwrap();
+        plugin.initialize(48000).unwrap();
+
+        // Buffer size not multiple of channels should error
+        let mut bad_buffer = vec![0.5_f32; 3]; // 3 is not a multiple of 2
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames: 1,
+        };
+
+        let result = plugin.process_in_place(&mut bad_buffer, &context);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_crossover_info() {
+        let plugin = CrossoverPlugin::new(2, "LR24", 1000.0, "low").unwrap();
+        let info = plugin.info();
+        assert_eq!(info.name, "Crossover");
+        assert!(info.description.contains("1000"));
+        assert!(info.description.contains("lowpass"));
+
+        let plugin_hp = CrossoverPlugin::new(2, "LR24", 2000.0, "high").unwrap();
+        let info_hp = plugin_hp.info();
+        assert!(info_hp.description.contains("highpass"));
+    }
+
+    #[test]
+    fn test_crossover_latency_is_zero() {
+        let plugin = CrossoverPlugin::new(2, "LR24", 1000.0, "low").unwrap();
+        assert_eq!(plugin.latency_samples(), 0);
+    }
+}

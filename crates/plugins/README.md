@@ -367,20 +367,36 @@ plugins/
 │   └── plugin_fuzzer.rs    # Fuzz testing tool
 │
 ├── tests/
-│   ├── test_plugins.rs         # Basic plugin tests
-│   ├── test_eq_plugin.rs       # EQ plugin tests
-│   ├── test_dynamics_plugins.rs # Compressor/limiter/gate tests
-│   ├── test_analyzer_plugins.rs # Analyzer tests
-│   ├── test_binaural_decoder.rs # Binaural tests
-│   ├── test_upmixer_integration.rs # Upmixer tests
-│   ├── test_loudness_compensation.rs
-│   └── test_resampler_plugin.rs
+│   ├── test_plugins.rs               # Basic plugin tests
+│   ├── test_basic_plugins.rs         # Gain, delay, matrix tests
+│   ├── test_eq_plugin.rs             # EQ plugin tests
+│   ├── test_dynamics_plugins.rs      # Compressor/limiter/gate tests
+│   ├── test_analyzer_plugins.rs      # Analyzer tests
+│   ├── test_binaural_decoder.rs      # Binaural tests
+│   ├── test_upmixer_integration.rs   # Upmixer tests
+│   ├── test_loudness_compensation.rs # Loudness compensation tests
+│   ├── test_resampler_plugin.rs      # Resampler tests
+│   ├── test_multiband_plugins.rs     # Multiband compressor/expander
+│   ├── test_pnd_plugin.rs            # PND plugin tests
+│   ├── test_xtc_plugin.rs            # XTC plugin tests
+│   ├── test_polyphonic_denoiser.rs   # Denoiser tests
+│   ├── test_sample_rate_support.rs   # Multi-sample-rate tests (22050-192000 Hz)
+│   ├── matrix_mixing_test.rs         # Channel matrix/M-S encoding
+│   ├── matrix_mute_test.rs           # Channel mute/solo tests
+│   ├── automation_tests.rs           # Parameter automation tests
+│   ├── property_tests.rs             # Property-based tests (proptest)
+│   ├── realtime_tests.rs             # Real-time constraint tests
+│   └── binaural_decoder_integration.rs # Extended binaural tests
 │
 ├── benches/
-│   ├── README.md                    # Benchmark documentation
-│   ├── binaural-decoder-benchmark.rs
-│   ├── upmixer-benchmark.rs
-│   └── compressor-benchmark.rs
+│   ├── README.md                      # Benchmark documentation
+│   ├── binaural-decoder-benchmark.rs  # Binaural decoder benchmarks
+│   ├── upmixer-benchmark.rs          # Upmixer benchmarks
+│   ├── compressor-benchmark.rs        # Compressor benchmarks
+│   ├── plugin-benchmark.rs            # Gain/host chain benchmarks
+│   └── all-plugins-benchmark.rs       # EQ, delay, gate, limiter, expander,
+│                                      # crossover, matrix, analyzers,
+│                                      # loudness, channel mute/solo
 │
 ├── src-ffi/                 # C FFI for native hosts
 │   ├── Cargo.toml
@@ -402,8 +418,11 @@ plugins/
 ### Unit Tests
 
 ```bash
-# Run all tests
+# Run all tests (unit + integration)
 cargo test -p plugins
+
+# Run only library unit tests
+cargo test -p plugins --lib
 
 # Run specific test module
 cargo test -p plugins test_eq_plugin
@@ -415,9 +434,33 @@ cargo test -p plugins -- --nocapture
 ### Integration Tests
 
 ```bash
+# Multi-sample-rate tests (22050, 44100, 48000, 96000, 192000 Hz)
+cargo test -p plugins --test test_sample_rate_support
+
+# Upmixer integration
 cargo test -p plugins --test test_upmixer_integration
+
+# Binaural decoder integration
 cargo test -p plugins --test binaural_decoder_integration
+
+# Property-based tests
+cargo test -p plugins --test property_tests
+
+# Real-time constraint tests
+cargo test -p plugins --test realtime_tests
 ```
+
+### Sample Rate Support
+
+All plugins are tested against standard sample rates:
+- **22050 Hz** - Low-resolution audio
+- **44100 Hz** - CD quality
+- **48000 Hz** - Professional audio / video
+- **96000 Hz** - High-resolution audio
+- **192000 Hz** - Ultra high-resolution audio
+
+The `test_sample_rate_support` integration test suite verifies each plugin
+initializes, processes, and produces finite output at every sample rate.
 
 ### Fuzz Testing
 
@@ -446,28 +489,48 @@ Performance benchmarks using Criterion:
 # Run all benchmarks
 cargo bench -p plugins
 
-# Run specific benchmark
+# Run specific benchmark suite
 cargo bench -p plugins --bench upmixer-benchmark
+cargo bench -p plugins --bench binaural-decoder-benchmark
+cargo bench -p plugins --bench compressor-benchmark
+cargo bench -p plugins --bench all-plugins-benchmark
+cargo bench -p plugins --bench plugin-benchmark
 
-# Run with specific test group
-cargo bench -p plugins --bench binaural-decoder-benchmark -- binaural_atmos_7_1_4
+# Run specific group from comprehensive suite
+cargo bench -p plugins --bench all-plugins-benchmark -- EqPlugin
+cargo bench -p plugins --bench all-plugins-benchmark -- LimiterPlugin
 
 # Quick run (no statistical analysis)
 cargo bench -p plugins -- --quick
 ```
 
-### Benchmark Groups
+### Benchmark Suites
 
-**Binaural Decoder:**
-- `binaural_process_channels` - Scaling with channel count
-- `binaural_fft_sizes` - FFT size impact
-- `binaural_optimization` - Optimized vs standard path
-- `binaural_atmos_7_1_4` - Real-world 12-channel workload
+**Binaural Decoder** (`binaural-decoder-benchmark`):
+- Channel count scaling (2, 5, 6, 8ch)
+- FFT size impact (512-4096)
+- Optimized vs standard path
+- Real-world Atmos 7.1.4 workload
 
-**Upmixer:**
-- `upmixer_5_1_block_sizes` - Buffer size scaling
-- `upmixer_configs` - Speaker configuration comparison
-- `upmixer_fft_sizes` - FFT size trade-offs
+**Upmixer** (`upmixer-benchmark`):
+- Buffer size scaling (256-2048 frames)
+- Speaker configuration comparison (2.0-9.1.6)
+- FFT size trade-offs
+
+**Compressor** (`compressor-benchmark`):
+- Linked vs unlinked channel detection
+
+**All Plugins** (`all-plugins-benchmark`):
+- EQ: 1-band, 6-band, 5.1, buffer sizes
+- Delay: Buffer sizes, feedback levels
+- Gate: Buffer size scaling
+- Limiter: Hard/soft modes, lookahead levels
+- Expander: Buffer size scaling
+- Crossover: LR24/LR48, channel counts
+- Matrix: Identity, upmix, 8x8 routing
+- Spectrum Analyzer, Loudness Monitor
+- Fletcher-Munson, Loudness Compensation
+- Channel Mute/Solo (stereo, 8ch)
 
 ### Performance Targets
 

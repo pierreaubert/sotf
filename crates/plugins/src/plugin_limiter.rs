@@ -474,4 +474,88 @@ mod tests {
         // for the same hot input, ensuring a safe, rounded response.
         assert!(soft_buf[0].abs() <= hard_buf[0].abs());
     }
+
+    #[test]
+    fn test_limiter_various_sample_rates() {
+        for &sample_rate in &[22050, 44100, 48000, 96000, 192000] {
+            let mut limiter = LimiterPlugin::new(2, -1.0, 50.0, 5.0, false);
+            limiter.initialize(sample_rate).unwrap();
+
+            let num_frames = 512;
+            let mut buffer: Vec<f32> = (0..num_frames * 2)
+                .map(|i| {
+                    let t = i as f32 / (sample_rate as f32 * 2.0);
+                    (t * 1000.0 * 2.0 * std::f32::consts::PI).sin() * 2.0
+                })
+                .collect();
+
+            let context = ProcessContext {
+                sample_rate,
+                num_frames,
+            };
+
+            limiter.process_in_place(&mut buffer, &context).unwrap();
+
+            for s in &buffer {
+                assert!(s.is_finite(), "Non-finite value at sample rate {}", sample_rate);
+            }
+        }
+    }
+
+    #[test]
+    fn test_limiter_from_params() {
+        let params = LimiterPluginParams {
+            threshold_db: -3.0,
+            release_ms: 100.0,
+            lookahead_ms: 10.0,
+            soft: true,
+            mix: 0.8,
+        };
+        let plugin = LimiterPlugin::from_params(2, params);
+        assert_eq!(plugin.threshold_db, -3.0);
+        assert_eq!(plugin.release_ms, 100.0);
+        assert_eq!(plugin.lookahead_ms, 10.0);
+        assert!(plugin.soft);
+        assert_eq!(plugin.mix, 0.8);
+    }
+
+    #[test]
+    fn test_limiter_time_to_coeff() {
+        let coeff = LimiterPlugin::time_to_coeff(0.0, 48000);
+        assert_eq!(coeff, 0.0);
+
+        let coeff = LimiterPlugin::time_to_coeff(50.0, 48000);
+        assert!(coeff > 0.0 && coeff < 1.0);
+
+        let coeff_short = LimiterPlugin::time_to_coeff(10.0, 48000);
+        let coeff_long = LimiterPlugin::time_to_coeff(100.0, 48000);
+        assert!(coeff_long > coeff_short);
+    }
+
+    #[test]
+    fn test_limiter_lookahead_latency() {
+        let mut limiter = LimiterPlugin::new(2, -1.0, 50.0, 5.0, false);
+        limiter.initialize(48000).unwrap();
+
+        let latency = limiter.latency_samples();
+        let expected = ((5.0 * 0.001 * 48000.0) as usize).max(1);
+        assert_eq!(latency, expected);
+    }
+
+    #[test]
+    fn test_limiter_reset() {
+        let mut limiter = LimiterPlugin::new(1, -1.0, 50.0, 5.0, false);
+        limiter.initialize(48000).unwrap();
+
+        let num_frames = 256;
+        let mut buffer = vec![2.0_f32; num_frames];
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+        limiter.process_in_place(&mut buffer, &context).unwrap();
+
+        limiter.reset();
+        assert_eq!(limiter.envelope, 0.0);
+    }
 }

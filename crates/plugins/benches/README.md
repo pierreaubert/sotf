@@ -3,23 +3,40 @@
 This directory contains performance benchmarks for audio plugins in the `sotf_audio` crate.
 
 Currently covered:
-- Binaural decoder (multichannel -> binaural)
-- Upmixer (stereo -> surround)
+- **Binaural decoder** (multichannel -> binaural) - `binaural-decoder-benchmark`
+- **Upmixer** (stereo -> surround) - `upmixer-benchmark`
+- **Compressor** (dynamic range compression) - `compressor-benchmark`
+- **Gain / Host chain** (basic plugin and host performance) - `plugin-benchmark`
+- **All other plugins** (EQ, delay, gate, limiter, expander, crossover, matrix, analyzers, loudness, channel mute/solo) - `all-plugins-benchmark`
 
 ## Running Benchmarks
 
 ```bash
+# Run all plugin benchmarks
+cargo bench -p plugins
+
 # Run binaural decoder benchmarks
-cargo bench --bench binaural_decoder
+cargo bench --bench binaural-decoder-benchmark
 
 # Run specific binaural benchmark group
-cargo bench --bench binaural_decoder -- binaural_process_channels
+cargo bench --bench binaural-decoder-benchmark -- binaural_process_channels
 
 # Run upmixer benchmarks
-cargo bench --bench upmixer
+cargo bench --bench upmixer-benchmark
 
-# Run specific upmixer benchmark group
-cargo bench --bench upmixer -- upmixer_5_1_block_sizes
+# Run compressor benchmarks
+cargo bench --bench compressor-benchmark
+
+# Run comprehensive plugin benchmarks (EQ, delay, gate, limiter, etc.)
+cargo bench --bench all-plugins-benchmark
+
+# Run specific plugin group from comprehensive suite
+cargo bench --bench all-plugins-benchmark -- EqPlugin
+cargo bench --bench all-plugins-benchmark -- LimiterPlugin
+cargo bench --bench all-plugins-benchmark -- CrossoverPlugin
+
+# Run gain and host chain benchmarks
+cargo bench --bench plugin-benchmark
 ```
 
 ## Binaural Decoder Benchmark Groups
@@ -108,6 +125,47 @@ Tests impact of FFT size on 5.1 upmixing performance with 512-frame buffers:
 
 **What it measures:**
 - Trade-off between time/frequency resolution and CPU cost for the upmixer.
+
+## All-Plugins Benchmark Groups
+
+The `all-plugins-benchmark` suite covers plugins not in dedicated benchmark files:
+
+### `EqPlugin`
+- 1-band and 6-band stereo EQ
+- 5.1 surround EQ
+- Buffer size scaling (256-2048 frames)
+
+### `DelayPlugin`
+- Buffer size scaling (256-1024 frames)
+- Feedback level impact (0%, 50%, 90%)
+
+### `GatePlugin`
+- Buffer size scaling (256-1024 frames)
+
+### `LimiterPlugin`
+- Hard vs soft limiting comparison
+- Lookahead impact (0ms, 5ms, 10ms)
+
+### `ExpanderPlugin`
+- Buffer size scaling (256-1024 frames)
+
+### `CrossoverPlugin`
+- LR24 vs LR48 filter steepness
+- Channel count scaling (2, 4, 8 channels)
+
+### `MatrixPlugin`
+- Identity (2x2), upmix (2->6), full routing (8x8)
+
+### `Analyzers`
+- Spectrum analyzer (30 bins)
+- EBU R128 loudness monitor
+
+### `Loudness`
+- Fletcher-Munson compensation
+- Multi-band loudness compensation
+
+### `ChannelMuteSolo`
+- Stereo and 8-channel configurations
 
 ## Interpreting Results
 

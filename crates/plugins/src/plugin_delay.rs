@@ -426,4 +426,132 @@ mod tests {
         assert_eq!(plugin.feedback(), 0.4);
         assert_eq!(plugin.mix(), 0.6);
     }
+
+    #[test]
+    fn test_delay_various_sample_rates() {
+        for &sample_rate in &[22050, 44100, 48000, 96000, 192000] {
+            let mut plugin = DelayPlugin::new(2, 100.0, 0.3, 0.5);
+            plugin.initialize(sample_rate).unwrap();
+
+            let expected_samples = DelayPlugin::ms_to_samples(100.0, sample_rate);
+            assert_eq!(plugin.delay_samples, expected_samples);
+
+            let num_frames = 256;
+            let mut buffer = vec![0.0_f32; num_frames * 2];
+            buffer[0] = 1.0;
+            buffer[1] = 1.0;
+
+            let context = ProcessContext {
+                sample_rate,
+                num_frames,
+            };
+
+            plugin.process_in_place(&mut buffer, &context).unwrap();
+        }
+    }
+
+    #[test]
+    fn test_delay_wet_signal_appears_after_delay() {
+        let mut plugin = DelayPlugin::new(1, 10.0, 0.0, 1.0); // 10ms, no feedback, all wet
+        plugin.initialize(48000).unwrap();
+
+        let delay_samples = DelayPlugin::ms_to_samples(10.0, 48000); // 480 samples
+        let num_frames = 1024;
+        let mut buffer = vec![0.0_f32; num_frames];
+        buffer[0] = 1.0; // Impulse at sample 0
+
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+
+        plugin.process_in_place(&mut buffer, &context).unwrap();
+
+        // With 100% wet, the impulse should appear at the delay offset
+        assert!(
+            buffer[delay_samples].abs() > 0.5,
+            "Delayed impulse expected at sample {}, got {}",
+            delay_samples,
+            buffer[delay_samples]
+        );
+        // Sample 0 should be zero (wet only, no dry signal and delay buffer was empty)
+        assert!(
+            buffer[0].abs() < 0.01,
+            "No signal expected at sample 0 with full wet, got {}",
+            buffer[0]
+        );
+    }
+
+    #[test]
+    fn test_delay_feedback_produces_echoes() {
+        let mut plugin = DelayPlugin::new(1, 10.0, 0.5, 1.0); // 10ms, 50% feedback, all wet
+        plugin.initialize(48000).unwrap();
+
+        let delay_samples = DelayPlugin::ms_to_samples(10.0, 48000);
+        let num_frames = delay_samples * 4; // Enough for several echoes
+        let mut buffer = vec![0.0_f32; num_frames];
+        buffer[0] = 1.0; // Impulse
+
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+
+        plugin.process_in_place(&mut buffer, &context).unwrap();
+
+        // First echo
+        let first_echo = buffer[delay_samples].abs();
+        assert!(first_echo > 0.3, "First echo should be present");
+
+        // Second echo should be quieter due to feedback decay
+        if delay_samples * 2 < num_frames {
+            let second_echo = buffer[delay_samples * 2].abs();
+            assert!(
+                second_echo < first_echo,
+                "Second echo should be quieter than first"
+            );
+        }
+    }
+
+    #[test]
+    fn test_delay_reset_clears_buffers() {
+        let mut plugin = DelayPlugin::new(1, 10.0, 0.5, 1.0);
+        plugin.initialize(48000).unwrap();
+
+        // Fill with data
+        let num_frames = 256;
+        let mut buffer = vec![1.0_f32; num_frames];
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+        plugin.process_in_place(&mut buffer, &context).unwrap();
+
+        // Reset
+        plugin.reset();
+
+        // After reset, processing silence should produce silence
+        let mut buffer2 = vec![0.0_f32; num_frames];
+        plugin.process_in_place(&mut buffer2, &context).unwrap();
+
+        let energy: f32 = buffer2.iter().map(|s| s * s).sum();
+        assert!(
+            energy < 0.001,
+            "After reset, processing silence should produce silence (energy: {})",
+            energy
+        );
+    }
+
+    #[test]
+    fn test_delay_reinitialize_different_rate() {
+        let mut plugin = DelayPlugin::new(2, 100.0, 0.3, 0.5);
+        plugin.initialize(44100).unwrap();
+        let delay_44k = plugin.delay_samples;
+
+        plugin.initialize(96000).unwrap();
+        let delay_96k = plugin.delay_samples;
+
+        // 100ms at 96kHz should produce more samples than at 44.1kHz
+        assert!(delay_96k > delay_44k);
+    }
 }
