@@ -102,6 +102,8 @@ pub struct AudioEngineManager {
     spectrum_plugin_index: Arc<Mutex<Option<usize>>>,
     /// Current volume level (preserved across song changes)
     current_volume: Arc<Mutex<f32>>,
+    /// Current mute state (preserved across song changes)
+    current_muted: Arc<Mutex<bool>>,
 }
 
 /// Commands for controlling the streaming (kept for API compatibility)
@@ -163,6 +165,7 @@ impl AudioEngineManager {
             loudness_plugin_index: Arc::new(Mutex::new(None)),
             spectrum_plugin_index: Arc::new(Mutex::new(None)),
             current_volume: Arc::new(Mutex::new(1.0)),
+            current_muted: Arc::new(Mutex::new(false)),
         }
     }
 
@@ -234,6 +237,7 @@ impl AudioEngineManager {
 
         // Create engine config with preserved volume
         let volume = *self.current_volume.lock();
+        let muted = *self.current_muted.lock();
         let config = EngineConfig {
             version: 1,
             frame_size: 1024,
@@ -244,7 +248,7 @@ impl AudioEngineManager {
             output_device, // User-specified device or None for default
             plugins,
             volume,
-            muted: false,
+            muted,
             config_path: None,
             watch_config: self.watch_signals, // Enable signal watching if requested
         };
@@ -334,6 +338,7 @@ impl AudioEngineManager {
 
         // Create engine config for HAL (no file source) with preserved volume
         let volume = *self.current_volume.lock();
+        let muted = *self.current_muted.lock();
         let config = EngineConfig {
             version: 1,
             frame_size: 1024,
@@ -344,7 +349,7 @@ impl AudioEngineManager {
             output_device,
             plugins,
             volume,
-            muted: false,
+            muted,
             config_path: None,
             watch_config: self.watch_signals,
         };
@@ -446,7 +451,11 @@ impl AudioEngineManager {
 
     /// Get current volume (0.0 - 1.0)
     pub fn get_volume(&self) -> f32 {
-        self.get_engine_state().volume
+        if self.engine.lock().is_some() {
+            self.get_engine_state().volume
+        } else {
+            *self.current_volume.lock()
+        }
     }
 
     /// Set volume (0.0 = silence, 1.0 = unity gain)
@@ -464,11 +473,18 @@ impl AudioEngineManager {
 
     /// Get mute state
     pub fn is_muted(&self) -> bool {
-        self.get_engine_state().muted
+        if self.engine.lock().is_some() {
+            self.get_engine_state().muted
+        } else {
+            *self.current_muted.lock()
+        }
     }
 
     /// Set mute state
     pub fn set_mute(&self, muted: bool) -> AudioDecoderResult<()> {
+        // Store mute state so it's preserved
+        *self.current_muted.lock() = muted;
+
         if let Some(ref mut engine) = *self.engine.lock() {
             engine.set_mute(muted).map_err(AudioDecoderError::IoError)?;
         }
