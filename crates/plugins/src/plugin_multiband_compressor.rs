@@ -365,6 +365,9 @@ pub struct MultibandCompressorPlugin {
     band_buffers: Vec<f32>,
     band_levels_db: Vec<f32>, // RMS per band
 
+    // Pre-allocated dry signal buffer (avoids allocation in process_in_place hot path)
+    dry_buffer: Vec<f32>,
+
     // Smoothing
     threshold_smoother: Smoother,
 
@@ -431,6 +434,7 @@ impl MultibandCompressorPlugin {
             band_compressors,
             band_buffers: Vec::new(), // Allocated in split_bands
             band_levels_db: vec![0.0; num_bands],
+            dry_buffer: Vec::new(), // Sized in initialize()
             threshold_smoother,
             param_num_bands: ParameterId::from("num_bands"),
             param_crossover_preset: ParameterId::from("crossover_preset"),
@@ -1060,12 +1064,13 @@ impl InPlacePlugin for MultibandCompressorPlugin {
         let dry_mix = 1.0 - self.mix;
         let wet_mix = self.mix;
 
-        // Keep a copy of dry signal if needed
-        let dry_signal: Vec<f32> = if dry_mix > 0.0 {
-            buffer.to_vec()
-        } else {
-            Vec::new()
-        };
+        // Keep a copy of dry signal if needed (pre-allocated buffer, no allocation)
+        if dry_mix > 0.0 {
+            if self.dry_buffer.len() < buffer.len() {
+                self.dry_buffer.resize(buffer.len(), 0.0);
+            }
+            self.dry_buffer[..buffer.len()].copy_from_slice(buffer);
+        }
 
         // Split into bands
         self.split_bands(buffer, num_frames);
@@ -1079,7 +1084,7 @@ impl InPlacePlugin for MultibandCompressorPlugin {
         // Apply dry/wet mix
         if dry_mix > 0.0 {
             for (i, sample) in buffer.iter_mut().enumerate() {
-                *sample = dry_mix * dry_signal[i] + wet_mix * *sample;
+                *sample = dry_mix * self.dry_buffer[i] + wet_mix * *sample;
             }
         }
 

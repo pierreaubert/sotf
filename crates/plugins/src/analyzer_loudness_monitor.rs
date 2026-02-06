@@ -11,7 +11,7 @@ use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use ebur128::{EbuR128, Mode};
 use serde::{Deserialize, Serialize};
 use std::any::Any;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 /// Real-time loudness measurements
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -41,6 +41,20 @@ pub struct LoudnessInfo {
     pub correlation_lr: Option<f64>,
 }
 
+impl LoudnessInfo {
+    fn new(channels: usize) -> Self {
+        Self {
+            momentary_lufs: f64::NEG_INFINITY,
+            shortterm_lufs: f64::NEG_INFINITY,
+            integrated_lufs: f64::NEG_INFINITY,
+            peak: 0.0,
+            channel_peaks: vec![0.0; channels],
+            true_peaks_dbtp: vec![f64::NEG_INFINITY; channels],
+            correlation_lr: None,
+        }
+    }
+}
+
 impl Default for LoudnessInfo {
     fn default() -> Self {
         Self {
@@ -55,30 +69,42 @@ impl Default for LoudnessInfo {
     }
 }
 
-/// Thread-safe loudness monitor for real-time audio analysis
+/// Loudness monitor for real-time audio analysis.
+///
+/// All access is serialized on the processing thread — no locks needed.
 pub(crate) struct LoudnessMonitor {
     /// EBU R128 analyzer
-    ebur128: Arc<Mutex<EbuR128>>,
+    ebur128: EbuR128,
     /// Number of channels
     channels: u32,
     /// Sample rate
     sample_rate: u32,
-    /// Current measurements
-    current_loudness: Arc<Mutex<LoudnessInfo>>,
+    /// Current measurements (pre-allocated with correct channel count)
+    current_loudness: LoudnessInfo,
     /// Per-channel peak trackers (separate from EBU R128 for meter display)
-    channel_peak_trackers: Arc<Mutex<Vec<f64>>>,
+    channel_peak_trackers: Vec<f64>,
     /// Peak decay rate per sample (for visual meter decay)
     peak_decay_per_sample: f64,
-    /// Correlation computation buffer (for stereo L/R correlation)
-    /// Stores recent samples for correlation calculation
-    correlation_buffer_l: Arc<Mutex<Vec<f32>>>,
-    correlation_buffer_r: Arc<Mutex<Vec<f32>>>,
-    /// Maximum correlation buffer size (e.g., 1 second of audio)
+    /// Ring buffer for L correlation samples (pre-allocated to correlation_buffer_size)
+    correlation_ring_l: Vec<f32>,
+    /// Ring buffer for R correlation samples (pre-allocated to correlation_buffer_size)
+    correlation_ring_r: Vec<f32>,
+    /// Current write position in the ring buffers
+    correlation_write_pos: usize,
+    /// Number of valid samples in the ring buffers (up to correlation_buffer_size)
+    correlation_count: usize,
+    /// Maximum correlation buffer size (1 second of audio)
     correlation_buffer_size: usize,
+    /// Frames since last correlation update
+    correlation_frames_since_update: usize,
+    /// How often to recompute correlation (sample_rate / 10 = every 100ms)
+    correlation_update_interval: usize,
+    /// Last computed correlation value
+    cached_correlation: Option<f64>,
     /// Scratch buffer for true peaks calculation
-    true_peaks_scratch: Arc<Mutex<Vec<f64>>>,
+    true_peaks_scratch: Vec<f64>,
     /// Scratch buffer for new channel peaks calculation
-    channel_peaks_scratch: Arc<Mutex<Vec<f64>>>,
+    channel_peaks_scratch: Vec<f64>,
 }
 
 impl LoudnessMonitor {
@@ -88,7 +114,6 @@ impl LoudnessMonitor {
     /// * `channels` - Number of audio channels
     /// * `sample_rate` - Sample rate in Hz
     pub(crate) fn new(channels: u32, sample_rate: u32) -> Result<Self, String> {
-        // Enable M (momentary), S (short-term), I (integrated), SAMPLE_PEAK, and TRUE_PEAK
         let ebur128 = EbuR128::new(
             channels,
             sample_rate,
@@ -96,226 +121,210 @@ impl LoudnessMonitor {
         )
         .map_err(|e| format!("Failed to create EBU R128 analyzer: {:?}", e))?;
 
-        // Calculate decay rate: decay to 0.0 over ~300ms (roughly -60 dB in 1.5 seconds)
-        // Decay factor per sample = (1 - decay_time_samples)^(-1)
-        // For 300ms hold + exponential decay: peak * (1 - decay_rate)^samples
-        // We want to reach 0.01 (1%) in about 300ms
-        // 0.01 = 1.0 * decay_rate^(sample_rate * 0.3)
-        // decay_rate = 0.01^(1 / (sample_rate * 0.3))
+        // Decay to ~1% in 300ms (linear approximation)
         let decay_time_seconds = 0.3;
         let decay_samples = sample_rate as f64 * decay_time_seconds;
-        // Use a linear decay for simplicity: subtract this much per sample
         let peak_decay_per_sample = 1.0 / decay_samples;
 
-        // Correlation buffer: use 1 second of audio for correlation computation
         let correlation_buffer_size = sample_rate as usize;
+        let correlation_update_interval = sample_rate as usize / 10; // every 100ms
 
         Ok(Self {
-            ebur128: Arc::new(Mutex::new(ebur128)),
+            ebur128,
             channels,
             sample_rate,
-            current_loudness: Arc::new(Mutex::new(LoudnessInfo::default())),
-            channel_peak_trackers: Arc::new(Mutex::new(vec![0.0; channels as usize])),
+            current_loudness: LoudnessInfo::new(channels as usize),
+            channel_peak_trackers: vec![0.0; channels as usize],
             peak_decay_per_sample,
-            correlation_buffer_l: Arc::new(Mutex::new(Vec::with_capacity(correlation_buffer_size))),
-            correlation_buffer_r: Arc::new(Mutex::new(Vec::with_capacity(correlation_buffer_size))),
+            correlation_ring_l: vec![0.0; correlation_buffer_size],
+            correlation_ring_r: vec![0.0; correlation_buffer_size],
+            correlation_write_pos: 0,
+            correlation_count: 0,
             correlation_buffer_size,
-            true_peaks_scratch: Arc::new(Mutex::new(vec![f64::NEG_INFINITY; channels as usize])),
-            channel_peaks_scratch: Arc::new(Mutex::new(vec![0.0; channels as usize])),
+            correlation_frames_since_update: 0,
+            correlation_update_interval,
+            cached_correlation: None,
+            true_peaks_scratch: vec![f64::NEG_INFINITY; channels as usize],
+            channel_peaks_scratch: vec![0.0; channels as usize],
         })
     }
 
     /// Add audio frames to the analyzer
-    ///
-    /// # Arguments
-    /// * `samples` - Interleaved f32 samples in range [-1.0, 1.0]
-    ///
-    /// # Returns
-    /// Ok(()) if successful, Err if analysis fails
-    pub(crate) fn add_frames(&self, samples: &[f32]) -> Result<(), String> {
-        let mut ebur = self.ebur128.lock().unwrap();
-
-        // Add frames to the analyzer
-        ebur.add_frames_f32(samples)
+    pub(crate) fn add_frames(&mut self, samples: &[f32]) -> Result<(), String> {
+        self.ebur128
+            .add_frames_f32(samples)
             .map_err(|e| format!("Failed to add frames: {:?}", e))?;
 
-        // Update measurements
-        let momentary_lufs = ebur.loudness_momentary().unwrap_or(f64::NEG_INFINITY);
-        let shortterm_lufs = ebur.loudness_shortterm().unwrap_or(f64::NEG_INFINITY);
-        let integrated_lufs = ebur.loudness_global().unwrap_or(f64::NEG_INFINITY);
+        let momentary_lufs = self.ebur128.loudness_momentary().unwrap_or(f64::NEG_INFINITY);
+        let shortterm_lufs = self.ebur128.loudness_shortterm().unwrap_or(f64::NEG_INFINITY);
+        let integrated_lufs = self.ebur128.loudness_global().unwrap_or(f64::NEG_INFINITY);
 
-        // Get true peaks per channel from ebur128 - use scratch buffer
-        let mut true_peaks_dbtp_guard = self.true_peaks_scratch.lock().unwrap();
-        let true_peaks_dbtp = &mut *true_peaks_dbtp_guard;
-        true_peaks_dbtp.fill(f64::NEG_INFINITY);
-
-        for (ch, peak_db) in true_peaks_dbtp
-            .iter_mut()
-            .enumerate()
-            .take(self.channels as usize)
-        {
-            match ebur.true_peak(ch as u32) {
-                Ok(true_peak_linear) => {
-                    // Convert to dBTP (dB True Peak)
-                    // dBTP = 20 * log10(true_peak_linear)
-                    // Use a small threshold to avoid log10(0) = -inf
-                    if true_peak_linear >= 1e-10 {
-                        *peak_db = 20.0 * true_peak_linear.log10();
-                    } else {
-                        // Very quiet or silent channel
-                        *peak_db = f64::NEG_INFINITY;
-                    }
-                }
-                Err(_e) => {
-                    // Channel might not be available yet - ignore error in RT callback
-                }
+        // Get true peaks per channel — reuse scratch buffer
+        self.true_peaks_scratch.fill(f64::NEG_INFINITY);
+        for ch in 0..self.channels as usize {
+            if let Ok(true_peak_linear) = self.ebur128.true_peak(ch as u32)
+                && true_peak_linear >= 1e-10
+            {
+                self.true_peaks_scratch[ch] = 20.0 * true_peak_linear.log10();
             }
         }
 
-        // Calculate per-channel peaks from the current buffer with decay
+        // Calculate per-channel peaks from the current buffer
         let num_frames = samples.len() / self.channels as usize;
         let mut peak = 0.0f64;
 
-        let mut new_channel_peaks_guard = self.channel_peaks_scratch.lock().unwrap();
-        let new_channel_peaks = &mut *new_channel_peaks_guard;
-        new_channel_peaks.fill(0.0);
-
-        // Get current peak levels by scanning the buffer
+        self.channel_peaks_scratch.fill(0.0);
         for frame_idx in 0..num_frames {
-            for (ch, channel_peak) in new_channel_peaks
-                .iter_mut()
-                .enumerate()
-                .take(self.channels as usize)
-            {
+            for ch in 0..self.channels as usize {
                 let sample_idx = frame_idx * self.channels as usize + ch;
                 let sample_abs = samples[sample_idx].abs() as f64;
-                *channel_peak = f64::max(*channel_peak, sample_abs);
-                peak = f64::max(peak, sample_abs);
+                if sample_abs > self.channel_peaks_scratch[ch] {
+                    self.channel_peaks_scratch[ch] = sample_abs;
+                }
+                if sample_abs > peak {
+                    peak = sample_abs;
+                }
             }
         }
 
-        // Compute correlation for stereo signals
+        // Update correlation for stereo using ring buffer + throttling
         let correlation_lr = if self.channels == 2 {
-            self.compute_correlation_stereo(samples)
+            self.update_correlation_stereo(samples)
         } else {
             None
         };
 
         // Apply decay to existing peaks and take max with new peaks
-        {
-            let mut peak_trackers = self.channel_peak_trackers.lock().unwrap();
-
-            // Decay existing peaks
-            for tracker in peak_trackers.iter_mut() {
-                *tracker = (*tracker - self.peak_decay_per_sample * num_frames as f64).max(0.0);
-            }
-
-            // Update with new peaks (take max of decayed and new)
-            for (tracker, new_peak) in peak_trackers.iter_mut().zip(new_channel_peaks.iter()) {
-                *tracker = f64::max(*tracker, *new_peak);
-            }
-
-            // Use the peak trackers as the channel peaks
-            let channel_peaks = peak_trackers.clone();
-            peak = channel_peaks.iter().cloned().fold(0.0, f64::max);
-
-            // Update shared state
-            let mut info = self.current_loudness.lock().unwrap();
-            info.momentary_lufs = momentary_lufs;
-            info.shortterm_lufs = shortterm_lufs;
-            info.integrated_lufs = integrated_lufs;
-            info.peak = peak;
-            info.channel_peaks = channel_peaks;
-            info.true_peaks_dbtp = true_peaks_dbtp.clone();
-            info.correlation_lr = correlation_lr;
+        for tracker in self.channel_peak_trackers.iter_mut() {
+            *tracker = (*tracker - self.peak_decay_per_sample * num_frames as f64).max(0.0);
         }
+        for (tracker, new_peak) in self
+            .channel_peak_trackers
+            .iter_mut()
+            .zip(self.channel_peaks_scratch.iter())
+        {
+            if *new_peak > *tracker {
+                *tracker = *new_peak;
+            }
+        }
+
+        // Compute overall peak from trackers
+        peak = self
+            .channel_peak_trackers
+            .iter()
+            .copied()
+            .fold(0.0, f64::max);
+
+        // Update LoudnessInfo in-place (no allocations)
+        self.current_loudness.momentary_lufs = momentary_lufs;
+        self.current_loudness.shortterm_lufs = shortterm_lufs;
+        self.current_loudness.integrated_lufs = integrated_lufs;
+        self.current_loudness.peak = peak;
+        self.current_loudness
+            .channel_peaks
+            .copy_from_slice(&self.channel_peak_trackers);
+        self.current_loudness
+            .true_peaks_dbtp
+            .copy_from_slice(&self.true_peaks_scratch);
+        self.current_loudness.correlation_lr = correlation_lr;
 
         Ok(())
     }
 
-    /// Compute L/R correlation for stereo signals
-    ///
-    /// # Arguments
-    /// * `samples` - Interleaved stereo samples (L, R, L, R, ...)
-    ///
-    /// # Returns
-    /// Correlation coefficient in range [-1.0, +1.0], or None if not enough data
-    fn compute_correlation_stereo(&self, samples: &[f32]) -> Option<f64> {
-        if self.channels != 2 {
+    /// Write new stereo samples into the ring buffer, then recompute correlation
+    /// only every ~100ms (correlation_update_interval samples).
+    fn update_correlation_stereo(&mut self, samples: &[f32]) -> Option<f64> {
+        let num_frames = samples.len() / 2;
+
+        // Write into ring buffer
+        for frame_idx in 0..num_frames {
+            let l = samples[frame_idx * 2];
+            let r = samples[frame_idx * 2 + 1];
+
+            self.correlation_ring_l[self.correlation_write_pos] = l;
+            self.correlation_ring_r[self.correlation_write_pos] = r;
+
+            self.correlation_write_pos += 1;
+            if self.correlation_write_pos >= self.correlation_buffer_size {
+                self.correlation_write_pos = 0;
+            }
+            if self.correlation_count < self.correlation_buffer_size {
+                self.correlation_count += 1;
+            }
+        }
+
+        self.correlation_frames_since_update += num_frames;
+
+        // Throttle: only recompute every ~100ms
+        if self.correlation_frames_since_update < self.correlation_update_interval {
+            return self.cached_correlation;
+        }
+        self.correlation_frames_since_update = 0;
+
+        // Need at least 100 samples for meaningful correlation
+        if self.correlation_count < 100 {
             return None;
         }
 
-        let num_frames = samples.len() / 2;
+        let n = self.correlation_count as f64;
 
-        // Update correlation buffers (rolling window)
-        {
-            let mut buf_l = self.correlation_buffer_l.lock().unwrap();
-            let mut buf_r = self.correlation_buffer_r.lock().unwrap();
+        // Compute means over the valid portion of the ring buffer
+        let (sum_l, sum_r) = if self.correlation_count == self.correlation_buffer_size {
+            // Buffer is full — sum entire thing
+            let sl: f64 = self.correlation_ring_l.iter().map(|&x| x as f64).sum();
+            let sr: f64 = self.correlation_ring_r.iter().map(|&x| x as f64).sum();
+            (sl, sr)
+        } else {
+            // Buffer partially filled — only first `correlation_count` elements are valid
+            let sl: f64 = self.correlation_ring_l[..self.correlation_count]
+                .iter()
+                .map(|&x| x as f64)
+                .sum();
+            let sr: f64 = self.correlation_ring_r[..self.correlation_count]
+                .iter()
+                .map(|&x| x as f64)
+                .sum();
+            (sl, sr)
+        };
 
-            // Extract L and R samples
-            for frame_idx in 0..num_frames {
-                let l = samples[frame_idx * 2];
-                let r = samples[frame_idx * 2 + 1];
+        let mean_l = sum_l / n;
+        let mean_r = sum_r / n;
 
-                buf_l.push(l);
-                buf_r.push(r);
-            }
+        let mut cov_lr = 0.0;
+        let mut var_l = 0.0;
+        let mut var_r = 0.0;
 
-            // Keep only last correlation_buffer_size samples
-            if buf_l.len() > self.correlation_buffer_size {
-                let excess = buf_l.len() - self.correlation_buffer_size;
-                buf_l.drain(0..excess);
-            }
-            if buf_r.len() > self.correlation_buffer_size {
-                let excess = buf_r.len() - self.correlation_buffer_size;
-                buf_r.drain(0..excess);
-            }
+        let valid_len = if self.correlation_count == self.correlation_buffer_size {
+            self.correlation_buffer_size
+        } else {
+            self.correlation_count
+        };
 
-            // Need at least 100 samples for meaningful correlation
-            if buf_l.len() < 100 {
-                return None;
-            }
-
-            // Compute Pearson correlation coefficient
-            let n = buf_l.len() as f64;
-            let mean_l: f64 = buf_l.iter().map(|&x| x as f64).sum::<f64>() / n;
-            let mean_r: f64 = buf_r.iter().map(|&x| x as f64).sum::<f64>() / n;
-
-            let mut cov_lr = 0.0;
-            let mut var_l = 0.0;
-            let mut var_r = 0.0;
-
-            for i in 0..buf_l.len() {
-                let diff_l = buf_l[i] as f64 - mean_l;
-                let diff_r = buf_r[i] as f64 - mean_r;
-                cov_lr += diff_l * diff_r;
-                var_l += diff_l * diff_l;
-                var_r += diff_r * diff_r;
-            }
-
-            // Avoid division by zero
-            if var_l < 1e-10 || var_r < 1e-10 {
-                return Some(0.0);
-            }
-
-            let correlation = cov_lr / (var_l * var_r).sqrt();
-
-            // Clamp to [-1, +1] to handle numerical errors
-            Some(correlation.clamp(-1.0, 1.0))
+        for i in 0..valid_len {
+            let diff_l = self.correlation_ring_l[i] as f64 - mean_l;
+            let diff_r = self.correlation_ring_r[i] as f64 - mean_r;
+            cov_lr += diff_l * diff_r;
+            var_l += diff_l * diff_l;
+            var_r += diff_r * diff_r;
         }
+
+        let correlation = if var_l < 1e-10 || var_r < 1e-10 {
+            0.0
+        } else {
+            (cov_lr / (var_l * var_r).sqrt()).clamp(-1.0, 1.0)
+        };
+
+        self.cached_correlation = Some(correlation);
+        self.cached_correlation
     }
 
     /// Get the current loudness measurements
     pub(crate) fn get_loudness(&self) -> LoudnessInfo {
-        let info = self.current_loudness.lock().unwrap();
-        info.clone()
+        self.current_loudness.clone()
     }
 
     /// Reset the monitor (clear all history)
-    pub(crate) fn reset(&self) -> Result<(), String> {
-        let mut ebur = self.ebur128.lock().unwrap();
-
-        // Create a new EBU R128 instance to reset state
+    pub(crate) fn reset(&mut self) -> Result<(), String> {
         let new_ebur = EbuR128::new(
             self.channels,
             self.sample_rate,
@@ -323,47 +332,17 @@ impl LoudnessMonitor {
         )
         .map_err(|e| format!("Failed to reset analyzer: {:?}", e))?;
 
-        *ebur = new_ebur;
-
-        // Reset measurements
-        {
-            let mut info = self.current_loudness.lock().unwrap();
-            *info = LoudnessInfo::default();
-        }
-
-        // Reset peak trackers
-        {
-            let mut peak_trackers = self.channel_peak_trackers.lock().unwrap();
-            peak_trackers.fill(0.0);
-        }
-
-        // Reset correlation buffers
-        {
-            let mut buf_l = self.correlation_buffer_l.lock().unwrap();
-            let mut buf_r = self.correlation_buffer_r.lock().unwrap();
-            buf_l.clear();
-            buf_r.clear();
-        }
+        self.ebur128 = new_ebur;
+        self.current_loudness = LoudnessInfo::new(self.channels as usize);
+        self.channel_peak_trackers.fill(0.0);
+        self.correlation_ring_l.fill(0.0);
+        self.correlation_ring_r.fill(0.0);
+        self.correlation_write_pos = 0;
+        self.correlation_count = 0;
+        self.correlation_frames_since_update = 0;
+        self.cached_correlation = None;
 
         Ok(())
-    }
-}
-
-impl Clone for LoudnessMonitor {
-    fn clone(&self) -> Self {
-        Self {
-            ebur128: Arc::clone(&self.ebur128),
-            channels: self.channels,
-            sample_rate: self.sample_rate,
-            current_loudness: Arc::clone(&self.current_loudness),
-            channel_peak_trackers: Arc::clone(&self.channel_peak_trackers),
-            peak_decay_per_sample: self.peak_decay_per_sample,
-            correlation_buffer_l: Arc::clone(&self.correlation_buffer_l),
-            correlation_buffer_r: Arc::clone(&self.correlation_buffer_r),
-            correlation_buffer_size: self.correlation_buffer_size,
-            true_peaks_scratch: Arc::clone(&self.true_peaks_scratch),
-            channel_peaks_scratch: Arc::clone(&self.channel_peaks_scratch),
-        }
     }
 }
 
@@ -439,7 +418,6 @@ impl Plugin for LoudnessMonitorPlugin {
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
-        // Recreate the monitor with the new sample rate
         self.monitor = LoudnessMonitor::new(self.num_channels as u32, sample_rate)
             .map_err(|e| format!("Failed to initialize loudness monitor: {}", e))?;
 
@@ -456,7 +434,6 @@ impl Plugin for LoudnessMonitorPlugin {
         output: &mut [f32],
         context: &ProcessContext,
     ) -> Result<usize, String> {
-        // Verify input/output size
         let expected_samples = context.num_frames * self.num_channels;
         if input.len() != expected_samples {
             return Err(format!(
@@ -491,7 +468,6 @@ impl Plugin for LoudnessMonitorPlugin {
     }
 
     fn latency_samples(&self) -> usize {
-        // EBU R128 has some latency due to the windowing, but it's minimal
         0
     }
 }

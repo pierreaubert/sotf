@@ -895,4 +895,63 @@ mod tests {
             "Left should be much louder than right with unlinked gate"
         );
     }
+
+    mod proptest_gate {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            /// Property: gate should attenuate signal below threshold
+            #[test]
+            fn attenuates_below_threshold(
+                threshold_db in -60.0f32..-10.0,
+            ) {
+                // Input well below threshold
+                let input_amplitude = 10.0f32.powf((threshold_db - 20.0) / 20.0);
+                let mut gate = GatePlugin::new(1, threshold_db, 100.0, 1.0, 0.0, 50.0);
+                gate.initialize(48000).unwrap();
+
+                // Process many blocks for gate to fully close
+                let num_frames = 8192;
+                let mut buffer = vec![input_amplitude; num_frames];
+                let context = ProcessContext { sample_rate: 48000, num_frames };
+                gate.process_in_place(&mut buffer, &context).unwrap();
+
+                // Last samples should be significantly attenuated
+                let output_rms: f32 = buffer[num_frames - 512..]
+                    .iter()
+                    .map(|s| s * s)
+                    .sum::<f32>()
+                    / 512.0;
+                let input_rms = input_amplitude * input_amplitude;
+
+                prop_assert!(
+                    output_rms < input_rms * 0.5,
+                    "Gate should attenuate below threshold: output_rms={:.6}, input_rms={:.6}",
+                    output_rms, input_rms
+                );
+            }
+
+            /// Property: gate should not produce NaN or Inf
+            #[test]
+            fn no_nan_or_inf(
+                threshold_db in -80.0f32..0.0,
+                ratio in 1.0f32..100.0,
+                input_amplitude in 0.001f32..2.0,
+            ) {
+                let mut gate = GatePlugin::new(1, threshold_db, ratio, 1.0, 0.0, 50.0);
+                gate.initialize(48000).unwrap();
+
+                let num_frames = 1024;
+                let mut buffer = vec![input_amplitude; num_frames];
+                let context = ProcessContext { sample_rate: 48000, num_frames };
+                gate.process_in_place(&mut buffer, &context).unwrap();
+
+                for &sample in &buffer {
+                    prop_assert!(!sample.is_nan(), "NaN in output");
+                    prop_assert!(!sample.is_infinite(), "Inf in output");
+                }
+            }
+        }
+    }
 }

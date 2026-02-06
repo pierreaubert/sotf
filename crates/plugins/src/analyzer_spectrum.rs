@@ -11,7 +11,7 @@ use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use serde::{Deserialize, Serialize};
 use std::any::Any;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 // ============================================================================
 // Core Spectrum Analyzer Implementation
@@ -124,7 +124,7 @@ pub(crate) struct SpectrumAnalyzer {
     #[allow(dead_code)]
     bin_centers: Vec<f32>,
     /// Current spectrum measurements (smoothed)
-    current_spectrum: Arc<Mutex<SpectrumInfo>>,
+    current_spectrum: SpectrumInfo,
     /// Previous spectrum values (for smoothing)
     prev_magnitudes: Vec<f32>,
     /// Pre-allocated magnitudes buffer for current calculation
@@ -172,11 +172,11 @@ impl SpectrumAnalyzer {
         let (_bin_edges, bin_centers) =
             Self::generate_log_bins(config.num_bins, config.min_freq, config.max_freq);
 
-        let current_spectrum = Arc::new(Mutex::new(SpectrumInfo {
+        let current_spectrum = SpectrumInfo {
             frequencies: bin_centers.clone(),
             magnitudes: vec![f32::NEG_INFINITY; config.num_bins],
             peak_magnitude: f32::NEG_INFINITY,
-        }));
+        };
 
         // Pre-compute tilt corrections for each bin
         let tilt_corrections = Self::compute_tilt_corrections(
@@ -410,7 +410,7 @@ impl SpectrumAnalyzer {
                     + (1.0 - self.config.smoothing) * *val;
             }
         }
-        self.prev_magnitudes = self.magnitudes.clone();
+        self.prev_magnitudes.copy_from_slice(&self.magnitudes);
 
         // Apply tilt correction
         for (i, val) in self.magnitudes.iter_mut().enumerate() {
@@ -424,20 +424,16 @@ impl SpectrumAnalyzer {
             .copied()
             .fold(f32::NEG_INFINITY, f32::max);
 
-        // Update shared state
-        {
-            let mut spectrum = self.current_spectrum.lock().unwrap();
-            spectrum.magnitudes = self.magnitudes.clone();
-            spectrum.peak_magnitude = peak_magnitude;
-        }
+        // Update current spectrum (no lock needed — single-threaded access)
+        self.current_spectrum.magnitudes.copy_from_slice(&self.magnitudes);
+        self.current_spectrum.peak_magnitude = peak_magnitude;
 
         Ok(())
     }
 
     /// Retrieve current spectrum
     fn get_spectrum(&self) -> SpectrumInfo {
-        let spectrum = self.current_spectrum.lock().unwrap();
-        spectrum.clone()
+        self.current_spectrum.clone()
     }
 
     /// Reset analyzer state
@@ -446,11 +442,8 @@ impl SpectrumAnalyzer {
         self.buffer_pos = 0;
         self.fft_input.fill(0.0);
         self.prev_magnitudes.fill(f32::NEG_INFINITY);
-        {
-            let mut s = self.current_spectrum.lock().unwrap();
-            s.magnitudes.fill(f32::NEG_INFINITY);
-            s.peak_magnitude = f32::NEG_INFINITY;
-        }
+        self.current_spectrum.magnitudes.fill(f32::NEG_INFINITY);
+        self.current_spectrum.peak_magnitude = f32::NEG_INFINITY;
         Ok(())
     }
 }
@@ -917,6 +910,43 @@ mod tests {
             .enumerate()
         {
             log::info!("  Bin {}: {:.0}Hz = {:.1}dB", i, freq, mag);
+        }
+    }
+
+    mod proptest_spectrum {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            /// Property: spectrum analyzer is passthrough — output must exactly equal input
+            #[test]
+            fn passthrough_property(
+                amplitude in 0.01f32..1.0,
+                freq_hz in 100.0f32..10000.0,
+            ) {
+                let mut plugin = SpectrumAnalyzerPlugin::new(2).unwrap();
+                plugin.initialize(48000).unwrap();
+
+                let num_frames = 512;
+                let input: Vec<f32> = (0..num_frames * 2)
+                    .map(|i| {
+                        let t = (i / 2) as f32 / 48000.0;
+                        amplitude * (2.0 * std::f32::consts::PI * freq_hz * t).sin()
+                    })
+                    .collect();
+                let mut output = vec![0.0f32; num_frames * 2];
+                let context = ProcessContext { sample_rate: 48000, num_frames };
+
+                plugin.process(&input, &mut output, &context).unwrap();
+
+                for (i, (&inp, &out)) in input.iter().zip(output.iter()).enumerate() {
+                    prop_assert!(
+                        (inp - out).abs() < 1e-6,
+                        "Passthrough violated at sample {}: input={}, output={}",
+                        i, inp, out
+                    );
+                }
+            }
         }
     }
 }

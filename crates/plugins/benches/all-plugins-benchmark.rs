@@ -12,7 +12,9 @@ use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use sotf_plugins::{
     ChannelMuteSoloPlugin, CrossoverPlugin, DelayPlugin, EqPlugin, ExpanderPlugin,
     FletcherMunsonPlugin, FletcherMunsonPluginParams, GatePlugin, InPlacePlugin, LimiterPlugin,
-    LoudnessCompensationPlugin, LoudnessMonitorPlugin, MatrixPlugin, Plugin, ProcessContext,
+    LoudnessCompensationPlugin, LoudnessMonitorPlugin, MatrixPlugin,
+    MultibandCompressorPlugin, MultibandExpanderPlugin,
+    Plugin, ProcessContext,
     SpectrumAnalyzerPlugin, SpectrumConfig,
 };
 use std::hint::black_box;
@@ -637,6 +639,116 @@ fn benchmark_channel_mute_solo(c: &mut Criterion) {
 }
 
 // ============================================================================
+// Multiband Compressor Plugin Benchmarks
+// ============================================================================
+
+fn benchmark_multiband_compressor(c: &mut Criterion) {
+    let mut group = c.benchmark_group("MultibandCompressor");
+
+    // Default 3-band compressor
+    {
+        let mut plugin = MultibandCompressorPlugin::new(CHANNELS);
+        plugin.initialize(SAMPLE_RATE).unwrap();
+
+        let mut buffer = generate_test_buffer(BUFFER_SIZE, CHANNELS);
+        let context = ProcessContext {
+            sample_rate: SAMPLE_RATE,
+            num_frames: BUFFER_SIZE,
+        };
+
+        group.bench_function("3band_stereo_512", |b| {
+            b.iter(|| {
+                plugin
+                    .process_in_place(black_box(&mut buffer), black_box(&context))
+                    .unwrap();
+            })
+        });
+    }
+
+    // 5-band compressor
+    {
+        use sotf_plugins::MultibandCompressorPluginParams;
+        let params = MultibandCompressorPluginParams {
+            num_bands: 5,
+            ..Default::default()
+        };
+        let mut plugin = MultibandCompressorPlugin::with_params(CHANNELS, params);
+        plugin.initialize(SAMPLE_RATE).unwrap();
+
+        let mut buffer = generate_test_buffer(BUFFER_SIZE, CHANNELS);
+        let context = ProcessContext {
+            sample_rate: SAMPLE_RATE,
+            num_frames: BUFFER_SIZE,
+        };
+
+        group.bench_function("5band_stereo_512", |b| {
+            b.iter(|| {
+                plugin
+                    .process_in_place(black_box(&mut buffer), black_box(&context))
+                    .unwrap();
+            })
+        });
+    }
+
+    group.finish();
+}
+
+// ============================================================================
+// Multiband Expander Plugin Benchmarks
+// ============================================================================
+
+fn benchmark_multiband_expander(c: &mut Criterion) {
+    let mut group = c.benchmark_group("MultibandExpander");
+
+    // Default 3-band expander
+    {
+        let mut plugin = MultibandExpanderPlugin::new(CHANNELS);
+        plugin.initialize(SAMPLE_RATE).unwrap();
+
+        let mut buffer = generate_test_buffer(BUFFER_SIZE, CHANNELS);
+        let context = ProcessContext {
+            sample_rate: SAMPLE_RATE,
+            num_frames: BUFFER_SIZE,
+        };
+
+        group.bench_function("3band_stereo_512", |b| {
+            b.iter(|| {
+                plugin
+                    .process_in_place(black_box(&mut buffer), black_box(&context))
+                    .unwrap();
+            })
+        });
+    }
+
+    // 5-band expander
+    {
+        use sotf_plugins::MultibandExpanderPluginParams;
+        let params = MultibandExpanderPluginParams {
+            num_bands: 5,
+            ..Default::default()
+        };
+        let mut plugin = MultibandExpanderPlugin::with_params(CHANNELS, params);
+        plugin.initialize(SAMPLE_RATE).unwrap();
+
+        let mut buffer = generate_test_buffer(BUFFER_SIZE, CHANNELS);
+        let context = ProcessContext {
+            sample_rate: SAMPLE_RATE,
+            num_frames: BUFFER_SIZE,
+        };
+
+        group.bench_function("5band_stereo_512", |b| {
+            b.iter(|| {
+                plugin
+                    .process_in_place(black_box(&mut buffer), black_box(&context))
+                    .unwrap();
+            })
+        });
+    }
+
+    group.finish();
+}
+
+// ============================================================================
 // Benchmark Groups
 // ============================================================================
 
@@ -652,5 +764,7 @@ criterion_group!(
     benchmark_analyzers,
     benchmark_loudness,
     benchmark_channel_mute_solo,
+    benchmark_multiband_compressor,
+    benchmark_multiband_expander,
 );
 criterion_main!(benches);

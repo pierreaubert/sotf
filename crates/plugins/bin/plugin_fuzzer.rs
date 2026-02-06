@@ -18,11 +18,12 @@ use sotf_plugins::{
     ChannelMuteSoloParams, ChannelMuteSoloPlugin, ChannelState, CompressorPlugin,
     CompressorPluginParams, CrossoverPlugin, CrossoverPluginParams, DawHost, DelayPlugin,
     DelayPluginParams, DenoiserPlugin, DenoiserPluginParams, EqPlugin, EqPluginParams,
-    ExpanderPlugin, ExpanderPluginParams, GainPlugin, GainPluginParams, GatePlugin,
-    GatePluginParams, InPlacePluginAdapter, LimiterPlugin, LimiterPluginParams,
-    LoudnessCompensationPlugin, LoudnessCompensationPluginParams, MatrixPlugin,
-    MultibandCompressorPlugin, MultibandCompressorPluginParams, MultibandExpanderPlugin,
-    MultibandExpanderPluginParams, Plugin, UpmixerPlugin, UpmixerPluginParams,
+    ExpanderPlugin, ExpanderPluginParams, FletcherMunsonPlugin, FletcherMunsonPluginParams,
+    GainPlugin, GainPluginParams, GatePlugin, GatePluginParams, InPlacePluginAdapter,
+    LimiterPlugin, LimiterPluginParams, LoudnessCompensationPlugin,
+    LoudnessCompensationPluginParams, MatrixPlugin, MultibandCompressorPlugin,
+    MultibandCompressorPluginParams, MultibandExpanderPlugin, MultibandExpanderPluginParams,
+    Plugin, SpectrumAnalyzerPlugin, SpectrumConfig, UpmixerPlugin, UpmixerPluginParams,
 };
 use std::fs::File;
 use std::path::PathBuf;
@@ -1068,6 +1069,58 @@ impl PluginFuzzer for UpmixerFuzzer {
     }
 }
 
+struct FletcherMunsonFuzzer;
+
+impl PluginFuzzer for FletcherMunsonFuzzer {
+    fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
+        let playback_volume_db = rng.random_range(-60.0..0.0);
+        let reference_level_db = rng.random_range(-30.0..0.0);
+
+        let params = FletcherMunsonPluginParams {
+            playback_volume_db,
+            reference_level_db,
+            ..Default::default()
+        };
+        let plugin = FletcherMunsonPlugin::from_params(channels, params);
+
+        let desc = format!(
+            "playback_vol={:.1}dB ref_level={:.1}dB",
+            playback_volume_db, reference_level_db
+        );
+
+        (Box::new(plugin), desc)
+    }
+}
+
+struct SpectrumAnalyzerFuzzer;
+
+impl PluginFuzzer for SpectrumAnalyzerFuzzer {
+    fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
+        let num_bins = rng.random_range(10..100);
+        let min_freq = rng.random_range(10.0..100.0);
+        let max_freq = rng.random_range(10000.0..22000.0);
+        let smoothing = rng.random_range(0.0..1.0);
+
+        let config = SpectrumConfig {
+            num_bins,
+            min_freq,
+            max_freq,
+            smoothing,
+            ..Default::default()
+        };
+
+        let plugin = SpectrumAnalyzerPlugin::with_config(channels, config)
+            .expect("Failed to create SpectrumAnalyzerPlugin");
+
+        let desc = format!(
+            "bins={} min_freq={:.0}Hz max_freq={:.0}Hz smoothing={:.2}",
+            num_bins, min_freq, max_freq, smoothing
+        );
+
+        (Box::new(plugin), desc)
+    }
+}
+
 fn get_fuzzer(plugin_name: &str, sample_rate: u32) -> Result<Box<dyn PluginFuzzer>, String> {
     match plugin_name.to_lowercase().as_str() {
         "gain" => Ok(Box::new(GainFuzzer)),
@@ -1087,8 +1140,10 @@ fn get_fuzzer(plugin_name: &str, sample_rate: u32) -> Result<Box<dyn PluginFuzze
         "matrix" => Ok(Box::new(MatrixFuzzer)),
         "channel_mute_solo" | "mute_solo" | "mutesolo" => Ok(Box::new(ChannelMuteSoloFuzzer)),
         "denoiser" | "denoise" => Ok(Box::new(DenoiserFuzzer)),
+        "fletcher_munson" | "fletcher" => Ok(Box::new(FletcherMunsonFuzzer)),
+        "spectrum" | "spectrum_analyzer" => Ok(Box::new(SpectrumAnalyzerFuzzer)),
         _ => Err(format!(
-            "Unknown plugin type: {}. Supported: gain, eq, compressor, limiter, gate, delay, loudness, crossover, upmixer, expander, multiband_compressor (mbcomp), multiband_expander (mbexp), matrix, channel_mute_solo (mutesolo), denoiser",
+            "Unknown plugin type: {}. Supported: gain, eq, compressor, limiter, gate, delay, loudness, crossover, upmixer, expander, multiband_compressor (mbcomp), multiband_expander (mbexp), matrix, channel_mute_solo (mutesolo), denoiser, fletcher_munson (fletcher), spectrum",
             plugin_name
         )),
     }

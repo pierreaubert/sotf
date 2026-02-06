@@ -5,6 +5,10 @@
 use super::ChannelState;
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use super::smoothing::Smoother;
+
+/// Smoothing time in ms for gain coefficient transitions (~5ms to avoid clicks)
+const GAIN_SMOOTH_MS: f32 = 5.0;
 
 /// Matrix mixer plugin that routes N input channels to P output channels
 ///
@@ -52,6 +56,10 @@ pub struct MatrixPlugin {
     /// Gain matrix in row-major order (num_outputs x num_inputs)
     /// matrix[out_ch * num_inputs + in_ch] = gain from logical input in_ch to logical output out_ch
     matrix: Vec<f32>,
+    /// Per-coefficient smoothers (same layout as matrix)
+    gain_smoothers: Vec<Smoother>,
+    /// Sample rate for smoother initialization
+    sample_rate: u32,
     /// Total number of physical input channels in the audio buffer
     /// (max(input_channel_map) + 1, or input_channel_map.len() if empty)
     physical_input_channels: usize,
@@ -73,10 +81,17 @@ impl MatrixPlugin {
     /// For non-square matrices, only matching indices get 1.0.
     pub fn new(input_channels: usize, output_channels: usize) -> Self {
         let matrix = Self::create_identity_matrix(input_channels, output_channels);
+        let sample_rate = 48000; // Default until initialize()
+        let gain_smoothers = matrix
+            .iter()
+            .map(|&v| Smoother::new(v, GAIN_SMOOTH_MS, sample_rate))
+            .collect();
         Self {
             input_channel_map: Vec::new(),  // Empty = dense mapping
             output_channel_map: Vec::new(), // Empty = dense mapping
             matrix,
+            gain_smoothers,
+            sample_rate,
             physical_input_channels: input_channels,
             physical_output_channels: output_channels,
             channel_states: Vec::new(),
@@ -119,10 +134,17 @@ impl MatrixPlugin {
             }
         }
 
+        let sample_rate = 48000;
+        let gain_smoothers = matrix
+            .iter()
+            .map(|&v| Smoother::new(v, GAIN_SMOOTH_MS, sample_rate))
+            .collect();
         Ok(Self {
             input_channel_map: Vec::new(),  // Empty = dense mapping
             output_channel_map: Vec::new(), // Empty = dense mapping
             matrix,
+            gain_smoothers,
+            sample_rate,
             physical_input_channels: input_channels,
             physical_output_channels: output_channels,
             channel_states: Vec::new(),
@@ -192,10 +214,17 @@ impl MatrixPlugin {
         let physical_input_channels = input_channel_map.iter().max().map(|&v| v + 1).unwrap();
         let physical_output_channels = output_channel_map.iter().max().map(|&v| v + 1).unwrap();
 
+        let sample_rate = 48000;
+        let gain_smoothers = matrix
+            .iter()
+            .map(|&v| Smoother::new(v, GAIN_SMOOTH_MS, sample_rate))
+            .collect();
         Ok(Self {
             input_channel_map,
             output_channel_map,
             matrix,
+            gain_smoothers,
+            sample_rate,
             physical_input_channels,
             physical_output_channels,
             channel_states: Vec::new(),
@@ -276,7 +305,9 @@ impl MatrixPlugin {
             ));
         }
 
-        self.matrix[output_ch * num_inputs + input_ch] = gain;
+        let idx = output_ch * num_inputs + input_ch;
+        self.matrix[idx] = gain;
+        self.gain_smoothers[idx].set_target(gain);
         Ok(())
     }
 
@@ -310,6 +341,9 @@ impl MatrixPlugin {
             }
         }
 
+        for (i, &v) in matrix.iter().enumerate() {
+            self.gain_smoothers[i].set_target(v);
+        }
         self.matrix = matrix;
         Ok(())
     }
@@ -324,6 +358,9 @@ impl MatrixPlugin {
         let num_inputs = self.num_inputs();
         let num_outputs = self.num_outputs();
         self.matrix = Self::create_identity_matrix(num_inputs, num_outputs);
+        for (i, &v) in self.matrix.iter().enumerate() {
+            self.gain_smoothers[i].reset(v);
+        }
     }
 }
 
@@ -556,6 +593,14 @@ impl Plugin for MatrixPlugin {
         None
     }
 
+    fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        self.sample_rate = sample_rate;
+        for smoother in &mut self.gain_smoothers {
+            smoother.set_time(GAIN_SMOOTH_MS, sample_rate);
+        }
+        Ok(())
+    }
+
     fn process(
         &mut self,
         input: &[f32],
@@ -593,7 +638,7 @@ impl Plugin for MatrixPlugin {
         // Check if any channel is soloed
         let any_soloed = self.channel_states.iter().any(|s| s.soloed);
 
-        // Process frame by frame
+        // Process frame by frame with smoothed gains
         for frame in 0..num_frames {
             let in_frame_offset = frame * self.physical_input_channels;
             let out_frame_offset = frame * self.physical_output_channels;
@@ -602,9 +647,10 @@ impl Plugin for MatrixPlugin {
             for logical_out_ch in 0..num_outputs {
                 let mut sum = 0.0;
 
-                // Sum contributions from all logical input channels
+                // Sum contributions from all logical input channels using smoothed gains
                 for logical_in_ch in 0..num_inputs {
-                    let gain = self.matrix[logical_out_ch * num_inputs + logical_in_ch];
+                    let smoother_idx = logical_out_ch * num_inputs + logical_in_ch;
+                    let gain = self.gain_smoothers[smoother_idx].next();
 
                     // Map logical channel to physical channel
                     let physical_in_ch = if self.input_channel_map.is_empty() {
@@ -619,18 +665,10 @@ impl Plugin for MatrixPlugin {
 
                 // Apply Mute/Solo/Dim logic if states available
                 if let Some(state) = self.channel_states.get(logical_out_ch) {
-                    if state.muted {
+                    if state.muted || (any_soloed && !state.soloed) {
                         sum = 0.0;
-                    } else if any_soloed && !state.soloed {
-                        sum = 0.0;
-                    } else {
-                        // Apply dim attenuation if dimmed
-                        // Typically Dim is -20dB (0.1) but let's use a fixed factor or parameter.
-                        // Ideally checking a "Dim Level" parameter, but for enabled/disabled bool
-                        // we can standardise on -20dB.
-                        if state.dimmed {
-                            sum *= 0.1;
-                        }
+                    } else if state.dimmed {
+                        sum *= 0.1;
                     }
                 }
 
@@ -672,6 +710,31 @@ mod tests {
         assert_eq!(plugin.get_gain(1, 3), Some(0.0));
     }
 
+    /// Process enough frames with constant input for smoothers to converge
+    fn process_converged(plugin: &mut MatrixPlugin, input: &[f32], output: &mut [f32]) {
+        let in_channels = plugin.input_channels();
+        let out_channels = plugin.output_channels();
+        let num_frames = input.len() / in_channels;
+        assert_eq!(output.len(), num_frames * out_channels);
+
+        let context = ProcessContext {
+            sample_rate: 48000,
+            num_frames,
+        };
+
+        // Process ~2048 frames to let smoothers settle
+        let mut dummy_out = vec![0.0; 2048 * out_channels];
+        let dummy_in: Vec<f32> = input.iter().copied().cycle().take(2048 * in_channels).collect();
+        let settle_ctx = ProcessContext {
+            sample_rate: 48000,
+            num_frames: 2048,
+        };
+        plugin.process(&dummy_in, &mut dummy_out, &settle_ctx).unwrap();
+
+        // Now process the actual input
+        plugin.process(input, output, &context).unwrap();
+    }
+
     #[test]
     fn test_swap_channels() {
         let mut plugin = MatrixPlugin::new(2, 2);
@@ -682,18 +745,15 @@ mod tests {
 
         let input = vec![1.0, 2.0, 3.0, 4.0]; // 2 frames, 2 channels: [L=1,R=2], [L=3,R=4]
         let mut output = vec![0.0; 4];
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames: 2,
-        };
 
-        plugin.process(&input, &mut output, &context).unwrap();
+        process_converged(&mut plugin, &input, &mut output);
 
+        let tolerance = 0.001;
         // Channels should be swapped
-        assert_eq!(output[0], 2.0); // Frame 0, Out0 = In1
-        assert_eq!(output[1], 1.0); // Frame 0, Out1 = In0
-        assert_eq!(output[2], 4.0); // Frame 1, Out0 = In1
-        assert_eq!(output[3], 3.0); // Frame 1, Out1 = In0
+        assert!((output[0] - 2.0).abs() < tolerance, "Frame 0, Out0 = In1: got {}", output[0]);
+        assert!((output[1] - 1.0).abs() < tolerance, "Frame 0, Out1 = In0: got {}", output[1]);
+        assert!((output[2] - 4.0).abs() < tolerance, "Frame 1, Out0 = In1: got {}", output[2]);
+        assert!((output[3] - 3.0).abs() < tolerance, "Frame 1, Out1 = In0: got {}", output[3]);
     }
 
     #[test]

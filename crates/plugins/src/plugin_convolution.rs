@@ -63,7 +63,12 @@ struct ConvolutionState {
 ///
 /// Uses overlap-add FFT convolution for efficient processing of long IRs.
 /// Supports mono and stereo impulse responses.
-/// Async IR loading prevents audio dropouts.
+///
+/// # Threading Model
+/// The `state` field uses `Arc<RwLock>` to support async IR loading via `load_ir(sync=false)`.
+/// `process()` takes a read lock; `load_ir()` takes a write lock from a rayon background thread.
+/// Currently only sync loading is used (at init time), but the async path is preserved for
+/// future use (e.g., IR hot-swap during playback).
 pub struct ConvolutionPlugin {
     channels: usize,
     sample_rate: u32,

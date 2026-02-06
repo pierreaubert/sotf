@@ -558,4 +558,62 @@ mod tests {
         limiter.reset();
         assert_eq!(limiter.envelope, 0.0);
     }
+
+    mod proptest_limiter {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            /// Property: limiter output should never exceed threshold (in linear domain)
+            /// after sufficient processing to settle the envelope.
+            #[test]
+            fn output_never_exceeds_threshold(
+                threshold_db in -20.0f32..0.0,
+                input_amplitude in 0.01f32..4.0,
+            ) {
+                let threshold_linear = 10.0f32.powf(threshold_db / 20.0);
+                let mut limiter = LimiterPlugin::new(1, threshold_db, 50.0, 0.0, false);
+                limiter.initialize(48000).unwrap();
+
+                // Process multiple blocks for envelope to settle
+                let num_frames = 4096;
+                let mut buffer = vec![input_amplitude; num_frames];
+                let context = ProcessContext {
+                    sample_rate: 48000,
+                    num_frames,
+                };
+                limiter.process_in_place(&mut buffer, &context).unwrap();
+
+                // Check last 512 samples (after envelope has settled)
+                for &sample in &buffer[num_frames - 512..] {
+                    prop_assert!(
+                        sample.abs() <= threshold_linear * 1.01, // 1% tolerance for numerical precision
+                        "sample {:.6} exceeded threshold {:.6} (threshold_db={:.1}, input={:.2})",
+                        sample.abs(), threshold_linear, threshold_db, input_amplitude
+                    );
+                }
+            }
+
+            /// Property: limiter should not produce NaN or Inf
+            #[test]
+            fn no_nan_or_inf(
+                threshold_db in -20.0f32..0.0,
+                release_ms in 10.0f32..500.0,
+                input_amplitude in 0.01f32..4.0,
+            ) {
+                let mut limiter = LimiterPlugin::new(1, threshold_db, release_ms, 0.0, false);
+                limiter.initialize(48000).unwrap();
+
+                let num_frames = 1024;
+                let mut buffer = vec![input_amplitude; num_frames];
+                let context = ProcessContext { sample_rate: 48000, num_frames };
+                limiter.process_in_place(&mut buffer, &context).unwrap();
+
+                for &sample in &buffer {
+                    prop_assert!(!sample.is_nan(), "NaN in output");
+                    prop_assert!(!sample.is_infinite(), "Inf in output");
+                }
+            }
+        }
+    }
 }
