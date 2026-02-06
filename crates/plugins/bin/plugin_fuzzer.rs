@@ -648,11 +648,11 @@ struct CrossoverFuzzer;
 
 impl PluginFuzzer for CrossoverFuzzer {
     fn create_plugin(&self, channels: usize, rng: &mut StdRng) -> (Box<dyn Plugin>, String) {
-        let crossover_types = vec!["LR24", "LR48", "Butterworth24", "Butterworth12"];
+        let crossover_types = ["LR24", "LR48", "Butterworth24", "Butterworth12"];
         let crossover_type =
             crossover_types[rng.random_range(0..crossover_types.len())].to_string();
         let frequency = rng.random_range(20.0..20000.0);
-        let outputs = vec!["low", "high"];
+        let outputs = ["low", "high"];
         let output = outputs[rng.random_range(0..outputs.len())].to_string();
 
         let params = CrossoverPluginParams {
@@ -846,8 +846,8 @@ impl PluginFuzzer for MatrixFuzzer {
         let mut matrix = vec![0.0_f32; channels * channels];
 
         // Fill with random values
-        for i in 0..matrix.len() {
-            matrix[i] = rng.random_range(0.0..1.0);
+        for val in &mut matrix {
+            *val = rng.random_range(0.0..1.0);
         }
 
         // Optionally make it more identity-like sometimes
@@ -1257,14 +1257,13 @@ fn run_fuzzer(args: Args) -> Result<(), String> {
     println!("  Original file is clean - no abnormalities detected.\n");
 
     // Check if upmixer requires stereo input
-    if args.plugin.to_lowercase() == "upmixer" || args.plugin.to_lowercase() == "upmix" {
-        if channels != 2 {
+    if (args.plugin.to_lowercase() == "upmixer" || args.plugin.to_lowercase() == "upmix")
+        && channels != 2 {
             return Err(format!(
                 "Upmixer requires stereo (2-channel) input, but the file has {} channels",
                 channels
             ));
         }
-    }
 
     // Prepare resampled versions for different sample rates
     const TARGET_RATES: [u32; 5] = [44100, 48000, 88200, 96000, 192000];

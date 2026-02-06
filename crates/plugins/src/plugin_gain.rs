@@ -309,15 +309,14 @@ impl InPlacePlugin for GainPlugin {
         }
 
         // Check for per-channel gain_db_N
-        if let Some(suffix) = id_str.strip_prefix("gain_db_") {
-            if let Ok(channel) = suffix.parse::<usize>() {
+        if let Some(suffix) = id_str.strip_prefix("gain_db_")
+            && let Ok(channel) = suffix.parse::<usize>() {
                 if let Some(gain_db) = value.as_float() {
                     return self.set_channel_gain_db(channel, gain_db);
                 } else {
                     return Err("Gain parameter must be a float".to_string());
                 }
             }
-        }
 
         Err(format!("Unknown parameter: {}", id))
     }
@@ -331,13 +330,11 @@ impl InPlacePlugin for GainPlugin {
         }
 
         // Check for per-channel gain_db_N
-        if let Some(suffix) = id_str.strip_prefix("gain_db_") {
-            if let Ok(channel) = suffix.parse::<usize>() {
-                if let Some(gain) = self.channel_gain_db(channel) {
+        if let Some(suffix) = id_str.strip_prefix("gain_db_")
+            && let Ok(channel) = suffix.parse::<usize>()
+                && let Some(gain) = self.channel_gain_db(channel) {
                     return Some(ParameterValue::Float(gain));
                 }
-            }
-        }
 
         None
     }

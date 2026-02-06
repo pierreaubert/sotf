@@ -18,6 +18,12 @@ use rubato::{
 ///
 /// Note: The output buffer size will differ from input size based on the resampling ratio.
 /// For example, resampling from 44.1kHz to 48kHz will produce more output frames.
+///
+/// # Allocation note
+/// Rubato's `process()` API returns `Vec<Vec<f32>>`, causing unavoidable heap allocations
+/// on every call. This is an external API limitation. TODO: investigate rubato's
+/// `process_into_buffer()` (if available in our version) which accepts pre-allocated output
+/// buffers. Until then, this plugin is excluded from the zero-allocation benchmark.
 pub struct ResamplerPlugin {
     /// Number of channels
     num_channels: usize,
@@ -231,7 +237,8 @@ impl Plugin for ResamplerPlugin {
         // Convert interleaved to planar
         self.interleaved_to_planar(input, num_input_frames);
 
-        // Process resampling - returns new Vec<Vec<f32>>
+        // Process resampling — rubato's process() returns Vec<Vec<f32>>, causing
+        // unavoidable heap allocation. See struct-level doc for details.
         let output_planar = self
             .resampler
             .as_mut()

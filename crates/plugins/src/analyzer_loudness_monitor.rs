@@ -9,65 +9,11 @@ use super::analyzer::LoudnessData;
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use ebur128::{EbuR128, Mode};
-use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::sync::Arc;
 
-/// Real-time loudness measurements
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LoudnessInfo {
-    /// Momentary loudness (M) - 400ms window, updated every 100ms
-    /// Range: -inf to ~0 LUFS (typical: -40 to 0)
-    pub momentary_lufs: f64,
-
-    /// Short-term loudness (S) - 3 second window
-    /// Range: -inf to ~0 LUFS (typical: -40 to 0)
-    pub shortterm_lufs: f64,
-
-    /// Integrated loudness (I) - whole program loudness
-    /// Range: -inf to ~0 LUFS (typical: -40 to 0)
-    pub integrated_lufs: f64,
-
-    /// Current sample peak across all channels (0.0 to 1.0+)
-    pub peak: f64,
-
-    /// Per-channel sample peaks (0.0 to 1.0+)
-    pub channel_peaks: Vec<f64>,
-
-    /// Per-channel true peaks in dBTP (dB True Peak)
-    pub true_peaks_dbtp: Vec<f64>,
-
-    /// L/R correlation coefficient (only for stereo)
-    pub correlation_lr: Option<f64>,
-}
-
-impl LoudnessInfo {
-    fn new(channels: usize) -> Self {
-        Self {
-            momentary_lufs: f64::NEG_INFINITY,
-            shortterm_lufs: f64::NEG_INFINITY,
-            integrated_lufs: f64::NEG_INFINITY,
-            peak: 0.0,
-            channel_peaks: vec![0.0; channels],
-            true_peaks_dbtp: vec![f64::NEG_INFINITY; channels],
-            correlation_lr: None,
-        }
-    }
-}
-
-impl Default for LoudnessInfo {
-    fn default() -> Self {
-        Self {
-            momentary_lufs: f64::NEG_INFINITY,
-            shortterm_lufs: f64::NEG_INFINITY,
-            integrated_lufs: f64::NEG_INFINITY,
-            peak: 0.0,
-            channel_peaks: Vec::new(),
-            true_peaks_dbtp: Vec::new(),
-            correlation_lr: None,
-        }
-    }
-}
+/// Type alias for backward compatibility — `LoudnessInfo` is now `LoudnessData`.
+pub type LoudnessInfo = LoudnessData;
 
 /// Loudness monitor for real-time audio analysis.
 ///
@@ -80,7 +26,7 @@ pub(crate) struct LoudnessMonitor {
     /// Sample rate
     sample_rate: u32,
     /// Current measurements (pre-allocated with correct channel count)
-    current_loudness: LoudnessInfo,
+    current_loudness: LoudnessData,
     /// Per-channel peak trackers (separate from EBU R128 for meter display)
     channel_peak_trackers: Vec<f64>,
     /// Peak decay rate per sample (for visual meter decay)
@@ -133,7 +79,7 @@ impl LoudnessMonitor {
             ebur128,
             channels,
             sample_rate,
-            current_loudness: LoudnessInfo::new(channels as usize),
+            current_loudness: LoudnessData::new(channels as usize),
             channel_peak_trackers: vec![0.0; channels as usize],
             peak_decay_per_sample,
             correlation_ring_l: vec![0.0; correlation_buffer_size],
@@ -318,9 +264,9 @@ impl LoudnessMonitor {
         self.cached_correlation
     }
 
-    /// Get the current loudness measurements
-    pub(crate) fn get_loudness(&self) -> LoudnessInfo {
-        self.current_loudness.clone()
+    /// Get the current loudness measurements (zero-copy reference)
+    pub(crate) fn get_loudness(&self) -> &LoudnessData {
+        &self.current_loudness
     }
 
     /// Reset the monitor (clear all history)
@@ -333,7 +279,7 @@ impl LoudnessMonitor {
         .map_err(|e| format!("Failed to reset analyzer: {:?}", e))?;
 
         self.ebur128 = new_ebur;
-        self.current_loudness = LoudnessInfo::new(self.channels as usize);
+        self.current_loudness = LoudnessData::new(self.channels as usize);
         self.channel_peak_trackers.fill(0.0);
         self.correlation_ring_l.fill(0.0);
         self.correlation_ring_r.fill(0.0);
@@ -356,6 +302,10 @@ pub struct LoudnessMonitorPlugin {
     monitor: LoudnessMonitor,
     /// Number of channels
     num_channels: usize,
+    /// Cached Arc for zero-alloc get_data() — rebuilt after each process() call.
+    /// Uses Arc::get_mut() to update in-place when refcount == 1 (common case),
+    /// falls back to new allocation only when UI still holds a reference.
+    cached_data: Option<Arc<dyn Any + Send + Sync>>,
 }
 
 impl LoudnessMonitorPlugin {
@@ -369,25 +319,34 @@ impl LoudnessMonitorPlugin {
         Ok(Self {
             monitor,
             num_channels,
+            cached_data: None,
         })
     }
 
-    /// Get current loudness measurements
-    pub fn get_loudness(&self) -> LoudnessInfo {
+    /// Get current loudness measurements (zero-copy reference)
+    pub fn get_loudness(&self) -> &LoudnessData {
         self.monitor.get_loudness()
     }
 
-    /// Convert LoudnessInfo to LoudnessData
-    fn to_loudness_data(info: &LoudnessInfo) -> LoudnessData {
-        LoudnessData {
-            momentary_lufs: info.momentary_lufs,
-            shortterm_lufs: info.shortterm_lufs,
-            integrated_lufs: info.integrated_lufs,
-            peak: info.peak,
-            channel_peaks: info.channel_peaks.clone(),
-            true_peaks_dbtp: info.true_peaks_dbtp.clone(),
-            correlation_lr: info.correlation_lr,
+    /// Rebuild the cached Arc from current monitor state.
+    /// Tries Arc::get_mut() for in-place update (zero alloc when refcount == 1),
+    /// falls back to new allocation when the old Arc is still held externally.
+    fn rebuild_cached_data(&mut self) {
+        let source = self.monitor.get_loudness();
+
+        if let Some(ref mut arc) = self.cached_data {
+            // Try to get mutable access (works when refcount == 1, i.e. nobody else holds a ref)
+            if let Some(inner) = Arc::get_mut(arc)
+                .and_then(|any| any.downcast_mut::<LoudnessData>())
+            {
+                // Zero-allocation in-place update
+                inner.update_from(source);
+                return;
+            }
         }
+
+        // First call or refcount > 1: allocate new Arc
+        self.cached_data = Some(Arc::new(source.clone()));
     }
 }
 
@@ -420,12 +379,14 @@ impl Plugin for LoudnessMonitorPlugin {
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.monitor = LoudnessMonitor::new(self.num_channels as u32, sample_rate)
             .map_err(|e| format!("Failed to initialize loudness monitor: {}", e))?;
+        self.rebuild_cached_data();
 
         Ok(())
     }
 
     fn reset(&mut self) {
         self.monitor.reset().ok();
+        self.rebuild_cached_data();
     }
 
     fn process(
@@ -458,13 +419,17 @@ impl Plugin for LoudnessMonitorPlugin {
             .add_frames(input)
             .map_err(|e| format!("Failed to add frames to loudness monitor: {}", e))?;
 
+        // Rebuild cached Arc for zero-alloc get_data().
+        // Common case: Arc::get_mut succeeds (refcount == 1) → in-place update, zero alloc.
+        // Rare case: UI still holds old ref → one allocation.
+        self.rebuild_cached_data();
+
         Ok(context.num_frames)
     }
 
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
-        let info = self.monitor.get_loudness();
-        let data = Self::to_loudness_data(&info);
-        Some(Arc::new(data))
+        // Just a refcount bump — no heap allocation
+        self.cached_data.clone()
     }
 
     fn latency_samples(&self) -> usize {

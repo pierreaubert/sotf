@@ -93,3 +93,7 @@ harness = false
 [[bench]]
 name = "all-plugins-benchmark"
 harness = false
+
+[[bench]]
+name = "allocation-benchmark"
+harness = false

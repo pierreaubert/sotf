@@ -45,7 +45,7 @@ impl DenoiserPlugin {
             // Apply smoothed Wiener gains to frequency domain
             for k in 0..self.spectrum_size {
                 let gain = self.smoothed_gain[ch][k];
-                self.freq_domain[ch][k] = self.freq_domain[ch][k] * gain;
+                self.freq_domain[ch][k] *= gain;
             }
 
             // Inverse FFT (Complex -> Real)

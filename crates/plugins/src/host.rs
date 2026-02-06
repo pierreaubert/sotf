@@ -724,28 +724,17 @@ impl DawHost {
         // Use the larger of input or output frames for buffer allocation
         let buffer_frames = num_frames.max(max_output_frames);
 
-        // Take pre-allocated buffers (avoids borrow conflicts with &self for graph topology)
-        let mut bufs = self.process_buffers.take().unwrap_or_else(|| {
-            // Fallback: create fresh buffers if somehow missing
-            let max_ch = self.nodes.values().map(|n| n.output_channels().max(n.input_channels())).max().unwrap_or(2);
-            let node_buffers = self.nodes.iter().map(|(&id, node)| {
-                (id, NodeBuffer::new(buffer_frames, node.output_channels()))
-            }).collect();
-            let sz = buffer_frames * max_ch;
-            ProcessBuffers {
-                node_buffers,
-                scratch_input: vec![0.0; sz],
-                scratch_output: vec![0.0; sz],
-                merge_buffer: vec![0.0; sz],
-                channel_map_buffer: vec![0.0; sz],
-            }
-        });
+        // Take pre-allocated buffers (avoids borrow conflicts with &self for graph topology).
+        // Buffers are always initialized in build() — missing buffers is a programming error.
+        let mut bufs = self.process_buffers.take()
+            .expect("process_buffers must be initialized by build() before process()");
 
-        // Ensure node buffers are large enough and cleared for this frame
-        for (&id, node) in &self.nodes {
-            let nb = bufs.node_buffers.entry(id).or_insert_with(|| {
-                NodeBuffer::new(buffer_frames, node.output_channels())
-            });
+        // Ensure node buffers are large enough and cleared for this frame.
+        // All entries are pre-allocated in build(); ensure_capacity is a no-op when
+        // the frame count doesn't exceed the pre-allocated size (2048).
+        for &id in self.nodes.keys() {
+            let nb = bufs.node_buffers.get_mut(&id)
+                .expect("NodeBuffer must be pre-allocated in build() for every node");
             nb.ensure_capacity(buffer_frames);
             nb.clear();
         }
@@ -793,6 +782,7 @@ impl DawHost {
     }
 
     /// Process a single node using pre-allocated buffers (static method to avoid borrow conflicts).
+    #[allow(clippy::too_many_arguments)]
     fn process_node_with_buffers(
         nodes: &HashMap<NodeId, GraphNode>,
         input_nodes: &[NodeId],

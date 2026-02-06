@@ -55,7 +55,7 @@ impl DenoiserPlugin {
             self.smoothed_psd[channel][k] = s_tmp;
 
             // Step 2: Track minimum (reset every L frames)
-            if self.frame_counter[channel] % l == 0 {
+            if self.frame_counter[channel].is_multiple_of(l) {
                 self.min_psd[channel][k] = s_tmp;
             } else {
                 self.min_psd[channel][k] = self.min_psd[channel][k].min(s_tmp);

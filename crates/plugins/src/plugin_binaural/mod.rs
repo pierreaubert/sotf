@@ -349,13 +349,12 @@ impl BinauralDecoderPlugin {
                 );
 
                 let mut new_df_eq = None;
-                if diffuse_field_eq {
-                    if let Ok(eq) =
+                if diffuse_field_eq
+                    && let Ok(eq) =
                         filter::compute_diffuse_field_eq(&sofa, fft_size, sample_rate, &fft_r2c)
                     {
                         new_df_eq = Some(eq);
                     }
-                }
 
                 // Write back
                 let mut lock = state_arc.write();
@@ -952,7 +951,7 @@ impl Plugin for BinauralDecoderPlugin {
         const MIN_SAMPLE_RATE: u32 = 8_000;
         const MAX_SAMPLE_RATE: u32 = 384_000;
 
-        if sample_rate < MIN_SAMPLE_RATE || sample_rate > MAX_SAMPLE_RATE {
+        if !(MIN_SAMPLE_RATE..=MAX_SAMPLE_RATE).contains(&sample_rate) {
             return Err(format!(
                 "Invalid sample rate: {} Hz (valid range: {}-{} Hz)",
                 sample_rate, MIN_SAMPLE_RATE, MAX_SAMPLE_RATE

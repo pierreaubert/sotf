@@ -902,9 +902,9 @@ impl InPlacePlugin for MultibandCompressorPlugin {
             self.build_crossovers();
         } else if id.as_str().starts_with("band_") {
             let parts: Vec<&str> = id.as_str().split('_').collect();
-            if parts.len() >= 3 {
-                if let Ok(band_idx) = parts[1].parse::<usize>() {
-                    if band_idx < self.band_params.len() {
+            if parts.len() >= 3
+                && let Ok(band_idx) = parts[1].parse::<usize>()
+                    && band_idx < self.band_params.len() {
                         let param_name = parts[2..].join("_");
                         let band = &mut self.band_params[band_idx];
 
@@ -943,8 +943,6 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                         }
                         return Ok(());
                     }
-                }
-            }
             return Err(format!("Invalid band parameter ID: {}", id));
         } else if id == self.param_threshold {
             let val = value.as_float().ok_or("Invalid threshold")?;
@@ -973,9 +971,9 @@ impl InPlacePlugin for MultibandCompressorPlugin {
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
         if id.as_str().starts_with("band_") {
             let parts: Vec<&str> = id.as_str().split('_').collect();
-            if parts.len() >= 3 {
-                if let Ok(band_idx) = parts[1].parse::<usize>() {
-                    if band_idx < self.band_params.len() {
+            if parts.len() >= 3
+                && let Ok(band_idx) = parts[1].parse::<usize>()
+                    && band_idx < self.band_params.len() {
                         let param_name = parts[2..].join("_");
                         let band = &self.band_params[band_idx];
 
@@ -1001,8 +999,6 @@ impl InPlacePlugin for MultibandCompressorPlugin {
                             _ => None,
                         };
                     }
-                }
-            }
             return None;
         }
 

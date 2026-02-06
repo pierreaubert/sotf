@@ -836,11 +836,10 @@ impl Plugin for FletcherMunsonPlugin {
         self.update_band_gains();
 
         // Reinitialize auto-gain with new sample rate
-        if let Some(ag) = &mut self.auto_gain {
-            if let Err(e) = ag.set_sample_rate(sample_rate) {
+        if let Some(ag) = &mut self.auto_gain
+            && let Err(e) = ag.set_sample_rate(sample_rate) {
                 log::warn!("Failed to set auto-gain sample rate: {}", e);
             }
-        }
 
         Ok(())
     }
@@ -900,11 +899,10 @@ impl Plugin for FletcherMunsonPlugin {
         }
 
         // Measure input for auto-gain if enabled
-        if let Some(ag) = &mut self.auto_gain {
-            if ag.is_enabled() {
+        if let Some(ag) = &mut self.auto_gain
+            && ag.is_enabled() {
                 let _ = ag.measure_input(input);
             }
-        }
 
         // Process each frame
         for frame_idx in 0..context.num_frames {
@@ -938,12 +936,11 @@ impl Plugin for FletcherMunsonPlugin {
         }
 
         // Measure output and apply auto-gain compensation if enabled
-        if let Some(ag) = &mut self.auto_gain {
-            if ag.is_enabled() {
+        if let Some(ag) = &mut self.auto_gain
+            && ag.is_enabled() {
                 let _ = ag.measure_output(output);
                 ag.apply_compensation(output, context.num_frames);
             }
-        }
 
         // Flush denormals to prevent CPU performance spikes and audio crackle
         // IIR biquad filter calculations can produce denormal numbers

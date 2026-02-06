@@ -25,6 +25,10 @@ pub struct PndPlugin {
     // State
     current_ratio: f64,
 
+    // Pre-allocated buffers for zero-allocation process()
+    mono_buffer: Vec<f32>,
+    planar_input: Vec<Vec<f32>>,
+
     // Parameters
     param_correction_strength: ParameterId,
     correction_strength: f32,
@@ -44,6 +48,8 @@ impl PndPlugin {
             analyzer: None,
             resampler: None,
             current_ratio: 1.0,
+            mono_buffer: Vec::new(),
+            planar_input: vec![Vec::new(); channels],
 
             param_correction_strength: ParameterId::from("correction_strength"),
             correction_strength: CORRECTION_STRENGTH_DEFAULT,
@@ -159,6 +165,11 @@ impl Plugin for PndPlugin {
         self.init_resampler()?;
         self.init_analyzer();
 
+        // Pre-allocate buffers for the expected chunk size (matches resampler chunk_size=1024)
+        let max_frames = 1024;
+        self.mono_buffer.resize(max_frames, 0.0);
+        self.planar_input = vec![vec![0.0; max_frames]; self.channels];
+
         Ok(())
     }
 
@@ -174,9 +185,14 @@ impl Plugin for PndPlugin {
         // For simplicity in this prototype, we analyze the current block (channel 0)
         // Ideally we would look at a window centered on the current block or lookahead
         let drift_ratio = if let Some(analyzer) = &mut self.analyzer {
-            // Interleaved to mono/first channel for analysis
-            let mono_input: Vec<f32> = input.chunks(self.channels).map(|chunk| chunk[0]).collect();
-            analyzer.analyze(&mono_input)
+            // Interleaved to mono/first channel for analysis (reuse pre-allocated buffer)
+            if self.mono_buffer.len() < num_frames {
+                self.mono_buffer.resize(num_frames, 0.0);
+            }
+            for (i, chunk) in input.chunks(self.channels).enumerate().take(num_frames) {
+                self.mono_buffer[i] = chunk[0];
+            }
+            analyzer.analyze(&self.mono_buffer[..num_frames])
         } else {
             1.0
         };
@@ -214,16 +230,22 @@ impl Plugin for PndPlugin {
                 .set_resample_ratio(final_ratio, true)
                 .map_err(|e| format!("{:?}", e))?;
 
-            // De-interleave
-            let mut planar_input = vec![vec![0.0; num_frames]; self.channels];
+            // De-interleave (reuse pre-allocated planar buffers)
+            for c in 0..self.channels {
+                if self.planar_input[c].len() < num_frames {
+                    self.planar_input[c].resize(num_frames, 0.0);
+                }
+            }
             for i in 0..num_frames {
                 for c in 0..self.channels {
-                    planar_input[c][i] = input[i * self.channels + c];
+                    self.planar_input[c][i] = input[i * self.channels + c];
                 }
             }
 
+            // NOTE: rubato's process() returns Vec<Vec<f32>> — allocation is inside the
+            // external crate and cannot be avoided without forking rubato.
             let planar_output = resampler
-                .process(&planar_input, None)
+                .process(&self.planar_input, None)
                 .map_err(|e| format!("{:?}", e))?;
 
             // Re-interleave

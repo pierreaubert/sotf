@@ -382,11 +382,10 @@ impl SpectrumAnalyzer {
             let relative_pos = (log_f - log_min) / (log_max - log_min);
             let target_bin = (relative_pos * num_log_bins as f32).floor() as usize;
 
-            if target_bin < num_log_bins {
-                if mag_db > self.magnitudes[target_bin] {
+            if target_bin < num_log_bins
+                && mag_db > self.magnitudes[target_bin] {
                     self.magnitudes[target_bin] = mag_db;
                 }
-            }
         }
 
         // Interpolation for empty bins (if FFT resolution is too low for low freq bins)
@@ -431,9 +430,14 @@ impl SpectrumAnalyzer {
         Ok(())
     }
 
-    /// Retrieve current spectrum
+    /// Retrieve current spectrum (clone)
     fn get_spectrum(&self) -> SpectrumInfo {
         self.current_spectrum.clone()
+    }
+
+    /// Retrieve current spectrum as a reference (zero-copy)
+    fn get_spectrum_ref(&self) -> &SpectrumInfo {
+        &self.current_spectrum
     }
 
     /// Reset analyzer state
@@ -458,6 +462,10 @@ pub struct SpectrumAnalyzerPlugin {
     analyzer: SpectrumAnalyzer,
     /// Number of channels
     num_channels: usize,
+    /// Cached Arc for zero-alloc get_data() — rebuilt after each process() call.
+    /// Uses Arc::get_mut() to update in-place when refcount == 1 (common case),
+    /// falls back to new allocation only when UI still holds a reference.
+    cached_data: Option<Arc<dyn Any + Send + Sync>>,
 }
 
 impl SpectrumAnalyzerPlugin {
@@ -480,6 +488,7 @@ impl SpectrumAnalyzerPlugin {
         Ok(Self {
             analyzer,
             num_channels,
+            cached_data: None,
         })
     }
 
@@ -495,6 +504,29 @@ impl SpectrumAnalyzerPlugin {
             magnitudes: info.magnitudes.clone(),
             peak_magnitude: info.peak_magnitude,
         }
+    }
+
+    /// Rebuild the cached Arc from current analyzer state.
+    /// Tries Arc::get_mut() for in-place update (zero alloc when refcount == 1),
+    /// falls back to new allocation when the old Arc is still held externally.
+    fn rebuild_cached_data(&mut self) {
+        let info = self.analyzer.get_spectrum_ref();
+
+        if let Some(ref mut arc) = self.cached_data
+            && let Some(inner) = Arc::get_mut(arc)
+                .and_then(|any| any.downcast_mut::<SpectrumData>())
+        {
+            // Zero-allocation in-place update (Vec lengths match → no realloc)
+            inner.frequencies.clear();
+            inner.frequencies.extend_from_slice(&info.frequencies);
+            inner.magnitudes.clear();
+            inner.magnitudes.extend_from_slice(&info.magnitudes);
+            inner.peak_magnitude = info.peak_magnitude;
+            return;
+        }
+
+        // First call or refcount > 1: allocate new Arc
+        self.cached_data = Some(Arc::new(Self::to_spectrum_data(info)));
     }
 }
 
@@ -531,12 +563,14 @@ impl Plugin for SpectrumAnalyzerPlugin {
         // Recreate the analyzer with the new sample rate
         self.analyzer = SpectrumAnalyzer::new(self.num_channels as u32, sample_rate, config)
             .map_err(|e| format!("Failed to initialize spectrum analyzer: {}", e))?;
+        self.rebuild_cached_data();
 
         Ok(())
     }
 
     fn reset(&mut self) {
         self.analyzer.reset().ok();
+        self.rebuild_cached_data();
     }
 
     fn process(
@@ -570,14 +604,17 @@ impl Plugin for SpectrumAnalyzerPlugin {
             .add_frames(input)
             .map_err(|e| format!("Failed to add frames to spectrum analyzer: {}", e))?;
 
+        // Rebuild cached Arc for zero-alloc get_data().
+        // Common case: Arc::get_mut succeeds (refcount == 1) → in-place update, zero alloc.
+        // Rare case: UI still holds old ref → one allocation.
+        self.rebuild_cached_data();
+
         Ok(context.num_frames)
     }
 
     fn get_data(&self) -> Option<Arc<dyn Any + Send + Sync>> {
-        let info = self.analyzer.get_spectrum();
-        let data = Self::to_spectrum_data(&info);
-        // Explicitly type the Arc to ensure downcast works
-        Some(Arc::new(data) as Arc<dyn Any + Send + Sync>)
+        // Just a refcount bump — no heap allocation
+        self.cached_data.clone()
     }
 
     fn latency_samples(&self) -> usize {

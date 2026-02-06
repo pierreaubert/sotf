@@ -82,6 +82,47 @@ pub struct LoudnessData {
     pub correlation_lr: Option<f64>,
 }
 
+impl LoudnessData {
+    pub fn new(channels: usize) -> Self {
+        Self {
+            momentary_lufs: f64::NEG_INFINITY,
+            shortterm_lufs: f64::NEG_INFINITY,
+            integrated_lufs: f64::NEG_INFINITY,
+            peak: 0.0,
+            channel_peaks: vec![0.0; channels],
+            true_peaks_dbtp: vec![f64::NEG_INFINITY; channels],
+            correlation_lr: None,
+        }
+    }
+
+    /// Update all fields in-place from another LoudnessData (zero allocation)
+    pub fn update_from(&mut self, other: &LoudnessData) {
+        self.momentary_lufs = other.momentary_lufs;
+        self.shortterm_lufs = other.shortterm_lufs;
+        self.integrated_lufs = other.integrated_lufs;
+        self.peak = other.peak;
+        self.channel_peaks.clear();
+        self.channel_peaks.extend_from_slice(&other.channel_peaks);
+        self.true_peaks_dbtp.clear();
+        self.true_peaks_dbtp.extend_from_slice(&other.true_peaks_dbtp);
+        self.correlation_lr = other.correlation_lr;
+    }
+}
+
+impl Default for LoudnessData {
+    fn default() -> Self {
+        Self {
+            momentary_lufs: f64::NEG_INFINITY,
+            shortterm_lufs: f64::NEG_INFINITY,
+            integrated_lufs: f64::NEG_INFINITY,
+            peak: 0.0,
+            channel_peaks: Vec::new(),
+            true_peaks_dbtp: Vec::new(),
+            correlation_lr: None,
+        }
+    }
+}
+
 /// Spectrum analyzer data
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpectrumData {
@@ -91,4 +132,16 @@ pub struct SpectrumData {
     pub magnitudes: Vec<f32>,
     /// Peak magnitude across all bins
     pub peak_magnitude: f32,
+}
+
+impl SpectrumData {
+    /// Update all fields in-place from another SpectrumData (zero allocation
+    /// when Vec lengths match, which is the common case).
+    pub fn update_from(&mut self, other: &SpectrumData) {
+        self.frequencies.clear();
+        self.frequencies.extend_from_slice(&other.frequencies);
+        self.magnitudes.clear();
+        self.magnitudes.extend_from_slice(&other.magnitudes);
+        self.peak_magnitude = other.peak_magnitude;
+    }
 }

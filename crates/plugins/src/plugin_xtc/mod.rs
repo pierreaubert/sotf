@@ -37,6 +37,13 @@ use serde::{Deserialize, Serialize};
 use std::f32::consts::PI;
 use std::sync::Arc;
 
+type XtcFilterSet = (
+    Vec<Complex<f32>>,
+    Vec<Complex<f32>>,
+    Vec<Complex<f32>>,
+    Vec<Complex<f32>>,
+);
+
 // ============================================================================
 // Configuration
 // ============================================================================
@@ -600,35 +607,35 @@ impl Plugin for XtcPlugin {
             }
         } else if id == self.param_distance {
             if let ParameterValue::Float(v) = value {
-                self.params.distance_m = v.max(0.5).min(5.0);
+                self.params.distance_m = v.clamp(0.5, 5.0);
                 needs_filter_update = true;
             } else {
                 return Err("distance_m parameter must be float".to_string());
             }
         } else if id == self.param_speaker_angle {
             if let ParameterValue::Float(v) = value {
-                self.params.speaker_angle_deg = v.max(15.0).min(60.0);
+                self.params.speaker_angle_deg = v.clamp(15.0, 60.0);
                 needs_filter_update = true;
             } else {
                 return Err("speaker_angle_deg parameter must be float".to_string());
             }
         } else if id == self.param_head_offset_x {
             if let ParameterValue::Float(v) = value {
-                self.params.head_offset_x = v.max(-0.5).min(0.5);
+                self.params.head_offset_x = v.clamp(-0.5, 0.5);
                 needs_filter_update = true;
             } else {
                 return Err("head_offset_x parameter must be float".to_string());
             }
         } else if id == self.param_head_offset_z {
             if let ParameterValue::Float(v) = value {
-                self.params.head_offset_z = v.max(-0.5).min(0.5);
+                self.params.head_offset_z = v.clamp(-0.5, 0.5);
                 needs_filter_update = true;
             } else {
                 return Err("head_offset_z parameter must be float".to_string());
             }
         } else if id == self.param_head_yaw {
             if let ParameterValue::Float(v) = value {
-                self.params.head_yaw_deg = v.max(-90.0).min(90.0);
+                self.params.head_yaw_deg = v.clamp(-90.0, 90.0);
                 needs_filter_update = true;
             } else {
                 return Err("head_yaw_deg parameter must be float".to_string());
@@ -665,6 +672,13 @@ impl Plugin for XtcPlugin {
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
         self.update_filters(true); // Synchronous for initialization
+
+        // Pre-allocate temp buffers to max expected frame count.
+        // After this, the resize() check in process() is a guaranteed no-op.
+        let max_frames = 4096;
+        self.temp_input_l.resize(max_frames, 0.0);
+        self.temp_input_r.resize(max_frames, 0.0);
+
         Ok(())
     }
 
@@ -720,7 +734,8 @@ impl Plugin for XtcPlugin {
             return Ok(context.num_frames);
         }
 
-        // Ensure temp buffers are large enough
+        // Temp buffers are pre-allocated in initialize() to 4096 frames.
+        // This resize is a no-op in normal operation; only allocates for unusually large blocks.
         if num_frames > self.temp_input_l.len() {
             self.temp_input_l.resize(num_frames, 0.0);
             self.temp_input_r.resize(num_frames, 0.0);
@@ -1086,12 +1101,7 @@ fn compute_xtc_filters(
     params: &XtcPluginParams,
     sample_rate: u32,
     num_bins: usize,
-) -> (
-    Vec<Complex<f32>>,
-    Vec<Complex<f32>>,
-    Vec<Complex<f32>>,
-    Vec<Complex<f32>>,
-) {
+) -> XtcFilterSet {
     let mut filter_ll = Vec::with_capacity(num_bins);
     let mut filter_lr = Vec::with_capacity(num_bins);
     let mut filter_rl = Vec::with_capacity(num_bins);
@@ -1213,9 +1223,9 @@ fn head_shadowing_filter(freq: f32, params: &XtcPluginParams) -> f32 {
     let n = slope / 6.0; // 6 dB/octave ≈ 1st order
 
     let ratio = freq / f_c;
-    let attenuation = 1.0 / (1.0 + ratio.powf(n));
+    
 
-    attenuation
+    1.0 / (1.0 + ratio.powf(n))
 }
 
 /// Compute frequency-dependent regularization parameter β(f)

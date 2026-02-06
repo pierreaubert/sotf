@@ -390,7 +390,7 @@ impl Plugin for EqPlugin {
         const MIN_SAMPLE_RATE: u32 = 8_000;
         const MAX_SAMPLE_RATE: u32 = 384_000;
 
-        if sample_rate < MIN_SAMPLE_RATE || sample_rate > MAX_SAMPLE_RATE {
+        if !(MIN_SAMPLE_RATE..=MAX_SAMPLE_RATE).contains(&sample_rate) {
             return Err(format!(
                 "Invalid sample rate: {} Hz (valid range: {}-{} Hz)",
                 sample_rate, MIN_SAMPLE_RATE, MAX_SAMPLE_RATE

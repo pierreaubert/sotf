@@ -229,11 +229,11 @@ impl UpmixerPlugin {
             let fade_len = seq_len / 4; // Fade last 25%
             if fade_len > 0 {
                 let fade_start = seq_len.saturating_sub(fade_len);
-                for i in fade_start..seq_len {
+                for (i, sample) in time_buf.iter_mut().enumerate().take(seq_len).skip(fade_start) {
                     let t = (i - fade_start) as f32 / fade_len as f32;
                     // Hann fade-out: cos^2 taper for smooth transition
                     let fade = 0.5 * (1.0 + (std::f32::consts::PI * t).cos());
-                    time_buf[i] *= fade;
+                    *sample *= fade;
                 }
             }
 

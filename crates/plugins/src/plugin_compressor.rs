@@ -257,17 +257,15 @@ impl CompressorPlugin {
                 let overshoot = input_db - threshold;
                 overshoot * slope
             }
+        } else if input_db < threshold - knee / 2.0 {
+            0.0
+        } else if input_db > threshold + knee / 2.0 {
+            let overshoot = input_db - threshold;
+            overshoot * slope
         } else {
-            if input_db < threshold - knee / 2.0 {
-                0.0
-            } else if input_db > threshold + knee / 2.0 {
-                let overshoot = input_db - threshold;
-                overshoot * slope
-            } else {
-                let overshoot = input_db - threshold + knee / 2.0;
-                let knee_factor = overshoot / knee;
-                knee_factor * knee_factor * knee / 2.0 * slope
-            }
+            let overshoot = input_db - threshold + knee / 2.0;
+            let knee_factor = overshoot / knee;
+            knee_factor * knee_factor * knee / 2.0 * slope
         }
     }
 

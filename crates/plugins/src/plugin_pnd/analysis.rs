@@ -44,8 +44,8 @@ impl PndAnalyzer {
         }
 
         // 1. Window and FFT
-        for i in 0..self.fft_size {
-            self.buffer[i] = Complex::new(samples[i] * self.window[i], 0.0);
+        for (i, &sample) in samples.iter().enumerate().take(self.fft_size) {
+            self.buffer[i] = Complex::new(sample * self.window[i], 0.0);
         }
         self.fft
             .process_with_scratch(&mut self.buffer, &mut self.scratch);

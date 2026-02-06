@@ -39,6 +39,7 @@ pub const CROSSOVER_PRESETS: &[(f32, f32, f32, f32)] = &[
 
 /// Per-band expander parameters (optional overrides)
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct BandExpanderParams {
     #[serde(default)]
     pub threshold_db: Option<f32>,
@@ -62,22 +63,6 @@ pub struct BandExpanderParams {
     pub bypass: bool,
 }
 
-impl Default for BandExpanderParams {
-    fn default() -> Self {
-        Self {
-            threshold_db: None,
-            ratio: None,
-            attack_ms: None,
-            release_ms: None,
-            knee_db: None,
-            range_db: None,
-            hysteresis_db: None,
-            hold_ms: None,
-            solo: false,
-            bypass: false,
-        }
-    }
-}
 
 /// Configuration parameters for MultibandExpanderPlugin
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -578,16 +563,14 @@ impl MultibandExpanderPlugin {
             } else {
                 (threshold - input_db) * slope
             }
+        } else if input_db > threshold + knee / 2.0 {
+            0.0
+        } else if input_db < threshold - knee / 2.0 {
+            (threshold - input_db) * slope
         } else {
-            if input_db > threshold + knee / 2.0 {
-                0.0
-            } else if input_db < threshold - knee / 2.0 {
-                (threshold - input_db) * slope
-            } else {
-                let below = threshold + knee / 2.0 - input_db;
-                let knee_factor = below / knee;
-                knee_factor * knee_factor * knee / 2.0 * slope
-            }
+            let below = threshold + knee / 2.0 - input_db;
+            let knee_factor = below / knee;
+            knee_factor * knee_factor * knee / 2.0 * slope
         };
 
         attenuation.min(range)
@@ -742,6 +725,7 @@ impl MultibandExpanderPlugin {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn process_hysteresis(
         band_exp: &mut BandExpander,
         ch: usize,
@@ -772,15 +756,13 @@ impl MultibandExpanderPlugin {
                 } else if band_exp.hold_counter[ch] > 0 {
                     band_exp.hold_counter[ch] -= 1;
                     0.0
+                } else if input_db < close_threshold {
+                    band_exp.gate_state[ch] = GateState::Closing;
+                    Self::calculate_expansion_attenuation(
+                        input_db, threshold, ratio, knee, range,
+                    )
                 } else {
-                    if input_db < close_threshold {
-                        band_exp.gate_state[ch] = GateState::Closing;
-                        Self::calculate_expansion_attenuation(
-                            input_db, threshold, ratio, knee, range,
-                        )
-                    } else {
-                        0.0
-                    }
+                    0.0
                 }
             }
             GateState::Closing => {
@@ -1000,9 +982,9 @@ impl InPlacePlugin for MultibandExpanderPlugin {
             self.build_crossovers();
         } else if id.as_str().starts_with("band_") {
             let parts: Vec<&str> = id.as_str().split('_').collect();
-            if parts.len() >= 3 {
-                if let Ok(band_idx) = parts[1].parse::<usize>() {
-                    if band_idx < self.band_params.len() {
+            if parts.len() >= 3
+                && let Ok(band_idx) = parts[1].parse::<usize>()
+                    && band_idx < self.band_params.len() {
                         let param_name = parts[2..].join("_");
                         let band = &mut self.band_params[band_idx];
 
@@ -1049,8 +1031,6 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                         }
                         return Ok(());
                     }
-                }
-            }
             return Err(format!("Invalid band parameter ID: {}", id));
         } else if id == self.param_threshold {
             let val = value.as_float().ok_or("Invalid threshold")?;
@@ -1085,9 +1065,9 @@ impl InPlacePlugin for MultibandExpanderPlugin {
     fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
         if id.as_str().starts_with("band_") {
             let parts: Vec<&str> = id.as_str().split('_').collect();
-            if parts.len() >= 3 {
-                if let Ok(band_idx) = parts[1].parse::<usize>() {
-                    if band_idx < self.band_params.len() {
+            if parts.len() >= 3
+                && let Ok(band_idx) = parts[1].parse::<usize>()
+                    && band_idx < self.band_params.len() {
                         let param_name = parts[2..].join("_");
                         let band = &self.band_params[band_idx];
 
@@ -1121,8 +1101,6 @@ impl InPlacePlugin for MultibandExpanderPlugin {
                             _ => None,
                         };
                     }
-                }
-            }
             return None;
         }
 

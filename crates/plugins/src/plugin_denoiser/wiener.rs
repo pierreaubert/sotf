@@ -107,7 +107,7 @@ impl DenoiserPlugin {
 
         let mut noise_floor = vec![0.0_f32; num_display_bands];
 
-        for band in 0..num_display_bands {
+        for (band, noise_val) in noise_floor.iter_mut().enumerate() {
             let start_bin = band * bins_per_band;
             let end_bin = ((band + 1) * bins_per_band).min(self.spectrum_size);
 
@@ -124,9 +124,9 @@ impl DenoiserPlugin {
 
             if count > 0 {
                 let avg_power = sum / count as f32;
-                noise_floor[band] = 10.0 * avg_power.log10();
+                *noise_val = 10.0 * avg_power.log10();
             } else {
-                noise_floor[band] = -100.0;
+                *noise_val = -100.0;
             }
         }
 
@@ -140,7 +140,7 @@ impl DenoiserPlugin {
 
         let mut snr = vec![0.0_f32; num_display_bands];
 
-        for band in 0..num_display_bands {
+        for (band, snr_val) in snr.iter_mut().enumerate() {
             let start_bin = band * bins_per_band;
             let end_bin = ((band + 1) * bins_per_band).min(self.spectrum_size);
 
@@ -159,9 +159,9 @@ impl DenoiserPlugin {
 
             if count > 0 {
                 let avg_snr = sum_snr / count as f32;
-                snr[band] = 10.0 * avg_snr.log10();
+                *snr_val = 10.0 * avg_snr.log10();
             } else {
-                snr[band] = 0.0;
+                *snr_val = 0.0;
             }
         }
 

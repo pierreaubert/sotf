@@ -808,11 +808,10 @@ impl Plugin for LoudnessCompensationPlugin {
         let id_str = id.as_str();
 
         // Try global parameters first
-        if let Some(val) = value.as_float() {
-            if self.update_global_parameter(&id, val) {
+        if let Some(val) = value.as_float()
+            && self.update_global_parameter(&id, val) {
                 return Ok(());
             }
-        }
 
         // Try auto-gain parameters
         match id_str {
@@ -853,15 +852,14 @@ impl Plugin for LoudnessCompensationPlugin {
         // Try per-channel parameters: {param}_{channel}
         for param_name in &["low_freq", "low_gain", "high_freq", "high_gain"] {
             let prefix = format!("{}_", param_name);
-            if let Some(suffix) = id_str.strip_prefix(&prefix) {
-                if let Ok(channel) = suffix.parse::<usize>() {
+            if let Some(suffix) = id_str.strip_prefix(&prefix)
+                && let Ok(channel) = suffix.parse::<usize>() {
                     if let Some(val) = value.as_float() {
                         return self.set_channel_param(channel, param_name, val);
                     } else {
                         return Err("Parameter must be a float".to_string());
                     }
                 }
-            }
         }
 
         Err(format!("Unknown parameter: {}", id))
@@ -894,9 +892,9 @@ impl Plugin for LoudnessCompensationPlugin {
         // Check per-channel parameters
         for param_name in &["low_freq", "low_gain", "high_freq", "high_gain"] {
             let prefix = format!("{}_", param_name);
-            if let Some(suffix) = id_str.strip_prefix(&prefix) {
-                if let Ok(channel) = suffix.parse::<usize>() {
-                    if channel < self.num_channels {
+            if let Some(suffix) = id_str.strip_prefix(&prefix)
+                && let Ok(channel) = suffix.parse::<usize>()
+                    && channel < self.num_channels {
                         let params = self.get_channel_params(channel);
                         let value = match *param_name {
                             "low_freq" => params.low_freq,
@@ -907,8 +905,6 @@ impl Plugin for LoudnessCompensationPlugin {
                         };
                         return Some(ParameterValue::Float(value));
                     }
-                }
-            }
         }
 
         None

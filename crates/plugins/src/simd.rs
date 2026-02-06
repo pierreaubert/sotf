@@ -602,9 +602,9 @@ pub fn flush_denormals_inplace(samples: &mut [f32]) {
             }
         }
 
-        for i in simd_len..len {
-            if samples[i].abs() < DENORM_THRESHOLD {
-                samples[i] = 0.0;
+        for sample in &mut samples[simd_len..len] {
+            if sample.abs() < DENORM_THRESHOLD {
+                *sample = 0.0;
             }
         }
     }

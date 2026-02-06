@@ -199,9 +199,9 @@ impl ConvolutionPlugin {
 
             // Pre-transform IR
             let mut ir_fft = Vec::with_capacity(ir_channels);
-            for ch in 0..ir_channels {
+            for channel_samples in ir_samples.iter().take(ir_channels) {
                 let mut fft_buffer = vec![Complex::new(0.0, 0.0); fft_size];
-                for (i, &sample) in ir_samples[ch].iter().enumerate() {
+                for (i, &sample) in channel_samples.iter().enumerate() {
                     fft_buffer[i] = Complex::new(sample, 0.0);
                 }
                 fft_forward.process(&mut fft_buffer);
@@ -480,7 +480,7 @@ impl Plugin for ConvolutionPlugin {
         const MIN_SAMPLE_RATE: u32 = 8_000;
         const MAX_SAMPLE_RATE: u32 = 384_000;
 
-        if sample_rate < MIN_SAMPLE_RATE || sample_rate > MAX_SAMPLE_RATE {
+        if !(MIN_SAMPLE_RATE..=MAX_SAMPLE_RATE).contains(&sample_rate) {
             return Err(format!(
                 "Invalid sample rate: {} Hz (valid range: {}-{} Hz)",
                 sample_rate, MIN_SAMPLE_RATE, MAX_SAMPLE_RATE
@@ -490,6 +490,14 @@ impl Plugin for ConvolutionPlugin {
         self.sample_rate = sample_rate;
         self.mix.set_time(20.0, sample_rate);
         self.gain_linear.set_time(20.0, sample_rate);
+
+        // Pre-allocate scratch buffers to max expected frame count.
+        // After this, resize() calls in process() are guaranteed no-ops.
+        let max_frames = 2048;
+        for ch in 0..self.channels {
+            self.scratch_input[ch].resize(max_frames, 0.0);
+            self.scratch_output[ch].resize(max_frames, 0.0);
+        }
 
         // Reload IR if it was previously loaded (sample rate changed)
         if !self.ir_file.is_empty() {
@@ -590,13 +598,9 @@ impl Plugin for ConvolutionPlugin {
             self.resize_buffers(size);
         }
 
-        // Resize scratch buffers if needed
-        if self.scratch_input[0].capacity() < num_frames {
-            for ch in 0..self.channels {
-                self.scratch_input[ch] = Vec::with_capacity(num_frames);
-                self.scratch_output[ch] = Vec::with_capacity(num_frames);
-            }
-        }
+        // Scratch buffers are pre-allocated in initialize() to max expected frame count.
+        // These resize() calls are no-ops when num_frames <= pre-allocated capacity (common case).
+        // Only allocates if an unexpectedly large frame count is encountered.
         for ch in 0..self.channels {
             self.scratch_input[ch].resize(num_frames, 0.0);
             self.scratch_output[ch].resize(num_frames, 0.0);

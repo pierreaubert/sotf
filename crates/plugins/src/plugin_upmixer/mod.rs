@@ -1387,12 +1387,11 @@ Upper bound for dialogue detection analysis.",
                 self.bypass_transient_detection = enable;
                 return Ok(());
             }
-        } else if id == self.param_bypass_all_processing {
-            if let Some(enable) = value.as_bool() {
+        } else if id == self.param_bypass_all_processing
+            && let Some(enable) = value.as_bool() {
                 self.bypass_all_processing = enable;
                 return Ok(());
             }
-        }
         Err(format!("Unknown parameter: {}", id))
     }
 
@@ -1499,7 +1498,7 @@ Upper bound for dialogue detection analysis.",
         const MIN_SAMPLE_RATE: u32 = 8_000;
         const MAX_SAMPLE_RATE: u32 = 384_000;
 
-        if sample_rate < MIN_SAMPLE_RATE || sample_rate > MAX_SAMPLE_RATE {
+        if !(MIN_SAMPLE_RATE..=MAX_SAMPLE_RATE).contains(&sample_rate) {
             return Err(format!(
                 "Invalid sample rate: {} Hz (valid range: {}-{} Hz)",
                 sample_rate, MIN_SAMPLE_RATE, MAX_SAMPLE_RATE
@@ -1627,7 +1626,7 @@ Upper bound for dialogue detection analysis.",
                 // Channel 1: Right front
                 // Channel 2: Center (L+R)/2
                 // All other channels: silence
-                output[i * self.num_output_channels + 0] = left; // FL
+                output[i * self.num_output_channels] = left; // FL
                 if self.num_output_channels > 1 {
                     output[i * self.num_output_channels + 1] = right; // FR
                 }
