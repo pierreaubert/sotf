@@ -302,30 +302,26 @@ impl AudioDaemon {
     }
 
     async fn handle_set_device(&self, device: &str) -> Response {
-        // Validate that the device exists
-        match list_audio_devices() {
-            Ok(devices) => {
-                let device_exists = devices.iter().any(|d| {
-                    d.get("name")
-                        .and_then(|n| n.as_str())
-                        .map(|n| n == device)
-                        .unwrap_or(false)
-                });
+        use cpal::traits::HostTrait;
+        let host = cpal::default_host();
 
-                if !device_exists {
-                    return Response::err(format!("Device '{}' not found", device));
-                }
+        // Try to find the device using the same logic as the engine (ID, Exact, StartsWith, Contains)
+        match sotf_audio::devices::find_device(&host, device, false) {
+            Ok(cpal_device) => {
+                let name = cpal_device
+                    .description()
+                    .map(|d| d.name().to_string())
+                    .unwrap_or_else(|_| "Unknown Device".to_string());
+
+                *self.selected_device.lock() = Some(name.clone());
+                log::info!("Output device set to: {} (matched from '{}')", name, device);
+                Response::ok_empty()
             }
             Err(e) => {
-                return Response::err(format!("Failed to list devices: {}", e));
+                log::warn!("Failed to set device '{}': {}", device, e);
+                Response::err(format!("Device '{}' not found. {}", device, e))
             }
         }
-
-        // Store the selected device
-        *self.selected_device.lock() = Some(device.to_string());
-        log::info!("Output device set to: {}", device);
-
-        Response::ok_empty()
     }
 
     async fn handle_load_plugins(&self, plugins: Vec<PluginConfig>) -> Response {
