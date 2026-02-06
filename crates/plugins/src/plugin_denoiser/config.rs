@@ -55,6 +55,22 @@ pub fn default_crack_sensitivity() -> f32 {
     10.0
 }
 
+pub fn default_psychoacoustic_masking() -> bool {
+    PSYCHOACOUSTIC_MASKING_DEFAULT
+}
+
+pub fn default_use_captured_profile() -> bool {
+    USE_CAPTURED_PROFILE_DEFAULT
+}
+
+pub fn default_dd_enabled() -> bool {
+    DD_ENABLED_DEFAULT
+}
+
+pub fn default_dd_alpha() -> f32 {
+    DD_ALPHA_DEFAULT
+}
+
 /// Configuration parameters for DenoiserPlugin
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DenoiserPluginParams {
@@ -107,6 +123,22 @@ pub struct DenoiserPluginParams {
     /// Speech presence detection threshold
     #[serde(default = "default_mcra_delta")]
     pub mcra_delta: f32,
+
+    /// Enable Decision-Directed SNR estimation (Ephraim-Malah)
+    #[serde(default = "default_dd_enabled")]
+    pub dd_enabled: bool,
+
+    /// DD smoothing factor (0.5-0.999)
+    #[serde(default = "default_dd_alpha")]
+    pub dd_alpha: f32,
+
+    /// Skip denoising for perceptually masked noise bins
+    #[serde(default = "default_psychoacoustic_masking")]
+    pub psychoacoustic_masking: bool,
+
+    /// Use captured noise profile instead of live MCRA estimation
+    #[serde(default = "default_use_captured_profile")]
+    pub use_captured_profile: bool,
 }
 
 impl Default for DenoiserPluginParams {
@@ -124,6 +156,10 @@ impl Default for DenoiserPluginParams {
             mcra_alpha_p: default_mcra_alpha_p(),
             mcra_l: default_mcra_l(),
             mcra_delta: default_mcra_delta(),
+            dd_enabled: default_dd_enabled(),
+            dd_alpha: default_dd_alpha(),
+            psychoacoustic_masking: default_psychoacoustic_masking(),
+            use_captured_profile: default_use_captured_profile(),
         }
     }
 }

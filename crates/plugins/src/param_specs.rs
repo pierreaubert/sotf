@@ -552,6 +552,19 @@ pub mod denoiser {
     pub const MCRA_DELTA_DEFAULT: f32 = 5.0; // Speech presence threshold
 
     pub const POLYPHONIC_DETECTION_DEFAULT: bool = false;
+
+    // Psychoacoustic masking
+    pub const PSYCHOACOUSTIC_MASKING_DEFAULT: bool = true;
+
+    // Noise profile capture
+    pub const USE_CAPTURED_PROFILE_DEFAULT: bool = false;
+    pub const LEARN_FRAMES: usize = 50; // ~1s at typical hop rates
+
+    // Decision-Directed SNR estimation
+    pub const DD_ENABLED_DEFAULT: bool = false;
+    pub const DD_ALPHA_DEFAULT: f32 = 0.98;
+    pub const DD_ALPHA_MIN: f32 = 0.5;
+    pub const DD_ALPHA_MAX: f32 = 0.999;
 }
 
 // ============================================================================
@@ -703,6 +716,70 @@ pub mod multiband_expander {
     // Per-band flags
     pub const BAND_SOLO_DEFAULT: bool = false;
     pub const BAND_BYPASS_DEFAULT: bool = false;
+}
+
+// ============================================================================
+// Band Split Plugin
+// ============================================================================
+
+// ============================================================================
+// Mono to Stereo Plugin
+// ============================================================================
+
+pub mod mono_to_stereo {
+    pub const STEREO_WIDTH_DEFAULT: f32 = 0.5;
+    pub const STEREO_WIDTH_MIN: f32 = 0.0;
+    pub const STEREO_WIDTH_MAX: f32 = 1.0;
+
+    pub const HAAS_DELAY_MS_DEFAULT: f32 = 1.5;
+    pub const HAAS_DELAY_MS_MIN: f32 = 0.0;
+    pub const HAAS_DELAY_MS_MAX: f32 = 5.0;
+
+    pub const ENABLE_COMP_EQ_DEFAULT: bool = true;
+
+    pub const COMP_EQ_DEPTH_DB_DEFAULT: f32 = 1.0;
+    pub const COMP_EQ_DEPTH_DB_MIN: f32 = 0.0;
+    pub const COMP_EQ_DEPTH_DB_MAX: f32 = 3.0;
+
+    pub const DECOR_LOW_HZ_DEFAULT: f32 = 300.0;
+    pub const DECOR_LOW_HZ_MIN: f32 = 100.0;
+    pub const DECOR_LOW_HZ_MAX: f32 = 500.0;
+
+    pub const DECOR_HIGH_HZ_DEFAULT: f32 = 2000.0;
+    pub const DECOR_HIGH_HZ_MIN: f32 = 1000.0;
+    pub const DECOR_HIGH_HZ_MAX: f32 = 5000.0;
+}
+
+// ============================================================================
+// Downmix Plugin
+// ============================================================================
+
+pub mod downmix {
+    pub const CENTER_GAIN_DB_DEFAULT: f32 = -3.0;
+    pub const CENTER_GAIN_DB_MIN: f32 = -12.0;
+    pub const CENTER_GAIN_DB_MAX: f32 = 0.0;
+
+    pub const SURROUND_GAIN_DB_DEFAULT: f32 = -3.0;
+    pub const SURROUND_GAIN_DB_MIN: f32 = -12.0;
+    pub const SURROUND_GAIN_DB_MAX: f32 = 0.0;
+
+    pub const HEIGHT_GAIN_DB_DEFAULT: f32 = -6.0;
+    pub const HEIGHT_GAIN_DB_MIN: f32 = -60.0;
+    pub const HEIGHT_GAIN_DB_MAX: f32 = 0.0;
+
+    pub const LFE_GAIN_DB_DEFAULT: f32 = -10.0;
+    pub const LFE_GAIN_DB_MIN: f32 = -60.0;
+    pub const LFE_GAIN_DB_MAX: f32 = 0.0;
+
+    pub const PHASE_COHERENCE_DEFAULT: bool = true;
+
+    pub const PHASE_BLEND_LOW_HZ_DEFAULT: f32 = 500.0;
+    pub const PHASE_BLEND_LOW_HZ_MIN: f32 = 100.0;
+    pub const PHASE_BLEND_LOW_HZ_MAX: f32 = 1000.0;
+
+    pub const PHASE_BLEND_HIGH_HZ_DEFAULT: f32 = 2000.0;
+    pub const PHASE_BLEND_HIGH_HZ_MIN: f32 = 1000.0;
+    pub const PHASE_BLEND_HIGH_HZ_MAX: f32 = 5000.0;
 }
 
 // ============================================================================

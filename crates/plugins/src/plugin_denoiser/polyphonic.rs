@@ -17,16 +17,14 @@ const EPSILON: f32 = 1e-10;
 impl DenoiserPlugin {
     /// Calculate and apply Polyphonic Note Detection (Spectral Gate) gains
     ///
-    /// This method:
-    /// 1. Calculates SNR for each frequency bin using MCRA noise estimate
-    /// 2. Applies a hard gate: if SNR > Threshold, Gain = 1.0, else Gain = Floor
-    /// 3. Smooths gains with attack/release envelope to prevent clicking
+    /// Three-pass approach:
+    /// 1. Compute binary gate gains per bin based on SNR threshold
+    /// 2. Smooth gains across frequency bins (prevents musical noise)
+    /// 3. Apply temporal smoothing with attack/release envelope
     pub(super) fn calculate_polyphonic_gains(&mut self) {
         let floor_linear = 10.0_f32.powf(self.floor_db / 20.0);
 
-        // Threshold: We consider something a "note" if it is significantly above the noise floor.
-        // We use a fixed threshold of 6dB for now, or we could make it a parameter.
-        // 6dB roughly corresponds to signal being 2x amplitude of noise (4x power).
+        // 6 dB threshold ~ signal is 4x noise power
         let snr_threshold_db = 6.0;
         let snr_threshold_linear = 10.0_f32.powf(snr_threshold_db / 10.0);
 
@@ -34,42 +32,45 @@ impl DenoiserPlugin {
         let mut bin_count = 0;
 
         for ch in 0..self.channels {
+            // Pass 1: Compute instantaneous gate gain
             for k in 0..self.spectrum_size {
-                // Get signal and noise power
                 let signal_power = self.get_power_at_bin(ch, k);
-                let noise_power = self.get_noise_power(ch, k);
-
+                let noise_power = self.get_effective_noise_power(ch, k);
                 let snr = signal_power / noise_power.max(EPSILON);
 
-                // Detection logic:
-                // If SNR is high, it's a note (or strong signal).
-                // We apply a binary gate behavior (softened by the envelope follower later).
                 let target_gain = if snr > snr_threshold_linear {
                     1.0
                 } else {
                     floor_linear
                 };
-
-                // Store instantaneous gain
                 self.gain[ch][k] = target_gain;
+            }
 
-                // Apply temporal smoothing with attack/release
-                // This converts the binary spectral gate into a smooth spectral expander/gate
+            // Pass 2: Smooth gains across frequency bins
+            self.smooth_gains_across_frequency(ch);
+
+            // Pass 2b: Psychoacoustic masking — skip denoising for masked bins
+            if self.psychoacoustic_masking {
+                self.compute_masking_thresholds(ch);
+                for k in 0..self.spectrum_size {
+                    if self.is_noise_masked(ch, k) {
+                        self.gain[ch][k] = 1.0;
+                    }
+                }
+            }
+
+            // Pass 3: Apply temporal smoothing with attack/release
+            for k in 0..self.spectrum_size {
+                let target_gain = self.gain[ch][k];
                 let prev_gain = self.smoothed_gain[ch][k];
-
-                // Logic:
-                // If target > prev (Note onset), use attack (fast)
-                // If target < prev (Note release), use release (slow)
                 let coeff = if target_gain > prev_gain {
                     self.attack_coeff
                 } else {
                     self.release_coeff
                 };
-
                 let smoothed = target_gain + coeff * (prev_gain - target_gain);
                 self.smoothed_gain[ch][k] = smoothed;
 
-                // Track average reduction for monitoring
                 total_reduction += (1.0 - smoothed).max(0.0);
                 bin_count += 1;
             }

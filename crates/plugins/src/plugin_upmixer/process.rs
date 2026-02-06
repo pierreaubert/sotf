@@ -37,66 +37,63 @@ impl UpmixerPlugin {
         // Phase 1: Apply window and perform forward FFT
         self.apply_window_and_forward_fft(input);
 
-        // High-frequency transient detector for HR direct-path crossfade.
-        // Diagnostic bypass: skip transient detection if bypass is enabled
+        // 3E: Spectral flux transient detection
+        // Replaces broadband HF energy ratio with spectral flux (sum of positive
+        // magnitude increases) for more accurate onset detection.
         if self.bypass_transient_detection {
             self.hr_transient_env = 0.0;
         } else if self.enable_hr_direct {
             let spectrum_size = self.fft_size / 2 + 1;
-            let freq_per_bin = self.sample_rate as f32 / self.fft_size as f32;
-            let hf_start = self.bandpass_hz.max(1000.0);
 
-            let mut energy = 0.0_f32;
-            let mut count = 0usize;
+            // Compute spectral flux: sum of positive magnitude increases
+            let mut flux = 0.0_f32;
             for i in 0..spectrum_size {
-                let freq = i as f32 * freq_per_bin;
-                if freq >= hf_start {
-                    let l = self.freq_domain_left[i];
-                    let r = self.freq_domain_right[i];
-                    energy += l.norm_sqr() + r.norm_sqr();
-                    count += 1;
-                }
-            }
-            if count > 0 {
-                energy /= count as f32;
-            } else {
-                energy = 0.0;
-            }
+                let l = self.freq_domain_left[i];
+                let r = self.freq_domain_right[i];
+                let current_mag = (l.norm_sqr() + r.norm_sqr()).sqrt();
 
-            if self.hr_energy_smooth <= 0.0 {
-                self.hr_energy_smooth = energy;
-                self.hr_transient_env = 0.0;
-            } else {
-                let prev_smooth = self.hr_energy_smooth;
-                let prev_smooth_clamped = prev_smooth.max(1e-9);
-                let ratio = (energy / prev_smooth_clamped).max(0.0);
-
-                let attack_e = 0.25_f32; // Slower energy tracking to reduce pumping
-                let release_e = 0.1_f32;
-                let alpha_e = if energy > prev_smooth {
-                    attack_e
-                } else {
-                    release_e
-                };
-                self.hr_energy_smooth = prev_smooth + alpha_e * (energy - prev_smooth);
-
-                let ratio_clamped = ratio.clamp(1.0, 4.0);
-                let transient_target = if ratio_clamped > 1.0 {
-                    (ratio_clamped - 1.0) / 3.0
+                let prev_mag = if i < self.prev_magnitude_spectrum.len() {
+                    self.prev_magnitude_spectrum[i]
                 } else {
                     0.0
                 };
 
-                let prev_env = self.hr_transient_env;
-                let attack_env = 0.4_f32; // Slower envelope attack to reduce surround modulation
-                let release_env = 0.3_f32;
-                let alpha_env = if transient_target > prev_env {
-                    attack_env
-                } else {
-                    release_env
-                };
-                self.hr_transient_env = prev_env + alpha_env * (transient_target - prev_env);
+                // Only count positive increases (onsets, not offsets)
+                let diff = current_mag - prev_mag;
+                if diff > 0.0 {
+                    flux += diff;
+                }
+
+                // Store current magnitude for next frame
+                if i < self.prev_magnitude_spectrum.len() {
+                    self.prev_magnitude_spectrum[i] = current_mag;
+                }
             }
+
+            // Normalize flux by spectrum size
+            flux /= spectrum_size as f32;
+
+            // Smooth flux for normalization baseline
+            let flux_smooth_alpha = 0.05_f32;
+            self.spectral_flux_smooth += flux_smooth_alpha * (flux - self.spectral_flux_smooth);
+
+            // Compute transient target: flux relative to smoothed baseline
+            let transient_target = if self.spectral_flux_smooth > 1e-9 {
+                let ratio = flux / self.spectral_flux_smooth;
+                // Map ratio > 1 to transient envelope (0-1 range)
+                ((ratio - 1.0) / 3.0).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+
+            // Fast attack / slow release envelope
+            let prev_env = self.hr_transient_env;
+            let alpha_env = if transient_target > prev_env {
+                0.4_f32 // Fast attack
+            } else {
+                0.15_f32 // Slow release
+            };
+            self.hr_transient_env = prev_env + alpha_env * (transient_target - prev_env);
         } else {
             self.hr_transient_env = 0.0;
         }

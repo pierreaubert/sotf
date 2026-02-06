@@ -28,7 +28,9 @@ use std::sync::Arc;
 
 mod config;
 mod fft;
+mod masking;
 mod mcra;
+mod noise_profile;
 mod polyphonic;
 mod transient;
 mod wiener;
@@ -54,6 +56,18 @@ pub struct DenoiserData {
 
     /// Whether noise learning is currently active (quiet moment detected)
     pub learning_active: bool,
+
+    /// Whether noise profile learning is in progress
+    pub is_learning_noise: bool,
+
+    /// Whether a captured noise profile is available
+    pub has_captured_profile: bool,
+
+    /// Learning progress (0.0 to 1.0)
+    pub learning_progress: f32,
+
+    /// Whether using captured profile
+    pub using_captured_profile: bool,
 }
 
 // ============================================================================
@@ -98,6 +112,31 @@ pub struct DenoiserPlugin {
     param_crack_sensitivity: ParameterId,
     crack_sensitivity: f32,
 
+    // Decision-Directed SNR parameters
+    param_dd_enabled: ParameterId,
+    dd_enabled: bool,
+    param_dd_alpha: ParameterId,
+    dd_alpha: f32,
+    prev_power: Vec<Vec<f32>>, // [channels][spectrum_size] previous frame power
+
+    // Psychoacoustic masking
+    param_psychoacoustic_masking: ParameterId,
+    psychoacoustic_masking: bool,
+    bark_map: Vec<f32>,             // [spectrum_size] frequency-to-Bark mapping
+    masking_threshold: Vec<f32>,    // [spectrum_size] scratch for masking thresholds
+    masking_signal_power: Vec<f32>, // [spectrum_size] scratch for signal power
+
+    // Noise profile capture
+    param_learn_noise: ParameterId,
+    param_use_captured_profile: ParameterId,
+    param_clear_profile: ParameterId,
+    use_captured_profile: bool,
+    noise_profile: Option<Vec<Vec<f32>>>,  // [channels][spectrum_size]
+    learning_accumulator: Vec<Vec<f32>>,   // [channels][spectrum_size]
+    learning_frames_count: usize,
+    learning_frames_target: usize,
+    is_learning: bool,
+
     // Pre-computed coefficients
     attack_coeff: f32,
     release_coeff: f32,
@@ -120,6 +159,9 @@ pub struct DenoiserPlugin {
     // Wiener filter state
     gain: Vec<Vec<f32>>,          // Current Wiener gains per bin
     smoothed_gain: Vec<Vec<f32>>, // Temporally smoothed gains
+
+    // Frequency smoothing scratch buffer
+    freq_smooth_temp: Vec<f32>, // [spectrum_size] scratch for smoothing across bins
 
     // Overlap-add buffers
     input_buffer: Vec<f32>, // Interleaved input accumulator
@@ -218,6 +260,28 @@ impl DenoiserPlugin {
             param_crack_sensitivity: ParameterId::from("crack_sensitivity"),
             crack_sensitivity: 10.0,
 
+            param_dd_enabled: ParameterId::from("dd_enabled"),
+            dd_enabled: DD_ENABLED_DEFAULT,
+            param_dd_alpha: ParameterId::from("dd_alpha"),
+            dd_alpha: DD_ALPHA_DEFAULT,
+            prev_power: vec![vec![0.0_f32; spectrum_size]; channels],
+
+            param_psychoacoustic_masking: ParameterId::from("psychoacoustic_masking"),
+            psychoacoustic_masking: PSYCHOACOUSTIC_MASKING_DEFAULT,
+            bark_map: vec![0.0_f32; spectrum_size],
+            masking_threshold: vec![0.0_f32; spectrum_size],
+            masking_signal_power: vec![0.0_f32; spectrum_size],
+
+            param_learn_noise: ParameterId::from("learn_noise"),
+            param_use_captured_profile: ParameterId::from("use_captured_profile"),
+            param_clear_profile: ParameterId::from("clear_profile"),
+            use_captured_profile: USE_CAPTURED_PROFILE_DEFAULT,
+            noise_profile: None,
+            learning_accumulator: vec![vec![0.0_f32; spectrum_size]; channels],
+            learning_frames_count: 0,
+            learning_frames_target: LEARN_FRAMES,
+            is_learning: false,
+
             attack_coeff: 0.0,
             release_coeff: 0.0,
             floor_linear: 10.0_f32.powf(FLOOR_DB_DEFAULT / 20.0),
@@ -235,6 +299,8 @@ impl DenoiserPlugin {
 
             gain,
             smoothed_gain,
+
+            freq_smooth_temp: vec![0.0_f32; spectrum_size],
 
             input_buffer,
             input_buffer_fill: 0,
@@ -279,6 +345,11 @@ impl DenoiserPlugin {
         plugin.mcra_l = params.mcra_l.max(1);
         plugin.mcra_delta = params.mcra_delta;
 
+        plugin.dd_enabled = params.dd_enabled;
+        plugin.dd_alpha = params.dd_alpha.clamp(DD_ALPHA_MIN, DD_ALPHA_MAX);
+        plugin.psychoacoustic_masking = params.psychoacoustic_masking;
+        plugin.use_captured_profile = params.use_captured_profile;
+
         plugin.floor_linear = 10.0_f32.powf(plugin.floor_db / 20.0);
 
         plugin
@@ -309,6 +380,11 @@ impl DenoiserPlugin {
                 self.initialize_mcra_from_frame(ch);
             }
             self.update_mcra(ch);
+        }
+
+        // Phase 2b: Noise profile learning (if active)
+        if self.is_learning {
+            self.accumulate_noise_frame();
         }
 
         // Phase 3: Calculate Gains (Wiener or Polyphonic)
@@ -469,6 +545,44 @@ impl InPlacePlugin for DenoiserPlugin {
                 .with_description("Sensitivity of transient suppressor (higher = less sensitive)")
                 .with_group("Detection")
                 .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool(
+                "psychoacoustic_masking",
+                "Psychoacoustic Masking",
+                PSYCHOACOUSTIC_MASKING_DEFAULT,
+            )
+            .with_description("Skip denoising for perceptually masked noise bins")
+            .with_group("Processing")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool("dd_enabled", "DD SNR", DD_ENABLED_DEFAULT)
+                .with_description("Enable Decision-Directed SNR estimation (Ephraim-Malah)")
+                .with_group("Processing")
+                .with_importance(ParameterImportance::Useful),
+            Parameter::new_float(
+                "dd_alpha",
+                "DD Alpha",
+                DD_ALPHA_DEFAULT,
+                DD_ALPHA_MIN,
+                DD_ALPHA_MAX,
+            )
+            .with_description("Decision-directed smoothing factor (higher = more smoothing)")
+            .with_group("Processing")
+            .with_importance(ParameterImportance::FineTuning),
+            Parameter::new_bool("learn_noise", "Learn Noise", false)
+                .with_description("Start capturing noise profile from current audio")
+                .with_group("Noise Profile")
+                .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool(
+                "use_captured_profile",
+                "Use Profile",
+                USE_CAPTURED_PROFILE_DEFAULT,
+            )
+            .with_description("Use captured noise profile instead of live estimation")
+            .with_group("Noise Profile")
+            .with_importance(ParameterImportance::Useful),
+            Parameter::new_bool("clear_profile", "Clear Profile", false)
+                .with_description("Clear the captured noise profile")
+                .with_group("Noise Profile")
+                .with_importance(ParameterImportance::Useful),
         ]
     }
 
@@ -516,6 +630,31 @@ impl InPlacePlugin for DenoiserPlugin {
                 .max(1.0);
             self.transient_suppressor
                 .set_sensitivity(self.crack_sensitivity);
+        } else if id == self.param_psychoacoustic_masking {
+            self.psychoacoustic_masking = value
+                .as_bool()
+                .ok_or("Invalid psychoacoustic_masking value")?;
+        } else if id == self.param_dd_enabled {
+            self.dd_enabled = value.as_bool().ok_or("Invalid dd_enabled value")?;
+        } else if id == self.param_dd_alpha {
+            self.dd_alpha = value
+                .as_float()
+                .ok_or("Invalid dd_alpha value")?
+                .clamp(DD_ALPHA_MIN, DD_ALPHA_MAX);
+        } else if id == self.param_learn_noise {
+            let trigger = value.as_bool().ok_or("Invalid learn_noise value")?;
+            if trigger {
+                self.start_learning();
+            }
+        } else if id == self.param_use_captured_profile {
+            self.use_captured_profile = value
+                .as_bool()
+                .ok_or("Invalid use_captured_profile value")?;
+        } else if id == self.param_clear_profile {
+            let trigger = value.as_bool().ok_or("Invalid clear_profile value")?;
+            if trigger {
+                self.clear_noise_profile();
+            }
         } else {
             return Err(format!("Unknown parameter: {}", id));
         }
@@ -539,6 +678,18 @@ impl InPlacePlugin for DenoiserPlugin {
             Some(ParameterValue::Bool(self.polyphonic_detection))
         } else if id == &self.param_crack_sensitivity {
             Some(ParameterValue::Float(self.crack_sensitivity))
+        } else if id == &self.param_psychoacoustic_masking {
+            Some(ParameterValue::Bool(self.psychoacoustic_masking))
+        } else if id == &self.param_dd_enabled {
+            Some(ParameterValue::Bool(self.dd_enabled))
+        } else if id == &self.param_dd_alpha {
+            Some(ParameterValue::Float(self.dd_alpha))
+        } else if id == &self.param_learn_noise {
+            Some(ParameterValue::Bool(self.is_learning))
+        } else if id == &self.param_use_captured_profile {
+            Some(ParameterValue::Bool(self.use_captured_profile))
+        } else if id == &self.param_clear_profile {
+            Some(ParameterValue::Bool(false)) // Trigger-only, always reads as false
         } else {
             None
         }
@@ -547,6 +698,7 @@ impl InPlacePlugin for DenoiserPlugin {
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
         self.update_envelope_coefficients();
+        self.precompute_bark_mapping();
         Ok(())
     }
 
@@ -556,9 +708,13 @@ impl InPlacePlugin for DenoiserPlugin {
             self.reset_mcra(ch);
             self.gain[ch].fill(1.0);
             self.smoothed_gain[ch].fill(1.0);
+            self.prev_power[ch].fill(0.0);
+            self.learning_accumulator[ch].fill(0.0);
             self.output_accumulator[ch].fill(0.0);
             self.time_out_channels[ch].fill(0.0);
         }
+        self.is_learning = false;
+        self.learning_frames_count = 0;
 
         // Reset transient suppressor
         self.transient_suppressor.reset();
@@ -620,6 +776,10 @@ impl InPlacePlugin for DenoiserPlugin {
             snr_db: self.get_snr_db(),
             avg_reduction_db: self.avg_reduction_db,
             learning_active: self.learning_active,
+            is_learning_noise: self.is_learning,
+            has_captured_profile: self.noise_profile.is_some(),
+            learning_progress: self.learning_progress(),
+            using_captured_profile: self.use_captured_profile,
         }))
     }
 }

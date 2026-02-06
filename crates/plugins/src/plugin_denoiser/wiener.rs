@@ -18,11 +18,10 @@ const EPSILON: f32 = 1e-10;
 impl DenoiserPlugin {
     /// Calculate and apply Wiener filter gains for all channels
     ///
-    /// This method:
-    /// 1. Calculates SNR for each frequency bin
-    /// 2. Computes Wiener gain with reduction control
-    /// 3. Applies floor to prevent musical noise
-    /// 4. Smooths gains with attack/release envelope
+    /// Three-pass approach:
+    /// 1. Compute instantaneous Wiener gain per bin
+    /// 2. Smooth gains across frequency bins (prevents musical noise)
+    /// 3. Apply temporal smoothing with attack/release envelope
     pub(super) fn calculate_wiener_gains(&mut self) {
         let reduction_factor = 10.0_f32.powf(self.reduction_db / 10.0);
         let floor_linear = 10.0_f32.powf(self.floor_db / 20.0);
@@ -30,29 +29,56 @@ impl DenoiserPlugin {
         let mut total_reduction = 0.0_f32;
         let mut bin_count = 0;
 
+        let dd_enabled = self.dd_enabled;
+        let dd_alpha = self.dd_alpha;
+
         for ch in 0..self.channels {
+            // Pass 1: Compute instantaneous Wiener gain
             for k in 0..self.spectrum_size {
-                // Get signal and noise power
                 let signal_power = self.get_power_at_bin(ch, k);
-                let noise_power = self.get_noise_power(ch, k);
+                let noise_power = self.get_effective_noise_power(ch, k);
 
                 // Calculate a priori SNR estimate
-                let snr_priori = ((signal_power - noise_power).max(0.0)) / noise_power.max(EPSILON);
+                let snr_priori = if dd_enabled {
+                    // Decision-Directed (Ephraim-Malah) approach:
+                    // SNR_dd = α * G²_prev * P_prev / σ_n² + (1-α) * max(P/σ_n² - 1, 0)
+                    let prev_gain = self.smoothed_gain[ch][k];
+                    let prev_pow = self.prev_power[ch][k];
+                    let ml_term = (signal_power / noise_power.max(EPSILON) - 1.0).max(0.0);
+                    let dd_term =
+                        prev_gain * prev_gain * prev_pow / noise_power.max(EPSILON);
+                    dd_alpha * dd_term + (1.0 - dd_alpha) * ml_term
+                } else {
+                    ((signal_power - noise_power).max(0.0)) / noise_power.max(EPSILON)
+                };
+
+                // Store current power for next frame's DD computation
+                self.prev_power[ch][k] = signal_power;
 
                 // Apply reduction control
-                // reduction_factor > 1 means more aggressive noise reduction
                 let effective_snr = snr_priori / reduction_factor;
 
-                // Calculate Wiener gain
-                let mut gain = effective_snr / (effective_snr + 1.0);
-
-                // Apply floor to prevent musical noise
-                gain = gain.max(floor_linear);
-
-                // Store instantaneous gain for smoothing
+                // Calculate Wiener gain with floor
+                let gain = (effective_snr / (effective_snr + 1.0)).max(floor_linear);
                 self.gain[ch][k] = gain;
+            }
 
-                // Apply temporal smoothing with attack/release
+            // Pass 2: Smooth gains across frequency bins
+            self.smooth_gains_across_frequency(ch);
+
+            // Pass 2b: Psychoacoustic masking — skip denoising for masked bins
+            if self.psychoacoustic_masking {
+                self.compute_masking_thresholds(ch);
+                for k in 0..self.spectrum_size {
+                    if self.is_noise_masked(ch, k) {
+                        self.gain[ch][k] = 1.0;
+                    }
+                }
+            }
+
+            // Pass 3: Apply temporal smoothing with attack/release
+            for k in 0..self.spectrum_size {
+                let gain = self.gain[ch][k];
                 let prev_gain = self.smoothed_gain[ch][k];
                 let coeff = if gain > prev_gain {
                     self.attack_coeff
@@ -62,7 +88,6 @@ impl DenoiserPlugin {
                 let smoothed = gain + coeff * (prev_gain - gain);
                 self.smoothed_gain[ch][k] = smoothed;
 
-                // Track average reduction for monitoring
                 total_reduction += (1.0 - smoothed).max(0.0);
                 bin_count += 1;
             }
@@ -76,6 +101,40 @@ impl DenoiserPlugin {
             } else {
                 60.0 // Max reduction
             };
+        }
+    }
+
+    /// Smooth gains across frequency bins using a 3-tap triangular kernel [β, 1-2β, β]
+    /// where β = smoothing / 2. Uses freq_smooth_temp as scratch buffer.
+    pub(super) fn smooth_gains_across_frequency(&mut self, channel: usize) {
+        let beta = self.smoothing / 2.0;
+        if beta < EPSILON {
+            return; // No smoothing needed
+        }
+
+        let n = self.spectrum_size;
+        // Copy current gains to scratch buffer
+        self.freq_smooth_temp[..n].copy_from_slice(&self.gain[channel][..n]);
+
+        // Apply 3-tap kernel: out[k] = β * in[k-1] + (1-2β) * in[k] + β * in[k+1]
+        let center = 1.0 - 2.0 * beta;
+        let src = &self.freq_smooth_temp;
+        let dst = &mut self.gain[channel];
+
+        // First bin: no left neighbor
+        dst[0] = center * src[0] + beta * src[1];
+        // Normalize: center + beta = 1-beta, so divide by (1-beta)
+        dst[0] /= 1.0 - beta;
+
+        // Interior bins
+        for k in 1..n - 1 {
+            dst[k] = beta * src[k - 1] + center * src[k] + beta * src[k + 1];
+        }
+
+        // Last bin: no right neighbor
+        if n > 1 {
+            dst[n - 1] = beta * src[n - 2] + center * src[n - 1];
+            dst[n - 1] /= 1.0 - beta;
         }
     }
 

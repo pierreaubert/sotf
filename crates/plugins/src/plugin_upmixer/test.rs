@@ -194,14 +194,19 @@ mod upmixer_tests {
 
         let fft_size = plugin.fft_size;
         let mut input = vec![0.0f32; fft_size * 2];
-        for i in 0..fft_size {
-            let t = i as f32 / 44100.0;
-            let s = (2.0 * std::f32::consts::PI * 1000.0 * t).sin() * 0.5;
-            input[i * 2] = s;
-            input[i * 2 + 1] = s;
-        }
         let mut output = vec![0.0f32; fft_size * plugin.num_output_channels];
-        plugin.process_fft_block(&input, &mut output);
+
+        // Process enough coherent frames to fill the median filter ring buffer (5 entries)
+        // AND let the one-pole smoother (alpha=0.15) converge near the instant value
+        for _ in 0..20 {
+            for i in 0..fft_size {
+                let t = i as f32 / 44100.0;
+                let s = (2.0 * std::f32::consts::PI * 1000.0 * t).sin() * 0.5;
+                input[i * 2] = s;
+                input[i * 2 + 1] = s;
+            }
+            plugin.process_fft_block(&input, &mut output);
+        }
 
         let num_bands = plugin.erb_bands.len();
         assert!(num_bands >= 3);
@@ -209,9 +214,8 @@ mod upmixer_tests {
 
         let coh1_inst = plugin.coherence_instant[band_idx];
         let coh1_smooth = plugin.smoothed_coherence[band_idx];
-        assert!(coh1_inst > 0.5);
-        assert!(coh1_smooth >= 0.0);
-        assert!(coh1_smooth <= coh1_inst + 1e-3_f32);
+        assert!(coh1_inst > 0.5, "Instant coherence should be high for correlated signal: {}", coh1_inst);
+        assert!(coh1_smooth > 0.0, "Smoothed coherence should be positive: {}", coh1_smooth);
 
         // Use phase-inverted signal to create strong incoherence
         for i in 0..fft_size {
@@ -226,9 +230,13 @@ mod upmixer_tests {
         let coh2_inst = plugin.coherence_instant[band_idx];
         let coh2_smooth = plugin.smoothed_coherence[band_idx];
 
-        assert!(coh2_inst < coh1_inst);
-        assert!(coh2_smooth > coh2_inst);
-        assert!(coh2_smooth < coh1_smooth);
+        // Instant coherence should drop
+        assert!(coh2_inst < coh1_inst, "Instant coherence should drop: {} vs {}", coh2_inst, coh1_inst);
+        // Median-filtered smoothed coherence should be higher than instant
+        // (median of ring buffer with mostly high values + one low value is still high)
+        assert!(coh2_smooth > coh2_inst,
+            "Smoothed coherence ({}) should be higher than instant ({}) due to median filtering",
+            coh2_smooth, coh2_inst);
     }
 
     #[test]

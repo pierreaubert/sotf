@@ -39,6 +39,7 @@ mod plugin_convolution;
 mod plugin_crossover;
 mod plugin_delay;
 mod plugin_denoiser;
+mod plugin_downmix;
 mod plugin_eq;
 mod plugin_expander;
 mod plugin_fletcher_munson;
@@ -47,6 +48,7 @@ mod plugin_gate;
 mod plugin_limiter;
 mod plugin_loudness_compensation;
 mod plugin_matrix;
+mod plugin_mono_to_stereo;
 mod plugin_multiband_compressor;
 mod plugin_multiband_expander;
 mod plugin_pnd;
@@ -90,6 +92,7 @@ pub use plugin_convolution::{ConvolutionPlugin, ConvolutionPluginParams};
 pub use plugin_crossover::{CrossoverPlugin, CrossoverPluginParams};
 pub use plugin_delay::{DelayPlugin, DelayPluginParams};
 pub use plugin_denoiser::{DenoiserData, DenoiserPlugin, DenoiserPluginParams};
+pub use plugin_downmix::{DownmixPlugin, DownmixPluginParams};
 pub use plugin_eq::{BiquadFilterConfig, EqPlugin, EqPluginParams};
 pub use plugin_expander::{ExpanderData, ExpanderPlugin, ExpanderPluginParams};
 pub use plugin_fletcher_munson::{
@@ -102,6 +105,7 @@ pub use plugin_loudness_compensation::{
     LoudnessCompensationPlugin, LoudnessCompensationPluginParams,
 };
 pub use plugin_matrix::MatrixPlugin;
+pub use plugin_mono_to_stereo::{MonoToStereoPlugin, MonoToStereoPluginParams};
 pub use plugin_multiband_compressor::{
     BandCompressorParams, MultibandCompressorData, MultibandCompressorPlugin,
     MultibandCompressorPluginParams,

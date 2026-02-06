@@ -280,6 +280,109 @@ impl UpmixerPlugin {
         }
     }
 
+    /// Generate unique decorrelation filters per output channel.
+    /// Front speakers and LFE get identity filters; surround and height channels
+    /// each get a unique velvet noise filter (different seed per channel).
+    pub(super) fn generate_per_channel_decorrelation_filters(&mut self) {
+        let spectrum_size = self.fft_size / 2 + 1;
+        let num_ch = self.num_output_channels;
+
+        self.decorrelation_filters = Vec::with_capacity(num_ch);
+
+        for ch_idx in 0..num_ch {
+            let speaker = &self.speaker_config.speakers[ch_idx];
+            let is_front = speaker.azimuth.abs() < 80.0 && speaker.elevation.abs() < 10.0;
+
+            if speaker.is_lfe || is_front {
+                // Identity filter for front speakers and LFE
+                self.decorrelation_filters
+                    .push(vec![Complex::new(1.0, 0.0); spectrum_size]);
+                continue;
+            }
+
+            // Generate unique velvet noise filter with channel-dependent seed
+            let seed_base = 54321u64 + (ch_idx as u64 * 7919);
+            let filter =
+                self.generate_velvet_noise_filter_with_seed(seed_base, spectrum_size);
+            self.decorrelation_filters.push(filter);
+        }
+    }
+
+    /// Generate a single velvet noise all-pass filter with a specific seed
+    fn generate_velvet_noise_filter_with_seed(
+        &self,
+        seed: u64,
+        spectrum_size: usize,
+    ) -> Vec<Complex<f32>> {
+        let duration_ms = self.velvet_noise_duration_ms;
+        let seq_len = ((duration_ms / 1000.0) * self.sample_rate as f32) as usize;
+        let seq_len = seq_len.clamp(128, self.fft_size / 2);
+
+        let pulses_per_sec = self.velvet_noise_density;
+        let grid_size = (self.sample_rate as f32 / pulses_per_sec).max(1.0) as usize;
+
+        let mut rng_seed = seed;
+        let mut rand_u32 = || {
+            rng_seed = rng_seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+            (rng_seed >> 32) as u32
+        };
+        let mut rand_f32 = || rand_u32() as f32 / u32::MAX as f32;
+
+        let mut time_buf = vec![0.0f32; self.fft_size];
+
+        let mut cursor = (rand_f32() * grid_size as f32) as usize;
+        while cursor < seq_len {
+            let offset = (rand_f32() * grid_size as f32) as usize;
+            let pos = (cursor + offset).min(self.fft_size - 1);
+            let val = if rand_f32() > 0.5 { 1.0 } else { -1.0 };
+            time_buf[pos] = val;
+            cursor += grid_size;
+        }
+
+        // Fade-out window
+        let fade_len = seq_len / 4;
+        if fade_len > 0 {
+            let fade_start = seq_len.saturating_sub(fade_len);
+            for (i, sample) in time_buf.iter_mut().enumerate().take(seq_len).skip(fade_start) {
+                let t = (i - fade_start) as f32 / fade_len as f32;
+                let fade = 0.5 * (1.0 + (std::f32::consts::PI * t).cos());
+                *sample *= fade;
+            }
+        }
+
+        // FFT
+        let mut input_fft = self.fft_forward.make_input_vec();
+        input_fft.copy_from_slice(&time_buf);
+        let mut output_fft = self.fft_forward.make_output_vec();
+        self.fft_forward
+            .process(&mut input_fft, &mut output_fft)
+            .unwrap();
+
+        // Normalize to all-pass
+        for val in output_fft.iter_mut() {
+            let norm = val.norm();
+            if norm > 1e-9 {
+                *val /= norm;
+            } else {
+                *val = Complex::new(1.0, 0.0);
+            }
+        }
+
+        // DC and Nyquist: real only
+        output_fft[0] = Complex::new(1.0, 0.0);
+        let last = output_fft.len() - 1;
+        output_fft[last] = Complex::new(1.0, 0.0);
+
+        // Copy to result
+        let mut result = vec![Complex::new(1.0, 0.0); spectrum_size];
+        for (i, val) in output_fft.iter().enumerate() {
+            if i < result.len() {
+                result[i] = *val;
+            }
+        }
+        result
+    }
+
     /// Apply adaptive decorrelation to ambient signals
     ///
     /// Blends between decorrelated and original signals based on strength parameter.

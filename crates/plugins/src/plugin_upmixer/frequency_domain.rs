@@ -121,18 +121,24 @@ impl UpmixerPlugin {
 
             self.coherence_instant[band_idx] = coherence;
 
-            let prev = self.smoothed_coherence[band_idx];
-            let band_alpha = self.steering_alphas[band_idx];
-            let coherence_attack = (band_alpha * 0.75).min(0.5);
-            let coherence_release = (band_alpha * 0.1).max(0.01);
-            let alpha_coh = if coherence > prev {
-                coherence_attack
-            } else {
-                coherence_release
-            };
-            let smoothed = prev + alpha_coh * (coherence - prev);
-            self.smoothed_coherence[band_idx] = smoothed;
-            coherence = smoothed;
+            // 3A: Median-filtered coherence estimation
+            // Write instant coherence to ring buffer, compute median of 5 values,
+            // then apply gentle one-pole on median for robust outlier rejection.
+            if band_idx < self.coherence_history.len() {
+                let idx = self.coherence_history_idx % 5;
+                self.coherence_history[band_idx][idx] = coherence;
+
+                // Compute median of 5-element ring buffer via sorting a local copy
+                let mut sorted = self.coherence_history[band_idx];
+                sorted.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                let median = sorted[2]; // Middle element of 5
+
+                // Gentle one-pole on median (alpha=0.15 for smooth response)
+                let prev = self.smoothed_coherence[band_idx];
+                let smoothed = prev + 0.15 * (median - prev);
+                self.smoothed_coherence[band_idx] = smoothed;
+                coherence = smoothed;
+            }
 
             // 1. LFE Band Logic
             // Determine intersection of current band [start_bin, end_bin) with LFE range [0, lfe_cutoff_bin]
@@ -207,34 +213,70 @@ impl UpmixerPlugin {
                 // Increase direct/center coherence proportionally (not as a boost multiplier)
                 let effective_coherence = coherence + (1.0 - coherence) * dialogue_weight;
 
+                // 3B: Compute principal eigenvector from smoothed 2x2 covariance
+                // for eigenvector projection direct/ambient split.
+                // Eigenvector of [[c_xx, c_xy], [conj(c_xy), c_yy]] for lambda1:
+                //   v = [c_xy, lambda1 - c_xx] (or fallback for degenerate case)
+                let eigvec = if c_xy.norm_sqr() > 1e-18 {
+                    let v = Complex::new(lambda1 - c_xx, 0.0);
+                    let norm = (c_xy.norm_sqr() + v.norm_sqr()).sqrt();
+                    if norm > 1e-9 {
+                        (c_xy / norm, Complex::new(v.re / norm, 0.0))
+                    } else {
+                        (Complex::new(std::f32::consts::FRAC_1_SQRT_2, 0.0),
+                         Complex::new(std::f32::consts::FRAC_1_SQRT_2, 0.0))
+                    }
+                } else {
+                    // Degenerate case: equal power, use mid-side fallback
+                    (Complex::new(std::f32::consts::FRAC_1_SQRT_2, 0.0),
+                     Complex::new(std::f32::consts::FRAC_1_SQRT_2, 0.0))
+                };
+                let (ev_l, ev_r) = eigvec;
+
                 for i in upmix_start..upmix_end {
                     let left = self.freq_domain_left[i];
                     let right = self.freq_domain_right[i];
 
-                    let sum = left + right;
-                    let sum_norm = sum.norm();
+                    // 3B: Project L/R onto principal eigenvector for direct component
+                    // direct_projection = (L * conj(ev_l) + R * conj(ev_r))
+                    let projection = left * ev_l.conj() + right * ev_r.conj();
 
-                    // Direct Extraction with energy-preserving dialogue routing
-                    // Use effective_coherence to shift energy to center without boosting total magnitude
-                    let direct_mag = sum_norm * 0.5 * effective_coherence;
-                    let direct_val = if sum_norm > 1e-9 {
-                        sum * (direct_mag / sum_norm)
-                    } else {
-                        Complex::new(0.0, 0.0)
-                    };
-                    self.direct[i] = direct_val;
+                    // Direct = projection * eigenvector, scaled by effective_coherence
+                    let direct_l = projection * ev_l * effective_coherence;
+                    let direct_r = projection * ev_r * effective_coherence;
+                    let direct_val = direct_l + direct_r; // mono direct for center
+                    self.direct[i] = direct_val * 0.5;
 
-                    // Ambient Extraction (Residual)
-                    // We use the difference signal for ambient, scaled by (1 - coherence).
-                    // Decorrelation is applied in a SIMD-optimized pass after this loop.
-                    let diff = left - right;
-                    self.ambient_left[i] = diff * ambient_gain;
-                    self.ambient_right[i] = -diff * ambient_gain;
+                    // 3B: Ambient = residual after eigenvector projection
+                    let residual_l = left - projection * ev_l;
+                    let residual_r = right - projection * ev_r;
+                    self.ambient_left[i] = residual_l * ambient_gain + (left - right) * ambient_gain * 0.3;
+                    self.ambient_right[i] = residual_r * ambient_gain - (left - right) * ambient_gain * 0.3;
 
                     // Divergence for Fronts
-                    self.direct_left[i] = left - direct_val * self.stereo_width;
-                    self.direct_right[i] = right - direct_val * self.stereo_width;
+                    self.direct_left[i] = left - self.direct[i] * self.stereo_width;
+                    self.direct_right[i] = right - self.direct[i] * self.stereo_width;
                     self.lfe[i] = Complex::new(0.0, 0.0);
+
+                    // 3F: Energy preservation correction
+                    // Normalize so |direct|^2 + |ambient_L|^2 + |ambient_R|^2 ≈ |L|^2 + |R|^2
+                    let input_energy =
+                        left.norm_sqr() + right.norm_sqr();
+                    let output_energy = self.direct[i].norm_sqr()
+                        + self.direct_left[i].norm_sqr()
+                        + self.direct_right[i].norm_sqr()
+                        + self.ambient_left[i].norm_sqr()
+                        + self.ambient_right[i].norm_sqr();
+                    if output_energy > 1e-12 && input_energy > 1e-12 {
+                        let correction = (input_energy / output_energy).sqrt();
+                        // Gentle correction: limit to ±3dB to avoid artifacts
+                        let correction = correction.clamp(0.707, 1.414);
+                        self.direct[i] *= correction;
+                        self.direct_left[i] *= correction;
+                        self.direct_right[i] *= correction;
+                        self.ambient_left[i] *= correction;
+                        self.ambient_right[i] *= correction;
+                    }
 
                     // Height mask: emphasize high-frequency, low-coherence (diffuse) content
                     // with reduced aggression to prevent "tizzy" artifacts
@@ -298,6 +340,9 @@ impl UpmixerPlugin {
                 self.apply_adaptive_decorrelation(upmix_start, upmix_end, decorrelation_strength);
             }
         }
+
+        // Advance coherence history ring buffer index (once per frame)
+        self.coherence_history_idx = self.coherence_history_idx.wrapping_add(1);
 
         // Flush denormals from frequency domain buffers to prevent CPU performance issues
         flush_denormals_complex_inplace(&mut self.direct);

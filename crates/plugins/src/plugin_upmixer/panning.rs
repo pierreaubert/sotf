@@ -81,17 +81,27 @@ impl UpmixerPlugin {
                             * height_direct_leak;
 
                         // 2. Ambient component (decorrelated)
-                        // Use the static Velvet Noise filters (decorrelation_filter_left/right)
-                        // instead of phase-shifted copies of ambient_left/right
-                        let decor_l = self.decorrelation_filter_left[i];
-                        let decor_r = self.decorrelation_filter_right[i];
+                        // 3C: Use per-channel decorrelation filter if available,
+                        // otherwise fall back to left/right pair
+                        let decor_filter = if ch_idx < self.decorrelation_filters.len()
+                            && i < self.decorrelation_filters[ch_idx].len()
+                        {
+                            self.decorrelation_filters[ch_idx][i]
+                        } else {
+                            // Fallback to legacy left/right filters
+                            if speaker.azimuth > 0.0 {
+                                self.decorrelation_filter_left[i]
+                            } else {
+                                self.decorrelation_filter_right[i]
+                            }
+                        };
 
                         let ambient_raw_l = self.ambient_left[i];
                         let ambient_raw_r = self.ambient_right[i];
 
-                        // Apply decorrelation to ambient
-                        let ambient_decor_l = ambient_raw_l * decor_l;
-                        let ambient_decor_r = ambient_raw_r * decor_r;
+                        // Apply per-channel decorrelation to ambient
+                        let ambient_decor_l = ambient_raw_l * decor_filter;
+                        let ambient_decor_r = ambient_raw_r * decor_filter;
 
                         let is_left = speaker.azimuth > 0.0;
                         let mut ambient_component = if is_left {
@@ -124,12 +134,20 @@ impl UpmixerPlugin {
                             + self.direct_right[i] * panning_gain_right;
 
                         // Apply decorrelation for surround channels (non-front)
+                        // 3C: Use per-channel decorrelation filter
                         let ambient_component = if !is_front {
-                            let decor_l = self.decorrelation_filter_left[i];
-                            let decor_r = self.decorrelation_filter_right[i];
+                            let decor = if ch_idx < self.decorrelation_filters.len()
+                                && i < self.decorrelation_filters[ch_idx].len()
+                            {
+                                self.decorrelation_filters[ch_idx][i]
+                            } else if speaker.azimuth > 0.0 {
+                                self.decorrelation_filter_left[i]
+                            } else {
+                                self.decorrelation_filter_right[i]
+                            };
 
-                            let amb_l = self.ambient_left[i] * decor_l;
-                            let amb_r = self.ambient_right[i] * decor_r;
+                            let amb_l = self.ambient_left[i] * decor;
+                            let amb_r = self.ambient_right[i] * decor;
 
                             amb_l * panning_gain_left + amb_r * panning_gain_right
                         } else {

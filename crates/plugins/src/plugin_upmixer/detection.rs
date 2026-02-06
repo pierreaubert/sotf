@@ -96,8 +96,38 @@ impl UpmixerPlugin {
         let variance_score =
             (1.0 - (self.dialogue_envelope_variance / variance_threshold).min(1.0)).max(0.0);
 
-        // Combined score with weighting
-        let dialogue_prob = centroid_score * 0.6 + variance_score * 0.4;
+        // 3D: Voice-band coherence score from ERB bands
+        // Average smoothed coherence for bands in the voice frequency range
+        let freq_per_bin = self.sample_rate as f32 / self.fft_size as f32;
+        let mut coherence_sum = 0.0_f32;
+        let mut coherence_count = 0usize;
+        for band_idx in 0..self.erb_bands.len() {
+            let start_bin = self.erb_bands[band_idx];
+            let end_bin = if band_idx + 1 < self.erb_bands.len() {
+                self.erb_bands[band_idx + 1]
+            } else {
+                self.fft_size / 2 + 1
+            };
+            let center_bin = (start_bin + end_bin) / 2;
+            let center_freq = center_bin as f32 * freq_per_bin;
+
+            if center_freq >= voice_start_hz
+                && center_freq <= voice_end_hz
+                && band_idx < self.smoothed_coherence.len()
+            {
+                coherence_sum += self.smoothed_coherence[band_idx];
+                coherence_count += 1;
+            }
+        }
+        let voice_coherence = if coherence_count > 0 {
+            coherence_sum / coherence_count as f32
+        } else {
+            0.0
+        };
+
+        // 3D: Updated weighting with coherence as strongest indicator
+        let dialogue_prob =
+            centroid_score * 0.3 + variance_score * 0.2 + voice_coherence * 0.5;
 
         // Smooth dialogue probability with slow attack/release
         let prob_alpha = if dialogue_prob > self.dialogue_probability {

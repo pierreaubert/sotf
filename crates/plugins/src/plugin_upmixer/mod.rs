@@ -148,6 +148,10 @@ pub struct UpmixerPlugin {
     steering_alphas: Vec<f32>, // Per-band alpha
     coherence_instant: Vec<f32>,
     smoothed_coherence: Vec<f32>,
+    /// Ring buffer for median-filtered coherence (5-element per ERB band)
+    coherence_history: Vec<[f32; 5]>,
+    /// Current write index in coherence_history ring buffer
+    coherence_history_idx: usize,
 
     // Decorrelation Mode
     param_decorrelation_mode: ParameterId,
@@ -208,6 +212,9 @@ pub struct UpmixerPlugin {
     // Decorrelation
     decorrelation_filter_left: Vec<Complex<f32>>,
     decorrelation_filter_right: Vec<Complex<f32>>,
+    /// Per-output-channel decorrelation filters (one per surround/height channel)
+    /// Front speakers and LFE get identity filters
+    decorrelation_filters: Vec<Vec<Complex<f32>>>,
 
     // LFO Decorrelation State
     decor_base_phases_left: Vec<f32>,
@@ -310,6 +317,10 @@ pub struct UpmixerPlugin {
 
     hr_transient_env: f32,
     hr_energy_smooth: f32,
+    /// Previous frame magnitude spectrum for spectral flux calculation
+    prev_magnitude_spectrum: Vec<f32>,
+    /// Smoothed spectral flux for transient normalization
+    spectral_flux_smooth: f32,
 
     // Dialogue Detection State
     /// Smoothed spectral centroid (Hz) for dialogue detection
@@ -532,8 +543,11 @@ impl UpmixerPlugin {
             steering_alphas: Vec::new(),
             coherence_instant: Vec::new(),
             smoothed_coherence: Vec::new(),
+            coherence_history: Vec::new(),
+            coherence_history_idx: 0,
             decorrelation_filter_left: vec![zero_complex; spectrum_size],
             decorrelation_filter_right: vec![zero_complex; spectrum_size],
+            decorrelation_filters: Vec::new(),
             decor_base_phases_left: Vec::new(),
             decor_base_phases_right: Vec::new(),
             decor_lfo_phase: 0.0,
@@ -593,6 +607,8 @@ impl UpmixerPlugin {
 
             hr_transient_env: 0.0,
             hr_energy_smooth: 0.0,
+            prev_magnitude_spectrum: vec![0.0; spectrum_size],
+            spectral_flux_smooth: 0.0,
 
             dialogue_spectral_centroid: 0.0,
             dialogue_envelope_variance: 0.0,
@@ -1518,9 +1534,19 @@ Upper bound for dialogue detection analysis.",
         self.pca_cov_xy = vec![Complex::new(0.0, 0.0); num_bands];
         self.coherence_instant = vec![0.0; num_bands];
         self.smoothed_coherence = vec![0.0; num_bands];
+        self.coherence_history = vec![[0.0; 5]; num_bands];
+        self.coherence_history_idx = 0;
+
+        // Initialize spectral flux buffers
+        let spectrum_size = self.fft_size / 2 + 1;
+        self.prev_magnitude_spectrum = vec![0.0; spectrum_size];
+        self.spectral_flux_smooth = 0.0;
 
         // Generate decorrelation filters
         self.generate_decorrelation_filters();
+
+        // Generate per-channel decorrelation filters
+        self.generate_per_channel_decorrelation_filters();
 
         // Precompute LR4 crossover gains for mains/LFE split
         self.update_crossover_gains();
@@ -1594,6 +1620,12 @@ Upper bound for dialogue detection analysis.",
         self.smoothed_coherence.fill(0.0);
         self.hr_transient_env = 0.0;
         self.hr_energy_smooth = 0.0;
+        self.prev_magnitude_spectrum.fill(0.0);
+        self.spectral_flux_smooth = 0.0;
+        self.coherence_history_idx = 0;
+        for h in &mut self.coherence_history {
+            *h = [0.0; 5];
+        }
 
         // Clear height mask; it will be recomputed in process_fft_block
         self.height_band_gains.fill(0.0);
