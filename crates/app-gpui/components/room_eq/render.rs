@@ -331,8 +331,16 @@ fn render_response_comparison_graph(
     // Convert (freq, db) pairs to separate vectors
     let frequencies: Vec<f64> = original.iter().map(|(f, _)| *f).collect();
     let original_values_raw: Vec<f64> = original.iter().map(|(_, db)| *db).collect();
-    // We'll ignore the passed normalized curve if it's flat/broken, and compute our own corrected curve
-    // let normalized_values_raw: Vec<f64> = normalized.iter().map(|(_, db)| *db).collect();
+
+    // Calculate normalization offset to center around 0dB (usually 1k-2k range)
+    let offset = crate::app::types::RoomEqState::calculate_normalization_offset(
+        &frequencies,
+        &original_values_raw,
+    );
+    let original_normalized: Vec<f64> = original_values_raw
+        .iter()
+        .map(|&db| db - offset)
+        .collect();
 
     // Compute EQ response curve from filters
     let eq_response: Vec<f64> = if eq_filters.is_empty() {
@@ -361,9 +369,9 @@ fn render_response_comparison_graph(
             .collect()
     };
 
-    // Apply smoothing
+    // Apply smoothing to normalized data
     let original_values =
-        dsp::smooth_response_f64(&frequencies, &original_values_raw, smoothing_octaves);
+        dsp::smooth_response_f64(&frequencies, &original_normalized, smoothing_octaves);
 
     // Compute Corrected = Original (smoothed) + EQ
     // We use smoothed original for the display curve so it looks clean

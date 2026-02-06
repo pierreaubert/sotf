@@ -1542,4 +1542,39 @@ impl RoomEqState {
         let config = self.to_room_config();
         autoeq::roomeq::validate_room_config(&config)
     }
+
+    /// Calculate the level offset needed to normalize a curve to 0dB.
+    /// Uses mean SPL in the 1kHz to 2kHz range by default.
+    pub fn calculate_normalization_offset(frequencies: &[f64], spl: &[f64]) -> f64 {
+        let min_freq = 1000.0;
+        let max_freq = 2000.0;
+
+        let mut sum = 0.0;
+        let mut count = 0;
+
+        for (i, &f) in frequencies.iter().enumerate() {
+            if f >= min_freq && f <= max_freq {
+                if let Some(&db) = spl.get(i) {
+                    sum += db;
+                    count += 1;
+                }
+            }
+        }
+
+        if count > 0 {
+            sum / count as f64
+        } else {
+            // Fallback: overall mean
+            if spl.is_empty() {
+                0.0
+            } else {
+                spl.iter().sum::<f64>() / spl.len() as f64
+            }
+        }
+    }
+
+    /// Normalize a set of points by subtracting an offset.
+    pub fn normalize_points(points: &[(f64, f64)], offset: f64) -> Vec<(f64, f64)> {
+        points.iter().map(|&(f, db)| (f, db - offset)).collect()
+    }
 }

@@ -162,3 +162,45 @@ fn test_room_eq_validation() {
     assert!(!validation.is_valid);
     assert!(validation.errors.iter().any(|e| e.contains("min_freq")));
 }
+
+#[test]
+fn test_calculate_normalization_offset() {
+    let frequencies = vec![100.0, 1000.0, 1500.0, 2000.0, 5000.0];
+    let spl = vec![70.0, 80.0, 82.0, 84.0, 75.0];
+    
+    // Mean of 80, 82, 84 is 82.0
+    let offset = RoomEqState::calculate_normalization_offset(&frequencies, &spl);
+    assert!((offset - 82.0).abs() < 0.001);
+}
+
+#[test]
+fn test_calculate_normalization_offset_fallback() {
+    let frequencies = vec![100.0, 200.0];
+    let spl = vec![70.0, 72.0];
+    
+    // No points in 1k-2k range, should use overall mean (71.0)
+    let offset = RoomEqState::calculate_normalization_offset(&frequencies, &spl);
+    assert!((offset - 71.0).abs() < 0.001);
+}
+
+#[test]
+fn test_normalization_alignment() {
+    let frequencies = vec![100.0, 1000.0, 1500.0, 2000.0, 5000.0];
+    let spl = vec![70.0, 80.0, 82.0, 84.0, 75.0];
+
+    let offset = RoomEqState::calculate_normalization_offset(&frequencies, &spl);
+    let pts: Vec<(f64, f64)> = frequencies
+        .iter()
+        .zip(spl.iter())
+        .map(|(&f, &db)| (f, db))
+        .collect();
+    let normalized = RoomEqState::normalize_points(&pts, offset);
+
+    // Check normalized values in 1k-2k range
+    let n_1000 = normalized[1].1;
+    let n_1500 = normalized[2].1;
+    let n_2000 = normalized[3].1;
+
+    let mean_normalized = (n_1000 + n_1500 + n_2000) / 3.0;
+    assert!(mean_normalized.abs() < 0.001);
+}

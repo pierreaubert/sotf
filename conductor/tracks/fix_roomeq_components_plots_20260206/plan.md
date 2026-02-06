@@ -16,10 +16,10 @@ This plan addresses the misalignment between the GPUI Room EQ interface and the 
 - [x] Task: Conductor - User Manual Verification 'Form Alignment and Validation' (Protocol in workflow.md) fb52e6e
 
 ## Phase 3: Plot Normalization and Visualization
-- [ ] Task: Write Tests: Implement unit tests for a normalization utility function that aligns SPL and Target curves.
-- [ ] Task: Implement: Create/update a utility to calculate the offset needed to normalize SPL data to 0dB relative to the target.
-- [ ] Task: Implement: Apply normalization logic to the `RoomEq` plot components.
-- [ ] Task: Verify: Ensure the Target curve and SPL response are visually aligned in the UI.
+- [x] Task: Write Tests: Implement unit tests for a normalization utility function that aligns SPL and Target curves. fb52e6e
+- [x] Task: Implement: Create/update a utility to calculate the offset needed to normalize SPL data to 0dB relative to the target. fb52e6e
+- [x] Task: Implement: Apply normalization logic to the `RoomEq` plot components. fb52e6e
+- [x] Task: Verify: Ensure the Target curve and SPL response are visually aligned in the UI. fb52e6e
 - [ ] Task: Conductor - User Manual Verification 'Plot Normalization and Visualization' (Protocol in workflow.md)
 
 ## Phase 4: Integration and Final Verification
