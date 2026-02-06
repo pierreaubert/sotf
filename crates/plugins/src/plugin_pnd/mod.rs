@@ -87,7 +87,11 @@ impl PndPlugin {
 
     fn init_analyzer(&mut self) {
         let fft_size = 2048; // Good balance for freq resolution
-        self.analyzer = Some(PndAnalyzer::new(fft_size, self.sample_rate));
+        self.analyzer = Some(PndAnalyzer::new(
+            fft_size,
+            self.sample_rate,
+            self.analysis_window_ms,
+        ));
     }
 }
 
@@ -142,6 +146,9 @@ impl Plugin for PndPlugin {
             self.correction_strength = value.as_float().ok_or("Invalid value")?;
         } else if id == self.param_analysis_window_ms {
             self.analysis_window_ms = value.as_float().ok_or("Invalid value")?;
+            if let Some(analyzer) = &mut self.analyzer {
+                analyzer.update_analysis_window(self.analysis_window_ms);
+            }
         } else if id == self.param_drift_smoothing {
             self.drift_smoothing = value.as_float().ok_or("Invalid value")?;
         }
@@ -277,5 +284,12 @@ impl Plugin for PndPlugin {
         }
 
         Ok(context.num_frames)
+    }
+
+    fn reset(&mut self) {
+        if let Some(analyzer) = &mut self.analyzer {
+            analyzer.reset();
+        }
+        self.current_ratio = 1.0;
     }
 }
