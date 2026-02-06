@@ -218,12 +218,12 @@ impl<'a, 'b> RecordingPage<'a, 'b> {
                 .channel_mappings = names
                 .iter()
                 .enumerate()
-                .map(
-                    |(i, name)| sotf_audio_player_gpui::app::types::ChannelMapping {
-                        interface_channel: i + 1,
-                        group_name: name.to_string(),
-                    },
-                )
+                .map(|(i, name)| {
+                    sotf_audio_player_gpui::app::types::ChannelMapping::single(
+                        i + 1,
+                        name.to_string(),
+                    )
+                })
                 .collect();
 
             // Initialize recordings

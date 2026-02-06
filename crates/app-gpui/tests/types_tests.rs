@@ -567,18 +567,9 @@ fn test_room_eq_optimizer_config_default() {
 fn test_recording_state_init_channel_recordings() {
     let mut state = RecordingState::default();
     state.playback_config.channel_mappings = vec![
-        ChannelMapping {
-            interface_channel: 1,
-            group_name: "L".to_string(),
-        },
-        ChannelMapping {
-            interface_channel: 2,
-            group_name: "R".to_string(),
-        },
-        ChannelMapping {
-            interface_channel: 3,
-            group_name: "C".to_string(),
-        },
+        ChannelMapping::single(1, "L"),
+        ChannelMapping::single(2, "R"),
+        ChannelMapping::single(3, "C"),
     ];
 
     state.init_channel_recordings();
