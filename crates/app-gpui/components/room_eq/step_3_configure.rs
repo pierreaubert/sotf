@@ -3,8 +3,8 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
-    AutoEqConfig, AutoEqForm, AutoEqFormUiState, Card, HStack, StackJustify, StackSpacing, Text,
-    TextSize, TextWeight, Toggle, ToggleTheme, VStack,
+    AutoEqConfig, AutoEqForm, AutoEqFormUiState, Card, HStack, StackSpacing, Text, TextSize,
+    TextWeight, VStack,
 };
 
 use super::render::render_channel_config_row;
