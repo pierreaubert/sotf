@@ -8,12 +8,12 @@ This plan addresses the misalignment between the GPUI Room EQ interface and the 
 - [x] Task: Locate the plot rendering logic and normalization points in `app-gpui/ui/screens/room_eq`. 7f8a1b2
 - [x] Task: Conductor - User Manual Verification 'Investigation and Data Mapping' (Protocol in workflow.md) 786a02f
 
-## Phase 2: Form Alignment and Validation
+## Phase 2: Form Alignment and Validation [checkpoint: fb52e6e]
 - [x] Task: Update Room EQ form models to include missing parameters (e.g., target curve, freq range, gain limits). 7f8a1b2
 - [x] Task: Implement validation logic for form inputs based on backend constraints. 7f8a1b2
-- [ ] Task: Write Tests: Verify form data serialization matches `roomeq` input format.
-- [ ] Task: Implement: Refactor Room EQ UI components to display the updated form fields.
-- [ ] Task: Conductor - User Manual Verification 'Form Alignment and Validation' (Protocol in workflow.md)
+- [x] Task: Write Tests: Verify form data serialization matches `roomeq` input format. fb52e6e
+- [x] Task: Implement: Refactor Room EQ UI components to display the updated form fields. fb52e6e
+- [x] Task: Conductor - User Manual Verification 'Form Alignment and Validation' (Protocol in workflow.md) fb52e6e
 
 ## Phase 3: Plot Normalization and Visualization
 - [ ] Task: Write Tests: Implement unit tests for a normalization utility function that aligns SPL and Target curves.
