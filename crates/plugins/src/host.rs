@@ -754,9 +754,8 @@ impl DawHost {
         let mut current_frames = num_frames;
 
         // Process each stage (sequential for scratch buffer reuse)
-        for stage_idx in 0..self.stages.len() {
-            let stage_nodes: Vec<NodeId> = self.stages[stage_idx].nodes.clone();
-            for &node_id in &stage_nodes {
+        for stage in &self.stages {
+            for &node_id in &stage.nodes {
                 let context = ProcessContext {
                     sample_rate: self.sample_rate,
                     num_frames: current_frames,
