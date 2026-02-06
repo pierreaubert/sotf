@@ -3797,7 +3797,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-ui-kit"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "gpui",
  "gpui-ui-kit-macros",

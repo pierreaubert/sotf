@@ -1,4 +1,4 @@
-use crate::app::{App, FocusedPane, InputMode, LibraryViewMode, MatrixEditMode, Screen, TreeItem};
+use crate::app::{App, FocusedPane, InputMode, LibraryViewMode, MatrixEditMode, Screen, TreeItem, TuiEditablePlugin};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -161,6 +161,9 @@ mod tests {
 const DUAL_VIEW_HEIGHT_THRESHOLD: u16 = 40;
 
 pub fn draw(f: &mut Frame, app: &mut App) {
+    // Ensure filtered albums cache is updated
+    app.filtered_albums();
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -275,6 +278,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         draw_load_apo_file_dialog(f, app);
     } else if app.input_mode == InputMode::LoadSofaFile {
         draw_load_sofa_file_dialog(f, app);
+    } else if matches!(app.input_mode, InputMode::BrowseSofaFile | InputMode::BrowseIrFile) {
+        draw_file_browser_modal(f, app);
     }
 
     // Scan progress popup
@@ -500,7 +505,7 @@ fn draw_album_list(f: &mut Frame, area: Rect, app: &App, is_focused: bool) {
 
     match app.library_view_mode {
         LibraryViewMode::Flat => {
-            let albums = app.filtered_albums();
+            let albums = &app.cached_filtered_albums;
 
             let items: Vec<ListItem> = albums
                 .iter()
@@ -873,14 +878,14 @@ fn draw_queue_screen(f: &mut Frame, area: Rect, app: &mut App) {
 
     let mut items: Vec<ListItem> = Vec::new();
 
-    for (i, item) in app.queue.iter().enumerate() {
+    for (i, entry) in app.queue.iter().enumerate() {
         let is_current = app.current_queue_index == Some(i);
         let is_selected = i == app.selected_queue_index;
-        let is_expanded = app.expanded_queue_items.get(i).copied().unwrap_or(false);
+        let is_expanded = entry.expanded;
 
         // Album header
         let expand_indicator = if is_expanded { "▼" } else { "▶" };
-        let raw_display = item.album.display_name();
+        let raw_display = entry.item.album.display_name();
         let cleaned_display = clean_text(&raw_display);
         let truncated_display = truncate_with_ellipsis(&cleaned_display, 90);
         let mut content = format!("{} {}", expand_indicator, truncated_display);
@@ -888,8 +893,8 @@ fn draw_queue_screen(f: &mut Frame, area: Rect, app: &mut App) {
         if is_current {
             let track_info = format!(
                 " [Track {}/{}]",
-                item.current_track_index + 1,
-                item.album.tracks.len()
+                entry.item.current_track_index + 1,
+                entry.item.album.tracks.len()
             );
             content.push_str(&track_info);
         }
@@ -910,8 +915,8 @@ fn draw_queue_screen(f: &mut Frame, area: Rect, app: &mut App) {
 
         // Show individual tracks if expanded
         if is_expanded {
-            for (track_idx, track) in item.album.tracks.iter().enumerate() {
-                let is_current_track = is_current && track_idx == item.current_track_index;
+            for (track_idx, track) in entry.item.album.tracks.iter().enumerate() {
+                let is_current_track = is_current && track_idx == entry.item.current_track_index;
                 let raw_track_name = track
                     .title
                     .as_deref()
@@ -1042,9 +1047,9 @@ fn draw_album_art(f: &mut Frame, area: Rect, app: &mut App) {
 fn draw_replay_gain_info(f: &mut Frame, area: Rect, app: &App) {
     // Get currently playing track
     let track_info = if let Some(queue_index) = app.current_queue_index {
-        if let Some(queue_item) = app.queue.get(queue_index) {
-            if let Some(track) = queue_item.album.tracks.get(queue_item.current_track_index) {
-                Some((track, &queue_item.album))
+        if let Some(entry) = app.queue.get(queue_index) {
+            if let Some(track) = entry.item.album.tracks.get(entry.item.current_track_index) {
+                Some((track, &entry.item.album))
             } else {
                 None
             }
@@ -2135,8 +2140,8 @@ fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
     }
 
     if let Some(idx) = app.current_queue_index
-        && let Some(item) = app.queue.get(idx)
-        && let Some(track) = item.current_track()
+        && let Some(entry) = app.queue.get(idx)
+        && let Some(track) = entry.item.current_track()
     {
         let raw_track_name = track
             .title
@@ -2275,9 +2280,9 @@ fn draw_plugin_editor_modal(f: &mut Frame, app: &App) {
         ]));
         lines.push(Line::from(""));
 
-        let params = get_plugin_parameters(&plugin.settings, app.plugin_param_selection);
+        let params = plugin.settings.get_params();
         for (i, param) in params.iter().enumerate() {
-            let style = if i == app.plugin_param_selection {
+            let style = if i == app.selected_file_index {
                 Style::default()
                     .fg(app.theme.fg_selected)
                     .bg(app.theme.bg_selected)
@@ -2287,8 +2292,11 @@ fn draw_plugin_editor_modal(f: &mut Frame, app: &App) {
             };
 
             lines.push(Line::from(vec![
-                Span::styled(format!("  {}: ", param.0), style),
-                Span::styled(param.1.clone(), style.fg(app.theme.title_color)),
+                Span::styled(format!("  {}: ", param.name), style),
+                Span::styled(
+                    format!("{}{}", param.value, param.unit),
+                    style.fg(app.theme.title_color),
+                ),
             ]));
         }
 
@@ -3055,6 +3063,7 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
             release_ms,
             low_latency,
             polyphonic_detection,
+            ..
         } => vec![
             ("Reduction".to_string(), format!("{:.1} dB", reduction_db)),
             ("Floor".to_string(), format!("{:.1} dB", floor_db)),
@@ -4151,4 +4160,98 @@ fn draw_error_modal(f: &mut Frame, app: &App) {
 
         f.render_widget(paragraph, inner);
     }
+}
+
+fn draw_file_browser_modal(f: &mut Frame, app: &App) {
+    let area = f.area();
+    let modal_width = (area.width as f32 * 0.8) as u16;
+    let modal_height = (area.height as f32 * 0.8) as u16;
+    let modal_x = (area.width - modal_width) / 2;
+    let modal_y = (area.height - modal_height) / 2;
+
+    let modal_area = Rect {
+        x: modal_x,
+        y: modal_y,
+        width: modal_width,
+        height: modal_height,
+    };
+
+    let title = match app.input_mode {
+        InputMode::BrowseSofaFile => " Select SOFA File ",
+        InputMode::BrowseIrFile => " Select Impulse Response (WAV) ",
+        _ => " File Browser ",
+    };
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .style(Style::default().bg(app.theme.bg_primary))
+        .title(title);
+
+    f.render_widget(Clear, modal_area);
+    f.render_widget(block, modal_area);
+
+    let inner = modal_area.inner(ratatui::layout::Margin {
+        vertical: 1,
+        horizontal: 1,
+    });
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1), // Current directory
+            Constraint::Min(0),    // File list
+            Constraint::Length(1), // Help text
+        ])
+        .split(inner);
+
+    // Current directory
+    let dir_text = format!("Dir: {}", app.current_browser_dir.display());
+    f.render_widget(
+        Paragraph::new(dir_text).style(Style::default().fg(app.theme.accent_primary)),
+        chunks[0],
+    );
+
+    // File list
+    let items: Vec<ListItem> = app
+        .file_browser_items
+        .iter()
+        .enumerate()
+        .map(|(i, path)| {
+            let is_selected = i == app.selected_file_index;
+            let icon = if path.is_dir() { "📁" } else { "📄" };
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| path.display().to_string());
+
+            let content = format!(" {} {}", icon, name);
+            let style = if is_selected {
+                Style::default()
+                    .fg(app.theme.fg_selected)
+                    .bg(app.theme.bg_selected)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+
+            ListItem::new(content).style(style)
+        })
+        .collect();
+
+    let list = List::new(items);
+    let mut state = ListState::default();
+    state.select(Some(app.selected_file_index));
+
+    use ratatui::widgets::StatefulWidget;
+    StatefulWidget::render(list, chunks[1], f.buffer_mut(), &mut state);
+
+    // Help text
+    let help_text = "↑/↓: Navigate | Enter/→: Select/Open | ←/Back: Up | Esc: Cancel";
+    f.render_widget(
+        Paragraph::new(help_text)
+            .style(Style::default().fg(app.theme.fg_secondary))
+            .alignment(Alignment::Center),
+        chunks[2],
+    );
 }

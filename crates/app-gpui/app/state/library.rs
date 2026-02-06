@@ -526,7 +526,11 @@ impl LibraryState {
 
     /// Remove directory at index
     pub fn remove_directory(&mut self, index: usize) -> Option<PathBuf> {
-        self.library.remove_directory(index)
+        let result = self.library.remove_directory(index);
+        if result.is_some() {
+            self.invalidate_cache();
+        }
+        result
     }
 
     /// Get directory tree items for display
@@ -572,6 +576,7 @@ impl LibraryState {
         self.scan_in_progress = false;
 
         self.selected_index = 0;
+        self.invalidate_cache();
 
         result
     }
@@ -581,6 +586,15 @@ impl LibraryState {
         self.library.load_from_database()?;
         self.invalidate_cache();
         Ok(())
+    }
+
+    /// Clean up database by removing tracks for files that no longer exist
+    pub fn clean_database(&mut self) -> Result<usize, Box<dyn std::error::Error>> {
+        let removed = self.library.clean_database()?;
+        if removed > 0 {
+            self.invalidate_cache();
+        }
+        Ok(removed)
     }
 }
 

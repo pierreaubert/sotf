@@ -1252,6 +1252,10 @@ fn play_stream(
                             release_ms: denoiser_release_ms as f64,
                             low_latency: denoiser_low_latency,
                             polyphonic_detection: false,
+                            dd_enabled: false,
+                            dd_alpha: 0.98,
+                            psychoacoustic_masking: true,
+                            use_captured_profile: false,
                         };
                     }
                     log::info!("Rack: Added Denoiser plugin");

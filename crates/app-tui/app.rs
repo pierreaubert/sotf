@@ -1,7 +1,7 @@
 use crate::theme::Theme;
 use sotf_audio::LoudnessData;
 use sotf_audio::devices::AudioDevice;
-use sotf_audio_player::{Album, MusicLibrary, PluginChain, PluginType, Track};
+use sotf_audio_player::{Album, BiquadFilterType, MusicLibrary, PluginChain, PluginSettings, PluginType, Track};
 use sotf_plugins::speaker_config::{
     MeterGroupSpec, get_meter_groups, get_meter_groups_by_channels, make_fallback_channel,
 };
@@ -28,6 +28,8 @@ pub enum InputMode {
     LoadPlugins,
     LoadApoFile,
     LoadSofaFile,
+    BrowseSofaFile,
+    BrowseIrFile,
     ShowHelp,
     ShowError,
 }
@@ -100,7 +102,7 @@ pub struct PendingParameterUpdate {
     pub value: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct QueueItem {
     pub album: Album,
     pub current_track_index: usize,
@@ -137,11 +139,528 @@ impl QueueItem {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct QueueEntry {
+    pub item: QueueItem,
+    pub expanded: bool,
+}
+
+impl QueueEntry {
+    pub fn new(item: QueueItem) -> Self {
+        Self {
+            item,
+            expanded: false,
+        }
+    }
+}
+
+/// Specification for a plugin parameter in the TUI
+pub struct TuiParamSpec {
+    pub name: String,
+    pub value: String,
+    pub unit: String,
+}
+
+pub trait TuiEditablePlugin {
+    fn get_params(&self) -> Vec<TuiParamSpec>;
+    fn adjust_param(&mut self, index: usize, delta: f64) -> bool;
+}
+
+impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
+    fn get_params(&self) -> Vec<TuiParamSpec> {
+        match self {
+            sotf_audio_player::PluginSettings::Gain { gain_db, .. } => vec![TuiParamSpec {
+                name: "Gain".to_string(),
+                value: format!("{:.1}", gain_db),
+                unit: "dB".to_string(),
+            }],
+            sotf_audio_player::PluginSettings::EQ { filters, .. } => {
+                let mut params = Vec::new();
+                for (i, filter) in filters.iter().enumerate() {
+                    params.push(TuiParamSpec {
+                        name: format!("F{} Freq", i + 1),
+                        value: format!("{:.0}", filter.frequency),
+                        unit: "Hz".to_string(),
+                    });
+                    params.push(TuiParamSpec {
+                        name: format!("F{} Q", i + 1),
+                        value: format!("{:.2}", filter.q),
+                        unit: "".to_string(),
+                    });
+                    params.push(TuiParamSpec {
+                        name: format!("F{} Gain", i + 1),
+                        value: format!("{:.1}", filter.gain_db),
+                        unit: "dB".to_string(),
+                    });
+                    params.push(TuiParamSpec {
+                        name: format!("F{} Type", i + 1),
+                        value: format!("{:?}", filter.filter_type),
+                        unit: "".to_string(),
+                    });
+                }
+                params
+            }
+            sotf_audio_player::PluginSettings::Compressor {
+                threshold_db,
+                ratio,
+                attack_ms,
+                release_ms,
+                knee_db,
+                makeup_gain_db,
+                mix,
+                auto_makeup,
+                link_channels,
+                sidechain_hpf_hz,
+            } => vec![
+                TuiParamSpec {
+                    name: "Threshold".to_string(),
+                    value: format!("{:.1}", threshold_db),
+                    unit: "dB".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Ratio".to_string(),
+                    value: format!("{:.1}", ratio),
+                    unit: ":1".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Attack".to_string(),
+                    value: format!("{:.1}", attack_ms),
+                    unit: "ms".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Release".to_string(),
+                    value: format!("{:.1}", release_ms),
+                    unit: "ms".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Knee".to_string(),
+                    value: format!("{:.1}", knee_db),
+                    unit: "dB".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Makeup".to_string(),
+                    value: format!("{:.1}", makeup_gain_db),
+                    unit: "dB".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Mix".to_string(),
+                    value: format!("{:.0}", mix * 100.0),
+                    unit: "%".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Auto Makeup".to_string(),
+                    value: (if *auto_makeup { "On" } else { "Off" }).to_string(),
+                    unit: "".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Link".to_string(),
+                    value: (if *link_channels { "Linked" } else { "Unlinked" }).to_string(),
+                    unit: "".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Sidechain HPF".to_string(),
+                    value: format!("{:.0}", sidechain_hpf_hz),
+                    unit: "Hz".to_string(),
+                },
+            ],
+            sotf_audio_player::PluginSettings::Limiter {
+                threshold_db,
+                release_ms,
+                lookahead_ms,
+                soft,
+                mix,
+            } => vec![
+                TuiParamSpec {
+                    name: "Threshold".to_string(),
+                    value: format!("{:.1}", threshold_db),
+                    unit: "dB".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Release".to_string(),
+                    value: format!("{:.1}", release_ms),
+                    unit: "ms".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Lookahead".to_string(),
+                    value: format!("{:.1}", lookahead_ms),
+                    unit: "ms".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Soft Limit".to_string(),
+                    value: (if *soft { "On" } else { "Off" }).to_string(),
+                    unit: "".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Mix".to_string(),
+                    value: format!("{:.0}", mix * 100.0),
+                    unit: "%".to_string(),
+                },
+            ],
+            sotf_audio_player::PluginSettings::Upmixer {
+                speaker_config,
+                gain_front_direct,
+                gain_front_ambient,
+                gain_rear_ambient,
+                height_gain,
+                stereo_width,
+                lfe_cutoff_hz,
+                lfe_gain,
+                enable_subharmonic_synth,
+                subharmonic_gain,
+                enable_hr_direct,
+                hr_sharpen,
+                safety_cap_db,
+                ..
+            } => vec![
+                TuiParamSpec {
+                    name: "Speaker Config".to_string(),
+                    value: speaker_config.clone(),
+                    unit: "".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Front Direct".to_string(),
+                    value: format!("{:.2}", gain_front_direct),
+                    unit: "x".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Front Ambient".to_string(),
+                    value: format!("{:.2}", gain_front_ambient),
+                    unit: "x".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Rear Ambient".to_string(),
+                    value: format!("{:.2}", gain_rear_ambient),
+                    unit: "x".to_string(),
+                },
+                TuiParamSpec {
+                    name: "LFE Cutoff".to_string(),
+                    value: format!("{:.0}", lfe_cutoff_hz),
+                    unit: "Hz".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Stereo Width".to_string(),
+                    value: format!("{:.2}", stereo_width),
+                    unit: "".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Height Gain".to_string(),
+                    value: format!("{:.2}", height_gain),
+                    unit: "x".to_string(),
+                },
+                TuiParamSpec {
+                    name: "LFE Gain".to_string(),
+                    value: format!("{:.2}", lfe_gain),
+                    unit: "x".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Subharmonic".to_string(),
+                    value: (if *enable_subharmonic_synth { "On" } else { "Off" }).to_string(),
+                    unit: "".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Subharmonic Gain".to_string(),
+                    value: format!("{:.2}", subharmonic_gain),
+                    unit: "x".to_string(),
+                },
+                TuiParamSpec {
+                    name: "HR Direct".to_string(),
+                    value: (if *enable_hr_direct { "On" } else { "Off" }).to_string(),
+                    unit: "".to_string(),
+                },
+                TuiParamSpec {
+                    name: "HR Sharpen".to_string(),
+                    value: format!("{:.2}", hr_sharpen),
+                    unit: "".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Safety Cap".to_string(),
+                    value: format!("{:.1}", safety_cap_db),
+                    unit: "dB".to_string(),
+                },
+            ],
+            sotf_audio_player::PluginSettings::BinauralDecoder {
+                sofa_file,
+                input_channels,
+                enable_optimization,
+                externalization,
+                near_field_strength,
+            } => vec![
+                TuiParamSpec {
+                    name: "SOFA File".to_string(),
+                    value: if sofa_file.is_empty() { "None".to_string() } else { PathBuf::from(sofa_file).file_name().unwrap_or_default().to_string_lossy().to_string() },
+                    unit: "".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Input Channels".to_string(),
+                    value: format!("{}", input_channels),
+                    unit: "ch".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Optimization".to_string(),
+                    value: (if *enable_optimization { "On" } else { "Off" }).to_string(),
+                    unit: "".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Externalization".to_string(),
+                    value: format!("{:.2}", externalization),
+                    unit: "".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Near-field".to_string(),
+                    value: format!("{:.2}", near_field_strength),
+                    unit: "".to_string(),
+                },
+            ],
+            sotf_audio_player::PluginSettings::Convolution { ir_file, mix, gain_db } => vec![
+                TuiParamSpec {
+                    name: "IR File".to_string(),
+                    value: if ir_file.is_empty() { "None".to_string() } else { PathBuf::from(ir_file).file_name().unwrap_or_default().to_string_lossy().to_string() },
+                    unit: "".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Mix".to_string(),
+                    value: format!("{:.0}", mix * 100.0),
+                    unit: "%".to_string(),
+                },
+                TuiParamSpec {
+                    name: "Gain".to_string(),
+                    value: format!("{:.1}", gain_db),
+                    unit: "dB".to_string(),
+                },
+            ],
+            sotf_audio_player::PluginSettings::Gate {
+                threshold_db,
+                ratio,
+                attack_ms,
+                hold_ms,
+                release_ms,
+                mix,
+                link_channels,
+                sidechain_hpf_hz,
+            } => vec![
+                TuiParamSpec { name: "Threshold".to_string(), value: format!("{:.1}", threshold_db), unit: "dB".to_string() },
+                TuiParamSpec { name: "Ratio".to_string(), value: format!("{:.1}", ratio), unit: ":1".to_string() },
+                TuiParamSpec { name: "Attack".to_string(), value: format!("{:.1}", attack_ms), unit: "ms".to_string() },
+                TuiParamSpec { name: "Hold".to_string(), value: format!("{:.1}", hold_ms), unit: "ms".to_string() },
+                TuiParamSpec { name: "Release".to_string(), value: format!("{:.1}", release_ms), unit: "ms".to_string() },
+                TuiParamSpec { name: "Mix".to_string(), value: format!("{:.0}", mix * 100.0), unit: "%".to_string() },
+                TuiParamSpec { name: "Link".to_string(), value: (if *link_channels { "Linked" } else { "Unlinked" }).to_string(), unit: "".to_string() },
+                TuiParamSpec { name: "Sidechain HPF".to_string(), value: format!("{:.0}", sidechain_hpf_hz), unit: "Hz".to_string() },
+            ],
+            sotf_audio_player::PluginSettings::LoudnessCompensation {
+                low_freq,
+                low_gain,
+                high_freq,
+                high_gain,
+                ..
+            } => vec![
+                TuiParamSpec { name: "Low Freq".to_string(), value: format!("{:.0}", low_freq), unit: "Hz".to_string() },
+                TuiParamSpec { name: "Low Gain".to_string(), value: format!("{:.1}", low_gain), unit: "dB".to_string() },
+                TuiParamSpec { name: "High Freq".to_string(), value: format!("{:.0}", high_freq), unit: "Hz".to_string() },
+                TuiParamSpec { name: "High Gain".to_string(), value: format!("{:.1}", high_gain), unit: "dB".to_string() },
+            ],
+            _ => vec![],
+        }
+    }
+
+    fn adjust_param(&mut self, index: usize, delta: f64) -> bool {
+        match self {
+            sotf_audio_player::PluginSettings::Gain { gain_db, .. } => {
+                if index == 0 {
+                    *gain_db = (*gain_db + delta * 0.5).clamp(-40.0, 40.0);
+                    return true;
+                }
+            }
+            sotf_audio_player::PluginSettings::EQ { filters, .. } => {
+                let filter_idx = index / 4;
+                let param_idx = index % 4;
+                if let Some(filter) = filters.get_mut(filter_idx) {
+                    match param_idx {
+                        0 => filter.frequency = (filter.frequency + delta * 10.0).clamp(20.0, 20000.0),
+                        1 => filter.q = (filter.q + delta * 0.1).clamp(0.1, 10.0),
+                        2 => filter.gain_db = (filter.gain_db + delta * 0.5).clamp(-24.0, 24.0),
+                        3 => {
+                            use sotf_audio_player::BiquadFilterType;
+                            let types = [
+                                BiquadFilterType::Peak,
+                                BiquadFilterType::Lowshelf,
+                                BiquadFilterType::Highshelf,
+                                BiquadFilterType::Lowpass,
+                                BiquadFilterType::Highpass,
+                                BiquadFilterType::Bandpass,
+                                BiquadFilterType::Notch,
+                            ];
+                            let current_idx = types.iter().position(|t| *t == filter.filter_type).unwrap_or(0);
+                            let new_idx = if delta > 0.0 { (current_idx + 1) % types.len() } else { (current_idx + types.len() - 1) % types.len() };
+                            filter.filter_type = types[new_idx];
+                        }
+                        _ => return false,
+                    }
+                    return true;
+                }
+            }
+            sotf_audio_player::PluginSettings::Compressor {
+                threshold_db,
+                ratio,
+                attack_ms,
+                release_ms,
+                knee_db,
+                makeup_gain_db,
+                mix,
+                auto_makeup,
+                link_channels,
+                sidechain_hpf_hz,
+            } => {
+                match index {
+                    0 => *threshold_db = (*threshold_db + delta).clamp(-60.0, 0.0),
+                    1 => *ratio = (*ratio + delta * 0.1).clamp(1.0, 20.0),
+                    2 => *attack_ms = (*attack_ms + delta * 0.1).clamp(0.1, 100.0),
+                    3 => *release_ms = (*release_ms + delta).clamp(1.0, 1000.0),
+                    4 => *knee_db = (*knee_db + delta * 0.1).clamp(0.0, 12.0),
+                    5 => *makeup_gain_db = (*makeup_gain_db + delta * 0.1).clamp(-20.0, 20.0),
+                    6 => *mix = (*mix + delta * 0.01).clamp(0.0, 1.0),
+                    7 => if delta.abs() > 0.1 { *auto_makeup = !*auto_makeup },
+                    8 => if delta.abs() > 0.1 { *link_channels = !*link_channels },
+                    9 => *sidechain_hpf_hz = (*sidechain_hpf_hz + delta).clamp(20.0, 500.0),
+                    _ => return false,
+                }
+                return true;
+            }
+            sotf_audio_player::PluginSettings::Limiter {
+                threshold_db,
+                release_ms,
+                lookahead_ms,
+                soft,
+                mix,
+            } => {
+                match index {
+                    0 => *threshold_db = (*threshold_db + delta * 0.1).clamp(-20.0, 0.0),
+                    1 => *release_ms = (*release_ms + delta).clamp(1.0, 500.0),
+                    2 => *lookahead_ms = (*lookahead_ms + delta * 0.1).clamp(0.0, 20.0),
+                    3 => if delta.abs() > 0.1 { *soft = !*soft },
+                    4 => *mix = (*mix + delta * 0.05).clamp(0.0, 1.0),
+                    _ => return false,
+                }
+                return true;
+            }
+            sotf_audio_player::PluginSettings::Upmixer {
+                speaker_config,
+                gain_front_direct,
+                gain_front_ambient,
+                gain_rear_ambient,
+                lfe_cutoff_hz,
+                stereo_width,
+                height_gain,
+                lfe_gain,
+                enable_subharmonic_synth,
+                subharmonic_gain,
+                enable_hr_direct,
+                hr_sharpen,
+                safety_cap_db,
+                ..
+            } => {
+                match index {
+                    0 => {
+                        let configs = ["2.0", "5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4", "9.1.4", "9.1.6"];
+                        let current_idx = configs.iter().position(|&c| c == speaker_config.as_str()).unwrap_or(2);
+                        let new_idx = if delta > 0.0 { (current_idx + 1) % configs.len() } else { (current_idx + configs.len() - 1) % configs.len() };
+                        *speaker_config = configs[new_idx].to_string();
+                    }
+                    1 => *gain_front_direct = (*gain_front_direct + delta * 0.1).clamp(0.0, 2.0),
+                    2 => *gain_front_ambient = (*gain_front_ambient + delta * 0.1).clamp(0.0, 2.0),
+                    3 => *gain_rear_ambient = (*gain_rear_ambient + delta * 0.1).clamp(0.0, 2.0),
+                    4 => *lfe_cutoff_hz = (*lfe_cutoff_hz + delta * 5.0).clamp(20.0, 200.0),
+                    5 => *stereo_width = (*stereo_width + delta * 0.05).clamp(0.0, 1.0),
+                    6 => *height_gain = (*height_gain + delta * 0.1).clamp(0.0, 2.0),
+                    7 => *lfe_gain = (*lfe_gain + delta * 0.1).clamp(0.0, 2.0),
+                    8 => if delta.abs() > 0.1 { *enable_subharmonic_synth = !*enable_subharmonic_synth },
+                    9 => *subharmonic_gain = (*subharmonic_gain + delta * 0.05).clamp(0.0, 1.0),
+                    10 => if delta.abs() > 0.1 { *enable_hr_direct = !*enable_hr_direct },
+                    11 => *hr_sharpen = (*hr_sharpen + delta * 0.05).clamp(0.0, 1.0),
+                    12 => *safety_cap_db = (*safety_cap_db + delta * 0.5).clamp(0.0, 12.0),
+                    _ => return false,
+                }
+                return true;
+            }
+            sotf_audio_player::PluginSettings::Gate {
+                threshold_db,
+                ratio,
+                attack_ms,
+                hold_ms,
+                release_ms,
+                mix,
+                link_channels,
+                sidechain_hpf_hz,
+            } => {
+                match index {
+                    0 => *threshold_db = (*threshold_db + delta).clamp(-60.0, 0.0),
+                    1 => *ratio = (*ratio + delta * 0.1).clamp(1.0, 20.0),
+                    2 => *attack_ms = (*attack_ms + delta * 0.1).clamp(0.1, 100.0),
+                    3 => *hold_ms = (*hold_ms + delta).clamp(0.0, 500.0),
+                    4 => *release_ms = (*release_ms + delta).clamp(1.0, 1000.0),
+                    5 => *mix = (*mix + delta * 0.01).clamp(0.0, 1.0),
+                    6 => if delta.abs() > 0.1 { *link_channels = !*link_channels },
+                    7 => *sidechain_hpf_hz = (*sidechain_hpf_hz + delta).clamp(20.0, 500.0),
+                    _ => return false,
+                }
+                return true;
+            }
+            sotf_audio_player::PluginSettings::LoudnessCompensation {
+                low_freq,
+                low_gain,
+                high_freq,
+                high_gain,
+                ..
+            } => {
+                match index {
+                    0 => *low_freq = (*low_freq + delta * 5.0).clamp(20.0, 500.0),
+                    1 => *low_gain = (*low_gain + delta * 0.5).clamp(0.0, 20.0),
+                    2 => *high_freq = (*high_freq + delta * 100.0).clamp(1000.0, 20000.0),
+                    3 => *high_gain = (*high_gain + delta * 0.5).clamp(0.0, 20.0),
+                    _ => return false,
+                }
+                return true;
+            }
+            sotf_audio_player::PluginSettings::BinauralDecoder {
+                input_channels,
+                enable_optimization,
+                externalization,
+                near_field_strength,
+                ..
+            } => {
+                match index {
+                    0 => return false, // SOFA file - not adjustable with delta
+                    1 => *input_channels = (*input_channels as i64 + delta as i64).clamp(2, 16) as usize,
+                    2 => if delta.abs() > 0.1 { *enable_optimization = !*enable_optimization },
+                    3 => *externalization = (*externalization + delta * 0.05).clamp(0.0, 1.0),
+                    4 => *near_field_strength = (*near_field_strength + delta * 0.05).clamp(0.0, 1.0),
+                    _ => return false,
+                }
+                return true;
+            }
+            sotf_audio_player::PluginSettings::Convolution {
+                mix,
+                gain_db,
+                ..
+            } => {
+                match index {
+                    0 => return false, // IR file - not adjustable with delta
+                    1 => *mix = (*mix + delta * 0.05).clamp(0.0, 1.0),
+                    2 => *gain_db = (*gain_db + delta * 0.5).clamp(-40.0, 40.0),
+                    _ => return false,
+                }
+                return true;
+            }
+            _ => {}
+        }
+        false
+    }
+}
+
 #[derive(Debug)]
 pub struct App {
     pub library: MusicLibrary,
-    pub queue: Vec<QueueItem>,
-    pub expanded_queue_items: Vec<bool>, // Track which queue items are expanded
+    pub queue: Vec<QueueEntry>,
     pub current_screen: Screen,
     pub input_mode: InputMode,
     pub focused_pane: FocusedPane, // Which pane (Main or Meters) has focus
@@ -163,6 +682,10 @@ pub struct App {
     pub album_list_offset: usize,
     pub status_message: Option<String>, // For displaying save/load status
     pub error_message: Option<String>,  // For displaying decode/playback errors in a modal
+
+    // Cached filtered results
+    pub cached_filtered_albums: Vec<Album>,
+    pub needs_filter_update: bool,
 
     // Autocomplete state
     pub autocomplete_suggestions: Vec<String>,
@@ -226,6 +749,7 @@ pub struct App {
     // Flags
     pub should_quit: bool,
     pub needs_rescan: bool,
+    pub needs_redraw: bool,
 
     // Scan progress
     pub scan_in_progress: bool,
@@ -248,6 +772,12 @@ pub struct App {
     // Last loaded plugin preset name (for config persistence)
     pub last_loaded_preset: Option<String>,
 
+    // File browser state
+    pub file_browser_items: Vec<PathBuf>,
+    pub selected_file_index: usize,
+    pub current_browser_dir: PathBuf,
+    pub file_browser_extension: Option<String>, // Filter by extension (.sofa, .wav)
+
     // Album cover image display
     pub album_images: Vec<PathBuf>, // List of image files in current album directory
     pub selected_image_index: usize, // Current image being displayed
@@ -268,7 +798,6 @@ impl App {
         Self {
             library,
             queue: Vec::new(),
-            expanded_queue_items: Vec::new(),
             current_screen: Screen::Library,
             input_mode: InputMode::Normal,
             focused_pane: FocusedPane::Main,
@@ -286,6 +815,8 @@ impl App {
             album_list_offset: 0,
             status_message: None,
             error_message: None,
+            cached_filtered_albums: Vec::new(),
+            needs_filter_update: true,
             autocomplete_suggestions: Vec::new(),
             autocomplete_index: 0,
             available_plugin_presets: Vec::new(),
@@ -332,6 +863,7 @@ impl App {
             current_output_device_name: None,
             should_quit: false,
             needs_rescan: false,
+            needs_redraw: true,
             scan_in_progress: false,
             scan_progress_tracks: 0,
             scan_progress_albums: 0,
@@ -342,6 +874,10 @@ impl App {
             replay_gain_manager: sotf_audio_player::ReplayGainScanManager::new(),
             waveform_manager: sotf_audio_player::WaveformScanManager::new(),
             last_loaded_preset: None,
+            file_browser_items: Vec::new(),
+            selected_file_index: 0,
+            current_browser_dir: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+            file_browser_extension: None,
             album_images: Vec::new(),
             selected_image_index: 0,
             image_picker: None,
@@ -403,27 +939,45 @@ impl App {
             .map(|config| config.channels as usize)
     }
 
-    pub fn filtered_albums(&self) -> Vec<Album> {
-        self.library.get_filtered_albums(
-            &self.search_query,
-            self.library_sort_order,
-            self.channel_filter,
-        )
+    /// Get current device sample rate or fallback to 48kHz
+    pub fn get_current_sample_rate(&self) -> f64 {
+        self.get_selected_output_device()
+            .and_then(|device| device.default_config.as_ref())
+            .map(|config| config.sample_rate as f64)
+            .unwrap_or(48000.0)
+    }
+
+    /// Get filtered albums, using cache if available
+    pub fn filtered_albums(&mut self) -> &[Album] {
+        if self.needs_filter_update {
+            self.cached_filtered_albums = self.library.get_filtered_albums(
+                &self.search_query,
+                self.library_sort_order,
+                self.channel_filter,
+            );
+            self.needs_filter_update = false;
+        }
+        &self.cached_filtered_albums
+    }
+
+    /// Mark filtered albums cache as dirty
+    pub fn request_filter_update(&mut self) {
+        self.needs_filter_update = true;
     }
 
     pub fn add_album_to_queue(&mut self) -> Option<PathBuf> {
         let was_empty = self.queue.is_empty();
         let was_not_playing = !self.is_playing;
-        let albums = self.filtered_albums();
+        
+        // Use a local copy to avoid borrow issues while mutating queue
+        let index = self.selected_album_index;
+        let album = self.filtered_albums().get(index)?.clone();
+        
+        self.queue.push(QueueEntry::new(QueueItem::new(album)));
 
-        if let Some(album) = albums.get(self.selected_album_index) {
-            self.queue.push(QueueItem::new((*album).clone()));
-            self.expanded_queue_items.push(false);
-
-            // Auto-play if queue was empty OR if nothing was playing
-            if was_empty || was_not_playing {
-                return self.start_queue();
-            }
+        // Auto-play if queue was empty OR if nothing was playing
+        if was_empty || was_not_playing {
+            return self.start_queue();
         }
         None
     }
@@ -431,20 +985,6 @@ impl App {
     pub fn remove_from_queue(&mut self, index: usize) {
         if index < self.queue.len() {
             self.queue.remove(index);
-
-            // Safely remove from expanded_queue_items, handling potential sync issues
-            if index < self.expanded_queue_items.len() {
-                self.expanded_queue_items.remove(index);
-            } else {
-                // If vectors are out of sync, resync them
-                log::warn!(
-                    "Queue sync issue detected: queue.len()={}, expanded.len()={}",
-                    self.queue.len(),
-                    self.expanded_queue_items.len()
-                );
-                // Resize expanded_queue_items to match queue
-                self.expanded_queue_items.resize(self.queue.len(), false);
-            }
 
             // Adjust current queue index if needed
             if let Some(current_idx) = self.current_queue_index {
@@ -459,8 +999,8 @@ impl App {
                         // (items have shifted down, so index now points to the next album)
                         self.current_queue_index = Some(index);
                         // Reset to first track of the new album at this position
-                        if let Some(item) = self.queue.get_mut(index) {
-                            item.current_track_index = 0;
+                        if let Some(entry) = self.queue.get_mut(index) {
+                            entry.item.current_track_index = 0;
                         }
                     } else if index > 0 {
                         // Deleted last album, move to previous album
@@ -484,31 +1024,29 @@ impl App {
 
     pub fn clear_queue(&mut self) {
         self.queue.clear();
-        self.expanded_queue_items.clear();
         self.current_queue_index = None;
         self.selected_queue_index = 0;
         self.is_playing = false;
     }
 
     pub fn toggle_queue_item_expansion(&mut self) {
-        if self.selected_queue_index < self.expanded_queue_items.len() {
-            self.expanded_queue_items[self.selected_queue_index] =
-                !self.expanded_queue_items[self.selected_queue_index];
+        if let Some(entry) = self.queue.get_mut(self.selected_queue_index) {
+            entry.expanded = !entry.expanded;
         }
     }
 
     pub fn select_next_album(&mut self) {
-        let albums = self.filtered_albums();
-        if !albums.is_empty() {
-            self.selected_album_index = (self.selected_album_index + 1) % albums.len();
+        let count = self.filtered_albums().len();
+        if count > 0 {
+            self.selected_album_index = (self.selected_album_index + 1) % count;
         }
     }
 
     pub fn select_previous_album(&mut self) {
-        let albums = self.filtered_albums();
-        if !albums.is_empty() {
+        let count = self.filtered_albums().len();
+        if count > 0 {
             if self.selected_album_index == 0 {
-                self.selected_album_index = albums.len() - 1;
+                self.selected_album_index = count - 1;
             } else {
                 self.selected_album_index -= 1;
             }
@@ -516,16 +1054,16 @@ impl App {
     }
 
     pub fn page_down_albums(&mut self, page_size: usize) {
-        let albums = self.filtered_albums();
-        if !albums.is_empty() {
+        let count = self.filtered_albums().len();
+        if count > 0 {
             self.selected_album_index =
-                (self.selected_album_index + page_size).min(albums.len() - 1);
+                (self.selected_album_index + page_size).min(count - 1);
         }
     }
 
     pub fn page_up_albums(&mut self, page_size: usize) {
-        let albums = self.filtered_albums();
-        if !albums.is_empty() {
+        let count = self.filtered_albums().len();
+        if count > 0 {
             self.selected_album_index = self.selected_album_index.saturating_sub(page_size);
         }
     }
@@ -988,13 +1526,13 @@ impl App {
             queue: self
                 .queue
                 .iter()
-                .map(|item| (item.album.artist(), item.album.title.clone()))
+                .map(|entry| (entry.item.album.artist(), entry.item.album.title.clone()))
                 .collect(),
             queue_index: self.current_queue_index,
             track_index: self
                 .current_queue_index
                 .and_then(|idx| self.queue.get(idx))
-                .map(|item| item.current_track_index)
+                .map(|entry| entry.item.current_track_index)
                 .unwrap_or(0),
             plugin_preset: self.last_loaded_preset.clone(),
         };
@@ -1030,8 +1568,7 @@ impl App {
                 .find(|a| a.artist() == artist && a.title == title)
                 .cloned()
             {
-                self.queue.push(QueueItem::new(album));
-                self.expanded_queue_items.push(false);
+                self.queue.push(QueueEntry::new(QueueItem::new(album)));
             }
         }
 
@@ -1041,10 +1578,10 @@ impl App {
         {
             self.current_queue_index = Some(queue_idx);
             // Restore track position within album
-            if let Some(item) = self.queue.get_mut(queue_idx)
-                && config.track_index < item.album.tracks.len()
+            if let Some(entry) = self.queue.get_mut(queue_idx)
+                && config.track_index < entry.item.album.tracks.len()
             {
-                item.current_track_index = config.track_index;
+                entry.item.current_track_index = config.track_index;
             }
         }
 
@@ -1119,6 +1656,8 @@ impl App {
         // Reset selection to top when changing sort order
         self.selected_album_index = 0;
         self.selected_tree_index = 0;
+        // Mark cache as dirty
+        self.request_filter_update();
         // Rebuild tree view if active (as sort order affects tree structure)
         if self.library_view_mode == LibraryViewMode::TreeView {
             self.rebuild_artist_tree();
@@ -1131,6 +1670,8 @@ impl App {
         // Reset selection to top when changing filter
         self.selected_album_index = 0;
         self.selected_tree_index = 0;
+        // Mark cache as dirty
+        self.request_filter_update();
         // Rebuild tree view if active
         if self.library_view_mode == LibraryViewMode::TreeView {
             self.rebuild_artist_tree();
@@ -1194,6 +1735,8 @@ impl App {
         // Reset selection
         self.selected_album_index = 0;
         self.selected_tree_index = 0;
+        // Mark cache as dirty
+        self.request_filter_update();
         // Rebuild tree view if active
         if self.library_view_mode == LibraryViewMode::TreeView {
             self.rebuild_artist_tree();
@@ -1213,6 +1756,9 @@ impl App {
             for artist_node in &mut self.artist_tree {
                 if artist_node.artist == *name {
                     artist_node.expanded = !artist_node.expanded;
+                    // Note: This doesn't change the set of albums, just visibility in tree
+                    // so we don't necessarily need request_filter_update() here
+                    // but we do need to rebuild the tree items display
                     return;
                 }
             }
@@ -1349,8 +1895,7 @@ impl App {
                             for &album_idx in &artist_node.album_indices {
                                 if filtered_indices.contains(&album_idx) {
                                     if let Some(album) = self.library.albums.get(album_idx) {
-                                        self.queue.push(QueueItem::new(album.clone()));
-                                        self.expanded_queue_items.push(false);
+                                        self.queue.push(QueueEntry::new(QueueItem::new(album.clone())));
                                     }
                                 }
                             }
@@ -1365,8 +1910,7 @@ impl App {
                 TreeItem::Album { index } => {
                     // Add single album
                     if let Some(album) = self.library.albums.get(*index) {
-                        self.queue.push(QueueItem::new(album.clone()));
-                        self.expanded_queue_items.push(false);
+                        self.queue.push(QueueEntry::new(QueueItem::new(album.clone())));
 
                         // Auto-play if queue was empty OR if nothing was playing
                         if was_empty || was_not_playing {
@@ -1382,14 +1926,14 @@ impl App {
     pub fn current_track_path(&self) -> Option<PathBuf> {
         self.current_queue_index
             .and_then(|idx| self.queue.get(idx))
-            .and_then(|item| item.current_track())
+            .and_then(|entry| entry.item.current_track())
             .map(|track| track.path.clone())
     }
 
     pub fn next_track(&mut self) -> Option<PathBuf> {
         if let Some(idx) = self.current_queue_index {
-            if let Some(item) = self.queue.get_mut(idx) {
-                if let Some(track) = item.next_track() {
+            if let Some(entry) = self.queue.get_mut(idx) {
+                if let Some(track) = entry.item.next_track() {
                     return Some(track.path.clone());
                 }
             }
@@ -1403,18 +1947,18 @@ impl App {
 
     pub fn previous_track(&mut self) -> Option<PathBuf> {
         if let Some(idx) = self.current_queue_index
-            && let Some(item) = self.queue.get_mut(idx)
+            && let Some(entry) = self.queue.get_mut(idx)
         {
-            if let Some(track) = item.previous_track() {
+            if let Some(track) = entry.item.previous_track() {
                 return Some(track.path.clone());
             } else {
                 // Move to previous album in queue
                 if idx > 0 {
                     self.current_queue_index = Some(idx - 1);
                     // Go to last track of previous album
-                    if let Some(prev_item) = self.queue.get_mut(idx - 1) {
-                        prev_item.current_track_index =
-                            prev_item.album.tracks.len().saturating_sub(1);
+                    if let Some(prev_entry) = self.queue.get_mut(idx - 1) {
+                        prev_entry.item.current_track_index =
+                            prev_entry.item.album.tracks.len().saturating_sub(1);
                     }
                     return self.current_track_path();
                 }
@@ -1426,7 +1970,7 @@ impl App {
     pub fn start_queue(&mut self) -> Option<PathBuf> {
         if !self.queue.is_empty() {
             self.current_queue_index = Some(0);
-            self.queue[0].current_track_index = 0;
+            self.queue[0].item.current_track_index = 0;
             self.is_playing = true;
             self.current_track_path()
         } else {
@@ -1438,7 +1982,7 @@ impl App {
     pub fn jump_to_selected_album(&mut self) -> Option<PathBuf> {
         if self.selected_queue_index < self.queue.len() {
             self.current_queue_index = Some(self.selected_queue_index);
-            self.queue[self.selected_queue_index].current_track_index = 0;
+            self.queue[self.selected_queue_index].item.current_track_index = 0;
             self.is_playing = true;
             self.current_track_path()
         } else {
@@ -1574,644 +2118,21 @@ impl App {
     /// Adjust the currently selected parameter by the given delta
     /// Returns true if the parameter was adjusted successfully
     pub fn adjust_selected_param(&mut self, delta: f64) -> bool {
-        use sotf_audio_player::PluginSettings;
-
         let param_idx = self.plugin_param_selection;
-        let mut channel_count_changed = false;
-
-        let result = if let Some(plugin) = self.get_editing_plugin_mut() {
-            match &mut plugin.settings {
-                PluginSettings::Upmixer {
-                    speaker_config,
-                    gain_front_direct,
-                    gain_front_ambient,
-                    gain_rear_ambient,
-                    lfe_cutoff_hz,
-                    stereo_width,
-                    bandpass_hz,
-                    height_gain,
-                    lfe_gain,
-                    enable_subharmonic_synth,
-                    subharmonic_gain,
-                    enable_hr_direct,
-                    hr_sharpen,
-                    safety_cap_db,
-                    decorrelation_mode,
-                    bypass_decorrelation,
-                    bypass_transient_detection,
-                    bypass_all_processing,
-                    ..
-                } => {
-                    match param_idx {
-                        0 => {
-                            // speaker_config: cycle through available configs
-                            let configs = [
-                                "2.0", "5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4",
-                                "9.1.4", "9.1.6",
-                            ];
-                            let current_idx = configs
-                                .iter()
-                                .position(|&c| c == speaker_config.as_str())
-                                .unwrap_or(2);
-                            let new_idx = if delta > 0.0 {
-                                (current_idx + 1) % configs.len()
-                            } else {
-                                (current_idx + configs.len() - 1) % configs.len()
-                            };
-                            *speaker_config = configs[new_idx].to_string();
-                            channel_count_changed = true; // Upmixer changed channel count
-                        }
-                        1 => {
-                            *gain_front_direct = (*gain_front_direct + delta * 0.1).clamp(0.0, 2.0)
-                        }
-                        2 => {
-                            *gain_front_ambient =
-                                (*gain_front_ambient + delta * 0.1).clamp(0.0, 2.0)
-                        }
-                        3 => {
-                            *gain_rear_ambient = (*gain_rear_ambient + delta * 0.1).clamp(0.0, 2.0)
-                        }
-                        4 => *lfe_cutoff_hz = (*lfe_cutoff_hz + delta * 5.0).clamp(20.0, 200.0),
-                        5 => *stereo_width = (*stereo_width + delta * 0.05).clamp(0.0, 1.0),
-                        6 => *bandpass_hz = (*bandpass_hz + delta * 10.0).clamp(100.0, 500.0),
-                        7 => *height_gain = (*height_gain + delta * 0.1).clamp(0.0, 2.0),
-                        8 => *lfe_gain = (*lfe_gain + delta * 0.1).clamp(0.0, 2.0),
-                        9 => {
-                            // Toggle subharmonic synth on/off
-                            *enable_subharmonic_synth = !*enable_subharmonic_synth;
-                        }
-                        10 => {
-                            *subharmonic_gain = (*subharmonic_gain + delta * 0.05).clamp(0.0, 1.0)
-                        }
-                        11 => {
-                            *enable_hr_direct = !*enable_hr_direct;
-                        }
-                        12 => *hr_sharpen = (*hr_sharpen + delta * 0.05).clamp(0.0, 1.0),
-                        13 => *safety_cap_db = (*safety_cap_db + delta * 0.5).clamp(0.0, 12.0),
-                        14 => {
-                            // Toggle decorrelation mode (0 or 1)
-                            if delta.abs() > 0.1 {
-                                *decorrelation_mode = if *decorrelation_mode == 0 { 1 } else { 0 };
-                            }
-                        }
-                        15 => {
-                            // Toggle bypass_decorrelation (diagnostic)
-                            *bypass_decorrelation = !*bypass_decorrelation;
-                        }
-                        16 => {
-                            // Toggle bypass_transient_detection (diagnostic)
-                            *bypass_transient_detection = !*bypass_transient_detection;
-                        }
-                        17 => {
-                            // Toggle bypass_all_processing (diagnostic - bypasses all FFT)
-                            *bypass_all_processing = !*bypass_all_processing;
-                        }
-                        _ => return false,
-                    }
-                    true
-                }
-                PluginSettings::Compressor {
-                    threshold_db,
-                    ratio,
-                    attack_ms,
-                    release_ms,
-                    knee_db,
-                    makeup_gain_db,
-                    mix,
-                    auto_makeup,
-                    link_channels,
-                    sidechain_hpf_hz,
-                } => {
-                    match param_idx {
-                        0 => *threshold_db = (*threshold_db + delta).clamp(-60.0, 0.0),
-                        1 => *ratio = (*ratio + delta * 0.1).clamp(1.0, 20.0),
-                        2 => *attack_ms = (*attack_ms + delta * 0.1).clamp(0.1, 100.0),
-                        3 => *release_ms = (*release_ms + delta).clamp(1.0, 1000.0),
-                        4 => *knee_db = (*knee_db + delta * 0.1).clamp(0.0, 12.0),
-                        5 => *makeup_gain_db = (*makeup_gain_db + delta * 0.1).clamp(-20.0, 20.0),
-                        6 => *mix = (*mix + delta * 0.01).clamp(0.0, 1.0),
-                        7 => {
-                            if delta.abs() > 0.1 {
-                                *auto_makeup = !*auto_makeup;
-                            }
-                        }
-                        8 => {
-                            if delta.abs() > 0.1 {
-                                *link_channels = !*link_channels;
-                            }
-                        }
-                        9 => *sidechain_hpf_hz = (*sidechain_hpf_hz + delta).clamp(20.0, 500.0),
-                        _ => return false,
-                    }
-                    true
-                }
-                PluginSettings::Limiter {
-                    threshold_db,
-                    release_ms,
-                    lookahead_ms,
-                    soft,
-                    mix,
-                } => {
-                    match param_idx {
-                        0 => *threshold_db = (*threshold_db + delta * 0.1).clamp(-20.0, 0.0),
-                        1 => *release_ms = (*release_ms + delta).clamp(1.0, 500.0),
-                        2 => *lookahead_ms = (*lookahead_ms + delta * 0.1).clamp(0.0, 20.0),
-                        3 => *soft = !*soft,
-                        4 => *mix = (*mix + delta * 0.05).clamp(0.0, 1.0),
-                        _ => return false,
-                    }
-                    true
-                }
-                PluginSettings::Gate {
-                    threshold_db,
-                    ratio,
-                    attack_ms,
-                    hold_ms,
-                    release_ms,
-                    mix,
-                    link_channels,
-                    sidechain_hpf_hz,
-                } => {
-                    match param_idx {
-                        0 => *threshold_db = (*threshold_db + delta).clamp(-80.0, 0.0),
-                        1 => *ratio = (*ratio + delta * 0.1).clamp(1.0, 100.0),
-                        2 => *attack_ms = (*attack_ms + delta * 0.1).clamp(0.1, 100.0),
-                        3 => *hold_ms = (*hold_ms + delta * 5.0).clamp(0.0, 1000.0),
-                        4 => *release_ms = (*release_ms + delta).clamp(1.0, 1000.0),
-                        5 => *mix = (*mix + delta * 0.05).clamp(0.0, 1.0),
-                        6 => {
-                            // Toggle linked / unlinked sidechain detection
-                            *link_channels = !*link_channels;
-                        }
-                        7 => {
-                            // Adjust sidechain HPF cutoff in Hz
-                            *sidechain_hpf_hz = (*sidechain_hpf_hz + delta * 5.0).clamp(0.0, 200.0);
-                        }
-                        _ => return false,
-                    }
-                    true
-                }
-                PluginSettings::LoudnessCompensation {
-                    low_freq,
-                    low_gain,
-                    high_freq,
-                    high_gain,
-                    ..
-                } => {
-                    match param_idx {
-                        0 => *low_freq = (*low_freq + delta * 10.0).clamp(20.0, 500.0), // Adjust low_freq
-                        1 => *low_gain = (*low_gain + delta).clamp(-20.0, 20.0), // Adjust low_gain
-                        2 => *high_freq = (*high_freq + delta * 100.0).clamp(2000.0, 20000.0), // Adjust high_freq
-                        3 => *high_gain = (*high_gain + delta).clamp(-20.0, 20.0), // Adjust high_gain
-                        _ => return false,
-                    }
-                    true
-                }
-                PluginSettings::Gain { gain_db, .. } => match param_idx {
-                    0 => {
-                        *gain_db = (*gain_db + delta * 0.5).clamp(-40.0, 40.0);
-                        true
-                    }
-                    _ => false,
-                },
-                PluginSettings::EQ { filters, .. } => {
-                    if filters.is_empty() {
-                        return false;
-                    }
-
-                    let total_params = filters.len() * 4;
-                    if param_idx >= total_params {
-                        return false;
-                    }
-
-                    let filter_idx = param_idx / 4;
-                    let field_idx = param_idx % 4;
-
-                    if let Some(filter) = filters.get_mut(filter_idx) {
-                        match field_idx {
-                            0 => {
-                                filter.frequency =
-                                    (filter.frequency + delta * 10.0).clamp(20.0, 20_000.0);
-                                true
-                            }
-                            1 => {
-                                filter.q = (filter.q + delta * 0.1).clamp(0.1, 10.0);
-                                true
-                            }
-                            2 => {
-                                filter.gain_db = (filter.gain_db + delta * 0.5).clamp(-24.0, 24.0);
-                                true
-                            }
-                            3 => {
-                                use sotf_audio_player::BiquadFilterType;
-
-                                let types = [
-                                    BiquadFilterType::Peak,
-                                    BiquadFilterType::Lowshelf,
-                                    BiquadFilterType::Highshelf,
-                                    BiquadFilterType::Lowpass,
-                                    BiquadFilterType::Highpass,
-                                    BiquadFilterType::Bandpass,
-                                    BiquadFilterType::Notch,
-                                ];
-
-                                let current_idx = types
-                                    .iter()
-                                    .position(|t| *t == filter.filter_type)
-                                    .unwrap_or(0);
-                                let new_idx = if delta > 0.0 {
-                                    (current_idx + 1) % types.len()
-                                } else {
-                                    (current_idx + types.len() - 1) % types.len()
-                                };
-                                filter.filter_type = types[new_idx];
-                                true
-                            }
-                            _ => false,
-                        }
-                    } else {
-                        false
-                    }
-                }
-                PluginSettings::BinauralDecoder {
-                    input_channels,
-                    enable_optimization,
-                    externalization,
-                    near_field_strength,
-                    ..
-                } => {
-                    // sofa_file (param 0) is set via 'f' key and cannot be adjusted here
-                    match param_idx {
-                        1 => {
-                            *input_channels =
-                                (*input_channels as i64 + delta as i64).clamp(2, 16) as usize;
-                            true
-                        }
-                        2 => {
-                            // Toggle optimization on/off
-                            *enable_optimization = !*enable_optimization;
-                            true
-                        }
-                        3 => {
-                            *externalization = (*externalization + delta * 0.05).clamp(0.0, 1.0);
-                            true
-                        }
-                        4 => {
-                            *near_field_strength =
-                                (*near_field_strength + delta * 0.05).clamp(0.0, 1.0);
-                            true
-                        }
-                        _ => false,
-                    }
-                }
-                PluginSettings::Convolution {
-                    ir_file: _,
-                    mix,
-                    gain_db,
-                } => {
-                    // ir_file (param 0) would need file browser - not adjustable here
-                    match param_idx {
-                        0 => false, // IR file
-                        1 => {
-                            *mix = (*mix + delta * 0.01).clamp(0.0, 1.0);
-                            true
-                        }
-                        2 => {
-                            *gain_db = (*gain_db + delta * 0.1).clamp(-20.0, 20.0);
-                            true
-                        }
-                        _ => false,
-                    }
-                }
-                PluginSettings::LoudnessMonitor => {
-                    // Analyzer plugin - no parameters to adjust
-                    false
-                }
-                PluginSettings::SpectrumAnalyzer {
-                    num_bins,
-                    min_freq,
-                    max_freq,
-                    smoothing,
-                    ..
-                } => match param_idx {
-                    0 => {
-                        *num_bins = (*num_bins as i64 + delta as i64).clamp(10, 100) as usize;
-                        true
-                    }
-                    1 => {
-                        *min_freq = (*min_freq + delta as f32).clamp(10.0, 100.0);
-                        true
-                    }
-                    2 => {
-                        *max_freq = (*max_freq + delta as f32 * 100.0).clamp(1000.0, 24000.0);
-                        true
-                    }
-                    3 => {
-                        *smoothing = (*smoothing + delta as f32 * 0.01).clamp(0.0, 1.0);
-                        true
-                    }
-                    _ => false,
-                },
-                PluginSettings::ChannelMuteSolo { .. } => {
-                    // ChannelMuteSolo is automatically managed, not user-editable
-                    false
-                }
-                PluginSettings::Matrix { .. } => {
-                    // Matrix is not yet user-editable
-                    false
-                }
-                PluginSettings::Expander {
-                    threshold_db,
-                    ratio,
-                    attack_ms,
-                    release_ms,
-                    range_db,
-                    knee_db,
-                    hysteresis_db,
-                    hold_ms,
-                    mix,
-                    link_channels,
-                    sidechain_hpf_hz,
-                } => {
-                    match param_idx {
-                        0 => *threshold_db = (*threshold_db + delta).clamp(-80.0, 0.0),
-                        1 => *ratio = (*ratio + delta * 0.1).clamp(1.0, 20.0),
-                        2 => *attack_ms = (*attack_ms + delta * 0.1).clamp(0.1, 50.0),
-                        3 => *release_ms = (*release_ms + delta).clamp(10.0, 2000.0),
-                        4 => *range_db = (*range_db + delta).clamp(0.0, 80.0),
-                        5 => *knee_db = (*knee_db + delta * 0.1).clamp(0.0, 20.0),
-                        6 => *hysteresis_db = (*hysteresis_db + delta * 0.1).clamp(0.0, 12.0),
-                        7 => *hold_ms = (*hold_ms + delta).clamp(0.0, 500.0),
-                        8 => *mix = (*mix + delta * 0.01).clamp(0.0, 1.0),
-                        9 => {
-                            if delta.abs() > 0.1 {
-                                *link_channels = !*link_channels;
-                            }
-                        }
-                        10 => *sidechain_hpf_hz = (*sidechain_hpf_hz + delta).clamp(0.0, 500.0),
-                        _ => return false,
-                    }
-                    true
-                }
-                PluginSettings::MultibandCompressor {
-                    num_bands,
-                    crossover_freq_1,
-                    crossover_freq_2,
-                    crossover_freq_3,
-                    crossover_freq_4,
-                    threshold_db,
-                    ratio,
-                    attack_ms,
-                    release_ms,
-                    knee_db,
-                    mix,
-                    link_channels,
-                    ..
-                } => {
-                    match param_idx {
-                        0 => *num_bands = (*num_bands as i32 + delta as i32).clamp(2, 5) as usize,
-                        1 => {
-                            *crossover_freq_1 =
-                                (*crossover_freq_1 + delta * 10.0).clamp(20.0, 500.0)
-                        }
-                        2 => {
-                            *crossover_freq_2 =
-                                (*crossover_freq_2 + delta * 10.0).clamp(500.0, 5000.0)
-                        }
-                        3 => {
-                            *crossover_freq_3 =
-                                (*crossover_freq_3 + delta * 10.0).clamp(5000.0, 15000.0)
-                        }
-                        4 => {
-                            *crossover_freq_4 =
-                                (*crossover_freq_4 + delta * 10.0).clamp(10000.0, 18000.0)
-                        }
-                        5 => *threshold_db = (*threshold_db + delta).clamp(-60.0, 0.0),
-                        6 => *ratio = (*ratio + delta * 0.1).clamp(1.0, 20.0),
-                        7 => *attack_ms = (*attack_ms + delta * 0.1).clamp(0.1, 100.0),
-                        8 => *release_ms = (*release_ms + delta).clamp(10.0, 1000.0),
-                        9 => *knee_db = (*knee_db + delta * 0.1).clamp(0.0, 20.0),
-                        10 => *mix = (*mix + delta * 0.01).clamp(0.0, 1.0),
-                        11 => {
-                            if delta.abs() > 0.1 {
-                                *link_channels = !*link_channels;
-                            }
-                        }
-                        _ => return false,
-                    }
-                    true
-                }
-                PluginSettings::MultibandExpander {
-                    num_bands,
-                    crossover_freq_1,
-                    crossover_freq_2,
-                    crossover_freq_3,
-                    crossover_freq_4,
-                    threshold_db,
-                    ratio,
-                    attack_ms,
-                    release_ms,
-                    range_db,
-                    knee_db,
-                    hysteresis_db,
-                    hold_ms,
-                    mix,
-                    link_channels,
-                    ..
-                } => {
-                    match param_idx {
-                        0 => *num_bands = (*num_bands as i32 + delta as i32).clamp(2, 5) as usize,
-                        1 => {
-                            *crossover_freq_1 =
-                                (*crossover_freq_1 + delta * 10.0).clamp(20.0, 500.0)
-                        }
-                        2 => {
-                            *crossover_freq_2 =
-                                (*crossover_freq_2 + delta * 10.0).clamp(500.0, 5000.0)
-                        }
-                        3 => {
-                            *crossover_freq_3 =
-                                (*crossover_freq_3 + delta * 10.0).clamp(5000.0, 15000.0)
-                        }
-                        4 => {
-                            *crossover_freq_4 =
-                                (*crossover_freq_4 + delta * 10.0).clamp(10000.0, 18000.0)
-                        }
-                        5 => *threshold_db = (*threshold_db + delta).clamp(-80.0, 0.0),
-                        6 => *ratio = (*ratio + delta * 0.1).clamp(1.0, 20.0),
-                        7 => *attack_ms = (*attack_ms + delta * 0.1).clamp(0.1, 50.0),
-                        8 => *release_ms = (*release_ms + delta).clamp(10.0, 2000.0),
-                        9 => *range_db = (*range_db + delta).clamp(0.0, 80.0),
-                        10 => *knee_db = (*knee_db + delta * 0.1).clamp(0.0, 20.0),
-                        11 => *hysteresis_db = (*hysteresis_db + delta * 0.1).clamp(0.0, 12.0),
-                        12 => *hold_ms = (*hold_ms + delta).clamp(0.0, 500.0),
-                        13 => *mix = (*mix + delta * 0.01).clamp(0.0, 1.0),
-                        14 => {
-                            if delta.abs() > 0.1 {
-                                *link_channels = !*link_channels;
-                            }
-                        }
-                        _ => return false,
-                    }
-                    true
-                }
-                PluginSettings::XTC {
-                    distance_m,
-                    speaker_angle_deg,
-                    head_radius_m,
-                    beta_base,
-                    beta_low_freq_boost,
-                    beta_high_freq_boost,
-                    head_shadow_cutoff_hz,
-                    head_shadow_slope_db_per_octave,
-                } => {
-                    match param_idx {
-                        0 => *distance_m = (*distance_m + delta * 0.1).clamp(0.5, 10.0),
-                        1 => *speaker_angle_deg = (*speaker_angle_deg + delta).clamp(10.0, 60.0),
-                        2 => *head_radius_m = (*head_radius_m + delta * 0.001).clamp(0.07, 0.12),
-                        3 => *beta_base = (*beta_base + delta * 0.0001).clamp(0.0001, 0.1),
-                        4 => {
-                            *beta_low_freq_boost = (*beta_low_freq_boost + delta).clamp(1.0, 100.0)
-                        }
-                        5 => {
-                            *beta_high_freq_boost =
-                                (*beta_high_freq_boost + delta).clamp(1.0, 100.0)
-                        }
-                        6 => {
-                            *head_shadow_cutoff_hz =
-                                (*head_shadow_cutoff_hz + delta * 100.0).clamp(1000.0, 10000.0)
-                        }
-                        7 => {
-                            *head_shadow_slope_db_per_octave =
-                                (*head_shadow_slope_db_per_octave + delta * 0.1).clamp(0.0, 12.0)
-                        }
-                        _ => return false,
-                    }
-                    true
-                }
-                PluginSettings::Denoiser {
-                    reduction_db,
-                    floor_db,
-                    smoothing,
-                    attack_ms,
-                    release_ms,
-                    low_latency,
-                    polyphonic_detection,
-                } => {
-                    match param_idx {
-                        0 => *reduction_db = (*reduction_db + delta).clamp(0.0, 40.0),
-                        1 => *floor_db = (*floor_db + delta).clamp(-60.0, -10.0),
-                        2 => *smoothing = (*smoothing + delta * 0.05).clamp(0.0, 0.99),
-                        3 => *attack_ms = (*attack_ms + delta).clamp(0.1, 100.0),
-                        4 => *release_ms = (*release_ms + delta * 5.0).clamp(10.0, 500.0),
-                        5 => *low_latency = !*low_latency,
-                        6 => *polyphonic_detection = !*polyphonic_detection,
-                        _ => return false,
-                    }
-                    true
-                }
-                PluginSettings::Pnd {
-                    correction_strength,
-                    analysis_window_ms,
-                    drift_smoothing,
-                } => {
-                    match param_idx {
-                        0 => {
-                            *correction_strength =
-                                (*correction_strength + delta * 0.1).clamp(0.0, 2.0)
-                        }
-                        1 => {
-                            *analysis_window_ms =
-                                (*analysis_window_ms + delta * 10.0).clamp(20.0, 500.0)
-                        }
-                        2 => *drift_smoothing = (*drift_smoothing + delta * 0.01).clamp(0.001, 1.0),
-                        _ => return false,
-                    }
-                    true
-                }
-                PluginSettings::ABCompare {
-                    mix,
-                    mix_mode,
-                    selected_path,
-                    bypass,
-                    auto_gain_enabled,
-                    loudness_type,
-                    max_auto_gain_db,
-                    gain_smoothing_ms,
-                    mix_transition_ms,
-                    path_a_config,
-                    path_b_config,
-                } => {
-                    match param_idx {
-                        0 => *mix = (*mix + delta * 0.1).clamp(-1.0, 1.0),
-                        1 => *mix_mode = if *mix_mode == 0 { 1 } else { 0 },
-                        2 => *selected_path = if *selected_path == 0 { 1 } else { 0 },
-                        3 => *bypass = !*bypass,
-                        4 => *auto_gain_enabled = !*auto_gain_enabled,
-                        5 => *loudness_type = if *loudness_type == 0 { 1 } else { 0 },
-                        6 => *max_auto_gain_db = (*max_auto_gain_db + delta).clamp(0.0, 24.0),
-                        7 => {
-                            *gain_smoothing_ms =
-                                (*gain_smoothing_ms + delta * 10.0).clamp(10.0, 500.0)
-                        }
-                        8 => {
-                            *mix_transition_ms =
-                                (*mix_transition_ms + delta * 5.0).clamp(5.0, 500.0)
-                        }
-                        9 => {
-                            // Cycle through path config presets for Path A
-                            *path_a_config = cycle_path_config(path_a_config, delta > 0.0);
-                        }
-                        10 => {
-                            // Cycle through path config presets for Path B
-                            *path_b_config = cycle_path_config(path_b_config, delta > 0.0);
-                        }
-                        _ => return false,
-                    }
-                    true
-                }
-                PluginSettings::FletcherMunson { .. } => {
-                    // FletcherMunson parameters are not yet user-editable in TUI
-                    false
-                }
-                PluginSettings::BandSplit {
-                    frequency,
-                    crossover_type,
-                    ..
-                } => match param_idx {
-                    0 => {
-                        *frequency = (*frequency + delta * 10.0).clamp(20.0, 20000.0);
-                        true
-                    }
-                    1 => {
-                        // Toggle between LR24 and LR48
-                        *crossover_type = if crossover_type == "LR24" {
-                            "LR48".to_string()
-                        } else {
-                            "LR24".to_string()
-                        };
-                        true
-                    }
-                    _ => false,
-                }
-                PluginSettings::BandMerge { bands, .. } => match param_idx {
-                    0 => {
-                        *bands = ((*bands as i32) + delta as i32).clamp(2, 8) as usize;
-                        true
-                    }
-                    _ => false,
-                }
-            }
+        
+        let old_channels = self.plugin_chain.output_channels();
+        let success = if let Some(plugin) = self.get_editing_plugin_mut() {
+            plugin.settings.adjust_param(param_idx, delta)
         } else {
             false
         };
+        let channel_count_changed = success && old_channels != self.plugin_chain.output_channels();
 
-        // If speaker config changed, update downstream BinauralDecoder plugins
         if channel_count_changed {
             self.plugin_chain.update_channel_dependent_plugins();
         }
 
-        result
+        success
     }
 
     // ========================================================================
@@ -2944,8 +2865,8 @@ impl App {
 
         // Get the currently playing album
         if let Some(queue_index) = self.current_queue_index {
-            if let Some(queue_item) = self.queue.get(queue_index) {
-                if let Some(first_track) = queue_item.album.tracks.first() {
+            if let Some(entry) = self.queue.get(queue_index) {
+                if let Some(first_track) = entry.item.album.tracks.first() {
                     if let Some(parent_dir) = first_track.path.parent() {
                         // Find all image files in the directory
                         if let Ok(entries) = std::fs::read_dir(parent_dir) {
@@ -3344,6 +3265,79 @@ impl App {
         self.current_track_start_time = None;
         self.current_track_already_recorded = false;
     }
+
+    // ========================================================================
+    // File Browser Methods
+    // ========================================================================
+
+    pub fn refresh_file_browser(&mut self) {
+        self.file_browser_items.clear();
+        self.selected_file_index = 0;
+
+        // Add ".." entry to go up
+        if let Some(parent) = self.current_browser_dir.parent() {
+            self.file_browser_items.push(parent.to_path_buf());
+        }
+
+        if let Ok(entries) = std::fs::read_dir(&self.current_browser_dir) {
+            let mut dirs = Vec::new();
+            let mut files = Vec::new();
+
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    dirs.push(path);
+                } else if path.is_file() {
+                    if let Some(ext) = &self.file_browser_extension {
+                        if path
+                            .extension()
+                            .is_some_and(|e| e.to_string_lossy().to_lowercase() == *ext)
+                        {
+                            files.push(path);
+                        }
+                    } else {
+                        files.push(path);
+                    }
+                }
+            }
+
+            dirs.sort();
+            files.sort();
+
+            self.file_browser_items.extend(dirs);
+            self.file_browser_items.extend(files);
+        }
+    }
+
+    pub fn navigate_file_browser(&mut self) -> Option<PathBuf> {
+        if let Some(path) = self.file_browser_items.get(self.selected_file_index).cloned() {
+            if path.is_dir() {
+                self.current_browser_dir = path;
+                self.refresh_file_browser();
+                None
+            } else {
+                Some(path)
+            }
+        } else {
+            None
+        }
+    }
+
+    pub fn select_next_file(&mut self) {
+        if !self.file_browser_items.is_empty() {
+            self.selected_file_index = (self.selected_file_index + 1) % self.file_browser_items.len();
+        }
+    }
+
+    pub fn select_previous_file(&mut self) {
+        if !self.file_browser_items.is_empty() {
+            if self.selected_file_index == 0 {
+                self.selected_file_index = self.file_browser_items.len() - 1;
+            } else {
+                self.selected_file_index -= 1;
+            }
+        }
+    }
 }
 
 /// Helper function to cycle through path config presets for A/B Compare plugin
@@ -3675,8 +3669,7 @@ mod tests {
         let album1 = create_test_album("Artist", "Album1", "/music/album1", 2);
         let album2 = create_test_album("Artist", "Album2", "/music/album2", 2);
 
-        app.queue = vec![QueueItem::new(album1), QueueItem::new(album2)];
-        app.expanded_queue_items = vec![false, false];
+        app.queue = vec![QueueEntry::new(QueueItem::new(album1)), QueueEntry::new(QueueItem::new(album2))];
         app.current_queue_index = Some(0);
         app.is_playing = true;
 
@@ -3776,11 +3769,13 @@ mod tests {
             orig_rear_ambient,
             orig_lfe_cutoff,
             orig_stereo_width,
-            orig_bandpass,
             orig_height_gain,
             orig_lfe_gain,
             orig_enable_subharm,
             orig_subharm_gain,
+            orig_enable_hr_direct,
+            orig_hr_sharpen,
+            orig_safety_cap_db,
         ) = match &plugin.settings {
             PluginSettings::Upmixer {
                 speaker_config,
@@ -3789,11 +3784,13 @@ mod tests {
                 gain_rear_ambient,
                 lfe_cutoff_hz,
                 stereo_width,
-                bandpass_hz,
                 height_gain,
                 lfe_gain,
                 enable_subharmonic_synth,
                 subharmonic_gain,
+                enable_hr_direct,
+                hr_sharpen,
+                safety_cap_db,
                 ..
             } => (
                 speaker_config.clone(),
@@ -3802,16 +3799,18 @@ mod tests {
                 *gain_rear_ambient,
                 *lfe_cutoff_hz,
                 *stereo_width,
-                *bandpass_hz,
                 *height_gain,
                 *lfe_gain,
                 *enable_subharmonic_synth,
                 *subharmonic_gain,
+                *enable_hr_direct,
+                *hr_sharpen,
+                *safety_cap_db,
             ),
             _ => panic!("Expected Upmixer plugin"),
         };
 
-        for idx in 0..11 {
+        for idx in 0..13 {
             app.plugin_param_selection = idx;
             assert!(app.adjust_selected_param(1.0));
         }
@@ -3824,11 +3823,13 @@ mod tests {
             gain_rear_ambient,
             lfe_cutoff_hz,
             stereo_width,
-            bandpass_hz,
             height_gain,
             lfe_gain,
             enable_subharmonic_synth,
             subharmonic_gain,
+            enable_hr_direct,
+            hr_sharpen,
+            safety_cap_db,
             ..
         } = &plugin.settings
         {
@@ -3838,11 +3839,13 @@ mod tests {
             assert_ne!(*gain_rear_ambient, orig_rear_ambient);
             assert_ne!(*lfe_cutoff_hz, orig_lfe_cutoff);
             assert_ne!(*stereo_width, orig_stereo_width);
-            assert_ne!(*bandpass_hz, orig_bandpass);
             assert_ne!(*height_gain, orig_height_gain);
             assert_ne!(*lfe_gain, orig_lfe_gain);
             assert_ne!(*enable_subharmonic_synth, orig_enable_subharm);
             assert_ne!(*subharmonic_gain, orig_subharm_gain);
+            assert_ne!(*enable_hr_direct, orig_enable_hr_direct);
+            assert_ne!(*hr_sharpen, orig_hr_sharpen);
+            assert_ne!(*safety_cap_db, orig_safety_cap_db);
         } else {
             panic!("Expected Upmixer plugin");
         }
@@ -4263,15 +4266,13 @@ mod tests {
         // Add some items to queue
         let album1 = create_test_album("Artist", "Album1", "/music/album1", 2);
         let album2 = create_test_album("Artist", "Album2", "/music/album2", 2);
-        app.queue = vec![QueueItem::new(album1), QueueItem::new(album2)];
-        app.expanded_queue_items = vec![false, true];
+        app.queue = vec![QueueEntry::new(QueueItem::new(album1)), QueueEntry::new(QueueItem::new(album2))];
         app.current_queue_index = Some(1);
         app.is_playing = true;
 
         app.clear_queue();
 
         assert!(app.queue.is_empty());
-        assert!(app.expanded_queue_items.is_empty());
         assert!(app.current_queue_index.is_none());
         assert!(!app.is_playing);
     }
@@ -4284,18 +4285,17 @@ mod tests {
         let album2 = create_test_album("Artist", "Album2", "/music/album2", 2);
         let album3 = create_test_album("Artist", "Album3", "/music/album3", 2);
         app.queue = vec![
-            QueueItem::new(album1),
-            QueueItem::new(album2),
-            QueueItem::new(album3),
+            QueueEntry::new(QueueItem::new(album1)),
+            QueueEntry::new(QueueItem::new(album2)),
+            QueueEntry::new(QueueItem::new(album3)),
         ];
-        app.expanded_queue_items = vec![false, false, false];
         app.current_queue_index = Some(1);
 
         // Remove first item
         app.remove_from_queue(0);
 
         assert_eq!(app.queue.len(), 2);
-        assert_eq!(app.queue[0].album.title, "Album2");
+        assert_eq!(app.queue[0].item.album.title, "Album2");
         assert_eq!(app.current_queue_index, Some(0)); // Adjusted
     }
 
@@ -4305,8 +4305,7 @@ mod tests {
 
         let album1 = create_test_album("Artist", "Album1", "/music/album1", 2);
         let album2 = create_test_album("Artist", "Album2", "/music/album2", 2);
-        app.queue = vec![QueueItem::new(album1), QueueItem::new(album2)];
-        app.expanded_queue_items = vec![false, false];
+        app.queue = vec![QueueEntry::new(QueueItem::new(album1)), QueueEntry::new(QueueItem::new(album2))];
         app.current_queue_index = Some(0);
         app.is_playing = true;
 
@@ -4314,7 +4313,7 @@ mod tests {
         app.remove_from_queue(0);
 
         assert_eq!(app.queue.len(), 1);
-        assert_eq!(app.queue[0].album.title, "Album2");
+        assert_eq!(app.queue[0].item.album.title, "Album2");
         // Current queue index should remain at 0 (now pointing to Album2)
         assert_eq!(app.current_queue_index, Some(0));
     }
@@ -4324,8 +4323,7 @@ mod tests {
         let mut app = App::new(Theme::default());
 
         let album1 = create_test_album("Artist", "Album1", "/music/album1", 2);
-        app.queue = vec![QueueItem::new(album1)];
-        app.expanded_queue_items = vec![false];
+        app.queue = vec![QueueEntry::new(QueueItem::new(album1))];
         app.current_queue_index = Some(0);
         app.is_playing = true;
 
@@ -4343,18 +4341,17 @@ mod tests {
 
         let album1 = create_test_album("Artist", "Album1", "/music/album1", 2);
         let album2 = create_test_album("Artist", "Album2", "/music/album2", 2);
-        app.queue = vec![QueueItem::new(album1), QueueItem::new(album2)];
-        app.expanded_queue_items = vec![false, false];
+        app.queue = vec![QueueEntry::new(QueueItem::new(album1)), QueueEntry::new(QueueItem::new(album2))];
         app.selected_queue_index = 1;
 
         // Toggle expansion
         app.toggle_queue_item_expansion();
-        assert!(!app.expanded_queue_items[0]);
-        assert!(app.expanded_queue_items[1]);
+        assert!(!app.queue[0].expanded);
+        assert!(app.queue[1].expanded);
 
         // Toggle again
         app.toggle_queue_item_expansion();
-        assert!(!app.expanded_queue_items[1]);
+        assert!(!app.queue[1].expanded);
     }
 
     #[test]
@@ -4363,7 +4360,7 @@ mod tests {
 
         let album1 = create_test_album("Artist", "Album1", "/music/album1", 2);
         let album2 = create_test_album("Artist", "Album2", "/music/album2", 2);
-        app.queue = vec![QueueItem::new(album1), QueueItem::new(album2)];
+        app.queue = vec![QueueEntry::new(QueueItem::new(album1)), QueueEntry::new(QueueItem::new(album2))];
         app.selected_queue_index = 0;
 
         app.select_next_queue_item();
@@ -4380,7 +4377,7 @@ mod tests {
 
         let album1 = create_test_album("Artist", "Album1", "/music/album1", 2);
         let album2 = create_test_album("Artist", "Album2", "/music/album2", 2);
-        app.queue = vec![QueueItem::new(album1), QueueItem::new(album2)];
+        app.queue = vec![QueueEntry::new(QueueItem::new(album1)), QueueEntry::new(QueueItem::new(album2))];
         app.selected_queue_index = 0;
 
         // Wrap around to last
@@ -5021,8 +5018,7 @@ mod tests {
 
         // Add items to queue
         let album = create_test_album("Artist", "Album", "/music/album", 3);
-        app.queue.push(QueueItem::new(album));
-        app.expanded_queue_items.push(false);
+        app.queue.push(QueueEntry::new(QueueItem::new(album)));
 
         let path = app.start_queue();
         assert!(path.is_some());
@@ -5035,13 +5031,12 @@ mod tests {
         let mut app = App::new(Theme::default());
 
         let album = create_test_album("Artist", "Album", "/music/album", 3);
-        app.queue.push(QueueItem::new(album));
-        app.expanded_queue_items.push(false);
+        app.queue.push(QueueEntry::new(QueueItem::new(album)));
         app.current_queue_index = Some(0);
         app.is_playing = true;
 
         // Move to track 2
-        app.queue[0].current_track_index = 2;
+        app.queue[0].item.current_track_index = 2;
 
         // Go back
         let path = app.previous_track();
@@ -5055,14 +5050,13 @@ mod tests {
 
         let album1 = create_test_album("Artist", "Album1", "/music/album1", 2);
         let album2 = create_test_album("Artist", "Album2", "/music/album2", 2);
-        app.queue.push(QueueItem::new(album1));
-        app.queue.push(QueueItem::new(album2));
-        app.expanded_queue_items = vec![false, false];
+        app.queue.push(QueueEntry::new(QueueItem::new(album1)));
+        app.queue.push(QueueEntry::new(QueueItem::new(album2)));
         app.current_queue_index = Some(1);
         app.is_playing = true;
 
         // At first track of second album
-        app.queue[1].current_track_index = 0;
+        app.queue[1].item.current_track_index = 0;
 
         // Go back should go to last track of first album
         let path = app.previous_track();

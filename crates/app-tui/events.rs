@@ -31,9 +31,61 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         InputMode::LoadPlugins => handle_load_plugins_mode(app, key),
         InputMode::LoadApoFile => handle_load_apo_file_mode(app, key),
         InputMode::LoadSofaFile => handle_load_sofa_file_mode(app, key),
+        InputMode::BrowseSofaFile => handle_file_browser_mode(app, key, true),
+        InputMode::BrowseIrFile => handle_file_browser_mode(app, key, false),
         InputMode::ShowHelp => handle_help_mode(app, key),
         InputMode::ShowError => handle_error_mode(app, key),
         InputMode::Normal => handle_normal_mode(app, key),
+    }
+}
+
+fn handle_file_browser_mode(app: &mut App, key: KeyEvent, is_sofa: bool) -> Option<PlayerCommand> {
+    match key.code {
+        KeyCode::Esc => {
+            app.input_mode = InputMode::EditPlugin;
+            None
+        }
+        KeyCode::Up | KeyCode::Char('k') => {
+            app.select_previous_file();
+            None
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            app.select_next_file();
+            None
+        }
+        KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
+            if let Some(path) = app.navigate_file_browser() {
+                let path_str = path.to_string_lossy().to_string();
+                if is_sofa {
+                    app.sofa_file_input = path_str;
+                    if let Err(e) = app.load_sofa_file() {
+                        app.status_message = Some(format!("Error: {}", e));
+                    } else {
+                        app.status_message = Some("SOFA file loaded".to_string());
+                        app.request_plugin_update();
+                    }
+                } else {
+                    // Load IR for Convolution
+                    if let Some(plugin) = app.plugin_chain.get_plugin_mut(app.selected_plugin_index) {
+                        if let PluginSettings::Convolution { ref mut ir_file, .. } = plugin.settings {
+                            *ir_file = path_str;
+                            app.status_message = Some("IR file set".to_string());
+                            app.request_plugin_update();
+                        }
+                    }
+                }
+                app.input_mode = InputMode::EditPlugin;
+            }
+            None
+        }
+        KeyCode::Left | KeyCode::Char('h') | KeyCode::Backspace => {
+            if let Some(parent) = app.current_browser_dir.parent() {
+                app.current_browser_dir = parent.to_path_buf();
+                app.refresh_file_browser();
+            }
+            None
+        }
+        _ => None,
     }
 }
 
@@ -229,6 +281,13 @@ fn handle_library_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     match key.code {
         KeyCode::Char('/') => {
             app.input_mode = InputMode::Search;
+            None
+        }
+        KeyCode::Char('X') => {
+            // Explicitly clear search query
+            app.search_query.clear();
+            app.selected_album_index = 0;
+            app.request_filter_update();
             None
         }
         KeyCode::Char('t') => {
@@ -517,8 +576,7 @@ fn handle_search_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     match key.code {
         KeyCode::Esc => {
             app.input_mode = InputMode::Normal;
-            app.search_query.clear();
-            app.selected_album_index = 0;
+            // Don't clear query, just exit mode to persist search
             None
         }
         KeyCode::Enter => {
@@ -793,15 +851,30 @@ fn handle_edit_plugin_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand
             None
         }
         KeyCode::Char('o') => {
-            // Load SOFA file (for Binaural Decoder plugins)
+            // Open SOFA file browser (for Binaural Decoder plugins)
             if let Some(plugin) = app.plugin_chain.get_plugin(app.selected_plugin_index) {
                 if matches!(plugin.settings, PluginSettings::BinauralDecoder { .. }) {
-                    app.input_mode = InputMode::LoadSofaFile;
-                    app.status_message = Some("Enter path to SOFA file:".to_string());
+                    app.input_mode = InputMode::BrowseSofaFile;
+                    app.file_browser_extension = Some("sofa".to_string());
+                    app.refresh_file_browser();
                 } else {
                     app.status_message = Some(
                         "SOFA files can only be loaded for Binaural Decoder plugins".to_string(),
                     );
+                }
+            }
+            None
+        }
+        KeyCode::Char('f') => {
+            // Open IR file browser (for Convolution plugins)
+            if let Some(plugin) = app.plugin_chain.get_plugin(app.selected_plugin_index) {
+                if matches!(plugin.settings, PluginSettings::Convolution { .. }) {
+                    app.input_mode = InputMode::BrowseIrFile;
+                    app.file_browser_extension = Some("wav".to_string()); // Common IR extension
+                    app.refresh_file_browser();
+                } else {
+                    app.status_message =
+                        Some("IR files can only be loaded for Convolution plugins".to_string());
                 }
             }
             None

@@ -143,6 +143,7 @@ impl App {
         self.library_state.selected_composer = None;
         self.library_state.selected_album_letter = None;
         self.library_state.selected_track_range = None;
+        self.library_state.invalidate_cache();
         self.reset_page();
     }
 
@@ -151,6 +152,7 @@ impl App {
         self.library_state.filter = filter;
         // Reset selection and page to top when changing filter
         self.library_state.selected_index = 0;
+        self.library_state.invalidate_cache();
         self.reset_page();
     }
 
@@ -168,6 +170,7 @@ impl App {
         };
         // Reset selection and page
         self.library_state.selected_index = 0;
+        self.library_state.invalidate_cache();
         self.reset_page();
     }
 
@@ -278,7 +281,7 @@ impl App {
 
     /// Clean up database by removing tracks for files that no longer exist
     pub fn clean_database(&mut self) {
-        match self.library_state.library.clean_database() {
+        match self.library_state.clean_database() {
             Ok(removed) => {
                 if removed > 0 {
                     self.ui_state.toast_message = Some(ToastMessage::success(format!(
@@ -317,7 +320,6 @@ impl App {
                 {
                     if self
                         .library_state
-                        .library
                         .remove_directory(dir_index)
                         .is_some()
                     {

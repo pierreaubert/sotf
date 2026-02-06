@@ -449,7 +449,7 @@ impl App {
 
     /// Load library from database if available
     pub fn load_library_from_database(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        self.library_state.library.load_from_database()?;
+        self.library_state.load_from_database()?;
         self.library_state.ensure_cache_valid();
         // Update last scan times for directories from database
         self.update_directory_scan_times();

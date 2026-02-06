@@ -45,9 +45,9 @@ generate-audio-tests: prod-generate-audio-tests
 # ----------------------------------------------------------------------
 
 test:
-	# Exclude GPUI crates from check - they cause stack overflow in syn during test/example mode compilation
-	RUST_MIN_STACK=16777216 cargo check --workspace --all-targets
-	cargo test --workspace --lib
+	# Exclude GPUI crates - they cause stack overflow in syn during test/example mode compilation
+	RUST_MIN_STACK=16777216 cargo check --workspace --all-targets --exclude sotf-gpui
+	cargo test --workspace --lib --exclude sotf-gpui --exclude gpui-px
 
 # Build gpui-ui-kit examples to verify they compile (doesn't run them)
 test-examples:
@@ -198,7 +198,7 @@ prod-hal-driver:
 	chmod 644 "$BUILD_DIR/Contents/Info.plist"
 	# Sign the driver bundle with hardened runtime
 	echo "Signing HAL driver..."
-	codesign --force --sign "Apple Development: Pierre Aubert (YU8PC9PYUP)" \
+	codesign --force --sign "$INSTALLER_DEVELOPER_ID" \
 		--options runtime \
 		--timestamp \
 		--deep \

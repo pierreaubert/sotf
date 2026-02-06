@@ -59,6 +59,10 @@ name = "qa-suite"
 path = "bin/qa_suite.rs"
 required-features = ["cli", "native"]
 
+[[example]]
+name = "scaling_3d"
+required-features = ["cli"]
+
 [[bench]]
 name = "helmholtz_3d_scaling"
 harness = false

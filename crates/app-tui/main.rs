@@ -213,11 +213,15 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
     player: &mut Player,
 ) -> Result<(), Box<dyn std::error::Error>> {
     loop {
-        // Draw UI
-        terminal.draw(|f| ui::draw(f, app))?;
+        // Draw UI only if needed
+        if app.needs_redraw {
+            terminal.draw(|f| ui::draw(f, app))?;
+            app.needs_redraw = false;
+        }
 
         // Handle events
         if let Some(event) = handle_events(Duration::from_millis(100))? {
+            app.needs_redraw = true;
             match event {
                 AppEvent::Key(key) => {
                     if let Some(cmd) = handle_key_event(app, key) {
@@ -236,6 +240,12 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                     // Update app state
                     app.position_secs = state.position_secs;
                     app.loudness_info = state.output_loudness;
+                    app.needs_redraw = true; // Always redraw on tick to update meters/position
+
+                    // Redraw while scanning or processing
+                    if app.scan_in_progress || app.maintenance_in_progress || app.replay_gain_manager.in_progress || app.waveform_manager.in_progress {
+                        app.needs_redraw = true;
+                    }
 
                     // Check if we should record a play (30s threshold)
                     if app.is_playing && state.is_playing {
@@ -259,7 +269,7 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                         // Advance to next
                         if let Some(path) = app.next_track() {
                             log::info!("[TUI] Auto-advancing to: {:?}", path);
-                            let sample_rate = 48000.0;
+                            let sample_rate = app.get_current_sample_rate();
                             let plugins = app.plugin_chain.to_plugin_configs(sample_rate);
                             let output_channels = app.plugin_chain.output_channels();
 
@@ -334,7 +344,7 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                                     MAX_RETRIES
                                 );
 
-                                let sample_rate = 48000.0;
+                                let sample_rate = app.get_current_sample_rate();
                                 let plugins = app.plugin_chain.to_plugin_configs(sample_rate);
 
                                 match player.update_plugins(plugins) {
@@ -441,7 +451,7 @@ fn handle_player_command(
             app.load_album_images();
 
             // Get plugin configs and output channels
-            let sample_rate = 48000.0; // Default sample rate
+            let sample_rate = app.get_current_sample_rate();
             let plugins = app.plugin_chain.to_plugin_configs(sample_rate);
             let output_channels = app.plugin_chain.output_channels();
 
