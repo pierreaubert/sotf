@@ -2,11 +2,11 @@
 
 This plan addresses the misalignment between the GPUI Room EQ interface and the `autoeq/roomeq` backend, ensuring forms are functional and plots are normalized.
 
-## Phase 1: Investigation and Data Mapping
+## Phase 1: Investigation and Data Mapping [checkpoint: 786a02f]
 - [x] Task: Audit `autoeq` backend for required Room EQ parameters. 7f8a1b2
 - [x] Task: Identify missing or incorrect fields in the current `app-gpui` Room EQ components. 7f8a1b2
 - [x] Task: Locate the plot rendering logic and normalization points in `app-gpui/ui/screens/room_eq`. 7f8a1b2
-- [ ] Task: Conductor - User Manual Verification 'Investigation and Data Mapping' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Investigation and Data Mapping' (Protocol in workflow.md) 786a02f
 
 ## Phase 2: Form Alignment and Validation
 - [ ] Task: Update Room EQ form models to include missing parameters (e.g., target curve, freq range, gain limits).
