@@ -152,8 +152,6 @@ struct ProcessingState {
     channels: usize,
     bypassed: bool,
     process_buffer: Vec<f32>,
-    /// Pre-allocated buffer for frame sending (avoids allocation in hot path)
-    frame_send_buffer: Vec<f32>,
 }
 
 impl ProcessingState {
@@ -163,8 +161,6 @@ impl ProcessingState {
             channels,
             bypassed: false,
             process_buffer: Vec::new(),
-            // Pre-allocate for typical frame size (1024 frames * 8 channels)
-            frame_send_buffer: Vec::with_capacity(1024 * 8),
         }
     }
 
@@ -346,9 +342,6 @@ fn run_processing_thread(
                 if process_buffer.len() != output_samples {
                     process_buffer.resize(output_samples, 0.0);
                 }
-                // Zero-fill buffer before processing to avoid garbage in unused portions
-                process_buffer.fill(0.0);
-
                 let start_time = std::time::Instant::now();
                 match state.process_frame(&frame.data, &mut process_buffer, frame.num_frames) {
                     Ok(actual_output_frames) => {
@@ -364,17 +357,9 @@ fn run_processing_thread(
                         // Use actual output frame count from processing (not max)
                         let actual_output_samples = actual_output_frames * output_channels;
 
-                        // Copy to frame_send_buffer and use take/restore (avoids .clone() allocation)
-                        if state.frame_send_buffer.len() < actual_output_samples {
-                            state.frame_send_buffer.resize(actual_output_samples, 0.0);
-                        }
-                        state.frame_send_buffer[..actual_output_samples]
-                            .copy_from_slice(&process_buffer[..actual_output_samples]);
-
-                        let mut frame_data = std::mem::take(&mut state.frame_send_buffer);
-                        frame_data.truncate(actual_output_samples);
-                        // Restore buffer for next iteration
-                        state.frame_send_buffer = Vec::with_capacity(actual_output_samples);
+                        // Create send vec directly from process_buffer (one unavoidable
+                        // allocation per frame since AudioFrame owns its data for cross-thread send)
+                        let frame_data = process_buffer[..actual_output_samples].to_vec();
 
                         // Use actual output frame count and sample rate (accounts for resampler)
                         let processed_frame = super::AudioFrame::new(

@@ -371,6 +371,10 @@ fn run_playback_thread(
                                     new_sample_rate,
                                     e
                                 );
+                                // Resume the old stream so audio doesn't stop
+                                if let Err(resume_err) = stream.play() {
+                                    log::error!("[Playback Thread] Failed to resume old stream: {}", resume_err);
+                                }
                                 event_tx
                                     .send(ThreadEvent::ProcessingError(format!(
                                         "Playback stream rebuild failed for sample rate {}: {}",
@@ -518,6 +522,10 @@ fn run_playback_thread(
                                     new_channels,
                                     e
                                 );
+                                // Resume the old stream so audio doesn't stop
+                                if let Err(resume_err) = stream.play() {
+                                    log::error!("[Playback Thread] Failed to resume old stream: {}", resume_err);
+                                }
                                 event_tx
                                     .send(ThreadEvent::ProcessingError(format!(
                                         "Playback stream rebuild failed for {} channels: {}",
@@ -615,27 +623,49 @@ fn run_playback_thread(
                     conversion_buffer.resize(target_len, 0.0);
 
                     if frame.num_channels > channels && channels == 2 {
-                        // High-quality N -> 2 Downmix
-                        // 0:L, 1:R, 2:C, 3:LFE, 4:SL, 5:SR, 6:BL, 7:BR, 8:TFL, 9:TFR...
+                        // ITU-R BS.775 compliant N→2 downmix with normalization
+                        // Channel layouts from speaker_config.rs:
+                        //   5ch (5.0): L=0, R=1, C=2, SL=3, SR=4
+                        //   6ch (5.1): L=0, R=1, C=2, LFE=3, SL=4, SR=5
+                        //   8ch (7.1): L=0, R=1, C=2, LFE=3, SL=4, SR=5, BL=6, BR=7
+                        //   10ch+ (Atmos): ..., TFL=8, TFR=9, ...
+                        let n = frame.num_channels;
+                        let has_lfe = n != 5; // 5.0 has no LFE; 5.1/7.1/Atmos do
+
+                        // Extract channel indices based on layout
+                        let (sl_idx, sr_idx) = if has_lfe { (4, 5) } else { (3, 4) };
+                        let (bl_idx, br_idx) = if has_lfe { (6, 7) } else { (5, 6) };
+                        let (tfl_idx, tfr_idx) = if has_lfe { (8, 9) } else { (7, 8) };
+
+                        // ITU-R BS.775 coefficients
+                        const C_COEFF: f32 = 0.707;
+                        const SURROUND_COEFF: f32 = 0.707;
+                        const BACK_COEFF: f32 = 0.5;
+                        const HEIGHT_COEFF: f32 = 0.5;
+
+                        // Compute normalization factor: 1 / (1 + sum of all mixing coefficients)
+                        // This ensures peak output never exceeds the peak of any single input channel
+                        let mut coeff_sum: f32 = 1.0 + C_COEFF + SURROUND_COEFF;
+                        if n > sl_idx + 2 { coeff_sum += BACK_COEFF; }   // has back surrounds
+                        if n > tfl_idx { coeff_sum += HEIGHT_COEFF; }     // has heights
+                        let norm = 1.0 / coeff_sum;
+
                         for i in 0..num_frames {
-                            let base = i * frame.num_channels;
-                            let src = &frame.data[base..base + frame.num_channels];
+                            let base = i * n;
+                            let src = &frame.data[base..base + n];
 
-                            let l = src.get(0).copied().unwrap_or(0.0);
-                            let r = src.get(1).copied().unwrap_or(0.0);
-                            let c = src.get(2).copied().unwrap_or(0.0) * 0.707;
-                            // Surrounds
-                            let sl = src.get(4).copied().unwrap_or(0.0) * 0.707;
-                            let sr = src.get(5).copied().unwrap_or(0.0) * 0.707;
-                            // Back surrounds
-                            let bl = src.get(6).copied().unwrap_or(0.0) * 0.5;
-                            let br = src.get(7).copied().unwrap_or(0.0) * 0.5;
-                            // Heights
-                            let tfl = src.get(8).copied().unwrap_or(0.0) * 0.5;
-                            let tfr = src.get(9).copied().unwrap_or(0.0) * 0.5;
+                            let l = src[0];
+                            let r = src[1];
+                            let c = src.get(2).copied().unwrap_or(0.0) * C_COEFF;
+                            let sl = src.get(sl_idx).copied().unwrap_or(0.0) * SURROUND_COEFF;
+                            let sr = src.get(sr_idx).copied().unwrap_or(0.0) * SURROUND_COEFF;
+                            let bl = src.get(bl_idx).copied().unwrap_or(0.0) * BACK_COEFF;
+                            let br = src.get(br_idx).copied().unwrap_or(0.0) * BACK_COEFF;
+                            let tfl = src.get(tfl_idx).copied().unwrap_or(0.0) * HEIGHT_COEFF;
+                            let tfr = src.get(tfr_idx).copied().unwrap_or(0.0) * HEIGHT_COEFF;
 
-                            conversion_buffer[i * 2] = l + c + sl + bl + tfl;
-                            conversion_buffer[i * 2 + 1] = r + c + sr + br + tfr;
+                            conversion_buffer[i * 2] = (l + c + sl + bl + tfl) * norm;
+                            conversion_buffer[i * 2 + 1] = (r + c + sr + br + tfr) * norm;
                         }
                     } else if frame.num_channels == 2 && channels > 2 {
                         // 2 -> N Upmix (L/R to fronts, rest silent)
@@ -726,6 +756,10 @@ fn build_output_stream(
 
     let capacity = state.capacity;
 
+    // Clipping detection state (lives across callbacks)
+    let mut clip_count: u64 = 0;
+    let mut callbacks_since_last_clip_log: u64 = 0;
+
     let stream = device
         .build_output_stream(
             config,
@@ -802,6 +836,28 @@ fn build_output_stream(
                         *sample *= volume;
                     }
                 }
+
+                // Hard clip to prevent saturation at hardware output
+                let mut clipped_this_callback: u32 = 0;
+                for sample in data.iter_mut() {
+                    if *sample > 1.0 || *sample < -1.0 {
+                        clipped_this_callback += 1;
+                        *sample = sample.clamp(-1.0, 1.0);
+                    }
+                }
+                if clipped_this_callback > 0 {
+                    clip_count += clipped_this_callback as u64;
+                    // Log at most once per ~200 callbacks (~1 second at 48kHz/256 frames)
+                    if callbacks_since_last_clip_log >= 200 || callbacks_since_last_clip_log == 0 {
+                        log::warn!(
+                            "[Playback Thread] Clipping detected: {} samples clipped this callback, {} total",
+                            clipped_this_callback,
+                            clip_count
+                        );
+                        callbacks_since_last_clip_log = 0;
+                    }
+                }
+                callbacks_since_last_clip_log += 1;
 
                 // Audio flows directly to hardware via cpal - no HAL loopback needed
             },
