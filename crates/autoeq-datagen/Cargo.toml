@@ -1,0 +1,49 @@
+[package]
+name = "autoeq-datagen"
+version = "0.3.0"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "Generate room measurement data for RoomEQ testing using BEM/FEM acoustic solvers"
+license = { workspace = true }
+repository = { workspace = true }
+
+[lib]
+name = "autoeq_datagen"
+path = "src/lib.rs"
+
+[[bin]]
+name = "generate-roomeq-data"
+path = "bin/generate_roomeq_data.rs"
+
+[dependencies]
+# Acoustic solvers
+math-bem = { workspace = true }
+math-fem = { workspace = true }
+math-xem-common = { workspace = true }
+
+# Autoeq types
+autoeq = { workspace = true }
+
+# Numerical computing
+num-complex = { workspace = true }
+ndarray = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+
+# Logging
+log = { workspace = true }
+env_logger = { workspace = true }
+
+# CLI
+clap = { workspace = true }
+
+# Parallel processing
+rayon = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

@@ -13,6 +13,10 @@ members = [
     "crates/driver-hal",
     "crates/head-tracker",
     "crates/daemon",
+    "crates/math-xem-common",
+    "crates/math-bem",
+    "crates/math-fem",
+    "crates/autoeq-datagen",
 ]
 resolver = "3"
 
@@ -52,7 +56,7 @@ base64 = "0.22"
 byteorder = "1.5"
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.5", features = ["derive"] }
-# console_error_panic_hook = { version = "0.1" }
+console_error_panic_hook = { version = "0.1" }
 csv = "1.4"
 ctrlc = "3.5"
 directories = "6"
@@ -98,6 +102,8 @@ math-iir-fir = { path = "crates/math-iir-fir", version = "0.3" }
 math-convex-hull = { path = "crates/math-convex-hull", version = "0.3" }
 math-differential-evolution = { path = "crates/math-differential-evolution", version = "0.3" }
 math-dsp = { path = "crates/math-dsp", version = "0.3" }
+math-bem = { path = "crates/math-bem", version = "0.3", default-features = false, features = ["native"] }
+math-fem = { path = "crates/math-fem", version = "0.3", default-features = false, features = ["native"] }
 
 autoeq-env = { version = "0.3", path = "crates/autoeq-env" }
 autoeq-cea2034 = { version = "0.3", path = "crates/autoeq-cea2034" }
@@ -162,7 +168,13 @@ dirs = "6"
 # memory-stats = "1.2"
 crossbeam = "0.8"
 
+# WASM support
+wasm-bindgen = { version = "0.2" }
+wasm-bindgen-rayon = { version = "1.2" }
+
 # Utilities
+toml = "0.8"
+spec_math = "0.1"
 approx = "0.5"
 proptest = "1.9"
 unicode-normalization = "0.1"
