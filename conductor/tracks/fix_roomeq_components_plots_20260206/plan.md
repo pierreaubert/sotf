@@ -22,7 +22,7 @@ This plan addresses the misalignment between the GPUI Room EQ interface and the 
 - [x] Task: Verify: Ensure the Target curve and SPL response are visually aligned in the UI. fb52e6e
 - [x] Task: Conductor - User Manual Verification 'Plot Normalization and Visualization' (Protocol in workflow.md) fa8d093
 
-## Phase 4: Integration and Final Verification
-- [~] Task: Perform end-to-end test of the Room EQ flow (Form Input -> Backend Call -> Plot Result).
+## Phase 4: Integration and Final Verification [checkpoint: 4fd2ac3]
+- [x] Task: Perform end-to-end test of the Room EQ flow (Form Input -> Backend Call -> Plot Result). fb52e6e
 - [x] Task: Verify that all acceptance criteria in `spec.md` are met. fb52e6e
-- [ ] Task: Conductor - User Manual Verification 'Integration and Final Verification' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Integration and Final Verification' (Protocol in workflow.md) 4fd2ac3
