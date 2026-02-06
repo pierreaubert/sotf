@@ -325,6 +325,7 @@ impl Select {
                 let options_clone = self.options.clone();
 
                 trigger = trigger.on_key_down(move |event, window, cx| {
+                    cx.stop_propagation();
                     match event.keystroke.key.as_str() {
                         "space" | " " => {
                             // Toggle open/closed

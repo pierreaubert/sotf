@@ -318,6 +318,7 @@ pub struct NumberInput {
     disabled: bool,
     theme: Option<NumberInputTheme>,
     on_change: Option<Box<dyn Fn(f64, &mut Window, &mut App) + 'static>>,
+    focus_handle: Option<FocusHandle>,
 }
 
 impl NumberInput {
@@ -337,7 +338,14 @@ impl NumberInput {
             disabled: false,
             theme: None,
             on_change: None,
+            focus_handle: None,
         }
+    }
+
+    /// Set the focus handle (optional - one is created internally if not provided)
+    pub fn focus_handle(mut self, handle: FocusHandle) -> Self {
+        self.focus_handle = Some(handle);
+        self
     }
 
     /// Set the current value
@@ -499,13 +507,15 @@ impl RenderOnce for NumberInput {
         let decimals = self.decimals;
         let unit_clone = self.unit.clone();
 
-        // Get or create focus handle for this element
-        let focus_handle = NUMBER_INPUT_FOCUS_HANDLES.with(|handles| {
-            let mut handles = handles.borrow_mut();
-            handles
-                .entry(self.id.clone())
-                .or_insert_with(|| cx.focus_handle())
-                .clone()
+        // Use provided focus handle, or get/create one from the registry.
+        let focus_handle = self.focus_handle.unwrap_or_else(|| {
+            NUMBER_INPUT_FOCUS_HANDLES.with(|handles| {
+                let mut handles = handles.borrow_mut();
+                handles
+                    .entry(self.id.clone())
+                    .or_insert_with(|| cx.focus_handle())
+                    .clone()
+            })
         });
 
         // Get or create edit state for this element
@@ -624,6 +634,7 @@ impl RenderOnce for NumberInput {
             if let Some(ref handler_rc) = on_change_rc {
                 let handler = handler_rc.clone();
                 dec_button = dec_button.on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                    window.blur();
                     let new_value = (current_value - step).clamp(min, max);
                     handler(new_value, window, cx);
                 });
@@ -696,6 +707,8 @@ impl RenderOnce for NumberInput {
             value_field = value_field.cursor_text().on_mouse_down(
                 MouseButton::Left,
                 move |event, window, cx| {
+                    cx.stop_propagation();
+
                     // Focus the input
                     window.focus(&focus_handle_for_click, cx);
 
@@ -720,6 +733,8 @@ impl RenderOnce for NumberInput {
                         // Clear selection on single click while editing
                         state.text_selected = false;
                     }
+                    drop(state);
+                    window.refresh();
                 },
             );
 
@@ -729,6 +744,8 @@ impl RenderOnce for NumberInput {
             let unit_for_key = unit_clone.clone();
 
             value_field = value_field.on_key_down(move |event, window, cx| {
+                cx.stop_propagation();
+
                 let mut state = edit_state_for_key.borrow_mut();
 
                 if state.editing {
@@ -741,6 +758,8 @@ impl RenderOnce for NumberInput {
                             state.text.clear();
                             state.text_selected = false;
                             drop(state);
+
+                            window.blur();
 
                             if let Some(ref handler) = on_change_key
                                 && let Some(value) = parsed
@@ -755,6 +774,7 @@ impl RenderOnce for NumberInput {
                             state.text.clear();
                             state.text_selected = false;
                             drop(state);
+                            window.blur();
                             window.refresh();
                         }
                         "backspace" => {
@@ -840,6 +860,7 @@ impl RenderOnce for NumberInput {
             if let Some(ref handler_rc) = on_change_rc {
                 let handler = handler_rc.clone();
                 inc_button = inc_button.on_mouse_down(MouseButton::Left, move |_, window, cx| {
+                    window.blur();
                     let new_value = (current_value + step).clamp(min, max);
                     handler(new_value, window, cx);
                 });

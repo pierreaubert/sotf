@@ -1126,3 +1126,7 @@ async fn test_number_input_small_step(cx: &mut TestAppContext) {
 // Note: Scroll wheel tests are not included because VisualTestContext
 // does not currently support simulate_scroll(). Scroll wheel functionality
 // should be tested manually.
+
+// Note: Scroll wheel tests are not included because VisualTestContext
+// does not currently support simulate_scroll(). Scroll wheel functionality
+// should be tested manually.

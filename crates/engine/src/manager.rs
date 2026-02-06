@@ -582,7 +582,7 @@ impl AudioEngineManager {
 
         match self.get_plugin_data(plugin_index) {
             Ok(data) => {
-                // Try to downcast to LoudnessInfo
+                // LoudnessInfo is a type alias for LoudnessData
                 data.downcast_ref::<crate::LoudnessInfo>().cloned()
             }
             Err(_) => None,

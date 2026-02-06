@@ -419,12 +419,14 @@ impl RenderOnce for Slider {
             if let Some(on_drag_start) = self.on_drag_start {
                 let handler_down = on_drag_start;
                 track = track.on_mouse_down(MouseButton::Left, move |event, window, cx| {
+                    cx.stop_propagation();
                     handler_down(event.position.x.into(), current_value, window, cx);
                 });
             } else if let Some(ref handler_rc) = on_change_rc {
                 // Click to set value based on position (immediate feedback)
                 let handler_click = handler_rc.clone();
                 track = track.on_mouse_down(MouseButton::Left, move |event, window, cx| {
+                    cx.stop_propagation();
                     // Calculate value from click position relative to track
                     let x: f32 = event.position.x.into();
                     let progress = (x / width).clamp(0.0, 1.0);
@@ -516,6 +518,7 @@ impl RenderOnce for Slider {
             if let Some(handler_rc) = on_change_rc {
                 let handler_key = handler_rc.clone();
                 track = track.on_key_down(move |event, window, cx| {
+                    cx.stop_propagation();
                     let step_amount = step.unwrap_or((max - min) * 0.05);
                     let large_step = (max - min) * 0.10; // 10% for page up/down
 

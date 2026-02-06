@@ -836,6 +836,7 @@ impl RenderOnce for VerticalSlider {
                 let current_value_key = current_value.clone();
                 let config_key = interaction_config.clone();
                 container = container.on_key_down(move |event, window, cx| {
+                    cx.stop_propagation();
                     let key = event.keystroke.key.as_str();
 
                     // Escape resets to default

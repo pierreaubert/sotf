@@ -1542,6 +1542,7 @@ impl RenderOnce for AutoEqForm {
         let on_multi_seat_max_deviation_db_change_rc = self.on_multi_seat_max_deviation_db_change.map(std::rc::Rc::new);
 
         let mut form = VStack::new().spacing(StackSpacing::Lg);
+        let base_id = id.clone();
 
         // ========================================
         // Goals & Configuration Section
@@ -1573,7 +1574,7 @@ impl RenderOnce for AutoEqForm {
                     .map(|(val, lbl)| SelectOption::new(*val, *lbl))
                     .collect();
 
-                let mut system_type_select = Select::new("autoeq-system-type")
+                let mut system_type_select = Select::new((base_id.clone(), "system-type"))
                     .label("System Type")
                     .options(system_type_options)
                     .selected(&config.system_type)
@@ -1602,7 +1603,7 @@ impl RenderOnce for AutoEqForm {
                 .map(|(val, lbl)| SelectOption::new(*val, *lbl))
                 .collect();
 
-            let mut loss_type_select = Select::new("autoeq-loss-type")
+            let mut loss_type_select = Select::new((base_id.clone(), "loss-type"))
                 .label("Loss Function")
                 .options(loss_type_options)
                 .selected(&config.loss_type)
@@ -1650,7 +1651,7 @@ impl RenderOnce for AutoEqForm {
                 }
             };
 
-            let mut target_curve_select = Select::new("autoeq-target-curve")
+            let mut target_curve_select = Select::new((base_id.clone(), "target-curve"))
                 .label("Target Curve")
                 .options(target_curve_options)
                 .selected(&config.target_curve)
@@ -1711,7 +1712,7 @@ impl RenderOnce for AutoEqForm {
                 .map(|(val, lbl)| SelectOption::new(*val, *lbl))
                 .collect();
 
-            let mut opt_mode_select = Select::new("autoeq-opt-mode")
+            let mut opt_mode_select = Select::new((base_id.clone(), "opt-mode"))
                 .label("EQ Mode")
                 .options(opt_mode_options)
                 .selected(&config.opt_mode)
@@ -1738,7 +1739,7 @@ impl RenderOnce for AutoEqForm {
 
             if is_fir {
                 // FIR Taps and Phase
-                let mut fir_taps_input = NumberInput::new("autoeq-fir-taps")
+                let mut fir_taps_input = NumberInput::new((base_id.clone(), "fir-taps"))
                     .value(config.fir_taps as f64)
                     .min(ParamLimits::FIR_TAPS.min)
                     .max(ParamLimits::FIR_TAPS.max)
@@ -1762,7 +1763,7 @@ impl RenderOnce for AutoEqForm {
                     .map(|(val, lbl)| SelectOption::new(*val, *lbl))
                     .collect();
 
-                let mut fir_phase_select = Select::new("autoeq-fir-phase")
+                let mut fir_phase_select = Select::new((base_id.clone(), "fir-phase"))
                     .label("Phase")
                     .options(fir_phase_options)
                     .selected(&config.fir_phase)
@@ -1791,7 +1792,7 @@ impl RenderOnce for AutoEqForm {
             }
 
             // Common params (Sample Rate) + Filters (if IIR)
-            let mut sample_rate_input = NumberInput::new("autoeq-sample-rate")
+            let mut sample_rate_input = NumberInput::new((base_id.clone(), "sample-rate"))
                 .value(config.sample_rate as f64)
                 .min(ParamLimits::SAMPLE_RATE.min)
                 .max(ParamLimits::SAMPLE_RATE.max)
@@ -1810,7 +1811,7 @@ impl RenderOnce for AutoEqForm {
             }
 
             if is_iir {
-                let mut num_filters_input = NumberInput::new("autoeq-num-filters")
+                let mut num_filters_input = NumberInput::new((base_id.clone(), "num-filters"))
                     .value(config.num_filters as f64)
                     .min(ParamLimits::NUM_FILTERS.min)
                     .max(ParamLimits::NUM_FILTERS.max)
@@ -1844,7 +1845,7 @@ impl RenderOnce for AutoEqForm {
             }
 
             // dB Range row
-            let mut min_db_input = NumberInput::new("autoeq-min-db")
+            let mut min_db_input = NumberInput::new((base_id.clone(), "min-db"))
                 .value(config.min_db)
                 .min(ParamLimits::DB.min)
                 .max(ParamLimits::DB.max)
@@ -1861,7 +1862,7 @@ impl RenderOnce for AutoEqForm {
                 min_db_input = min_db_input.on_change(move |v, w, cx| h(v, w, cx));
             }
 
-            let mut max_db_input = NumberInput::new("autoeq-max-db")
+            let mut max_db_input = NumberInput::new((base_id.clone(), "max-db"))
                 .value(config.max_db)
                 .min(ParamLimits::DB.min)
                 .max(ParamLimits::DB.max)
@@ -1887,7 +1888,7 @@ impl RenderOnce for AutoEqForm {
 
             // Q Range row (IIR only)
             if is_iir {
-                let mut min_q_input = NumberInput::new("autoeq-min-q")
+                let mut min_q_input = NumberInput::new((base_id.clone(), "min-q"))
                     .value(config.min_q)
                     .min(ParamLimits::Q.min)
                     .max(ParamLimits::Q.max)
@@ -1904,7 +1905,7 @@ impl RenderOnce for AutoEqForm {
                     min_q_input = min_q_input.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
-                let mut max_q_input = NumberInput::new("autoeq-max-q")
+                let mut max_q_input = NumberInput::new((base_id.clone(), "max-q"))
                     .value(config.max_q)
                     .min(ParamLimits::Q.min)
                     .max(ParamLimits::Q.max)
@@ -1930,7 +1931,7 @@ impl RenderOnce for AutoEqForm {
             }
 
             // Frequency Range row
-            let mut min_freq_input = NumberInput::new("autoeq-min-freq")
+            let mut min_freq_input = NumberInput::new((base_id.clone(), "min-freq"))
                 .value(config.min_freq)
                 .min(ParamLimits::FREQUENCY.min)
                 .max(ParamLimits::FREQUENCY.max)
@@ -1947,7 +1948,7 @@ impl RenderOnce for AutoEqForm {
                 min_freq_input = min_freq_input.on_change(move |v, w, cx| h(v, w, cx));
             }
 
-            let mut max_freq_input = NumberInput::new("autoeq-max-freq")
+            let mut max_freq_input = NumberInput::new((base_id.clone(), "max-freq"))
                 .value(config.max_freq)
                 .min(ParamLimits::FREQUENCY.min)
                 .max(ParamLimits::FREQUENCY.max)
@@ -1978,7 +1979,7 @@ impl RenderOnce for AutoEqForm {
                     .map(|(val, lbl)| SelectOption::new(*val, *lbl))
                     .collect();
 
-                let mut peq_model_select = Select::new("autoeq-peq-model")
+                let mut peq_model_select = Select::new((base_id.clone(), "peq-model"))
                     .label("PEQ Model")
                     .options(peq_model_options)
                     .selected(&config.peq_model)
@@ -2001,7 +2002,7 @@ impl RenderOnce for AutoEqForm {
                 eq_design_content = eq_design_content.child(peq_model_select);
 
                 // Spacing constraint row
-                let mut spacing_weight_input = NumberInput::new("autoeq-spacing-weight")
+                let mut spacing_weight_input = NumberInput::new((base_id.clone(), "spacing-weight"))
                     .value(config.spacing_weight)
                     .min(ParamLimits::SPACING_WEIGHT.min)
                     .max(ParamLimits::SPACING_WEIGHT.max)
@@ -2019,7 +2020,7 @@ impl RenderOnce for AutoEqForm {
                         spacing_weight_input.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
-                let mut min_spacing_oct_input = NumberInput::new("autoeq-min-spacing-oct")
+                let mut min_spacing_oct_input = NumberInput::new((base_id.clone(), "min-spacing-oct"))
                     .value(config.min_spacing_oct)
                     .min(ParamLimits::MIN_SPACING_OCT.min)
                     .max(ParamLimits::MIN_SPACING_OCT.max)
@@ -2077,7 +2078,7 @@ impl RenderOnce for AutoEqForm {
                 .map(|(val, lbl)| SelectOption::new(*val, *lbl))
                 .collect();
 
-            let mut algo_select = Select::new("autoeq-algo")
+            let mut algo_select = Select::new((base_id.clone(), "algo"))
                 .label("Algorithm")
                 .options(algo_options)
                 .selected(&config.algo)
@@ -2098,7 +2099,7 @@ impl RenderOnce for AutoEqForm {
             opt_tuning_content = opt_tuning_content.child(algo_select);
 
             // Population and MaxEval row
-            let mut population_input = NumberInput::new("autoeq-population")
+            let mut population_input = NumberInput::new((base_id.clone(), "population"))
                 .value(config.population as f64)
                 .min(ParamLimits::POPULATION.min)
                 .max(ParamLimits::POPULATION.max)
@@ -2116,7 +2117,7 @@ impl RenderOnce for AutoEqForm {
                     population_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
             }
 
-            let mut maxeval_input = NumberInput::new("autoeq-maxeval")
+            let mut maxeval_input = NumberInput::new((base_id.clone(), "maxeval"))
                 .value(config.maxeval as f64)
                 .min(ParamLimits::MAXEVAL.min)
                 .max(ParamLimits::MAXEVAL.max)
@@ -2142,7 +2143,7 @@ impl RenderOnce for AutoEqForm {
             );
 
             // Tolerance row
-            let mut tolerance_input = NumberInput::new("autoeq-tolerance")
+            let mut tolerance_input = NumberInput::new((base_id.clone(), "tolerance"))
                 .value(config.tolerance)
                 .min(ParamLimits::TOLERANCE.min)
                 .max(ParamLimits::TOLERANCE.max)
@@ -2159,7 +2160,7 @@ impl RenderOnce for AutoEqForm {
                 tolerance_input = tolerance_input.on_change(move |v, w, cx| h(v, w, cx));
             }
 
-            let mut atolerance_input = NumberInput::new("autoeq-atolerance")
+            let mut atolerance_input = NumberInput::new((base_id.clone(), "atolerance"))
                 .value(config.atolerance)
                 .min(ParamLimits::TOLERANCE.min)
                 .max(ParamLimits::TOLERANCE.max)
@@ -2196,7 +2197,7 @@ impl RenderOnce for AutoEqForm {
                         .map(|(val, lbl)| SelectOption::new(*val, *lbl))
                         .collect();
 
-                    let mut strategy_select = Select::new("autoeq-strategy")
+                    let mut strategy_select = Select::new((base_id.clone(), "strategy"))
                         .label("DE Strategy")
                         .options(strategy_options)
                         .selected(&config.strategy)
@@ -2219,7 +2220,7 @@ impl RenderOnce for AutoEqForm {
                     opt_tuning_content = opt_tuning_content.child(strategy_select);
 
                     // DE F and CR row
-                    let mut de_f_input = NumberInput::new("autoeq-de-f")
+                    let mut de_f_input = NumberInput::new((base_id.clone(), "de-f"))
                         .value(config.de_f)
                         .min(ParamLimits::DE_FACTOR.min)
                         .max(ParamLimits::DE_FACTOR.max)
@@ -2236,7 +2237,7 @@ impl RenderOnce for AutoEqForm {
                         de_f_input = de_f_input.on_change(move |v, w, cx| h(v, w, cx));
                     }
 
-                    let mut de_cr_input = NumberInput::new("autoeq-de-cr")
+                    let mut de_cr_input = NumberInput::new((base_id.clone(), "de-cr"))
                         .value(config.de_cr)
                         .min(ParamLimits::DE_CR.min)
                         .max(ParamLimits::DE_CR.max)
@@ -2281,7 +2282,7 @@ impl RenderOnce for AutoEqForm {
                 background: theme.card_bg,
             };
 
-            let mut refine_toggle = Toggle::new("autoeq-refine")
+            let mut refine_toggle = Toggle::new((base_id.clone(), "refine"))
                 .size(ToggleSize::Sm)
                 .checked(config.refine)
                 .theme(toggle_theme.clone());
@@ -2310,7 +2311,7 @@ impl RenderOnce for AutoEqForm {
                     .map(|(val, lbl)| SelectOption::new(*val, *lbl))
                     .collect();
 
-                let mut local_algo_select = Select::new("autoeq-local-algo")
+                let mut local_algo_select = Select::new((base_id.clone(), "local-algo"))
                     .label("Local Algo")
                     .options(local_algo_options)
                     .selected(&config.local_algo)
@@ -2334,7 +2335,7 @@ impl RenderOnce for AutoEqForm {
             }
 
             // Smoothing toggle
-            let mut smooth_toggle = Toggle::new("autoeq-smooth")
+            let mut smooth_toggle = Toggle::new((base_id.clone(), "smooth"))
                 .size(ToggleSize::Sm)
                 .checked(config.smooth)
                 .theme(toggle_theme.clone());
@@ -2358,7 +2359,7 @@ impl RenderOnce for AutoEqForm {
 
             // Smoothing window size (only when smooth is enabled)
             if config.smooth {
-                let mut smooth_n_input = NumberInput::new("autoeq-smooth-n")
+                let mut smooth_n_input = NumberInput::new((base_id.clone(), "smooth-n"))
                     .value(config.smooth_n as f64)
                     .min(ParamLimits::SMOOTH_N.min)
                     .max(ParamLimits::SMOOTH_N.max)
@@ -2380,7 +2381,7 @@ impl RenderOnce for AutoEqForm {
             }
 
             // Psychoacoustic toggle
-            let mut psycho_toggle = Toggle::new("autoeq-psychoacoustic")
+            let mut psycho_toggle = Toggle::new((base_id.clone(), "psychoacoustic"))
                 .size(ToggleSize::Sm)
                 .checked(config.psychoacoustic)
                 .theme(toggle_theme.clone());
@@ -2412,7 +2413,7 @@ impl RenderOnce for AutoEqForm {
             );
 
             // Asymmetric Loss toggle
-            let mut asymmetric_toggle = Toggle::new("autoeq-asymmetric-loss")
+            let mut asymmetric_toggle = Toggle::new((base_id.clone(), "asymmetric-loss"))
                 .size(ToggleSize::Sm)
                 .checked(config.asymmetric_loss)
                 .theme(toggle_theme);
@@ -2488,7 +2489,7 @@ impl RenderOnce for AutoEqForm {
             };
 
             // --- Target Tilt ---
-            let mut tilt_toggle = Toggle::new("autoeq-tilt-enabled")
+            let mut tilt_toggle = Toggle::new((base_id.clone(), "tilt-enabled"))
                 .size(ToggleSize::Sm)
                 .checked(config.use_target_tilt)
                 .theme(toggle_theme.clone());
@@ -2511,7 +2512,7 @@ impl RenderOnce for AutoEqForm {
                     .map(|(val, lbl)| SelectOption::new(*val, *lbl))
                     .collect();
 
-                let mut tilt_select = Select::new("autoeq-tilt-type")
+                let mut tilt_select = Select::new((base_id.clone(), "tilt-type"))
                     .options(tilt_options)
                     .selected(&config.tilt_type)
                     .is_open(ui_state.tilt_type_open)
@@ -2530,7 +2531,7 @@ impl RenderOnce for AutoEqForm {
                 advanced_b_content = advanced_b_content.child(tilt_select);
 
                 if config.tilt_type == "custom" || config.tilt_type == "harman" {
-                    let mut slope_input = NumberInput::new("autoeq-tilt-slope")
+                    let mut slope_input = NumberInput::new((base_id.clone(), "tilt-slope"))
                         .value(config.tilt_slope)
                         .min(ParamLimits::TILT_SLOPE.min)
                         .max(ParamLimits::TILT_SLOPE.max)
@@ -2545,7 +2546,7 @@ impl RenderOnce for AutoEqForm {
                         slope_input = slope_input.on_change(move |v, w, cx| h(v, w, cx));
                     }
 
-                    let mut ref_freq_input = NumberInput::new("autoeq-tilt-ref-freq")
+                    let mut ref_freq_input = NumberInput::new((base_id.clone(), "tilt-ref-freq"))
                         .value(config.tilt_reference_freq)
                         .min(20.0)
                         .max(20000.0)
@@ -2567,7 +2568,7 @@ impl RenderOnce for AutoEqForm {
                             .child(ref_freq_input)
                     );
 
-                    let mut shelf_db_input = NumberInput::new("autoeq-tilt-shelf-db")
+                    let mut shelf_db_input = NumberInput::new((base_id.clone(), "tilt-shelf-db"))
                         .value(config.tilt_bass_shelf_db)
                         .min(ParamLimits::BASS_SHELF.min)
                         .max(ParamLimits::BASS_SHELF.max)
@@ -2582,7 +2583,7 @@ impl RenderOnce for AutoEqForm {
                         shelf_db_input = shelf_db_input.on_change(move |v, w, cx| h(v, w, cx));
                     }
 
-                    let mut shelf_freq_input = NumberInput::new("autoeq-tilt-shelf-freq")
+                    let mut shelf_freq_input = NumberInput::new((base_id.clone(), "tilt-shelf-freq"))
                         .value(config.tilt_bass_shelf_freq)
                         .min(20.0)
                         .max(1000.0)
@@ -2607,7 +2608,7 @@ impl RenderOnce for AutoEqForm {
             }
 
             // --- Excursion Protection ---
-            let mut excursion_toggle = Toggle::new("autoeq-excursion-enabled")
+            let mut excursion_toggle = Toggle::new((base_id.clone(), "excursion-enabled"))
                 .size(ToggleSize::Sm)
                 .checked(config.use_excursion_protection)
                 .theme(toggle_theme.clone());
@@ -2625,7 +2626,7 @@ impl RenderOnce for AutoEqForm {
             );
 
                             if config.use_excursion_protection {
-                            let mut auto_f3_toggle = Toggle::new("autoeq-excursion-auto-f3")
+                            let mut auto_f3_toggle = Toggle::new((base_id.clone(), "excursion-auto-f3"))
                                 .size(ToggleSize::Sm)
                                 .checked(config.excursion_auto_detect_f3)
                                 .theme(toggle_theme.clone());
@@ -2643,7 +2644,7 @@ impl RenderOnce for AutoEqForm {
                             );
             
                             if !config.excursion_auto_detect_f3 {
-                                let mut f3_input = NumberInput::new("autoeq-excursion-manual-f3")
+                                let mut f3_input = NumberInput::new((base_id.clone(), "excursion-manual-f3"))
                                     .value(config.excursion_manual_f3)
                                     .min(10.0)
                                     .max(500.0)
@@ -2665,7 +2666,7 @@ impl RenderOnce for AutoEqForm {
                                 .map(|(val, lbl)| SelectOption::new(*val, *lbl))
                                 .collect();
             
-                            let mut hp_select = Select::new("autoeq-excursion-hp-type")
+                            let mut hp_select = Select::new((base_id.clone(), "excursion-hp-type"))
                                 .options(hp_options)
                                 .selected(&config.excursion_filter_type)
                                 .is_open(ui_state.excursion_filter_type_open)
@@ -2681,7 +2682,7 @@ impl RenderOnce for AutoEqForm {
                                 hp_select = hp_select.on_change(move |val, w, cx| h(val.as_ref(), w, cx));
                             }
             
-                            let mut order_input = NumberInput::new("autoeq-excursion-order")
+                            let mut order_input = NumberInput::new((base_id.clone(), "excursion-order"))
                                 .value(config.excursion_filter_order as f64)
                                 .min(2.0)
                                 .max(8.0)
@@ -2703,7 +2704,7 @@ impl RenderOnce for AutoEqForm {
                                     .child(order_input)
                             );
             
-                            let mut margin_input = NumberInput::new("autoeq-excursion-margin")
+                            let mut margin_input = NumberInput::new((base_id.clone(), "excursion-margin"))
                                 .value(config.excursion_margin_octaves)
                                 .min(0.0)
                                 .max(1.0)
@@ -2721,7 +2722,7 @@ impl RenderOnce for AutoEqForm {
                             advanced_b_content = advanced_b_content.child(margin_input);
                         }
                         // --- Schroeder Split ---
-            let mut schroeder_toggle = Toggle::new("autoeq-schroeder-enabled")
+            let mut schroeder_toggle = Toggle::new((base_id.clone(), "schroeder-enabled"))
                 .size(ToggleSize::Sm)
                 .checked(config.use_schroeder_split)
                 .theme(toggle_theme.clone());
@@ -2739,7 +2740,7 @@ impl RenderOnce for AutoEqForm {
             );
 
             if config.use_schroeder_split {
-                let mut s_freq_input = NumberInput::new("autoeq-schroeder-freq")
+                let mut s_freq_input = NumberInput::new((base_id.clone(), "schroeder-freq"))
                     .value(config.schroeder_freq)
                     .min(ParamLimits::SCHROEDER_FREQ.min)
                     .max(ParamLimits::SCHROEDER_FREQ.max)
@@ -2756,7 +2757,7 @@ impl RenderOnce for AutoEqForm {
 
                 advanced_b_content = advanced_b_content.child(s_freq_input);
 
-                let mut low_q_input = NumberInput::new("autoeq-schroeder-low-q")
+                let mut low_q_input = NumberInput::new((base_id.clone(), "schroeder-low-q"))
                     .value(config.schroeder_low_max_q)
                     .min(1.0)
                     .max(20.0)
@@ -2771,7 +2772,7 @@ impl RenderOnce for AutoEqForm {
                     low_q_input = low_q_input.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
-                let mut high_q_input = NumberInput::new("autoeq-schroeder-high-q")
+                let mut high_q_input = NumberInput::new((base_id.clone(), "schroeder-high-q"))
                     .value(config.schroeder_high_max_q)
                     .min(0.5)
                     .max(5.0)
@@ -2793,7 +2794,7 @@ impl RenderOnce for AutoEqForm {
                         .child(high_q_input)
                 );
 
-                let mut boost_toggle = Toggle::new("autoeq-schroeder-boost")
+                let mut boost_toggle = Toggle::new((base_id.clone(), "schroeder-boost"))
                     .size(ToggleSize::Sm)
                     .checked(config.schroeder_low_allow_boost)
                     .theme(toggle_theme.clone());
@@ -2803,7 +2804,7 @@ impl RenderOnce for AutoEqForm {
                     boost_toggle = boost_toggle.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
-                let mut shelve_toggle = Toggle::new("autoeq-schroeder-shelve")
+                let mut shelve_toggle = Toggle::new((base_id.clone(), "schroeder-shelve"))
                     .size(ToggleSize::Sm)
                     .checked(config.schroeder_high_shelving_only)
                     .theme(toggle_theme.clone());
@@ -2853,7 +2854,7 @@ impl RenderOnce for AutoEqForm {
             );
 
             // --- Phase Alignment ---
-            let mut phase_toggle = Toggle::new("autoeq-phase-enabled")
+            let mut phase_toggle = Toggle::new((base_id.clone(), "phase-enabled"))
                 .size(ToggleSize::Sm)
                 .checked(config.use_phase_alignment)
                 .theme(toggle_theme.clone());
@@ -2871,7 +2872,7 @@ impl RenderOnce for AutoEqForm {
             );
 
             if config.use_phase_alignment {
-                let mut min_freq_input = NumberInput::new("autoeq-phase-min-freq")
+                let mut min_freq_input = NumberInput::new((base_id.clone(), "phase-min-freq"))
                     .value(config.phase_min_freq)
                     .min(20.0)
                     .max(1000.0)
@@ -2886,7 +2887,7 @@ impl RenderOnce for AutoEqForm {
                     min_freq_input = min_freq_input.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
-                let mut max_freq_input = NumberInput::new("autoeq-phase-max-freq")
+                let mut max_freq_input = NumberInput::new((base_id.clone(), "phase-max-freq"))
                     .value(config.phase_max_freq)
                     .min(20.0)
                     .max(1000.0)
@@ -2908,7 +2909,7 @@ impl RenderOnce for AutoEqForm {
                         .child(max_freq_input)
                 );
 
-                let mut polarity_toggle = Toggle::new("autoeq-phase-polarity")
+                let mut polarity_toggle = Toggle::new((base_id.clone(), "phase-polarity"))
                     .size(ToggleSize::Sm)
                     .checked(config.phase_optimize_polarity)
                     .theme(toggle_theme.clone());
@@ -2925,7 +2926,7 @@ impl RenderOnce for AutoEqForm {
                         .child(polarity_toggle)
                 );
 
-                let mut p_max_delay = NumberInput::new("autoeq-phase-max-delay")
+                let mut p_max_delay = NumberInput::new((base_id.clone(), "phase-max-delay"))
                     .value(config.phase_max_delay_ms)
                     .min(ParamLimits::DELAY_MS.min)
                     .max(ParamLimits::DELAY_MS.max)
@@ -2943,7 +2944,7 @@ impl RenderOnce for AutoEqForm {
             }
 
             // --- Multi-Seat ---
-            let mut multi_seat_toggle = Toggle::new("autoeq-multi-seat-enabled")
+            let mut multi_seat_toggle = Toggle::new((base_id.clone(), "multi-seat-enabled"))
                 .size(ToggleSize::Sm)
                 .checked(config.use_multi_seat)
                 .theme(toggle_theme.clone());
@@ -2966,7 +2967,7 @@ impl RenderOnce for AutoEqForm {
                     .map(|(val, lbl)| SelectOption::new(*val, *lbl))
                     .collect();
 
-                let mut strategy_select = Select::new("autoeq-multi-seat-strategy")
+                let mut strategy_select = Select::new((base_id.clone(), "multi-seat-strategy"))
                     .options(strategy_options)
                     .selected(&config.multi_seat_strategy)
                     .is_open(ui_state.multi_seat_strategy_open)
@@ -2985,7 +2986,7 @@ impl RenderOnce for AutoEqForm {
                 advanced_a_content = advanced_a_content.child(strategy_select);
 
                 if config.multi_seat_strategy == "primary" {
-                    let mut primary_seat_input = NumberInput::new("autoeq-multi-seat-primary")
+                    let mut primary_seat_input = NumberInput::new((base_id.clone(), "multi-seat-primary"))
                         .value(config.multi_seat_primary_seat as f64)
                         .min(0.0)
                         .max(16.0)
@@ -3003,7 +3004,7 @@ impl RenderOnce for AutoEqForm {
                     advanced_a_content = advanced_a_content.child(primary_seat_input);
                 }
 
-                let mut dev_input = NumberInput::new("autoeq-multi-seat-max-dev")
+                let mut dev_input = NumberInput::new((base_id.clone(), "multi-seat-max-dev"))
                     .value(config.multi_seat_max_deviation_db)
                     .min(1.0)
                     .max(12.0)

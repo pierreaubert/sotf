@@ -492,6 +492,7 @@ impl RenderOnce for Potentiometer {
             let focus_handle_click = self.focus_handle.clone();
 
             container = container.on_mouse_down(MouseButton::Left, move |event, window, cx| {
+                cx.stop_propagation();
                 // Always focus for keyboard navigation
                 if let Some(ref fh) = focus_handle_click {
                     fh.focus(window, cx);
@@ -530,6 +531,7 @@ impl RenderOnce for Potentiometer {
                 let current_value_key = current_value.clone();
                 let config_key = interaction_config.clone();
                 container = container.on_key_down(move |event, window, cx| {
+                    cx.stop_propagation();
                     let key = event.keystroke.key.as_str();
                     if key == "escape" {
                         if let Some(ref reset_handler) = reset_key {

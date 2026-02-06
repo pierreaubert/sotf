@@ -1570,13 +1570,13 @@ impl LevelMeterManager for AppState {
 
         let now = std::time::Instant::now();
 
-        // Get current channel peaks from loudness data
-        let current_peaks = self
+        // Get current channel peaks from loudness data (zero-copy slice reference)
+        let current_peaks: &[f64] = self
             .playback
             .loudness_info
             .as_ref()
-            .map(|l| l.channel_peaks.clone())
-            .unwrap_or_default();
+            .map(|l| l.channel_peaks.as_slice())
+            .unwrap_or(&[]);
 
         // Resize peak hold array if needed
         if self.level_meter_peak_hold.len() != current_peaks.len() {
@@ -1585,18 +1585,16 @@ impl LevelMeterManager for AppState {
 
         // Update each channel's peak hold
         for (i, &current_peak) in current_peaks.iter().enumerate() {
-            if i < self.level_meter_peak_hold.len() {
-                // If current peak is higher than held peak, update immediately
-                if current_peak > self.level_meter_peak_hold[i] {
-                    self.level_meter_peak_hold[i] = current_peak;
-                } else {
-                    // Apply decay to held peak
-                    self.level_meter_peak_hold[i] *= PEAK_HOLD_DECAY_RATE;
+            // If current peak is higher than held peak, update immediately
+            if current_peak > self.level_meter_peak_hold[i] {
+                self.level_meter_peak_hold[i] = current_peak;
+            } else {
+                // Apply decay to held peak
+                self.level_meter_peak_hold[i] *= PEAK_HOLD_DECAY_RATE;
 
-                    // Clamp to zero if below threshold
-                    if self.level_meter_peak_hold[i] < PEAK_HOLD_DECAY_THRESHOLD {
-                        self.level_meter_peak_hold[i] = 0.0;
-                    }
+                // Clamp to zero if below threshold
+                if self.level_meter_peak_hold[i] < PEAK_HOLD_DECAY_THRESHOLD {
+                    self.level_meter_peak_hold[i] = 0.0;
                 }
             }
         }

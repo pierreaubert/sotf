@@ -442,6 +442,7 @@ impl RenderOnce for VolumeKnob {
             let focus_handle_click = focus_handle.clone();
             // Mouse down - focus for keyboard navigation
             container = container.on_mouse_down(MouseButton::Left, move |_event, window, cx| {
+                cx.stop_propagation();
                 focus_handle_click.focus(window, cx);
             });
         }
@@ -504,6 +505,7 @@ impl RenderOnce for VolumeKnob {
             let config_key = interaction_config.clone();
 
             container = container.on_key_down(move |event, window, cx| {
+                cx.stop_propagation();
                 let key = event.keystroke.key.as_str();
 
                 // Handle mute keys specially
