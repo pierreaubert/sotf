@@ -47,7 +47,9 @@ impl PlayerView {
                                 .set_plugin_parameter(engine_index, param_id, value)
                         } else {
                             // Parameter not supported for individual update, fall back to structural
-                            let sample_rate = state.app.playback.sample_rate.unwrap_or(48000) as f64;
+                            let device_name = state.app.audio_device_state.current_output_device_name.as_deref();
+                            let track_sample_rate = state.app.playback.sample_rate.unwrap_or(48000);
+                            let sample_rate = sotf_audio::select_output_sample_rate(track_sample_rate, device_name) as f64;
                             let plugins = state.app.plugin_state.plugin_chain.to_plugin_configs(sample_rate);
                             state.player.lock().update_plugins(plugins)
                         }
@@ -61,7 +63,9 @@ impl PlayerView {
             }
             PluginUpdateType::Structural => {
                 // Full plugin chain rebuild
-                let sample_rate = state.app.playback.sample_rate.unwrap_or(48000) as f64;
+                let device_name = state.app.audio_device_state.current_output_device_name.as_deref();
+                let track_sample_rate = state.app.playback.sample_rate.unwrap_or(48000);
+                let sample_rate = sotf_audio::select_output_sample_rate(track_sample_rate, device_name) as f64;
                 let plugins = state.app.plugin_state.plugin_chain.to_plugin_configs(sample_rate);
                 log::warn!(
                     "[GPUI] Structural update: sending {} plugins to engine (expected output: {} channels) at {}Hz",

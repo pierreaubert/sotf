@@ -621,10 +621,10 @@ fn main() {
         }
         Commands::ReplayGain { file } => match sotf_audio::replaygain::analyze_file(&file) {
             Ok(info) => {
-                log::info!("ReplayGain analysis:");
-                log::info!("  File: {:?}", file);
-                log::info!("  Gain: {:+.2} dB", info.gain);
-                log::info!("  Peak: {:.6}", info.peak);
+                let msg = format!("ReplayGain analysis:\n  File: {:?}\n  Gain: {:+.2} dB\n  Peak: {:.6}", 
+                    file, info.gain, info.peak);
+                log::info!("{}", msg);
+                println!("{}", msg);
             }
             Err(e) => {
                 log::error!("Error: {}", e);
@@ -757,15 +757,22 @@ fn main() {
 }
 
 fn list_devices() -> Result<(), String> {
-    log::info!("Enumerating audio devices...\n");
+    let msg = "Enumerating audio devices...\n";
+    log::info!("{}", msg);
+    println!("{}", msg);
 
     let devices = sotf_audio::devices::get_audio_devices()
         .map_err(|e| format!("Failed to get devices: {}", e))?;
 
     // Print input devices
     if let Some(input_devices) = devices.get("input") {
-        log::info!("Input Devices:");
-        log::info!("{}", "=".repeat(80));
+        let title = "Input Devices:";
+        let separator = "=".repeat(80);
+        log::info!("{}", title);
+        log::info!("{}", separator);
+        println!("{}", title);
+        println!("{}", separator);
+
         for (idx, device) in input_devices.iter().enumerate() {
             let default_marker = if device.is_default { " (Default)" } else { "" };
 
@@ -782,7 +789,7 @@ fn list_devices() -> Result<(), String> {
                     )
                 };
 
-                log::info!(
+                let line = format!(
                     "  [{}] {}{} - {} ch, {} (current: {} Hz), {}",
                     idx + 1,
                     device.name,
@@ -792,17 +799,27 @@ fn list_devices() -> Result<(), String> {
                     config.sample_rate,
                     config.sample_format
                 );
+                log::info!("{}", line);
+                println!("{}", line);
             } else {
-                log::info!("  [{}] {}{}", idx + 1, device.name, default_marker);
+                let line = format!("  [{}] {}{}", idx + 1, device.name, default_marker);
+                log::info!("{}", line);
+                println!("{}", line);
             }
         }
         log::info!("");
+        println!("");
     }
 
     // Print output devices
     if let Some(output_devices) = devices.get("output") {
-        log::info!("Output Devices:");
-        log::info!("{}", "=".repeat(80));
+        let title = "Output Devices:";
+        let separator = "=".repeat(80);
+        log::info!("{}", title);
+        log::info!("{}", separator);
+        println!("{}", title);
+        println!("{}", separator);
+
         for (idx, device) in output_devices.iter().enumerate() {
             let default_marker = if device.is_default { " (Default)" } else { "" };
 
@@ -819,7 +836,7 @@ fn list_devices() -> Result<(), String> {
                     )
                 };
 
-                log::info!(
+                let line = format!(
                     "  [{}] {}{} - {} ch, {} (current: {} Hz), {}",
                     idx + 1,
                     device.name,
@@ -829,11 +846,16 @@ fn list_devices() -> Result<(), String> {
                     config.sample_rate,
                     config.sample_format
                 );
+                log::info!("{}", line);
+                println!("{}", line);
             } else {
-                log::info!("  [{}] {}{}", idx + 1, device.name, default_marker);
+                let line = format!("  [{}] {}{}", idx + 1, device.name, default_marker);
+                log::info!("{}", line);
+                println!("{}", line);
             }
         }
         log::info!("");
+        println!("");
     }
 
     Ok(())
@@ -1114,21 +1136,29 @@ fn play_stream(
         .load_file(&file)
         .map_err(|e| format!("Failed to load audio file: {}", e))?;
 
-    log::info!("Loaded audio file:");
-    log::info!("  Format: {}", audio_info.format);
-    log::info!("  Sample rate: {}Hz", audio_info.spec.sample_rate);
-    log::info!("  Channels: {}", audio_info.spec.channels);
-    log::info!("  Bits per sample: {}", audio_info.spec.bits_per_sample);
+    let msg = format!("Loaded audio file:\n  Format: {}\n  Sample rate: {}Hz\n  Channels: {}\n  Bits per sample: {}", 
+        audio_info.format, audio_info.spec.sample_rate, audio_info.spec.channels, audio_info.spec.bits_per_sample);
+    log::info!("{}", msg);
+    println!("{}", msg);
+    
     if let Some(duration_secs) = audio_info.duration_seconds {
-        log::info!("  Duration: {:.2}s", duration_secs);
+        let dur_msg = format!("  Duration: {:.2}s", duration_secs);
+        log::info!("{}", dur_msg);
+        println!("{}", dur_msg);
     }
-    log::info!("");
+    println!("");
 
     // Build plugin chain
     let (plugins, output_channels, loudness_plugin_index) = if !rack.is_empty() {
         // Use PluginChain with specified plugin order (matches GPUI app behavior)
         log::info!("Using rack mode with plugins: {:?}", rack);
-        let sample_rate = audio_info.spec.sample_rate as f64;
+        
+        // Determine target sample rate based on track's native rate and device capabilities
+        let sample_rate = sotf_audio::select_output_sample_rate(
+            audio_info.spec.sample_rate,
+            device.as_deref(),
+        ) as f64;
+        
         let mut chain = PluginChain::new();
         let mut has_lufs = false;
 

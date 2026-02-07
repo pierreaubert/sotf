@@ -59,6 +59,7 @@ ebur128 = { workspace = true }
 rtrb = { workspace = true }
 hound = { workspace = true }
 rubato = { workspace = true }
+audioadapter-buffers = { workspace = true }
 id3 = { workspace = true }
 metaflac = { workspace = true }
 bincode = { workspace = true }

@@ -7,8 +7,10 @@
 
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
+use audioadapter_buffers::direct::SequentialSliceOfVecs;
 use rubato::{
-    Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+    Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType,
+    WindowFunction,
 };
 
 /// Resampler plugin using rubato
@@ -18,12 +20,6 @@ use rubato::{
 ///
 /// Note: The output buffer size will differ from input size based on the resampling ratio.
 /// For example, resampling from 44.1kHz to 48kHz will produce more output frames.
-///
-/// # Allocation note
-/// Rubato's `process()` API returns `Vec<Vec<f32>>`, causing unavoidable heap allocations
-/// on every call. This is an external API limitation. TODO: investigate rubato's
-/// `process_into_buffer()` (if available in our version) which accepts pre-allocated output
-/// buffers. Until then, this plugin is excluded from the zero-allocation benchmark.
 pub struct ResamplerPlugin {
     /// Number of channels
     num_channels: usize,
@@ -32,11 +28,13 @@ pub struct ResamplerPlugin {
     /// Output sample rate
     output_sample_rate: u32,
     /// Rubato resampler (planar format)
-    resampler: Option<SincFixedIn<f32>>,
+    resampler: Option<Async<f32>>,
     /// Chunk size for processing (number of frames per chunk)
     chunk_size: usize,
     /// Input buffer (planar: one vec per channel)
     input_buffer: Vec<Vec<f32>>,
+    /// Output buffer (planar: one vec per channel, pre-allocated to max output size)
+    output_buffer: Vec<Vec<f32>>,
     /// Actual output frames from last process() call
     last_output_frames: usize,
 }
@@ -73,6 +71,8 @@ impl ResamplerPlugin {
             chunk_size,
         )?;
 
+        let max_output_frames = resampler.output_frames_max();
+
         Ok(Self {
             num_channels,
             input_sample_rate,
@@ -80,6 +80,7 @@ impl ResamplerPlugin {
             resampler: Some(resampler),
             chunk_size,
             input_buffer: vec![vec![0.0; chunk_size]; num_channels],
+            output_buffer: vec![vec![0.0; max_output_frames]; num_channels],
             last_output_frames: 0,
         })
     }
@@ -99,7 +100,7 @@ impl ResamplerPlugin {
         input_sample_rate: u32,
         output_sample_rate: u32,
         chunk_size: usize,
-    ) -> Result<SincFixedIn<f32>, String> {
+    ) -> Result<Async<f32>, String> {
         // Use high-quality sinc interpolation
         let params = SincInterpolationParameters {
             sinc_len: 256,                                // Sinc filter length
@@ -109,12 +110,13 @@ impl ResamplerPlugin {
             window: WindowFunction::BlackmanHarris2, // Window function
         };
 
-        let resampler = SincFixedIn::<f32>::new(
+        let resampler = Async::<f32>::new_sinc(
             output_sample_rate as f64 / input_sample_rate as f64,
             2.0, // Maximum relative ratio deviation
-            params,
+            &params,
             chunk_size,
             num_channels,
+            FixedAsync::Input,
         )
         .map_err(|e| format!("Failed to create resampler: {:?}", e))?;
 
@@ -131,10 +133,15 @@ impl ResamplerPlugin {
     }
 
     /// Convert planar output to interleaved format
-    fn planar_to_interleaved(&self, planar: &[Vec<f32>], output: &mut [f32], num_frames: usize) {
+    fn planar_to_interleaved(
+        planar: &[Vec<f32>],
+        output: &mut [f32],
+        num_frames: usize,
+        num_channels: usize,
+    ) {
         for frame in 0..num_frames {
-            for ch in 0..self.num_channels {
-                output[frame * self.num_channels + ch] = planar[ch][frame];
+            for ch in 0..num_channels {
+                output[frame * num_channels + ch] = planar[ch][frame];
             }
         }
     }
@@ -237,17 +244,28 @@ impl Plugin for ResamplerPlugin {
         // Convert interleaved to planar
         self.interleaved_to_planar(input, num_input_frames);
 
-        // Process resampling — rubato's process() returns Vec<Vec<f32>>, causing
-        // unavoidable heap allocation. See struct-level doc for details.
-        let output_planar = self
+        // Process resampling using pre-allocated buffers (zero-allocation path)
+        let resampler = self
             .resampler
             .as_mut()
-            .ok_or("Resampler not initialized")?
-            .process(&self.input_buffer, None)
+            .ok_or("Resampler not initialized")?;
+
+        let max_output_frames = resampler.output_frames_max();
+        let input_adapter =
+            SequentialSliceOfVecs::new(&self.input_buffer, self.num_channels, num_input_frames)
+                .map_err(|e| format!("Input adapter error: {:?}", e))?;
+        let mut output_adapter = SequentialSliceOfVecs::new_mut(
+            &mut self.output_buffer,
+            self.num_channels,
+            max_output_frames,
+        )
+        .map_err(|e| format!("Output adapter error: {:?}", e))?;
+
+        let (_, output_frames) = resampler
+            .process_into_buffer(&input_adapter, &mut output_adapter, None)
             .map_err(|e| format!("Resampling failed: {:?}", e))?;
 
-        // Get output frame count and store it
-        let output_frames = output_planar[0].len();
+        // Store actual output frame count
         self.last_output_frames = output_frames;
 
         // Check output buffer size
@@ -263,7 +281,7 @@ impl Plugin for ResamplerPlugin {
         }
 
         // Convert planar to interleaved
-        self.planar_to_interleaved(&output_planar, output, output_frames);
+        Self::planar_to_interleaved(&self.output_buffer, output, output_frames, self.num_channels);
 
         Ok(output_frames)
     }

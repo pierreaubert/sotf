@@ -18,7 +18,8 @@ use crate::database::MusicDatabase;
 use bliss_audio::decoder::Decoder as BlissDecoder;
 use bliss_audio::decoder::PreAnalyzedSong;
 use bliss_audio::{Analysis, AnalysisIndex, BlissError, BlissResult};
-use rubato::{FftFixedInOut, Resampler};
+use audioadapter_buffers::direct::SequentialSliceOfVecs;
+use rubato::{Fft, FixedSync, Resampler};
 use sotf_audio::decoder::create_decoder;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -219,38 +220,41 @@ fn resample_to_bliss_rate(
     let chunk_size = 1024;
 
     let mut resampler =
-        FftFixedInOut::<f32>::new(source_rate as usize, target_rate as usize, chunk_size, 1)
+        Fft::<f32>::new(source_rate as usize, target_rate as usize, chunk_size, 2, 1, FixedSync::Both)
             .map_err(|e| BlissError::DecodingError(format!("Failed to create resampler: {}", e)))?;
 
-    let output_frames_per_chunk = (chunk_size as f64 * resample_ratio).ceil() as usize;
+    let input_frames_needed = resampler.input_frames_next();
+    let output_frames_per_chunk = resampler.output_frames_next();
     let estimated_output_len =
         ((samples.len() as f64 * resample_ratio) as usize) + output_frames_per_chunk;
     let mut output = Vec::with_capacity(estimated_output_len);
+    let mut output_channels = vec![vec![0.0f32; output_frames_per_chunk]];
 
     // Process in chunks
     let mut pos = 0;
     while pos < samples.len() {
-        let end = (pos + chunk_size).min(samples.len());
+        let end = (pos + input_frames_needed).min(samples.len());
         let chunk = &samples[pos..end];
 
         // Pad last chunk if needed
-        let input_chunk: Vec<f32> = if chunk.len() < chunk_size {
+        let input_chunk: Vec<f32> = if chunk.len() < input_frames_needed {
             let mut padded = chunk.to_vec();
-            padded.resize(chunk_size, 0.0);
+            padded.resize(input_frames_needed, 0.0);
             padded
         } else {
             chunk.to_vec()
         };
 
-        // Resample (rubato expects Vec<Vec<f32>> for multi-channel)
         let input_channels = vec![input_chunk];
-        let mut output_channels = resampler.output_buffer_allocate(true);
+        let input_adapter = SequentialSliceOfVecs::new(&input_channels, 1, input_frames_needed)
+            .map_err(|e| BlissError::DecodingError(format!("Input adapter error: {}", e)))?;
+        let mut output_adapter =
+            SequentialSliceOfVecs::new_mut(&mut output_channels, 1, output_frames_per_chunk)
+                .map_err(|e| BlissError::DecodingError(format!("Output adapter error: {}", e)))?;
 
-        match resampler.process_into_buffer(&input_channels, &mut output_channels, None) {
-            Ok(_) => {
-                if let Some(channel_output) = output_channels.first() {
-                    output.extend_from_slice(channel_output);
-                }
+        match resampler.process_into_buffer(&input_adapter, &mut output_adapter, None) {
+            Ok((_, written)) => {
+                output.extend_from_slice(&output_channels[0][..written]);
             }
             Err(e) => {
                 return Err(BlissError::DecodingError(format!(
@@ -260,7 +264,7 @@ fn resample_to_bliss_rate(
             }
         }
 
-        pos += chunk_size;
+        pos += input_frames_needed;
     }
 
     Ok(output)

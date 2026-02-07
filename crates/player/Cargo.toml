@@ -72,6 +72,7 @@ ebur128 = { workspace = true }
 # bliss audio analysis (no ffmpeg, we use our own Symphonia decoder)
 bliss-audio = { workspace = true }
 rubato = { workspace = true }
+audioadapter-buffers = { workspace = true }
 num_cpus = { workspace = true }
 
 # CLI for bliss scanner

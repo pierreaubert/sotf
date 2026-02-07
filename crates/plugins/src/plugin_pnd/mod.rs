@@ -5,7 +5,8 @@
 use super::param_specs::pnd::*;
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
-use rubato::{FastFixedIn, PolynomialDegree, Resampler};
+use audioadapter_buffers::direct::SequentialSliceOfVecs;
+use rubato::{Async, FixedAsync, PolynomialDegree, Resampler};
 
 mod analysis;
 mod config;
@@ -20,7 +21,7 @@ pub struct PndPlugin {
 
     // Components
     analyzer: Option<PndAnalyzer>,
-    resampler: Option<FastFixedIn<f32>>,
+    resampler: Option<Async<f32>>,
 
     // State
     current_ratio: f64,
@@ -72,12 +73,13 @@ impl PndPlugin {
 
     fn init_resampler(&mut self) -> PluginResult<()> {
         let chunk_size = 1024; // Standard block size
-        let resampler = FastFixedIn::<f32>::new(
+        let resampler = Async::<f32>::new_poly(
             1.0, // Initial ratio
             1.1, // Max ratio
             PolynomialDegree::Cubic,
             chunk_size,
             self.channels,
+            FixedAsync::Input,
         )
         .map_err(|e| format!("Failed to create resampler: {:?}", e))?;
 
@@ -249,10 +251,18 @@ impl Plugin for PndPlugin {
                 }
             }
 
-            // NOTE: rubato's process() returns Vec<Vec<f32>> — allocation is inside the
-            // external crate and cannot be avoided without forking rubato.
-            let planar_output = resampler
-                .process(&self.planar_input, None)
+            let max_output_frames = resampler.output_frames_max();
+            let mut planar_output = vec![vec![0.0f32; max_output_frames]; self.channels];
+
+            let input_adapter =
+                SequentialSliceOfVecs::new(&self.planar_input, self.channels, num_frames)
+                    .map_err(|e| format!("{:?}", e))?;
+            let mut output_adapter =
+                SequentialSliceOfVecs::new_mut(&mut planar_output, self.channels, max_output_frames)
+                    .map_err(|e| format!("{:?}", e))?;
+
+            let (_, out_written) = resampler
+                .process_into_buffer(&input_adapter, &mut output_adapter, None)
                 .map_err(|e| format!("{:?}", e))?;
 
             // Re-interleave
@@ -265,7 +275,7 @@ impl Plugin for PndPlugin {
             // which works if we are just "effecting" the audio, but for strict timing synchronization
             // this requires a different host architecture (pull-based with variable rate).
 
-            let out_frames = planar_output[0].len().min(num_frames);
+            let out_frames = out_written.min(num_frames);
 
             for i in 0..out_frames {
                 for c in 0..self.channels {

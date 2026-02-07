@@ -11,8 +11,10 @@ use super::speaker_config::{SpeakerConfig, get_speaker_config_by_channels};
 use crate::sofa::SofaFile;
 use parking_lot::RwLock;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
+use audioadapter_buffers::direct::SequentialSliceOfVecs;
 use rubato::{
-    Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+    Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType,
+    WindowFunction,
 };
 use rustfft::num_complex::Complex;
 use std::path::PathBuf;
@@ -444,10 +446,13 @@ impl BinauralDecoderPlugin {
             window: WindowFunction::BlackmanHarris2,
         };
 
-        let mut resampler = SincFixedIn::<f32>::new(ratio, 2.0, params, sofa.ir_length, 2)
-            .map_err(|e| format!("Failed to create resampler: {:?}", e))?;
+        let mut resampler =
+            Async::<f32>::new_sinc(ratio, 2.0, &params, sofa.ir_length, 2, FixedAsync::Input)
+                .map_err(|e| format!("Failed to create resampler: {:?}", e))?;
 
+        let max_output_frames = resampler.output_frames_max();
         let mut resampled_data = Vec::with_capacity(sofa.num_measurements * 2 * new_ir_length);
+        let mut output_buffers = vec![vec![0.0f32; max_output_frames]; 2];
 
         for m in 0..sofa.num_measurements {
             let offset = m * 2 * sofa.ir_length;
@@ -457,12 +462,18 @@ impl BinauralDecoderPlugin {
 
             let input = vec![ir_left.to_vec(), ir_right.to_vec()];
 
-            let output = resampler
-                .process(&input, None)
+            let input_adapter = SequentialSliceOfVecs::new(&input, 2, sofa.ir_length)
+                .map_err(|e| format!("Input adapter error: {:?}", e))?;
+            let mut output_adapter =
+                SequentialSliceOfVecs::new_mut(&mut output_buffers, 2, max_output_frames)
+                    .map_err(|e| format!("Output adapter error: {:?}", e))?;
+
+            let (_, output_frames) = resampler
+                .process_into_buffer(&input_adapter, &mut output_adapter, None)
                 .map_err(|e| format!("Resampling failed for measurement {}: {:?}", m, e))?;
 
-            resampled_data.extend_from_slice(&output[0]);
-            resampled_data.extend_from_slice(&output[1]);
+            resampled_data.extend_from_slice(&output_buffers[0][..output_frames]);
+            resampled_data.extend_from_slice(&output_buffers[1][..output_frames]);
             resampler.reset();
         }
 
