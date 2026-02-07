@@ -1,6 +1,6 @@
 [package]
 name = "math-xem-common"
-version = "0.3.1"
+version = "0.3.2"
 description = "Common types and utilities for BEM/FEM room acoustics simulators"
 edition = { workspace = true }
 authors = { workspace = true }
