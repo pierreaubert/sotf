@@ -100,7 +100,7 @@ pub fn run_room_optimization(
     sample_rate: f64,
     callback: Option<RoomOptimizationCallback>,
 ) -> Result<RoomOptimizationResult, String> {
-    optimize_room(config, sample_rate, callback).map_err(|e| e.to_string())
+    optimize_room(config, sample_rate, callback, None).map_err(|e| e.to_string())
 }
 
 /// Convert RoomOptimizationResult to legacy SingleSpeakerResult format
@@ -336,7 +336,7 @@ pub fn run_multi_speaker_optimization(
     });
 
     // Run optimization using roomeq
-    let result = optimize_room(&room_config, config.args.sample_rate, callback_wrapped)
+    let result = optimize_room(&room_config, config.args.sample_rate, callback_wrapped, None)
         .map_err(|e| e.to_string())?;
 
     // Convert result to legacy format

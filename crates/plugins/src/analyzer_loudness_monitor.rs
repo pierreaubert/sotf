@@ -65,7 +65,7 @@ impl LoudnessMonitor {
         let ebur128 = EbuR128::new(
             channels,
             sample_rate,
-            Mode::M | Mode::S | Mode::I | Mode::SAMPLE_PEAK,
+            Mode::M | Mode::S | Mode::I | Mode::SAMPLE_PEAK | Mode::TRUE_PEAK,
         )
         .map_err(|e| format!("Failed to create EBU R128 analyzer: {:?}", e))?;
 
@@ -117,6 +117,23 @@ impl LoudnessMonitor {
             self.current_loudness.momentary_lufs = self.ebur128.loudness_momentary().unwrap_or(-120.0);
             self.current_loudness.shortterm_lufs = self.ebur128.loudness_shortterm().unwrap_or(-120.0);
             self.current_loudness.integrated_lufs = self.ebur128.loudness_global().unwrap_or(-120.0);
+
+            // Update true peaks from ebur128 (inter-sample peak via oversampling)
+            for ch in 0..self.channels as usize {
+                match self.ebur128.true_peak(ch as u32) {
+                    Ok(tp) => {
+                        let dbtp = if tp > 0.0 {
+                            20.0 * tp.log10()
+                        } else {
+                            f64::NEG_INFINITY
+                        };
+                        self.true_peaks_scratch[ch] = dbtp;
+                    }
+                    Err(_) => {
+                        self.true_peaks_scratch[ch] = f64::NEG_INFINITY;
+                    }
+                }
+            }
 
             // Update correlation for stereo
             if self.channels == 2 {
@@ -248,7 +265,7 @@ impl LoudnessMonitor {
         let new_ebur = EbuR128::new(
             self.channels,
             self.sample_rate,
-            Mode::M | Mode::S | Mode::I | Mode::SAMPLE_PEAK,
+            Mode::M | Mode::S | Mode::I | Mode::SAMPLE_PEAK | Mode::TRUE_PEAK,
         )
         .map_err(|e| format!("Failed to reset analyzer: {:?}", e))?;
 
