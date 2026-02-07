@@ -6,84 +6,41 @@ use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::devices::get_device_supported_sample_rates;
+use crate::devices::get_device_current_sample_rate;
 use crate::engine::{AudioEngine, AudioEngineState, EngineConfig, PlaybackState, PluginConfig};
 use crate::{AudioDecoderError, AudioDecoderResult, AudioFormat, AudioSpec, probe_file};
 
-/// Select the optimal output sample rate for playback
+/// Select the output sample rate for playback
 ///
-/// Strategy:
-/// 1. If device supports file's native rate -> use it (no resampling)
-/// 2. Otherwise, find best supported rate:
-///    - Prefer rates in the same "family" (44100-based or 48000-based)
-///    - Prefer higher rates (less quality loss during resampling)
-///    - Fallback to device default
+/// Always uses the device's actual current sample rate. On macOS, devices report a wide
+/// range of "supported" rates but don't actually switch their hardware rate — so playing
+/// 44100 samples on a device running at 48000 causes speed/pitch errors and artifacts.
+/// The decoder will resample when the file rate differs from the device rate.
 pub fn select_output_sample_rate(file_sample_rate: u32, output_device: Option<&str>) -> u32 {
-    // Get device supported rates
-    let supported_rates = match get_device_supported_sample_rates(output_device) {
-        Some(rates) if !rates.is_empty() => rates,
-        _ => {
-            // No device info available, assume file rate is supported
+    match get_device_current_sample_rate(output_device) {
+        Some(device_rate) => {
+            if device_rate == file_sample_rate {
+                log::info!(
+                    "[AudioEngineManager] Device rate matches file: {}Hz (no resampling)",
+                    device_rate
+                );
+            } else {
+                log::info!(
+                    "[AudioEngineManager] Device running at {}Hz, file is {}Hz (will resample)",
+                    device_rate,
+                    file_sample_rate
+                );
+            }
+            device_rate
+        }
+        None => {
             log::debug!(
-                "[AudioEngineManager] Could not query device rates, using file rate: {}Hz",
+                "[AudioEngineManager] Could not query device rate, using file rate: {}Hz",
                 file_sample_rate
             );
-            return file_sample_rate;
-        }
-    };
-
-    log::debug!(
-        "[AudioEngineManager] File: {}Hz, Device supports: {:?}",
-        file_sample_rate,
-        supported_rates
-    );
-
-    // If device supports file's native rate, use it (no resampling needed)
-    if supported_rates.contains(&file_sample_rate) {
-        log::info!(
-            "[AudioEngineManager] Using native rate: {}Hz",
             file_sample_rate
-        );
-        return file_sample_rate;
-    }
-
-    // Device doesn't support file rate - find best alternative
-    // Determine the sample rate "family" (44100-based vs 48000-based)
-    let is_44100_family = file_sample_rate % 44100 == 0 || file_sample_rate == 22050;
-    let is_48000_family = file_sample_rate % 48000 == 0 || file_sample_rate == 24000;
-
-    // Preferred rates in order of preference for each family
-    let preferred_rates: &[u32] = if is_44100_family {
-        // 44100 family: prefer multiples/divisors within family, then cross-family
-        &[88200, 176400, 44100, 96000, 192000, 48000]
-    } else if is_48000_family {
-        // 48000 family: prefer multiples/divisors within family, then cross-family
-        &[96000, 192000, 48000, 88200, 176400, 44100]
-    } else {
-        // Unknown family (e.g., 32000Hz): prefer highest quality rates
-        &[192000, 176400, 96000, 88200, 48000, 44100]
-    };
-
-    // Find the best available rate
-    for &preferred in preferred_rates {
-        if supported_rates.contains(&preferred) {
-            log::info!(
-                "[AudioEngineManager] Resampling {}Hz -> {}Hz (native not supported)",
-                file_sample_rate,
-                preferred
-            );
-            return preferred;
         }
     }
-
-    // Fallback: use highest supported rate
-    let highest = *supported_rates.last().unwrap_or(&48000);
-    log::info!(
-        "[AudioEngineManager] Resampling {}Hz -> {}Hz (fallback to highest)",
-        file_sample_rate,
-        highest
-    );
-    highest
 }
 
 /// High-level audio streaming manager using native AudioEngine
@@ -260,13 +217,16 @@ impl AudioEngineManager {
             watch_config: self.watch_signals, // Enable signal watching if requested
         };
 
-        log::info!(
-            "[AudioEngineManager] Creating engine: source={}Hz, output={}Hz, {}ch{}",
+        log::warn!(
+            "[AudioEngineManager] Creating engine: file_sr={}Hz, device_sr={}Hz, output_sr={}Hz, input_ch={}, output_ch={}, plugins={}{}",
             file_sample_rate,
+            output_sample_rate,
             config.output_sample_rate,
+            config.input_channels,
             config.output_channels,
+            config.plugins.len(),
             if file_sample_rate != config.output_sample_rate {
-                " (resampling)"
+                " (RESAMPLING)"
             } else {
                 ""
             }

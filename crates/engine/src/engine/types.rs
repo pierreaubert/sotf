@@ -154,7 +154,7 @@ impl std::fmt::Debug for ProcessingCommand {
 }
 
 /// Response from processing thread
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum ProcessingResponse {
     /// Ok response
     Ok,

@@ -17,7 +17,7 @@ use std::sync::mpsc::{Receiver, Sender};
 // No loopback to HAL needed
 
 const SPIN_MS_RINGBUFFER: u64 = 5;
-const SPIN_MS_SIGNAL: u64 = 10;
+const SPIN_MS_SIGNAL: u64 = 1;
 
 /// Playback thread handle
 pub struct PlaybackThread {
@@ -101,6 +101,11 @@ struct PlaybackState {
     muted: Arc<AtomicBool>,
     underrun_count: Arc<AtomicU64>,
     last_buffer_level: Arc<AtomicU64>, // For tracking buffer fill percentage
+
+    // Diagnostic: total samples requested by cpal callback
+    total_callback_samples: Arc<AtomicU64>,
+    // Diagnostic: number of cpal callbacks
+    callback_count: Arc<AtomicU64>,
 }
 
 impl PlaybackState {
@@ -112,6 +117,8 @@ impl PlaybackState {
             muted: Arc::new(AtomicBool::new(false)),
             underrun_count: Arc::new(AtomicU64::new(0)),
             last_buffer_level: Arc::new(AtomicU64::new(100)), // Start at 100%
+            total_callback_samples: Arc::new(AtomicU64::new(0)),
+            callback_count: Arc::new(AtomicU64::new(0)),
         }
     }
 }
@@ -221,8 +228,8 @@ fn run_playback_thread(
         buffer_size: cpal::BufferSize::Default,
     };
 
-    // Create shared state (ring buffer with ~200ms capacity)
-    let buffer_capacity = (sample_rate as usize * 200) / 1000 * channels; // 200ms * channels
+    // Create shared state (ring buffer with ~500ms capacity)
+    let buffer_capacity = (sample_rate as usize * 500) / 1000 * channels; // 500ms * channels
     let (mut producer, consumer) = RingBuffer::<f32>::new(buffer_capacity);
     let mut state = Arc::new(PlaybackState::new(consumer, buffer_capacity));
 
@@ -250,6 +257,23 @@ fn run_playback_thread(
         device_name
     );
 
+    // Verify actual device config matches what we requested
+    if let Ok(actual_config) = device.default_output_config() {
+        let actual_sr = actual_config.sample_rate();
+        let actual_ch = actual_config.channels();
+        log::warn!(
+            "[Playback Thread] Requested: {}Hz {}ch, Device default config reports: {}Hz {}ch (format: {:?})",
+            sample_rate,
+            channels,
+            actual_sr,
+            actual_ch,
+            actual_config.sample_format(),
+        );
+    }
+
+    // Record stream start time for rate measurement
+    let stream_start_time = std::time::Instant::now();
+
     // Warn if the device name looks like a virtual device
     if device_name.contains("SotF") || device_name.contains("BlackHole") {
         log::error!(
@@ -257,6 +281,13 @@ fn run_playback_thread(
             device_name
         );
     }
+
+    // Diagnostic counters for frame accounting
+    let mut frames_received: u64 = 0;
+    let mut frames_written: u64 = 0;
+    let mut frames_dropped: u64 = 0;
+    let mut frames_blocked: u64 = 0;
+    let mut total_samples_written: u64 = 0;
 
     // Main loop: read from queue and write to ring buffer
     loop {
@@ -303,7 +334,7 @@ fn run_playback_thread(
 
                         // Create new ring buffer
                         let new_buffer_capacity =
-                            (new_sample_rate as usize * 200) / 1000 * channels;
+                            (new_sample_rate as usize * 500) / 1000 * channels;
                         let (new_producer, new_consumer) =
                             RingBuffer::<f32>::new(new_buffer_capacity);
 
@@ -431,7 +462,7 @@ fn run_playback_thread(
 
                         // Create new ring buffer for the new channel configuration
                         let new_buffer_capacity =
-                            (sample_rate as usize * 200) / 1000 * new_channels;
+                            (sample_rate as usize * 500) / 1000 * new_channels;
                         let (new_producer, new_consumer) =
                             RingBuffer::<f32>::new(new_buffer_capacity);
 
@@ -567,12 +598,17 @@ fn run_playback_thread(
         if available_space < min_space_required {
             // Ring buffer is full, sleep briefly and let the audio callback drain it
             std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_RINGBUFFER));
+            frames_blocked += 1;
             continue;
         }
 
-        // Read from message queue (non-blocking since we checked space)
-        match message_rx.recv_timeout(std::time::Duration::from_millis(SPIN_MS_SIGNAL)) {
+        // Read from message queue (prioritize draining the queue if we have space)
+        let message = message_rx.try_recv();
+        
+        match message {
             Ok(ProcessingMessage::Frame(frame)) => {
+                frames_received += 1;
+
                 // Track consecutive channel mismatches to detect stuck state vs transient hot-reload
                 static CHANNEL_MISMATCH_COUNT: std::sync::atomic::AtomicU32 =
                     std::sync::atomic::AtomicU32::new(0);
@@ -669,15 +705,23 @@ fn run_playback_thread(
                 CHANNEL_MISMATCH_COUNT.store(0, std::sync::atomic::Ordering::Relaxed);
 
                 // Write to ring buffer
-                let chunk = match producer.write_chunk_uninit(frame.data.len()) {
+                let frame_samples = frame.data.len();
+                let chunk = match producer.write_chunk_uninit(frame_samples) {
                     Ok(chunk) => chunk,
                     Err(_) => {
-                        // Should not happen often due to available_space check above, but purely for safety
+                        // FRAME DROPPED: popped from sync channel but can't write to ring buffer
+                        frames_dropped += 1;
+                        log::warn!(
+                            "[Playback Thread] FRAME DROPPED #{}: {} samples, ring_buffer_space={}, required={}",
+                            frames_dropped, frame_samples, producer.slots(), frame_samples,
+                        );
                         std::thread::sleep(std::time::Duration::from_millis(SPIN_MS_RINGBUFFER));
                         continue;
                     }
                 };
                 chunk.fill_from_iter(frame.data.into_iter());
+                frames_written += 1;
+                total_samples_written += frame_samples as u64;
             }
             Ok(ProcessingMessage::EndOfStream) => {
                 log::debug!("[Playback Thread] End of stream");
@@ -685,15 +729,47 @@ fn run_playback_thread(
             Ok(ProcessingMessage::Flush) => {
                 // Cannot easily clear rtrb producer side without consumer access
             }
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                // No message, continue
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                // No message available, sleep briefly to avoid 100% CPU
+                std::thread::sleep(std::time::Duration::from_millis(1));
             }
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                 log::debug!("[Playback Thread] Queue disconnected");
                 break;
             }
         }
     }
+
+    // Log cpal callback rate measurement
+    let elapsed = stream_start_time.elapsed();
+    let elapsed_secs = elapsed.as_secs_f64();
+    let total_samples = state.total_callback_samples.load(Ordering::Relaxed);
+    let total_callbacks = state.callback_count.load(Ordering::Relaxed);
+    let total_frames = if channels > 0 { total_samples / channels as u64 } else { 0 };
+    let effective_rate = if elapsed_secs > 0.0 { (total_frames as f64 / elapsed_secs) as u64 } else { 0 };
+    let audio_duration = total_frames as f64 / sample_rate as f64;
+    let avg_samples_per_callback = if total_callbacks > 0 { total_samples / total_callbacks } else { 0 };
+    log::warn!(
+        "[Playback Thread] CALLBACK RATE: {} callbacks, {} total samples ({} frames) in {:.3}s = {} effective Hz (expected {}Hz), audio_duration={:.3}s, avg_samples/callback={}, channels={}",
+        total_callbacks,
+        total_samples,
+        total_frames,
+        elapsed_secs,
+        effective_rate,
+        sample_rate,
+        audio_duration,
+        avg_samples_per_callback,
+        channels,
+    );
+    log::warn!(
+        "[Playback Thread] FRAME ACCOUNTING: received={}, written={}, dropped={}, blocked={}, written_samples={}, written_audio={:.3}s",
+        frames_received,
+        frames_written,
+        frames_dropped,
+        frames_blocked,
+        total_samples_written,
+        total_samples_written as f64 / (channels as f64 * sample_rate as f64),
+    );
 
     // Cleanup
     drop(stream);
@@ -725,6 +801,10 @@ fn build_output_stream(
             config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
                 let requested = data.len();
+
+                // Track callback metrics
+                state_clone.total_callback_samples.fetch_add(requested as u64, Ordering::Relaxed);
+                state_clone.callback_count.fetch_add(1, Ordering::Relaxed);
 
                 // Try to read requested amount
                 if let Ok(chunk) = consumer.read_chunk(requested) {

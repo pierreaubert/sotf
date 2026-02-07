@@ -20,21 +20,24 @@ use sotf_plugins::{
 use std::sync::mpsc::{Receiver, Sender, SyncSender};
 use std::time::Duration;
 
-const SPIN_MS_SIGNAL: u64 = 10;
+const SPIN_MS_SIGNAL: u64 = 1;
 
-/// Helper to send a message with backpressure handling and interruption support
+/// Helper to send a message with backpressure handling and interruption support.
+/// When a command arrives during backpressure, the pending message is returned
+/// along with the command so the caller can handle both without data loss.
 fn send_or_interrupt<T>(
     tx: &SyncSender<T>,
     rx: &Receiver<ProcessingCommand>,
     mut msg: T,
-) -> Result<Option<ProcessingCommand>, String> {
+) -> Result<Option<(ProcessingCommand, Option<T>)>, String> {
     loop {
         match tx.try_send(msg) {
             Ok(_) => return Ok(None),
             Err(std::sync::mpsc::TrySendError::Full(returned_msg)) => {
                 // Buffer full - check for interruption
                 if let Ok(cmd) = rx.try_recv() {
-                    return Ok(Some(cmd));
+                    // Return both the command AND the unsent message
+                    return Ok(Some((cmd, Some(returned_msg))));
                 }
                 msg = returned_msg;
                 std::thread::sleep(Duration::from_millis(1));
@@ -152,6 +155,14 @@ struct ProcessingState {
     channels: usize,
     bypassed: bool,
     process_buffer: Vec<f32>,
+    /// Frame counter for diagnostic logging
+    frame_count: u64,
+    /// Total output samples produced (for effective rate measurement)
+    total_output_samples: u64,
+    /// Timestamp of first frame processed
+    first_frame_time: Option<std::time::Instant>,
+    /// Sample rate (for effective rate calculation)
+    sample_rate: u32,
 }
 
 impl ProcessingState {
@@ -161,6 +172,10 @@ impl ProcessingState {
             channels,
             bypassed: false,
             process_buffer: Vec::new(),
+            frame_count: 0,
+            total_output_samples: 0,
+            first_frame_time: None,
+            sample_rate,
         }
     }
 
@@ -327,7 +342,9 @@ fn run_processing_thread(
         }
 
         // Process audio from decoder
-        match decoder_rx.recv_timeout(std::time::Duration::from_millis(SPIN_MS_SIGNAL)) {
+        let message = decoder_rx.try_recv();
+        
+        match message {
             Ok(DecoderMessage::Frame(frame)) => {
                 let output_channels = state.output_channels();
 
@@ -338,24 +355,49 @@ fn run_processing_thread(
                 // Query plugin chain for actual output sample rate
                 let output_sample_rate = state.output_sample_rate(frame.sample_rate);
 
+                // Diagnostic logging for first 5 frames
+                if state.frame_count < 5 {
+                    log::warn!(
+                        "[Processing] Frame #{}: input_frames={}, input_samples={}, input_ch={}, input_sr={}, output_ch={}, output_frames={}, output_sr={}, plugins={}",
+                        state.frame_count,
+                        frame.num_frames,
+                        frame.data.len(),
+                        frame.num_channels,
+                        frame.sample_rate,
+                        output_channels,
+                        output_frames,
+                        output_sample_rate,
+                        state.host.plugin_count(),
+                    );
+                }
+
                 let mut process_buffer = std::mem::take(&mut state.process_buffer);
                 if process_buffer.len() != output_samples {
                     process_buffer.resize(output_samples, 0.0);
                 }
-                let start_time = std::time::Instant::now();
+
                 match state.process_frame(&frame.data, &mut process_buffer, frame.num_frames) {
                     Ok(actual_output_frames) => {
-                        let elapsed = start_time.elapsed();
-                        if elapsed > std::time::Duration::from_millis(5) {
-                            log::warn!(
-                                "[Processing Thread] Slow processing: {:.2}ms for {} frames",
-                                elapsed.as_secs_f64() * 1000.0,
-                                frame.num_frames
-                            );
-                        }
-
                         // Use actual output frame count from processing (not max)
                         let actual_output_samples = actual_output_frames * output_channels;
+
+                        // Diagnostic logging for first 5 frames (post-processing)
+                        if state.frame_count < 5 {
+                            log::warn!(
+                                "[Processing] Frame #{}: actual_output_frames={}, actual_output_samples={}, expected_output_frames={}",
+                                state.frame_count,
+                                actual_output_frames,
+                                actual_output_samples,
+                                output_frames,
+                            );
+                        }
+                        state.frame_count += 1;
+
+                        // Track timing for effective rate measurement
+                        if state.first_frame_time.is_none() {
+                            state.first_frame_time = Some(std::time::Instant::now());
+                        }
+                        state.total_output_samples += actual_output_samples as u64;
 
                         // Create send vec directly from process_buffer (one unavoidable
                         // allocation per frame since AudioFrame owns its data for cross-thread send)
@@ -369,20 +411,28 @@ fn run_processing_thread(
                             output_sample_rate,
                         );
 
-                        match send_or_interrupt(
-                            &message_tx,
-                            &command_rx,
-                            ProcessingMessage::Frame(processed_frame),
-                        ) {
-                            Ok(Some(cmd)) => {
-                                if handle_processing_command(cmd, &mut state, &response_tx) {
-                                    break;
+                        let mut pending_msg = Some(ProcessingMessage::Frame(processed_frame));
+                        // Retry sending until the message is delivered or we shut down
+                        while let Some(msg) = pending_msg.take() {
+                            match send_or_interrupt(
+                                &message_tx,
+                                &command_rx,
+                                msg,
+                            ) {
+                                Ok(Some((cmd, unsent))) => {
+                                    pending_msg = unsent;
+                                    if handle_processing_command(cmd, &mut state, &response_tx) {
+                                        break;
+                                    }
+                                    // Loop to retry sending the unsent message
                                 }
-                            }
-                            Ok(None) => {}
-                            Err(e) => {
-                                log::debug!("[Processing Thread] Send error: {}", e);
-                                break;
+                                Ok(None) => {
+                                    // Sent successfully
+                                }
+                                Err(e) => {
+                                    log::debug!("[Processing Thread] Send error: {}", e);
+                                                    break;
+                                }
                             }
                         }
                     }
@@ -394,33 +444,77 @@ fn run_processing_thread(
                 state.process_buffer = process_buffer;
             }
             Ok(DecoderMessage::EndOfStream) => {
-                match send_or_interrupt(&message_tx, &command_rx, ProcessingMessage::EndOfStream) {
-                    Ok(Some(cmd)) => {
-                        if handle_processing_command(cmd, &mut state, &response_tx) {
-                            break;
+                let mut pending_msg = Some(ProcessingMessage::EndOfStream);
+                while let Some(msg) = pending_msg.take() {
+                    match send_or_interrupt(&message_tx, &command_rx, msg) {
+                        Ok(Some((cmd, unsent))) => {
+                            pending_msg = unsent;
+                            if handle_processing_command(cmd, &mut state, &response_tx) {
+                                break;
+                            }
                         }
+                        Ok(None) => {}
+                        Err(_) => break,
                     }
-                    Ok(None) => {}
-                    Err(_) => break,
                 }
             }
             Ok(DecoderMessage::Flush) => {
-                match send_or_interrupt(&message_tx, &command_rx, ProcessingMessage::Flush) {
-                    Ok(Some(cmd)) => {
-                        if handle_processing_command(cmd, &mut state, &response_tx) {
-                            break;
+                let mut pending_msg = Some(ProcessingMessage::Flush);
+                while let Some(msg) = pending_msg.take() {
+                    match send_or_interrupt(&message_tx, &command_rx, msg) {
+                        Ok(Some((cmd, unsent))) => {
+                            pending_msg = unsent;
+                            if handle_processing_command(cmd, &mut state, &response_tx) {
+                                break;
+                            }
                         }
+                        Ok(None) => {}
+                        Err(_) => break,
                     }
-                    Ok(None) => {}
-                    Err(_) => break,
                 }
             }
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                // No data, sleep briefly to avoid 100% CPU
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                 log::debug!("[Processing Thread] Decoder queue disconnected");
                 break;
             }
         }
+    }
+
+    // Log effective playback rate measurement
+    if let Some(start_time) = state.first_frame_time {
+        let elapsed = start_time.elapsed();
+        let elapsed_secs = elapsed.as_secs_f64();
+        let output_channels = state.output_channels();
+        let total_frames = if output_channels > 0 {
+            state.total_output_samples / output_channels as u64
+        } else {
+            0
+        };
+        let audio_duration_secs = total_frames as f64 / state.sample_rate as f64;
+        let effective_rate = if elapsed_secs > 0.0 {
+            (total_frames as f64 / elapsed_secs) as u64
+        } else {
+            0
+        };
+        let speed_ratio = if elapsed_secs > 0.0 {
+            audio_duration_secs / elapsed_secs
+        } else {
+            0.0
+        };
+        log::warn!(
+            "[Processing Thread] PLAYBACK RATE: {} frames in {:.3}s = {} effective Hz (expected {}Hz), audio_duration={:.3}s, speed_ratio={:.4}x, plugins={}",
+            total_frames,
+            elapsed_secs,
+            effective_rate,
+            state.sample_rate,
+            audio_duration_secs,
+            speed_ratio,
+            state.host.plugin_count(),
+        );
     }
 
     log::debug!("[Processing Thread] Stopped");

@@ -812,9 +812,10 @@ fn apply_plugin_update(
 
     input_channels: usize,
 ) -> Result<(), ConfigError> {
-    log::warn!(
-        "[Manager Thread] apply_plugin_update: ENTERING with {} plugins",
-        plugins.len()
+    log::debug!(
+        "[Manager Thread] apply_plugin_update: Starting update with {} plugins at {}Hz",
+        plugins.len(),
+        sample_rate
     );
 
     // Build the plugin host locally (this blocks ManagerThread, preventing UI updates but saving audio thread)
@@ -823,27 +824,31 @@ fn apply_plugin_update(
 
     let start_build = std::time::Instant::now();
 
-    log::debug!("[Manager Thread] Building plugin host...");
+    log::debug!("[Manager Thread] Building plugin host locally...");
 
     let host = build_plugin_host(&plugins, sample_rate, input_channels).map_err(|e| {
-        log::error!("[Manager Thread] Failed to build plugin host: {}", e);
+        log::error!("[Manager Thread] Local build failed: {}", e);
 
         ConfigError::ProcessingError { reason: e }
     })?;
 
     log::debug!(
-        "[Manager Thread] Plugin host built in {:?}",
-        start_build.elapsed()
+        "[Manager Thread] Local build successful in {:?}, output channels: {}",
+        start_build.elapsed(),
+        host.output_channels()
     );
 
     // Send update command to processing thread
 
     processing
         .send_command(ProcessingCommand::UpdateHost(host))
-        .map_err(|_| ConfigError::ChannelDisconnected)?;
+        .map_err(|_| {
+            log::error!("[Manager Thread] Failed to send UpdateHost command: disconnected");
+            ConfigError::ChannelDisconnected
+        })?;
 
-    log::trace!(
-        "[Manager Thread] apply_plugin_update: Sent UpdateHost command to processing thread"
+    log::debug!(
+        "[Manager Thread] apply_plugin_update: Sent UpdateHost to processing thread, waiting for ACK..."
     );
 
     // Calculate adaptive timeout based on plugin complexity
@@ -862,10 +867,16 @@ fn apply_plugin_update(
         loop_count += 1;
 
         if let Some(response) = processing.try_recv_response() {
+            log::debug!(
+                "[Manager Thread] Received response from processing thread after {:?} (loop {})",
+                start.elapsed(),
+                loop_count
+            );
+
             match &response {
                 super::ProcessingResponse::PluginData(_) | super::ProcessingResponse::Ok => {
                     _skipped_responses += 1;
-
+                    log::trace!("[Manager Thread] Skipping unrelated response: {:?}", response);
                     continue;
                 }
 
@@ -874,15 +885,15 @@ fn apply_plugin_update(
 
             match response {
                 super::ProcessingResponse::PluginChainUpdated { output_channels } => {
-                    log::warn!(
-                        "[Manager Thread] Plugin chain updated in {:?}, output_channels={} - SENDING TO PLAYBACK",
-                        start.elapsed(),
+                    log::debug!(
+                        "[Manager Thread] ACK received: Plugin chain updated, output_channels={}",
                         output_channels
                     );
 
                     let old_channels = if let Ok(state_guard) = safe_lock(state) {
                         state_guard.num_channels
                     } else {
+                        log::error!("[Manager Thread] State lock error during ACK processing");
                         return Err(ConfigError::StateLockError);
                     };
 
@@ -891,6 +902,11 @@ fn apply_plugin_update(
                     }
 
                     if output_channels != old_channels {
+                        log::info!(
+                            "[Manager Thread] Channel count changed ({} -> {}), updating playback thread",
+                            old_channels,
+                            output_channels
+                        );
                         playback
                             .send_command(PlaybackCommand::Stop)
                             .map_err(|_| ConfigError::ChannelDisconnected)?;
@@ -904,11 +920,12 @@ fn apply_plugin_update(
 
                     config_queue.metrics.record_success(start.elapsed());
 
+                    log::debug!("[Manager Thread] apply_plugin_update completed successfully");
                     return Ok(());
                 }
 
                 super::ProcessingResponse::Error(e) => {
-                    log::error!("[Manager Thread] Plugin update error: {}", e);
+                    log::error!("[Manager Thread] Processing thread reported error: {}", e);
 
                     config_queue.metrics.record_failure();
 
@@ -916,6 +933,7 @@ fn apply_plugin_update(
                 }
 
                 _ => {
+                    log::error!("[Manager Thread] Unexpected response type from processing thread");
                     return Err(ConfigError::UnexpectedResponse);
                 }
             }
@@ -945,7 +963,16 @@ fn apply_plugin_update(
 
 /// Validate plugin configurations before applying
 fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), ConfigError> {
+    log::debug!("[Manager Thread] Starting validation of {} plugins", configs.len());
+    
     for (i, config) in configs.iter().enumerate() {
+        log::debug!(
+            "[Manager Thread] Validating plugin {}: type='{}', params={}",
+            i,
+            config.plugin_type,
+            config.parameters
+        );
+
         // Check if plugin type is recognized (case-insensitive)
         let valid_types = [
             "eq",
@@ -972,6 +999,7 @@ fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), Config
 
         let plugin_type_lower = config.plugin_type.to_lowercase();
         if !valid_types.contains(&plugin_type_lower.as_str()) {
+            log::error!("[Manager Thread] Validation failed: Unknown plugin type '{}'", config.plugin_type);
             return Err(ConfigError::ValidationError {
                 plugin_index: i,
                 reason: format!("Unknown plugin type '{}'", config.plugin_type),
@@ -980,6 +1008,7 @@ fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), Config
 
         // Validate that parameters exist
         if config.parameters.is_null() {
+            log::error!("[Manager Thread] Validation failed: Plugin '{}' missing parameters", config.plugin_type);
             return Err(ConfigError::ValidationError {
                 plugin_index: i,
                 reason: format!("Plugin '{}' missing parameters", config.plugin_type),
@@ -990,18 +1019,29 @@ fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), Config
         match plugin_type_lower.as_str() {
             "eq" => {
                 // Validate EQ filter structure
-                if let Some(filters) = config.parameters.get("filters")
-                    && !filters.is_array()
-                {
-                    return Err(ConfigError::ValidationError {
-                        plugin_index: i,
-                        reason: "Invalid 'filters' parameter (must be array)".to_string(),
-                    });
+                if let Some(filters) = config.parameters.get("filters") {
+                    if !filters.is_array() {
+                        log::error!("[Manager Thread] EQ validation failed: 'filters' must be an array");
+                        return Err(ConfigError::ValidationError {
+                            plugin_index: i,
+                            reason: "Invalid 'filters' parameter (must be array)".to_string(),
+                        });
+                    }
+                    log::debug!("[Manager Thread] EQ validated with {} filters", filters.as_array().unwrap().len());
                 }
             }
             "gain" => {
                 // Validate gain_db exists
-                if config.parameters.get("gain_db").is_none() {
+                if let Some(gain) = config.parameters.get("gain_db") {
+                    if !gain.is_number() {
+                        log::error!("[Manager Thread] Gain validation failed: 'gain_db' must be a number");
+                        return Err(ConfigError::ValidationError {
+                            plugin_index: i,
+                            reason: "'gain_db' must be a number".to_string(),
+                        });
+                    }
+                } else {
+                    log::error!("[Manager Thread] Gain validation failed: Missing 'gain_db'");
                     return Err(ConfigError::ValidationError {
                         plugin_index: i,
                         reason: "Missing 'gain_db' parameter".to_string(),
@@ -1010,13 +1050,14 @@ fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), Config
             }
             "upmixer" => {
                 // Validate upmixer mode
-                if let Some(mode) = config.parameters.get("mode")
-                    && !mode.is_string()
-                {
-                    return Err(ConfigError::ValidationError {
-                        plugin_index: i,
-                        reason: "Invalid 'mode' parameter (must be string)".to_string(),
-                    });
+                if let Some(mode) = config.parameters.get("mode") {
+                    if !mode.is_string() {
+                        log::error!("[Manager Thread] Upmixer validation failed: 'mode' must be a string");
+                        return Err(ConfigError::ValidationError {
+                            plugin_index: i,
+                            reason: "Invalid 'mode' parameter (must be string)".to_string(),
+                        });
+                    }
                 }
             }
             _ => {
@@ -1025,6 +1066,7 @@ fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), Config
         }
     }
 
+    log::debug!("[Manager Thread] All {} plugins validated successfully", configs.len());
     Ok(())
 }
 

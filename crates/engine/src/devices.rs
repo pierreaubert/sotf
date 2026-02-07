@@ -444,6 +444,34 @@ pub fn get_device_supported_sample_rates(device_identifier: Option<&str>) -> Opt
     Some(rates)
 }
 
+/// Get the current (actual running) sample rate of an output device
+///
+/// Unlike `get_device_supported_sample_rates()` which returns what the device *claims* to support,
+/// this returns the rate the device is actually running at via `default_output_config()`.
+/// On macOS, the "supported" range may include rates the device won't switch to automatically,
+/// so using the current rate and resampling is the correct approach.
+///
+/// # Arguments
+/// * `device_identifier` - Device ID or name. If None, uses default output device.
+///
+/// # Returns
+/// The device's current sample rate, or None if device not found
+pub fn get_device_current_sample_rate(device_identifier: Option<&str>) -> Option<u32> {
+    let host = cpal::default_host();
+
+    // Find the device
+    let device = if let Some(identifier) = device_identifier {
+        host.output_devices()
+            .ok()?
+            .find(|d| device_matches_str(d, identifier))
+    } else {
+        host.default_output_device()
+    }?;
+
+    let config = device.default_output_config().ok()?;
+    Some(config.sample_rate())
+}
+
 /// Helper to match device by string identifier
 fn device_matches_str<D: DeviceTrait>(device: &D, identifier: &str) -> bool {
     // First try to match by device ID (preferred for persistence)

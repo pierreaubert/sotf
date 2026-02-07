@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 #[cfg(all(target_os = "macos", feature = "hal"))]
 use driver_hal::HalInputReader;
 
-const SPIN_MS_SLEEP_DECODER: u64 = 10;
+const SPIN_MS_SLEEP_DECODER: u64 = 1;
 
 /// Action returned by decode loop
 enum DecoderLoopAction {
@@ -300,7 +300,14 @@ impl DecoderState {
                         // Restore a new buffer for next iteration
                         self.frame_send_buffer = Vec::with_capacity(frame_len);
 
-                        AudioFrame::new(frame_data, actual_output_frames, channels, target_sample_rate)
+                        let frame = AudioFrame::new(frame_data, actual_output_frames, channels, target_sample_rate);
+                        debug_assert_eq!(
+                            frame.data.len(),
+                            frame.num_frames * frame.num_channels,
+                            "Resampled frame data size mismatch: data.len()={}, num_frames={}, num_channels={}",
+                            frame.data.len(), frame.num_frames, frame.num_channels,
+                        );
+                        frame
                     } else {
                         // No resampling - copy chunk to frame_send_buffer and take ownership
                         if self.frame_send_buffer.len() < chunk_len {
@@ -316,7 +323,14 @@ impl DecoderState {
                         // Restore a new buffer for next iteration
                         self.frame_send_buffer = Vec::with_capacity(chunk_len);
 
-                        AudioFrame::new(frame_data, frame_size, channels, source_sample_rate)
+                        let frame = AudioFrame::new(frame_data, frame_size, channels, source_sample_rate);
+                        debug_assert_eq!(
+                            frame.data.len(),
+                            frame.num_frames * frame.num_channels,
+                            "Non-resampled frame data size mismatch: data.len()={}, num_frames={}, num_channels={}",
+                            frame.data.len(), frame.num_frames, frame.num_channels,
+                        );
+                        frame
                     };
 
                     // Send with interruption support
