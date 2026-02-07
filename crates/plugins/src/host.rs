@@ -800,14 +800,31 @@ impl DawHost {
             current_frames,
         )?;
 
-        // Return actual output frames if available (e.g., from resampler),
-        // otherwise return input frames
-        let actual_output_frames = self.last_output_frames().unwrap_or(num_frames);
+        // Verify frame count hasn't changed unexpectedly (no resampler should mean same count)
+        let has_resampler = self.chain_nodes.iter().any(|node_id| {
+            self.nodes.get(node_id).is_some_and(|node| {
+                let plugin = node.plugin.lock().unwrap();
+                plugin.output_frames_for_input(100) != 100 // Simple heuristic: resampler changes frame count
+            })
+        });
+        if !has_resampler && current_frames != num_frames {
+            log::error!(
+                "[PluginHost] Frame count changed without resampler: {} -> {} (plugins: {})",
+                num_frames,
+                current_frames,
+                self.chain_nodes.len(),
+            );
+            debug_assert_eq!(
+                current_frames, num_frames,
+                "Frame count changed unexpectedly: {} -> {} (no resampler in chain)",
+                num_frames, current_frames,
+            );
+        }
 
         // Put buffers back for reuse next frame
         self.process_buffers = Some(bufs);
 
-        Ok(actual_output_frames)
+        Ok(current_frames)
     }
 
     /// Process a single node using pre-allocated buffers (static method to avoid borrow conflicts).

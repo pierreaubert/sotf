@@ -1708,12 +1708,7 @@ Upper bound for dialogue detection analysis.",
 
         // Sanity check for threading issues
         if self.next_add_position > self.fft_size * 3 {
-            log::info!(
-                "[UPMIXER] WARNING: Corrupted state detected! next_add_pos={} exceeds buffer size {}",
-                self.next_add_position,
-                self.fft_size * 3
-            );
-            log::debug!("[UPMIXER] This could indicate a threading issue. Resetting state.");
+            // No logging in real-time thread!
             self.reset();
         }
 
@@ -1728,20 +1723,6 @@ Upper bound for dialogue detection analysis.",
         loop {
             iteration += 1;
             if iteration > 1000 {
-                // log::error!("[UPMIXER] ERROR: Infinite loop detected after 1000 iterations!");
-                // log::info!(
-                //     "[UPMIXER] State: input_pos={}/{}, output_pos={}/{}",
-                //     input_pos / 2,
-                //     input.len() / 2,
-                //     output_pos / self.num_output_channels,
-                //     output.len() / 5
-                // );
-                // log::info!(
-                //     "[UPMIXER] input_buffer_fill={}, output_accumulator_fill={}, next_add_pos={}",
-                //     self.input_buffer_fill,
-                //     self.output_accumulator_fill,
-                //     self.next_add_position
-                // );
                 break;
             }
             // Step 1: Drain output accumulator if we have data and space
@@ -2047,73 +2028,11 @@ Upper bound for dialogue detection analysis.",
             //     self.next_add_position,
             //     output_pos / self.num_output_channels
             // );
+            
+            output_pos += frames_to_drain * self.num_output_channels;
         }
 
-        // log::debug!(
-        //     "[UPMIXER] process() complete: returned {} frames\n",
-        //     output_pos / self.num_output_channels
-        // );
-
-        // Detection only: Check for NaN/Inf and log level warnings
-        // Actual limiting is handled by safety_cap_db + channel normalization
-        let threshold = 1.0; // 0dBFS
-        let mut clipping_samples = 0;
-        let mut nan_count = 0;
-        let mut inf_count = 0;
-        let mut max_value = 0.0_f32;
-        let mut max_clipping_value = 1.0_f32;
-
-        for sample in output.iter() {
-            if sample.is_nan() {
-                nan_count += 1;
-                continue;
-            }
-            if sample.is_infinite() {
-                inf_count += 1;
-                continue;
-            }
-
-            let abs_val = sample.abs();
-            if abs_val > max_value {
-                max_value = abs_val;
-            }
-
-            if abs_val >= threshold {
-                clipping_samples += 1;
-                if abs_val > max_clipping_value {
-                    max_clipping_value = abs_val;
-                }
-            }
-        }
-
-        // Log critical errors for NaN/Inf
-        if nan_count > 0 {
-            log::error!(
-                "[UPMIXER] CRITICAL: {} NaN samples detected in output!",
-                nan_count
-            );
-        }
-        if inf_count > 0 {
-            log::error!(
-                "[UPMIXER] CRITICAL: {} infinite samples detected in output!",
-                inf_count
-            );
-        }
-
-        // Log warning if clipping occurred (only if valid samples exist)
-        if clipping_samples > 0 && max_clipping_value >= threshold && max_clipping_value.is_finite()
-        {
-            let peak_db = 20.0 * max_clipping_value.log10();
-            log::warn!(
-                "[UPMIXER] CLIPPING: {} samples exceeded threshold, peak: {:.2} dBFS ({:.2} dB above 0dBFS), safety_cap_db={:.1} dB",
-                clipping_samples,
-                peak_db,
-                peak_db,
-                self.safety_cap_db
-            );
-        }
-
-        Ok(context.num_frames)
+        Ok(output_pos / self.num_output_channels)
     }
 
     fn latency_samples(&self) -> usize {

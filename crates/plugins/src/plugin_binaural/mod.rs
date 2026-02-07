@@ -1085,16 +1085,7 @@ impl Plugin for BinauralDecoderPlugin {
             }
         }
 
-        // let elapsed = start_time.elapsed();
-        // if elapsed > std::time::Duration::from_millis(3) {
-        //     log::warn!(
-        //         "[BinauralDecoder] Slow processing: {:.2}ms for {} input frames",
-        //         elapsed.as_secs_f64() * 1000.0,
-        //         context.num_frames
-        //     );
-        // }
-
-        Ok(context.num_frames)
+        Ok(output_pos / 2)
     }
 
     fn latency_samples(&self) -> usize {

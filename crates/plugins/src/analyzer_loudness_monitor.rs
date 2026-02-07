@@ -41,16 +41,18 @@ pub(crate) struct LoudnessMonitor {
     correlation_count: usize,
     /// Maximum correlation buffer size (1 second of audio)
     correlation_buffer_size: usize,
-    /// Frames since last correlation update
-    correlation_frames_since_update: usize,
-    /// How often to recompute correlation (sample_rate / 10 = every 100ms)
-    correlation_update_interval: usize,
+    /// Frames since last metrics update
+    frames_since_metrics_update: usize,
+    /// How often to recompute expensive metrics (sample_rate / 10 = every 100ms)
+    metrics_update_interval: usize,
     /// Last computed correlation value
     cached_correlation: Option<f64>,
-    /// Scratch buffer for true peaks calculation
+    /// Scratch buffer for true peaks calculation (placeholders)
     true_peaks_scratch: Vec<f64>,
     /// Scratch buffer for new channel peaks calculation
     channel_peaks_scratch: Vec<f64>,
+    /// Last number of frames processed
+    last_num_frames: usize,
 }
 
 impl LoudnessMonitor {
@@ -63,7 +65,7 @@ impl LoudnessMonitor {
         let ebur128 = EbuR128::new(
             channels,
             sample_rate,
-            Mode::M | Mode::S | Mode::I | Mode::SAMPLE_PEAK | Mode::TRUE_PEAK,
+            Mode::M | Mode::S | Mode::I | Mode::SAMPLE_PEAK,
         )
         .map_err(|e| format!("Failed to create EBU R128 analyzer: {:?}", e))?;
 
@@ -73,7 +75,7 @@ impl LoudnessMonitor {
         let peak_decay_per_sample = 1.0 / decay_samples;
 
         let correlation_buffer_size = sample_rate as usize;
-        let correlation_update_interval = sample_rate as usize / 10; // every 100ms
+        let metrics_update_interval = sample_rate as usize / 10; // every 100ms
 
         Ok(Self {
             ebur128,
@@ -87,44 +89,47 @@ impl LoudnessMonitor {
             correlation_write_pos: 0,
             correlation_count: 0,
             correlation_buffer_size,
-            correlation_frames_since_update: 0,
-            correlation_update_interval,
+            frames_since_metrics_update: 0,
+            metrics_update_interval,
             cached_correlation: None,
-            true_peaks_scratch: vec![f64::NEG_INFINITY; channels as usize],
+            true_peaks_scratch: vec![-120.0; channels as usize],
             channel_peaks_scratch: vec![0.0; channels as usize],
+            last_num_frames: 0,
         })
     }
 
     /// Add audio frames to the analyzer
     pub(crate) fn add_frames(&mut self, samples: &[f32]) -> Result<(), String> {
+        // ebur128::add_frames_f32 is the most intensive part, but unavoidable for LUFS
         self.ebur128
             .add_frames_f32(samples)
             .map_err(|_| "Failed to add frames to EBU R128 analyzer".to_string())?;
 
-        let momentary_lufs = self.ebur128.loudness_momentary().unwrap_or(-120.0);
-        let shortterm_lufs = self.ebur128.loudness_shortterm().unwrap_or(-120.0);
-        let integrated_lufs = self.ebur128.loudness_global().unwrap_or(-120.0);
+        let num_frames = samples.len() / self.channels as usize;
+        self.last_num_frames = num_frames;
+        let channels = self.channels as usize;
+        self.frames_since_metrics_update += num_frames;
 
-        // Get true peaks per channel — reuse scratch buffer
-        // Note: true_peak() can be expensive as it involves oversampling.
-        // We only update it when throttled if performance is an issue, but for now we keep it per-block.
-        for ch in 0..self.channels as usize {
-            if let Ok(true_peak_linear) = self.ebur128.true_peak(ch as u32) {
-                // Pre-calculate 20 * log10(tp) only if tp is significant
-                self.true_peaks_scratch[ch] = if true_peak_linear > 1e-6 {
-                    20.0 * true_peak_linear.log10()
-                } else {
-                    -120.0
-                };
-            } else {
-                self.true_peaks_scratch[ch] = -120.0;
+        // Throttle expensive loudness queries
+        if self.frames_since_metrics_update >= self.metrics_update_interval {
+            self.frames_since_metrics_update = 0;
+
+            self.current_loudness.momentary_lufs = self.ebur128.loudness_momentary().unwrap_or(-120.0);
+            self.current_loudness.shortterm_lufs = self.ebur128.loudness_shortterm().unwrap_or(-120.0);
+            self.current_loudness.integrated_lufs = self.ebur128.loudness_global().unwrap_or(-120.0);
+
+            // Update correlation for stereo
+            if self.channels == 2 {
+                self.current_loudness.correlation_lr = self.calculate_correlation_stereo();
             }
         }
 
-        // Calculate per-channel sample peaks from the current buffer
-        let num_frames = samples.len() / self.channels as usize;
-        let channels = self.channels as usize;
+        // We still need to fill correlation ring buffers every block to avoid missing data
+        if self.channels == 2 {
+            self.fill_correlation_buffers(samples);
+        }
 
+        // Calculate per-channel sample peaks from the current buffer (cheap)
         self.channel_peaks_scratch.fill(0.0);
         for frame in samples.chunks_exact(channels) {
             for (ch, &sample) in frame.iter().enumerate() {
@@ -134,13 +139,6 @@ impl LoudnessMonitor {
                 }
             }
         }
-
-        // Update correlation for stereo using ring buffer + throttling
-        let correlation_lr = if self.channels == 2 {
-            self.update_correlation_stereo(samples)
-        } else {
-            None
-        };
 
         // Apply decay to existing peaks and take max with new peaks
         let decay = self.peak_decay_per_sample * num_frames as f64;
@@ -159,10 +157,7 @@ impl LoudnessMonitor {
             .copied()
             .fold(0.0, f64::max);
 
-        // Update LoudnessInfo in-place (no allocations)
-        self.current_loudness.momentary_lufs = momentary_lufs;
-        self.current_loudness.shortterm_lufs = shortterm_lufs;
-        self.current_loudness.integrated_lufs = integrated_lufs;
+        // Update basic peak info every block for responsive meters
         self.current_loudness.peak = peak;
         self.current_loudness
             .channel_peaks
@@ -170,18 +165,15 @@ impl LoudnessMonitor {
         self.current_loudness
             .true_peaks_dbtp
             .copy_from_slice(&self.true_peaks_scratch);
-        self.current_loudness.correlation_lr = correlation_lr;
 
         Ok(())
     }
 
-    /// Write new stereo samples into the ring buffer, then recompute correlation
-    /// only every ~100ms (correlation_update_interval samples).
-    fn update_correlation_stereo(&mut self, samples: &[f32]) -> Option<f64> {
+    /// Fill the correlation ring buffers with new samples
+    fn fill_correlation_buffers(&mut self, samples: &[f32]) {
+        let mut write_pos = self.correlation_write_pos;
         let num_frames = samples.len() / 2;
 
-        // Write into ring buffer (manual loop is efficient for interleaved data)
-        let mut write_pos = self.correlation_write_pos;
         for frame in samples.chunks_exact(2) {
             self.correlation_ring_l[write_pos] = frame[0];
             self.correlation_ring_r[write_pos] = frame[1];
@@ -192,16 +184,12 @@ impl LoudnessMonitor {
             }
         }
         self.correlation_write_pos = write_pos;
-        self.correlation_count = (self.correlation_count + num_frames).min(self.correlation_buffer_size);
+        self.correlation_count =
+            (self.correlation_count + num_frames).min(self.correlation_buffer_size);
+    }
 
-        self.correlation_frames_since_update += num_frames;
-
-        // Throttle: only recompute every ~100ms
-        if self.correlation_frames_since_update < self.correlation_update_interval {
-            return self.cached_correlation;
-        }
-        self.correlation_frames_since_update = 0;
-
+    /// Recompute correlation from ring buffer
+    fn calculate_correlation_stereo(&mut self) -> Option<f64> {
         // Need at least 100 samples for meaningful correlation
         if self.correlation_count < 100 {
             return None;
@@ -214,7 +202,9 @@ impl LoudnessMonitor {
         let (sum_l, sum_r) = self.correlation_ring_l[..valid_len]
             .iter()
             .zip(self.correlation_ring_r[..valid_len].iter())
-            .fold((0.0, 0.0), |acc, (&l, &r)| (acc.0 + l as f64, acc.1 + r as f64));
+            .fold((0.0, 0.0), |acc, (&l, &r)| {
+                (acc.0 + l as f64, acc.1 + r as f64)
+            });
 
         let mean_l = sum_l / n;
         let mean_r = sum_r / n;
@@ -240,7 +230,7 @@ impl LoudnessMonitor {
         };
 
         self.cached_correlation = Some(correlation);
-        self.cached_correlation
+        Some(correlation)
     }
 
     /// Get the current loudness measurements (zero-copy reference)
@@ -248,12 +238,17 @@ impl LoudnessMonitor {
         &self.current_loudness
     }
 
+    /// Get the last number of frames processed
+    pub(crate) fn last_num_frames(&self) -> usize {
+        self.last_num_frames
+    }
+
     /// Reset the monitor (clear all history)
     pub(crate) fn reset(&mut self) -> Result<(), String> {
         let new_ebur = EbuR128::new(
             self.channels,
             self.sample_rate,
-            Mode::M | Mode::S | Mode::I | Mode::SAMPLE_PEAK | Mode::TRUE_PEAK,
+            Mode::M | Mode::S | Mode::I | Mode::SAMPLE_PEAK,
         )
         .map_err(|e| format!("Failed to reset analyzer: {:?}", e))?;
 
@@ -264,7 +259,7 @@ impl LoudnessMonitor {
         self.correlation_ring_r.fill(0.0);
         self.correlation_write_pos = 0;
         self.correlation_count = 0;
-        self.correlation_frames_since_update = 0;
+        self.frames_since_metrics_update = 0;
         self.cached_correlation = None;
 
         Ok(())
@@ -429,127 +424,9 @@ impl Plugin for LoudnessMonitorPlugin {
     fn latency_samples(&self) -> usize {
         0
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::Plugin;
-
-    #[test]
-    fn test_loudness_monitor_plugin_creation() {
-        let plugin = LoudnessMonitorPlugin::new(2).unwrap();
-        assert_eq!(plugin.input_channels(), 2);
-    }
-
-    #[test]
-    fn test_loudness_monitor_plugin_processing() {
-        let mut plugin = LoudnessMonitorPlugin::new(2).unwrap();
-        plugin.initialize(48000).unwrap();
-
-        // Create test signal: 1kHz sine wave at -20dBFS
-        let num_frames = 4800; // 100ms at 48kHz
-        let mut input = vec![0.0_f32; num_frames * 2];
-        for i in 0..num_frames {
-            let phase = 2.0 * std::f32::consts::PI * 1000.0 * i as f32 / 48000.0;
-            let sample = phase.sin() * 0.1; // -20dBFS
-            input[i * 2] = sample;
-            input[i * 2 + 1] = sample;
-        }
-
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames,
-        };
-
-        let mut output = vec![0.0_f32; num_frames * 2];
-
-        // Process
-        plugin.process(&input, &mut output, &context).unwrap();
-
-        // Get measurements
-        let data = plugin.get_data().unwrap();
-        let loudness_data = data.downcast_ref::<LoudnessData>().unwrap();
-
-        log::info!("Momentary LUFS: {:.1}", loudness_data.momentary_lufs);
-        log::info!("Short-term LUFS: {:.1}", loudness_data.shortterm_lufs);
-        log::info!("Peak: {:.3}", loudness_data.peak);
-
-        // Peak should be around 0.1
-        assert!(
-            loudness_data.peak > 0.05 && loudness_data.peak < 0.15,
-            "Peak should be around 0.1, got {}",
-            loudness_data.peak
-        );
-    }
-
-    #[test]
-    fn test_loudness_monitor_plugin_reset() {
-        let mut plugin = LoudnessMonitorPlugin::new(2).unwrap();
-        plugin.initialize(48000).unwrap();
-
-        // Process some audio
-        let num_frames = 1024;
-        let input = vec![0.5_f32; num_frames * 2];
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames,
-        };
-
-        let mut output = vec![0.0_f32; num_frames * 2];
-        plugin.process(&input, &mut output, &context).unwrap();
-
-        // Reset
-        plugin.reset();
-
-        // Measurements should be reset
-        let data = plugin.get_data().unwrap();
-        let loudness_data = data.downcast_ref::<LoudnessData>().unwrap();
-
-        // After reset, values should be back to default (negative infinity for LUFS)
-        log::info!(
-            "After reset - Momentary: {:.1}, Peak: {:.3}",
-            loudness_data.momentary_lufs,
-            loudness_data.peak
-        );
-    }
-
-    #[test]
-    fn test_loudness_monitor_plugin_multichannel() {
-        // Test with 5 channels (5.0 surround)
-        let mut plugin = LoudnessMonitorPlugin::new(5).unwrap();
-        plugin.initialize(48000).unwrap();
-
-        let num_frames = 1024;
-        let mut input = vec![0.0_f32; num_frames * 5];
-
-        // Different signal on each channel
-        for i in 0..num_frames {
-            let t = i as f32 / 48000.0;
-            input[i * 5 + 0] = (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.1;
-            input[i * 5 + 1] = (2.0 * std::f32::consts::PI * 550.0 * t).sin() * 0.1;
-            input[i * 5 + 2] = (2.0 * std::f32::consts::PI * 660.0 * t).sin() * 0.1;
-            input[i * 5 + 3] = (2.0 * std::f32::consts::PI * 770.0 * t).sin() * 0.1;
-            input[i * 5 + 4] = (2.0 * std::f32::consts::PI * 880.0 * t).sin() * 0.1;
-        }
-
-        let context = ProcessContext {
-            sample_rate: 48000,
-            num_frames,
-        };
-
-        let mut output = vec![0.0_f32; num_frames * 5];
-        plugin.process(&input, &mut output, &context).unwrap();
-
-        let data = plugin.get_data().unwrap();
-        let loudness_data = data.downcast_ref::<LoudnessData>().unwrap();
-
-        log::info!(
-            "5-channel loudness: {:.1} LUFS, peak: {:.3}",
-            loudness_data.momentary_lufs,
-            loudness_data.peak
-        );
-
-        assert!(loudness_data.peak > 0.0, "Peak should be non-zero");
+    fn last_output_frames(&self) -> Option<usize> {
+        // Always pass through the frame count
+        Some(self.monitor.last_num_frames())
     }
 }

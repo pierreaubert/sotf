@@ -273,14 +273,8 @@ impl Plugin for PndPlugin {
                 }
             }
 
-            // Zero fill rest if we shrank
-            if out_frames < num_frames {
-                for i in out_frames..num_frames {
-                    for c in 0..self.channels {
-                        output[i * self.channels + c] = 0.0;
-                    }
-                }
-            }
+            // Report actual produced frames to host
+            return Ok(out_frames);
         }
 
         Ok(context.num_frames)
