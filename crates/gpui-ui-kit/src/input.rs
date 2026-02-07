@@ -374,13 +374,15 @@ impl EditState {
 
     fn kill_to_end(&mut self) {
         let chars: Vec<char> = self.text.chars().collect();
-        self.text = chars[..self.cursor].iter().collect();
+        let cursor = self.cursor.min(chars.len());
+        self.text = chars[..cursor].iter().collect();
         self.clear_selection();
     }
 
     fn kill_to_start(&mut self) {
         let chars: Vec<char> = self.text.chars().collect();
-        self.text = chars[self.cursor..].iter().collect();
+        let cursor = self.cursor.min(chars.len());
+        self.text = chars[cursor..].iter().collect();
         self.cursor = 0;
         self.clear_selection();
     }
@@ -390,6 +392,7 @@ impl EditState {
             return;
         }
         let chars: Vec<char> = self.text.chars().collect();
+        self.cursor = self.cursor.min(chars.len());
         let mut new_pos = self.cursor;
         // Skip trailing spaces
         while new_pos > 0 && chars[new_pos - 1].is_whitespace() {
@@ -412,6 +415,9 @@ impl EditState {
             && start != end
         {
             let chars: Vec<char> = self.text.chars().collect();
+            let len = chars.len();
+            let start = start.min(len);
+            let end = end.min(len);
             let mut new_chars = chars[..start].to_vec();
             new_chars.extend_from_slice(&chars[end..]);
             self.text = new_chars.into_iter().collect();

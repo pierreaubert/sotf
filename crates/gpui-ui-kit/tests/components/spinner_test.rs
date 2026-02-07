@@ -20,3 +20,37 @@ fn test_loading_dots() {
 
     drop(dots);
 }
+
+// -- New tests --
+
+#[test]
+fn test_spinner_all_sizes() {
+    let sizes = [SpinnerSize::Sm, SpinnerSize::Md, SpinnerSize::Lg];
+
+    for size in sizes {
+        let spinner = Spinner::new().size(size);
+        drop(spinner);
+    }
+}
+
+#[test]
+fn test_spinner_default() {
+    let spinner = Spinner::new();
+    drop(spinner);
+}
+
+#[test]
+fn test_spinner_no_label() {
+    let spinner = Spinner::new().size(SpinnerSize::Md);
+    drop(spinner);
+}
+
+#[test]
+fn test_loading_dots_all_sizes() {
+    let sizes = [SpinnerSize::Sm, SpinnerSize::Md, SpinnerSize::Lg];
+
+    for size in sizes {
+        let dots = LoadingDots::new().size(size);
+        drop(dots);
+    }
+}

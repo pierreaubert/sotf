@@ -164,12 +164,11 @@ impl Alert {
                 .hover(move |s| s.text_color(text_primary));
 
             if let Some(handler) = self.on_close {
-                let handler_ptr: *const dyn Fn(&mut Window, &mut App) = handler.as_ref();
+                let handler_rc = std::rc::Rc::new(handler);
                 close_btn =
-                    close_btn.on_mouse_up(MouseButton::Left, move |_event, window, cx| unsafe {
-                        (*handler_ptr)(window, cx);
+                    close_btn.on_mouse_up(MouseButton::Left, move |_event, window, cx| {
+                        handler_rc(window, cx);
                     });
-                std::mem::forget(handler);
             }
 
             alert = alert.child(close_btn.child("x"));

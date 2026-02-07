@@ -203,7 +203,7 @@ impl Toast {
             let text_muted = theme.text_muted;
             let text_primary = theme.text_primary;
             if let Some(handler) = self.on_close {
-                let handler_ptr: *const dyn Fn(&mut Window, &mut App) = handler.as_ref();
+                let handler_rc = std::rc::Rc::new(handler);
                 toast = toast.child(
                     div()
                         .id((close_btn_id, "close"))
@@ -211,12 +211,11 @@ impl Toast {
                         .text_color(text_muted)
                         .cursor_pointer()
                         .hover(move |s| s.text_color(text_primary))
-                        .on_mouse_up(MouseButton::Left, move |_event, window, cx| unsafe {
-                            (*handler_ptr)(window, cx);
+                        .on_mouse_up(MouseButton::Left, move |_event, window, cx| {
+                            handler_rc(window, cx);
                         })
                         .child("x"),
                 );
-                std::mem::forget(handler);
             }
         }
 
