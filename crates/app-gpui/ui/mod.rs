@@ -134,37 +134,7 @@ impl PlayerView {
                             && state.app.playback.current_queue_index.is_some()
                         {
                             if let Some(path) = state.app.next_track() {
-                                let sample_rate = 48000.0;
-                                let plugins = state
-                                    .app
-                                    .plugin_state
-                                    .plugin_chain
-                                    .to_plugin_configs(sample_rate);
-                                let output_channels =
-                                    state.app.plugin_state.plugin_chain.output_channels();
-
-                                let device_name = state
-                                    .app
-                                    .audio_device_state
-                                    .current_output_device_name
-                                    .clone()
-                                    .or_else(|| {
-                                        state
-                                            .app
-                                            .audio_device_state
-                                            .selected_output_device()
-                                            .map(|d| d.name.clone())
-                                    });
-
-                                if let Err(e) = state.player.lock().load_and_play(
-                                    path,
-                                    plugins,
-                                    output_channels,
-                                    device_name,
-                                ) {
-                                    log::error!("Failed to auto-advance: {}", e);
-                                    state.app.playback.is_playing = false;
-                                }
+                                Self::play_track(state, path);
                             } else {
                                 state.app.playback.is_playing = false;
                             }
@@ -543,7 +513,24 @@ impl PlayerView {
     }
 
     pub(crate) fn play_track(state: &mut AppState, path: std::path::PathBuf) {
-        let sample_rate = 48000.0;
+        Self::play_track_at(state, path, None);
+    }
+
+    pub(crate) fn play_track_at(
+        state: &mut AppState,
+        path: std::path::PathBuf,
+        position: Option<f64>,
+    ) {
+        // Try to get track sample rate from queue, fallback to 48kHz
+        let track_sample_rate = state
+            .app
+            .playback
+            .current_queue_index
+            .and_then(|idx| state.app.queue.get(idx))
+            .and_then(|item| item.current_track())
+            .and_then(|track| track.sample_rate);
+
+        let sample_rate = track_sample_rate.unwrap_or(48000) as f64;
         let plugins = state
             .app
             .plugin_state
@@ -552,9 +539,11 @@ impl PlayerView {
         let output_channels = state.app.plugin_state.plugin_chain.output_channels();
 
         log::warn!(
-            "[GPUI] play_track: starting with {} plugins, output_channels={}",
+            "[GPUI] play_track: starting with {} plugins, output_channels={}, position={:?}, sample_rate={}Hz",
             plugins.len(),
-            output_channels
+            output_channels,
+            position,
+            sample_rate
         );
 
         let device_name = state
@@ -570,12 +559,13 @@ impl PlayerView {
                     .map(|d| d.name.clone())
             });
 
-        if let Err(e) =
-            state
-                .player
-                .lock()
-                .load_and_play(path.clone(), plugins, output_channels, device_name)
-        {
+        if let Err(e) = state.player.lock().load_and_play_at(
+            path.clone(),
+            plugins,
+            output_channels,
+            device_name,
+            position,
+        ) {
             log::error!("Failed to play track: {}", e);
             state.app.playback.is_playing = false;
             state

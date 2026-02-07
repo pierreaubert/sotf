@@ -794,6 +794,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "autoeq-roomsim"
+version = "0.3.1"
+dependencies = [
+ "console_error_panic_hook",
+ "math-bem",
+ "ndarray 0.17.2",
+ "num-complex",
+ "rayon",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+ "wasm-bindgen-rayon",
+]
+
+[[package]]
 name = "av-scenechange"
 version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1762,6 +1777,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4ca0197aee26d1ae37445ee532fefce43251d24cc7c166799f4d46817f1d3973"
 dependencies = [
  "crossbeam-utils",
+]
+
+[[package]]
+name = "console_error_panic_hook"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a06aeb73f470f66dcdbf7223caeebb85984942f22f1adb2a088cf9668146bbbc"
+dependencies = [
+ "cfg-if",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -3797,7 +3822,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-ui-kit"
-version = "0.6.1"
+version = "0.6.3"
 dependencies = [
  "gpui",
  "gpui-ui-kit-macros",
@@ -5287,7 +5312,7 @@ dependencies = [
 
 [[package]]
 name = "math-dsp"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "approx",
  "clap",
@@ -5374,7 +5399,7 @@ dependencies = [
 
 [[package]]
 name = "math-xem-common"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "approx",
  "chrono",

@@ -203,6 +203,15 @@ impl App {
             .unwrap_or(0.0)
     }
 
+    /// Get the path of the currently playing track
+    pub fn get_current_track_path(&self) -> Option<PathBuf> {
+        self.playback
+            .current_queue_index
+            .and_then(|idx| self.queue.get(idx))
+            .and_then(|item| item.current_track())
+            .map(|track| track.path.clone())
+    }
+
     pub fn toggle_queue_item_expansion(&mut self) {
         if self.selected_queue_index < self.expanded_queue_items.len() {
             self.expanded_queue_items[self.selected_queue_index] =

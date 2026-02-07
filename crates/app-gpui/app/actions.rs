@@ -84,6 +84,10 @@ actions!(
         QuickAddLimiter,
         QuickAddLoudness,
         QuickAddBinaural,
+        QuickAddDownmix,
+        QuickAddMonoToStereo,
+        QuickAddBandSplit,
+        QuickAddBandMerge,
         // Level meter actions
         SelectNextMeterGroup,
         SelectPrevMeterGroup,

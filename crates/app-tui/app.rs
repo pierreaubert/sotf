@@ -1,7 +1,7 @@
 use crate::theme::Theme;
 use sotf_audio::LoudnessData;
 use sotf_audio::devices::AudioDevice;
-use sotf_audio_player::{Album, BiquadFilterType, MusicLibrary, PluginChain, PluginSettings, PluginType, Track};
+use sotf_audio_player::{Album, MusicLibrary, PluginChain, PluginType, Track};
 use sotf_plugins::speaker_config::{
     MeterGroupSpec, get_meter_groups, get_meter_groups_by_channels, make_fallback_channel,
 };
@@ -459,6 +459,46 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                 TuiParamSpec { name: "High Freq".to_string(), value: format!("{:.0}", high_freq), unit: "Hz".to_string() },
                 TuiParamSpec { name: "High Gain".to_string(), value: format!("{:.1}", high_gain), unit: "dB".to_string() },
             ],
+            sotf_audio_player::PluginSettings::Downmix {
+                center_gain_db,
+                surround_gain_db,
+                height_gain_db,
+                lfe_gain_db,
+                phase_coherence,
+                phase_blend_low_hz,
+                phase_blend_high_hz,
+                ..
+            } => vec![
+                TuiParamSpec { name: "Center Gain".to_string(), value: format!("{:.1}", center_gain_db), unit: "dB".to_string() },
+                TuiParamSpec { name: "Surround Gain".to_string(), value: format!("{:.1}", surround_gain_db), unit: "dB".to_string() },
+                TuiParamSpec { name: "Height Gain".to_string(), value: format!("{:.1}", height_gain_db), unit: "dB".to_string() },
+                TuiParamSpec { name: "LFE Gain".to_string(), value: format!("{:.1}", lfe_gain_db), unit: "dB".to_string() },
+                TuiParamSpec { name: "Phase Coherence".to_string(), value: (if *phase_coherence { "On" } else { "Off" }).to_string(), unit: "".to_string() },
+                TuiParamSpec { name: "Blend Low".to_string(), value: format!("{:.0}", phase_blend_low_hz), unit: "Hz".to_string() },
+                TuiParamSpec { name: "Blend High".to_string(), value: format!("{:.0}", phase_blend_high_hz), unit: "Hz".to_string() },
+            ],
+            sotf_audio_player::PluginSettings::MonoToStereo {
+                stereo_width,
+                haas_delay_ms,
+                enable_comp_eq,
+                comp_eq_depth_db,
+                decor_low_hz,
+                decor_high_hz,
+            } => vec![
+                TuiParamSpec { name: "Width".to_string(), value: format!("{:.2}", stereo_width), unit: "".to_string() },
+                TuiParamSpec { name: "Haas Delay".to_string(), value: format!("{:.1}", haas_delay_ms), unit: "ms".to_string() },
+                TuiParamSpec { name: "Panning EQ".to_string(), value: (if *enable_comp_eq { "On" } else { "Off" }).to_string(), unit: "".to_string() },
+                TuiParamSpec { name: "EQ Depth".to_string(), value: format!("{:.1}", comp_eq_depth_db), unit: "dB".to_string() },
+                TuiParamSpec { name: "Decor Low".to_string(), value: format!("{:.0}", decor_low_hz), unit: "Hz".to_string() },
+                TuiParamSpec { name: "Decor High".to_string(), value: format!("{:.0}", decor_high_hz), unit: "Hz".to_string() },
+            ],
+            sotf_audio_player::PluginSettings::BandSplit { frequency, crossover_type, .. } => vec![
+                TuiParamSpec { name: "Frequency".to_string(), value: format!("{:.0}", frequency), unit: "Hz".to_string() },
+                TuiParamSpec { name: "Type".to_string(), value: crossover_type.clone(), unit: "".to_string() },
+            ],
+            sotf_audio_player::PluginSettings::BandMerge { bands, .. } => vec![
+                TuiParamSpec { name: "Bands".to_string(), value: format!("{}", bands), unit: "".to_string() },
+            ],
             _ => vec![],
         }
     }
@@ -651,6 +691,68 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                 }
                 return true;
             }
+            sotf_audio_player::PluginSettings::Downmix {
+                center_gain_db,
+                surround_gain_db,
+                height_gain_db,
+                lfe_gain_db,
+                phase_coherence,
+                phase_blend_low_hz,
+                phase_blend_high_hz,
+                ..
+            } => {
+                use sotf_plugins::param_specs::downmix::*;
+                match index {
+                    0 => *center_gain_db = (*center_gain_db + delta * 0.5).clamp(CENTER_GAIN_DB_MIN as f64, CENTER_GAIN_DB_MAX as f64),
+                    1 => *surround_gain_db = (*surround_gain_db + delta * 0.5).clamp(SURROUND_GAIN_DB_MIN as f64, SURROUND_GAIN_DB_MAX as f64),
+                    2 => *height_gain_db = (*height_gain_db + delta * 0.5).clamp(HEIGHT_GAIN_DB_MIN as f64, HEIGHT_GAIN_DB_MAX as f64),
+                    3 => *lfe_gain_db = (*lfe_gain_db + delta * 0.5).clamp(LFE_GAIN_DB_MIN as f64, LFE_GAIN_DB_MAX as f64),
+                    4 => if delta.abs() > 0.1 { *phase_coherence = !*phase_coherence },
+                    5 => *phase_blend_low_hz = (*phase_blend_low_hz + delta * 10.0).clamp(PHASE_BLEND_LOW_HZ_MIN as f64, PHASE_BLEND_LOW_HZ_MAX as f64),
+                    6 => *phase_blend_high_hz = (*phase_blend_high_hz + delta * 10.0).clamp(PHASE_BLEND_HIGH_HZ_MIN as f64, PHASE_BLEND_HIGH_HZ_MAX as f64),
+                    _ => return false,
+                }
+                return true;
+            }
+            sotf_audio_player::PluginSettings::MonoToStereo {
+                stereo_width,
+                haas_delay_ms,
+                enable_comp_eq,
+                comp_eq_depth_db,
+                decor_low_hz,
+                decor_high_hz,
+            } => {
+                use sotf_plugins::param_specs::mono_to_stereo::*;
+                match index {
+                    0 => *stereo_width = (*stereo_width + delta * 0.05).clamp(STEREO_WIDTH_MIN as f64, STEREO_WIDTH_MAX as f64),
+                    1 => *haas_delay_ms = (*haas_delay_ms + delta * 0.1).clamp(HAAS_DELAY_MS_MIN as f64, HAAS_DELAY_MS_MAX as f64),
+                    2 => if delta.abs() > 0.1 { *enable_comp_eq = !*enable_comp_eq },
+                    3 => *comp_eq_depth_db = (*comp_eq_depth_db + delta * 0.1).clamp(COMP_EQ_DEPTH_DB_MIN as f64, COMP_EQ_DEPTH_DB_MAX as f64),
+                    4 => *decor_low_hz = (*decor_low_hz + delta * 10.0).clamp(DECOR_LOW_HZ_MIN as f64, DECOR_LOW_HZ_MAX as f64),
+                    5 => *decor_high_hz = (*decor_high_hz + delta * 10.0).clamp(DECOR_HIGH_HZ_MIN as f64, DECOR_HIGH_HZ_MAX as f64),
+                    _ => return false,
+                }
+                return true;
+            }
+            sotf_audio_player::PluginSettings::BandSplit { frequency, crossover_type, .. } => {
+                use sotf_plugins::param_specs::band_split::*;
+                match index {
+                    0 => *frequency = (*frequency + delta * 10.0).clamp(FREQUENCY_MIN, FREQUENCY_MAX),
+                    1 => if delta.abs() > 0.1 {
+                        *crossover_type = if crossover_type == "LR24" { "LR48".to_string() } else { "LR24".to_string() };
+                    },
+                    _ => return false,
+                }
+                return true;
+            }
+            sotf_audio_player::PluginSettings::BandMerge { bands, .. } => {
+                use sotf_plugins::param_specs::band_merge::*;
+                match index {
+                    0 => *bands = ((*bands as i64) + delta as i64).clamp(BANDS_MIN as i64, BANDS_MAX as i64) as usize,
+                    _ => return false,
+                }
+                return true;
+            }
             _ => {}
         }
         false
@@ -723,6 +825,7 @@ pub struct App {
     pub current_queue_index: Option<usize>,
     pub volume: f32,
     pub position_secs: f64,
+    pub current_sample_rate: Option<u32>, // Actual playback rate from engine
 
     // Play tracking for statistics (30s threshold)
     pub current_track_path: Option<PathBuf>,
@@ -849,6 +952,7 @@ impl App {
             current_queue_index: None,
             volume: 0.1, // Start at 10% volume
             position_secs: 0.0,
+            current_sample_rate: None,
             current_track_path: None,
             current_track_start_time: None,
             current_track_already_recorded: false,
@@ -907,6 +1011,7 @@ impl App {
             // Find the default device
             if let Some(default_idx) = output_devices.iter().position(|d| d.is_default) {
                 self.selected_output_device_index = default_idx;
+                self.current_output_device_name = output_devices[default_idx].name.clone().into();
             }
         }
     }
@@ -945,6 +1050,14 @@ impl App {
             .and_then(|device| device.default_config.as_ref())
             .map(|config| config.sample_rate as f64)
             .unwrap_or(48000.0)
+    }
+
+    /// Get the target sample rate for a track, accounting for device capabilities
+    pub fn get_target_sample_rate(&self, track_sample_rate: u32) -> f64 {
+        sotf_audio::select_output_sample_rate(
+            track_sample_rate,
+            self.current_output_device_name.as_deref(),
+        ) as f64
     }
 
     /// Get filtered albums, using cache if available
@@ -1928,6 +2041,13 @@ impl App {
             .and_then(|idx| self.queue.get(idx))
             .and_then(|entry| entry.item.current_track())
             .map(|track| track.path.clone())
+    }
+
+    /// Get the currently playing track info
+    pub fn current_track(&self) -> Option<&Track> {
+        self.current_queue_index
+            .and_then(|idx| self.queue.get(idx))
+            .and_then(|entry| entry.item.current_track())
     }
 
     pub fn next_track(&mut self) -> Option<PathBuf> {
@@ -3422,9 +3542,11 @@ fn get_param_count(settings: &sotf_audio_player::PluginSettings) -> usize {
         PluginSettings::ABCompare { .. } => 11, // mix, mix_mode, selected_path, bypass, auto_gain_enabled, loudness_type, max_auto_gain_db, gain_smoothing_ms, mix_transition_ms, path_a, path_b
         PluginSettings::FletcherMunson { .. } => 0, // Not yet user-editable in TUI
         PluginSettings::BandSplit { .. } => 2,     // frequency, crossover_type
-        PluginSettings::BandMerge { .. } => 1,     // bands
-    }
-}
+                PluginSettings::BandMerge { .. } => 1, // bands
+                PluginSettings::Downmix { .. } => 7,
+                PluginSettings::MonoToStereo { .. } => 6,
+            }
+        }
 
 impl Default for App {
     fn default() -> Self {
@@ -3812,7 +3934,9 @@ mod tests {
 
         for idx in 0..13 {
             app.plugin_param_selection = idx;
-            assert!(app.adjust_selected_param(1.0));
+            // hr_sharpen (11) defaults to 1.0 which is max, so use negative delta
+            let delta = if idx == 11 { -1.0 } else { 1.0 };
+            assert!(app.adjust_selected_param(delta));
         }
 
         let plugin = app.plugin_chain.get_plugin(plugin_idx).unwrap();

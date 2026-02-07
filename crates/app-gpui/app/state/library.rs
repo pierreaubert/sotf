@@ -53,10 +53,10 @@ pub enum LibraryResponse {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LibrarySortOrder {
     #[default]
+    Album,
     Year,
     Genre,
     Artist,
-    Album,
     Tracks,
     Composer,
 }
@@ -367,7 +367,79 @@ impl LibraryState {
 
     /// Set search query and reset selection
     pub fn set_search_query(&mut self, query: String) {
-        self.search_query = query;
+        if query.is_empty() {
+            self.clear_search();
+            return;
+        }
+
+        self.search_query = query.clone();
+        let query_lower = query.to_lowercase();
+
+        // Smart view switching logic
+        // Find the best match type to determine sort order
+        let mut best_order = None;
+        let mut is_exact = false;
+
+        // First pass: look for exact matches (highest priority)
+        for album in &self.library.albums {
+            // Exact Album Title
+            if album.title.to_lowercase() == query_lower {
+                best_order = Some(LibrarySortOrder::Album);
+                is_exact = true;
+                break;
+            }
+            // Exact Artist
+            if album.artist().to_lowercase() == query_lower {
+                best_order = Some(LibrarySortOrder::Artist);
+                is_exact = true;
+                // Continue to see if there's an exact album match (which takes priority)
+            }
+            // Exact Composer
+            if best_order != Some(LibrarySortOrder::Artist) && best_order != Some(LibrarySortOrder::Album) {
+                for track in &album.tracks {
+                    if let Some(composer) = &track.composer {
+                        if composer.to_lowercase() == query_lower {
+                            best_order = Some(LibrarySortOrder::Composer);
+                            is_exact = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Second pass: if no exact match, look for partial matches
+        if !is_exact {
+            for album in &self.library.albums {
+                // Partial Album Title
+                if album.title.to_lowercase().contains(&query_lower) {
+                    best_order = Some(LibrarySortOrder::Album);
+                    break;
+                }
+                // Partial Artist
+                if album.artist().to_lowercase().contains(&query_lower) {
+                    best_order = Some(LibrarySortOrder::Artist);
+                    // Don't break, keep looking for better matches or continue
+                }
+                // Partial Composer
+                if best_order != Some(LibrarySortOrder::Artist) && best_order != Some(LibrarySortOrder::Album) {
+                    for track in &album.tracks {
+                        if let Some(composer) = &track.composer {
+                            if composer.to_lowercase().contains(&query_lower) {
+                                best_order = Some(LibrarySortOrder::Composer);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Update sort order if a match was found
+        if let Some(order) = best_order {
+            self.sort_order = order;
+        }
+
         self.selected_index = 0;
         self.invalidate_cache();
     }

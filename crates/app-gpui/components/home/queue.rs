@@ -482,6 +482,38 @@ impl PlayerView {
             // Get channel count from current track
             let channels = current_track.and_then(|t| t.channels).unwrap_or(2);
 
+            let (file_type, bit_depth, sample_rate_str) = if let Some(track) = current_track {
+                let ext = track
+                    .path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("")
+                    .to_uppercase();
+                let bd = track
+                    .bit_depth
+                    .map(|b| b.to_string())
+                    .unwrap_or_else(|| "--".to_string());
+                let sr = track
+                    .sample_rate
+                    .map(|s| {
+                        if s >= 1000 {
+                            if s % 1000 == 0 {
+                                format!("{}k", s / 1000)
+                            } else {
+                                format!("{:.1}k", s as f32 / 1000.0)
+                            }
+                        } else {
+                            format!("{}", s)
+                        }
+                    })
+                    .unwrap_or_else(|| "--".to_string());
+                (ext, bd, sr)
+            } else {
+                ("".into(), "--".into(), "--".into())
+            };
+
+            let track_count = album.tracks.len();
+
             let album_title_full = album.title.clone();
             let artist_raw = album.artist();
             let art_path = album.album_art_path.clone();
@@ -588,13 +620,26 @@ impl PlayerView {
                                         .text_ellipsis()
                                         .child(artist),
                                 )
-                                // Replay Gain
+                                // Technical Info (Combined)
                                 .child(
                                     div()
                                         .flex()
                                         .items_center()
                                         .gap_2()
                                         .mt_2()
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .font_weight(FontWeight::BOLD)
+                                                .text_color(theme.text_secondary)
+                                                .child(format!("{} {}/{}", file_type, bit_depth, sample_rate_str)),
+                                        )
+                                        .child(
+                                            div()
+                                                .text_xs()
+                                                .text_color(theme.text_muted)
+                                                .child(format!("#{}", track_count)),
+                                        )
                                         .child(
                                             div()
                                                 .text_xs()
@@ -612,17 +657,10 @@ impl PlayerView {
                                                 })
                                                 .child(
                                                     replay_gain
-                                                        .map(|g| format!("{:+.1} dB", g))
+                                                        .map(|g| format!("{:+.1}dB", g))
                                                         .unwrap_or_else(|| "N/A".to_string()),
                                                 ),
-                                        ),
-                                )
-                                // Channels
-                                .child(
-                                    div()
-                                        .flex()
-                                        .items_center()
-                                        .gap_2()
+                                        )
                                         .child(
                                             div()
                                                 .text_xs()
@@ -834,18 +872,6 @@ impl PlayerView {
             .flex_col()
             .flex_1()
             .overflow_hidden()
-            .child(
-                Text::new(format!(
-                    "{} ({})",
-                    translations.queue_tracks,
-                    disc_map.values().map(|v| v.len()).sum::<usize>()
-                ))
-                .size(TextSize::Sm)
-                .weight(TextWeight::Semibold)
-                .color(theme.text_secondary)
-                .build()
-                .mb_2(),
-            )
             .child(
                 div()
                     .id("track-list")

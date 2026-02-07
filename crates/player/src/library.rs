@@ -290,6 +290,11 @@ impl Album {
             AlbumChannelType::Mixed => None,
         }
     }
+
+    /// Get the sample rate of this album (from the first track that has it)
+    pub fn sample_rate(&self) -> Option<u32> {
+        self.tracks.iter().find_map(|t| t.sample_rate)
+    }
 }
 
 impl Album {

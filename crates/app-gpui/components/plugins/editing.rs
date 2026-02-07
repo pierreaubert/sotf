@@ -1378,6 +1378,101 @@ impl PluginEditingManager for App {
                     }
                     _ => false,
                 },
+                PluginSettings::Downmix {
+                    center_gain_db,
+                    surround_gain_db,
+                    height_gain_db,
+                    lfe_gain_db,
+                    phase_coherence,
+                    phase_blend_low_hz,
+                    phase_blend_high_hz,
+                    ..
+                } => {
+                    use sotf_plugins::param_specs::downmix::*;
+                    match param_idx {
+                        0 => {
+                            *center_gain_db = (*center_gain_db + delta * 0.5)
+                                .clamp(CENTER_GAIN_DB_MIN as f64, CENTER_GAIN_DB_MAX as f64);
+                            true
+                        }
+                        1 => {
+                            *surround_gain_db = (*surround_gain_db + delta * 0.5)
+                                .clamp(SURROUND_GAIN_DB_MIN as f64, SURROUND_GAIN_DB_MAX as f64);
+                            true
+                        }
+                        2 => {
+                            *height_gain_db = (*height_gain_db + delta * 0.5)
+                                .clamp(HEIGHT_GAIN_DB_MIN as f64, HEIGHT_GAIN_DB_MAX as f64);
+                            true
+                        }
+                        3 => {
+                            *lfe_gain_db = (*lfe_gain_db + delta * 0.5)
+                                .clamp(LFE_GAIN_DB_MIN as f64, LFE_GAIN_DB_MAX as f64);
+                            true
+                        }
+                        4 => {
+                            *phase_coherence = !*phase_coherence;
+                            true
+                        }
+                        5 => {
+                            *phase_blend_low_hz = (*phase_blend_low_hz + delta * 10.0)
+                                .clamp(PHASE_BLEND_LOW_HZ_MIN as f64, PHASE_BLEND_LOW_HZ_MAX as f64);
+                            true
+                        }
+                        6 => {
+                            *phase_blend_high_hz = (*phase_blend_high_hz + delta * 10.0).clamp(
+                                PHASE_BLEND_HIGH_HZ_MIN as f64,
+                                PHASE_BLEND_HIGH_HZ_MAX as f64,
+                            );
+                            true
+                        }
+                        _ => false,
+                    }
+                }
+                PluginSettings::MonoToStereo {
+                    stereo_width,
+                    haas_delay_ms,
+                    enable_comp_eq,
+                    comp_eq_depth_db,
+                    decor_low_hz,
+                    decor_high_hz,
+                } => {
+                    use sotf_plugins::param_specs::mono_to_stereo::*;
+                    match param_idx {
+                        0 => {
+                            *stereo_width = (*stereo_width + delta * 0.05)
+                                .clamp(STEREO_WIDTH_MIN as f64, STEREO_WIDTH_MAX as f64);
+                            true
+                        }
+                        1 => {
+                            *haas_delay_ms = (*haas_delay_ms + delta * 0.1)
+                                .clamp(HAAS_DELAY_MS_MIN as f64, HAAS_DELAY_MS_MAX as f64);
+                            true
+                        }
+                        2 => {
+                            *enable_comp_eq = !*enable_comp_eq;
+                            true
+                        }
+                        3 => {
+                            *comp_eq_depth_db = (*comp_eq_depth_db + delta * 0.1)
+                                .clamp(COMP_EQ_DEPTH_DB_MIN as f64, COMP_EQ_DEPTH_DB_MAX as f64);
+                            true
+                        }
+                        4 => {
+                            *decor_low_hz = (*decor_low_hz + delta * 10.0)
+                                .clamp(DECOR_LOW_HZ_MIN as f64, DECOR_LOW_HZ_MAX as f64);
+                            true
+                        }
+                        5 => {
+                            *decor_high_hz = (*decor_high_hz + delta * 10.0).clamp(
+                                DECOR_HIGH_HZ_MIN as f64,
+                                DECOR_HIGH_HZ_MAX as f64,
+                            );
+                            true
+                        }
+                        _ => false,
+                    }
+                }
             }
         } else {
             false
@@ -2483,6 +2578,118 @@ impl PluginEditingManager for App {
                         }
                     }
                 }
+                PluginSettings::Downmix {
+                    center_gain_db,
+                    surround_gain_db,
+                    height_gain_db,
+                    lfe_gain_db,
+                    phase_coherence,
+                    phase_blend_low_hz,
+                    phase_blend_high_hz,
+                    ..
+                } => {
+                    use sotf_plugins::param_specs::downmix::*;
+                    match param_idx {
+                        0 => {
+                            *center_gain_db = value.clamp(CENTER_GAIN_DB_MIN as f64, CENTER_GAIN_DB_MAX as f64);
+                            update_needed = true;
+                        }
+                        1 => {
+                            *surround_gain_db = value.clamp(SURROUND_GAIN_DB_MIN as f64, SURROUND_GAIN_DB_MAX as f64);
+                            update_needed = true;
+                        }
+                        2 => {
+                            *height_gain_db = value.clamp(HEIGHT_GAIN_DB_MIN as f64, HEIGHT_GAIN_DB_MAX as f64);
+                            update_needed = true;
+                        }
+                        3 => {
+                            *lfe_gain_db = value.clamp(LFE_GAIN_DB_MIN as f64, LFE_GAIN_DB_MAX as f64);
+                            update_needed = true;
+                        }
+                        4 => {
+                            *phase_coherence = value > 0.5;
+                            update_needed = true;
+                        }
+                        5 => {
+                            *phase_blend_low_hz = value.clamp(PHASE_BLEND_LOW_HZ_MIN as f64, PHASE_BLEND_LOW_HZ_MAX as f64);
+                            update_needed = true;
+                        }
+                        6 => {
+                            *phase_blend_high_hz = value.clamp(PHASE_BLEND_HIGH_HZ_MIN as f64, PHASE_BLEND_HIGH_HZ_MAX as f64);
+                            update_needed = true;
+                        }
+                        _ => {}
+                    }
+                }
+                PluginSettings::MonoToStereo {
+                    stereo_width,
+                    haas_delay_ms,
+                    enable_comp_eq,
+                    comp_eq_depth_db,
+                    decor_low_hz,
+                    decor_high_hz,
+                } => {
+                    use sotf_plugins::param_specs::mono_to_stereo::*;
+                    match param_idx {
+                        0 => {
+                            *stereo_width = value.clamp(STEREO_WIDTH_MIN as f64, STEREO_WIDTH_MAX as f64);
+                            update_needed = true;
+                        }
+                        1 => {
+                            *haas_delay_ms = value.clamp(HAAS_DELAY_MS_MIN as f64, HAAS_DELAY_MS_MAX as f64);
+                            update_needed = true;
+                        }
+                        2 => {
+                            *enable_comp_eq = value > 0.5;
+                            update_needed = true;
+                        }
+                        3 => {
+                            *comp_eq_depth_db = value.clamp(COMP_EQ_DEPTH_DB_MIN as f64, COMP_EQ_DEPTH_DB_MAX as f64);
+                            update_needed = true;
+                        }
+                        4 => {
+                            *decor_low_hz = value.clamp(DECOR_LOW_HZ_MIN as f64, DECOR_LOW_HZ_MAX as f64);
+                            update_needed = true;
+                        }
+                        5 => {
+                            *decor_high_hz = value.clamp(DECOR_HIGH_HZ_MIN as f64, DECOR_HIGH_HZ_MAX as f64);
+                            update_needed = true;
+                        }
+                        _ => {}
+                    }
+                }
+                PluginSettings::BandSplit {
+                    frequency,
+                    crossover_type,
+                    ..
+                } => {
+                    use sotf_plugins::param_specs::band_split::*;
+                    match param_idx {
+                        0 => {
+                            *frequency = value.clamp(FREQUENCY_MIN, FREQUENCY_MAX);
+                            update_needed = true;
+                        }
+                        1 => {
+                            *crossover_type = if value > 0.5 {
+                                "LR48".to_string()
+                            } else {
+                                "LR24".to_string()
+                            };
+                            update_needed = true;
+                        }
+                        _ => {}
+                    }
+                }
+                PluginSettings::BandMerge { bands, .. } => {
+                    use sotf_plugins::param_specs::band_merge::*;
+                    match param_idx {
+                        0 => {
+                            *bands = (value as usize).clamp(BANDS_MIN, BANDS_MAX);
+                            update_needed = true;
+                        }
+                        _ => {}
+                    }
+                }
                 _ => {}
             }
         }
@@ -2864,6 +3071,72 @@ impl PluginEditingManager for App {
                         return;
                     }
                 }
+            },
+            PluginSettings::Downmix {
+                center_gain_db,
+                surround_gain_db,
+                height_gain_db,
+                lfe_gain_db,
+                phase_coherence,
+                phase_blend_low_hz,
+                phase_blend_high_hz,
+                ..
+            } => match param_idx {
+                0 => *center_gain_db,
+                1 => *surround_gain_db,
+                2 => *height_gain_db,
+                3 => *lfe_gain_db,
+                4 => {
+                    if *phase_coherence {
+                        1.0
+                    } else {
+                        0.0
+                    }
+                }
+                5 => *phase_blend_low_hz,
+                6 => *phase_blend_high_hz,
+                _ => return,
+            },
+            PluginSettings::MonoToStereo {
+                stereo_width,
+                haas_delay_ms,
+                enable_comp_eq,
+                comp_eq_depth_db,
+                decor_low_hz,
+                decor_high_hz,
+            } => match param_idx {
+                0 => *stereo_width,
+                1 => *haas_delay_ms,
+                2 => {
+                    if *enable_comp_eq {
+                        1.0
+                    } else {
+                        0.0
+                    }
+                }
+                3 => *comp_eq_depth_db,
+                4 => *decor_low_hz,
+                5 => *decor_high_hz,
+                _ => return,
+            },
+            PluginSettings::BandSplit {
+                frequency,
+                crossover_type,
+                ..
+            } => match param_idx {
+                0 => *frequency,
+                1 => {
+                    if crossover_type == "LR48" {
+                        1.0
+                    } else {
+                        0.0
+                    }
+                }
+                _ => return,
+            },
+            PluginSettings::BandMerge { bands, .. } => match param_idx {
+                0 => *bands as f64,
+                _ => return,
             },
             _ => return,
         };
@@ -3437,5 +3710,7 @@ pub fn get_param_count(settings: &PluginSettings) -> usize {
         PluginSettings::FletcherMunson { .. } => 22, // reference_level, smoothing, 4 bands x 4 params each, + 4 auto-gain params
         PluginSettings::BandSplit { .. } => 2, // frequency, crossover_type
         PluginSettings::BandMerge { .. } => 1, // bands
+        PluginSettings::Downmix { .. } => 7, // center, surround, height, lfe, phase_coherence, blend_low, blend_high
+        PluginSettings::MonoToStereo { .. } => 6, // width, haas, comp_eq, depth, decor_low, decor_high
     }
 }

@@ -960,6 +960,10 @@ impl PlayerView {
                         MouseButton::Left,
                         cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                             view.state.update(cx, |state, _cx| {
+                                let was_playing = state.app.playback.is_playing;
+                                let current_path = state.app.get_current_track_path();
+                                let current_pos = state.app.playback.position_secs;
+
                                 state.app.audio_device_state.selected_output_device_index = idx;
                                 state.app.audio_device_state.current_output_device_name =
                                     Some(device_name.clone());
@@ -969,6 +973,12 @@ impl PlayerView {
                                 let mut player = state.player.lock();
                                 if let Err(e) = player.set_output_device(device_name.clone()) {
                                     log::error!("Failed to set output device: {}", e);
+                                } else if was_playing {
+                                    if let Some(path) = current_path {
+                                        // Drop the player lock before calling play_track which also locks it
+                                        drop(player);
+                                        Self::play_track_at(state, path, Some(current_pos));
+                                    }
                                 }
                             });
                             cx.notify();

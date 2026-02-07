@@ -44,6 +44,7 @@ The project uses `just` as a command runner.
 -   **Just:** `cargo install just`.
 -   **System Dependencies:**
     -   **macOS:** Xcode (Accelerate framework used for BLAS).
+        - **Note:** On macOS there is a bug with hdf5. Use `HDF5_DIR=/opt/homebrew/Cellar/hdf5@1.10/1.10.11 cargo build` to compile.
     -   **Linux:** OpenBLAS (`libopenblas-dev`), ALSA (`libasound2-dev`).
     -   **Windows:** Intel MKL or OpenBLAS.
 

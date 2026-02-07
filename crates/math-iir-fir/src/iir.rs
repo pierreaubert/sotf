@@ -1412,9 +1412,13 @@ pub fn peq_loudness_gain(peq: &Peq, weighting: &str) -> f64 {
 
     // Convert back to dB (half because we squared for energy)
     // Negative because we want to compensate (reduce if PEQ increases loudness)
-    let loudness_change_db = 10.0 * (1.0 + avg_energy_change).log10();
+    // Guard: if total energy is zero or negative (extreme filter combinations),
+    // clamp to a small positive value to avoid NaN from log10()
+    let energy = (1.0 + avg_energy_change).max(f64::MIN_POSITIVE);
+    let loudness_change_db = 10.0 * energy.log10();
 
-    -loudness_change_db
+    // Clamp to ±60dB — beyond this the filter config is pathological
+    (-loudness_change_db).clamp(-60.0, 60.0)
 }
 
 /// Compute preamp gain for a PEQ: well adapted to computers

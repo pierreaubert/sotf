@@ -15,10 +15,13 @@ pub mod theme;
 pub mod ticks;
 
 mod ui_ab_compare;
+mod ui_band_merge;
+mod ui_band_split;
 mod ui_binaural;
 mod ui_compressor;
 mod ui_convolution;
 mod ui_denoiser;
+mod ui_downmix;
 pub mod ui_eq;
 mod ui_expander;
 mod ui_fletcher_munson;
@@ -30,6 +33,7 @@ mod ui_loudness;
 mod ui_matrix;
 mod ui_mb_compressor;
 mod ui_mb_expander;
+mod ui_mono_to_stereo;
 mod ui_mute_solo;
 mod ui_pnd;
 mod ui_rack;
@@ -47,10 +51,13 @@ pub use theme::*;
 pub use ticks::{ScaleType, TickConfig, render_tick_row};
 
 pub use ui_ab_compare::render_ab_compare_plugin;
+pub use ui_band_merge::render_band_merge_plugin;
+pub use ui_band_split::render_band_split_plugin;
 pub use ui_binaural::render_binaural_plugin;
 pub use ui_compressor::render_compressor_plugin;
 pub use ui_convolution::render_convolution_plugin;
 pub use ui_denoiser::render_denoiser_plugin;
+pub use ui_downmix::render_downmix_plugin;
 pub use ui_eq::render_eq_plugin;
 pub use ui_expander::render_expander_plugin;
 pub use ui_fletcher_munson::render_fletcher_munson_plugin;
@@ -61,6 +68,7 @@ pub use ui_loudness::{render_loudness_compensation_plugin, render_loudness_monit
 pub use ui_matrix::render_matrix_plugin;
 pub use ui_mb_compressor::render_mb_compressor_plugin;
 pub use ui_mb_expander::render_mb_expander_plugin;
+pub use ui_mono_to_stereo::render_mono_to_stereo_plugin;
 pub use ui_mute_solo::render_mute_solo_plugin;
 pub use ui_pnd::render_pnd_plugin;
 pub use ui_rack::PluginDragInfo;
@@ -734,110 +742,77 @@ pub fn render_plugin_content(
             frequency,
             crossover_type,
             ..
-        } => render_band_split_plugin(*frequency, crossover_type, plugin_idx, is_editing, theme)
-            .into_any_element(),
-        PluginSettings::BandMerge { bands, .. } => {
-            render_band_merge_plugin(*bands, plugin_idx, is_editing, theme).into_any_element()
-        }
+        } => render_band_split_plugin(
+            entity.clone(),
+            plugin_idx,
+            ui_band_split::BandSplitRenderState {
+                frequency: *frequency,
+                crossover_type: crossover_type.clone(),
+                is_editing,
+                selected_param,
+            },
+            theme,
+        )
+        .into_any_element(),
+        PluginSettings::BandMerge { bands, .. } => render_band_merge_plugin(
+            entity.clone(),
+            plugin_idx,
+            ui_band_merge::BandMergeRenderState {
+                bands: *bands,
+                is_editing,
+                selected_param,
+            },
+            theme,
+        )
+        .into_any_element(),
+        PluginSettings::Downmix {
+            center_gain_db,
+            surround_gain_db,
+            height_gain_db,
+            lfe_gain_db,
+            phase_coherence,
+            phase_blend_low_hz,
+            phase_blend_high_hz,
+            ..
+        } => render_downmix_plugin(
+            entity.clone(),
+            plugin_idx,
+            ui_downmix::DownmixRenderState {
+                center_gain_db: *center_gain_db,
+                surround_gain_db: *surround_gain_db,
+                height_gain_db: *height_gain_db,
+                lfe_gain_db: *lfe_gain_db,
+                phase_coherence: *phase_coherence,
+                phase_blend_low_hz: *phase_blend_low_hz,
+                phase_blend_high_hz: *phase_blend_high_hz,
+                is_editing,
+                selected_param,
+            },
+            theme,
+        )
+        .into_any_element(),
+        PluginSettings::MonoToStereo {
+            stereo_width,
+            haas_delay_ms,
+            enable_comp_eq,
+            comp_eq_depth_db,
+            decor_low_hz,
+            decor_high_hz,
+        } => render_mono_to_stereo_plugin(
+            entity.clone(),
+            plugin_idx,
+            ui_mono_to_stereo::MonoToStereoRenderState {
+                stereo_width: *stereo_width,
+                haas_delay_ms: *haas_delay_ms,
+                enable_comp_eq: *enable_comp_eq,
+                comp_eq_depth_db: *comp_eq_depth_db,
+                decor_low_hz: *decor_low_hz,
+                decor_high_hz: *decor_high_hz,
+                is_editing,
+                selected_param,
+            },
+            theme,
+        )
+        .into_any_element(),
     }
-}
-
-/// Render a simple Band Split plugin display
-fn render_band_split_plugin(
-    frequency: f64,
-    crossover_type: &str,
-    _plugin_idx: usize,
-    _is_editing: bool,
-    theme: &Theme,
-) -> impl IntoElement {
-    div()
-        .flex()
-        .flex_col()
-        .gap_2()
-        .p_3()
-        .child(
-            div()
-                .flex()
-                .gap_4()
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_1()
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(theme.text_muted)
-                                .child("Crossover"),
-                        )
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(theme.text_primary)
-                                .child(format!("{:.0} Hz", frequency)),
-                        ),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_1()
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(theme.text_muted)
-                                .child("Type"),
-                        )
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(theme.text_primary)
-                                .child(crossover_type.to_string()),
-                        ),
-                ),
-        )
-        .child(
-            div()
-                .text_xs()
-                .text_color(theme.text_muted)
-                .child("Splits audio into low and high frequency bands"),
-        )
-}
-
-/// Render a simple Band Merge plugin display
-fn render_band_merge_plugin(
-    bands: usize,
-    _plugin_idx: usize,
-    _is_editing: bool,
-    theme: &Theme,
-) -> impl IntoElement {
-    div()
-        .flex()
-        .flex_col()
-        .gap_2()
-        .p_3()
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap_1()
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(theme.text_muted)
-                        .child("Bands"),
-                )
-                .child(
-                    div()
-                        .text_sm()
-                        .text_color(theme.text_primary)
-                        .child(format!("{}", bands)),
-                ),
-        )
-        .child(
-            div()
-                .text_xs()
-                .text_color(theme.text_muted)
-                .child("Merges frequency bands back together by summing"),
-        )
 }

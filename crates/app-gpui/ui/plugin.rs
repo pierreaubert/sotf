@@ -47,7 +47,7 @@ impl PlayerView {
                                 .set_plugin_parameter(engine_index, param_id, value)
                         } else {
                             // Parameter not supported for individual update, fall back to structural
-                            let sample_rate = 48000.0;
+                            let sample_rate = state.app.playback.sample_rate.unwrap_or(48000) as f64;
                             let plugins = state.app.plugin_state.plugin_chain.to_plugin_configs(sample_rate);
                             state.player.lock().update_plugins(plugins)
                         }
@@ -61,12 +61,13 @@ impl PlayerView {
             }
             PluginUpdateType::Structural => {
                 // Full plugin chain rebuild
-                let sample_rate = 48000.0;
+                let sample_rate = state.app.playback.sample_rate.unwrap_or(48000) as f64;
                 let plugins = state.app.plugin_state.plugin_chain.to_plugin_configs(sample_rate);
                 log::warn!(
-                    "[GPUI] Structural update: sending {} plugins to engine (expected output: {} channels)",
+                    "[GPUI] Structural update: sending {} plugins to engine (expected output: {} channels) at {}Hz",
                     plugins.len(),
-                    state.app.plugin_state.plugin_chain.output_channels()
+                    state.app.plugin_state.plugin_chain.output_channels(),
+                    sample_rate
                 );
                 state.player.lock().update_plugins(plugins)
             }
@@ -106,6 +107,10 @@ impl PlayerView {
     quick_add_plugin_handler!(quick_add_limiter, QuickAddLimiter, sotf_audio_player::PluginType::Limiter);
     quick_add_plugin_handler!(quick_add_loudness, QuickAddLoudness, sotf_audio_player::PluginType::LoudnessCompensation);
     quick_add_plugin_handler!(quick_add_binaural, QuickAddBinaural, sotf_audio_player::PluginType::BinauralDecoder);
+    quick_add_plugin_handler!(quick_add_downmix, QuickAddDownmix, sotf_audio_player::PluginType::Downmix);
+    quick_add_plugin_handler!(quick_add_mono_to_stereo, QuickAddMonoToStereo, sotf_audio_player::PluginType::MonoToStereo);
+    quick_add_plugin_handler!(quick_add_band_split, QuickAddBandSplit, sotf_audio_player::PluginType::BandSplit);
+    quick_add_plugin_handler!(quick_add_band_merge, QuickAddBandMerge, sotf_audio_player::PluginType::BandMerge);
 
     fn increment_plugin_param(&mut self, _: &IncrementPluginParam, _: &mut Window, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {

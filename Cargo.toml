@@ -16,7 +16,10 @@ members = [
     "crates/math-xem-common",
     "crates/math-bem",
     "crates/math-fem",
+    "crates/autoeq-cea2034",
+    "crates/autoeq-roomsim",
     "crates/autoeq-datagen",
+    "crates/autoeq",
 ]
 resolver = "3"
 

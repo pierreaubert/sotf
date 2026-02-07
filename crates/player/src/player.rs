@@ -9,6 +9,7 @@ use std::path::PathBuf;
 pub struct PlaybackState {
     pub position_secs: f64,
     pub is_playing: bool,
+    pub sample_rate: Option<u32>,
     pub input_loudness: Option<LoudnessData>,
     pub output_loudness: Option<LoudnessData>,
     pub spectrum: Option<SpectrumData>,
@@ -70,6 +71,17 @@ impl Player {
         output_channels: usize,
         output_device: Option<String>,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        self.load_and_play_at(path, plugins, output_channels, output_device, None)
+    }
+
+    pub fn load_and_play_at(
+        &mut self,
+        path: PathBuf,
+        plugins: Vec<PluginConfig>,
+        output_channels: usize,
+        output_device: Option<String>,
+        position: Option<f64>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         // Update analyzer indices
         self.update_analyzer_indices(&plugins);
 
@@ -81,7 +93,7 @@ impl Player {
 
         // Start playback with plugins and specified output device
         self.manager
-            .start_playback(output_device, plugins, output_channels)?;
+            .start_playback_at(output_device, plugins, output_channels, position)?;
 
         Ok(())
     }
@@ -278,6 +290,7 @@ impl Player {
         let state = self.manager.get_state();
         let position_secs = self.manager.get_position();
         let is_playing = matches!(state, StreamingState::Playing);
+        let sample_rate = self.manager.get_audio_info().map(|info| info.spec.sample_rate);
 
         // Only query analyzers when actually playing to reduce overhead
         let input_loudness = if is_playing {
@@ -307,6 +320,7 @@ impl Player {
         PlaybackState {
             position_secs,
             is_playing,
+            sample_rate,
             input_loudness,
             output_loudness,
             spectrum,
@@ -333,6 +347,7 @@ mod tests {
 
         assert_eq!(state.position_secs, 0.0);
         assert!(!state.is_playing);
+        assert!(state.sample_rate.is_none());
         assert!(state.input_loudness.is_none());
         assert!(state.output_loudness.is_none());
         assert!(state.spectrum.is_none());

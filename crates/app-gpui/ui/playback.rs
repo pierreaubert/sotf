@@ -37,23 +37,9 @@ impl PlayerView {
             }
             let from_index = state.app.playback.current_queue_index;
             if let Some(path) = state.app.next_track() {
-                let sample_rate = 48000.0;
-                let plugins = state.app.plugin_state.plugin_chain.to_plugin_configs(sample_rate);
-                let output_channels = state.app.plugin_state.plugin_chain.output_channels();
+                Self::play_track(state, path);
 
-                let device_name = state.app.audio_device_state.current_output_device_name.clone()
-                    .or_else(|| state.app.audio_device_state.selected_output_device().map(|d| d.name.clone()));
-
-                if let Err(e) = state.player.lock().load_and_play(
-                    path.clone(),
-                    plugins,
-                    output_channels,
-                    device_name,
-                ) {
-                    log::error!("Failed to play next track: {}", e);
-                    state.app.playback.is_playing = false;
-                    state.app.record_playback_error(format!("Next track failed: {}", e));
-                } else if let Some(to_index) = state.app.playback.current_queue_index {
+                if let Some(to_index) = state.app.playback.current_queue_index {
                     state.app.record_track_changed(
                         from_index,
                         to_index,
@@ -75,23 +61,9 @@ impl PlayerView {
             }
             let from_index = state.app.playback.current_queue_index;
             if let Some(path) = state.app.previous_track() {
-                let sample_rate = 48000.0;
-                let plugins = state.app.plugin_state.plugin_chain.to_plugin_configs(sample_rate);
-                let output_channels = state.app.plugin_state.plugin_chain.output_channels();
+                Self::play_track(state, path);
 
-                let device_name = state.app.audio_device_state.current_output_device_name.clone()
-                    .or_else(|| state.app.audio_device_state.selected_output_device().map(|d| d.name.clone()));
-
-                if let Err(e) = state.player.lock().load_and_play(
-                    path.clone(),
-                    plugins,
-                    output_channels,
-                    device_name,
-                ) {
-                    log::error!("Failed to play previous track: {}", e);
-                    state.app.playback.is_playing = false;
-                    state.app.record_playback_error(format!("Previous track failed: {}", e));
-                } else if let Some(to_index) = state.app.playback.current_queue_index {
+                if let Some(to_index) = state.app.playback.current_queue_index {
                     state.app.record_track_changed(
                         from_index,
                         to_index,

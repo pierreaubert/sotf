@@ -337,7 +337,7 @@ impl PlayerView {
                                         let view_handle = cx.entity().clone();
                                         move |text, _window, cx| {
                                             app_state.update(cx, |state, _| {
-                                                state.app.library_state.search_query = text;
+                                                state.app.library_state.set_search_query(text);
                                                 if state.app.ui_state.input_mode
                                                     != crate::app::InputMode::Search
                                                 {

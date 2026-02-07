@@ -240,6 +240,7 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                     // Update app state
                     app.position_secs = state.position_secs;
                     app.loudness_info = state.output_loudness;
+                    app.current_sample_rate = state.sample_rate;
                     app.needs_redraw = true; // Always redraw on tick to update meters/position
 
                     // Redraw while scanning or processing
@@ -269,7 +270,17 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                         // Advance to next
                         if let Some(path) = app.next_track() {
                             log::info!("[TUI] Auto-advancing to: {:?}", path);
-                            let sample_rate = app.get_current_sample_rate();
+                            
+                            // Determine target sample rate based on track's native rate if known
+                            let track_sample_rate = app.current_track().and_then(|t| t.sample_rate).unwrap_or(48000);
+                            let sample_rate = app.get_target_sample_rate(track_sample_rate);
+                            
+                            log::info!(
+                                "[TUI] Auto-advance rate: track={}Hz, target={}Hz",
+                                track_sample_rate,
+                                sample_rate
+                            );
+
                             let plugins = app.plugin_chain.to_plugin_configs(sample_rate);
                             let output_channels = app.plugin_chain.output_channels();
 
@@ -344,7 +355,7 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                                     MAX_RETRIES
                                 );
 
-                                let sample_rate = app.get_current_sample_rate();
+                                let sample_rate = app.current_sample_rate.map(|r| r as f64).unwrap_or_else(|| app.get_current_sample_rate());
                                 let plugins = app.plugin_chain.to_plugin_configs(sample_rate);
 
                                 match player.update_plugins(plugins) {
@@ -451,7 +462,17 @@ fn handle_player_command(
             app.load_album_images();
 
             // Get plugin configs and output channels
-            let sample_rate = app.get_current_sample_rate();
+            // Determine target sample rate based on track's native rate if known
+            let track_sample_rate = app.current_track().and_then(|t| t.sample_rate).unwrap_or(48000);
+            let sample_rate = app.get_target_sample_rate(track_sample_rate);
+            
+            log::info!(
+                "[TUI] Starting playback: track={}Hz, target={}Hz, device_default={}Hz",
+                track_sample_rate,
+                sample_rate,
+                app.get_current_sample_rate()
+            );
+
             let plugins = app.plugin_chain.to_plugin_configs(sample_rate);
             let output_channels = app.plugin_chain.output_channels();
 

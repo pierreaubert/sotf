@@ -1,4 +1,4 @@
-use crate::app::{App, FocusedPane, InputMode, LibraryViewMode, MatrixEditMode, Screen, TreeItem, TuiEditablePlugin};
+use crate::app::{App, FocusedPane, InputMode, LibraryViewMode, MatrixEditMode, Screen, TreeItem};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -2280,9 +2280,9 @@ fn draw_plugin_editor_modal(f: &mut Frame, app: &App) {
         ]));
         lines.push(Line::from(""));
 
-        let params = plugin.settings.get_params();
-        for (i, param) in params.iter().enumerate() {
-            let style = if i == app.selected_file_index {
+        let params = get_plugin_parameters(&plugin.settings, app.plugin_param_selection);
+        for (i, (name, value)) in params.iter().enumerate() {
+            let style = if i == app.plugin_param_selection {
                 Style::default()
                     .fg(app.theme.fg_selected)
                     .bg(app.theme.bg_selected)
@@ -2292,11 +2292,8 @@ fn draw_plugin_editor_modal(f: &mut Frame, app: &App) {
             };
 
             lines.push(Line::from(vec![
-                Span::styled(format!("  {}: ", param.name), style),
-                Span::styled(
-                    format!("{}{}", param.value, param.unit),
-                    style.fg(app.theme.title_color),
-                ),
+                Span::styled(format!("  {}: ", name), style),
+                Span::styled(value.to_string(), style.fg(app.theme.title_color)),
             ]));
         }
 
@@ -3172,7 +3169,42 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
                 path_config_to_display_name(path_b_config),
             ),
         ],
-        PluginSettings::FletcherMunson { .. } => vec![],
+        PluginSettings::FletcherMunson {
+            playback_volume_db,
+            reference_level_db,
+            enabled,
+            smoothing_ms,
+            auto_gain_enabled,
+            auto_gain_max_db,
+            auto_gain_smoothing_ms,
+            ..
+        } => vec![
+            (
+                "Playback Volume".to_string(),
+                format!("{:.1} dB", playback_volume_db),
+            ),
+            (
+                "Reference Level".to_string(),
+                format!("{:.1} dB", reference_level_db),
+            ),
+            (
+                "Enabled".to_string(),
+                if *enabled { "Yes" } else { "No" }.to_string(),
+            ),
+            ("Smoothing".to_string(), format!("{:.1} ms", smoothing_ms)),
+            (
+                "Auto Gain".to_string(),
+                if *auto_gain_enabled { "On" } else { "Off" }.to_string(),
+            ),
+            (
+                "Max Auto Gain".to_string(),
+                format!("{:.1} dB", auto_gain_max_db),
+            ),
+            (
+                "Auto Gain Smooth".to_string(),
+                format!("{:.1} ms", auto_gain_smoothing_ms),
+            ),
+        ],
         PluginSettings::BandSplit {
             frequency,
             crossover_type,
@@ -3184,6 +3216,51 @@ fn get_plugin_parameters(settings: &PluginSettings, _selected: usize) -> Vec<(St
         PluginSettings::BandMerge { bands, .. } => {
             vec![("Bands".to_string(), format!("{}", bands))]
         }
+        PluginSettings::Downmix {
+            center_gain_db,
+            surround_gain_db,
+            height_gain_db,
+            lfe_gain_db,
+            phase_coherence,
+            phase_blend_low_hz,
+            phase_blend_high_hz,
+            ..
+        } => vec![
+            ("Center Gain".to_string(), format!("{:.1} dB", center_gain_db)),
+            (
+                "Surround Gain".to_string(),
+                format!("{:.1} dB", surround_gain_db),
+            ),
+            ("Height Gain".to_string(), format!("{:.1} dB", height_gain_db)),
+            ("LFE Gain".to_string(), format!("{:.1} dB", lfe_gain_db)),
+            (
+                "Phase Coherence".to_string(),
+                if *phase_coherence { "On" } else { "Off" }.to_string(),
+            ),
+            ("Blend Low".to_string(), format!("{:.0} Hz", phase_blend_low_hz)),
+            (
+                "Blend High".to_string(),
+                format!("{:.0} Hz", phase_blend_high_hz),
+            ),
+        ],
+        PluginSettings::MonoToStereo {
+            stereo_width,
+            haas_delay_ms,
+            enable_comp_eq,
+            comp_eq_depth_db,
+            decor_low_hz,
+            decor_high_hz,
+        } => vec![
+            ("Width".to_string(), format!("{:.2}", stereo_width)),
+            ("Haas Delay".to_string(), format!("{:.1} ms", haas_delay_ms)),
+            (
+                "Panning EQ".to_string(),
+                if *enable_comp_eq { "On" } else { "Off" }.to_string(),
+            ),
+            ("EQ Depth".to_string(), format!("{:.1} dB", comp_eq_depth_db)),
+            ("Decor Low".to_string(), format!("{:.0} Hz", decor_low_hz)),
+            ("Decor High".to_string(), format!("{:.0} Hz", decor_high_hz)),
+        ],
     }
 }
 

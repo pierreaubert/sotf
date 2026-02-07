@@ -393,17 +393,9 @@ impl PlayerView {
 
                                             // If playing, restart track with new device
                                             if state.app.playback.is_playing {
-                                                if let Some(queue_idx) =
-                                                    state.app.playback.current_queue_index
-                                                {
-                                                    if let Some(item) =
-                                                        state.app.queue.get(queue_idx)
-                                                    {
-                                                        if let Some(track) = item.current_track() {
-                                                            let path = track.path.clone();
-                                                            Self::play_track(state, path);
-                                                        }
-                                                    }
+                                                if let Some(path) = state.app.get_current_track_path() {
+                                                    let position = state.app.playback.position_secs;
+                                                    Self::play_track_at(state, path, Some(position));
                                                 }
                                             }
                                         }

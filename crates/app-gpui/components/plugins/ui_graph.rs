@@ -15,9 +15,9 @@ use sotf_audio_player::{PluginGraph, PluginSettings, PluginType, SpecialNodeType
 use crate::app::types::Screen;
 use crate::components::icons::{Icon, IconName};
 use crate::components::plugins::{
-    render_compressor_plugin, render_eq_plugin, render_gain_plugin, render_gate_plugin,
-    render_limiter_plugin, render_upmixer_plugin, ui_compressor, ui_eq, ui_gain, ui_gate,
-    ui_limiter, ui_upmixer,
+    render_compressor_plugin, render_downmix_plugin, render_eq_plugin, render_gain_plugin,
+    render_gate_plugin, render_limiter_plugin, render_mono_to_stereo_plugin, render_upmixer_plugin,
+    ui_compressor, ui_downmix, ui_eq, ui_gain, ui_gate, ui_limiter, ui_mono_to_stereo, ui_upmixer,
 };
 use crate::theme::Theme;
 use crate::ui::PlayerView;
@@ -378,6 +378,8 @@ impl PlayerView {
                 "Spatial",
                 vec![
                     (PluginType::Upmixer, "Upmix"),
+                    (PluginType::Downmix, "Downmix"),
+                    (PluginType::MonoToStereo, "Mono->2.0"),
                     (PluginType::BinauralDecoder, "Binaural"),
                     (PluginType::Convolution, "Convo"),
                 ],
@@ -512,6 +514,8 @@ fn plugin_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
         PluginType::Pnd => theme.info,
         PluginType::ABCompare => theme.warning, // A/B Compare - use warning color
         PluginType::BandSplit | PluginType::BandMerge => theme.accent, // Band processing - use accent
+        PluginType::Downmix => theme.accent,
+        PluginType::MonoToStereo => theme.accent,
     }
 }
 
@@ -549,6 +553,10 @@ fn plugin_channel_counts(plugin_type: &PluginType) -> (usize, usize) {
         PluginType::BandSplit => (2, 4),
         // Band Merge: 4 in, 2 out (2 bands x 2 channels merged back)
         PluginType::BandMerge => (4, 2),
+        // Downmix: multi-channel in, stereo out
+        PluginType::Downmix => (6, 2),
+        // Mono to Stereo: mono in, stereo out
+        PluginType::MonoToStereo => (1, 2),
     }
 }
 
@@ -790,6 +798,8 @@ fn build_menu_items(
     items.push(MenuItem::new("plugin-limiter", "Limiter"));
     items.push(MenuItem::new("plugin-gate", "Gate"));
     items.push(MenuItem::new("plugin-upmixer", "Upmixer"));
+    items.push(MenuItem::new("plugin-downmix", "Downmix"));
+    items.push(MenuItem::new("plugin-mono-to-stereo", "Mono to Stereo"));
     items.push(MenuItem::new("plugin-binaural", "Binaural Decoder"));
     items.push(MenuItem::new("plugin-convolution", "Convolution"));
     items.push(MenuItem::new(
@@ -1334,6 +1344,57 @@ impl PlayerView {
                     is_editing: false,
                     selected_param: 0,
                     config_open: false,
+                },
+                theme,
+            )
+            .into_any_element(),
+
+            PluginSettings::Downmix {
+                center_gain_db,
+                surround_gain_db,
+                height_gain_db,
+                lfe_gain_db,
+                phase_coherence,
+                phase_blend_low_hz,
+                phase_blend_high_hz,
+                ..
+            } => render_downmix_plugin(
+                entity,
+                plugin_idx,
+                ui_downmix::DownmixRenderState {
+                    center_gain_db: *center_gain_db,
+                    surround_gain_db: *surround_gain_db,
+                    height_gain_db: *height_gain_db,
+                    lfe_gain_db: *lfe_gain_db,
+                    phase_coherence: *phase_coherence,
+                    phase_blend_low_hz: *phase_blend_low_hz,
+                    phase_blend_high_hz: *phase_blend_high_hz,
+                    is_editing: false,
+                    selected_param: 0,
+                },
+                theme,
+            )
+            .into_any_element(),
+
+            PluginSettings::MonoToStereo {
+                stereo_width,
+                haas_delay_ms,
+                enable_comp_eq,
+                comp_eq_depth_db,
+                decor_low_hz,
+                decor_high_hz,
+            } => render_mono_to_stereo_plugin(
+                entity,
+                plugin_idx,
+                ui_mono_to_stereo::MonoToStereoRenderState {
+                    stereo_width: *stereo_width,
+                    haas_delay_ms: *haas_delay_ms,
+                    enable_comp_eq: *enable_comp_eq,
+                    comp_eq_depth_db: *comp_eq_depth_db,
+                    decor_low_hz: *decor_low_hz,
+                    decor_high_hz: *decor_high_hz,
+                    is_editing: false,
+                    selected_param: 0,
                 },
                 theme,
             )

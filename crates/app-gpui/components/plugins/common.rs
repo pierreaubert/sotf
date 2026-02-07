@@ -369,6 +369,55 @@ pub fn param_index_to_engine_param(
                 Some((id, val_str))
             }
         }
+        PluginSettings::Downmix {
+            center_gain_db,
+            surround_gain_db,
+            height_gain_db,
+            lfe_gain_db,
+            phase_coherence,
+            phase_blend_low_hz,
+            phase_blend_high_hz,
+            ..
+        } => match param_idx {
+            0 => Some(("center_gain_db".to_string(), format!("{}", center_gain_db))),
+            1 => Some(("surround_gain_db".to_string(), format!("{}", surround_gain_db))),
+            2 => Some(("height_gain_db".to_string(), format!("{}", height_gain_db))),
+            3 => Some(("lfe_gain_db".to_string(), format!("{}", lfe_gain_db))),
+            4 => Some(("phase_coherence".to_string(), phase_coherence.to_string())),
+            5 => Some(("phase_blend_low_hz".to_string(), format!("{}", phase_blend_low_hz))),
+            6 => Some(("phase_blend_high_hz".to_string(), format!("{}", phase_blend_high_hz))),
+            _ => None,
+        },
+        PluginSettings::MonoToStereo {
+            stereo_width,
+            haas_delay_ms,
+            enable_comp_eq,
+            comp_eq_depth_db,
+            decor_low_hz,
+            decor_high_hz,
+        } => match param_idx {
+            0 => Some(("stereo_width".to_string(), format!("{}", stereo_width))),
+            1 => Some(("haas_delay_ms".to_string(), format!("{}", haas_delay_ms))),
+            2 => Some(("enable_comp_eq".to_string(), enable_comp_eq.to_string())),
+            3 => Some(("comp_eq_depth_db".to_string(), format!("{}", comp_eq_depth_db))),
+            4 => Some(("decor_low_hz".to_string(), format!("{}", decor_low_hz))),
+            5 => Some(("decor_high_hz".to_string(), format!("{}", decor_high_hz))),
+            _ => None,
+        },
+        PluginSettings::BandSplit {
+            frequency,
+            crossover_type,
+            ..
+        } => match param_idx {
+            0 => Some(("frequency".to_string(), format!("{}", frequency))),
+            1 => Some(("type".to_string(), crossover_type.clone())),
+            _ => None,
+        },
+        PluginSettings::BandMerge { .. } => {
+            // BandMerge changes input channels when 'bands' changes, so return None 
+            // to force a structural update (rebuild the plugin chain).
+            None
+        },
         // Other plugins: use Structural for now
         _ => None,
     }
