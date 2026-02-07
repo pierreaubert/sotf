@@ -570,52 +570,16 @@ fn run_playback_thread(
             continue;
         }
 
-        // Static counter for periodic logging
-        static FRAME_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
         // Read from message queue (non-blocking since we checked space)
         match message_rx.recv_timeout(std::time::Duration::from_millis(SPIN_MS_SIGNAL)) {
             Ok(ProcessingMessage::Frame(frame)) => {
-                let count = FRAME_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
-                // Log every 100 frames
-                if count % 100 == 0 {
-                    // Calculate RMS to check if we have actual audio
-                    let rms: f32 = if !frame.data.is_empty() {
-                        let sum: f32 = frame.data.iter().map(|s| s * s).sum();
-                        (sum / frame.data.len() as f32).sqrt()
-                    } else {
-                        0.0
-                    };
-                    let has_audio = rms > 0.0001;
-
-                    log::info!(
-                        "[AUDIO FLOW] Playback recv: {} samples, {} frames, {} ch, RMS={:.6}, has_audio={}",
-                        frame.data.len(),
-                        frame.num_frames,
-                        frame.num_channels,
-                        rms,
-                        has_audio
-                    );
-                }
                 // Track consecutive channel mismatches to detect stuck state vs transient hot-reload
                 static CHANNEL_MISMATCH_COUNT: std::sync::atomic::AtomicU32 =
                     std::sync::atomic::AtomicU32::new(0);
 
                 // Handle channel count mismatch with robust conversion
                 if frame.num_channels != channels {
-                    let count =
-                        CHANNEL_MISMATCH_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
-                    if count < 10 || count.is_multiple_of(1000) {
-                        log::warn!(
-                            "[Playback Thread] Channel mismatch #{}: frame has {} channels, \
-                             output device expects {} - converting",
-                            count + 1,
-                            frame.num_channels,
-                            channels
-                        );
-                    }
+                    CHANNEL_MISMATCH_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
                     conversion_buffer.clear();
                     let num_frames = frame.num_frames;
@@ -756,10 +720,6 @@ fn build_output_stream(
 
     let capacity = state.capacity;
 
-    // Clipping detection state (lives across callbacks)
-    let mut clip_count: u64 = 0;
-    let mut callbacks_since_last_clip_log: u64 = 0;
-
     let stream = device
         .build_output_stream(
             config,
@@ -838,26 +798,11 @@ fn build_output_stream(
                 }
 
                 // Hard clip to prevent saturation at hardware output
-                let mut clipped_this_callback: u32 = 0;
                 for sample in data.iter_mut() {
                     if *sample > 1.0 || *sample < -1.0 {
-                        clipped_this_callback += 1;
                         *sample = sample.clamp(-1.0, 1.0);
                     }
                 }
-                if clipped_this_callback > 0 {
-                    clip_count += clipped_this_callback as u64;
-                    // Log at most once per ~200 callbacks (~1 second at 48kHz/256 frames)
-                    if callbacks_since_last_clip_log >= 200 || callbacks_since_last_clip_log == 0 {
-                        log::warn!(
-                            "[Playback Thread] Clipping detected: {} samples clipped this callback, {} total",
-                            clipped_this_callback,
-                            clip_count
-                        );
-                        callbacks_since_last_clip_log = 0;
-                    }
-                }
-                callbacks_since_last_clip_log += 1;
 
                 // Audio flows directly to hardware via cpal - no HAL loopback needed
             },

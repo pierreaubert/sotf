@@ -18,7 +18,7 @@ use crate::{AudioDecoderError, AudioDecoderResult, AudioFormat, AudioSpec, probe
 ///    - Prefer rates in the same "family" (44100-based or 48000-based)
 ///    - Prefer higher rates (less quality loss during resampling)
 ///    - Fallback to device default
-fn select_output_sample_rate(file_sample_rate: u32, output_device: Option<&str>) -> u32 {
+pub fn select_output_sample_rate(file_sample_rate: u32, output_device: Option<&str>) -> u32 {
     // Get device supported rates
     let supported_rates = match get_device_supported_sample_rates(output_device) {
         Some(rates) if !rates.is_empty() => rates,
@@ -207,16 +207,22 @@ impl AudioEngineManager {
     }
 
     /// Start streaming playback with the given plugin chain
-    ///
-    /// # Arguments
-    /// * `_output_device` - Output device
-    /// * `plugins` - Plugin chain to apply (upmixer, EQ, effects, etc.)
-    /// * `output_channels` - Expected output channel count after all plugins
     pub fn start_playback(
         &mut self,
         output_device: Option<String>,
         plugins: Vec<PluginConfig>,
         output_channels: usize,
+    ) -> AudioDecoderResult<()> {
+        self.start_playback_at(output_device, plugins, output_channels, None)
+    }
+
+    /// Start streaming playback at a specific position
+    pub fn start_playback_at(
+        &mut self,
+        output_device: Option<String>,
+        plugins: Vec<PluginConfig>,
+        output_channels: usize,
+        position: Option<f64>,
     ) -> AudioDecoderResult<()> {
         let audio_info = self
             .current_audio_info
@@ -225,9 +231,10 @@ impl AudioEngineManager {
             .ok_or_else(|| AudioDecoderError::ConfigError("No file loaded".to_string()))?;
 
         log::debug!(
-            "[AudioEngineManager] start_playback called: {} plugins, requested output_channels={}",
+            "[AudioEngineManager] start_playback_at called: {} plugins, requested output_channels={}, position={:?}",
             plugins.len(),
-            output_channels
+            output_channels,
+            position
         );
 
         // Select optimal output sample rate based on device capabilities
@@ -270,9 +277,15 @@ impl AudioEngineManager {
             AudioDecoderError::ConfigError(format!("Failed to create engine: {}", e))
         })?;
 
-        engine
-            .play(&audio_info.path)
-            .map_err(AudioDecoderError::IoError)?;
+        if let Some(pos) = position {
+            engine
+                .play_at(&audio_info.path, pos)
+                .map_err(AudioDecoderError::IoError)?;
+        } else {
+            engine
+                .play(&audio_info.path)
+                .map_err(AudioDecoderError::IoError)?;
+        }
 
         // Store engine
         *self.engine.lock() = Some(engine);

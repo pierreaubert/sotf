@@ -165,13 +165,14 @@ impl EqPlugin {
                 other => return Err(format!("Unknown filter type: {}", other)),
             };
 
-            Ok(Biquad::new(
+            Biquad::try_new(
                 filter_type,
                 f.freq,
                 sample_rate as f64,
                 f.q,
                 f.db_gain,
-            ))
+            )
+            .map_err(|e| format!("Invalid filter parameters: {}", e))
         };
 
         // Create auto-gain with provided parameters

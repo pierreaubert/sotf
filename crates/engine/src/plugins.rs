@@ -31,6 +31,8 @@ pub enum PluginType {
     ABCompare,
     BandSplit,
     BandMerge,
+    Downmix,
+    MonoToStereo,
 }
 
 impl PluginType {
@@ -59,6 +61,8 @@ impl PluginType {
             Self::ABCompare => "A/B Compare",
             Self::BandSplit => "Band Split",
             Self::BandMerge => "Band Merge",
+            Self::Downmix => "Downmix",
+            Self::MonoToStereo => "Mono to Stereo",
         }
     }
 
@@ -87,6 +91,8 @@ impl PluginType {
             Self::ABCompare => "A/B comparison with auto-gain loudness matching",
             Self::BandSplit => "Split audio into low/high frequency bands",
             Self::BandMerge => "Merge frequency bands back together",
+            Self::Downmix => "Phase-coherent surround to stereo downmix",
+            Self::MonoToStereo => "Convert mono signal to pseudo-stereo",
         }
     }
 
@@ -115,6 +121,8 @@ impl PluginType {
             Self::ABCompare,
             Self::BandSplit,
             Self::BandMerge,
+            Self::Downmix,
+            Self::MonoToStereo,
         ]
     }
 
@@ -776,6 +784,56 @@ fn default_band_merge_bands() -> usize {
     band_merge_specs::BANDS_DEFAULT
 }
 
+// Downmix defaults
+use sotf_plugins::param_specs::downmix as downmix_specs;
+
+fn default_downmix_center_gain_db() -> f64 {
+    downmix_specs::CENTER_GAIN_DB_DEFAULT as f64
+}
+
+fn default_downmix_surround_gain_db() -> f64 {
+    downmix_specs::SURROUND_GAIN_DB_DEFAULT as f64
+}
+
+fn default_downmix_height_gain_db() -> f64 {
+    downmix_specs::HEIGHT_GAIN_DB_DEFAULT as f64
+}
+
+fn default_downmix_lfe_gain_db() -> f64 {
+    downmix_specs::LFE_GAIN_DB_DEFAULT as f64
+}
+
+fn default_downmix_phase_blend_low_hz() -> f64 {
+    downmix_specs::PHASE_BLEND_LOW_HZ_DEFAULT as f64
+}
+
+fn default_downmix_phase_blend_high_hz() -> f64 {
+    downmix_specs::PHASE_BLEND_HIGH_HZ_DEFAULT as f64
+}
+
+// MonoToStereo defaults
+use sotf_plugins::param_specs::mono_to_stereo as mono_to_stereo_specs;
+
+fn default_mono_to_stereo_width() -> f64 {
+    mono_to_stereo_specs::STEREO_WIDTH_DEFAULT as f64
+}
+
+fn default_mono_to_stereo_haas_delay_ms() -> f64 {
+    mono_to_stereo_specs::HAAS_DELAY_MS_DEFAULT as f64
+}
+
+fn default_mono_to_stereo_comp_eq_depth_db() -> f64 {
+    mono_to_stereo_specs::COMP_EQ_DEPTH_DB_DEFAULT as f64
+}
+
+fn default_mono_to_stereo_decor_low_hz() -> f64 {
+    mono_to_stereo_specs::DECOR_LOW_HZ_DEFAULT as f64
+}
+
+fn default_mono_to_stereo_decor_high_hz() -> f64 {
+    mono_to_stereo_specs::DECOR_HIGH_HZ_DEFAULT as f64
+}
+
 fn default_channels() -> usize {
     2
 }
@@ -1219,6 +1277,38 @@ pub enum PluginSettings {
         #[serde(default = "default_band_merge_bands")]
         bands: usize,
     },
+    Downmix {
+        #[serde(default = "default_channels")]
+        input_channels: usize,
+        #[serde(default = "default_downmix_center_gain_db")]
+        center_gain_db: f64,
+        #[serde(default = "default_downmix_surround_gain_db")]
+        surround_gain_db: f64,
+        #[serde(default = "default_downmix_height_gain_db")]
+        height_gain_db: f64,
+        #[serde(default = "default_downmix_lfe_gain_db")]
+        lfe_gain_db: f64,
+        #[serde(default)] // false
+        phase_coherence: bool,
+        #[serde(default = "default_downmix_phase_blend_low_hz")]
+        phase_blend_low_hz: f64,
+        #[serde(default = "default_downmix_phase_blend_high_hz")]
+        phase_blend_high_hz: f64,
+    },
+    MonoToStereo {
+        #[serde(default = "default_mono_to_stereo_width")]
+        stereo_width: f64,
+        #[serde(default = "default_mono_to_stereo_haas_delay_ms")]
+        haas_delay_ms: f64,
+        #[serde(default)] // false
+        enable_comp_eq: bool,
+        #[serde(default = "default_mono_to_stereo_comp_eq_depth_db")]
+        comp_eq_depth_db: f64,
+        #[serde(default = "default_mono_to_stereo_decor_low_hz")]
+        decor_low_hz: f64,
+        #[serde(default = "default_mono_to_stereo_decor_high_hz")]
+        decor_high_hz: f64,
+    },
 }
 
 impl PluginSettings {
@@ -1247,6 +1337,8 @@ impl PluginSettings {
             Self::ABCompare { .. } => PluginType::ABCompare,
             Self::BandSplit { .. } => PluginType::BandSplit,
             Self::BandMerge { .. } => PluginType::BandMerge,
+            Self::Downmix { .. } => PluginType::Downmix,
+            Self::MonoToStereo { .. } => PluginType::MonoToStereo,
         }
     }
 
@@ -1831,6 +1923,46 @@ impl PluginSettings {
                     "bands": bands,
                 }),
             ),
+            Self::Downmix {
+                input_channels,
+                center_gain_db,
+                surround_gain_db,
+                height_gain_db,
+                lfe_gain_db,
+                phase_coherence,
+                phase_blend_low_hz,
+                phase_blend_high_hz,
+            } => PluginConfig::new(
+                "downmix",
+                json!({
+                    "input_channels": input_channels,
+                    "center_gain_db": center_gain_db,
+                    "surround_gain_db": surround_gain_db,
+                    "height_gain_db": height_gain_db,
+                    "lfe_gain_db": lfe_gain_db,
+                    "phase_coherence": phase_coherence,
+                    "phase_blend_low_hz": phase_blend_low_hz,
+                    "phase_blend_high_hz": phase_blend_high_hz,
+                }),
+            ),
+            Self::MonoToStereo {
+                stereo_width,
+                haas_delay_ms,
+                enable_comp_eq,
+                comp_eq_depth_db,
+                decor_low_hz,
+                decor_high_hz,
+            } => PluginConfig::new(
+                "mono_to_stereo",
+                json!({
+                    "stereo_width": stereo_width,
+                    "haas_delay_ms": haas_delay_ms,
+                    "enable_comp_eq": enable_comp_eq,
+                    "comp_eq_depth_db": comp_eq_depth_db,
+                    "decor_low_hz": decor_low_hz,
+                    "decor_high_hz": decor_high_hz,
+                }),
+            ),
         }
     }
 
@@ -2092,6 +2224,24 @@ impl PluginSettings {
             PluginType::BandMerge => Self::BandMerge {
                 channels: default_channels(),
                 bands: default_band_merge_bands(),
+            },
+            PluginType::Downmix => Self::Downmix {
+                input_channels: 6, // Default to 5.1
+                center_gain_db: default_downmix_center_gain_db(),
+                surround_gain_db: default_downmix_surround_gain_db(),
+                height_gain_db: default_downmix_height_gain_db(),
+                lfe_gain_db: default_downmix_lfe_gain_db(),
+                phase_coherence: true,
+                phase_blend_low_hz: default_downmix_phase_blend_low_hz(),
+                phase_blend_high_hz: default_downmix_phase_blend_high_hz(),
+            },
+            PluginType::MonoToStereo => Self::MonoToStereo {
+                stereo_width: default_mono_to_stereo_width(),
+                haas_delay_ms: default_mono_to_stereo_haas_delay_ms(),
+                enable_comp_eq: true,
+                comp_eq_depth_db: default_mono_to_stereo_comp_eq_depth_db(),
+                decor_low_hz: default_mono_to_stereo_decor_low_hz(),
+                decor_high_hz: default_mono_to_stereo_decor_high_hz(),
             },
         }
     }
@@ -2563,23 +2713,27 @@ impl PluginChain {
             return None;
         }
 
-        // Determine if this is the first LoudnessMonitor (input monitor)
-        let first_loudness_idx = self
+        // Determine if this is the first permanent LoudnessMonitor (input monitor)
+        let first_permanent_loudness_idx = self
             .plugins
             .iter()
-            .position(|p| p.enabled && matches!(p.plugin_type(), PluginType::LoudnessMonitor));
-        let target_is_first_loudness = first_loudness_idx == Some(ui_index)
+            .position(|p| p.permanent && matches!(p.plugin_type(), PluginType::LoudnessMonitor));
+        let target_is_first_loudness = first_permanent_loudness_idx == Some(ui_index)
             && matches!(target_plugin.plugin_type(), PluginType::LoudnessMonitor);
 
         if target_is_first_loudness {
-            // First LoudnessMonitor is always at engine index 0
+            // First permanent LoudnessMonitor is always at engine index 0
             return Some(0);
         }
 
         let target_is_monitor = target_plugin.plugin_type().is_monitoring();
 
         // Check if there's an enabled input monitor (counts toward engine offset)
-        let has_input_monitor = first_loudness_idx.is_some();
+        // An input monitor exists in the engine if the first permanent one is enabled.
+        let has_input_monitor = first_permanent_loudness_idx
+            .and_then(|idx| self.plugins.get(idx))
+            .map(|p| p.enabled)
+            .unwrap_or(false);
         let input_monitor_offset = if has_input_monitor { 1 } else { 0 };
 
         if !target_is_monitor {
@@ -2595,8 +2749,8 @@ impl PluginChain {
                 }
             }
         } else {
-            // Target is a monitoring plugin (but not first LoudnessMonitor - handled above).
-            // Engine index is input_monitor_offset + (all enabled processing plugins) + (count of enabled monitors before it, excluding first LoudnessMonitor).
+            // Target is a monitoring plugin (but not first permanent LoudnessMonitor).
+            // Engine index is input_monitor_offset + (all enabled processing plugins) + (count of enabled monitors before it, excluding first permanent LoudnessMonitor).
 
             // 1. Count all enabled processing plugins
             let mut engine_idx = input_monitor_offset;
@@ -2606,23 +2760,15 @@ impl PluginChain {
                 }
             }
 
-            // 2. Count enabled monitors until we hit target (skip first LoudnessMonitor)
-            let mut found_first_loudness = false;
+            // 2. Count enabled monitors until we hit target (skip first permanent LoudnessMonitor)
             for (i, p) in self.plugins.iter().enumerate() {
-                if p.enabled && matches!(p.plugin_type(), PluginType::LoudnessMonitor) {
-                    if !found_first_loudness {
-                        found_first_loudness = true;
-                        continue; // Skip first LoudnessMonitor, it's already counted at index 0
-                    }
+                if Some(i) == first_permanent_loudness_idx {
+                    continue; // Skip first permanent LoudnessMonitor
                 }
                 if i == ui_index {
                     return Some(engine_idx);
                 }
-                if p.enabled
-                    && p.plugin_type().is_monitoring()
-                    && (found_first_loudness
-                        || !matches!(p.plugin_type(), PluginType::LoudnessMonitor))
-                {
+                if p.enabled && p.plugin_type().is_monitoring() {
                     engine_idx += 1;
                 }
             }
@@ -2633,23 +2779,26 @@ impl PluginChain {
 
     pub fn to_plugin_configs(&self, sample_rate: f64) -> Vec<PluginConfig> {
         // Separate plugins into three categories:
-        // 1. Input monitor (first LoudnessMonitor) - measures input signal BEFORE processing
+        // 1. Input monitor (the first permanent LoudnessMonitor)
         // 2. Processing plugins - transform the audio
-        // 3. Output analyzers (subsequent LoudnessMonitors, Spectrum, etc.) - measure AFTER processing
+        // 3. Output analyzers (subsequent LoudnessMonitors, Spectrum, etc.)
         let mut input_monitor: Option<PluginConfig> = None;
         let mut processing_plugins = Vec::new();
         let mut analyzer_plugins = Vec::new();
-        let mut found_first_loudness_monitor = false;
 
-        for plugin in &self.plugins {
+        // Identify which plugin should be the input monitor.
+        // It's the first permanent LoudnessMonitor.
+        let first_permanent_loudness_idx = self
+            .plugins
+            .iter()
+            .position(|p| p.permanent && matches!(p.plugin_type(), PluginType::LoudnessMonitor));
+
+        for (idx, plugin) in self.plugins.iter().enumerate() {
             if let Some(config) = plugin.to_plugin_config(sample_rate) {
                 match plugin.plugin_type() {
-                    // First LoudnessMonitor is input monitor, stays at beginning
-                    // Subsequent LoudnessMonitors go at the end
                     PluginType::LoudnessMonitor => {
-                        if !found_first_loudness_monitor {
+                        if Some(idx) == first_permanent_loudness_idx {
                             input_monitor = Some(config);
-                            found_first_loudness_monitor = true;
                         } else {
                             analyzer_plugins.push(config);
                         }
@@ -3000,6 +3149,50 @@ impl PluginChain {
                         });
                     }
                 }
+                PluginSettings::Downmix {
+                    input_channels,
+                    center_gain_db,
+                    surround_gain_db,
+                    height_gain_db,
+                    lfe_gain_db,
+                    phase_coherence,
+                    phase_blend_low_hz,
+                    phase_blend_high_hz,
+                } => {
+                    if *input_channels != current_channels {
+                        updated_settings = Some(PluginSettings::Downmix {
+                            input_channels: current_channels,
+                            center_gain_db: *center_gain_db,
+                            surround_gain_db: *surround_gain_db,
+                            height_gain_db: *height_gain_db,
+                            lfe_gain_db: *lfe_gain_db,
+                            phase_coherence: *phase_coherence,
+                            phase_blend_low_hz: *phase_blend_low_hz,
+                            phase_blend_high_hz: *phase_blend_high_hz,
+                        });
+                    }
+                }
+                PluginSettings::BandSplit {
+                    channels,
+                    frequency,
+                    crossover_type,
+                } => {
+                    if *channels != current_channels {
+                        updated_settings = Some(PluginSettings::BandSplit {
+                            channels: current_channels,
+                            frequency: *frequency,
+                            crossover_type: crossover_type.clone(),
+                        });
+                    }
+                }
+                PluginSettings::BandMerge { channels, bands } => {
+                    if *channels != current_channels {
+                        updated_settings = Some(PluginSettings::BandMerge {
+                            channels: current_channels,
+                            bands: *bands,
+                        });
+                    }
+                }
                 _ => {}
             }
 
@@ -3032,6 +3225,18 @@ impl PluginChain {
                         output_channels, ..
                     } => {
                         current_channels = *output_channels;
+                    }
+                    PluginSettings::Downmix { .. } => {
+                        current_channels = 2; // Downmix always produces stereo
+                    }
+                    PluginSettings::MonoToStereo { .. } => {
+                        current_channels = 2; // MonoToStereo always produces stereo
+                    }
+                    PluginSettings::BandSplit { .. } => {
+                        current_channels *= 2; // Split into 2 bands
+                    }
+                    PluginSettings::BandMerge { bands, .. } => {
+                        current_channels /= if *bands > 0 { *bands } else { 2 };
                     }
                     _ => {}
                 }

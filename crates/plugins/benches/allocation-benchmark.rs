@@ -436,7 +436,9 @@ fn test_loudness_monitor_zero_alloc() {
     plugin.process(&input, &mut output, &ctx).unwrap();
 
     assert_no_allocs("LoudnessMonitorPlugin", || {
-        plugin.process(&input, &mut output, &ctx).unwrap();
+        for _ in 0..10 {
+            plugin.process(&input, &mut output, &ctx).unwrap();
+        }
     });
 }
 

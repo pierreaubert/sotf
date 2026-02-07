@@ -49,6 +49,9 @@ pub struct BandMergePlugin {
     output_channels: usize,
     /// Number of bands to merge
     num_bands: usize,
+
+    // Parameter ID
+    param_bands: ParameterId,
 }
 
 impl BandMergePlugin {
@@ -68,6 +71,7 @@ impl BandMergePlugin {
         Ok(Self {
             output_channels,
             num_bands: bands,
+            param_bands: ParameterId("bands".to_string()),
         })
     }
 
@@ -97,15 +101,39 @@ impl Plugin for BandMergePlugin {
     }
 
     fn parameters(&self) -> Vec<Parameter> {
-        vec![]
+        use super::parameters::ParameterImportance;
+        use crate::param_specs::band_merge::*;
+
+        vec![Parameter::new_int(
+            "bands",
+            "Number of Bands",
+            self.num_bands as i32,
+            BANDS_MIN as i32,
+            BANDS_MAX as i32,
+        )
+        .with_importance(ParameterImportance::Critical)]
     }
 
-    fn set_parameter(&mut self, _id: ParameterId, _value: ParameterValue) -> PluginResult<()> {
-        Err("BandMerge plugin has no adjustable parameters".to_string())
+    fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+        if id == self.param_bands {
+            if let Some(v) = value.as_int() {
+                if v < 2 {
+                    return Err("bands must be at least 2".to_string());
+                }
+                self.num_bands = v as usize;
+                return Ok(());
+            }
+            return Err("bands must be int".to_string());
+        }
+        Err(format!("Unknown parameter ID: {}", id.0))
     }
 
-    fn get_parameter(&self, _id: &ParameterId) -> Option<ParameterValue> {
-        None
+    fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
+        if id == &self.param_bands {
+            Some(ParameterValue::Int(self.num_bands as i32))
+        } else {
+            None
+        }
     }
 
     fn initialize(&mut self, _sample_rate: u32) -> PluginResult<()> {

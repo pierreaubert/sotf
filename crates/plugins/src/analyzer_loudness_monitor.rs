@@ -99,36 +99,38 @@ impl LoudnessMonitor {
     pub(crate) fn add_frames(&mut self, samples: &[f32]) -> Result<(), String> {
         self.ebur128
             .add_frames_f32(samples)
-            .map_err(|e| format!("Failed to add frames: {:?}", e))?;
+            .map_err(|_| "Failed to add frames to EBU R128 analyzer".to_string())?;
 
-        let momentary_lufs = self.ebur128.loudness_momentary().unwrap_or(f64::NEG_INFINITY);
-        let shortterm_lufs = self.ebur128.loudness_shortterm().unwrap_or(f64::NEG_INFINITY);
-        let integrated_lufs = self.ebur128.loudness_global().unwrap_or(f64::NEG_INFINITY);
+        let momentary_lufs = self.ebur128.loudness_momentary().unwrap_or(-120.0);
+        let shortterm_lufs = self.ebur128.loudness_shortterm().unwrap_or(-120.0);
+        let integrated_lufs = self.ebur128.loudness_global().unwrap_or(-120.0);
 
         // Get true peaks per channel — reuse scratch buffer
-        self.true_peaks_scratch.fill(f64::NEG_INFINITY);
+        // Note: true_peak() can be expensive as it involves oversampling.
+        // We only update it when throttled if performance is an issue, but for now we keep it per-block.
         for ch in 0..self.channels as usize {
-            if let Ok(true_peak_linear) = self.ebur128.true_peak(ch as u32)
-                && true_peak_linear >= 1e-10
-            {
-                self.true_peaks_scratch[ch] = 20.0 * true_peak_linear.log10();
+            if let Ok(true_peak_linear) = self.ebur128.true_peak(ch as u32) {
+                // Pre-calculate 20 * log10(tp) only if tp is significant
+                self.true_peaks_scratch[ch] = if true_peak_linear > 1e-6 {
+                    20.0 * true_peak_linear.log10()
+                } else {
+                    -120.0
+                };
+            } else {
+                self.true_peaks_scratch[ch] = -120.0;
             }
         }
 
-        // Calculate per-channel peaks from the current buffer
+        // Calculate per-channel sample peaks from the current buffer
         let num_frames = samples.len() / self.channels as usize;
-        let mut peak = 0.0f64;
+        let channels = self.channels as usize;
 
         self.channel_peaks_scratch.fill(0.0);
-        for frame_idx in 0..num_frames {
-            for ch in 0..self.channels as usize {
-                let sample_idx = frame_idx * self.channels as usize + ch;
-                let sample_abs = samples[sample_idx].abs() as f64;
+        for frame in samples.chunks_exact(channels) {
+            for (ch, &sample) in frame.iter().enumerate() {
+                let sample_abs = sample.abs() as f64;
                 if sample_abs > self.channel_peaks_scratch[ch] {
                     self.channel_peaks_scratch[ch] = sample_abs;
-                }
-                if sample_abs > peak {
-                    peak = sample_abs;
                 }
             }
         }
@@ -141,21 +143,17 @@ impl LoudnessMonitor {
         };
 
         // Apply decay to existing peaks and take max with new peaks
-        for tracker in self.channel_peak_trackers.iter_mut() {
-            *tracker = (*tracker - self.peak_decay_per_sample * num_frames as f64).max(0.0);
-        }
-        for (tracker, new_peak) in self
+        let decay = self.peak_decay_per_sample * num_frames as f64;
+        for (tracker, &new_peak) in self
             .channel_peak_trackers
             .iter_mut()
             .zip(self.channel_peaks_scratch.iter())
         {
-            if *new_peak > *tracker {
-                *tracker = *new_peak;
-            }
+            *tracker = (*tracker - decay).max(new_peak);
         }
 
         // Compute overall peak from trackers
-        peak = self
+        let peak = self
             .channel_peak_trackers
             .iter()
             .copied()
@@ -182,22 +180,19 @@ impl LoudnessMonitor {
     fn update_correlation_stereo(&mut self, samples: &[f32]) -> Option<f64> {
         let num_frames = samples.len() / 2;
 
-        // Write into ring buffer
-        for frame_idx in 0..num_frames {
-            let l = samples[frame_idx * 2];
-            let r = samples[frame_idx * 2 + 1];
+        // Write into ring buffer (manual loop is efficient for interleaved data)
+        let mut write_pos = self.correlation_write_pos;
+        for frame in samples.chunks_exact(2) {
+            self.correlation_ring_l[write_pos] = frame[0];
+            self.correlation_ring_r[write_pos] = frame[1];
 
-            self.correlation_ring_l[self.correlation_write_pos] = l;
-            self.correlation_ring_r[self.correlation_write_pos] = r;
-
-            self.correlation_write_pos += 1;
-            if self.correlation_write_pos >= self.correlation_buffer_size {
-                self.correlation_write_pos = 0;
-            }
-            if self.correlation_count < self.correlation_buffer_size {
-                self.correlation_count += 1;
+            write_pos += 1;
+            if write_pos >= self.correlation_buffer_size {
+                write_pos = 0;
             }
         }
+        self.correlation_write_pos = write_pos;
+        self.correlation_count = (self.correlation_count + num_frames).min(self.correlation_buffer_size);
 
         self.correlation_frames_since_update += num_frames;
 
@@ -213,46 +208,30 @@ impl LoudnessMonitor {
         }
 
         let n = self.correlation_count as f64;
+        let valid_len = self.correlation_count;
 
-        // Compute means over the valid portion of the ring buffer
-        let (sum_l, sum_r) = if self.correlation_count == self.correlation_buffer_size {
-            // Buffer is full — sum entire thing
-            let sl: f64 = self.correlation_ring_l.iter().map(|&x| x as f64).sum();
-            let sr: f64 = self.correlation_ring_r.iter().map(|&x| x as f64).sum();
-            (sl, sr)
-        } else {
-            // Buffer partially filled — only first `correlation_count` elements are valid
-            let sl: f64 = self.correlation_ring_l[..self.correlation_count]
-                .iter()
-                .map(|&x| x as f64)
-                .sum();
-            let sr: f64 = self.correlation_ring_r[..self.correlation_count]
-                .iter()
-                .map(|&x| x as f64)
-                .sum();
-            (sl, sr)
-        };
+        // Compute means in one pass
+        let (sum_l, sum_r) = self.correlation_ring_l[..valid_len]
+            .iter()
+            .zip(self.correlation_ring_r[..valid_len].iter())
+            .fold((0.0, 0.0), |acc, (&l, &r)| (acc.0 + l as f64, acc.1 + r as f64));
 
         let mean_l = sum_l / n;
         let mean_r = sum_r / n;
 
-        let mut cov_lr = 0.0;
-        let mut var_l = 0.0;
-        let mut var_r = 0.0;
-
-        let valid_len = if self.correlation_count == self.correlation_buffer_size {
-            self.correlation_buffer_size
-        } else {
-            self.correlation_count
-        };
-
-        for i in 0..valid_len {
-            let diff_l = self.correlation_ring_l[i] as f64 - mean_l;
-            let diff_r = self.correlation_ring_r[i] as f64 - mean_r;
-            cov_lr += diff_l * diff_r;
-            var_l += diff_l * diff_l;
-            var_r += diff_r * diff_r;
-        }
+        // Compute covariance and variance in one pass
+        let (cov_lr, var_l, var_r) = self.correlation_ring_l[..valid_len]
+            .iter()
+            .zip(self.correlation_ring_r[..valid_len].iter())
+            .fold((0.0, 0.0, 0.0), |acc, (&l, &r)| {
+                let diff_l = l as f64 - mean_l;
+                let diff_r = r as f64 - mean_r;
+                (
+                    acc.0 + diff_l * diff_r,
+                    acc.1 + diff_l * diff_l,
+                    acc.2 + diff_r * diff_r,
+                )
+            });
 
         let correlation = if var_l < 1e-10 || var_r < 1e-10 {
             0.0
@@ -302,10 +281,14 @@ pub struct LoudnessMonitorPlugin {
     monitor: LoudnessMonitor,
     /// Number of channels
     num_channels: usize,
-    /// Cached Arc for zero-alloc get_data() — rebuilt after each process() call.
-    /// Uses Arc::get_mut() to update in-place when refcount == 1 (common case),
-    /// falls back to new allocation only when UI still holds a reference.
+    /// Sample rate
+    sample_rate: u32,
+    /// Cached Arc for zero-alloc get_data()
     cached_data: Option<Arc<dyn Any + Send + Sync>>,
+    /// Samples since last metadata update (throttling)
+    samples_since_update: usize,
+    /// How often to update metadata (sample_rate / 10 = every 100ms)
+    update_interval_samples: usize,
 }
 
 impl LoudnessMonitorPlugin {
@@ -314,12 +297,16 @@ impl LoudnessMonitorPlugin {
     /// # Arguments
     /// * `num_channels` - Number of audio channels to analyze
     pub fn new(num_channels: usize) -> Result<Self, String> {
-        let monitor = LoudnessMonitor::new(num_channels as u32, 48000)?;
+        let sample_rate = 48000; // Default until initialize()
+        let monitor = LoudnessMonitor::new(num_channels as u32, sample_rate)?;
 
         Ok(Self {
             monitor,
             num_channels,
+            sample_rate,
             cached_data: None,
+            samples_since_update: 0,
+            update_interval_samples: sample_rate as usize / 10,
         })
     }
 
@@ -377,6 +364,9 @@ impl Plugin for LoudnessMonitorPlugin {
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
+        self.sample_rate = sample_rate;
+        self.update_interval_samples = sample_rate as usize / 10;
+        self.samples_since_update = 0;
         self.monitor = LoudnessMonitor::new(self.num_channels as u32, sample_rate)
             .map_err(|e| format!("Failed to initialize loudness monitor: {}", e))?;
         self.rebuild_cached_data();
@@ -386,6 +376,7 @@ impl Plugin for LoudnessMonitorPlugin {
 
     fn reset(&mut self) {
         self.monitor.reset().ok();
+        self.samples_since_update = 0;
         self.rebuild_cached_data();
     }
 
@@ -420,9 +411,12 @@ impl Plugin for LoudnessMonitorPlugin {
             .map_err(|e| format!("Failed to add frames to loudness monitor: {}", e))?;
 
         // Rebuild cached Arc for zero-alloc get_data().
-        // Common case: Arc::get_mut succeeds (refcount == 1) → in-place update, zero alloc.
-        // Rare case: UI still holds old ref → one allocation.
-        self.rebuild_cached_data();
+        // Throttled to every ~100ms to reduce overhead.
+        self.samples_since_update += context.num_frames;
+        if self.samples_since_update >= self.update_interval_samples {
+            self.samples_since_update = 0;
+            self.rebuild_cached_data();
+        }
 
         Ok(context.num_frames)
     }

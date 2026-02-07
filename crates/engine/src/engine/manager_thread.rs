@@ -1072,6 +1072,23 @@ fn handle_command(
 
             ManagerResponse::Ok
         }
+        ManagerCommand::PlayAt(path, position) => {
+            log::debug!("[Manager Thread] PlayAt: {:?} at {:.2}s", path, position);
+
+            // Update state
+            if let Ok(mut state_guard) = safe_lock(state) {
+                state_guard.current_file = Some(path.clone());
+                state_guard.playback_state = PlaybackState::Playing;
+                state_guard.position = position;
+            }
+
+            // Send to decoder
+            if let Err(e) = decoder.send_command(DecoderCommand::PlayAt(path, position)) {
+                return ManagerResponse::Error(e);
+            }
+
+            ManagerResponse::Ok
+        }
         ManagerCommand::Pause => {
             log::debug!("[Manager Thread] Pause");
 

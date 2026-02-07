@@ -31,6 +31,18 @@ impl AudioEngine {
         Ok(())
     }
 
+    /// Play an audio file at a specific position
+    pub fn play_at<P: Into<std::path::PathBuf>>(
+        &mut self,
+        path: P,
+        position: f64,
+    ) -> Result<(), String> {
+        self.manager
+            .send_command(ManagerCommand::PlayAt(path.into(), position))?;
+        self.manager.recv_response()?;
+        Ok(())
+    }
+
     /// Pause playback
     pub fn pause(&mut self) -> Result<(), String> {
         self.manager.send_command(ManagerCommand::Pause)?;

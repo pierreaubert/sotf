@@ -14,6 +14,7 @@ pub use decoder::stream::{StreamEvent, StreamPosition, StreamState};
 pub mod manager;
 pub use manager::{
     AudioEngineManager, AudioFileInfo, StreamingCommand, StreamingEvent, StreamingState,
+    select_output_sample_rate,
 };
 
 pub mod preflight;

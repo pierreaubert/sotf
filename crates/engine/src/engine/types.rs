@@ -93,6 +93,8 @@ pub enum ProcessingMessage {
 pub enum DecoderCommand {
     /// Start playing a file
     Play(PathBuf),
+    /// Start playing a file at a specific position in seconds
+    PlayAt(PathBuf, f64),
     /// Start silent source (for HAL input plugins)
     /// Sends empty frames at regular intervals for source plugins
     StartSilentSource,
@@ -186,6 +188,8 @@ pub enum PlaybackCommand {
 pub enum ManagerCommand {
     // Playback control
     Play(PathBuf),
+    /// Play a file starting at a specific position
+    PlayAt(PathBuf, f64),
     Pause,
     Resume,
     Stop,

@@ -63,8 +63,8 @@ impl NodeBuffer {
 /// Pre-allocated processing buffers, extracted from DawHost to avoid borrow conflicts.
 /// Taken out of DawHost via `Option::take()` during `process()`, put back after.
 struct ProcessBuffers {
-    /// Pre-allocated buffer for each node (reused across frames)
-    node_buffers: HashMap<NodeId, NodeBuffer>,
+    /// Pre-allocated buffer for each node (reused across frames), indexed by NodeId
+    node_buffers: Vec<Option<NodeBuffer>>,
     /// Pre-allocated scratch input buffer
     scratch_input: Vec<f32>,
     /// Pre-allocated scratch output buffer
@@ -295,6 +295,12 @@ pub struct DawHost {
     built: bool,
     /// Pre-allocated processing buffers (taken during process(), put back after)
     process_buffers: Option<ProcessBuffers>,
+    /// Pre-computed adjacency list: node_id -> list of incoming edges
+    predecessors: Vec<Vec<GraphEdge>>,
+    /// Fast lookup for input nodes
+    is_input_node: Vec<bool>,
+    /// Fast lookup for output nodes
+    is_output_node: Vec<bool>,
 }
 
 impl DawHost {
@@ -327,6 +333,9 @@ impl DawHost {
             initial_input_channels: channels,
             built: false,
             process_buffers: None,
+            predecessors: Vec::new(),
+            is_input_node: Vec::new(),
+            is_output_node: Vec::new(),
         }
     }
 
@@ -439,23 +448,43 @@ impl DawHost {
             );
         }
 
+        // Pre-compute predecessors, input/output flags
+        let max_node_id = self.nodes.keys().copied().max().unwrap_or(0);
+        let num_id_slots = if self.nodes.is_empty() { 0 } else { max_node_id + 1 };
+        
+        self.predecessors = vec![Vec::new(); num_id_slots];
+        self.is_input_node = vec![false; num_id_slots];
+        self.is_output_node = vec![false; num_id_slots];
+        
+        for edge in &self.edges {
+            self.predecessors[edge.to_node].push(edge.clone());
+        }
+        
+        for &id in &self.input_nodes {
+            self.is_input_node[id] = true;
+        }
+        for &id in &self.output_nodes {
+            self.is_output_node[id] = true;
+        }
+
         // Pre-allocate processing buffers based on graph topology
         let max_channels = self
             .nodes
             .values()
             .map(|n| n.output_channels().max(n.input_channels()))
             .max()
-            .unwrap_or(2);
-        // Use a generous default frame count; will grow if needed
-        let default_buffer_frames = 2048;
-        let node_buffers: HashMap<NodeId, NodeBuffer> = self
-            .nodes
-            .iter()
-            .map(|(&id, node)| {
-                let buf = NodeBuffer::new(default_buffer_frames, node.output_channels());
-                (id, buf)
-            })
-            .collect();
+            .unwrap_or(2)
+            .max(16); // Ensure at least 16 channels for scratch buffers
+
+        // Use a generous default frame count to avoid reallocations when resamplers are used
+        // 4096 frames covers most typical block sizes even after 2x upsampling
+        let default_buffer_frames = 4096;
+
+        let mut node_buffers = (0..num_id_slots).map(|_| None).collect::<Vec<_>>();
+        for (&id, node) in &self.nodes {
+            node_buffers[id] = Some(NodeBuffer::new(default_buffer_frames, node.output_channels()));
+        }
+
         let scratch_size = default_buffer_frames * max_channels;
         self.process_buffers = Some(ProcessBuffers {
             node_buffers,
@@ -731,12 +760,12 @@ impl DawHost {
 
         // Ensure node buffers are large enough and cleared for this frame.
         // All entries are pre-allocated in build(); ensure_capacity is a no-op when
-        // the frame count doesn't exceed the pre-allocated size (2048).
-        for &id in self.nodes.keys() {
-            let nb = bufs.node_buffers.get_mut(&id)
-                .expect("NodeBuffer must be pre-allocated in build() for every node");
-            nb.ensure_capacity(buffer_frames);
-            nb.clear();
+        // the frame count doesn't exceed the pre-allocated size.
+        for nb_opt in bufs.node_buffers.iter_mut() {
+            if let Some(nb) = nb_opt {
+                nb.ensure_capacity(buffer_frames);
+                nb.clear();
+            }
         }
 
         // Track current frame count through the chain (may change after resamplers)
@@ -752,8 +781,8 @@ impl DawHost {
 
                 Self::process_node_with_buffers(
                     &self.nodes,
-                    &self.input_nodes,
-                    &self.edges,
+                    &self.is_input_node,
+                    &self.predecessors,
                     node_id,
                     input,
                     &mut bufs,
@@ -785,8 +814,8 @@ impl DawHost {
     #[allow(clippy::too_many_arguments)]
     fn process_node_with_buffers(
         nodes: &HashMap<NodeId, GraphNode>,
-        input_nodes: &[NodeId],
-        edges: &[GraphEdge],
+        is_input_node: &[bool],
+        predecessors: &[Vec<GraphEdge>],
         node_id: NodeId,
         graph_input: &[f32],
         bufs: &mut ProcessBuffers,
@@ -798,7 +827,7 @@ impl DawHost {
             .ok_or_else(|| format!("Node {} not found", node_id))?;
 
         // Determine input data
-        let input_len = if input_nodes.contains(&node_id) {
+        let input_len = if *is_input_node.get(node_id).unwrap_or(&false) {
             // Input node - copy graph input into scratch_input for uniform handling
             let len = graph_input.len();
             if bufs.scratch_input.len() < len {
@@ -810,9 +839,8 @@ impl DawHost {
             // Internal node - merge inputs from predecessors into merge_buffer,
             // then copy to scratch_input
             let merged_len = Self::merge_inputs_into(
-                nodes,
-                edges,
-                node_id,
+                node,
+                predecessors,
                 &bufs.node_buffers,
                 context.num_frames,
                 &mut bufs.merge_buffer,
@@ -825,14 +853,14 @@ impl DawHost {
             merged_len
         };
 
+        // Lock the plugin once for both queries and processing
+        let mut plugin = node
+            .plugin
+            .lock()
+            .map_err(|e| format!("Plugin '{}' lock poisoned: {}", node.name, e))?;
+
         // Query the plugin for max output frames (accounts for resamplers)
-        let max_output_frames = {
-            let plugin = node
-                .plugin
-                .lock()
-                .map_err(|e| format!("Plugin '{}' lock poisoned: {}", node.name, e))?;
-            plugin.output_frames_for_input(context.num_frames)
-        };
+        let max_output_frames = plugin.output_frames_for_input(context.num_frames);
 
         // Prepare output scratch buffer
         let output_channels = node.output_channels();
@@ -840,24 +868,17 @@ impl DawHost {
         if bufs.scratch_output.len() < output_size {
             bufs.scratch_output.resize(output_size, 0.0);
         }
-        bufs.scratch_output[..output_size].fill(0.0);
 
-        // Process (lock the plugin for processing)
-        let actual_output_frames = {
-            let mut plugin = node
-                .plugin
-                .lock()
-                .map_err(|e| format!("Plugin '{}' lock poisoned: {}", node.name, e))?;
-            plugin.process(
-                &bufs.scratch_input[..input_len],
-                &mut bufs.scratch_output[..output_size],
-                context,
-            )?
-        };
+        // Process
+        let actual_output_frames = plugin.process(
+            &bufs.scratch_input[..input_len],
+            &mut bufs.scratch_output[..output_size],
+            context,
+        )?;
 
         // Write actual output to node buffer
         let actual_output_size = actual_output_frames * output_channels;
-        if let Some(nb) = bufs.node_buffers.get_mut(&node_id) {
+        if let Some(Some(nb)) = bufs.node_buffers.get_mut(node_id) {
             nb.write(&bufs.scratch_output[..actual_output_size]);
         }
 
@@ -870,29 +891,34 @@ impl DawHost {
     /// Merge inputs from predecessor nodes into `merge_buffer` (zero-allocation).
     /// Returns the number of samples written into `merge_buffer`.
     fn merge_inputs_into(
-        nodes: &HashMap<NodeId, GraphNode>,
-        edges: &[GraphEdge],
-        node_id: NodeId,
-        node_buffers: &HashMap<NodeId, NodeBuffer>,
+        node: &GraphNode,
+        predecessors: &[Vec<GraphEdge>],
+        node_buffers: &[Option<NodeBuffer>],
         num_frames: usize,
         merge_buffer: &mut Vec<f32>,
         channel_map_buffer: &mut Vec<f32>,
     ) -> Result<usize, String> {
-        let node = &nodes[&node_id];
+        let node_id = node.id;
         let input_channels = node.input_channels();
         let input_size = num_frames * input_channels;
 
-        // Ensure merge buffer is large enough and zeroed
+        // Ensure merge buffer is large enough and zeroed (only for current input_size)
         if merge_buffer.len() < input_size {
             merge_buffer.resize(input_size, 0.0);
         }
         merge_buffer[..input_size].fill(0.0);
 
-        // Find and mix all incoming edges
-        let mut found_input = false;
-        for edge in edges.iter().filter(|e| e.to_node == node_id) {
-            found_input = true;
-            let src_buffer = &node_buffers[&edge.from_node];
+        // Find and mix all incoming edges using pre-computed predecessors
+        let node_preds = predecessors.get(node_id)
+            .ok_or_else(|| format!("Predecessors for node {} not found", node_id))?;
+            
+        if node_preds.is_empty() {
+            return Err(format!("Node {} has no inputs", node_id));
+        }
+
+        for edge in node_preds {
+            let src_buffer = node_buffers[edge.from_node].as_ref()
+                .ok_or_else(|| format!("Source buffer for node {} not found", edge.from_node))?;
 
             if let Some(ref channel_map) = edge.channel_map {
                 // Apply channel mapping into channel_map_buffer
@@ -904,11 +930,12 @@ impl DawHost {
                     channel_map_buffer.resize(mapped_size, 0.0);
                 }
 
+                // Optimized channel mapping loop
                 for frame in 0..num_frames {
+                    let src_frame_base = frame * src_channels;
+                    let dst_frame_base = frame * dst_channels;
                     for (dst_ch, &src_ch) in channel_map.iter().enumerate() {
-                        let src_idx = frame * src_channels + src_ch;
-                        let dst_idx = frame * dst_channels + dst_ch;
-                        channel_map_buffer[dst_idx] = src_data[src_idx];
+                        channel_map_buffer[dst_frame_base + dst_ch] = src_data[src_frame_base + src_ch];
                     }
                 }
 
@@ -922,17 +949,15 @@ impl DawHost {
             } else {
                 // Direct mix from node buffer (no clone - reads a slice)
                 let src_data = src_buffer.read();
-                for (dst, &src) in merge_buffer[..input_size]
+                // Ensure we don't read more than input_size
+                let mix_len = src_data.len().min(input_size);
+                for (dst, &src) in merge_buffer[..mix_len]
                     .iter_mut()
-                    .zip(src_data.iter())
+                    .zip(src_data[..mix_len].iter())
                 {
                     *dst += src;
                 }
             }
-        }
-
-        if !found_input {
-            return Err(format!("Node {} has no inputs", node_id));
         }
 
         Ok(input_size)
@@ -941,14 +966,15 @@ impl DawHost {
     /// Collect output from output nodes (static method, no borrow conflicts).
     fn collect_output_from_buffers(
         output_nodes: &[NodeId],
-        node_buffers: &HashMap<NodeId, NodeBuffer>,
+        node_buffers: &[Option<NodeBuffer>],
         output: &mut [f32],
         _num_frames: usize,
     ) -> Result<(), String> {
         if output_nodes.len() == 1 {
             // Single output - direct copy (slice, no allocation)
             let node_id = output_nodes[0];
-            let buffer = &node_buffers[&node_id];
+            let buffer = node_buffers[node_id].as_ref()
+                .ok_or_else(|| format!("Output buffer for node {} not found", node_id))?;
             let data = buffer.read();
             let copy_len = data.len().min(output.len());
             output[..copy_len].copy_from_slice(&data[..copy_len]);
@@ -956,7 +982,8 @@ impl DawHost {
             // Multiple outputs - mix them
             output.fill(0.0);
             for &node_id in output_nodes {
-                let buffer = &node_buffers[&node_id];
+                let buffer = node_buffers[node_id].as_ref()
+                    .ok_or_else(|| format!("Output buffer for node {} not found", node_id))?;
                 let data = buffer.read();
                 let mix_len = data.len().min(output.len());
                 for (dst, &src) in output[..mix_len].iter_mut().zip(data[..mix_len].iter()) {

@@ -739,6 +739,16 @@ fn run_decoder_thread(
                         event_tx.send(ThreadEvent::DecoderError(e)).ok();
                     }
                 }
+                DecoderCommand::PlayAt(path, position) => {
+                    state.stop();
+                    if let Err(e) = state.play(path, target_sample_rate, frame_size) {
+                        log::debug!("[Decoder Thread] PlayAt (load) failed: {}", e);
+                        event_tx.send(ThreadEvent::DecoderError(e)).ok();
+                    } else if let Err(e) = state.seek(position) {
+                        log::debug!("[Decoder Thread] PlayAt (seek) failed: {}", e);
+                        event_tx.send(ThreadEvent::DecoderError(e)).ok();
+                    }
+                }
                 DecoderCommand::StartSilentSource => {
                     state.start_silent_source();
                 }
@@ -825,6 +835,16 @@ fn run_decoder_thread(
                             state.stop();
                             if let Err(e) = state.play(path, target_sample_rate, frame_size) {
                                 log::debug!("[Decoder Thread] Play failed: {}", e);
+                                event_tx.send(ThreadEvent::DecoderError(e)).ok();
+                            }
+                        }
+                        DecoderCommand::PlayAt(path, position) => {
+                            state.stop();
+                            if let Err(e) = state.play(path, target_sample_rate, frame_size) {
+                                log::debug!("[Decoder Thread] PlayAt (load) failed: {}", e);
+                                event_tx.send(ThreadEvent::DecoderError(e)).ok();
+                            } else if let Err(e) = state.seek(position) {
+                                log::debug!("[Decoder Thread] PlayAt (seek) failed: {}", e);
                                 event_tx.send(ThreadEvent::DecoderError(e)).ok();
                             }
                         }

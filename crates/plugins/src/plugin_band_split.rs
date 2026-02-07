@@ -170,6 +170,10 @@ pub struct BandSplitPlugin {
     crossover_type: String,
     /// Crossover filters
     filters: Option<CrossoverFilters>,
+
+    // Parameter IDs
+    param_frequency: ParameterId,
+    param_type: ParameterId,
 }
 
 impl BandSplitPlugin {
@@ -187,6 +191,8 @@ impl BandSplitPlugin {
             frequency,
             crossover_type: crossover_type.to_string(),
             filters: None, // Will be created in initialize()
+            param_frequency: ParameterId("frequency".to_string()),
+            param_type: ParameterId("type".to_string()),
         })
     }
 
@@ -216,16 +222,57 @@ impl Plugin for BandSplitPlugin {
     }
 
     fn parameters(&self) -> Vec<Parameter> {
-        // No runtime-adjustable parameters for now
-        vec![]
+        use super::parameters::ParameterImportance;
+        use crate::param_specs::band_split::*;
+
+        vec![
+            Parameter::new_float(
+                "frequency",
+                "Crossover Frequency",
+                self.frequency as f32,
+                FREQUENCY_MIN as f32,
+                FREQUENCY_MAX as f32,
+            )
+            .with_unit("Hz")
+            .with_importance(ParameterImportance::Critical),
+            Parameter::new_string("type", "Crossover Type", self.crossover_type.clone())
+                .with_importance(ParameterImportance::Useful),
+        ]
     }
 
-    fn set_parameter(&mut self, _id: ParameterId, _value: ParameterValue) -> PluginResult<()> {
-        Err("BandSplit plugin has no adjustable parameters".to_string())
+    fn set_parameter(&mut self, id: ParameterId, value: ParameterValue) -> PluginResult<()> {
+        if id == self.param_frequency {
+            if let Some(v) = value.as_float() {
+                self.frequency = v as f64;
+                // Rebuild filters
+                return self.initialize(self.sample_rate);
+            }
+            return Err("frequency must be float".to_string());
+        } else if id == self.param_type {
+            if let Some(v) = value.as_string() {
+                // Validate type
+                match v.to_uppercase().as_str() {
+                    "LR24" | "LR4" | "LR48" | "LR8" => {
+                        self.crossover_type = v.to_string();
+                        // Rebuild filters
+                        return self.initialize(self.sample_rate);
+                    }
+                    _ => return Err(format!("Unknown crossover type: {}", v)),
+                }
+            }
+            return Err("type must be string".to_string());
+        }
+        Err(format!("Unknown parameter ID: {}", id.0))
     }
 
-    fn get_parameter(&self, _id: &ParameterId) -> Option<ParameterValue> {
-        None
+    fn get_parameter(&self, id: &ParameterId) -> Option<ParameterValue> {
+        if id == &self.param_frequency {
+            Some(ParameterValue::Float(self.frequency as f32))
+        } else if id == &self.param_type {
+            Some(ParameterValue::String(self.crossover_type.clone()))
+        } else {
+            None
+        }
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
