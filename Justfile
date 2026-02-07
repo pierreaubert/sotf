@@ -374,7 +374,7 @@ demo-d3rs:
 	cargo build --release --bin d3rs-spinorama --features="spinorama, gpu-3d"
 
 demo-px:
-	cargo build --release --bin px-spinorama -p gpui-px --features="autoeq,tokio,reqwest,urlencoding"
+	cargo build --release --bin px-spinorama -p gpui-px --features="autoeq, tokio, reqwest, urlencoding, gpu-3d"
 
 demo-headphone-loss:
 	cargo run --release --example headphone_loss_demo -- \
@@ -636,7 +636,7 @@ publish-math:
 # QA
 # ----------------------------------------------------------------------
 
-qa: qa-autoeq qa-math
+qa: qa-autoeq qa-math qa-plugins qa-roomeq
 
 qa-autoeq: prod-autoeq \
 	qa-ascilab-6b \
@@ -719,11 +719,36 @@ qa-fem:
 qa-bem:
 	cargo run --release --bin qa-suite -p math-bem --features="native cli parallel"
 
+qa-plugins: qa-plugin-fuzzer
+
+qa-plugin-fuzzer:
+	@for file in ./data_generated/test-audio/wav/pink_noise/pink_noise_*.wav; do \
+		for plugin in gain eq compressor limiter gate delay loudness crossover upmixer expander mbcomp mbexp matrix mutesolo denoiser fletcher spectrum; do \
+			echo "=== Fuzzing plugin: $plugin with $file ==="; \
+			cargo run --release --bin plugin-fuzzer -- --file "$file" --plugin $plugin || exit 1; \
+		done; \
+	done
+
+qa-roomeq:
+	mkdir -p ./data_generated/roomeq/generated/bem/small_stereo_2.0
+	@for method in iir fir mixed; do \
+	    cargo run --bin roomeq --release -- \
+	        --config       ./data_tests/roomeq/generated/bem/small_stereo_2_0/config.json \
+		    --optim-config ./data_tests/roomeq/generated/optimiser-$method.json \
+		    --output       ./data_generated/roomeq/generated/bem/small_stereo_2.0/dsp_$method.json; \
+		python3 ./scripts/display-roomeq.py \
+	        --input        ./data_tests/roomeq/generated/bem/small_stereo_2.0/config.json \
+		                   ./data_generated/roomeq/generated/bem/small_stereo_2.0/dsp_$method.json; \
+	done
+
+
 # ----------------------------------------------------------------------
 # POST
 # ----------------------------------------------------------------------
 
-post-install:
+post-install: post-install-rust post-install-python
+
+post-install-rust:
 	$HOME/.cargo/bin/rustup default stable
 	$HOME/.cargo/bin/cargo install just
 	$HOME/.cargo/bin/cargo install cargo-wizard
@@ -733,6 +758,11 @@ post-install:
 	$HOME/.cargo/bin/cargo install cargo-binstall
 	$HOME/.cargo/bin/cargo binstall cargo-nextest --secure
 	$HOME/.cargo/bin/cargo check
+
+post-install-python:
+	python3 -m venv venv
+	./venv/bin/pip install -U pip
+	./venv/bin/pip install -r ./scripts/requirements.txt
 
 # ----------------------------------------------------------------------
 # MACOS INSTALLER
