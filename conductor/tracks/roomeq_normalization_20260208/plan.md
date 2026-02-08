@@ -37,16 +37,16 @@ Update the converter and fuzzer to work with the new schema.
     - [x] Adapt fuzzer to handle the updated schema version
 - [x] Task: Conductor - User Manual Verification 'Tooling Adaptation' (Protocol in workflow.md) b63a853
 
-## Phase 4: Normalization & Grouping Logic
+## Phase 4: Normalization & Grouping Logic [checkpoint: 02118c4]
 Implement the logic to detect passbands and group speakers for comparison.
 
-- [ ] Task: Implement automatic passband detection for normalization
-    - [ ] Write tests verifying that subwoofers are normalized only over their active range (-3dB points)
-    - [ ] Integrate `find_db_point` into the normalization pipeline in `autoeq-roomsim`
-- [ ] Task: Implement Acoustic Group identification
-    - [ ] Write tests for the grouping heuristics (L/R, SL/SR, etc.)
-    - [ ] Implement grouping logic based on `speaker_name` and speaker position labels
-- [ ] Task: Conductor - User Manual Verification 'Normalization & Grouping Logic' (Protocol in workflow.md)
+- [x] Task: Implement automatic passband detection for normalization 8931382c
+    - [x] Write tests verifying that subwoofers are normalized only over their active range (-3dB points)
+    - [x] Integrate `find_db_point` into the normalization pipeline in `autoeq-roomsim`
+- [x] Task: Implement Acoustic Group identification 8d7ad686
+    - [x] Write tests for the grouping heuristics (L/R, SL/SR, etc.)
+    - [x] Implement grouping logic based on `speaker_name` and speaker position labels
+- [x] Task: Conductor - User Manual Verification 'Normalization & Grouping Logic' (Protocol in workflow.md) 02118c4
 
 ## Phase 5: Consistency Warnings
 Implement the acoustic comparison checks and warning reporting.
