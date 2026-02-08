@@ -7,6 +7,7 @@ use crate::error::{AutoeqError, Result};
 use crate::read as load;
 use crate::response;
 use log::{debug, info, warn};
+use math_audio_dsp::analysis::{compute_average_response, find_db_point};
 use math_audio_iir_fir::Biquad;
 use rayon::prelude::*;
 use std::collections::HashMap;
@@ -43,6 +44,20 @@ type SpeakerProcessResult = std::result::Result<
 /// Result type for mixed mode processing
 /// Returns: (chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms)
 type MixedModeResult = (ChannelDspChain, f64, f64, Curve, Curve, Vec<Biquad>, f64, Option<f64>);
+
+/// Detect passband and compute mean SPL for normalization
+fn detect_passband_and_mean(curve: &Curve) -> (Option<(f64, f64)>, f64) {
+    let freqs_f32: Vec<f32> = curve.freq.iter().map(|&f| f as f32).collect();
+    let spl_f32: Vec<f32> = curve.spl.iter().map(|&s| s as f32).collect();
+    
+    let f_low = find_db_point(&freqs_f32, &spl_f32, -3.0, true).unwrap_or(freqs_f32[0]);
+    let f_high = find_db_point(&freqs_f32, &spl_f32, -3.0, false).unwrap_or(freqs_f32[freqs_f32.len()-1]);
+    
+    let norm_range_f32 = Some((f_low, f_high));
+    let mean = compute_average_response(&freqs_f32, &spl_f32, norm_range_f32) as f64;
+    
+    (Some((f_low as f64, f_high as f64)), mean)
+}
 
 /// Threshold in dB above which to warn about channel level differences
 const LEVEL_DIFFERENCE_WARNING_THRESHOLD: f64 = 6.0;
@@ -736,15 +751,14 @@ fn process_single_speaker(
     let min_freq = room_config.optimizer.min_freq;
     let max_freq = room_config.optimizer.max_freq;
 
-    let mut sum = 0.0;
-    let mut count = 0;
-    for i in 0..curve.freq.len() {
-        if curve.freq[i] >= min_freq && curve.freq[i] <= max_freq {
-            sum += curve.spl[i];
-            count += 1;
-        }
+    // Detect passband for normalization
+    let (norm_range, mean) = detect_passband_and_mean(&curve);
+    
+    if let Some((f_low, f_high)) = norm_range {
+        info!("  Detected passband for '{}': {:.1} Hz - {:.1} Hz (Mean SPL: {:.2} dB)", 
+              channel_name, f_low, f_high, mean);
     }
-    let mean = if count > 0 { sum / count as f64 } else { 0.0 };
+
     let normalized_spl = &curve.spl - mean;
     let pre_score = crate::loss::flat_loss(&curve.freq, &normalized_spl, min_freq, max_freq);
 
@@ -786,19 +800,7 @@ fn process_single_speaker(
             let final_curve = response::apply_complex_response(&curve, &complex_resp);
 
             // Compute post_score consistently with pre_score
-            let mut sum_final = 0.0;
-            let mut count_final = 0;
-            for i in 0..final_curve.freq.len() {
-                if final_curve.freq[i] >= min_freq && final_curve.freq[i] <= max_freq {
-                    sum_final += final_curve.spl[i];
-                    count_final += 1;
-                }
-            }
-            let mean_final = if count_final > 0 {
-                sum_final / count_final as f64
-            } else {
-                0.0
-            };
+            let (_, mean_final) = detect_passband_and_mean(&final_curve);
             let normalized_final_spl = &final_curve.spl - mean_final;
             let post_score =
                 crate::loss::flat_loss(&final_curve.freq, &normalized_final_spl, min_freq, max_freq);
@@ -814,8 +816,13 @@ fn process_single_speaker(
                 response::compute_fir_complex_response(&coeffs, &display_initial.freq, sample_rate);
             let display_final = response::apply_complex_response(&display_initial, &display_fir_resp);
 
-            chain.initial_curve = Some((&display_initial).into());
-            chain.final_curve = Some((&display_final).into());
+            let mut initial_data: super::types::CurveData = (&display_initial).into();
+            initial_data.norm_range = norm_range;
+            let mut final_data: super::types::CurveData = (&display_final).into();
+            final_data.norm_range = norm_range;
+
+            chain.initial_curve = Some(initial_data);
+            chain.final_curve = Some(final_data);
 
             Ok((chain, pre_score, post_score, curve.clone(), final_curve, vec![], mean_spl, arrival_time_ms))
         }
@@ -880,19 +887,7 @@ fn process_single_speaker(
             let final_curve = response::apply_complex_response(&input_plus_iir, &fir_resp);
 
             // Compute post_score consistently with pre_score
-            let mut sum_final = 0.0;
-            let mut count_final = 0;
-            for i in 0..final_curve.freq.len() {
-                if final_curve.freq[i] >= min_freq && final_curve.freq[i] <= max_freq {
-                    sum_final += final_curve.spl[i];
-                    count_final += 1;
-                }
-            }
-            let mean_final = if count_final > 0 {
-                sum_final / count_final as f64
-            } else {
-                0.0
-            };
+            let (_, mean_final) = detect_passband_and_mean(&final_curve);
             let normalized_final_spl = &final_curve.spl - mean_final;
             let post_score =
                 crate::loss::flat_loss(&final_curve.freq, &normalized_final_spl, min_freq, max_freq);
@@ -911,8 +906,13 @@ fn process_single_speaker(
                 response::compute_fir_complex_response(&coeffs, &display_initial.freq, sample_rate);
             let display_final = response::apply_complex_response(&display_iir_corrected, &display_fir_resp);
 
-            chain.initial_curve = Some((&display_initial).into());
-            chain.final_curve = Some((&display_final).into());
+            let mut initial_data: super::types::CurveData = (&display_initial).into();
+            initial_data.norm_range = norm_range;
+            let mut final_data: super::types::CurveData = (&display_final).into();
+            final_data.norm_range = norm_range;
+
+            chain.initial_curve = Some(initial_data);
+            chain.final_curve = Some(final_data);
 
             Ok((chain, pre_score, post_score, curve.clone(), final_curve, eq_filters, mean_spl, arrival_time_ms))
         }
@@ -1014,19 +1014,7 @@ fn process_single_speaker(
                 final_curve.clone()
             };
 
-            let mut sum_final = 0.0;
-            let mut count_final = 0;
-            for i in 0..score_curve.freq.len() {
-                if score_curve.freq[i] >= min_freq && score_curve.freq[i] <= max_freq {
-                    sum_final += score_curve.spl[i];
-                    count_final += 1;
-                }
-            }
-            let mean_final = if count_final > 0 {
-                sum_final / count_final as f64
-            } else {
-                0.0
-            };
+            let (_, mean_final) = detect_passband_and_mean(&score_curve);
             let normalized_final_spl = &score_curve.spl - mean_final;
             let post_score =
                 crate::loss::flat_loss(&score_curve.freq, &normalized_final_spl, min_freq, max_freq);
@@ -1042,8 +1030,13 @@ fn process_single_speaker(
                 response::compute_peq_complex_response(&all_filters, &display_initial.freq, sample_rate);
             let display_final = response::apply_complex_response(&display_initial, &display_resp);
 
-            chain.initial_curve = Some((&display_initial).into());
-            chain.final_curve = Some((&display_final).into());
+            let mut initial_data: super::types::CurveData = (&display_initial).into();
+            initial_data.norm_range = norm_range;
+            let mut final_data: super::types::CurveData = (&display_final).into();
+            final_data.norm_range = norm_range;
+
+            chain.initial_curve = Some(initial_data);
+            chain.final_curve = Some(final_data);
 
             Ok((chain, pre_score, post_score, curve.clone(), final_curve, eq_filters, mean_spl, arrival_time_ms))
         }
@@ -1305,8 +1298,8 @@ fn process_speaker_group(
         response::compute_peq_complex_response(&eq_filters, &combined_curve.freq, sample_rate);
     let final_curve = response::apply_complex_response(&combined_curve, &iir_resp);
 
-    // Compute full-range mean SPL for level alignment between channels
-    let mean_spl = combined_curve.spl.mean().unwrap_or(0.0);
+    // Detect passband for normalization
+    let (norm_range, mean_spl) = detect_passband_and_mean(&combined_curve);
 
     // Extend curves to 20 Hz – 20 kHz for display output
     let display_initial = output::extend_curve_to_full_range(&combined_curve);
@@ -1314,8 +1307,13 @@ fn process_speaker_group(
         response::compute_peq_complex_response(&eq_filters, &display_initial.freq, sample_rate);
     let display_final = response::apply_complex_response(&display_initial, &display_resp);
 
-    chain.initial_curve = Some((&display_initial).into());
-    chain.final_curve = Some((&display_final).into());
+    let mut initial_data: super::types::CurveData = (&display_initial).into();
+    initial_data.norm_range = norm_range;
+    let mut final_data: super::types::CurveData = (&display_final).into();
+    final_data.norm_range = norm_range;
+
+    chain.initial_curve = Some(initial_data);
+    chain.final_curve = Some(final_data);
 
     Ok((
         chain,
@@ -1377,8 +1375,8 @@ fn process_multisub_group(
         response::compute_peq_complex_response(&eq_filters, &combined_curve.freq, sample_rate);
     let final_curve = response::apply_complex_response(&combined_curve, &iir_resp);
 
-    // Compute full-range mean SPL for level alignment between channels
-    let mean_spl = combined_curve.spl.mean().unwrap_or(0.0);
+    // Detect passband for normalization
+    let (norm_range, mean_spl) = detect_passband_and_mean(&combined_curve);
 
     // Extend curves to 20 Hz – 20 kHz for display output
     let display_initial = output::extend_curve_to_full_range(&combined_curve);
@@ -1386,8 +1384,13 @@ fn process_multisub_group(
         response::compute_peq_complex_response(&eq_filters, &display_initial.freq, sample_rate);
     let display_final = response::apply_complex_response(&display_initial, &display_resp);
 
-    chain.initial_curve = Some((&display_initial).into());
-    chain.final_curve = Some((&display_final).into());
+    let mut initial_data: super::types::CurveData = (&display_initial).into();
+    initial_data.norm_range = norm_range;
+    let mut final_data: super::types::CurveData = (&display_final).into();
+    final_data.norm_range = norm_range;
+
+    chain.initial_curve = Some(initial_data);
+    chain.final_curve = Some(final_data);
 
     Ok((
         chain,
@@ -1447,8 +1450,8 @@ fn process_dba(
         response::compute_peq_complex_response(&eq_filters, &combined_curve.freq, sample_rate);
     let final_curve = response::apply_complex_response(&combined_curve, &iir_resp);
 
-    // Compute full-range mean SPL for level alignment between channels
-    let mean_spl = combined_curve.spl.mean().unwrap_or(0.0);
+    // Detect passband for normalization
+    let (norm_range, mean_spl) = detect_passband_and_mean(&combined_curve);
 
     // Extend curves to 20 Hz – 20 kHz for display output
     let display_initial = output::extend_curve_to_full_range(&combined_curve);
@@ -1456,8 +1459,13 @@ fn process_dba(
         response::compute_peq_complex_response(&eq_filters, &display_initial.freq, sample_rate);
     let display_final = response::apply_complex_response(&display_initial, &display_resp);
 
-    chain.initial_curve = Some((&display_initial).into());
-    chain.final_curve = Some((&display_final).into());
+    let mut initial_data: super::types::CurveData = (&display_initial).into();
+    initial_data.norm_range = norm_range;
+    let mut final_data: super::types::CurveData = (&display_final).into();
+    final_data.norm_range = norm_range;
+
+    chain.initial_curve = Some(initial_data);
+    chain.final_curve = Some(final_data);
 
     Ok((
         chain,
@@ -1610,20 +1618,10 @@ fn process_mixed_mode_crossover(
 
     let final_curve = response::apply_complex_response(curve, &combined_resp);
 
+    // Detect passband for normalization
+    let (norm_range, mean_final) = detect_passband_and_mean(&final_curve);
+
     // Compute post-score
-    let mut sum_final = 0.0;
-    let mut count_final = 0;
-    for i in 0..final_curve.freq.len() {
-        if final_curve.freq[i] >= min_freq && final_curve.freq[i] <= max_freq {
-            sum_final += final_curve.spl[i];
-            count_final += 1;
-        }
-    }
-    let mean_final = if count_final > 0 {
-        sum_final / count_final as f64
-    } else {
-        0.0
-    };
     let normalized_final_spl = &final_curve.spl - mean_final;
     let post_score = crate::loss::flat_loss(&final_curve.freq, &normalized_final_spl, min_freq, max_freq);
 
@@ -1654,8 +1652,13 @@ fn process_mixed_mode_crossover(
         .collect();
     let display_final = response::apply_complex_response(&display_initial, &display_combined);
 
-    chain.initial_curve = Some((&display_initial).into());
-    chain.final_curve = Some((&display_final).into());
+    let mut initial_data: super::types::CurveData = (&display_initial).into();
+    initial_data.norm_range = norm_range;
+    let mut final_data: super::types::CurveData = (&display_final).into();
+    final_data.norm_range = norm_range;
+
+    chain.initial_curve = Some(initial_data);
+    chain.final_curve = Some(final_data);
 
     Ok((
         chain,
