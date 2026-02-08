@@ -14,7 +14,7 @@ use math_audio_fem::assembly::{
 use math_audio_fem::basis::{Jacobian, PolynomialDegree, evaluate_shape};
 use math_audio_fem::mesh::{BoundaryType, ElementType, Mesh, Point};
 use math_audio_fem::quadrature::for_mass;
-use math_audio_fem::solver::{self, GmresConfigF64, SolverConfig, SolverType};
+use math_audio_fem::solver::{self, SolverConfig, SolverType};
 use math_audio_xem_common::{Point3D, RoomSimulation, Source};
 use num_complex::Complex64;
 use rayon::prelude::*;
@@ -78,19 +78,13 @@ pub fn run_fem(simulation: &RoomSimulation) -> Result<SimulationOutput> {
         .map(|lp| find_containing_element_parallel(&mesh, *lp))
         .collect();
 
+    // Direct LU: at 900–3600 DOFs the system is small enough that dense
+    // factorisation (~1–10 ms per frequency) is faster and unconditionally
+    // stable — no convergence issues unlike iterative Helmholtz solvers.
     let solver_config = SolverConfig {
-        solver_type: SolverType::GmresIlu,
-        gmres: GmresConfigF64 {
-            max_iterations: 1000,
-            restart: 50,
-            tolerance: 1e-6,
-            print_interval: 0,
-        },
+        solver_type: SolverType::Direct,
         verbosity: 0,
-        schwarz_subdomains: 8,
-        schwarz_overlap: 2,
-        shifted_laplacian: None,
-        wavenumber: None,
+        ..Default::default()
     };
 
     let n_sources = simulation.sources.len();
@@ -120,7 +114,7 @@ pub fn run_fem(simulation: &RoomSimulation) -> Result<SimulationOutput> {
 
                 let boundary_coeffs = compute_boundary_coefficients(simulation, freq);
                 let csr = assembler.assemble(k_complex, &boundary_coeffs);
-                let rhs = assemble_rhs_parallel(&mesh, &single_source, freq, DEFAULT_SOURCE_WIDTH);
+                let rhs = assemble_rhs_parallel(&mesh, &single_source, freq, k, DEFAULT_SOURCE_WIDTH);
                 let rhs_array = ndarray::Array1::from(rhs);
 
                 let solution =
@@ -140,7 +134,6 @@ pub fn run_fem(simulation: &RoomSimulation) -> Result<SimulationOutput> {
                             }
                         });
 
-                // Evaluate at listening positions
                 let lp_pressures: Vec<Complex64> = simulation
                     .listening_positions
                     .iter()
@@ -322,6 +315,7 @@ fn assemble_rhs_parallel(
     mesh: &Mesh,
     sources: &[Source],
     frequency: f64,
+    k: f64,
     source_width: f64,
 ) -> Vec<Complex64> {
     let n_dofs = mesh.num_nodes();
@@ -373,7 +367,7 @@ fn assemble_rhs_parallel(
                     .map(|(n, c)| n * c[2])
                     .sum();
 
-                let f_val = compute_source_term(x, y, z, sources, frequency, source_width);
+                let f_val = compute_source_term(x, y, z, sources, frequency, k, source_width);
                 let det_j = jac.det.abs();
 
                 for (i, &vertex) in vertices.iter().enumerate().take(n_nodes) {
@@ -404,6 +398,7 @@ fn compute_source_term(
     z: f64,
     sources: &[Source],
     frequency: f64,
+    k: f64,
     source_width: f64,
 ) -> Complex64 {
     let point = Point3D::new(x, y, z);
@@ -413,7 +408,8 @@ fn compute_source_term(
         let r = source.position.distance_to(&point);
         let envelope = (-r * r / (2.0 * source_width * source_width)).exp();
         let amplitude = source.amplitude_towards(&point, frequency);
-        total += Complex64::new(amplitude * envelope, 0.0);
+        // Include propagation phase: the source radiates as e^{-ikr}
+        total += Complex64::from_polar(amplitude * envelope, -k * r);
     }
 
     total

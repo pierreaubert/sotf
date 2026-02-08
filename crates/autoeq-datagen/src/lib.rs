@@ -8,6 +8,7 @@ use num_complex::Complex64;
 pub mod bem_runner;
 pub mod csv_export;
 pub mod fem_runner;
+pub mod hf_extension;
 pub mod roomeq_config_gen;
 pub mod scenarios;
 

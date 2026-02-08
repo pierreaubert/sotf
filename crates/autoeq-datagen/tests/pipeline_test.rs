@@ -2,7 +2,7 @@
 //!
 //! Tests the full pipeline: scenario -> solver -> CSV export -> config generation
 
-use autoeq_datagen::{bem_runner, csv_export, roomeq_config_gen, scenarios};
+use autoeq_datagen::{bem_runner, csv_export, hf_extension, roomeq_config_gen, scenarios};
 use tempfile::TempDir;
 
 /// Helper: run full BEM pipeline for a given scenario name
@@ -153,6 +153,54 @@ fn test_config_multi_sub_has_multisub_lfe() {
             assert_eq!(group.subwoofers.len(), 2, "Expected 2 subs");
         }
         other => panic!("Expected MultiSub config for LFE, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_hf_extension_pipeline() {
+    let scenario = scenarios::scenario_by_name("small_stereo_2_1")
+        .expect("Scenario not found");
+
+    let sim_output = bem_runner::run_bem(&scenario.simulation)
+        .expect("BEM solve failed");
+
+    assert_eq!(sim_output.frequencies.len(), 100, "Simulation should have 100 points");
+
+    let extended = hf_extension::extend_to_full_range(&sim_output);
+
+    // 100 simulation + 100 HF extension = 200
+    assert_eq!(extended.frequencies.len(), 200, "Extended should have 200 points");
+    assert!(extended.frequencies[0] >= 19.0, "First freq should be ~20 Hz");
+    assert!(*extended.frequencies.last().unwrap() > 19000.0, "Last freq should be ~20 kHz");
+
+    // Source count preserved
+    assert_eq!(extended.source_names.len(), sim_output.source_names.len());
+    assert_eq!(extended.pressures.len(), sim_output.pressures.len());
+
+    // All pressure arrays extended
+    for (src_idx, src_pressures) in extended.pressures.iter().enumerate() {
+        for (lp_idx, lp_pressures) in src_pressures.iter().enumerate() {
+            assert_eq!(
+                lp_pressures.len(), 200,
+                "Source {src_idx} LP {lp_idx} should have 200 points"
+            );
+        }
+    }
+
+    // Export extended CSVs and verify
+    let temp_dir = tempfile::TempDir::new().unwrap();
+    let csv_files = csv_export::export_csvs(&extended, temp_dir.path()).unwrap();
+
+    for filename in &csv_files {
+        let filepath = temp_dir.path().join(filename);
+        let content = std::fs::read_to_string(&filepath).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+        assert_eq!(lines.len(), 201, "Header + 200 data lines in {filename}");
+
+        // Last line should have freq near 20 kHz
+        let last_parts: Vec<&str> = lines[200].split(',').collect();
+        let last_freq: f64 = last_parts[0].parse().unwrap();
+        assert!(last_freq > 19000.0, "Last CSV freq should be ~20 kHz, got {last_freq}");
     }
 }
 

@@ -4,7 +4,8 @@
 //! stereo, 2.1, multi-sub, and multi-seat configurations.
 
 use math_audio_xem_common::{
-    CrossoverFilter, Point3D, RectangularRoom, RoomGeometry, RoomSimulation, Source,
+    BoundaryConfig, CrossoverFilter, Point3D, RectangularRoom, RoomGeometry, RoomSimulation,
+    Source, SurfaceConfig,
 };
 
 /// A named scenario for data generation
@@ -52,19 +53,32 @@ fn make_fullrange_source(position: Point3D, name: &str) -> Source {
     Source::omnidirectional(position, 1.0).with_name(name.to_string())
 }
 
+/// Typical domestic room boundary absorption coefficients.
+/// Floor (carpet/rug): α ≈ 0.3, ceiling (plaster): α ≈ 0.05, walls (drywall): α ≈ 0.1.
+fn default_boundaries() -> BoundaryConfig {
+    BoundaryConfig {
+        floor: SurfaceConfig::Absorption { coefficient: 0.3 },
+        ceiling: SurfaceConfig::Absorption { coefficient: 0.05 },
+        walls: SurfaceConfig::Absorption { coefficient: 0.1 },
+        ..Default::default()
+    }
+}
+
 fn make_simulation(
     room: RectangularRoom,
     sources: Vec<Source>,
     listening_positions: Vec<Point3D>,
 ) -> RoomSimulation {
-    RoomSimulation::with_frequencies(
+    let mut sim = RoomSimulation::with_frequencies(
         RoomGeometry::Rectangular(room),
         sources,
         listening_positions,
         MIN_FREQ,
         MAX_FREQ,
         NUM_POINTS,
-    )
+    );
+    sim.boundaries = default_boundaries();
+    sim
 }
 
 /// Generate all 12 scenarios

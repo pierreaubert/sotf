@@ -1,9 +1,9 @@
 {
   "version": "1.1.0",
   "speakers": {
-    "left": "left_lp0.csv",
     "right": "right_lp0.csv",
-    "lfe": "subwoofer_lp0.csv"
+    "lfe": "subwoofer_lp0.csv",
+    "left": "left_lp0.csv"
   },
   "optimizer": {
     "mode": "iir",

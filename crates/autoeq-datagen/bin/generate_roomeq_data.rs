@@ -4,7 +4,7 @@
 //!   cargo run --bin generate-roomeq-data --release -- --solver bem --output-dir data_tests/roomeq/generated
 
 use anyhow::Result;
-use autoeq_datagen::{bem_runner, csv_export, fem_runner, roomeq_config_gen, scenarios};
+use autoeq_datagen::{bem_runner, csv_export, fem_runner, hf_extension, roomeq_config_gen, scenarios};
 use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
 
@@ -52,11 +52,14 @@ fn run_solver(
         scenario.description
     );
 
-    let output = match solver_name {
+    let sim_output = match solver_name {
         "bem" => bem_runner::run_bem(&scenario.simulation)?,
         "fem" => fem_runner::run_fem(&scenario.simulation)?,
         other => anyhow::bail!("Unknown solver: {other}"),
     };
+
+    // Extend simulated 20–500 Hz data to 20 kHz with synthetic speaker response
+    let output = hf_extension::extend_to_full_range(&sim_output);
 
     // Export CSVs
     let csv_files = csv_export::export_csvs(&output, &scenario_dir)?;

@@ -1,15 +1,15 @@
 {
   "version": "1.1.0",
   "speakers": {
+    "right": "right_lp0.csv",
+    "left": "left_lp0.csv",
     "lfe": {
       "name": "subs",
       "subwoofers": [
         "sub1_lp0.csv",
         "sub2_lp0.csv"
       ]
-    },
-    "right": "right_lp0.csv",
-    "left": "left_lp0.csv"
+    }
   },
   "optimizer": {
     "mode": "iir",
