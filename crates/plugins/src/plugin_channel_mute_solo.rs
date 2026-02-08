@@ -268,7 +268,7 @@ impl InPlacePlugin for ChannelMuteSoloPlugin {
         &mut self,
         buffer: &mut [f32],
         context: &ProcessContext,
-    ) -> PluginResult<()> {
+    ) -> PluginResult<usize> {
         // Verify buffer size matches channel count
         if !buffer.len().is_multiple_of(self.channels) {
             return Err(format!(
@@ -280,7 +280,7 @@ impl InPlacePlugin for ChannelMuteSoloPlugin {
 
         // If not enabled, pass through unchanged (zero overhead)
         if !self.enabled {
-            return Ok(());
+            return Ok(context.num_frames);
         }
 
         let num_frames = context.num_frames;
@@ -294,7 +294,7 @@ impl InPlacePlugin for ChannelMuteSoloPlugin {
             }
         }
 
-        Ok(())
+        Ok(context.num_frames)
     }
 }
 

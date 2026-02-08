@@ -160,7 +160,7 @@ impl InPlacePlugin for HalOutputPlugin {
         &mut self,
         buffer: &mut [f32],
         context: &ProcessContext,
-    ) -> PluginResult<()> {
+    ) -> PluginResult<usize> {
         // Verify buffer size matches channel count
         let expected_len = context.num_frames * self.channels;
         if buffer.len() != expected_len {
@@ -207,7 +207,7 @@ impl InPlacePlugin for HalOutputPlugin {
         }
 
         // Audio passes through unmodified
-        Ok(())
+        Ok(context.num_frames)
     }
 }
 

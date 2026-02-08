@@ -200,7 +200,7 @@ impl InPlacePlugin for CrossoverPlugin {
         &mut self,
         buffer: &mut [f32],
         context: &ProcessContext,
-    ) -> PluginResult<()> {
+    ) -> PluginResult<usize> {
         // Verify buffer size matches channel count
         if !buffer.len().is_multiple_of(self.num_channels) {
             return Err(format!(
@@ -231,7 +231,7 @@ impl InPlacePlugin for CrossoverPlugin {
         // IIR filter calculations can produce denormal numbers
         flush_denormals_inplace(buffer);
 
-        Ok(())
+        Ok(num_frames)
     }
 
     fn latency_samples(&self) -> usize {

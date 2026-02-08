@@ -60,6 +60,9 @@ pub(super) fn common_bindings() -> Vec<KeyBinding> {
         KeyBinding::new("%", actions::QuickAddLimiter, Some("PluginRack")),
         KeyBinding::new("^", actions::QuickAddLoudness, Some("PluginRack")),
         KeyBinding::new("&", actions::QuickAddBinaural, Some("PluginRack")),
+        KeyBinding::new("*", actions::QuickAddDownmix, Some("PluginRack")),
+        KeyBinding::new("(", actions::QuickAddMonoToStereo, Some("PluginRack")),
+        KeyBinding::new(")", actions::QuickAddSpectrum, Some("PluginRack")),
         // Plugin navigation
         KeyBinding::new("up", actions::SelectPrev, Some("PluginRack")),
         KeyBinding::new("down", actions::SelectNext, Some("PluginRack")),

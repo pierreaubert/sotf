@@ -222,8 +222,8 @@ impl DenoiserPlugin {
         // Overlap-add buffers
         // Input buffer needs to hold fft_size samples
         let input_buffer = vec![0.0_f32; fft_size * channels * 2];
-        // Output accumulator needs extra space for overlap-add (3x fft_size)
-        let output_accumulator = vec![vec![0.0_f32; fft_size * 3]; channels];
+        // Output accumulator needs extra space for overlap-add (4x fft_size)
+        let output_accumulator = vec![vec![0.0_f32; fft_size * 4]; channels];
         let time_out_channels = vec![vec![0.0_f32; fft_size]; channels];
 
         Self {
@@ -733,7 +733,7 @@ impl InPlacePlugin for DenoiserPlugin {
         &mut self,
         buffer: &mut [f32],
         context: &ProcessContext,
-    ) -> PluginResult<()> {
+    ) -> PluginResult<usize> {
         // Pre-process: Time-domain transient suppression (de-clicking)
         self.transient_suppressor.process(buffer);
 
@@ -762,7 +762,7 @@ impl InPlacePlugin for DenoiserPlugin {
             buffer[zero_start..total_samples].fill(0.0);
         }
 
-        Ok(())
+        Ok(frames_output)
     }
 
     fn latency_samples(&self) -> usize {

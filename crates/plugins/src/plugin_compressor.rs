@@ -483,7 +483,7 @@ impl InPlacePlugin for CompressorPlugin {
         &mut self,
         buffer: &mut [f32],
         context: &ProcessContext,
-    ) -> PluginResult<()> {
+    ) -> PluginResult<usize> {
         let num_frames = context.num_frames;
         let ratio = self.ratio.max(1.0);
         let compression_slope = 1.0 - 1.0 / ratio;
@@ -573,7 +573,7 @@ impl InPlacePlugin for CompressorPlugin {
         // Compressor gain reduction and envelope calculations can produce denormal numbers
         flush_denormals_inplace(buffer);
 
-        Ok(())
+        Ok(num_frames)
     }
 
     fn latency_samples(&self) -> usize {

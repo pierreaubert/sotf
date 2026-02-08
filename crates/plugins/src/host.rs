@@ -301,6 +301,9 @@ pub struct DawHost {
     is_input_node: Vec<bool>,
     /// Fast lookup for output nodes
     is_output_node: Vec<bool>,
+    /// Cached: true if any plugin changes frame count (resampler) or has latency (STFT).
+    /// Computed once in build() to avoid locking plugin mutexes on every process() call.
+    has_variable_frame_plugin: bool,
 }
 
 impl DawHost {
@@ -336,6 +339,7 @@ impl DawHost {
             predecessors: Vec::new(),
             is_input_node: Vec::new(),
             is_output_node: Vec::new(),
+            has_variable_frame_plugin: false,
         }
     }
 
@@ -492,6 +496,15 @@ impl DawHost {
             scratch_output: vec![0.0; scratch_size],
             merge_buffer: vec![0.0; scratch_size],
             channel_map_buffer: vec![0.0; scratch_size],
+        });
+
+        // Cache whether any plugin has variable frame count (resampler or STFT latency).
+        // This avoids locking every plugin mutex on each process() call just for the check.
+        self.has_variable_frame_plugin = self.chain_nodes.iter().any(|node_id| {
+            self.nodes.get(node_id).is_some_and(|node| {
+                let plugin = node.plugin.lock().unwrap();
+                plugin.output_frames_for_input(100) != 100 || plugin.latency_samples() > 0
+            })
         });
 
         self.built = true;
@@ -800,18 +813,23 @@ impl DawHost {
             current_frames,
         )?;
 
+        // Safety: when a latency plugin (STFT) produces fewer frames during fill-up,
+        // pad the rest of the output with silence and report full frame count.
+        // This prevents the playback ring buffer from starving (underruns → crackling).
+        // Only skip this for resamplers which legitimately change frame count.
+        if current_frames < num_frames && self.has_variable_frame_plugin {
+            let out_ch = self.output_channels();
+            let filled = current_frames * out_ch;
+            let total = num_frames * out_ch;
+            if total <= output.len() {
+                output[filled..total].fill(0.0);
+            }
+            current_frames = num_frames;
+        }
+
         // Verify frame count hasn't changed unexpectedly.
-        // Plugins that legitimately change frame count:
-        // - Resamplers: output_frames_for_input(100) != 100
-        // - STFT/FFT plugins (upmixer, XTC, denoiser): latency_samples() > 0, may return
-        //   fewer frames during initial fill-up period
-        let has_variable_frame_plugin = self.chain_nodes.iter().any(|node_id| {
-            self.nodes.get(node_id).is_some_and(|node| {
-                let plugin = node.plugin.lock().unwrap();
-                plugin.output_frames_for_input(100) != 100 || plugin.latency_samples() > 0
-            })
-        });
-        if !has_variable_frame_plugin && current_frames != num_frames {
+        // Uses cached flag from build() to avoid locking plugin mutexes on the audio thread.
+        if !self.has_variable_frame_plugin && current_frames != num_frames {
             log::error!(
                 "[PluginHost] Frame count changed without resampler or latency plugin: {} -> {} (plugins: {})",
                 num_frames,
@@ -1807,17 +1825,18 @@ mod tests {
         let input = vec![0.5_f32; num_frames * 2]; // stereo
         let mut output = vec![0.0_f32; num_frames * output_channels];
 
-        // First call: FFT fill-up, upmixer returns 0 frames — host must NOT panic
+        // Even during FFT fill-up, host must always return full frame count
+        // (output contains silence for unfilled portions — prevents ring buffer underruns)
         let frames = graph.process(&input, &mut output).unwrap();
-        // During fill-up, frames may be 0
-        assert!(frames <= num_frames, "frames={}", frames);
+        assert_eq!(frames, num_frames, "host must always return full frame count");
 
-        // After enough calls the upmixer should start producing output
+        // After enough calls the upmixer should start producing non-zero output
         let mut got_output = false;
         for _ in 0..20 {
             output.fill(0.0);
             let frames = graph.process(&input, &mut output).unwrap();
-            if frames > 0 && output.iter().any(|&s| s.abs() > 1e-10) {
+            assert_eq!(frames, num_frames);
+            if output.iter().any(|&s| s.abs() > 1e-10) {
                 got_output = true;
                 break;
             }
@@ -1899,16 +1918,17 @@ mod tests {
         let input = vec![0.5_f32; num_frames * 2];
         let mut output = vec![0.0_f32; num_frames * 2];
 
-        // Should not panic even during upmixer fill-up
+        // Always returns full frame count (silence during fill-up)
         let frames = graph.process(&input, &mut output).unwrap();
-        assert!(frames <= num_frames);
+        assert_eq!(frames, num_frames);
 
-        // After fill-up, should produce output
+        // After fill-up, should produce non-zero output
         let mut got_output = false;
         for _ in 0..20 {
             output.fill(0.0);
             let frames = graph.process(&input, &mut output).unwrap();
-            if frames > 0 && output.iter().any(|&s| s.abs() > 1e-10) {
+            assert_eq!(frames, num_frames);
+            if output.iter().any(|&s| s.abs() > 1e-10) {
                 got_output = true;
                 break;
             }

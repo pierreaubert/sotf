@@ -683,7 +683,8 @@ impl Plugin for XtcPlugin {
             }
         }
 
-        Ok(context.num_frames)
+        // Return actual number of frames produced. DawHost handles silence padding.
+        Ok(out_pos)
     }
 
     fn latency_samples(&self) -> usize {

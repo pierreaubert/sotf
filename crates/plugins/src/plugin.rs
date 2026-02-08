@@ -186,11 +186,14 @@ pub trait InPlacePlugin: Send {
     /// * `buffer` - Interleaved audio samples [C0_F0, C1_F0, ..., C0_F1, C1_F1, ...]
     ///   Length is num_frames * channels()
     /// * `context` - Processing context
+    ///
+    /// # Returns
+    /// Actual number of frames processed, or error message
     fn process_in_place(
         &mut self,
         buffer: &mut [f32],
         context: &ProcessContext,
-    ) -> PluginResult<()>;
+    ) -> PluginResult<usize>;
 
     /// Get the processing latency in samples (if any)
     fn latency_samples(&self) -> usize {
@@ -256,8 +259,7 @@ impl<T: InPlacePlugin> Plugin for InPlacePluginAdapter<T> {
     ) -> Result<usize, String> {
         // Copy input to output, then process in-place
         output.copy_from_slice(input);
-        self.plugin.process_in_place(output, context)?;
-        Ok(context.num_frames)
+        self.plugin.process_in_place(output, context)
     }
 
     fn latency_samples(&self) -> usize {

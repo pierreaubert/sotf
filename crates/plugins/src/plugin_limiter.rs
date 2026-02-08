@@ -311,7 +311,7 @@ impl InPlacePlugin for LimiterPlugin {
         &mut self,
         buffer: &mut [f32],
         context: &ProcessContext,
-    ) -> PluginResult<()> {
+    ) -> PluginResult<usize> {
         let num_frames = context.num_frames;
 
         for frame in 0..num_frames {
@@ -391,7 +391,7 @@ impl InPlacePlugin for LimiterPlugin {
             }
         }
 
-        Ok(())
+        Ok(num_frames)
     }
 
     fn latency_samples(&self) -> usize {

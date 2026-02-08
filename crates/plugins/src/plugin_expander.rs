@@ -590,7 +590,7 @@ impl InPlacePlugin for ExpanderPlugin {
         &mut self,
         buffer: &mut [f32],
         context: &ProcessContext,
-    ) -> PluginResult<()> {
+    ) -> PluginResult<usize> {
         let num_frames = context.num_frames;
         let hold_samples = self.hold_samples();
         let dry_mix = 1.0 - self.mix;
@@ -664,7 +664,7 @@ impl InPlacePlugin for ExpanderPlugin {
         // Expander envelope calculations can produce denormal numbers
         flush_denormals_inplace(buffer);
 
-        Ok(())
+        Ok(num_frames)
     }
 
     fn latency_samples(&self) -> usize {

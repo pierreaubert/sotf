@@ -1055,7 +1055,7 @@ impl InPlacePlugin for MultibandCompressorPlugin {
         &mut self,
         buffer: &mut [f32],
         context: &ProcessContext,
-    ) -> PluginResult<()> {
+    ) -> PluginResult<usize> {
         let num_frames = context.num_frames;
         let dry_mix = 1.0 - self.mix;
         let wet_mix = self.mix;
@@ -1088,7 +1088,7 @@ impl InPlacePlugin for MultibandCompressorPlugin {
         // Multiband compressor envelope calculations can produce denormal numbers
         flush_denormals_inplace(buffer);
 
-        Ok(())
+        Ok(num_frames)
     }
 
     fn latency_samples(&self) -> usize {

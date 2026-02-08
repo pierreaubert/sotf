@@ -563,7 +563,7 @@ impl Plugin for ConvolutionPlugin {
         &mut self,
         input: &[f32],
         output: &mut [f32],
-        context: &ProcessContext,
+        _context: &ProcessContext,
     ) -> Result<usize, String> {
         if input.len() != output.len() {
             return Err("Input and output buffers must be same size".to_string());
@@ -578,6 +578,18 @@ impl Plugin for ConvolutionPlugin {
         }
 
         let num_frames = input.len() / self.channels;
+
+        // Initialize output to zero or dry signal
+        let dry_mix = 1.0 - self.mix.current();
+        if dry_mix > 0.0 {
+            for i in 0..num_frames {
+                for ch in 0..self.channels {
+                    output[i * self.channels + ch] = input[i * self.channels + ch] * dry_mix;
+                }
+            }
+        } else {
+            output.fill(0.0);
+        }
 
         // 1. Check for resize requirements without holding lock for long
         let resize_fft_size = {
@@ -598,9 +610,6 @@ impl Plugin for ConvolutionPlugin {
             self.resize_buffers(size);
         }
 
-        // Scratch buffers are pre-allocated in initialize() to max expected frame count.
-        // These resize() calls are no-ops when num_frames <= pre-allocated capacity (common case).
-        // Only allocates if an unexpectedly large frame count is encountered.
         for ch in 0..self.channels {
             self.scratch_input[ch].resize(num_frames, 0.0);
             self.scratch_output[ch].resize(num_frames, 0.0);
@@ -608,20 +617,15 @@ impl Plugin for ConvolutionPlugin {
 
         // 3. Process
         let state_guard = self.state.read();
-
-        // Check if we have active IR state
         let has_state = state_guard.is_some();
 
         if let Some(ref state) = *state_guard {
-            // Process each channel
             for ch in 0..self.channels {
-                // De-interleave input to scratch buffer
                 for frame in 0..num_frames {
                     self.scratch_input[ch][frame] = input[frame * self.channels + ch];
                 }
 
-                // Process (pass disjoint borrows)
-                // Generate pure wet signal (dry=0.0, wet=1.0) into scratch_output
+                // Process (pure wet signal)
                 Self::process_channel_internal(
                     ch,
                     &self.scratch_input[ch],
@@ -633,42 +637,35 @@ impl Plugin for ConvolutionPlugin {
                     &mut self.output_accumulator_fill,
                     &mut self.fft_buffer,
                     &mut self.conv_result,
-                    0.0, // dry gain (we want pure wet here)
-                    1.0, // wet gain
+                    0.0,
+                    1.0,
                 );
             }
         }
 
-        // 4. Mix Dry/Wet to Output
-        // If state exists, we mix dry input with wet scratch_output.
-        // If no state, we just pass through dry input (mix parameter still applies effectively as gain=1.0)
+        // 4. Mix Wet to Output (Dry was already added or output was zeroed)
+        if has_state {
+            for frame in 0..num_frames {
+                let gain = self.gain_linear.next();
+                let mix = self.mix.next();
+                let wet_gain = mix * gain;
 
-        for frame in 0..num_frames {
-            // Tick smoothers per frame
-            let mix = self.mix.next();
-            let gain = self.gain_linear.next();
-            let wet_gain = mix * gain;
-            let dry_gain = 1.0 - mix;
-
-            for ch in 0..self.channels {
-                let idx = frame * self.channels + ch;
-                let dry_sample = input[idx];
-
-                if has_state {
-                    let wet_sample = self.scratch_output[ch][frame];
-                    output[idx] = dry_sample * dry_gain + wet_sample * wet_gain;
-                } else {
-                    // Passthrough behavior when no IR loaded: effectively just dry
-                    output[idx] = dry_sample;
+                for ch in 0..self.channels {
+                    let idx = frame * self.channels + ch;
+                    output[idx] += self.scratch_output[ch][frame] * wet_gain;
                 }
+            }
+        } else {
+            // Just update smoothers
+            for _ in 0..num_frames {
+                self.gain_linear.next();
+                self.mix.next();
             }
         }
 
-        // Flush denormals to prevent CPU performance spikes and audio crackle
-        // FFT convolution and overlap-add can produce denormal numbers
         flush_denormals_inplace(output);
 
-        Ok(context.num_frames)
+        Ok(num_frames)
     }
 }
 

@@ -159,7 +159,7 @@ impl BinauralDecoderPlugin {
             .checked_mul(input_channels)
             .expect("Buffer size overflow");
         let freq_size = fft_size / 2 + 1;
-        let output_acc_size = fft_size.checked_mul(2).expect("Buffer size overflow");
+        let output_acc_size = fft_size.checked_mul(4).expect("Buffer size overflow");
 
         assert!(
             input_buffer_size <= 1 << 24,

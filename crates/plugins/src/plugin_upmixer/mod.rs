@@ -297,6 +297,8 @@ pub struct UpmixerPlugin {
     output_accumulator_fill: usize,
     /// Next position to add a block (tracks overlap-add offset)
     next_add_position: usize,
+    /// Current read position in the output accumulator ring buffer
+    output_read_position: usize,
     /// Pre-allocated output block buffer (reused to avoid allocations)
     output_block: Vec<f32>,
 
@@ -434,8 +436,8 @@ impl UpmixerPlugin {
         let panning_gains_left = Vec::with_capacity(num_output_channels);
         let panning_gains_right = Vec::with_capacity(num_output_channels);
 
-        // Output accumulator holds up to 3*fft_size samples per channel
-        let output_accumulator = vec![vec![0.0; fft_size * 3]; num_output_channels];
+        // Output accumulator holds up to 4*fft_size samples per channel
+        let output_accumulator = vec![vec![0.0; fft_size * 4]; num_output_channels];
 
         // Allocate output buffers for each channel
         let time_out_channels = vec![vec![0.0; fft_size]; num_output_channels];
@@ -617,6 +619,7 @@ impl UpmixerPlugin {
             output_accumulator,
             output_accumulator_fill: 0,
             next_add_position: 0,
+            output_read_position: 0,
             output_block: vec![0.0; fft_size * num_output_channels],
 
             hr_input_buffer: vec![0.0; hr_fft_size * 2],
@@ -1642,7 +1645,10 @@ Upper bound for dialogue detection analysis.",
         }
 
         self.output_accumulator.iter_mut().for_each(|b| b.fill(0.0));
+        self.output_accumulator_fill = 0;
         self.output_block.fill(0.0);
+        self.next_add_position = 0;
+        self.output_read_position = 0;
 
         // Clear HR input and temp blocks
         self.hr_input_buffer.fill(0.0);
@@ -1676,7 +1682,6 @@ Upper bound for dialogue detection analysis.",
         context: &ProcessContext,
     ) -> Result<usize, String> {
         // Update smoothers once per block
-        // (For optimal quality this would be per-sample, but block-rate is acceptable for these gains)
         self.gain_front_direct.next();
         self.gain_front_ambient.next();
         self.gain_rear_ambient.next();
@@ -1691,11 +1696,6 @@ Upper bound for dialogue detection analysis.",
                 let left = input[i * 2];
                 let right = input[i * 2 + 1];
 
-                // Map stereo to output channels:
-                // Channel 0: Left front
-                // Channel 1: Right front
-                // Channel 2: Center (L+R)/2
-                // All other channels: silence
                 output[i * self.num_output_channels] = left; // FL
                 if self.num_output_channels > 1 {
                     output[i * self.num_output_channels + 1] = right; // FR
@@ -1703,7 +1703,6 @@ Upper bound for dialogue detection analysis.",
                 if self.num_output_channels > 2 {
                     output[i * self.num_output_channels + 2] = (left + right) * 0.5; // C
                 }
-                // Fill remaining channels with silence
                 for ch in 3..self.num_output_channels {
                     output[i * self.num_output_channels + ch] = 0.0;
                 }
@@ -1712,7 +1711,7 @@ Upper bound for dialogue detection analysis.",
         }
 
         // Verify input size
-        let input_samples = context.num_frames * 2; // stereo
+        let input_samples = context.num_frames * 2;
         if input.len() != input_samples {
             return Err(format!(
                 "Input size mismatch: expected {}, got {}",
@@ -1730,150 +1729,66 @@ Upper bound for dialogue detection analysis.",
             ));
         }
 
-        /*
-                log::debug!(
-                    "[UPMIXER] process() called: input={} frames, output={} frames",
-                    context.num_frames,
-                    context.num_frames
-                );
-                log::debug!(
-                    "[UPMIXER] Initial state: input_buffer_fill={}, output_accumulator_fill={}, next_add_pos={}",
-                    self.input_buffer_fill,
-                    self.output_accumulator_fill,
-                    self.next_add_position
-                );
-        */
-
-        // Sanity check for threading issues
-        if self.next_add_position > self.fft_size * 3 {
-            // No logging in real-time thread!
-            self.reset();
-        }
-
-        // Initialize output buffer to zero (critical to prevent crackling!)
+        // Initialize output buffer to zero
         output.fill(0.0);
 
         let mut input_pos = 0;
         let mut output_pos = 0;
+        let buffer_size = self.output_accumulator[0].len();
 
-        // Main processing loop: interleave input filling, FFT processing, and output draining
         let mut iteration = 0;
         loop {
             iteration += 1;
             if iteration > 1000 {
                 break;
             }
-            // Step 1: Drain output accumulator if we have data and space
-            let frames_available = (output.len() - output_pos) / self.num_output_channels;
-            let frames_to_drain = self.output_accumulator_fill.min(frames_available);
+
+            // Step 1: Drain available output from ring buffer
+            let frames_to_drain = self
+                .output_accumulator_fill
+                .min(context.num_frames - output_pos);
 
             if frames_to_drain > 0 {
-                // log::debug!(
-                //     "[UPMIXER] Iter {}: DRAIN {} frames (accum_fill={}, frames_avail={})",
-                //     iteration,
-                //     frames_to_drain,
-                //     self.output_accumulator_fill,
-                //     frames_available
-                // );
-
-                // Copy samples to output
-                // Optimization: Iterate over frames first for sequential writes to the interleaved output buffer
                 for i in 0..frames_to_drain {
-                    let out_frame_idx = output_pos + i * self.num_output_channels;
+                    let read_idx = (self.output_read_position + i) % buffer_size;
+                    let out_frame_idx = (output_pos + i) * self.num_output_channels;
                     for ch in 0..self.num_output_channels {
-                        output[out_frame_idx + ch] = self.output_accumulator[ch][i];
+                        output[out_frame_idx + ch] = self.output_accumulator[ch][read_idx];
+                        // Clear after reading for next overlap-add cycle
+                        self.output_accumulator[ch][read_idx] = 0.0;
                     }
                 }
-                output_pos += frames_to_drain * self.num_output_channels;
-
-                // Shift accumulator
-                for ch in 0..self.num_output_channels {
-                    self.output_accumulator[ch]
-                        .copy_within(frames_to_drain..self.output_accumulator_fill, 0);
-                    // Clear the tail
-                    self.output_accumulator[ch][(self.output_accumulator_fill - frames_to_drain)
-                        ..self.output_accumulator_fill]
-                        .fill(0.0);
-                }
+                self.output_read_position = (self.output_read_position + frames_to_drain) % buffer_size;
                 self.output_accumulator_fill -= frames_to_drain;
-
-                // Update next add position (subtract drained amount)
-                self.next_add_position = self.next_add_position.saturating_sub(frames_to_drain);
-
-                // Reset position if accumulator is empty
-                if self.output_accumulator_fill == 0 {
-                    self.next_add_position = 0;
-                }
-
-                // Debug assertions to catch overlap-add state inconsistencies
-                debug_assert!(
-                    self.next_add_position <= self.fft_size * 2,
-                    "next_add_position {} exceeds max {} (2*fft_size)",
-                    self.next_add_position,
-                    self.fft_size * 2
-                );
-                debug_assert!(
-                    self.output_accumulator_fill <= self.fft_size * 3,
-                    "output_accumulator_fill {} exceeds max {} (3*fft_size)",
-                    self.output_accumulator_fill,
-                    self.fft_size * 3
-                );
-
-                // log::debug!(
-                //     "[UPMIXER] After drain: accum_fill={}, next_add_pos={}, output_pos={}",
-                //     self.output_accumulator_fill,
-                //     self.next_add_position,
-                //     output_pos / self.num_output_channels
-                // );
+                output_pos += frames_to_drain;
             }
 
-            // Step 2: Process FFT block if we have input and accumulator space
-            // Ensure accumulator won't overflow (need space for fft_size samples)
+            // Step 2: Process FFT block if we have enough input
             let can_process_input = self.input_buffer_fill >= self.fft_size * 2;
-            let can_process_space = self.next_add_position + self.fft_size <= self.fft_size * 3;
-
-            if can_process_input && can_process_space {
-                // log::debug!(
-                //     "[UPMIXER] Iter {}: PROCESS FFT (input_buf_fill={}/{}, next_add_pos={}, space_ok={})",
-                //     iteration,
-                //     self.input_buffer_fill / 2,
-                //     self.fft_size,
-                //     self.next_add_position,
-                //     can_process_space
-                // );
-
+            if can_process_input {
                 // Copy to temp buffer
                 self.temp_input_block[..self.fft_size * 2]
                     .copy_from_slice(&self.input_buffer[..self.fft_size * 2]);
 
-                // Process FFT block (low-resolution path)
                 let temp_input = std::mem::take(&mut self.temp_input_block);
                 let mut output_block = std::mem::take(&mut self.output_block);
                 self.process_fft_block(&temp_input, &mut output_block);
 
-                // Optional high-resolution direct-path enhancement
-                // Gate: skip 5 FFTs when hr_mix < 0.01 (-40dB, inaudible)
                 if self.enable_hr_direct && self.gain_front_direct.current() > 0.0 {
                     let hr_mix = (self.hr_transient_env * self.hr_sharpen).clamp(0.0, 1.0);
                     if hr_mix > 0.01 {
-                        // Take a centered HR window from the current input block
                         let center = (self.fft_size - self.hr_fft_size) / 2;
-                        let start = center * 2; // stereo interleaved
+                        let start = center * 2;
                         let end = start + self.hr_fft_size * 2;
 
                         if end <= temp_input.len() {
                             let hr_input = &temp_input[start..end];
-                            // Use pre-allocated buffer instead of local Vec::new()
                             let mut hr_output = std::mem::take(&mut self.hr_output_block);
                             self.process_hr_block(hr_input, &mut hr_output);
 
-                            // Overlay HR contribution onto the low-res output block
-                            // Apply synthesis window to HR output for proper phase alignment
-                            // This prevents comb filtering artifacts from mismatched overlap-add
                             for i in 0..self.hr_fft_size {
                                 let dst_idx = (center + i) * self.num_output_channels;
                                 let src_idx = i * self.num_output_channels;
-                                // Apply synthesis window (Hann) to taper HR contribution at edges
                                 let window_val = self.hr_window[i];
                                 let scaled_mix = hr_mix * window_val;
                                 for ch in 0..self.num_output_channels {
@@ -1888,182 +1803,49 @@ Upper bound for dialogue detection analysis.",
 
                 self.temp_input_block = temp_input;
 
-                // Accumulate output (overlap-add) at next_add_position
-                // Note: Window was already applied during analysis. With Hann window at 50% overlap,
-                // we should NOT apply it again during synthesis, otherwise we get amplitude modulation.
+                // Accumulate to ring buffer
                 for i in 0..self.fft_size {
+                    let write_idx = (self.next_add_position + i) % buffer_size;
                     for ch in 0..self.num_output_channels {
-                        self.output_accumulator[ch][self.next_add_position + i] +=
+                        self.output_accumulator[ch][write_idx] +=
                             output_block[i * self.num_output_channels + ch];
                     }
                 }
 
-                // Update fill level and next add position
-                if self.output_accumulator_fill == 0 {
-                    // First block: fills from 0 to fft_size
-                    self.output_accumulator_fill = self.fft_size;
-                    self.next_add_position = self.hop_size;
-                } else {
-                    // Subsequent blocks: add hop_size more samples, next block starts hop_size later
-                    self.output_accumulator_fill += self.hop_size;
-                    self.next_add_position += self.hop_size;
-                }
-
                 self.output_block = output_block;
 
-                // Shift input buffer by hop_size (50% overlap)
-                let shift_amount = self.hop_size * 2; // stereo
+                // Advance positions
+                self.next_add_position = (self.next_add_position + self.hop_size) % buffer_size;
+                self.output_accumulator_fill += self.hop_size;
+
+                // Shift input buffer
+                let shift_amount = self.hop_size * 2;
                 self.input_buffer
                     .copy_within(shift_amount..self.fft_size * 2, 0);
                 self.input_buffer_fill -= shift_amount;
 
-                // log::debug!(
-                //     "[UPMIXER] After FFT: accum_fill={}, next_add_pos={}, input_buf_fill={}",
-                //     self.output_accumulator_fill,
-                //     self.next_add_position,
-                //     self.input_buffer_fill / 2
-                // );
-
-                continue; // Process more blocks if possible
-            } else if !can_process_input || !can_process_space {
-                // log::debug!(
-                //     "[UPMIXER] Iter {}: SKIP FFT (can_process_input={}, can_process_space={})",
-                //     iteration,
-                //     can_process_input,
-                //     can_process_space
-                // );
+                continue;
             }
 
             // Step 3: Fill input buffer if we have more input
-            if input_pos < input.len() {
+            if input_pos < context.num_frames {
                 let samples_to_copy =
-                    (input.len() - input_pos).min(self.fft_size * 2 - self.input_buffer_fill);
-
-                // log::debug!(
-                //     "[UPMIXER] Iter {}: FILL {} samples (input_pos={}/{}, input_buf_fill={})",
-                //     iteration,
-                //     samples_to_copy / 2,
-                //     input_pos / 2,
-                //     input.len() / 2,
-                //     self.input_buffer_fill / 2
-                // );
+                    (input_samples - input_pos * 2).min(self.fft_size * 2 - self.input_buffer_fill);
 
                 self.input_buffer[self.input_buffer_fill..self.input_buffer_fill + samples_to_copy]
-                    .copy_from_slice(&input[input_pos..input_pos + samples_to_copy]);
+                    .copy_from_slice(&input[input_pos * 2..input_pos * 2 + samples_to_copy]);
 
                 self.input_buffer_fill += samples_to_copy;
-                input_pos += samples_to_copy;
+                input_pos += samples_to_copy / 2;
 
-                // log::debug!(
-                //     "[UPMIXER] After fill: input_buf_fill={}, input_pos={}",
-                //     self.input_buffer_fill / 2,
-                //     input_pos / 2
-                // );
-
-                continue; // Try processing again
+                continue;
             }
 
-            // No more work to do - exit loop
-            // Exit when: output buffer is full OR (no more input AND can't process AND nothing to drain)
-            let cant_process = self.input_buffer_fill < self.fft_size * 2
-                || self.next_add_position + self.fft_size > self.fft_size * 3;
-            let no_data_to_drain = self.output_accumulator_fill == 0;
-            let no_space_to_drain = (output.len() - output_pos) / self.num_output_channels == 0;
-
-            // log::debug!(
-            //     "[UPMIXER] Iter {}: CHECK EXIT - no_more_input={}, cant_process={}, no_data={}, no_space={}",
-            //     iteration,
-            //     input_pos >= input.len(),
-            //     cant_process,
-            //     no_data_to_drain,
-            //     no_space_to_drain
-            // );
-
-            // Exit if output buffer is full (most important - prevents deadlock)
-            if no_space_to_drain {
-                // log::debug!("[UPMIXER] EXITING LOOP: output buffer full");
-                break;
-            }
-
-            // Exit if no more input and can't process and nothing to drain
-            if input_pos >= input.len() && cant_process && no_data_to_drain {
-                // log::debug!("[UPMIXER] EXITING LOOP: no more work");
-                break;
-            }
+            break;
         }
 
-        // log::debug!("[UPMIXER] Loop finished after {} iterations", iteration);
-        // log::debug!(
-        //     "[UPMIXER] Final: output_pos={}/{}, accum_fill={}",
-        //     output_pos / self.num_output_channels,
-        //     output.len() / self.num_output_channels,
-        //     self.output_accumulator_fill
-        // );
-
-        // Final drain of any remaining output
-        let frames_available = (output.len() - output_pos) / self.num_output_channels;
-        let frames_to_drain = self.output_accumulator_fill.min(frames_available);
-
-        if frames_to_drain > 0 {
-            // log::debug!(
-            //     "[UPMIXER] FINAL DRAIN: {} frames (accum_fill={}, frames_avail={})",
-            //     frames_to_drain,
-            //     self.output_accumulator_fill,
-            //     frames_available
-            // );
-
-            for i in 0..frames_to_drain {
-                for ch in 0..self.num_output_channels {
-                    output[output_pos + i * self.num_output_channels + ch] =
-                        self.output_accumulator[ch][i];
-                }
-            }
-            // output_pos += frames_to_drain * self.num_output_channels;
-
-            for ch in 0..self.num_output_channels {
-                self.output_accumulator[ch]
-                    .copy_within(frames_to_drain..self.output_accumulator_fill, 0);
-                for i in
-                    (self.output_accumulator_fill - frames_to_drain)..self.output_accumulator_fill
-                {
-                    self.output_accumulator[ch][i] = 0.0;
-                }
-            }
-            self.output_accumulator_fill -= frames_to_drain;
-
-            // Update next add position
-            self.next_add_position = self.next_add_position.saturating_sub(frames_to_drain);
-
-            // Reset position if accumulator is empty
-            if self.output_accumulator_fill == 0 {
-                self.next_add_position = 0;
-            }
-
-            // Debug assertions to catch overlap-add state inconsistencies
-            debug_assert!(
-                self.next_add_position <= self.fft_size * 2,
-                "next_add_position {} exceeds max {} (2*fft_size)",
-                self.next_add_position,
-                self.fft_size * 2
-            );
-            debug_assert!(
-                self.output_accumulator_fill <= self.fft_size * 3,
-                "output_accumulator_fill {} exceeds max {} (3*fft_size)",
-                self.output_accumulator_fill,
-                self.fft_size * 3
-            );
-
-            // log::debug!(
-            //     "[UPMIXER] After final drain: accum_fill={}, next_add_pos={}, total_output={}",
-            //     self.output_accumulator_fill,
-            //     self.next_add_position,
-            //     output_pos / self.num_output_channels
-            // );
-            
-            output_pos += frames_to_drain * self.num_output_channels;
-        }
-
-        Ok(output_pos / self.num_output_channels)
+        // Return actual number of frames produced. DawHost handles silence padding.
+        Ok(output_pos)
     }
 
     fn latency_samples(&self) -> usize {

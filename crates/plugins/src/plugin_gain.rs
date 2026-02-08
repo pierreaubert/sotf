@@ -352,7 +352,7 @@ impl InPlacePlugin for GainPlugin {
         &mut self,
         buffer: &mut [f32],
         _context: &ProcessContext,
-    ) -> PluginResult<()> {
+    ) -> PluginResult<usize> {
         // Verify buffer size matches channel count
         if !buffer.len().is_multiple_of(self.channels) {
             return Err(format!(
@@ -387,7 +387,7 @@ impl InPlacePlugin for GainPlugin {
             }
         }
 
-        Ok(())
+        Ok(num_frames)
     }
 }
 
