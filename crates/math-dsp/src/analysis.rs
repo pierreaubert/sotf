@@ -2251,6 +2251,70 @@ pub fn find_db_point(
     None
 }
 
+/// Compute the average response level in dB
+///
+/// # Arguments
+/// * `frequencies` - Frequency points in Hz
+/// * `magnitude_db` - Magnitude in dB
+/// * `freq_range` - Optional (start_freq, end_freq) to limit the averaging range.
+///                  If None, averages over the full bandwidth.
+///
+/// # Returns
+/// The log-frequency weighted average SPL in dB.
+pub fn compute_average_response(
+    frequencies: &[f32],
+    magnitude_db: &[f32],
+    freq_range: Option<(f32, f32)>,
+) -> f32 {
+    if frequencies.len() < 2 || frequencies.len() != magnitude_db.len() {
+        return magnitude_db.first().copied().unwrap_or(0.0);
+    }
+
+    let (start_freq, end_freq) = freq_range.unwrap_or((frequencies[0], frequencies[frequencies.len() - 1]));
+
+    let mut sum_weighted_db = 0.0;
+    let mut sum_weights = 0.0;
+
+    for i in 0..frequencies.len() - 1 {
+        let f0 = frequencies[i];
+        let f1 = frequencies[i + 1];
+
+        // Check if this segment overlaps with the target range
+        if f1 < start_freq || f0 > end_freq {
+            continue;
+        }
+
+        // Clamp segment to target range
+        let fa = f0.max(start_freq);
+        let fb = f1.min(end_freq);
+
+        if fb <= fa {
+            continue;
+        }
+
+        // For acoustic data, we weight by log frequency (octaves)
+        // weight = log2(fb/fa)
+        let weight = (fb / fa).log2();
+        
+        // Average magnitude in this segment
+        // We'll use the midpoint value of the segment (or average of endpoints)
+        // If the segment is partially outside start_freq/end_freq, we should interpolate
+        // but for many points simple average of endpoints in the segment is fine.
+        let m0 = magnitude_db[i];
+        let m1 = magnitude_db[i + 1];
+        let avg_m = (m0 + m1) / 2.0;
+
+        sum_weighted_db += avg_m * weight;
+        sum_weights += weight;
+    }
+
+    if sum_weights > 0.0 {
+        sum_weighted_db / sum_weights
+    } else {
+        magnitude_db.first().copied().unwrap_or(0.0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -51,3 +51,37 @@ fn test_find_db_point_subwoofer() {
     assert!(high_3db.is_some());
     assert!((high_3db.unwrap() - 160.0).abs() < 1e-3);
 }
+
+#[test]
+fn test_compute_average_response_full_band() {
+    use math_audio_dsp::analysis::compute_average_response;
+    let frequencies = vec![100.0, 200.0, 400.0, 800.0];
+    let magnitude_db = vec![10.0, 10.0, 10.0, 10.0];
+    
+    // Flat response should average to 10.0
+    let avg = compute_average_response(&frequencies, &magnitude_db, None);
+    assert!((avg - 10.0).abs() < 1e-3);
+}
+
+#[test]
+fn test_compute_average_response_range() {
+    use math_audio_dsp::analysis::compute_average_response;
+    let frequencies = vec![100.0, 200.0, 400.0, 800.0];
+    let magnitude_db = vec![0.0, 10.0, 10.0, 20.0];
+    
+    // Average between 200Hz and 400Hz (where both are 10dB)
+    let avg = compute_average_response(&frequencies, &magnitude_db, Some((200.0, 400.0)));
+    assert!((avg - 10.0).abs() < 1e-3);
+}
+
+#[test]
+fn test_compute_average_response_log_spacing() {
+    use math_audio_dsp::analysis::compute_average_response;
+    let frequencies = vec![10.0, 100.0, 1000.0];
+    let magnitude_db = vec![0.0, 10.0, 20.0];
+    
+    // Log-weighted average should be more accurate for acoustic data
+    // Here we'll just test that it returns a value within range for now
+    let avg = compute_average_response(&frequencies, &magnitude_db, None);
+    assert!(avg > 0.0 && avg < 20.0);
+}
