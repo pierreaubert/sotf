@@ -25,17 +25,17 @@ Update the data structures to support the new `speaker_name` field and schema ve
     - [x] Implement validation logic (likely a `Validate` trait or a constructor check)
 - [x] Task: Conductor - User Manual Verification 'Schema & Data Model Updates' (Protocol in workflow.md) db29cf3
 
-## Phase 3: Tooling Adaptation
+## Phase 3: Tooling Adaptation [checkpoint: b63a853]
 Update the converter and fuzzer to work with the new schema.
 
-- [ ] Task: Update Converter (`crates/autoeq/bin/convert_recording.rs`)
-    - [ ] Write tests for the converter with the new `speaker_name` field
-    - [ ] Update parsing logic to extract and inject `speaker_name`
-    - [ ] Ensure compatibility with the new schema version
-- [ ] Task: Update Room Fuzzer (`crates/autoeq/bin/roomeq_fuzzer.rs`)
-    - [ ] Update fuzzer to generate randomized but valid `speaker_name` values
-    - [ ] Adapt fuzzer to handle the updated schema version
-- [ ] Task: Conductor - User Manual Verification 'Tooling Adaptation' (Protocol in workflow.md)
+- [x] Task: Update Converter (`crates/autoeq/bin/convert_recording.rs`)
+    - [x] Write tests for the converter with the new `speaker_name` field
+    - [x] Update parsing logic to extract and inject `speaker_name`
+    - [x] Ensure compatibility with the new schema version
+- [x] Task: Update Room Fuzzer (`crates/autoeq/bin/roomeq_fuzzer.rs`)
+    - [x] Update fuzzer to generate randomized but valid `speaker_name` values
+    - [x] Adapt fuzzer to handle the updated schema version
+- [x] Task: Conductor - User Manual Verification 'Tooling Adaptation' (Protocol in workflow.md) b63a853
 
 ## Phase 4: Normalization & Grouping Logic
 Implement the logic to detect passbands and group speakers for comparison.
