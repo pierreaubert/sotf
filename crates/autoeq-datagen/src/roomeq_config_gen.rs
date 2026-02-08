@@ -4,7 +4,7 @@
 
 use anyhow::Result;
 use autoeq::roomeq::{MultiSubGroup, OptimizerConfig, RoomConfig, SpeakerConfig};
-use autoeq::{MeasurementRef, MeasurementSource};
+use autoeq::{MeasurementRef, MeasurementSingle, MeasurementSource};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -19,9 +19,8 @@ pub fn generate_config(scenario: &Scenario, _csv_dir: &Path) -> Result<RoomConfi
 
     let mut speakers: HashMap<String, SpeakerConfig> = HashMap::new();
 
-    // Classify sources
-    let mut main_sources: Vec<&str> = Vec::new();
-    let mut sub_sources: Vec<&str> = Vec::new();
+    let mut main_sources = Vec::new();
+    let mut sub_sources = Vec::new();
 
     for name in source_names {
         if name.starts_with("sub") {
@@ -36,10 +35,10 @@ pub fn generate_config(scenario: &Scenario, _csv_dir: &Path) -> Result<RoomConfi
         let csv_path = PathBuf::from(format!("{name}_lp0.csv"));
         speakers.insert(
             name.to_string(),
-            SpeakerConfig::Single(MeasurementSource::Single {
+            SpeakerConfig::Single(MeasurementSource::Single(MeasurementSingle {
                 measurement: MeasurementRef::Path(csv_path),
                 speaker_name: None,
-            }),
+            })),
         );
     }
 
@@ -52,10 +51,10 @@ pub fn generate_config(scenario: &Scenario, _csv_dir: &Path) -> Result<RoomConfi
             let csv_path = PathBuf::from(format!("{name}_lp0.csv"));
             speakers.insert(
                 "lfe".to_string(),
-                SpeakerConfig::Single(MeasurementSource::Single {
-                measurement: MeasurementRef::Path(csv_path),
-                speaker_name: None,
-            }),
+                SpeakerConfig::Single(MeasurementSource::Single(MeasurementSingle {
+                    measurement: MeasurementRef::Path(csv_path),
+                    speaker_name: None,
+                })),
             );
         }
         _ => {
@@ -64,10 +63,10 @@ pub fn generate_config(scenario: &Scenario, _csv_dir: &Path) -> Result<RoomConfi
                 .iter()
                 .map(|name| {
                     let csv_path = PathBuf::from(format!("{name}_lp0.csv"));
-                    MeasurementSource::Single {
+                    MeasurementSource::Single(MeasurementSingle {
                         measurement: MeasurementRef::Path(csv_path),
                         speaker_name: None,
-                    }
+                    })
                 })
                 .collect();
             speakers.insert(
