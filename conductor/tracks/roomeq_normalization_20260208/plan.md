@@ -13,17 +13,17 @@ Implement the fundamental mathematical functions for passband detection and rang
     - [x] Implement `compute_average_response(curve, freq_range: Option<(f64, f64)>)`
 - [x] Task: Conductor - User Manual Verification 'Core DSP Utilities' (Protocol in workflow.md) 483ad0f
 
-## Phase 2: Schema & Data Model Updates
+## Phase 2: Schema & Data Model Updates [checkpoint: db29cf3]
 Update the data structures to support the new `speaker_name` field and schema versioning.
 
-- [ ] Task: Update `autoeq-roomsim` data structures
-    - [ ] Write tests for serializing/deserializing the updated schema with `speaker_name`
-    - [ ] Add `speaker_name` field to relevant structs (e.g., `SpeakerConfig`, `Measurement`)
-    - [ ] Increment the schema version constant
-- [ ] Task: Implement `speaker_name` validation
-    - [ ] Write tests for valid/invalid speaker names (alphanumeric, spaces, hyphens)
-    - [ ] Implement validation logic (likely a `Validate` trait or a constructor check)
-- [ ] Task: Conductor - User Manual Verification 'Schema & Data Model Updates' (Protocol in workflow.md)
+- [x] Task: Update `autoeq-roomsim` data structures 7ca1ccfd
+    - [x] Write tests for serializing/deserializing the updated schema with `speaker_name`
+    - [x] Add `speaker_name` field to relevant structs (e.g., `SpeakerConfig`, `Measurement`)
+    - [x] Increment the schema version constant
+- [x] Task: Implement `speaker_name` validation 7ca1ccfd
+    - [x] Write tests for valid/invalid speaker names (alphanumeric, spaces, hyphens)
+    - [x] Implement validation logic (likely a `Validate` trait or a constructor check)
+- [x] Task: Conductor - User Manual Verification 'Schema & Data Model Updates' (Protocol in workflow.md) db29cf3
 
 ## Phase 3: Tooling Adaptation
 Update the converter and fuzzer to work with the new schema.
