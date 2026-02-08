@@ -85,6 +85,10 @@ name = "binaural-decoder-benchmark"
 harness = false
 
 [[bench]]
+name = "loudness-benchmark"
+harness = false
+
+[[bench]]
 name = "upmixer-benchmark"
 harness = false
 

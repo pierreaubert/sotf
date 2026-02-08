@@ -3,7 +3,6 @@
 // ============================================================================
 
 use super::UpmixerPlugin;
-use crate::simd::flush_denormals_inplace;
 use rustfft::num_complex::Complex;
 
 impl UpmixerPlugin {
@@ -44,22 +43,20 @@ impl UpmixerPlugin {
             .unwrap();
 
         // 3. Frequency-dependent processing for HF direct path only
-        //    We restrict to frequencies above a cutoff so that the
-        //    high-resolution path mainly sharpens transients.
         let freq_per_bin = self.sample_rate as f32 / self.hr_fft_size as f32;
         let hf_cut = self.bandpass_hz.max(1000.0);
         let hr_spectrum_size = self.hr_fft_size / 2 + 1;
-
-        // Clear HR time-domain buffers
-        for ch in 0..self.num_output_channels {
-            self.hr_time_out_channels[ch].fill(0.0);
-        }
 
         // 4. Inverse FFT per-channel and write time-domain output
         let fft_scale = 1.0 / self.hr_fft_size as f32;
         let cola_scale = 2.0; // Hann with 50% overlap
         let channel_normalization = 0.5; // Conservative mix factor for HR path
         let combined_scale = fft_scale * cola_scale * channel_normalization;
+
+        let gain_front_direct = self.gain_front_direct.current();
+        if gain_front_direct <= 0.0 {
+            return;
+        }
 
         for ch_idx in 0..self.num_output_channels {
             let speaker = &self.speaker_config.speakers[ch_idx];
@@ -71,29 +68,26 @@ impl UpmixerPlugin {
             let panning_gain_left = self.panning_gains_left[ch_idx];
             let panning_gain_right = self.panning_gains_right[ch_idx];
 
-            self.hr_temp_freq_out.fill(Complex::new(0.0, 0.0));
+            let mut gain_scale = gain_front_direct;
+            if is_center {
+                let spread = self.center_spread.clamp(0.0, 1.0);
+                gain_scale *= 1.0 - spread;
+            }
 
+            if gain_scale == 0.0 {
+                continue;
+            }
+
+            // Optimization: Process bins only above cutoff and use gain_scale
+            self.hr_temp_freq_out.fill(Complex::new(0.0, 0.0));
+            
             for i in 0..hr_spectrum_size {
                 let freq = i as f32 * freq_per_bin;
-                if freq <= hf_cut {
-                    continue;
+                if freq > hf_cut {
+                    let l = self.hr_freq_domain_left[i];
+                    let r = self.hr_freq_domain_right[i];
+                    self.hr_temp_freq_out[i] = (l * panning_gain_left + r * panning_gain_right) * gain_scale;
                 }
-
-                let l = self.hr_freq_domain_left[i];
-                let r = self.hr_freq_domain_right[i];
-
-                let direct_val = l * panning_gain_left + r * panning_gain_right;
-                let mut gain_scale = self.gain_front_direct.current();
-                if is_center {
-                    let spread = self.center_spread.clamp(0.0, 1.0);
-                    gain_scale *= 1.0 - spread;
-                }
-
-                if gain_scale == 0.0 {
-                    continue;
-                }
-
-                self.hr_temp_freq_out[i] = direct_val * gain_scale;
             }
 
             if hr_spectrum_size > 0 {
@@ -107,14 +101,17 @@ impl UpmixerPlugin {
                     &mut self.hr_time_out_channels[ch_idx],
                 )
                 .unwrap();
-
-            for i in 0..self.hr_fft_size {
-                let idx = i * self.num_output_channels + ch_idx;
-                output[idx] = self.hr_time_out_channels[ch_idx][i] * combined_scale;
-            }
         }
 
-        // Flush denormals from HR output to prevent CPU performance spikes
-        flush_denormals_inplace(output);
+        // Re-interleave HR channels into the output block
+        // Optimization: iterate over frames first for sequential writes to output
+        for i in 0..self.hr_fft_size {
+            let out_idx = i * self.num_output_channels;
+            for ch_idx in 0..self.num_output_channels {
+                // Only front channels have data, others were cleared by fill(0.0) at start
+                // We could optimize further by only iterating over active HR channels
+                output[out_idx + ch_idx] += self.hr_time_out_channels[ch_idx][i] * combined_scale;
+            }
+        }
     }
 }

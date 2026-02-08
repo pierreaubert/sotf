@@ -24,22 +24,22 @@ impl UpmixerPlugin {
         let voice_start_bin = (voice_start_hz / freq_per_bin) as usize;
         let voice_end_bin = (voice_end_hz / freq_per_bin).min(spectrum_size as f32 - 1.0) as usize;
 
-        // Calculate spectral centroid in voice range
+        // Calculate spectral centroid and RMS energy in voice range
         let mut weighted_sum = 0.0_f32;
-        let mut magnitude_sum = 0.0_f32;
+        let mut power_sum = 0.0_f32;
 
         for i in voice_start_bin..=voice_end_bin {
-            let left_mag = self.freq_domain_left[i].norm();
-            let right_mag = self.freq_domain_right[i].norm();
-            let avg_mag = (left_mag + right_mag) * 0.5;
+            let left_power = self.freq_domain_left[i].norm_sqr();
+            let right_power = self.freq_domain_right[i].norm_sqr();
+            let avg_power = (left_power + right_power) * 0.5;
 
             let freq = i as f32 * freq_per_bin;
-            weighted_sum += freq * avg_mag;
-            magnitude_sum += avg_mag;
+            weighted_sum += freq * avg_power;
+            power_sum += avg_power;
         }
 
-        let spectral_centroid = if magnitude_sum > 1e-9 {
-            weighted_sum / magnitude_sum
+        let spectral_centroid = if power_sum > 1e-9 {
+            weighted_sum / power_sum
         } else {
             0.0
         };
@@ -49,13 +49,9 @@ impl UpmixerPlugin {
         self.dialogue_spectral_centroid = centroid_alpha * spectral_centroid
             + (1.0 - centroid_alpha) * self.dialogue_spectral_centroid;
 
-        // Calculate RMS energy for temporal envelope variance
-        let mut energy_sum = 0.0_f32;
-        for i in voice_start_bin..=voice_end_bin {
-            let left_mag = self.freq_domain_left[i].norm_sqr();
-            let right_mag = self.freq_domain_right[i].norm_sqr();
-            energy_sum += left_mag + right_mag;
-        }
+        // Calculate RMS energy for temporal envelope variance from power_sum
+        // energy_sum = sum(left_power + right_power) = sum(avg_power * 2.0) = 2.0 * power_sum
+        let energy_sum = power_sum * 2.0;
         let rms = (energy_sum / ((voice_end_bin - voice_start_bin + 1) as f32 * 2.0)).sqrt();
 
         // Calculate envelope variance (difference from previous frame)

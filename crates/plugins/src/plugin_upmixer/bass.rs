@@ -3,7 +3,6 @@
 // ============================================================================
 
 use super::UpmixerPlugin;
-use crate::simd::flush_denormals_inplace;
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 
 impl UpmixerPlugin {
@@ -151,11 +150,6 @@ impl UpmixerPlugin {
                     self.time_out_channels[lfe_idx][i] += sub;
                 }
             }
-        }
-
-        // Flush denormals from LFE channel after sub-harmonic synthesis
-        if let Some(lfe_idx) = self.speaker_config.speakers.iter().position(|s| s.is_lfe) {
-            flush_denormals_inplace(&mut self.time_out_channels[lfe_idx]);
         }
     }
 }

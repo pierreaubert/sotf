@@ -45,28 +45,31 @@ impl UpmixerPlugin {
         } else if self.enable_hr_direct {
             let spectrum_size = self.fft_size / 2 + 1;
 
-            // Compute spectral flux: sum of positive magnitude increases
+            // Compute spectral flux: sum of positive power increases
+            // Using norm_sqr (power) instead of sqrt(norm_sqr) (magnitude) because
+            // spectral flux only needs relative comparison (ratio to previous frame),
+            // and the flux / spectral_flux_smooth ratio is scale-invariant.
             let mut flux = 0.0_f32;
             for i in 0..spectrum_size {
                 let l = self.freq_domain_left[i];
                 let r = self.freq_domain_right[i];
-                let current_mag = (l.norm_sqr() + r.norm_sqr()).sqrt();
+                let current_power = l.norm_sqr() + r.norm_sqr();
 
-                let prev_mag = if i < self.prev_magnitude_spectrum.len() {
+                let prev_power = if i < self.prev_magnitude_spectrum.len() {
                     self.prev_magnitude_spectrum[i]
                 } else {
                     0.0
                 };
 
                 // Only count positive increases (onsets, not offsets)
-                let diff = current_mag - prev_mag;
+                let diff = current_power - prev_power;
                 if diff > 0.0 {
                     flux += diff;
                 }
 
-                // Store current magnitude for next frame
+                // Store current power for next frame
                 if i < self.prev_magnitude_spectrum.len() {
-                    self.prev_magnitude_spectrum[i] = current_mag;
+                    self.prev_magnitude_spectrum[i] = current_power;
                 }
             }
 

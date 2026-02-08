@@ -18,7 +18,6 @@
 use super::param_specs::upmixer::*;
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
-use super::simd::flush_denormals_inplace;
 use super::smoothing::Smoother;
 use super::speaker_config::{SpeakerConfig, get_speaker_config};
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
@@ -237,6 +236,16 @@ pub struct UpmixerPlugin {
     // Temporary buffer for height gain smoothing (avoid real-time allocation)
     height_band_gains_temp: Vec<f32>,
 
+    // Precomputed per-bin frequency weights for height mask (hf_ratio^0.7)
+    // Depends only on sample_rate, bandpass_hz, height_hf_cap_hz — recomputed in initialize()
+    height_freq_weights: Vec<f32>,
+
+    // Cached safety cap linear values (avoid per-block powf)
+    // safety_cap_linear = 10^(safety_cap_db / 20)
+    safety_cap_linear: f32,
+    // safety_cap_min_scale = 10^(-safety_cap_db / 20)
+    safety_cap_min_scale: f32,
+
     /// Panning gains for left source (pre-calculated for each speaker)
     panning_gains_left: Vec<f32>,
     /// Panning gains for right source (pre-calculated for each speaker)
@@ -331,6 +340,10 @@ pub struct UpmixerPlugin {
     dialogue_prev_rms: f32,
     /// Dialogue probability (0.0 = no dialogue, 1.0 = strong dialogue)
     dialogue_probability: f32,
+    /// Current adaptive decorrelation strength (0.0 to 1.0)
+    pub(super) decorrelation_strength: f32,
+    /// Pre-calculated blended decorrelation filters (one per channel)
+    pub(super) blended_decorrelation_filters: Vec<Vec<Complex<f32>>>,
 }
 
 impl UpmixerPlugin {
@@ -563,6 +576,19 @@ impl UpmixerPlugin {
             height_band_gains_prev: vec![0.0; spectrum_size],
             height_band_gains_temp: vec![0.0; spectrum_size],
 
+            height_freq_weights: vec![0.0; spectrum_size],
+
+            safety_cap_linear: if default_safety_cap_db() > 0.0 {
+                10.0_f32.powf(default_safety_cap_db() / 20.0)
+            } else {
+                1.0
+            },
+            safety_cap_min_scale: if default_safety_cap_db() > 0.0 {
+                10.0_f32.powf(-default_safety_cap_db() / 20.0)
+            } else {
+                0.0
+            },
+
             panning_gains_left,
             panning_gains_right,
 
@@ -614,6 +640,8 @@ impl UpmixerPlugin {
             dialogue_envelope_variance: 0.0,
             dialogue_prev_rms: 0.0,
             dialogue_probability: 0.0,
+            decorrelation_strength: 1.0,
+            blended_decorrelation_filters: Vec::new(),
         };
 
         // Calculate panning gains for stereo sources (left at +30°, right at -30°)
@@ -642,6 +670,7 @@ impl UpmixerPlugin {
         plugin.enable_hr_direct = params.enable_hr_direct;
         plugin.hr_sharpen = params.hr_sharpen.clamp(0.0, 1.0);
         plugin.safety_cap_db = params.safety_cap_db.max(0.0);
+        plugin.update_safety_cap_cache();
         plugin.decorrelation_mode = params.decorrelation_mode;
 
         // Sub-harmonic synthesis parameters
@@ -1245,6 +1274,7 @@ Upper bound for dialogue detection analysis.",
         {
             if freq > self.lfe_cutoff_hz {
                 self.bandpass_hz = freq;
+                self.precompute_height_freq_weights();
                 return Ok(());
             }
             return Err("Bandpass frequency must be greater than LFE cutoff".to_string());
@@ -1289,6 +1319,7 @@ Upper bound for dialogue detection analysis.",
         {
             if (0.0..=3.0).contains(&val) {
                 self.safety_cap_db = val;
+                self.update_safety_cap_cache();
                 return Ok(());
             }
             return Err("Safety cap must be between 0.0 and 3.0 dB".to_string());
@@ -1340,6 +1371,7 @@ Upper bound for dialogue detection analysis.",
             && let Some(val) = value.as_float()
         {
             self.height_hf_cap_hz = val.clamp(8000.0, 20000.0);
+            self.precompute_height_freq_weights();
             return Ok(());
         } else if id == self.param_height_transient_reduction
             && let Some(val) = value.as_float()
@@ -1551,6 +1583,12 @@ Upper bound for dialogue detection analysis.",
         // Precompute LR4 crossover gains for mains/LFE split
         self.update_crossover_gains();
 
+        // Precompute height frequency weights (hf_ratio^0.7 per bin)
+        self.precompute_height_freq_weights();
+
+        // Update cached safety cap values
+        self.update_safety_cap_cache();
+
         // Initialize smoothers
         let time_ms = 50.0;
         self.gain_front_direct.set_time(time_ms, sample_rate);
@@ -1739,10 +1777,11 @@ Upper bound for dialogue detection analysis.",
                 // );
 
                 // Copy samples to output
+                // Optimization: Iterate over frames first for sequential writes to the interleaved output buffer
                 for i in 0..frames_to_drain {
+                    let out_frame_idx = output_pos + i * self.num_output_channels;
                     for ch in 0..self.num_output_channels {
-                        output[output_pos + i * self.num_output_channels + ch] =
-                            self.output_accumulator[ch][i];
+                        output[out_frame_idx + ch] = self.output_accumulator[ch][i];
                     }
                 }
                 output_pos += frames_to_drain * self.num_output_channels;
@@ -1752,11 +1791,9 @@ Upper bound for dialogue detection analysis.",
                     self.output_accumulator[ch]
                         .copy_within(frames_to_drain..self.output_accumulator_fill, 0);
                     // Clear the tail
-                    for i in (self.output_accumulator_fill - frames_to_drain)
-                        ..self.output_accumulator_fill
-                    {
-                        self.output_accumulator[ch][i] = 0.0;
-                    }
+                    self.output_accumulator[ch][(self.output_accumulator_fill - frames_to_drain)
+                        ..self.output_accumulator_fill]
+                        .fill(0.0);
                 }
                 self.output_accumulator_fill -= frames_to_drain;
 
@@ -1815,23 +1852,24 @@ Upper bound for dialogue detection analysis.",
                 self.process_fft_block(&temp_input, &mut output_block);
 
                 // Optional high-resolution direct-path enhancement
+                // Gate: skip 5 FFTs when hr_mix < 0.01 (-40dB, inaudible)
                 if self.enable_hr_direct && self.gain_front_direct.current() > 0.0 {
-                    // Take a centered HR window from the current input block
-                    let center = (self.fft_size - self.hr_fft_size) / 2;
-                    let start = center * 2; // stereo interleaved
-                    let end = start + self.hr_fft_size * 2;
+                    let hr_mix = (self.hr_transient_env * self.hr_sharpen).clamp(0.0, 1.0);
+                    if hr_mix > 0.01 {
+                        // Take a centered HR window from the current input block
+                        let center = (self.fft_size - self.hr_fft_size) / 2;
+                        let start = center * 2; // stereo interleaved
+                        let end = start + self.hr_fft_size * 2;
 
-                    if end <= temp_input.len() {
-                        let hr_input = &temp_input[start..end];
-                        // Use pre-allocated buffer instead of local Vec::new()
-                        let mut hr_output = std::mem::take(&mut self.hr_output_block);
-                        self.process_hr_block(hr_input, &mut hr_output);
+                        if end <= temp_input.len() {
+                            let hr_input = &temp_input[start..end];
+                            // Use pre-allocated buffer instead of local Vec::new()
+                            let mut hr_output = std::mem::take(&mut self.hr_output_block);
+                            self.process_hr_block(hr_input, &mut hr_output);
 
-                        // Overlay HR contribution onto the low-res output block
-                        // Apply synthesis window to HR output for proper phase alignment
-                        // This prevents comb filtering artifacts from mismatched overlap-add
-                        let hr_mix = (self.hr_transient_env * self.hr_sharpen).clamp(0.0, 1.0);
-                        if hr_mix > 0.0 {
+                            // Overlay HR contribution onto the low-res output block
+                            // Apply synthesis window to HR output for proper phase alignment
+                            // This prevents comb filtering artifacts from mismatched overlap-add
                             for i in 0..self.hr_fft_size {
                                 let dst_idx = (center + i) * self.num_output_channels;
                                 let src_idx = i * self.num_output_channels;
@@ -1843,8 +1881,8 @@ Upper bound for dialogue detection analysis.",
                                         hr_output[src_idx + ch] * scaled_mix;
                                 }
                             }
+                            self.hr_output_block = hr_output;
                         }
-                        self.hr_output_block = hr_output;
                     }
                 }
 
@@ -1869,13 +1907,6 @@ Upper bound for dialogue detection analysis.",
                     // Subsequent blocks: add hop_size more samples, next block starts hop_size later
                     self.output_accumulator_fill += self.hop_size;
                     self.next_add_position += self.hop_size;
-                }
-
-                // Flush denormals from accumulator to prevent CPU performance spikes
-                for ch in 0..self.num_output_channels {
-                    let start = self.next_add_position - self.hop_size;
-                    let end = self.next_add_position;
-                    flush_denormals_inplace(&mut self.output_accumulator[ch][start..end]);
                 }
 
                 self.output_block = output_block;

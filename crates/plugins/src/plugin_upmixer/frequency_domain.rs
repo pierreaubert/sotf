@@ -3,7 +3,7 @@
 // ============================================================================
 
 use super::UpmixerPlugin;
-use crate::simd::{compute_covariance_simd, flush_denormals_complex_inplace};
+use crate::simd::{compute_covariance_simd, flush_denormals_complex_inplace, flush_denormals_inplace};
 use rustfft::num_complex::Complex;
 
 fn base_ambient_gain_from_coherence(coherence: f32, ambient_boost: f32) -> f32 {
@@ -141,7 +141,6 @@ impl UpmixerPlugin {
             }
 
             // 1. LFE Band Logic
-            // Determine intersection of current band [start_bin, end_bin) with LFE range [0, lfe_cutoff_bin]
             let lfe_end = (lfe_cutoff_bin + 1).min(end_bin);
             if start_bin < lfe_end {
                 let loop_start = start_bin;
@@ -150,10 +149,6 @@ impl UpmixerPlugin {
                 for i in loop_start..loop_end {
                     let left = self.freq_domain_left[i];
                     let right = self.freq_domain_right[i];
-
-                    // LFE band: use Linkwitz–Riley style crossover so that
-                    // low frequencies are shared between LFE (low-pass
-                    // mono sum) and mains (high-passed left/right).
 
                     let bin = i.min(self.lfe_low_gains.len() - 1);
                     let low_gain = self.lfe_low_gains[bin];
@@ -171,7 +166,6 @@ impl UpmixerPlugin {
             }
 
             // 2. Pass-through Band Logic
-            // Intersection of [start_bin, end_bin) with [lfe_cutoff_bin + 1, bandpass_bin)
             let pass_start = (lfe_cutoff_bin + 1).max(start_bin);
             let pass_end = bandpass_bin.min(end_bin);
 
@@ -189,34 +183,20 @@ impl UpmixerPlugin {
             }
 
             // 3. Upmixing Band Logic
-            // Intersection of [start_bin, end_bin) with [bandpass_bin, infinity)
             let upmix_start = bandpass_bin.max(start_bin);
             let upmix_end = end_bin;
 
             if upmix_start < upmix_end {
-                // Perceptually-weighted ambient gain for better envelopment
-                // Base: sqrt(1 - coherence) for energy preservation
-                // Boost: configurable ambient_boost (default 1.2x) for enhanced spatial impression
-                //
-                // Dialogue detection: redistribute energy from ambient to center
-                // while preserving total energy to avoid saturation
+                // Perceptually-weighted ambient gain
                 let base_ambient_gain =
                     base_ambient_gain_from_coherence(coherence, self.ambient_boost);
 
-                // Energy redistribution for dialogue: shift energy to center while maintaining total
-                // dialogue_weight ranges from 0.0 (no dialogue) to configurable maximum
+                // Energy redistribution for dialogue
                 let dialogue_weight = self.dialogue_probability * self.dialogue_weight;
-
-                // Reduce ambient proportionally
                 let ambient_gain = base_ambient_gain * (1.0 - dialogue_weight);
-
-                // Increase direct/center coherence proportionally (not as a boost multiplier)
                 let effective_coherence = coherence + (1.0 - coherence) * dialogue_weight;
 
-                // 3B: Compute principal eigenvector from smoothed 2x2 covariance
-                // for eigenvector projection direct/ambient split.
-                // Eigenvector of [[c_xx, c_xy], [conj(c_xy), c_yy]] for lambda1:
-                //   v = [c_xy, lambda1 - c_xx] (or fallback for degenerate case)
+                // 3B: Compute principal eigenvector
                 let eigvec = if c_xy.norm_sqr() > 1e-18 {
                     let v = Complex::new(lambda1 - c_xx, 0.0);
                     let norm = (c_xy.norm_sqr() + v.norm_sqr()).sqrt();
@@ -227,130 +207,135 @@ impl UpmixerPlugin {
                          Complex::new(std::f32::consts::FRAC_1_SQRT_2, 0.0))
                     }
                 } else {
-                    // Degenerate case: equal power, use mid-side fallback
                     (Complex::new(std::f32::consts::FRAC_1_SQRT_2, 0.0),
                      Complex::new(std::f32::consts::FRAC_1_SQRT_2, 0.0))
                 };
                 let (ev_l, ev_r) = eigvec;
 
+                // Optimization: Pre-calculate per-band energy sums
+                let mut input_energy_band = 0.0_f32;
+                let mut output_energy_band = 0.0_f32;
+
                 for i in upmix_start..upmix_end {
                     let left = self.freq_domain_left[i];
                     let right = self.freq_domain_right[i];
 
-                    // 3B: Project L/R onto principal eigenvector for direct component
-                    // direct_projection = (L * conj(ev_l) + R * conj(ev_r))
                     let projection = left * ev_l.conj() + right * ev_r.conj();
-
-                    // Direct = projection * eigenvector, scaled by effective_coherence
                     let direct_l = projection * ev_l * effective_coherence;
                     let direct_r = projection * ev_r * effective_coherence;
-                    let direct_val = direct_l + direct_r; // mono direct for center
+                    let direct_val = direct_l + direct_r;
                     self.direct[i] = direct_val * 0.5;
 
-                    // 3B: Ambient = residual after eigenvector projection
                     let residual_l = left - projection * ev_l;
                     let residual_r = right - projection * ev_r;
-                    self.ambient_left[i] = residual_l * ambient_gain + (left - right) * ambient_gain * 0.3;
-                    self.ambient_right[i] = residual_r * ambient_gain - (left - right) * ambient_gain * 0.3;
+                    let side = (left - right) * 0.3;
+                    self.ambient_left[i] = residual_l * ambient_gain + side * ambient_gain;
+                    self.ambient_right[i] = residual_r * ambient_gain - side * ambient_gain;
 
-                    // Divergence for Fronts
                     self.direct_left[i] = left - self.direct[i] * self.stereo_width;
                     self.direct_right[i] = right - self.direct[i] * self.stereo_width;
                     self.lfe[i] = Complex::new(0.0, 0.0);
 
-                    // 3F: Energy preservation correction
-                    // Normalize so |direct|^2 + |ambient_L|^2 + |ambient_R|^2 ≈ |L|^2 + |R|^2
-                    let input_energy =
-                        left.norm_sqr() + right.norm_sqr();
-                    let output_energy = self.direct[i].norm_sqr()
+                    input_energy_band += left.norm_sqr() + right.norm_sqr();
+                    output_energy_band += self.direct[i].norm_sqr()
                         + self.direct_left[i].norm_sqr()
                         + self.direct_right[i].norm_sqr()
                         + self.ambient_left[i].norm_sqr()
                         + self.ambient_right[i].norm_sqr();
-                    if output_energy > 1e-12 && input_energy > 1e-12 {
-                        let correction = (input_energy / output_energy).sqrt();
-                        // Gentle correction: limit to ±3dB to avoid artifacts
-                        let correction = correction.clamp(0.707, 1.414);
+                }
+
+                // 3F: Energy preservation correction (ONCE per band)
+                if output_energy_band > 1e-12 && input_energy_band > 1e-12 {
+                    let correction = (input_energy_band / output_energy_band).sqrt();
+                    let correction = correction.clamp(0.707, 1.414);
+                    
+                    for i in upmix_start..upmix_end {
                         self.direct[i] *= correction;
                         self.direct_left[i] *= correction;
                         self.direct_right[i] *= correction;
                         self.ambient_left[i] *= correction;
                         self.ambient_right[i] *= correction;
-                    }
 
-                    // Height mask: emphasize high-frequency, low-coherence (diffuse) content
-                    // with reduced aggression to prevent "tizzy" artifacts
-                    let nyquist = self.sample_rate as f32 / 2.0;
-                    let freq = (i as f32 * self.sample_rate as f32) / self.fft_size as f32;
-                    let hf_start = self.bandpass_hz.max(self.lfe_cutoff_hz);
-                    let hf_end = self.height_hf_cap_hz.min(nyquist); // Configurable HF cap
-
-                    let hf_ratio = if freq <= hf_start {
-                        0.0
-                    } else if freq >= hf_end {
-                        1.0
-                    } else {
-                        (freq - hf_start) / (hf_end - hf_start)
-                    };
-
-                    // Reduced from sqrt() to linear^0.7 for gentler emphasis
-                    let freq_weight = hf_ratio.powf(0.7);
-                    let diffuse = (1.0 - coherence).max(0.0);
-
-                    // Height suitability: additive blend allows direct HF content
-                    // This prevents pure multiplicative gating (freq_weight * diffuse)
-                    // which would block coherent high frequencies from reaching heights.
-                    // 50/50 blend: some direct HF + some ambient = natural overhead sound
-                    let height_suitability = (freq_weight * 0.5 + diffuse * 0.5).min(1.0);
-
-                    // Transient-adaptive reduction: keep transients coherent
-                    // During transients, reduce height channel emphasis by configurable amount
-                    let transient_reduction = 1.0
-                        - (self.hr_transient_env * self.height_transient_reduction)
+                        let freq_weight = self.height_freq_weights[i];
+                        let diffuse = (1.0 - coherence).max(0.0);
+                        let height_suitability = (freq_weight * 0.5 + diffuse * 0.5).min(1.0);
+                        let transient_reduction = 1.0 - (self.hr_transient_env * self.height_transient_reduction)
                             .min(self.height_transient_reduction);
-
-                    let height_mask = (height_suitability * transient_reduction).min(1.0);
-
-                    let half_len = self.height_band_gains.len();
-                    if i < half_len {
-                        self.height_band_gains[i] = height_mask;
+                        
+                        if i < self.height_band_gains.len() {
+                            self.height_band_gains[i] = (height_suitability * transient_reduction).min(1.0);
+                        }
+                    }
+                } else {
+                    let transient_reduction = 1.0 - (self.hr_transient_env * self.height_transient_reduction)
+                        .min(self.height_transient_reduction);
+                    for i in upmix_start..upmix_end {
+                        let freq_weight = self.height_freq_weights[i];
+                        let diffuse = (1.0 - coherence).max(0.0);
+                        let height_suitability = (freq_weight * 0.5 + diffuse * 0.5).min(1.0);
+                        if i < self.height_band_gains.len() {
+                            self.height_band_gains[i] = (height_suitability * transient_reduction).min(1.0);
+                        }
                     }
                 }
+            }
+        }
 
-                // Transient-adaptive decorrelation: reduce decorrelation during transients
-                // to keep transients coherent and prevent "tizzy" artifacts.
-                //
-                // During transients (hr_transient_env approaching 1.0):
-                // - decorrelation_strength approaches 0.0
-                // - Filters approach identity (no decorrelation)
-                //
-                // During steady-state (hr_transient_env = 0.0):
-                // - decorrelation_strength = 1.0
-                // - Full decorrelation effect
-                //
-                // Dialogue-adaptive decorrelation: reduce decorrelation for dialogue
-                // to keep vocals coherent and prevent metallic artifacts
-                // Reduced transient impact (0.5 instead of 0.85) to prevent audible surround pumping
-                let base_decorr_strength = (1.0 - self.hr_transient_env * 0.5).max(0.3);
-                let dialogue_decorr_reduction = 1.0 - (self.dialogue_probability * 0.7); // Reduce by up to 70%
-                let decorrelation_strength =
-                    (base_decorr_strength * dialogue_decorr_reduction).max(0.05);
+        // Calculate adaptive decorrelation strength once per frame
+        let base_decorr_strength = (1.0 - self.hr_transient_env * 0.5).max(0.3);
+        let dialogue_decorr_reduction = 1.0 - (self.dialogue_probability * 0.7);
+        let strength = (base_decorr_strength * dialogue_decorr_reduction).max(0.05);
+        self.decorrelation_strength = strength;
 
-                // Apply transient-adaptive and dialogue-adaptive decorrelation
-                self.apply_adaptive_decorrelation(upmix_start, upmix_end, decorrelation_strength);
+        // Pre-calculate blended filters for all channels
+        let spectrum_size = self.fft_size / 2 + 1;
+        let num_ch = self.num_output_channels;
+        
+        if self.blended_decorrelation_filters.len() != num_ch {
+            self.blended_decorrelation_filters = vec![vec![Complex::new(1.0, 0.0); spectrum_size]; num_ch];
+        }
+
+        let identity_weight = 1.0 - strength;
+        let skip_blend = strength >= 0.99;
+
+        for ch_idx in 0..num_ch {
+            let speaker = &self.speaker_config.speakers[ch_idx];
+            let is_front = speaker.azimuth.abs() < 80.0 && speaker.elevation.abs() < 10.0;
+            
+            if speaker.is_lfe || is_front {
+                // Identity filter
+                self.blended_decorrelation_filters[ch_idx].fill(Complex::new(1.0, 0.0));
+                continue;
+            }
+
+            let decor = if ch_idx < self.decorrelation_filters.len() {
+                &self.decorrelation_filters[ch_idx]
+            } else if speaker.azimuth > 0.0 {
+                &self.decorrelation_filter_left
+            } else {
+                &self.decorrelation_filter_right
+            };
+
+            if skip_blend {
+                self.blended_decorrelation_filters[ch_idx].copy_from_slice(decor);
+            } else {
+                let target = &mut self.blended_decorrelation_filters[ch_idx];
+                for i in 0..spectrum_size {
+                    target[i] = Complex::new(
+                        strength * decor[i].re + identity_weight,
+                        strength * decor[i].im
+                    );
+                }
             }
         }
 
         // Advance coherence history ring buffer index (once per frame)
         self.coherence_history_idx = self.coherence_history_idx.wrapping_add(1);
 
-        // Flush denormals from frequency domain buffers to prevent CPU performance issues
-        flush_denormals_complex_inplace(&mut self.direct);
-        flush_denormals_complex_inplace(&mut self.direct_left);
-        flush_denormals_complex_inplace(&mut self.direct_right);
-        flush_denormals_complex_inplace(&mut self.ambient_left);
-        flush_denormals_complex_inplace(&mut self.ambient_right);
-        flush_denormals_complex_inplace(&mut self.lfe);
+        // Flush denormals from PCA covariance state arrays.
+        flush_denormals_inplace(&mut self.pca_cov_xx);
+        flush_denormals_inplace(&mut self.pca_cov_yy);
+        flush_denormals_complex_inplace(&mut self.pca_cov_xy);
 
         // Apply spectral and temporal smoothing to height_band_gains
         self.smooth_height_gains();

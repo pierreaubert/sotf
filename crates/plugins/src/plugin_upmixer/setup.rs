@@ -32,6 +32,7 @@ impl UpmixerPlugin {
         self.hr_time_out_channels = vec![vec![0.0; self.hr_fft_size]; self.num_output_channels];
         self.output_accumulator = vec![vec![0.0; self.fft_size * 3]; self.num_output_channels];
         self.output_block = vec![0.0; self.fft_size * self.num_output_channels];
+        self.blended_decorrelation_filters.clear();
 
         self.recalculate_panning_gains();
         self.reset();
@@ -115,6 +116,43 @@ impl UpmixerPlugin {
             for i in 0..self.num_output_channels {
                 self.panning_gains_right[i] *= right_scale;
             }
+        }
+    }
+
+    /// Precompute per-bin frequency weights for height mask (hf_ratio^0.7).
+    ///
+    /// These depend only on sample_rate, bandpass_hz, height_hf_cap_hz and fft_size,
+    /// all of which are constant between initialize() calls (or parameter changes).
+    pub(super) fn precompute_height_freq_weights(&mut self) {
+        let spectrum_size = self.fft_size / 2 + 1;
+        self.height_freq_weights.resize(spectrum_size, 0.0);
+
+        let nyquist = self.sample_rate as f32 / 2.0;
+        let hf_start = self.bandpass_hz.max(self.lfe_cutoff_hz);
+        let hf_end = self.height_hf_cap_hz.min(nyquist);
+        let freq_per_bin = self.sample_rate as f32 / self.fft_size as f32;
+
+        for i in 0..spectrum_size {
+            let freq = i as f32 * freq_per_bin;
+            let hf_ratio = if freq <= hf_start {
+                0.0
+            } else if freq >= hf_end {
+                1.0
+            } else {
+                (freq - hf_start) / (hf_end - hf_start)
+            };
+            self.height_freq_weights[i] = hf_ratio.powf(0.7);
+        }
+    }
+
+    /// Update cached safety_cap linear values from safety_cap_db
+    pub(super) fn update_safety_cap_cache(&mut self) {
+        if self.safety_cap_db > 0.0 {
+            self.safety_cap_linear = 10.0_f32.powf(self.safety_cap_db / 20.0);
+            self.safety_cap_min_scale = 10.0_f32.powf(-self.safety_cap_db / 20.0);
+        } else {
+            self.safety_cap_linear = 1.0;
+            self.safety_cap_min_scale = 0.0;
         }
     }
 

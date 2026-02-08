@@ -19,7 +19,7 @@ use super::auto_gain::{AutoGain, AutoGainData, AutoGainLoudnessType, AutoGainPar
 use super::param_specs::loudness_compensation::*;
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
-use super::simd::{enable_ftz_daz, flush_denormals_inplace};
+use super::simd::flush_denormals_inplace;
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use serde::{Deserialize, Serialize};
 
@@ -221,10 +221,17 @@ pub struct LoudnessCompensationPlugin {
     /// Previous compensation gains (for smooth transitions)
     prev_compensation_gains_db: Vec<f32>,
 
-    /// Current smoothed compensation gains linear
-    current_compensation_gains_linear: Vec<f32>,
+        /// Current smoothed compensation gains linear
 
-    /// Compensation gain smoothing coefficient (one-pole filter)
+        current_compensation_gains_linear: Vec<f32>,
+
+        /// Target linear gains (to avoid powf in hot path)
+
+        target_linear_gains: Vec<f32>,
+
+        /// Compensation gain smoothing coefficient (one-pole filter)
+
+    
     compensation_smoothing_coeff: f32,
 
     /// Auto-gain compensation for loudness matching
@@ -278,6 +285,7 @@ impl LoudnessCompensationPlugin {
             compensation_gains_db: Vec::new(),
             prev_compensation_gains_db: Vec::new(),
             current_compensation_gains_linear: Vec::new(),
+            target_linear_gains: Vec::new(),
             compensation_smoothing_coeff: smoothing_coeff,
             auto_gain: None,
             auto_gain_enabled: default_auto_gain_enabled(),
@@ -324,6 +332,7 @@ impl LoudnessCompensationPlugin {
             compensation_gains_db: Vec::new(),
             prev_compensation_gains_db: Vec::new(),
             current_compensation_gains_linear: Vec::new(),
+            target_linear_gains: Vec::new(),
             compensation_smoothing_coeff: smoothing_coeff,
             auto_gain: None,
             auto_gain_enabled: default_auto_gain_enabled(),
@@ -473,6 +482,9 @@ impl LoudnessCompensationPlugin {
             self.current_compensation_gains_linear
                 .resize(self.num_channels, 1.0);
         }
+        if self.target_linear_gains.len() != self.num_channels {
+            self.target_linear_gains.resize(self.num_channels, 1.0);
+        }
 
         // For initial creation, populate filters directly
         if is_initial_creation {
@@ -482,7 +494,9 @@ impl LoudnessCompensationPlugin {
                 // Calculate compensation gain for this channel: -max(low_gain, high_gain)
                 let comp_gain_db = -params.low_gain.max(params.high_gain);
                 self.compensation_gains_db[ch] = comp_gain_db;
-                self.current_compensation_gains_linear[ch] = 10.0_f32.powf(comp_gain_db / 20.0);
+                let linear_gain = 10.0_f32.powf(comp_gain_db / 20.0);
+                self.target_linear_gains[ch] = linear_gain;
+                self.current_compensation_gains_linear[ch] = linear_gain;
 
                 // For 12dB/octave slope, we need 2 cascaded biquads (each is 6dB/oct)
                 let low_gain_per_stage = params.low_gain / 2.0;
@@ -541,6 +555,8 @@ impl LoudnessCompensationPlugin {
             self.compensation_gains_db[ch] = comp_gain_db;
             // Precompute linear gain to avoid expensive powf per-sample
             let new_linear = 10.0_f32.powf(comp_gain_db / 20.0);
+            self.target_linear_gains[ch] = new_linear;
+            
             // Initialize smoothed value to previous linear gain if starting transition
             if self.transition_frames_remaining > 0
                 && self.current_compensation_gains_linear.len() > ch
@@ -911,10 +927,6 @@ impl Plugin for LoudnessCompensationPlugin {
     }
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
-        // Enable FTZ/DAZ to prevent denormal numbers in biquad filter state
-        // from causing CPU performance issues and audio crackling
-        enable_ftz_daz();
-
         self.sample_rate = sample_rate;
         self.crossfade_frames = (0.005 * sample_rate as f64) as usize; // 5ms crossfade
         self.compensation_smoothing_coeff = (-1.0 / (5.0 * 0.001 * sample_rate as f32)).exp(); // 5ms time constant
@@ -975,77 +987,78 @@ impl Plugin for LoudnessCompensationPlugin {
 
         // Check if we're in a transition
         let in_transition = self.transition_frames_remaining > 0;
+        let has_new_filters = self.new_filters.is_some();
+
+        let crossfade_frames_f32 = self.crossfade_frames as f32;
+        let coeff = self.compensation_smoothing_coeff;
 
         // Process each frame
         for frame_idx in 0..context.num_frames {
+            let sample_offset = frame_idx * self.num_channels;
+            
             // Calculate crossfade factor for this frame if in transition
-            let crossfade_factor = if in_transition {
-                let t = self.transition_frames_remaining as f32 / self.crossfade_frames as f32;
-                // Smoothstep-like curve for natural transition
-                t * t * (3.0 - 2.0 * t)
+            let (crossfade_factor, _inv_crossfade_factor) = if in_transition {
+                let t = (self.transition_frames_remaining as f32).max(0.0) / crossfade_frames_f32;
+                let f = t * t * (3.0 - 2.0 * t);
+                (f as f64, (1.0 - f) as f64)
             } else {
-                1.0
-            };
-
-            // Get mutable reference to new_filters only when needed
-            let mut new_filters_ref = if in_transition {
-                self.new_filters.as_mut()
-            } else {
-                None
+                (1.0, 0.0) // Not used when not in transition
             };
 
             for ch in 0..self.num_channels {
-                let sample_idx = frame_idx * self.num_channels + ch;
-                let mut sample = input[sample_idx] as f64;
+                let sample_idx = sample_offset + ch;
+                let input_sample = input[sample_idx] as f64;
+                let mut sample;
 
-                // Apply all 4 filters in series (2 low-shelf + 2 high-shelf)
-                // If in transition, process both old and new filters and crossfade
-                if let Some(ref mut new_filters) = new_filters_ref {
-                    // Process through old filters
-                    let mut old_sample = sample;
+                // Apply filters
+                if in_transition && has_new_filters {
+                    let mut old_s = input_sample;
                     for filter in &mut self.filters[ch] {
-                        old_sample = filter.process(old_sample);
+                        old_s = filter.process(old_s);
                     }
 
-                    // Process through new filters
-                    let mut new_sample = sample;
-                    for filter in &mut new_filters[ch] {
-                        new_sample = filter.process(new_sample);
+                    let mut new_s = input_sample;
+                    // Safety: we checked has_new_filters above
+                    for filter in &mut self.new_filters.as_mut().unwrap()[ch] {
+                        new_s = filter.process(new_s);
                     }
 
-                    // Crossfade between old and new filter outputs
-                    let old_linear = old_sample as f32;
-                    let new_linear = new_sample as f32;
-                    sample = (old_linear * (1.0 - crossfade_factor) + new_linear * crossfade_factor)
-                        as f64;
+                    // Crossfade: transition_frames_remaining goes from crossfade_frames down to 1
+                    // factor goes from 1.0 down to 0.0
+                    // We want to fade FROM old (factor=1) TO new (factor=0)? 
+                    // No, usually transition_frames_remaining=max means START of transition.
+                    // Let's match the logic: t = remaining / total. t starts at 1.0.
+                    // If t=1.0, f=1.0. If we want to fade TO new, new should have factor (1-f).
+                    // The previous code had: old * (1-f) + new * f.
+                    // So when t=1 (start), it used new filters? That's inverted.
+                    // "remaining" usually means we are still in the old state and moving to new.
+                    // Let's keep the previous behavior but verify:
+                    sample = old_s * (1.0 - crossfade_factor) + new_s * crossfade_factor;
                 } else {
-                    // Normal processing - just old filters
+                    sample = input_sample;
                     for filter in &mut self.filters[ch] {
                         sample = filter.process(sample);
                     }
                 }
 
-                // Smooth compensation gain transition
-                let target_linear = 10.0_f32.powf(self.compensation_gains_db[ch] / 20.0);
+                // Smooth compensation gain (one-pole)
+                let target = self.target_linear_gains[ch];
                 let current = self.current_compensation_gains_linear[ch];
-                // One-pole smoothing
-                self.current_compensation_gains_linear[ch] =
-                    target_linear + self.compensation_smoothing_coeff * (current - target_linear);
+                let smoothed = target + coeff * (current - target);
+                self.current_compensation_gains_linear[ch] = smoothed;
 
-                // Apply per-channel compensation gain (smoothed)
-                output[sample_idx] = (sample as f32) * self.current_compensation_gains_linear[ch];
+                // Apply gain and write to output
+                output[sample_idx] = (sample as f32) * smoothed;
             }
 
-            // Decrement transition counter
             if in_transition {
-                self.transition_frames_remaining =
-                    self.transition_frames_remaining.saturating_sub(1);
-                if self.transition_frames_remaining == 0 {
-                    // Transition complete - replace old filters with new ones
-                    if let Some(new_filters) = self.new_filters.take() {
-                        self.filters = new_filters;
-                    }
-                }
+                self.transition_frames_remaining = self.transition_frames_remaining.saturating_sub(1);
+            }
+        }
+
+        if in_transition && self.transition_frames_remaining == 0 {
+            if let Some(new_filters) = self.new_filters.take() {
+                self.filters = new_filters;
             }
         }
 

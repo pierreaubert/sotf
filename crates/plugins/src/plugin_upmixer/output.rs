@@ -28,7 +28,7 @@ impl UpmixerPlugin {
             }
 
             if max_abs > 0.0 {
-                let cap_linear = 10.0_f32.powf(self.safety_cap_db / 20.0);
+                let cap_linear = self.safety_cap_linear;
                 let effective_peak = max_abs * combined_scale;
                 // Guard against division by zero or negative values (defensive)
                 if effective_peak > 0.0 && effective_peak.is_finite() && effective_peak > cap_linear

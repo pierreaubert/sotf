@@ -3,7 +3,6 @@
 // ============================================================================
 
 use super::UpmixerPlugin;
-use crate::simd::complex_mul_inplace_simd;
 use rustfft::num_complex::Complex;
 
 impl UpmixerPlugin {
@@ -383,54 +382,4 @@ impl UpmixerPlugin {
         result
     }
 
-    /// Apply adaptive decorrelation to ambient signals
-    ///
-    /// Blends between decorrelated and original signals based on strength parameter.
-    /// Uses SIMD optimization for full decorrelation (strength >= 0.99).
-    pub(super) fn apply_adaptive_decorrelation(&mut self, start: usize, end: usize, strength: f32) {
-        // Fast path: full decorrelation (common case during steady-state)
-        if strength >= 0.99 {
-            let left_slice = &mut self.ambient_left[start..end];
-            let right_slice = &mut self.ambient_right[start..end];
-            let decor_left = &self.decorrelation_filter_left[start..end];
-            let decor_right = &self.decorrelation_filter_right[start..end];
-
-            complex_mul_inplace_simd(left_slice, decor_left);
-            complex_mul_inplace_simd(right_slice, decor_right);
-            return;
-        }
-
-        // Adaptive decorrelation: blend between decorrelated and original signals
-        //
-        // For each bin:
-        //   decorrelated = signal * decorrelation_filter
-        //   output = strength * decorrelated + (1 - strength) * signal
-        //
-        // This can be rewritten as:
-        //   output = signal * (strength * decorrelation_filter + (1 - strength) * identity)
-        //   output = signal * (strength * decorrelation_filter + (1 - strength))
-        //
-        // We compute the blended filter and apply it in one pass.
-
-        let identity_weight = 1.0 - strength;
-
-        for i in start..end {
-            let decor_l = self.decorrelation_filter_left[i];
-            let decor_r = self.decorrelation_filter_right[i];
-
-            // Blend: strength * decor + (1 - strength) * identity
-            // Identity is Complex::new(1.0, 0.0)
-            let blended_l = Complex::new(
-                strength * decor_l.re + identity_weight,
-                strength * decor_l.im,
-            );
-            let blended_r = Complex::new(
-                strength * decor_r.re + identity_weight,
-                strength * decor_r.im,
-            );
-
-            self.ambient_left[i] *= blended_l;
-            self.ambient_right[i] *= blended_r;
-        }
-    }
 }

@@ -222,6 +222,7 @@ pub fn complex_mul_simd(dst: &mut [Complex<f32>], src: &[Complex<f32>], hrtf: &[
 ///
 /// Computes: dst[i] *= hrtf[i] for all i
 #[inline]
+#[allow(dead_code)]
 pub fn complex_mul_inplace_simd(dst: &mut [Complex<f32>], hrtf: &[Complex<f32>]) {
     let len = dst.len();
 
@@ -671,16 +672,12 @@ pub fn enable_ftz_daz() -> bool {
 /// Flush denormals in complex buffer (applies to both real and imaginary parts)
 #[inline]
 pub fn flush_denormals_complex_inplace(samples: &mut [Complex<f32>]) {
-    const DENORM_THRESHOLD: f32 = 1e-30;
-
-    for sample in samples {
-        if sample.re.abs() < DENORM_THRESHOLD {
-            sample.re = 0.0;
-        }
-        if sample.im.abs() < DENORM_THRESHOLD {
-            sample.im = 0.0;
-        }
-    }
+    // A Complex<f32> is just two f32s (re and im)
+    // We can treat the whole buffer as a slice of f32 and use flush_denormals_inplace
+    let len = samples.len() * 2;
+    let ptr = samples.as_mut_ptr() as *mut f32;
+    let f32_samples = unsafe { std::slice::from_raw_parts_mut(ptr, len) };
+    flush_denormals_inplace(f32_samples);
 }
 
 #[cfg(test)]
