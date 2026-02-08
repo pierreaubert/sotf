@@ -1938,7 +1938,7 @@ pub fn compute_clarity_broadband(impulse: &[f32], sample_rate: f32) -> (f32, f32
     let c80 = if energy_80_inf > 1e-12 && energy_0_80 > 1e-12 {
         let ratio = energy_0_80 / energy_80_inf;
         (10.0 * ratio.log10()).clamp(-MAX_CLARITY_DB, MAX_CLARITY_DB)
-    } else if energy_0_80 > energy_80_inf {
+    } else if energy_80_inf > energy_0_80 {
         MAX_CLARITY_DB // Early energy dominates - excellent clarity
     } else {
         -MAX_CLARITY_DB // Late energy dominates - poor clarity
@@ -2193,6 +2193,62 @@ pub fn compute_spectrogram(
     let freqs: Vec<f32> = (0..num_bins).map(|i| i as f32 * freq_step).collect();
 
     (spectrogram, freqs, times)
+}
+
+/// Find a frequency point where the magnitude reaches a specific dB level
+///
+/// # Arguments
+/// * `frequencies` - Frequency points in Hz
+/// * `magnitude_db` - Magnitude in dB
+/// * `target_db` - The target level to find (e.g., -3.0)
+/// * `from_start` - If true, search from the beginning of the curve. If false, search from the end.
+///
+/// # Returns
+/// The interpolated frequency where the target dB is reached, or None if not found.
+pub fn find_db_point(
+    frequencies: &[f32],
+    magnitude_db: &[f32],
+    target_db: f32,
+    from_start: bool,
+) -> Option<f32> {
+    if frequencies.len() < 2 || frequencies.len() != magnitude_db.len() {
+        return None;
+    }
+
+    if from_start {
+        for i in 0..magnitude_db.len() - 1 {
+            let m0 = magnitude_db[i];
+            let m1 = magnitude_db[i + 1];
+
+            // Check if target_db is between m0 and m1
+            if (m0 <= target_db && target_db <= m1) || (m1 <= target_db && target_db <= m0) {
+                // Linear interpolation: m0 + t * (m1 - m0) = target_db
+                let denominator = m1 - m0;
+                if denominator.abs() < 1e-9 {
+                    return Some(frequencies[i]);
+                }
+                let t = (target_db - m0) / denominator;
+                return Some(frequencies[i] + t * (frequencies[i + 1] - frequencies[i]));
+            }
+        }
+    } else {
+        for i in (1..magnitude_db.len()).rev() {
+            let m0 = magnitude_db[i];
+            let m1 = magnitude_db[i - 1];
+
+            // Check if target_db is between m0 and m1
+            if (m0 <= target_db && target_db <= m1) || (m1 <= target_db && target_db <= m0) {
+                let denominator = m1 - m0;
+                if denominator.abs() < 1e-9 {
+                    return Some(frequencies[i]);
+                }
+                let t = (target_db - m0) / denominator;
+                return Some(frequencies[i] + t * (frequencies[i - 1] - frequencies[i]));
+            }
+        }
+    }
+
+    None
 }
 
 #[cfg(test)]

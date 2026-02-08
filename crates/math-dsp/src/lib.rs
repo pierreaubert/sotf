@@ -26,8 +26,9 @@ pub use analysis::{
     AnalysisResult, MicrophoneCompensation, WavAnalysisConfig, WavAnalysisOutput,
     analyze_recording, analyze_wav_buffer, analyze_wav_file, compute_clarity_broadband,
     compute_clarity_spectrum, compute_group_delay, compute_impulse_response_from_fr,
-    compute_rt60_broadband, compute_rt60_spectrum, compute_spectrogram, read_analysis_csv,
-    smooth_response_f32, smooth_response_f64, write_analysis_csv, write_wav_analysis_csv,
+    compute_rt60_broadband, compute_rt60_spectrum, compute_spectrogram, find_db_point,
+    read_analysis_csv, smooth_response_f32, smooth_response_f64, write_analysis_csv,
+    write_wav_analysis_csv,
 };
 
 pub use signals::{
