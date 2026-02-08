@@ -1119,10 +1119,38 @@ fn generate_random_source(
     }
 
     if is_multiple {
-        Ok((MeasurementSource::Multiple(file_strings), paths))
+        Ok((
+            autoeq::MeasurementSource::Multiple(autoeq::read::MeasurementMultiple {
+                measurements: file_strings
+                    .into_iter()
+                    .map(|s| autoeq::MeasurementRef::Path(PathBuf::from(s)))
+                    .collect(),
+                speaker_name: Some(random_speaker_name()),
+            }),
+            paths,
+        ))
     } else {
-        Ok((MeasurementSource::Single(file_strings[0].clone()), paths))
+        Ok((
+            autoeq::MeasurementSource::Single(autoeq::read::MeasurementSingle {
+                measurement: autoeq::MeasurementRef::Path(PathBuf::from(file_strings[0].clone())),
+                speaker_name: Some(random_speaker_name()),
+            }),
+            paths,
+        ))
     }
+}
+
+/// Generate a randomized but valid speaker model name
+fn random_speaker_name() -> String {
+    let brands = ["Genelec", "Neumann", "JBL", "Kef", "Revel", "Yamaha"];
+    let models = ["8361A", "KH-120", "708P", "LS50", "F208", "HS8"];
+    let mut rng = rand::thread_rng();
+    use rand::seq::IndexedRandom;
+    format!(
+        "{} {}",
+        brands.choose(&mut rng).unwrap(),
+        models.choose(&mut rng).unwrap()
+    )
 }
 
 /// Generate random speaker configuration

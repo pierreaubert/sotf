@@ -20,9 +20,10 @@ pub use solver::*;
 
 // Re-export common types from math-xem-common
 pub use math_audio_xem_common::{
-    CrossoverFilter, DirectivityPattern, FrequencyResult, LShapedRoom, ListeningPosition, Point3D,
-    RectangularRoom, RoomGeometry, RoomMesh, RoomSimulation, SimulationResults, SliceData, Source,
-    SurfaceElement, constants, log_space, pressure_to_spl, wavenumber,
+    BoundaryConfig, CrossoverFilter, DirectivityPattern, FrequencyResult, LShapedRoom,
+    ListeningPosition, Point3D, RectangularRoom, RoomGeometry, RoomMesh, RoomSimulation,
+    SimulationResults, SliceData, Source, SurfaceElement, constants, log_space, pressure_to_spl,
+    wavenumber,
 };
 // Re-export output utilities
 pub use math_audio_xem_common::{

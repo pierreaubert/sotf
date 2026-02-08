@@ -149,6 +149,7 @@ fn create_default_config() -> RoomConfig {
             spacing: "logarithmic".to_string(),
         },
         solver: SolverConfig::default(),
+        boundaries: BoundaryConfig::default(),
         visualization: VisualizationConfig::default(),
         metadata: MetadataConfig::default(),
     }
