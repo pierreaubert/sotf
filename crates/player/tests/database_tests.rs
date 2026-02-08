@@ -30,6 +30,8 @@ fn test_track(path: PathBuf, title: &str, artist: &str) -> Track {
         album_artist: None,
         ensemble: None,
         edition: None,
+        is_favorite: false,
+        play_count: 0,
     }
 }
 
@@ -70,6 +72,8 @@ fn test_track_with_metadata(
         album_artist: album_artist.map(|s| s.to_string()),
         ensemble: ensemble.map(|s| s.to_string()),
         edition: None,
+        is_favorite: false,
+        play_count: 0,
     }
 }
 
@@ -85,6 +89,7 @@ fn test_album(title: &str, year: Option<u32>, tracks: Vec<Track>) -> Album {
         play_count: 0,
         edition: None,
         dynamic_range: None,
+        is_favorite: false,
     }
 }
 
@@ -560,6 +565,7 @@ fn test_update_existing_album() {
         play_count: 0,
         edition: None,
         dynamic_range: None,
+        is_favorite: false,
     };
 
     db.save_albums(&[updated_album])

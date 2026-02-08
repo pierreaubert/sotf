@@ -513,6 +513,8 @@ impl PlayerView {
             };
 
             let track_count = album.tracks.len();
+            let album_id = album.id;
+            let album_is_favorite = album.is_favorite;
 
             let album_title_full = album.title.clone();
             let artist_raw = album.artist();
@@ -673,7 +675,38 @@ impl PlayerView {
                                                 .font_weight(FontWeight::MEDIUM)
                                                 .text_color(theme.text_secondary)
                                                 .child(format!("{}", channels)),
-                                        ),
+                                        )
+                                        // Album favorite heart
+                                        .when_some(album_id, |d, aid| {
+                                            d.child(
+                                                div()
+                                                    .id("album-heart")
+                                                    .cursor_pointer()
+                                                    .ml_2()
+                                                    .on_mouse_up(
+                                                        MouseButton::Left,
+                                                        cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                                                            view.state.update(cx, |state, _cx| {
+                                                                state.app.toggle_album_favorite(aid);
+                                                            });
+                                                            cx.notify();
+                                                        }),
+                                                    )
+                                                    .child(
+                                                        Icon::new(if album_is_favorite {
+                                                            IconName::HeartFilled
+                                                        } else {
+                                                            IconName::Heart
+                                                        })
+                                                        .xs()
+                                                        .color(if album_is_favorite {
+                                                            theme.accent
+                                                        } else {
+                                                            theme.text_muted
+                                                        }),
+                                                    ),
+                                            )
+                                        }),
                                 ),
                         ),
                 )
@@ -796,6 +829,9 @@ impl PlayerView {
                 let duration_str = format!("{}:{:02}", duration / 60, duration % 60);
                 let theme_c = theme.clone();
                 let track_path = track.path.clone();
+                let track_play_count = track.play_count;
+                let track_is_favorite = track.is_favorite;
+                let heart_track_path = track.path.clone();
 
                 all_elements.push(
                     div()
@@ -851,6 +887,50 @@ impl PlayerView {
                                 .whitespace_nowrap()
                                 .when(is_current, |d| d.font_weight(FontWeight::SEMIBOLD))
                                 .child(title),
+                        )
+                        // Play count (only if > 0)
+                        .when(track_play_count > 0, |d| {
+                            d.child(
+                                div()
+                                    .text_xs()
+                                    .text_color(if is_current {
+                                        theme_c.text_on_accent
+                                    } else {
+                                        theme_c.text_muted
+                                    })
+                                    .child(format!("#{}", track_play_count)),
+                            )
+                        })
+                        // Favorite heart icon
+                        .child(
+                            div()
+                                .id(SharedString::from(format!("heart-track-{}", idx)))
+                                .cursor_pointer()
+                                .on_mouse_up(
+                                    MouseButton::Left,
+                                    cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
+                                        let path = heart_track_path.clone();
+                                        view.state.update(cx, |state, _cx| {
+                                            state.app.toggle_track_favorite(&path);
+                                        });
+                                        cx.notify();
+                                    }),
+                                )
+                                .child(
+                                    Icon::new(if track_is_favorite {
+                                        IconName::HeartFilled
+                                    } else {
+                                        IconName::Heart
+                                    })
+                                    .xs()
+                                    .color(if track_is_favorite {
+                                        theme_c.accent
+                                    } else if is_current {
+                                        theme_c.text_on_accent
+                                    } else {
+                                        theme_c.text_muted
+                                    }),
+                                ),
                         )
                         .child(
                             div()

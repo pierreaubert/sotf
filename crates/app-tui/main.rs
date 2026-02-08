@@ -233,12 +233,16 @@ fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                     }
                 }
                 AppEvent::Tick => {
-                    // Get playback state (TUI doesn't use spectrum)
-                    let state = player.get_playback_state(false);
+                    let state = player.get_playback_state();
 
                     // Update app state
                     app.position_secs = state.position_secs;
-                    app.loudness_info = state.output_loudness;
+                    // Read loudness from cache using plugin chain's engine index
+                    app.loudness_info = app
+                        .plugin_chain
+                        .output_monitor_engine_index()
+                        .and_then(|idx| player.get_cached_plugin_data(idx))
+                        .and_then(|d| d.downcast_ref::<sotf_audio_player::LoudnessData>().cloned());
                     app.current_sample_rate = state.sample_rate;
                     app.needs_redraw = true; // Always redraw on tick to update meters/position
 

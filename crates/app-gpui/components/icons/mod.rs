@@ -50,6 +50,7 @@ pub enum IconName {
     // General
     Folder,
     Heart,
+    HeartFilled,
     Plug,
     SlidersHorizontal,
     User,
@@ -91,6 +92,7 @@ impl IconName {
             IconName::AudioWaveform => "icons/audio-waveform.svg",
             IconName::Folder => "icons/folder.svg",
             IconName::Heart => "icons/heart.svg",
+            IconName::HeartFilled => "icons/heart-filled.svg",
             IconName::Plug => "icons/plug.svg",
             IconName::SlidersHorizontal => "icons/sliders-horizontal.svg",
             IconName::User => "icons/user.svg",

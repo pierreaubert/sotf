@@ -205,6 +205,8 @@ pub struct Track {
     pub album_artist: Option<String>,
     pub ensemble: Option<String>,
     pub edition: Option<String>,
+    pub is_favorite: bool,
+    pub play_count: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -219,6 +221,7 @@ pub struct Album {
     pub play_count: usize,
     pub edition: Option<String>,
     pub dynamic_range: Option<f64>,
+    pub is_favorite: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1154,6 +1157,7 @@ impl MusicLibrary {
                                     play_count: 0,
                                     edition: metadata.edition.clone(),
                                     dynamic_range: None,
+                                    is_favorite: false,
                                 }
                             });
 
@@ -1180,6 +1184,8 @@ impl MusicLibrary {
                                 album_artist: metadata.album_artist,
                                 ensemble: metadata.ensemble,
                                 edition: metadata.edition.clone(),
+                                is_favorite: false,
+                                play_count: 0,
                             };
 
                             album.tracks.push(track);
@@ -1251,7 +1257,7 @@ impl MusicLibrary {
                     if album.artist().to_lowercase().contains(&query_lower) {
                         return true;
                     }
-                    // Match track titles
+                    // Match track titles, artists, and filenames
                     for track in &album.tracks {
                         if let Some(title) = &track.title {
                             if title.to_lowercase().contains(&query_lower) {
@@ -1261,6 +1267,12 @@ impl MusicLibrary {
                         // Match track artist
                         if let Some(artist) = &track.artist {
                             if artist.to_lowercase().contains(&query_lower) {
+                                return true;
+                            }
+                        }
+                        // Match track filename (for files with no metadata tags)
+                        if let Some(filename) = track.path.file_stem() {
+                            if filename.to_string_lossy().to_lowercase().contains(&query_lower) {
                                 return true;
                             }
                         }
@@ -1950,6 +1962,8 @@ mod tests {
             album_artist: None,
             ensemble: None,
             edition: None,
+            is_favorite: false,
+            play_count: 0,
         }
     }
 
@@ -1968,6 +1982,7 @@ mod tests {
             play_count: 0,
             edition: None,
             dynamic_range: None,
+            is_favorite: false,
         });
 
         lib.albums.push(Album {
@@ -1980,6 +1995,7 @@ mod tests {
             play_count: 0,
             edition: None,
             dynamic_range: None,
+            is_favorite: false,
         });
 
         lib.albums.push(Album {
@@ -1992,6 +2008,7 @@ mod tests {
             play_count: 0,
             edition: None,
             dynamic_range: None,
+            is_favorite: false,
         });
 
         // Search by artist (case insensitive)
@@ -2032,6 +2049,7 @@ mod tests {
             play_count: 0,
             edition: None,
             dynamic_range: None,
+            is_favorite: false,
         });
 
         // Test various case combinations
@@ -2219,12 +2237,15 @@ mod tests {
                 isrc: None,
                 ensemble: None,
                 edition: None,
+                is_favorite: false,
+                play_count: 0,
             }],
             album_art_path: None,
             album_art_thumbnail: None,
             play_count: 0,
             edition: None,
             dynamic_range: None,
+            is_favorite: false,
         }
     }
 

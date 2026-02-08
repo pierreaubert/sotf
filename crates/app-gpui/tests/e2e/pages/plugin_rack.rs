@@ -198,6 +198,8 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
                 album_artist: Some("Test Artist".to_string()),
                 ensemble: None,
                 edition: None,
+                is_favorite: false,
+                play_count: 0,
             };
 
             let album = sotf_audio_player::library::Album {
@@ -210,6 +212,7 @@ impl<'a, 'b> PluginRackPage<'a, 'b> {
                 play_count: 0,
                 edition: None,
                 dynamic_range: None,
+                is_favorite: false,
             };
 
             app.queue

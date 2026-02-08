@@ -414,6 +414,11 @@ fn handle_library_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             };
             path.map(PlayerCommand::Play)
         }
+        KeyCode::Char('f') => {
+            // Toggle favorite on selected album
+            app.toggle_selected_album_favorite();
+            None
+        }
         KeyCode::Char('q') => {
             app.current_screen = Screen::Queue;
             None
@@ -568,6 +573,11 @@ fn handle_queue_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
         KeyCode::Char(';') => {
             // Seek backward 30 seconds
             Some(PlayerCommand::SeekRelative(-30.0))
+        }
+        KeyCode::Char('f') => {
+            // Toggle favorite on current queue album
+            app.toggle_current_queue_album_favorite();
+            None
         }
         // Note: Volume controls (+/-) are now global (see handle_normal_mode)
         _ => None,

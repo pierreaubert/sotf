@@ -31,12 +31,15 @@ fn create_test_album(title: &str, artist: &str, composer: Option<&str>) -> Album
             album_artist: Some(artist.to_string()),
             ensemble: None,
             edition: None,
+            is_favorite: false,
+            play_count: 0,
         }],
         album_art_path: None,
         album_art_thumbnail: None,
         play_count: 0,
         edition: None,
         dynamic_range: None,
+        is_favorite: false,
     }
 }
 

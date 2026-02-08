@@ -94,32 +94,52 @@ impl PlayerView {
                             && (state.app.spectrum_visible
                                 || state.app.ui_state.current_screen == Screen::Spectrum);
 
-                        let playback_state =
-                            state.player.lock().get_playback_state(include_spectrum);
+                        let player = state.player.lock();
+                        let playback_state = player.get_playback_state();
 
                         state.app.playback.is_playing = playback_state.is_playing;
                         state.app.playback.position_secs = playback_state.position_secs;
                         state.app.playback.duration_secs = state.app.get_current_track_duration();
 
-                        if playback_state.input_loudness.is_some() {
-                            let _ = state.app.playback.input_loudness_info.take();
-                            state.app.playback.input_loudness_info = playback_state.input_loudness;
+                        // Read analyzer data from the shared cache (no audio pipeline blocking)
+                        if playback_state.is_playing {
+                            let chain = &state.app.plugin_state.plugin_chain;
+
+                            if let Some(idx) = chain.input_monitor_engine_index() {
+                                if let Some(data) = player.get_cached_plugin_data(idx) {
+                                    if let Some(loudness) = data.downcast_ref::<sotf_audio_player::LoudnessData>() {
+                                        state.app.playback.input_loudness_info = Some(loudness.clone());
+                                    }
+                                }
+                            }
+
+                            if let Some(idx) = chain.output_monitor_engine_index() {
+                                if let Some(data) = player.get_cached_plugin_data(idx) {
+                                    if let Some(loudness) = data.downcast_ref::<sotf_audio_player::LoudnessData>() {
+                                        state.app.playback.loudness_info = Some(loudness.clone());
+                                    }
+                                }
+                            }
+
+                            if include_spectrum {
+                                if let Some(idx) = chain.spectrum_engine_index() {
+                                    state.app.playback.spectrum_info = player
+                                        .get_cached_plugin_data(idx)
+                                        .and_then(|d| d.downcast_ref::<sotf_audio_player::SpectrumData>().cloned());
+                                }
+                            }
+
+                            if let Some(idx) = chain.compressor_engine_index() {
+                                state.app.playback.compressor_info = player
+                                    .get_cached_plugin_data(idx)
+                                    .and_then(|d| d.downcast_ref::<sotf_plugins::CompressorData>().cloned());
+                            }
                         }
 
-                        if playback_state.output_loudness.is_some() {
-                            let _ = state.app.playback.loudness_info.take();
-                            state.app.playback.loudness_info = playback_state.output_loudness;
-                        }
+                        drop(player);
 
                         state.app.update_level_meter_groups();
                         state.app.update_level_meter_peak_hold();
-
-                        if include_spectrum {
-                            let _ = state.app.playback.spectrum_info.take();
-                            state.app.playback.spectrum_info = playback_state.spectrum;
-                        }
-
-                        state.app.playback.compressor_info = playback_state.compressor;
 
                         if let Some(update_type) =
                             state.app.plugin_state.pending_plugin_update.take()
@@ -128,11 +148,17 @@ impl PlayerView {
                             Self::apply_plugin_update(state, update_type);
                         }
 
+                        // Check and record play history (30s threshold)
+                        if state.app.playback.is_playing && playback_state.is_playing {
+                            state.app.check_and_record_play();
+                        }
+
                         // Check if playback ended and auto-advance
                         if state.app.playback.is_playing
                             && !playback_state.is_playing
                             && state.app.playback.current_queue_index.is_some()
                         {
+                            state.app.stop_track_tracking();
                             if let Some(path) = state.app.next_track() {
                                 Self::play_track(state, path);
                             } else {
@@ -571,8 +597,9 @@ impl PlayerView {
         } else {
             state.app.playback.is_playing = true;
             if let Some(queue_index) = state.app.playback.current_queue_index {
-                state.app.record_playback_started(queue_index, Some(path));
+                state.app.record_playback_started(queue_index, Some(path.clone()));
             }
+            state.app.start_track_tracking(path);
         }
     }
     // Plugin parameter handling

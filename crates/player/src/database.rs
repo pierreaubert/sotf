@@ -129,7 +129,7 @@ impl MusicDatabase {
         log::info!("Current database schema version: {}", current_version);
 
         // Define all migrations
-        const LATEST_VERSION: i64 = 14;
+        const LATEST_VERSION: i64 = 16;
         let migrations = self.get_migrations();
 
         // Apply migrations sequentially from current version to latest
@@ -1107,6 +1107,142 @@ impl MusicDatabase {
             },
         );
 
+        // Migration 15: Add track path to FTS index for filename-based search
+        migrations.insert(
+            15,
+            Migration {
+                description: "Add track path to FTS index for filename-based search",
+                apply: |db| {
+                    // Drop old FTS table and triggers
+                    db.conn.execute("DROP TABLE IF EXISTS library_fts", [])?;
+                    db.conn.execute("DROP TRIGGER IF EXISTS tracks_ai", [])?;
+                    db.conn.execute("DROP TRIGGER IF EXISTS tracks_ad", [])?;
+                    db.conn.execute("DROP TRIGGER IF EXISTS tracks_au", [])?;
+                    db.conn.execute("DROP TRIGGER IF EXISTS albums_au", [])?;
+
+                    // Create new FTS table with track_path column
+                    db.conn.execute(
+                        "CREATE VIRTUAL TABLE IF NOT EXISTS library_fts USING fts5(
+                            artist,
+                            album_title,
+                            track_title,
+                            track_path,
+                            album_id UNINDEXED
+                        )",
+                        [],
+                    )?;
+
+                    // Create triggers with path included
+                    db.conn.execute(
+                        "CREATE TRIGGER tracks_ai AFTER INSERT ON tracks BEGIN
+                            INSERT INTO library_fts(artist, album_title, track_title, track_path, album_id)
+                            SELECT
+                                COALESCE(new.album_artist, new.artist, 'Unknown Artist'),
+                                a.title,
+                                new.title,
+                                new.path,
+                                new.album_id
+                            FROM albums a WHERE a.id = new.album_id;
+                        END;",
+                        [],
+                    )?;
+
+                    db.conn.execute(
+                        "CREATE TRIGGER tracks_ad AFTER DELETE ON tracks BEGIN
+                            DELETE FROM library_fts WHERE track_path = old.path;
+                        END;",
+                        [],
+                    )?;
+
+                    db.conn.execute(
+                        "CREATE TRIGGER tracks_au AFTER UPDATE ON tracks BEGIN
+                            DELETE FROM library_fts WHERE track_path = old.path;
+                            INSERT INTO library_fts(artist, album_title, track_title, track_path, album_id)
+                            SELECT
+                                COALESCE(new.album_artist, new.artist, 'Unknown Artist'),
+                                a.title,
+                                new.title,
+                                new.path,
+                                new.album_id
+                            FROM albums a WHERE a.id = new.album_id;
+                        END;",
+                        [],
+                    )?;
+
+                    db.conn.execute(
+                        "CREATE TRIGGER albums_au AFTER UPDATE ON albums BEGIN
+                            DELETE FROM library_fts WHERE album_id = old.id;
+                            INSERT INTO library_fts(artist, album_title, track_title, track_path, album_id)
+                            SELECT
+                                COALESCE(t.album_artist, t.artist, 'Unknown Artist'),
+                                new.title,
+                                t.title,
+                                t.path,
+                                t.album_id
+                            FROM tracks t WHERE t.album_id = new.id;
+                        END;",
+                        [],
+                    )?;
+
+                    // Rebuild FTS index with path data
+                    db.sync_fts_index()?;
+
+                    log::info!("Added track_path to FTS index for filename-based search");
+                    Ok(())
+                },
+            },
+        );
+
+        // Migration 16: Add favorites support for tracks and albums
+        migrations.insert(
+            16,
+            Migration {
+                description: "Add is_favorite column to tracks and albums tables",
+                apply: |db| {
+                    // Add is_favorite to tracks
+                    let has_track_fav = db
+                        .conn
+                        .prepare("SELECT is_favorite FROM tracks LIMIT 1")
+                        .is_ok();
+
+                    if !has_track_fav {
+                        db.conn.execute(
+                            "ALTER TABLE tracks ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0",
+                            [],
+                        )?;
+                        log::info!("Added is_favorite column to tracks table");
+                    }
+
+                    // Add is_favorite to albums
+                    let has_album_fav = db
+                        .conn
+                        .prepare("SELECT is_favorite FROM albums LIMIT 1")
+                        .is_ok();
+
+                    if !has_album_fav {
+                        db.conn.execute(
+                            "ALTER TABLE albums ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0",
+                            [],
+                        )?;
+                        log::info!("Added is_favorite column to albums table");
+                    }
+
+                    // Create indexes for favorite queries
+                    db.conn.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_tracks_favorite ON tracks(is_favorite)",
+                        [],
+                    )?;
+                    db.conn.execute(
+                        "CREATE INDEX IF NOT EXISTS idx_albums_favorite ON albums(is_favorite)",
+                        [],
+                    )?;
+
+                    log::info!("Added favorites support to tracks and albums");
+                    Ok(())
+                },
+            },
+        );
+
         migrations
     }
 
@@ -1161,12 +1297,14 @@ impl MusicDatabase {
         self.conn.execute("DELETE FROM library_fts", [])?;
 
         // Rebuild from tracks and albums tables
+        // Include track_path so filenames are searchable (for files with no metadata tags)
         self.conn.execute(
-            "INSERT INTO library_fts(artist, album_title, track_title, album_id)
+            "INSERT INTO library_fts(artist, album_title, track_title, track_path, album_id)
              SELECT
                 COALESCE(t.album_artist, t.artist, 'Unknown Artist'),
                 a.title,
                 t.title,
+                t.path,
                 t.album_id
              FROM tracks t
              JOIN albums a ON t.album_id = a.id",
@@ -1198,7 +1336,9 @@ impl MusicDatabase {
         // Note: We still select artist from albums for backwards compatibility with old databases,
         // but we don't use it - artist is now derived from tracks
         let mut albums_stmt = self.conn.prepare(
-            "SELECT id, title, year, album_art_path, album_art_thumbnail FROM albums ORDER BY title",
+            "SELECT id, title, year, album_art_path, album_art_thumbnail,
+                    COALESCE(is_favorite, 0)
+             FROM albums ORDER BY title",
         )?;
 
         let mut albums = Vec::new();
@@ -1209,14 +1349,16 @@ impl MusicDatabase {
                 row.get::<_, Option<i64>>(2)?,     // year
                 row.get::<_, Option<String>>(3)?,  // album_art_path
                 row.get::<_, Option<Vec<u8>>>(4)?, // album_art_thumbnail
+                row.get::<_, i64>(5)?,             // is_favorite
             ))
         })?;
 
         // Get all play counts at once for efficiency
         let play_counts = self.get_all_album_play_counts()?;
+        let track_play_counts = self.get_all_track_play_counts()?;
 
         for album_row in album_rows {
-            let (album_id, title, year, album_art_path, album_art_thumbnail) = album_row?;
+            let (album_id, title, year, album_art_path, album_art_thumbnail, album_is_favorite) = album_row?;
 
             // Load tracks for this album (now including artist)
             let mut tracks_stmt = self.conn.prepare(
@@ -1224,7 +1366,8 @@ impl MusicDatabase {
                         sample_rate, bit_depth,
                         replay_gain, replay_peak, album_gain, album_peak, waveform,
                         genre, composer, disc_number, conductor, performer,
-                        isrc, album_artist, ensemble
+                        isrc, album_artist, ensemble,
+                        COALESCE(is_favorite, 0)
                  FROM tracks
                  WHERE album_id = ?1
                  ORDER BY disc_number, track_number",
@@ -1232,8 +1375,14 @@ impl MusicDatabase {
 
             let tracks = tracks_stmt
                 .query_map(params![album_id], |row| {
+                    let path_str = row.get::<_, String>(0)?;
+                    let is_fav = row.get::<_, i64>(21)? != 0;
+                    let play_count = track_play_counts
+                        .get(&path_str)
+                        .copied()
+                        .unwrap_or(0);
                     Ok(Track {
-                        path: PathBuf::from(row.get::<_, String>(0)?),
+                        path: PathBuf::from(path_str),
                         title: row.get::<_, Option<String>>(1)?,
                         artist: row.get::<_, Option<String>>(2)?,
                         track_number: row.get::<_, Option<i64>>(3)?.map(|n| n as u32),
@@ -1255,6 +1404,8 @@ impl MusicDatabase {
                         album_artist: row.get::<_, Option<String>>(19)?,
                         ensemble: row.get::<_, Option<String>>(20)?,
                         edition: None,
+                        is_favorite: is_fav,
+                        play_count,
                     })
                 })?
                 .collect::<SqlResult<Vec<_>>>()?;
@@ -1271,6 +1422,7 @@ impl MusicDatabase {
                 play_count,
                 edition: None,
                 dynamic_range: None,
+                is_favorite: album_is_favorite != 0,
             });
         }
 
@@ -1927,6 +2079,66 @@ impl MusicDatabase {
         )?;
 
         Ok(result.map(|t| t as u64))
+    }
+
+    // ==================== Favorites Methods ====================
+
+    /// Toggle favorite status for a track, returns the new favorite state
+    pub fn toggle_track_favorite(&self, track_path: &Path) -> SqlResult<bool> {
+        let path_str = track_path.to_string_lossy();
+        self.conn.execute(
+            "UPDATE tracks SET is_favorite = CASE WHEN is_favorite = 0 THEN 1 ELSE 0 END WHERE path = ?1",
+            params![path_str.as_ref()],
+        )?;
+        self.is_track_favorite(track_path)
+    }
+
+    /// Toggle favorite status for an album, returns the new favorite state
+    pub fn toggle_album_favorite(&self, album_id: i64) -> SqlResult<bool> {
+        self.conn.execute(
+            "UPDATE albums SET is_favorite = CASE WHEN is_favorite = 0 THEN 1 ELSE 0 END WHERE id = ?1",
+            params![album_id],
+        )?;
+        self.is_album_favorite(album_id)
+    }
+
+    /// Check if a track is favorited
+    pub fn is_track_favorite(&self, track_path: &Path) -> SqlResult<bool> {
+        let path_str = track_path.to_string_lossy();
+        let fav: i64 = self.conn.query_row(
+            "SELECT COALESCE(is_favorite, 0) FROM tracks WHERE path = ?1",
+            params![path_str.as_ref()],
+            |row| row.get(0),
+        )?;
+        Ok(fav != 0)
+    }
+
+    /// Check if an album is favorited
+    pub fn is_album_favorite(&self, album_id: i64) -> SqlResult<bool> {
+        let fav: i64 = self.conn.query_row(
+            "SELECT COALESCE(is_favorite, 0) FROM albums WHERE id = ?1",
+            params![album_id],
+            |row| row.get(0),
+        )?;
+        Ok(fav != 0)
+    }
+
+    /// Get play counts for all tracks
+    /// Returns a HashMap of track_path -> play_count
+    pub fn get_all_track_play_counts(&self) -> SqlResult<std::collections::HashMap<String, usize>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT track_path, COUNT(*) as play_count
+             FROM play_history
+             GROUP BY track_path",
+        )?;
+
+        let counts = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as usize))
+            })?
+            .collect::<SqlResult<std::collections::HashMap<_, _>>>()?;
+
+        Ok(counts)
     }
 
     // ==================== Playlist Methods ====================

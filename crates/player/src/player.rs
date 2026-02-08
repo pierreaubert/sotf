@@ -1,8 +1,7 @@
 use sotf_audio::engine::PluginConfig;
 use sotf_audio::manager::{AudioEngineManager, StreamingEvent, StreamingState};
-use sotf_audio::{LoudnessData, SpectrumData};
-use sotf_plugins::CompressorData;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 /// Batched playback state to reduce mutex locking
 #[derive(Debug, Clone)]
@@ -10,58 +9,18 @@ pub struct PlaybackState {
     pub position_secs: f64,
     pub is_playing: bool,
     pub sample_rate: Option<u32>,
-    pub input_loudness: Option<LoudnessData>,
-    pub output_loudness: Option<LoudnessData>,
-    pub spectrum: Option<SpectrumData>,
-    pub compressor: Option<CompressorData>,
     pub last_error: Option<String>,
 }
 
 pub struct Player {
     manager: AudioEngineManager,
-    input_loudness_index: Option<usize>,
-    output_loudness_index: Option<usize>,
-    spectrum_index: Option<usize>,
-    compressor_index: Option<usize>,
 }
 
 impl Player {
     pub fn new() -> Self {
         Self {
             manager: AudioEngineManager::with_signal_watching(true),
-            input_loudness_index: None,
-            output_loudness_index: None,
-            spectrum_index: None,
-            compressor_index: None,
         }
-    }
-
-    fn update_analyzer_indices(&mut self, plugins: &[PluginConfig]) {
-        // Find all loudness monitors
-        let loudness_indices: Vec<usize> = plugins
-            .iter()
-            .enumerate()
-            .filter(|(_, p)| p.plugin_type == "loudness_monitor")
-            .map(|(i, _)| i)
-            .collect();
-
-        if loudness_indices.is_empty() {
-            self.input_loudness_index = None;
-            self.output_loudness_index = None;
-        } else if loudness_indices.len() == 1 {
-            // If only one monitor, treat it as output (default behavior)
-            self.input_loudness_index = None;
-            self.output_loudness_index = Some(loudness_indices[0]);
-        } else {
-            // First one is input, last one is output
-            self.input_loudness_index = Some(loudness_indices[0]);
-            self.output_loudness_index = Some(*loudness_indices.last().unwrap());
-        }
-
-        self.spectrum_index = plugins
-            .iter()
-            .position(|p| p.plugin_type == "spectrum_analyzer");
-        self.compressor_index = plugins.iter().position(|p| p.plugin_type == "compressor");
     }
 
     pub fn load_and_play(
@@ -82,9 +41,6 @@ impl Player {
         output_device: Option<String>,
         position: Option<f64>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        // Update analyzer indices
-        self.update_analyzer_indices(&plugins);
-
         // Stop current playback if any
         self.manager.stop()?;
 
@@ -102,9 +58,6 @@ impl Player {
         &mut self,
         plugins: Vec<PluginConfig>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        // Update analyzer indices
-        self.update_analyzer_indices(&plugins);
-
         match self.manager.update_plugin_chain(plugins) {
             Ok(()) => Ok(()),
             Err(e) if e == "No engine running" => {
@@ -173,34 +126,12 @@ impl Player {
         matches!(state, StreamingState::Playing)
     }
 
-    fn get_loudness_at_index(&self, index_opt: Option<usize>) -> Option<LoudnessData> {
-        if let Some(index) = index_opt
-            && let Ok(data) = self.manager.get_plugin_data(index)
-            && let Some(loudness) = data.downcast_ref::<LoudnessData>()
-        {
-            return Some(loudness.clone());
-        }
-        None
-    }
-
-    pub fn get_spectrum(&self) -> Option<SpectrumData> {
-        if let Some(index) = self.spectrum_index
-            && let Ok(data) = self.manager.get_plugin_data(index)
-            && let Some(spectrum) = data.downcast_ref::<SpectrumData>()
-        {
-            return Some(spectrum.clone());
-        }
-        None
-    }
-
-    pub fn get_compressor(&self) -> Option<CompressorData> {
-        if let Some(index) = self.compressor_index
-            && let Ok(data) = self.manager.get_plugin_data(index)
-            && let Some(compressor) = data.downcast_ref::<CompressorData>()
-        {
-            return Some(compressor.clone());
-        }
-        None
+    /// Get cached plugin data by engine index without blocking the audio pipeline.
+    pub fn get_cached_plugin_data(
+        &self,
+        index: usize,
+    ) -> Option<Arc<dyn std::any::Any + Send + Sync>> {
+        self.manager.get_cached_plugin_data(index)
     }
 
     pub fn set_output_device(
@@ -259,9 +190,6 @@ impl Player {
         output_device: Option<String>,
         sample_rate: u32,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        // Update analyzer indices
-        self.update_analyzer_indices(&plugins);
-
         // Stop current playback if any
         self.manager.stop()?;
 
@@ -276,9 +204,9 @@ impl Player {
         Ok(())
     }
 
-    /// Get all playback state in a single call
-    /// No extra locking - AudioEngineManager handles internal synchronization
-    pub fn get_playback_state(&self, include_spectrum: bool) -> PlaybackState {
+    /// Get basic playback state in a single call.
+    /// Plugin data should be queried separately via `get_cached_plugin_data`.
+    pub fn get_playback_state(&self) -> PlaybackState {
         // Drain any pending streaming events and capture the last error (if any)
         let mut last_error: Option<String> = None;
         for event in self.manager.drain_events() {
@@ -292,39 +220,10 @@ impl Player {
         let is_playing = matches!(state, StreamingState::Playing);
         let sample_rate = self.manager.get_audio_info().map(|info| info.spec.sample_rate);
 
-        // Only query analyzers when actually playing to reduce overhead
-        let input_loudness = if is_playing {
-            self.get_loudness_at_index(self.input_loudness_index)
-        } else {
-            None
-        };
-
-        let output_loudness = if is_playing {
-            self.get_loudness_at_index(self.output_loudness_index)
-        } else {
-            None
-        };
-
-        let spectrum = if include_spectrum && is_playing {
-            self.get_spectrum()
-        } else {
-            None
-        };
-
-        let compressor = if is_playing {
-            self.get_compressor()
-        } else {
-            None
-        };
-
         PlaybackState {
             position_secs,
             is_playing,
             sample_rate,
-            input_loudness,
-            output_loudness,
-            spectrum,
-            compressor,
             last_error,
         }
     }
@@ -343,14 +242,11 @@ mod tests {
     #[test]
     fn playback_state_defaults_are_sane() {
         let player = Player::new();
-        let state = player.get_playback_state(false);
+        let state = player.get_playback_state();
 
         assert_eq!(state.position_secs, 0.0);
         assert!(!state.is_playing);
         assert!(state.sample_rate.is_none());
-        assert!(state.input_loudness.is_none());
-        assert!(state.output_loudness.is_none());
-        assert!(state.spectrum.is_none());
         assert!(state.last_error.is_none());
     }
 

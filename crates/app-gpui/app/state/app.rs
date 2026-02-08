@@ -196,6 +196,11 @@ pub struct App {
 
     /// Event sourcing for playback state
     pub playback_events: super::playback_events::PlaybackEventStore,
+
+    // Play tracking for statistics (30s threshold)
+    pub current_track_path: Option<std::path::PathBuf>,
+    pub current_track_start_time: Option<std::time::Instant>,
+    pub current_track_already_recorded: bool,
 }
 
 /// GPUI-compatible state wrapper
@@ -284,6 +289,9 @@ impl App {
             shared_state: Arc::new(super::SharedState::new()),
             state_history: StateHistory::new(),
             playback_events: super::playback_events::PlaybackEventStore::new(),
+            current_track_path: None,
+            current_track_start_time: None,
+            current_track_already_recorded: false,
         };
 
         // Initialize default stereo meter layout so meters are visible before audio starts
@@ -445,6 +453,134 @@ impl App {
     /// Get playback event summary for debugging
     pub fn playback_event_summary(&self) -> super::playback_events::EventStoreSummary {
         self.playback_events.summary()
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Play tracking for statistics (30s threshold)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Start tracking a new track for play statistics
+    pub fn start_track_tracking(&mut self, track_path: std::path::PathBuf) {
+        self.current_track_path = Some(track_path);
+        self.current_track_start_time = Some(std::time::Instant::now());
+        self.current_track_already_recorded = false;
+    }
+
+    /// Check if current track has been played for 30+ seconds and record it
+    pub fn check_and_record_play(&mut self) {
+        if self.current_track_already_recorded {
+            return;
+        }
+
+        if let (Some(path), Some(start_time)) =
+            (&self.current_track_path, self.current_track_start_time)
+        {
+            let elapsed = start_time.elapsed().as_secs();
+            if elapsed >= 30 {
+                if let Some(db) = self.library_state.library.get_database() {
+                    let duration = self.playback.position_secs as u64;
+                    if let Err(e) = db.record_play(path, duration) {
+                        log::error!("Failed to record play: {}", e);
+                    } else {
+                        log::info!("Recorded play for {:?} ({}s)", path, duration);
+                        self.current_track_already_recorded = true;
+
+                        // Update in-memory play_count so UI reflects immediately
+                        let path = path.clone();
+                        for item in &mut self.queue {
+                            for track in &mut item.album.tracks {
+                                if track.path == path {
+                                    track.play_count += 1;
+                                }
+                            }
+                        }
+                        for album in &mut self.library_state.library.albums {
+                            for track in &mut album.tracks {
+                                if track.path == path {
+                                    track.play_count += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Stop tracking the current track (called when track changes or stops)
+    pub fn stop_track_tracking(&mut self) {
+        self.current_track_path = None;
+        self.current_track_start_time = None;
+        self.current_track_already_recorded = false;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Favorites
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Toggle favorite status for a track and update in-memory state
+    pub fn toggle_track_favorite(&mut self, track_path: &std::path::Path) {
+        let new_state = if let Some(db) = self.library_state.library.get_database() {
+            match db.toggle_track_favorite(track_path) {
+                Ok(state) => state,
+                Err(e) => {
+                    log::error!("Failed to toggle track favorite: {}", e);
+                    return;
+                }
+            }
+        } else {
+            return;
+        };
+
+        // Update in queue
+        for item in &mut self.queue {
+            for track in &mut item.album.tracks {
+                if track.path == track_path {
+                    track.is_favorite = new_state;
+                }
+            }
+        }
+
+        // Update in library cache
+        for album in &mut self.library_state.library.albums {
+            for track in &mut album.tracks {
+                if track.path == track_path {
+                    track.is_favorite = new_state;
+                }
+            }
+        }
+    }
+
+    /// Toggle favorite status for an album and update in-memory state
+    pub fn toggle_album_favorite(&mut self, album_id: i64) {
+        let new_state = if let Some(db) = self.library_state.library.get_database() {
+            match db.toggle_album_favorite(album_id) {
+                Ok(state) => state,
+                Err(e) => {
+                    log::error!("Failed to toggle album favorite: {}", e);
+                    return;
+                }
+            }
+        } else {
+            return;
+        };
+
+        // Update in queue
+        for item in &mut self.queue {
+            if item.album.id == Some(album_id) {
+                item.album.is_favorite = new_state;
+            }
+        }
+
+        // Update in library cache
+        for album in &mut self.library_state.library.albums {
+            if album.id == Some(album_id) {
+                album.is_favorite = new_state;
+            }
+        }
+
+        // Invalidate library cache so sorted views update
+        self.library_state.invalidate_cache();
     }
 
     /// Load library from database if available

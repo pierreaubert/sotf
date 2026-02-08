@@ -3,6 +3,7 @@
 //! A reusable RenderOnce component for displaying album information.
 //! Used in both grid and list views.
 
+use crate::app::AppState;
 use crate::components::icons::{Icon, IconName};
 use crate::theme::Theme;
 use gpui::prelude::*;
@@ -65,6 +66,8 @@ pub struct AlbumCard {
     mode: AlbumCardMode,
     /// Theme reference
     theme: Theme,
+    /// App state entity for favorite toggling
+    state: Option<Entity<AppState>>,
 }
 
 impl AlbumCard {
@@ -76,12 +79,19 @@ impl AlbumCard {
             is_selected,
             mode: AlbumCardMode::Grid,
             theme,
+            state: None,
         }
     }
 
     /// Set the display mode
     pub fn mode(mut self, mode: AlbumCardMode) -> Self {
         self.mode = mode;
+        self
+    }
+
+    /// Set the app state entity for favorite toggling
+    pub fn state(mut self, state: Entity<AppState>) -> Self {
+        self.state = Some(state);
         self
     }
 }
@@ -138,8 +148,50 @@ impl AlbumCard {
         dr.map(|d| format!("{:.0}", d))
     }
 
-    /// Build the metadata line: "FLAC 24/44.1k [DR icon]14 #20"
-    fn build_metadata_line(album: &Album, theme: &Theme) -> impl IntoElement {
+    /// Build a clickable heart icon for favorite toggling
+    fn build_heart_icon(
+        album: &Album,
+        index: usize,
+        theme: &Theme,
+        state: &Option<Entity<AppState>>,
+    ) -> Stateful<Div> {
+        let is_fav = album.is_favorite;
+        let album_id = album.id;
+        let heart = div()
+            .id(SharedString::from(format!("album-fav-{}", index)))
+            .cursor_pointer()
+            .child(
+                Icon::new(if is_fav {
+                    IconName::HeartFilled
+                } else {
+                    IconName::Heart
+                })
+                .xs()
+                .color(if is_fav {
+                    theme.accent
+                } else {
+                    theme.text_muted
+                }),
+            );
+
+        if let (Some(aid), Some(state)) = (album_id, state.clone()) {
+            heart.on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
+                state.update(cx, |state, _cx| {
+                    state.app.toggle_album_favorite(aid);
+                });
+            })
+        } else {
+            heart
+        }
+    }
+
+    /// Build the metadata line: "FLAC 24/44.1k [DR icon]14 #20 [heart]"
+    fn build_metadata_line(
+        album: &Album,
+        index: usize,
+        theme: &Theme,
+        state: &Option<Entity<AppState>>,
+    ) -> impl IntoElement {
         let format = Self::get_format(album);
         let sample_info = Self::format_sample_info(album);
         let dr = Self::format_dr(album.dynamic_range);
@@ -173,6 +225,8 @@ impl AlbumCard {
             // Track count
             .child("#")
             .child(track_count.to_string())
+            // Favorite heart (always visible)
+            .child(Self::build_heart_icon(album, index, theme, state))
     }
 
     fn render_grid(self) -> AnyElement {
@@ -180,7 +234,8 @@ impl AlbumCard {
         let card_width = 140.0;
         let theme = self.theme;
         let album = self.album;
-        // has_thumbnail no longer needed - we use direct pattern matching now
+        let index = self.index;
+        let state = self.state;
 
         // Metadata for grid view (smaller font)
         let format = Self::get_format(&album);
@@ -189,7 +244,7 @@ impl AlbumCard {
         let track_count = album.tracks.len();
 
         div()
-            .id(("album-card", self.index))
+            .id(("album-card", index))
             .w(px(card_width))
             .rounded_lg()
             .cursor_pointer()
@@ -256,7 +311,7 @@ impl AlbumCard {
                             .whitespace_nowrap()
                             .child(album.artist()),
                     )
-                    // Metadata line: FORMAT SAMPLE DR #count
+                    // Metadata line: FORMAT SAMPLE DR #count [heart]
                     .child(
                         div()
                             .flex()
@@ -285,7 +340,9 @@ impl AlbumCard {
                             })
                             // Track count - use static prefix
                             .child("#")
-                            .child(track_count.to_string()),
+                            .child(track_count.to_string())
+                            // Favorite heart (always visible, clickable)
+                            .child(Self::build_heart_icon(&album, index, &theme, &state)),
                     ),
             )
             .into_any_element()
@@ -294,9 +351,11 @@ impl AlbumCard {
     fn render_list(self) -> AnyElement {
         let theme = self.theme;
         let album = self.album;
+        let index = self.index;
+        let state = self.state;
 
         div()
-            .id(("album-row", self.index))
+            .id(("album-row", index))
             .w_full()
             .p_3()
             .rounded_md()
@@ -324,8 +383,8 @@ impl AlbumCard {
                             .text_color(theme.text_secondary)
                             .child(album.artist()),
                     )
-                    // Metadata line: FORMAT [DR icon]DR #count
-                    .child(Self::build_metadata_line(&album, &theme)),
+                    // Metadata line: FORMAT [DR icon]DR #count [heart]
+                    .child(Self::build_metadata_line(&album, index, &theme, &state)),
             )
             .into_any_element()
     }
@@ -333,9 +392,11 @@ impl AlbumCard {
     fn render_compact(self) -> AnyElement {
         let theme = self.theme;
         let album = self.album;
+        let index = self.index;
+        let state = self.state;
 
         div()
-            .id(("album-compact", self.index))
+            .id(("album-compact", index))
             .w_full()
             .pl_8()
             .p_2()
@@ -364,10 +425,14 @@ impl AlbumCard {
                     )
                     .child(
                         div()
+                            .flex()
+                            .items_center()
+                            .gap_1()
                             .text_xs()
                             .text_color(theme.text_secondary)
                             .child("#")
-                            .child(album.tracks.len().to_string()),
+                            .child(album.tracks.len().to_string())
+                            .child(Self::build_heart_icon(&album, index, &theme, &state)),
                     ),
             )
             .into_any_element()

@@ -100,7 +100,11 @@ fn plugin_color(plugin_type: &PluginType, theme: &crate::theme::Theme) -> Rgba {
     }
 }
 
-fn plugin_icon(plugin_type: &PluginType) -> &'static str {
+fn plugin_icon(
+    plugin_type: &PluginType,
+    is_input_mon: bool,
+    is_output_mon: bool,
+) -> &'static str {
     match plugin_type {
         PluginType::EQ => "≈",
         PluginType::Gain => "▲",
@@ -115,7 +119,15 @@ fn plugin_icon(plugin_type: &PluginType) -> &'static str {
         PluginType::FletcherMunson => "🎧",
         PluginType::BinauralDecoder => "◎",
         PluginType::Convolution => "∿",
-        PluginType::LoudnessMonitor => "◐",
+        PluginType::LoudnessMonitor => {
+            if is_input_mon {
+                "◁" // Input monitor - left-pointing triangle
+            } else if is_output_mon {
+                "▷" // Output monitor - right-pointing triangle
+            } else {
+                "◐" // User-added monitor
+            }
+        }
         PluginType::SpectrumAnalyzer => "▓",
         PluginType::ChannelMuteSolo => "◧",
         PluginType::Matrix => "⊞",
@@ -130,7 +142,7 @@ fn plugin_icon(plugin_type: &PluginType) -> &'static str {
     }
 }
 
-fn short_name(plugin_type: &PluginType) -> &'static str {
+fn short_name(plugin_type: &PluginType, is_input_mon: bool, is_output_mon: bool) -> &'static str {
     match plugin_type {
         PluginType::EQ => "Equalizer",
         PluginType::Gain => "Gain",
@@ -145,7 +157,15 @@ fn short_name(plugin_type: &PluginType) -> &'static str {
         PluginType::FletcherMunson => "F-M EQ",
         PluginType::BinauralDecoder => "Binaural",
         PluginType::Convolution => "Convolution",
-        PluginType::LoudnessMonitor => "Monitor",
+        PluginType::LoudnessMonitor => {
+            if is_input_mon {
+                "In Monitor"
+            } else if is_output_mon {
+                "Out Monitor"
+            } else {
+                "Monitor"
+            }
+        }
         PluginType::SpectrumAnalyzer => "Spectrum",
         PluginType::ChannelMuteSolo => "Mixer",
         PluginType::Matrix => "Matrix",
@@ -300,18 +320,19 @@ impl PlayerView {
     fn render_plugin_rack(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let (plugins_data, selected_idx, theme) = {
             let state = self.state.read(cx);
-            let plugins: Vec<_> = state
-                .app
-                .plugin_state
-                .plugin_chain
+            let chain = &state.app.plugin_state.plugin_chain;
+            let plugins: Vec<_> = chain
                 .plugins()
                 .iter()
-                .map(|p| {
+                .enumerate()
+                .map(|(i, p)| {
                     (
                         p.plugin_type().clone(),
                         p.enabled,
                         p.plugin_type().name().to_string(),
                         p.is_permanent(),
+                        chain.is_input_monitor(i),
+                        chain.is_output_monitor(i),
                     )
                 })
                 .collect();
@@ -326,18 +347,22 @@ impl PlayerView {
         let modules_info: Vec<_> = plugins_data
             .iter()
             .enumerate()
-            .map(|(idx, (pt, enabled, name, permanent))| {
-                (
-                    idx,
-                    plugin_color(pt, &theme),
-                    plugin_icon(pt),
-                    name.clone(),
-                    *enabled,
-                    selected_idx == idx,
-                    pt.clone(), // Include plugin type for short_name
-                    *permanent, // Include permanent flag
-                )
-            })
+            .map(
+                |(idx, (pt, enabled, name, permanent, is_input_mon, is_output_mon))| {
+                    (
+                        idx,
+                        plugin_color(pt, &theme),
+                        plugin_icon(pt, *is_input_mon, *is_output_mon),
+                        name.clone(),
+                        *enabled,
+                        selected_idx == idx,
+                        pt.clone(),       // Include plugin type for short_name
+                        *permanent,       // Include permanent flag
+                        *is_input_mon,    // Input monitor flag
+                        *is_output_mon,   // Output monitor flag
+                    )
+                },
+            )
             .collect();
 
         let is_empty = plugins_data.is_empty();
@@ -416,7 +441,7 @@ impl PlayerView {
                     // Input Meter removed from rack strip (moved to detail panel)
                     // Plugin modules - inline creation with drag-and-drop
                     .children(modules_info.into_iter().map(
-                        |(idx, color, icon, name, enabled, is_selected, plugin_type, is_permanent)| {
+                        |(idx, color, icon, name, enabled, is_selected, plugin_type, is_permanent, is_input_mon, is_output_mon)| {
                             let theme_c = theme.clone();
                             let drag_info = PluginDragInfo {
                                 source_index: idx,
@@ -773,7 +798,7 @@ impl PlayerView {
                                                 .text_align(TextAlign::Center)
                                                 .overflow_hidden()
                                                 .text_ellipsis()
-                                                .child(short_name(&plugin_type)),
+                                                .child(short_name(&plugin_type, is_input_mon, is_output_mon)),
                                         ),
                                 )
                         },
@@ -1140,7 +1165,7 @@ impl PlayerView {
                 }
 
                 let color = plugin_color(&pt, &theme);
-                let name = short_name(&pt);
+                let name = short_name(&pt, false, false);
                 let theme_c = theme.clone();
 
                 let text_on_accent = theme_c.text_on_accent;
@@ -1189,7 +1214,7 @@ impl PlayerView {
                 }
 
                 let color = plugin_color(&pt, &theme);
-                let name = short_name(&pt);
+                let name = short_name(&pt, false, false);
                 let theme_c = theme.clone();
 
                 let text_on_accent = theme_c.text_on_accent;
