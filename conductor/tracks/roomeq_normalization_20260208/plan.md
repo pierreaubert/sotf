@@ -2,16 +2,16 @@
 
 This plan follows the TDD workflow: Write Failing Tests -> Implement -> Refactor.
 
-## Phase 1: Core DSP Utilities
+## Phase 1: Core DSP Utilities [checkpoint: 483ad0f]
 Implement the fundamental mathematical functions for passband detection and range-aware averaging.
 
 - [x] Task: Implement `find_db_point` in `math-dsp` b4684217
-    - [ ] Write tests for finding frequencies at -3dB (low and high pass) using linear interpolation
-    - [ ] Implement `find_db_point(curve, target_db)` logic
-- [ ] Task: Implement range-aware `compute_average_response`
-    - [ ] Write tests for averaging over full-band and specific sub-ranges
-    - [ ] Implement `compute_average_response(curve, freq_range: Option<(f64, f64)>)`
-- [ ] Task: Conductor - User Manual Verification 'Core DSP Utilities' (Protocol in workflow.md)
+    - [x] Write tests for finding frequencies at -3dB (low and high pass) using linear interpolation
+    - [x] Implement `find_db_point(curve, target_db)` logic
+- [x] Task: Implement range-aware `compute_average_response` a2abd9e6
+    - [x] Write tests for averaging over full-band and specific sub-ranges
+    - [x] Implement `compute_average_response(curve, freq_range: Option<(f64, f64)>)`
+- [x] Task: Conductor - User Manual Verification 'Core DSP Utilities' (Protocol in workflow.md) 483ad0f
 
 ## Phase 2: Schema & Data Model Updates
 Update the data structures to support the new `speaker_name` field and schema versioning.
