@@ -138,7 +138,8 @@ impl AudioEngine {
         }
     }
 
-    /// Get plugin data (e.g. analyzer results)
+    /// Get plugin data (e.g. analyzer results) via synchronous command round-trip.
+    /// Prefer `get_cached_plugin_data` for UI polling to avoid blocking the audio pipeline.
     pub fn get_plugin_data(
         &mut self,
         index: usize,
@@ -150,6 +151,15 @@ impl AudioEngine {
             ManagerResponse::Error(e) => Err(e),
             _ => Err("Unexpected response".to_string()),
         }
+    }
+
+    /// Get cached plugin data directly without blocking the audio pipeline.
+    /// The processing thread updates this cache after every frame.
+    pub fn get_cached_plugin_data(
+        &self,
+        index: usize,
+    ) -> Option<std::sync::Arc<dyn std::any::Any + Send + Sync>> {
+        self.manager.get_cached_plugin_data(index)
     }
 
     /// Reload configuration from file

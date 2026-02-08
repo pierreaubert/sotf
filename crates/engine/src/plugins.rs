@@ -1888,22 +1888,32 @@ impl PluginSettings {
                 mix_transition_ms,
                 path_a_config,
                 path_b_config,
-            } => PluginConfig::new(
-                "ab_compare",
-                json!({
-                    "mix": mix,
-                    "mix_mode": mix_mode,
-                    "selected_path": selected_path,
-                    "bypass": bypass,
-                    "auto_gain_enabled": auto_gain_enabled,
-                    "loudness_type": loudness_type,
-                    "max_auto_gain_db": max_auto_gain_db,
-                    "gain_smoothing_ms": gain_smoothing_ms,
-                    "mix_transition_ms": mix_transition_ms,
-                    "path_a_config": path_a_config,
-                    "path_b_config": path_b_config,
-                }),
-            ),
+            } => {
+                let loudness_type_str = match loudness_type {
+                    0 => "Momentary",
+                    _ => "ShortTerm",
+                };
+                let mix_mode_str = match mix_mode {
+                    0 => "Potentiometer",
+                    _ => "Binary",
+                };
+                PluginConfig::new(
+                    "ab_compare",
+                    json!({
+                        "mix": mix,
+                        "mix_mode": mix_mode_str,
+                        "selected_path": selected_path,
+                        "bypass": bypass,
+                        "auto_gain_enabled": auto_gain_enabled,
+                        "loudness_type": loudness_type_str,
+                        "max_auto_gain_db": max_auto_gain_db,
+                        "gain_smoothing_ms": gain_smoothing_ms,
+                        "mix_transition_ms": mix_transition_ms,
+                        "path_a_config": path_a_config,
+                        "path_b_config": path_b_config,
+                    }),
+                )
+            }
             Self::BandSplit {
                 channels,
                 frequency,
@@ -2681,6 +2691,34 @@ impl PluginChain {
             .position(|p| p.plugin_type() == *plugin_type)
     }
 
+    /// Returns true if the plugin at `index` is the input monitor
+    /// (first permanent LoudnessMonitor in the chain)
+    pub fn is_input_monitor(&self, index: usize) -> bool {
+        let first_permanent_lm = self
+            .plugins
+            .iter()
+            .position(|p| p.permanent && matches!(p.plugin_type(), PluginType::LoudnessMonitor));
+        first_permanent_lm == Some(index)
+    }
+
+    /// Returns true if the plugin at `index` is the output monitor
+    /// (last permanent LoudnessMonitor in the chain, distinct from the input monitor)
+    pub fn is_output_monitor(&self, index: usize) -> bool {
+        let last_permanent_lm = self
+            .plugins
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, p)| p.permanent && matches!(p.plugin_type(), PluginType::LoudnessMonitor))
+            .map(|(i, _)| i);
+        let first_permanent_lm = self
+            .plugins
+            .iter()
+            .position(|p| p.permanent && matches!(p.plugin_type(), PluginType::LoudnessMonitor));
+        // Only true if the last permanent LM is different from the first (i.e., there are at least two)
+        last_permanent_lm == Some(index) && last_permanent_lm != first_permanent_lm
+    }
+
     /// Check if the chain has an enabled spectrum analyzer plugin
     pub fn has_enabled_spectrum_analyzer(&self) -> bool {
         self.plugins
@@ -2775,6 +2813,54 @@ impl PluginChain {
         }
 
         None
+    }
+
+    /// Get the engine index of the input loudness monitor (first permanent LoudnessMonitor).
+    pub fn input_monitor_engine_index(&self) -> Option<usize> {
+        let ui_idx = self
+            .plugins
+            .iter()
+            .position(|p| p.permanent && matches!(p.plugin_type(), PluginType::LoudnessMonitor))?;
+        self.get_engine_index(ui_idx)
+    }
+
+    /// Get the engine index of the output loudness monitor
+    /// (last permanent LoudnessMonitor, if distinct from input).
+    pub fn output_monitor_engine_index(&self) -> Option<usize> {
+        let ui_idx = self
+            .plugins
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, p)| p.permanent && matches!(p.plugin_type(), PluginType::LoudnessMonitor))
+            .map(|(i, _)| i)?;
+        // Only valid if different from the input monitor
+        let first = self
+            .plugins
+            .iter()
+            .position(|p| p.permanent && matches!(p.plugin_type(), PluginType::LoudnessMonitor));
+        if first == Some(ui_idx) {
+            return None;
+        }
+        self.get_engine_index(ui_idx)
+    }
+
+    /// Get the engine index of the first enabled spectrum analyzer.
+    pub fn spectrum_engine_index(&self) -> Option<usize> {
+        let ui_idx = self
+            .plugins
+            .iter()
+            .position(|p| p.enabled && matches!(p.plugin_type(), PluginType::SpectrumAnalyzer))?;
+        self.get_engine_index(ui_idx)
+    }
+
+    /// Get the engine index of the first enabled compressor.
+    pub fn compressor_engine_index(&self) -> Option<usize> {
+        let ui_idx = self
+            .plugins
+            .iter()
+            .position(|p| p.enabled && matches!(p.plugin_type(), PluginType::Compressor))?;
+        self.get_engine_index(ui_idx)
     }
 
     pub fn to_plugin_configs(&self, sample_rate: f64) -> Vec<PluginConfig> {
@@ -3403,5 +3489,110 @@ mod tests {
                 assert_eq!(input_channels, 2);
             }
         }
+    }
+
+    #[test]
+    fn test_default_rack_structure() {
+        let chain = PluginChain::with_default_rack();
+        assert_eq!(chain.len(), 3);
+
+        // [InputLM, Matrix, OutputLM] - all permanent
+        let plugins = chain.plugins();
+        assert!(matches!(plugins[0].plugin_type(), PluginType::LoudnessMonitor));
+        assert!(matches!(plugins[1].plugin_type(), PluginType::Matrix));
+        assert!(matches!(plugins[2].plugin_type(), PluginType::LoudnessMonitor));
+
+        assert!(plugins[0].is_permanent());
+        assert!(plugins[1].is_permanent());
+        assert!(plugins[2].is_permanent());
+    }
+
+    #[test]
+    fn test_is_input_output_monitor() {
+        let chain = PluginChain::with_default_rack();
+
+        // Index 0 = input monitor
+        assert!(chain.is_input_monitor(0));
+        assert!(!chain.is_output_monitor(0));
+
+        // Index 1 = Matrix (neither)
+        assert!(!chain.is_input_monitor(1));
+        assert!(!chain.is_output_monitor(1));
+
+        // Index 2 = output monitor
+        assert!(!chain.is_input_monitor(2));
+        assert!(chain.is_output_monitor(2));
+    }
+
+    #[test]
+    fn test_default_rack_to_plugin_configs() {
+        let chain = PluginChain::with_default_rack();
+        let configs = chain.to_plugin_configs(48000.0);
+
+        // Engine order: InputLM(0), Matrix(1), OutputLM(2)
+        // InputLM is a monitoring plugin moved to front, Matrix is processing, OutputLM is analyzer at end
+        assert_eq!(configs.len(), 3);
+        assert_eq!(configs[0].plugin_type, "loudness_monitor"); // input monitor
+        assert_eq!(configs[1].plugin_type, "matrix");           // processing
+        assert_eq!(configs[2].plugin_type, "loudness_monitor"); // output monitor
+    }
+
+    #[test]
+    fn test_default_rack_get_engine_index() {
+        let chain = PluginChain::with_default_rack();
+
+        // UI index 0 (input LM) → engine index 0
+        assert_eq!(chain.get_engine_index(0), Some(0));
+        // UI index 1 (Matrix, processing) → engine index 1 (after input monitor)
+        assert_eq!(chain.get_engine_index(1), Some(1));
+        // UI index 2 (output LM) → engine index 2 (after processing)
+        assert_eq!(chain.get_engine_index(2), Some(2));
+    }
+
+    #[test]
+    fn test_default_rack_with_user_plugin() {
+        let mut chain = PluginChain::with_default_rack();
+
+        // Insert a user EQ plugin at the user insert point (before Matrix)
+        let insert_idx = chain.user_plugin_insert_index();
+        assert_eq!(insert_idx, 1); // Before Matrix
+        chain.insert_plugin(insert_idx, &PluginType::EQ);
+
+        // Chain should be [InputLM, EQ, Matrix, OutputLM]
+        assert_eq!(chain.len(), 4);
+        assert!(matches!(chain.plugins()[0].plugin_type(), PluginType::LoudnessMonitor));
+        assert!(matches!(chain.plugins()[1].plugin_type(), PluginType::EQ));
+        assert!(matches!(chain.plugins()[2].plugin_type(), PluginType::Matrix));
+        assert!(matches!(chain.plugins()[3].plugin_type(), PluginType::LoudnessMonitor));
+
+        // Monitor identification still correct
+        assert!(chain.is_input_monitor(0));
+        assert!(!chain.is_input_monitor(1));
+        assert!(!chain.is_output_monitor(2));
+        assert!(chain.is_output_monitor(3));
+
+        // Engine indices: InputLM(0), EQ(1), Matrix(2), OutputLM(3)
+        assert_eq!(chain.get_engine_index(0), Some(0)); // input monitor
+        assert_eq!(chain.get_engine_index(1), Some(1)); // EQ (processing)
+        assert_eq!(chain.get_engine_index(2), Some(2)); // Matrix (processing)
+        assert_eq!(chain.get_engine_index(3), Some(3)); // output monitor
+
+        // to_plugin_configs order: InputLM, EQ, Matrix, OutputLM
+        let configs = chain.to_plugin_configs(48000.0);
+        assert_eq!(configs.len(), 4);
+        assert_eq!(configs[0].plugin_type, "loudness_monitor");
+        assert_eq!(configs[1].plugin_type, "eq");
+        assert_eq!(configs[2].plugin_type, "matrix");
+        assert_eq!(configs[3].plugin_type, "loudness_monitor");
+    }
+
+    #[test]
+    fn test_single_loudness_monitor_not_output() {
+        // A chain with only one permanent LoudnessMonitor should not be an output monitor
+        let mut chain = PluginChain::new();
+        chain.add_permanent_plugin(&PluginType::LoudnessMonitor);
+
+        assert!(chain.is_input_monitor(0));
+        assert!(!chain.is_output_monitor(0));
     }
 }

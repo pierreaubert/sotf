@@ -62,6 +62,7 @@ impl ProcessingThread {
         event_tx: Sender<ThreadEvent>,
         sample_rate: u32,
         channels: usize,
+        plugin_data_cache: super::PluginDataCache,
     ) -> Result<Self, String> {
         let (command_tx, command_rx) = std::sync::mpsc::channel();
         let (response_tx, response_rx) = std::sync::mpsc::channel();
@@ -77,6 +78,7 @@ impl ProcessingThread {
                     event_tx,
                     sample_rate,
                     channels,
+                    plugin_data_cache,
                 ) {
                     log::debug!("[Processing Thread] Error: {}", e);
                 }
@@ -320,6 +322,7 @@ fn run_processing_thread(
     event_tx: Sender<ThreadEvent>,
     sample_rate: u32,
     channels: usize,
+    plugin_data_cache: super::PluginDataCache,
 ) -> Result<(), String> {
     // Enable FTZ/DAZ CPU flags to prevent denormal numbers from causing
     // performance issues in IIR filters and other DSP code
@@ -392,6 +395,19 @@ fn run_processing_thread(
                             );
                         }
                         state.frame_count += 1;
+
+                        // Update shared plugin data cache so the UI can read
+                        // analyzer results without blocking the audio pipeline.
+                        {
+                            let plugin_count = state.host.plugin_count();
+                            let mut cache = plugin_data_cache.write();
+                            if cache.len() != plugin_count {
+                                cache.resize(plugin_count, None);
+                            }
+                            for i in 0..plugin_count {
+                                cache[i] = state.host.get_plugin_data(i);
+                            }
+                        }
 
                         // Track timing for effective rate measurement
                         if state.first_frame_time.is_none() {
@@ -945,6 +961,192 @@ fn create_plugin(
             Ok(Box::new(plugin))
         }
 
+        "band_split" => {
+            use sotf_plugins::{BandSplitPlugin, BandSplitPluginParams};
+
+            let params: BandSplitPluginParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| format!("Failed to parse band_split parameters: {}", e))?;
+
+            let plugin = BandSplitPlugin::from_params(channels, &params)?;
+            Ok(Box::new(plugin))
+        }
+
+        "band_merge" => {
+            use sotf_plugins::{BandMergePlugin, BandMergePluginParams};
+
+            let params: BandMergePluginParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| format!("Failed to parse band_merge parameters: {}", e))?;
+
+            // `channels` is the current chain channel count (= output_channels * bands after a split).
+            // BandMerge::from_params expects output_channels, so divide by bands.
+            let output_channels = channels / params.bands;
+            let plugin = BandMergePlugin::from_params(output_channels, &params)?;
+            Ok(Box::new(plugin))
+        }
+
+        "downmix" => {
+            use sotf_plugins::{DownmixPlugin, DownmixPluginParams};
+
+            let params: DownmixPluginParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| format!("Failed to parse downmix parameters: {}", e))?;
+
+            let plugin = DownmixPlugin::from_params(params);
+            Ok(Box::new(plugin))
+        }
+
+        "mono_to_stereo" => {
+            use sotf_plugins::{MonoToStereoPlugin, MonoToStereoPluginParams};
+
+            let params: MonoToStereoPluginParams = serde_json::from_value(parameters.clone())
+                .map_err(|e| format!("Failed to parse mono_to_stereo parameters: {}", e))?;
+
+            let plugin = MonoToStereoPlugin::from_params(params);
+            Ok(Box::new(plugin))
+        }
+
         other => Err(format!("Unknown plugin type: {}", other)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::plugins::{PluginSettings, PluginType};
+
+    /// Returns the input channel count that `create_plugin` expects for each type.
+    fn input_channels_for(plugin_type: &PluginType) -> usize {
+        match plugin_type {
+            PluginType::Upmixer => 2,
+            PluginType::XTC => 2,
+            PluginType::MonoToStereo => 1,
+            // BandMerge default is 2 bands, so input = output_channels * bands = 2 * 2 = 4
+            PluginType::BandMerge => 4,
+            // Downmix default has input_channels = 6
+            PluginType::Downmix => 6,
+            // BinauralDecoder defaults to 6 input channels (5.1)
+            PluginType::BinauralDecoder => 6,
+            _ => 2,
+        }
+    }
+
+    #[test]
+    fn test_create_plugin_all_types() {
+        let sample_rate = 48000;
+
+        for plugin_type in PluginType::all() {
+            // Convolution requires an IR file on disk — skip factory test
+            if plugin_type == PluginType::Convolution {
+                continue;
+            }
+
+            let settings = PluginSettings::default_for(&plugin_type);
+            let config = settings.to_plugin_config(sample_rate as f64);
+            let channels = input_channels_for(&plugin_type);
+
+            let plugin = match create_plugin(&config.plugin_type, &config.parameters, channels, sample_rate) {
+                Ok(p) => p,
+                Err(e) => panic!("create_plugin failed for '{}': {}", config.plugin_type, e),
+            };
+            assert_eq!(
+                plugin.input_channels(),
+                channels,
+                "input_channels mismatch for '{}'",
+                config.plugin_type
+            );
+        }
+    }
+
+    #[test]
+    fn test_build_plugin_host_all_types() {
+        let sample_rate = 48000;
+
+        for plugin_type in PluginType::all() {
+            if plugin_type == PluginType::Convolution {
+                continue;
+            }
+
+            let settings = PluginSettings::default_for(&plugin_type);
+            let config = settings.to_plugin_config(sample_rate as f64);
+            let channels = input_channels_for(&plugin_type);
+
+            match build_plugin_host(&[config.clone()], sample_rate, channels) {
+                Ok(_) => {}
+                Err(e) => panic!("build_plugin_host failed for '{}': {}", config.plugin_type, e),
+            }
+        }
+    }
+
+    #[test]
+    fn test_process_audio_all_types() {
+        let sample_rate = 48000;
+        let num_frames = 1024;
+
+        for plugin_type in PluginType::all() {
+            // Skip plugins that can't be tested in isolation with a simple process call:
+            // - Convolution requires an IR file on disk
+            // - Upmixer/BinauralDecoder/Pnd use FFT overlap-add that returns 0 frames
+            //   on first call, which triggers an assertion in PluginHost
+            let skip_process = matches!(
+                plugin_type,
+                PluginType::Convolution
+                    | PluginType::Upmixer
+                    | PluginType::BinauralDecoder
+                    | PluginType::Pnd
+            );
+            if skip_process {
+                continue;
+            }
+
+            let settings = PluginSettings::default_for(&plugin_type);
+            let config = settings.to_plugin_config(sample_rate as f64);
+            let in_channels = input_channels_for(&plugin_type);
+
+            let mut host = build_plugin_host(&[config.clone()], sample_rate, in_channels)
+                .unwrap_or_else(|e| panic!("build failed for '{}': {}", config.plugin_type, e));
+
+            let out_channels = host.output_channels();
+
+            // Generate a 440Hz sine wave as input
+            let input: Vec<f32> = (0..num_frames * in_channels)
+                .map(|i| {
+                    let frame = i / in_channels;
+                    (2.0 * std::f32::consts::PI * 440.0 * frame as f32 / sample_rate as f32).sin()
+                        * 0.5
+                })
+                .collect();
+
+            let mut output = vec![0.0f32; num_frames * out_channels];
+
+            let result = host.process(&input, &mut output);
+            assert!(
+                result.is_ok(),
+                "process failed for '{}': {}",
+                config.plugin_type,
+                result.err().unwrap()
+            );
+
+            // Some plugins produce silence in normal operation:
+            // - Gate/Expander: gate signal to zero for quiet inputs
+            // - ABCompare: may bypass
+            // - XTC/Denoiser: STFT latency causes silent output on first block
+            let may_produce_silence = matches!(
+                plugin_type,
+                PluginType::Gate
+                    | PluginType::Expander
+                    | PluginType::ABCompare
+                    | PluginType::XTC
+                    | PluginType::Denoiser
+            );
+
+            if !may_produce_silence {
+                let max_abs = output.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
+                assert!(
+                    max_abs > 1e-6,
+                    "plugin '{}' produced silence (max_abs={})",
+                    config.plugin_type,
+                    max_abs
+                );
+            }
+        }
     }
 }

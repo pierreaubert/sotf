@@ -531,7 +531,8 @@ impl AudioEngineManager {
         }
     }
 
-    /// Get plugin data (e.g. analyzer results)
+    /// Get plugin data (e.g. analyzer results) via synchronous command round-trip.
+    /// Prefer `get_cached_plugin_data` for UI polling to avoid blocking the audio pipeline.
     pub fn get_plugin_data(
         &self,
         index: usize,
@@ -547,19 +548,27 @@ impl AudioEngineManager {
         }
     }
 
+    /// Get cached plugin data directly without blocking the audio pipeline.
+    /// The processing thread updates this cache after every frame.
+    pub fn get_cached_plugin_data(
+        &self,
+        index: usize,
+    ) -> Option<std::sync::Arc<dyn std::any::Any + Send + Sync>> {
+        if let Some(ref engine) = *self.engine.lock() {
+            engine.get_cached_plugin_data(index)
+        } else {
+            None
+        }
+    }
+
     /// Get current loudness measurements
     ///
     /// Returns None if loudness monitoring is not enabled or no data is available yet.
     pub fn get_loudness(&self) -> Option<crate::LoudnessInfo> {
         let plugin_index = (*self.loudness_plugin_index.lock())?;
 
-        match self.get_plugin_data(plugin_index) {
-            Ok(data) => {
-                // LoudnessInfo is a type alias for LoudnessData
-                data.downcast_ref::<crate::LoudnessInfo>().cloned()
-            }
-            Err(_) => None,
-        }
+        self.get_cached_plugin_data(plugin_index)
+            .and_then(|data| data.downcast_ref::<crate::LoudnessInfo>().cloned())
     }
 
     /// Set the loudness plugin index (call this after adding loudness_monitor to plugin chain)
@@ -577,13 +586,8 @@ impl AudioEngineManager {
     pub fn get_spectrum(&self) -> Option<crate::SpectrumInfo> {
         let plugin_index = (*self.spectrum_plugin_index.lock())?;
 
-        match self.get_plugin_data(plugin_index) {
-            Ok(data) => {
-                // Try to downcast to SpectrumInfo
-                data.downcast_ref::<crate::SpectrumInfo>().cloned()
-            }
-            Err(_) => None,
-        }
+        self.get_cached_plugin_data(plugin_index)
+            .and_then(|data| data.downcast_ref::<crate::SpectrumInfo>().cloned())
     }
 
     // ========================================================================

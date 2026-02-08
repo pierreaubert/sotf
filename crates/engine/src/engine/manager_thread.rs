@@ -7,9 +7,10 @@
 use super::{
     AudioEngineState, ConfigEvent, ConfigWatcher, DecoderCommand, DecoderThread, EngineConfig,
     ManagerCommand, ManagerResponse, PlaybackCommand, PlaybackState, PlaybackThread,
-    ProcessingCommand, ProcessingThread, ThreadEvent,
+    PluginDataCache, ProcessingCommand, ProcessingThread, ThreadEvent,
 };
 use crate::engine::processing_thread::build_plugin_host;
+use std::any::Any;
 use std::collections::VecDeque;
 use std::sync::mpsc::{Receiver, Sender, channel, sync_channel};
 use std::sync::{Arc, Mutex};
@@ -310,6 +311,7 @@ pub struct ManagerThread {
     command_tx: Sender<ManagerCommand>,
     response_rx: Receiver<ManagerResponse>,
     state: Arc<Mutex<AudioEngineState>>,
+    plugin_data_cache: PluginDataCache,
     thread_handle: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -322,10 +324,16 @@ impl ManagerThread {
         let state = Arc::new(Mutex::new(AudioEngineState::default()));
         let state_clone = Arc::clone(&state);
 
+        let plugin_data_cache: PluginDataCache =
+            Arc::new(parking_lot::RwLock::new(Vec::new()));
+        let cache_clone = Arc::clone(&plugin_data_cache);
+
         let thread_handle = std::thread::Builder::new()
             .name("manager".to_string())
             .spawn(move || {
-                if let Err(e) = run_manager_thread(config, command_rx, response_tx, state_clone) {
+                if let Err(e) =
+                    run_manager_thread(config, command_rx, response_tx, state_clone, cache_clone)
+                {
                     log::debug!("[Manager Thread] Error: {}", e);
                 }
             })
@@ -335,6 +343,7 @@ impl ManagerThread {
             command_tx,
             response_rx,
             state,
+            plugin_data_cache,
             thread_handle: Some(thread_handle),
         })
     }
@@ -368,6 +377,16 @@ impl ManagerThread {
             })
     }
 
+    /// Get cached plugin data directly (no command round-trip).
+    /// The processing thread updates this cache after every frame.
+    pub fn get_cached_plugin_data(
+        &self,
+        index: usize,
+    ) -> Option<Arc<dyn Any + Send + Sync>> {
+        let cache = self.plugin_data_cache.read();
+        cache.get(index).and_then(|slot| slot.clone())
+    }
+
     /// Shutdown the manager thread
     pub fn shutdown(&mut self) {
         self.send_command(ManagerCommand::Shutdown).ok();
@@ -389,6 +408,7 @@ fn run_manager_thread(
     command_rx: Receiver<ManagerCommand>,
     response_tx: Sender<ManagerResponse>,
     state: Arc<Mutex<AudioEngineState>>,
+    plugin_data_cache: PluginDataCache,
 ) -> Result<(), String> {
     log::debug!("[Manager Thread] Starting with config: {:?}", config);
 
@@ -418,6 +438,7 @@ fn run_manager_thread(
         event_tx.clone(),
         config.output_sample_rate,
         config.input_channels, // Use input channels, not output
+        plugin_data_cache,
     )?;
 
     // Determine actual output channel count by loading plugin chain first
@@ -995,6 +1016,14 @@ fn validate_plugin_configs(configs: &[super::PluginConfig]) -> Result<(), Config
             "delay",
             "resampler",
             "xtc",
+            "fletcher_munson",
+            "denoiser",
+            "pnd",
+            "ab_compare",
+            "band_split",
+            "band_merge",
+            "downmix",
+            "mono_to_stereo",
         ];
 
         let plugin_type_lower = config.plugin_type.to_lowercase();
@@ -1516,6 +1545,26 @@ mod tests {
             assert!(reason.contains("gain_db"));
         } else {
             panic!("Expected ValidationError");
+        }
+    }
+
+    #[test]
+    fn test_validate_plugin_configs_accepts_all_types() {
+        use crate::plugins::{PluginSettings, PluginType};
+
+        let sample_rate = 48000.0;
+
+        for plugin_type in PluginType::all() {
+            let settings = PluginSettings::default_for(&plugin_type);
+            let config = settings.to_plugin_config(sample_rate);
+
+            let result = validate_plugin_configs(&[config.clone()]);
+            assert!(
+                result.is_ok(),
+                "validate_plugin_configs rejected '{}': {:?}",
+                config.plugin_type,
+                result.unwrap_err()
+            );
         }
     }
 }
