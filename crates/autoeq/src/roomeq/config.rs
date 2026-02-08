@@ -304,6 +304,16 @@ fn validate_speakers(speakers: &HashMap<String, SpeakerConfig>, result: &mut Val
     }
 
     for (name, config) in speakers {
+        // Validate speaker model name if provided
+        if let Some(speaker_name) = config.speaker_name() {
+            if !is_valid_speaker_name(speaker_name) {
+                result.add_error(format!(
+                    "Speaker '{}' has invalid speaker_name '{}'. Only alphanumeric, spaces, and hyphens allowed.",
+                    name, speaker_name
+                ));
+            }
+        }
+
         match config {
             SpeakerConfig::Group(group) => {
                 if group.measurements.is_empty() {
@@ -481,11 +491,20 @@ fn validate_group_delay(
     }
 }
 
+/// Check if a speaker name is valid (alphanumeric, spaces, hyphens)
+fn is_valid_speaker_name(name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+    name.chars()
+        .all(|c| c.is_alphanumeric() || c == ' ' || c == '-')
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::roomeq::types::*;
-    use crate::{MeasurementRef, MeasurementSource};
+    use crate::{MeasurementRef, MeasurementSingle, MeasurementSource};
     use std::path::PathBuf;
 
     #[test]
@@ -534,9 +553,10 @@ mod tests {
         let mut speakers = HashMap::new();
         speakers.insert(
             "left".to_string(),
-            SpeakerConfig::Single(MeasurementSource::Single(MeasurementRef::Path(
-                PathBuf::from("test.csv"),
-            ))),
+            SpeakerConfig::Single(MeasurementSource::Single(MeasurementSingle {
+                measurement: MeasurementRef::Path(PathBuf::from("test.csv")),
+                speaker_name: None,
+            })),
         );
 
         let mut optimizer = OptimizerConfig::default();
@@ -565,9 +585,16 @@ mod tests {
             "left".to_string(),
             SpeakerConfig::Group(SpeakerGroup {
                 name: "Test".to_string(),
+                speaker_name: None,
                 measurements: vec![
-                    MeasurementSource::Single(MeasurementRef::Path(PathBuf::from("woofer.csv"))),
-                    MeasurementSource::Single(MeasurementRef::Path(PathBuf::from("tweeter.csv"))),
+                    MeasurementSource::Single(MeasurementSingle {
+                        measurement: MeasurementRef::Path(PathBuf::from("woofer.csv")),
+                        speaker_name: None,
+                    }),
+                    MeasurementSource::Single(MeasurementSingle {
+                        measurement: MeasurementRef::Path(PathBuf::from("tweeter.csv")),
+                        speaker_name: None,
+                    }),
                 ],
                 crossover: Some("nonexistent".to_string()),
             }),
@@ -598,9 +625,10 @@ mod tests {
         let mut speakers = HashMap::new();
         speakers.insert(
             "left".to_string(),
-            SpeakerConfig::Single(MeasurementSource::Single(MeasurementRef::Path(
-                PathBuf::from("left.csv"),
-            ))),
+            SpeakerConfig::Single(MeasurementSource::Single(MeasurementSingle {
+                measurement: MeasurementRef::Path(PathBuf::from("left.csv")),
+                speaker_name: None,
+            })),
         );
 
         let config = RoomConfig {
@@ -626,5 +654,31 @@ mod tests {
                 .iter()
                 .any(|e| e.contains("non-existent subwoofer"))
         );
+    }
+
+    #[test]
+    fn test_validate_speaker_name() {
+        let mut speakers = HashMap::new();
+        speakers.insert(
+            "left".to_string(),
+            SpeakerConfig::Single(MeasurementSource::Single(MeasurementSingle {
+                measurement: MeasurementRef::Path(PathBuf::from("left.csv")),
+                speaker_name: Some("Invalid @ Name".to_string()),
+            })),
+        );
+
+        let config = RoomConfig {
+            version: default_config_version(),
+            speakers,
+            crossovers: None,
+            target_curve: None,
+            group_delay: None,
+            optimizer: OptimizerConfig::default(),
+            recording_config: None,
+        };
+
+        let result = validate_room_config(&config);
+        assert!(!result.is_valid);
+        assert!(result.errors.iter().any(|e| e.contains("invalid speaker_name")));
     }
 }

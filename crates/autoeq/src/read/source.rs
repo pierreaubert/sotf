@@ -125,24 +125,146 @@ impl MeasurementRef {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum MeasurementSource {
-    /// A single measurement file.
-    Single(MeasurementRef),
-    /// Multiple measurement files to be averaged.
-    Multiple(Vec<MeasurementRef>),
+    /// A single measurement file with optional speaker name
+    Single(MeasurementSingle),
+    /// Multiple measurement files to be averaged with optional speaker name
+    Multiple(MeasurementMultiple),
     /// In-memory curve data (not serializable to JSON config files).
     /// Use this when curves are already loaded in memory.
     #[serde(skip)]
     InMemory(Curve),
 }
 
+/// Single measurement with metadata
+/// 
+/// Custom implementation to support both string path and object with speaker_name
+#[derive(Debug, Clone, JsonSchema)]
+pub struct MeasurementSingle {
+    pub measurement: MeasurementRef,
+    pub speaker_name: Option<String>,
+}
+
+impl Serialize for MeasurementSingle {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        if self.speaker_name.is_none() {
+            // No metadata, serialize as the inner ref (might be string or object)
+            self.measurement.serialize(serializer)
+        } else {
+            // Has metadata, must serialize as object
+            use serde::ser::SerializeMap;
+            let mut map = serializer.serialize_map(None)?;
+            match &self.measurement {
+                MeasurementRef::Path(p) => {
+                    map.serialize_entry("path", p)?;
+                }
+                MeasurementRef::Named { path, name } => {
+                    map.serialize_entry("path", path)?;
+                    if let Some(n) = name {
+                        map.serialize_entry("name", n)?;
+                    }
+                }
+                MeasurementRef::Inline(inline) => {
+                    // Inline is already an object, but we can't easily merge without duplicating fields
+                    // or using a temporary value.
+                    map.serialize_entry("inline", inline)?;
+                }
+            }
+            map.serialize_entry("speaker_name", &self.speaker_name)?;
+            map.end()
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for MeasurementSingle {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Helper {
+            path: Option<PathBuf>,
+            name: Option<String>,
+            inline: Option<InlineMeasurement>,
+            speaker_name: Option<String>,
+            // Also support direct string for 'path' if not in object
+            #[serde(flatten)]
+            extra: serde_json::Value,
+        }
+
+        let value = serde_json::Value::deserialize(deserializer)?;
+        
+        if value.is_string() {
+            // Case: "path/to/file.csv"
+            let path = value.as_str().unwrap().into();
+            return Ok(MeasurementSingle {
+                measurement: MeasurementRef::Path(path),
+                speaker_name: None,
+            });
+        }
+
+        if let Ok(helper) = serde_json::from_value::<Helper>(value.clone()) {
+            let speaker_name = helper.speaker_name;
+            
+            if let Some(inline) = helper.inline {
+                return Ok(MeasurementSingle {
+                    measurement: MeasurementRef::Inline(inline),
+                    speaker_name,
+                });
+            }
+            
+            if let Some(path) = helper.path {
+                if let Some(name) = helper.name {
+                    return Ok(MeasurementSingle {
+                        measurement: MeasurementRef::Named { path, name: Some(name) },
+                        speaker_name,
+                    });
+                } else {
+                    return Ok(MeasurementSingle {
+                        measurement: MeasurementRef::Path(path),
+                        speaker_name,
+                    });
+                }
+            }
+        }
+
+        // Fallback to trying to parse as MeasurementRef if it doesn't match our helper
+        let measurement = serde_json::from_value(value).map_err(serde::de::Error::custom)?;
+        Ok(MeasurementSingle {
+            measurement,
+            speaker_name: None,
+        })
+    }
+}
+
+/// Multiple measurements with metadata
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MeasurementMultiple {
+    pub measurements: Vec<MeasurementRef>,
+    /// Optional speaker name (e.g., "Genelec 8361A")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speaker_name: Option<String>,
+}
+
 impl MeasurementSource {
+    /// Returns the optional speaker name, if provided.
+    pub fn speaker_name(&self) -> Option<&str> {
+        match self {
+            MeasurementSource::Single(s) => s.speaker_name.as_deref(),
+            MeasurementSource::Multiple(m) => m.speaker_name.as_deref(),
+            MeasurementSource::InMemory(_) => None,
+        }
+    }
+
     /// Resolve relative paths in this measurement source against a base directory.
     pub fn resolve_paths(&mut self, base_dir: &Path) {
         match self {
-            MeasurementSource::Single(m) => m.resolve_paths(base_dir),
-            MeasurementSource::Multiple(refs) => {
-                for m in refs {
-                    m.resolve_paths(base_dir);
+            MeasurementSource::Single(s) => s.measurement.resolve_paths(base_dir),
+            MeasurementSource::Multiple(m) => {
+                for r in &mut m.measurements {
+                    r.resolve_paths(base_dir);
                 }
             }
             MeasurementSource::InMemory(_) => {} // No paths to resolve
@@ -202,21 +324,21 @@ pub fn load_measurement(measurement: &MeasurementRef) -> Result<Curve, Box<dyn E
 /// Load measurement(s) from a source and average if necessary
 pub fn load_source(source: &MeasurementSource) -> Result<Curve, Box<dyn Error>> {
     match source {
-        MeasurementSource::Single(m) => load_measurement(m),
+        MeasurementSource::Single(s) => load_measurement(&s.measurement),
         MeasurementSource::InMemory(curve) => Ok(curve.clone()),
-        MeasurementSource::Multiple(measurements) => {
-            if measurements.is_empty() {
+        MeasurementSource::Multiple(m) => {
+            if m.measurements.is_empty() {
                 return Err("Measurement list is empty".into());
             }
 
             // Load all curves
             let mut curves = Vec::new();
-            for m in measurements {
-                match load_measurement(m) {
+            for r in &m.measurements {
+                match load_measurement(r) {
                     Ok(c) => curves.push(c),
                     Err(e) => {
-                        let name = m.path().map(|p| p.display().to_string())
-                            .or_else(|| m.name().map(String::from))
+                        let name = r.path().map(|p| p.display().to_string())
+                            .or_else(|| r.name().map(String::from))
                             .unwrap_or_else(|| "inline".to_string());
                         eprintln!("Warning: failed to load measurement {}: {}", name, e)
                     }

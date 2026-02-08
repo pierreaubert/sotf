@@ -92,8 +92,8 @@ fn test_load_new_room_config_format() {
 
     // Verify inline measurement data
     if let autoeq::SpeakerConfig::Single(source) = &room_config.speakers["L"] {
-        if let autoeq::MeasurementSource::Single(ref_) = source {
-            let inline = ref_.inline_data().expect("Expected inline data");
+        if let autoeq::MeasurementSource::Single(s) = source {
+            let inline = s.measurement.inline_data().expect("Expected inline data");
             assert_eq!(inline.frequencies.len(), 3);
             assert_eq!(inline.magnitude_db.len(), 3);
             assert_eq!(inline.name, Some("L".to_string()));
@@ -123,16 +123,17 @@ fn test_room_config_roundtrip() {
     let mut speakers = HashMap::new();
     speakers.insert(
         "L".to_string(),
-        SpeakerConfig::Single(MeasurementSource::Single(MeasurementRef::Inline(
-            InlineMeasurement {
+        SpeakerConfig::Single(MeasurementSource::Single(autoeq::read::MeasurementSingle {
+            measurement: MeasurementRef::Inline(InlineMeasurement {
                 frequencies: vec![100.0, 1000.0, 10000.0],
                 magnitude_db: vec![-5.0, 0.0, -3.0],
                 phase_deg: Some(vec![0.0, 45.0, 90.0]),
                 name: Some("L".to_string()),
                 wav_path: Some("recording_L.wav".to_string()),
                 csv_path: Some("recording_L.csv".to_string()),
-            },
-        ))),
+            }),
+            speaker_name: None,
+        })),
     );
 
     let room_config = RoomConfig {

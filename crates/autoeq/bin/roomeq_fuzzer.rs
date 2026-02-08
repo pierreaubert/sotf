@@ -372,15 +372,17 @@ fn generate_plots_for_multi_drivers(
         for source in &group.measurement_sources {
             // Convert fuzzer source to lib source
             let lib_source = match source {
-                MeasurementSource::Single(path) => autoeq::MeasurementSource::Single(
-                    autoeq::MeasurementRef::Path(PathBuf::from(path)),
-                ),
-                MeasurementSource::Multiple(paths) => autoeq::MeasurementSource::Multiple(
-                    paths
+                MeasurementSource::Single(path) => autoeq::MeasurementSource::Single(autoeq::read::MeasurementSingle {
+                    measurement: autoeq::MeasurementRef::Path(PathBuf::from(path)),
+                    speaker_name: None,
+                }),
+                MeasurementSource::Multiple(paths) => autoeq::MeasurementSource::Multiple(autoeq::read::MeasurementMultiple {
+                    measurements: paths
                         .iter()
                         .map(|p| autoeq::MeasurementRef::Path(PathBuf::from(p)))
                         .collect(),
-                ),
+                    speaker_name: None,
+                }),
             };
 
             // Load and average

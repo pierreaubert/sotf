@@ -1,6 +1,6 @@
 //! Room EQ - Multi-channel room equalization optimizer
 //!
-//! Copyright (C) 2025 Pierre Aubert pierre(at)spinorama(dot)org
+//! Copyright (C) 2025-2026 Pierre Aubert pierre(at)spinorama(dot)org
 //!
 //! This program is free software: you can redistribute it and/or modify
 //! it under the terms of the GNU General Public License as published by
@@ -15,7 +15,7 @@
 //! You should have received a copy of the GNU General Public License
 //! along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-pub use crate::MeasurementSource;
+pub use crate::{MeasurementSingle, MeasurementSource};
 use crate::Curve;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -37,6 +37,9 @@ pub struct CurveData {
     pub freq: Vec<f64>,
     /// Sound Pressure Level in dB (normalized)
     pub spl: Vec<f64>,
+    /// Optional frequency range used for normalization
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub norm_range: Option<(f64, f64)>,
 }
 
 impl From<Curve> for CurveData {
@@ -44,6 +47,7 @@ impl From<Curve> for CurveData {
         CurveData {
             freq: curve.freq.to_vec(),
             spl: curve.spl.to_vec(),
+            norm_range: None,
         }
     }
 }
@@ -53,6 +57,7 @@ impl From<&Curve> for CurveData {
         CurveData {
             freq: curve.freq.to_vec(),
             spl: curve.spl.to_vec(),
+            norm_range: None,
         }
     }
 }
@@ -182,7 +187,7 @@ impl RoomConfig {
 
 /// Default configuration version
 pub fn default_config_version() -> String {
-    "1.1.0".to_string()
+    "1.2.0".to_string()
 }
 
 /// Group delay optimization configuration
@@ -228,6 +233,16 @@ pub enum SpeakerConfig {
 }
 
 impl SpeakerConfig {
+    /// Returns the optional speaker name associated with this configuration
+    pub fn speaker_name(&self) -> Option<&str> {
+        match self {
+            SpeakerConfig::Single(source) => source.speaker_name(),
+            SpeakerConfig::Group(group) => group.speaker_name.as_deref(),
+            SpeakerConfig::MultiSub(ms) => ms.speaker_name.as_deref(),
+            SpeakerConfig::Dba(dba) => dba.speaker_name.as_deref(),
+        }
+    }
+
     /// Resolve relative paths in this speaker configuration against a base directory.
     pub fn resolve_paths(&mut self, base_dir: &std::path::Path) {
         match self {
@@ -244,6 +259,10 @@ impl SpeakerConfig {
 pub struct SpeakerGroup {
     /// Name of the group
     pub name: String,
+
+    /// Optional speaker model name
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speaker_name: Option<String>,
 
     /// Measurements in this group
     pub measurements: Vec<MeasurementSource>,
@@ -268,6 +287,10 @@ pub struct MultiSubGroup {
     /// Name of the subwoofer group (e.g. "subs")
     pub name: String,
 
+    /// Optional speaker model name
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speaker_name: Option<String>,
+
     /// Measurements for each subwoofer
     pub subwoofers: Vec<MeasurementSource>,
 }
@@ -286,6 +309,10 @@ impl MultiSubGroup {
 pub struct DBAConfig {
     /// Name of the DBA system
     pub name: String,
+
+    /// Optional speaker model name
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speaker_name: Option<String>,
 
     /// Measurements for the front array
     pub front: Vec<MeasurementSource>,
@@ -1139,9 +1166,10 @@ mod tests {
         let mut speakers = HashMap::new();
         speakers.insert(
             "left".to_string(),
-            SpeakerConfig::Single(MeasurementSource::Single(MeasurementRef::Path(
-                PathBuf::from("left.csv"),
-            ))),
+            SpeakerConfig::Single(MeasurementSource::Single(MeasurementSingle {
+                measurement: MeasurementRef::Path(PathBuf::from("left.csv")),
+                speaker_name: None,
+            })),
         );
 
         let config = RoomConfig {
@@ -1163,9 +1191,16 @@ mod tests {
     fn test_speaker_group_serialization() {
         let group = SpeakerGroup {
             name: "2-Way Speaker".to_string(),
+            speaker_name: None,
             measurements: vec![
-                MeasurementSource::Single(MeasurementRef::Path(PathBuf::from("woofer.csv"))),
-                MeasurementSource::Single(MeasurementRef::Path(PathBuf::from("tweeter.csv"))),
+                MeasurementSource::Single(MeasurementSingle {
+                    measurement: MeasurementRef::Path(PathBuf::from("woofer.csv")),
+                    speaker_name: None,
+                }),
+                MeasurementSource::Single(MeasurementSingle {
+                    measurement: MeasurementRef::Path(PathBuf::from("tweeter.csv")),
+                    speaker_name: None,
+                }),
             ],
             crossover: Some("default_lr24".to_string()),
         };
@@ -1190,5 +1225,22 @@ mod tests {
 
         assert_eq!(deserialized.crossover_type, "LR24");
         assert_eq!(deserialized.frequency, Some(2500.0));
+    }
+
+    #[test]
+    fn test_speaker_name_validation() {
+        let valid_names = vec!["Genelec 8361A", "Neumann KH-120", "Sub-1"];
+        let invalid_names = vec!["Genelec @ 8361A", "Neumann_KH_120"];
+
+        let is_valid = |name: &str| {
+            name.chars().all(|c| c.is_alphanumeric() || c == ' ' || c == '-')
+        };
+
+        for name in valid_names {
+            assert!(is_valid(name), "Should be valid: {}", name);
+        }
+        for name in invalid_names {
+            assert!(!is_valid(name), "Should be invalid: {}", name);
+        }
     }
 }

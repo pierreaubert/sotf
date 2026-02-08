@@ -154,7 +154,10 @@ pub fn write_room_config(
         };
 
         let measurement_ref = MeasurementRef::Inline(inline_measurement);
-        let measurement_source = MeasurementSource::Single(measurement_ref);
+        let measurement_source = MeasurementSource::Single {
+            measurement: measurement_ref,
+            speaker_name: None,
+        };
         let speaker_config = SpeakerConfig::Single(measurement_source);
 
         speakers.insert(ch.channel_name.clone(), speaker_config);

@@ -1410,6 +1410,7 @@ impl RoomEqState {
                             channel_name.clone(),
                             SpeakerConfig::Group(SpeakerGroup {
                                 name: channel_name.clone(),
+                                speaker_name: None,
                                 measurements: driver_measurements,
                                 crossover: Some(xover_id),
                             }),

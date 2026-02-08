@@ -1178,7 +1178,10 @@ impl PlayerView {
                     };
 
                     let measurement_ref = MeasurementRef::Inline(inline_measurement);
-                    let measurement_source = MeasurementSource::Single(measurement_ref);
+                    let measurement_source = MeasurementSource::Single(autoeq::read::MeasurementSingle {
+                        measurement: measurement_ref,
+                        speaker_name: None,
+                    });
                     let speaker_config = SpeakerConfig::Single(measurement_source);
 
                     speakers.insert(rec.channel_name.clone(), speaker_config);
@@ -1350,9 +1353,9 @@ impl PlayerView {
                         // Extract inline measurement from speaker config
                         let inline = match speaker_config {
                             autoeq::SpeakerConfig::Single(source) => match source {
-                                autoeq::MeasurementSource::Single(ref_) => ref_.inline_data().cloned(),
-                                autoeq::MeasurementSource::Multiple(refs) => {
-                                    refs.first().and_then(|r| r.inline_data()).cloned()
+                                autoeq::MeasurementSource::Single(s) => s.measurement.inline_data().cloned(),
+                                autoeq::MeasurementSource::Multiple(m) => {
+                                    m.measurements.first().and_then(|r| r.inline_data()).cloned()
                                 }
                                 autoeq::MeasurementSource::InMemory(_) => None,
                             },

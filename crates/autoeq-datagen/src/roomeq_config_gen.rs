@@ -36,7 +36,10 @@ pub fn generate_config(scenario: &Scenario, _csv_dir: &Path) -> Result<RoomConfi
         let csv_path = PathBuf::from(format!("{name}_lp0.csv"));
         speakers.insert(
             name.to_string(),
-            SpeakerConfig::Single(MeasurementSource::Single(MeasurementRef::Path(csv_path))),
+            SpeakerConfig::Single(MeasurementSource::Single {
+                measurement: MeasurementRef::Path(csv_path),
+                speaker_name: None,
+            }),
         );
     }
 
@@ -49,7 +52,10 @@ pub fn generate_config(scenario: &Scenario, _csv_dir: &Path) -> Result<RoomConfi
             let csv_path = PathBuf::from(format!("{name}_lp0.csv"));
             speakers.insert(
                 "lfe".to_string(),
-                SpeakerConfig::Single(MeasurementSource::Single(MeasurementRef::Path(csv_path))),
+                SpeakerConfig::Single(MeasurementSource::Single {
+                measurement: MeasurementRef::Path(csv_path),
+                speaker_name: None,
+            }),
             );
         }
         _ => {
@@ -58,13 +64,17 @@ pub fn generate_config(scenario: &Scenario, _csv_dir: &Path) -> Result<RoomConfi
                 .iter()
                 .map(|name| {
                     let csv_path = PathBuf::from(format!("{name}_lp0.csv"));
-                    MeasurementSource::Single(MeasurementRef::Path(csv_path))
+                    MeasurementSource::Single {
+                        measurement: MeasurementRef::Path(csv_path),
+                        speaker_name: None,
+                    }
                 })
                 .collect();
             speakers.insert(
                 "lfe".to_string(),
                 SpeakerConfig::MultiSub(MultiSubGroup {
                     name: "subs".to_string(),
+                    speaker_name: None,
                     subwoofers,
                 }),
             );

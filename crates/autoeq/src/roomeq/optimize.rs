@@ -173,6 +173,7 @@ pub fn optimize_room(
     config: &RoomConfig,
     sample_rate: f64,
     _callback: Option<RoomOptimizationCallback>,
+    output_dir: Option<&Path>,
 ) -> Result<RoomOptimizationResult> {
     // Validate configuration
     let validation = validate_room_config(config);
@@ -201,7 +202,7 @@ pub fn optimize_room(
                     speaker_config,
                     config,
                     sample_rate,
-                    None,
+                    output_dir,
                 )?;
 
             Ok((
@@ -627,16 +628,16 @@ fn process_speaker_internal(
 /// Extract wav_path from a MeasurementSource if available
 fn extract_wav_path(source: &MeasurementSource) -> Option<String> {
     match source {
-        MeasurementSource::Single(measurement_ref) => {
-            if let crate::MeasurementRef::Inline(inline) = measurement_ref {
+        MeasurementSource::Single(s) => {
+            if let crate::MeasurementRef::Inline(inline) = &s.measurement {
                 inline.wav_path.clone()
             } else {
                 None
             }
         }
-        MeasurementSource::Multiple(refs) => {
+        MeasurementSource::Multiple(m) => {
             // Use the first measurement's wav_path if available
-            refs.first().and_then(|r| {
+            m.measurements.first().and_then(|r| {
                 if let crate::MeasurementRef::Inline(inline) = r {
                     inline.wav_path.clone()
                 } else {
@@ -731,7 +732,7 @@ fn process_single_speaker(
         Vec::new()
     };
 
-    // Compute pre-score
+    // Compute pre-score (within EQ range)
     let min_freq = room_config.optimizer.min_freq;
     let max_freq = room_config.optimizer.max_freq;
 
@@ -746,6 +747,9 @@ fn process_single_speaker(
     let mean = if count > 0 { sum / count as f64 } else { 0.0 };
     let normalized_spl = &curve.spl - mean;
     let pre_score = crate::loss::flat_loss(&curve.freq, &normalized_spl, min_freq, max_freq);
+
+    // Compute full-range mean SPL for level alignment between channels
+    let mean_spl = curve.spl.mean().unwrap_or(0.0);
 
     match room_config.optimizer.mode.as_str() {
         "fir" => {
@@ -772,7 +776,7 @@ fn process_single_speaker(
                 None,
                 Vec::new(),
                 &[],
-                Some(&curve),
+                None,
                 None,
             );
             chain.plugins.push(convolution_plugin);
@@ -804,9 +808,16 @@ fn process_single_speaker(
                 pre_score, post_score
             );
 
-            chain.final_curve = Some((&final_curve).into());
+            // Extend curves to 20 Hz – 20 kHz for display output
+            let display_initial = output::extend_curve_to_full_range(&curve);
+            let display_fir_resp =
+                response::compute_fir_complex_response(&coeffs, &display_initial.freq, sample_rate);
+            let display_final = response::apply_complex_response(&display_initial, &display_fir_resp);
 
-            Ok((chain, pre_score, post_score, curve.clone(), final_curve, vec![], mean, arrival_time_ms))
+            chain.initial_curve = Some((&display_initial).into());
+            chain.final_curve = Some((&display_final).into());
+
+            Ok((chain, pre_score, post_score, curve.clone(), final_curve, vec![], mean_spl, arrival_time_ms))
         }
         "mixed" => {
             // Check for frequency-based crossover configuration
@@ -821,7 +832,7 @@ fn process_single_speaker(
                     output_dir,
                     min_freq,
                     max_freq,
-                    mean,
+                    mean_spl,
                     pre_score,
                     arrival_time_ms,
                 );
@@ -891,10 +902,19 @@ fn process_single_speaker(
                 pre_score, post_score
             );
 
-            chain.initial_curve = Some((&curve).into());
-            chain.final_curve = Some((&final_curve).into());
+            // Extend curves to 20 Hz – 20 kHz for display output
+            let display_initial = output::extend_curve_to_full_range(&curve);
+            let display_iir_resp =
+                response::compute_peq_complex_response(&eq_filters, &display_initial.freq, sample_rate);
+            let display_iir_corrected = response::apply_complex_response(&display_initial, &display_iir_resp);
+            let display_fir_resp =
+                response::compute_fir_complex_response(&coeffs, &display_initial.freq, sample_rate);
+            let display_final = response::apply_complex_response(&display_iir_corrected, &display_fir_resp);
 
-            Ok((chain, pre_score, post_score, curve.clone(), final_curve, eq_filters, mean, arrival_time_ms))
+            chain.initial_curve = Some((&display_initial).into());
+            chain.final_curve = Some((&display_final).into());
+
+            Ok((chain, pre_score, post_score, curve.clone(), final_curve, eq_filters, mean_spl, arrival_time_ms))
         }
         _ => {
             // Default IIR mode with enhanced processing
@@ -968,12 +988,12 @@ fn process_single_speaker(
             let mut all_filters = excursion_filters.clone();
             all_filters.extend(eq_filters.clone());
 
-            let chain = output::build_channel_dsp_chain_with_curves(
+            let mut chain = output::build_channel_dsp_chain_with_curves(
                 channel_name,
                 None,
                 Vec::new(),
                 &all_filters,
-                Some(&curve),
+                None,
                 None,
             );
 
@@ -1016,10 +1036,16 @@ fn process_single_speaker(
                 pre_score, post_score
             );
 
-            let mut chain = chain;
-            chain.final_curve = Some((&final_curve).into());
+            // Extend curves to 20 Hz – 20 kHz for display output
+            let display_initial = output::extend_curve_to_full_range(&curve);
+            let display_resp =
+                response::compute_peq_complex_response(&all_filters, &display_initial.freq, sample_rate);
+            let display_final = response::apply_complex_response(&display_initial, &display_resp);
 
-            Ok((chain, pre_score, post_score, curve.clone(), final_curve, eq_filters, mean, arrival_time_ms))
+            chain.initial_curve = Some((&display_initial).into());
+            chain.final_curve = Some((&display_final).into());
+
+            Ok((chain, pre_score, post_score, curve.clone(), final_curve, eq_filters, mean_spl, arrival_time_ms))
         }
     }
 }
@@ -1264,14 +1290,14 @@ fn process_speaker_group(
     );
 
     // Build multi-driver DSP chain
-    let chain = output::build_multidriver_dsp_chain_with_curves(
+    let mut chain = output::build_multidriver_dsp_chain_with_curves(
         channel_name,
         &gains,
         &delays,
         &crossover_freqs,
         crossover::crossover_type_to_string(&crossover_type),
         &eq_filters,
-        Some(&combined_curve),
+        None,
         None,
     );
 
@@ -1279,21 +1305,17 @@ fn process_speaker_group(
         response::compute_peq_complex_response(&eq_filters, &combined_curve.freq, sample_rate);
     let final_curve = response::apply_complex_response(&combined_curve, &iir_resp);
 
-    // Compute mean SPL of combined curve for level alignment
-    let min_freq = room_config.optimizer.min_freq;
-    let max_freq = room_config.optimizer.max_freq;
-    let mut sum = 0.0;
-    let mut count = 0;
-    for i in 0..combined_curve.freq.len() {
-        if combined_curve.freq[i] >= min_freq && combined_curve.freq[i] <= max_freq {
-            sum += combined_curve.spl[i];
-            count += 1;
-        }
-    }
-    let mean_spl = if count > 0 { sum / count as f64 } else { 0.0 };
+    // Compute full-range mean SPL for level alignment between channels
+    let mean_spl = combined_curve.spl.mean().unwrap_or(0.0);
 
-    let mut chain = chain;
-    chain.final_curve = Some((&final_curve).into());
+    // Extend curves to 20 Hz – 20 kHz for display output
+    let display_initial = output::extend_curve_to_full_range(&combined_curve);
+    let display_resp =
+        response::compute_peq_complex_response(&eq_filters, &display_initial.freq, sample_rate);
+    let display_final = response::apply_complex_response(&display_initial, &display_resp);
+
+    chain.initial_curve = Some((&display_initial).into());
+    chain.final_curve = Some((&display_final).into());
 
     Ok((
         chain,
@@ -1340,14 +1362,14 @@ fn process_multisub_group(
         post_score
     );
 
-    let chain = output::build_multisub_dsp_chain_with_curves(
+    let mut chain = output::build_multisub_dsp_chain_with_curves(
         channel_name,
         &group.name,
         group.subwoofers.len(),
         &result.gains,
         &result.delays,
         &eq_filters,
-        Some(&combined_curve),
+        None,
         None,
     );
 
@@ -1355,21 +1377,17 @@ fn process_multisub_group(
         response::compute_peq_complex_response(&eq_filters, &combined_curve.freq, sample_rate);
     let final_curve = response::apply_complex_response(&combined_curve, &iir_resp);
 
-    // Compute mean SPL of combined curve for level alignment
-    let min_freq = room_config.optimizer.min_freq;
-    let max_freq = room_config.optimizer.max_freq;
-    let mut sum = 0.0;
-    let mut count = 0;
-    for i in 0..combined_curve.freq.len() {
-        if combined_curve.freq[i] >= min_freq && combined_curve.freq[i] <= max_freq {
-            sum += combined_curve.spl[i];
-            count += 1;
-        }
-    }
-    let mean_spl = if count > 0 { sum / count as f64 } else { 0.0 };
+    // Compute full-range mean SPL for level alignment between channels
+    let mean_spl = combined_curve.spl.mean().unwrap_or(0.0);
 
-    let mut chain = chain;
-    chain.final_curve = Some((&final_curve).into());
+    // Extend curves to 20 Hz – 20 kHz for display output
+    let display_initial = output::extend_curve_to_full_range(&combined_curve);
+    let display_resp =
+        response::compute_peq_complex_response(&eq_filters, &display_initial.freq, sample_rate);
+    let display_final = response::apply_complex_response(&display_initial, &display_resp);
+
+    chain.initial_curve = Some((&display_initial).into());
+    chain.final_curve = Some((&display_final).into());
 
     Ok((
         chain,
@@ -1416,12 +1434,12 @@ fn process_dba(
         post_score
     );
 
-    let chain = output::build_dba_dsp_chain_with_curves(
+    let mut chain = output::build_dba_dsp_chain_with_curves(
         channel_name,
         &result.gains,
         &result.delays,
         &eq_filters,
-        Some(&combined_curve),
+        None,
         None,
     );
 
@@ -1429,21 +1447,17 @@ fn process_dba(
         response::compute_peq_complex_response(&eq_filters, &combined_curve.freq, sample_rate);
     let final_curve = response::apply_complex_response(&combined_curve, &iir_resp);
 
-    // Compute mean SPL of combined curve for level alignment
-    let min_freq = room_config.optimizer.min_freq;
-    let max_freq = room_config.optimizer.max_freq;
-    let mut sum = 0.0;
-    let mut count = 0;
-    for i in 0..combined_curve.freq.len() {
-        if combined_curve.freq[i] >= min_freq && combined_curve.freq[i] <= max_freq {
-            sum += combined_curve.spl[i];
-            count += 1;
-        }
-    }
-    let mean_spl = if count > 0 { sum / count as f64 } else { 0.0 };
+    // Compute full-range mean SPL for level alignment between channels
+    let mean_spl = combined_curve.spl.mean().unwrap_or(0.0);
 
-    let mut chain = chain;
-    chain.final_curve = Some((&final_curve).into());
+    // Extend curves to 20 Hz – 20 kHz for display output
+    let display_initial = output::extend_curve_to_full_range(&combined_curve);
+    let display_resp =
+        response::compute_peq_complex_response(&eq_filters, &display_initial.freq, sample_rate);
+    let display_final = response::apply_complex_response(&display_initial, &display_resp);
+
+    chain.initial_curve = Some((&display_initial).into());
+    chain.final_curve = Some((&display_final).into());
 
     Ok((
         chain,
@@ -1560,13 +1574,13 @@ fn process_mixed_mode_crossover(
     info!("  Saved FIR filter to {}", wav_path.display());
 
     // Build DSP chain with band split/merge
-    let chain = output::build_mixed_mode_crossover_chain(
+    let mut chain = output::build_mixed_mode_crossover_chain(
         channel_name,
         mixed_config,
         &eq_filters,
         &fir_filename,
         fir_uses_low,
-        Some(curve),
+        None,
     );
 
     // Compute combined response for scoring
@@ -1618,8 +1632,30 @@ fn process_mixed_mode_crossover(
         pre_score, post_score
     );
 
-    let mut chain = chain;
-    chain.final_curve = Some((&final_curve).into());
+    // Extend curves to 20 Hz – 20 kHz for display output
+    let display_initial = output::extend_curve_to_full_range(curve);
+    let display_iir_resp =
+        response::compute_peq_complex_response(&eq_filters, &display_initial.freq, sample_rate);
+    let display_fir_resp =
+        response::compute_fir_complex_response(&fir_coeffs, &display_initial.freq, sample_rate);
+    let (display_lp, display_hp) =
+        compute_lr24_crossover_responses(&display_initial.freq, crossover_freq, sample_rate);
+    let display_combined: Vec<num_complex::Complex<f64>> = display_initial
+        .freq
+        .iter()
+        .enumerate()
+        .map(|(i, _)| {
+            if fir_uses_low {
+                display_lp[i] * display_fir_resp[i] + display_hp[i] * display_iir_resp[i]
+            } else {
+                display_lp[i] * display_iir_resp[i] + display_hp[i] * display_fir_resp[i]
+            }
+        })
+        .collect();
+    let display_final = response::apply_complex_response(&display_initial, &display_combined);
+
+    chain.initial_curve = Some((&display_initial).into());
+    chain.final_curve = Some((&display_final).into());
 
     Ok((
         chain,
