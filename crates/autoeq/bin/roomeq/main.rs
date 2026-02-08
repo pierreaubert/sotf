@@ -1,6 +1,6 @@
 //! Room EQ - Multi-channel room equalization optimizer
 //!
-//! Copyright (C) 2025 Pierre Aubert pierre(at)spinorama(dot)org
+//! Copyright (C) 2025-2026 Pierre Aubert pierre(at)spinorama(dot)org
 //!
 //! This program is free software: you can redistribute it and/or modify
 //! it under the terms of the GNU General Public License as published by
@@ -51,9 +51,9 @@ struct Args {
     #[arg(long)]
     schema: bool,
 
-    /// Path to optimizer config JSON file (overrides optimizer section from main config)
-    #[arg(long)]
-    optim_config: Option<PathBuf>,
+    /// Path to override config JSON file (overrides any section: optimizer, speakers, crossovers, group_delay, etc.)
+    #[arg(long, alias = "optim-config")]
+    override_config: Option<PathBuf>,
 }
 
 fn main() -> Result<()> {
@@ -80,7 +80,7 @@ fn main() -> Result<()> {
         .output
         .ok_or_else(|| anyhow!("Output file is required"))?;
 
-    run(args.sample_rate, config_path, output_path, args.optim_config)
+    run(args.sample_rate, config_path, output_path, args.override_config)
 }
 
 /// Progress callback that logs to stderr
@@ -104,11 +104,40 @@ fn create_progress_callback() -> RoomOptimizationCallback {
     })
 }
 
+/// Keys that are shallow-merged (override individual fields within the object).
+/// All other top-level keys are replaced entirely by the override value.
+const SHALLOW_MERGE_KEYS: &[&str] = &["optimizer"];
+
+/// Merge two JSON objects: for keys in `SHALLOW_MERGE_KEYS`, shallow-merge individual fields;
+/// for all other keys, replace the base value entirely with the override value.
+fn merge_json_objects(base: &mut serde_json::Value, overrides: &serde_json::Value) {
+    if let (Some(base_obj), Some(override_obj)) = (base.as_object_mut(), overrides.as_object()) {
+        for (key, override_value) in override_obj {
+            if SHALLOW_MERGE_KEYS.contains(&key.as_str()) {
+                // Shallow merge: override individual fields within the object
+                if let (Some(base_inner), Some(override_inner)) = (
+                    base_obj.get_mut(key).and_then(|v| v.as_object_mut()),
+                    override_value.as_object(),
+                ) {
+                    for (k, v) in override_inner {
+                        base_inner.insert(k.clone(), v.clone());
+                    }
+                } else {
+                    base_obj.insert(key.clone(), override_value.clone());
+                }
+            } else {
+                // Replace entirely (speakers, crossovers, group_delay, etc.)
+                base_obj.insert(key.clone(), override_value.clone());
+            }
+        }
+    }
+}
+
 fn run(
     sample_rate: f64,
     config_path: PathBuf,
     output_path: PathBuf,
-    optim_config_path: Option<PathBuf>,
+    override_config_path: Option<PathBuf>,
 ) -> Result<()> {
     // Load room configuration
     info!("Loading room configuration from {:?}", config_path);
@@ -116,50 +145,39 @@ fn run(
     let config_json = std::fs::read_to_string(&config_path)
         .with_context(|| format!("Failed to read config file: {:?}", config_path))?;
 
-    let mut room_config: RoomConfig = serde_json::from_str(&config_json)
+    let mut config_value: serde_json::Value = serde_json::from_str(&config_json)
         .with_context(|| "Failed to parse room configuration JSON")?;
+
+    // Apply override config if provided
+    if let Some(override_path) = override_config_path {
+        info!("Loading config overrides from {:?}", override_path);
+
+        let override_json = std::fs::read_to_string(&override_path)
+            .with_context(|| format!("Failed to read override config file: {:?}", override_path))?;
+
+        let override_value: serde_json::Value = serde_json::from_str(&override_json)
+            .with_context(|| "Failed to parse override config JSON")?;
+
+        merge_json_objects(&mut config_value, &override_value);
+
+        info!("Config overrides applied successfully");
+    }
+
+    // Deserialize merged config into RoomConfig
+    let mut room_config: RoomConfig = serde_json::from_value(config_value)
+        .with_context(|| "Failed to parse merged room configuration")?;
 
     // Resolve relative paths in the config relative to the config file's directory
     if let Some(config_dir) = config_path.parent() {
         room_config.resolve_paths(config_dir);
     }
 
-    // Override optimizer config if provided
-    if let Some(optim_path) = optim_config_path {
-        info!("Loading optimizer config override from {:?}", optim_path);
-
-        let optim_json = std::fs::read_to_string(&optim_path)
-            .with_context(|| format!("Failed to read optim config file: {:?}", optim_path))?;
-
-        // Parse as JSON Value first to merge with existing config
-        let optim_override: serde_json::Value = serde_json::from_str(&optim_json)
-            .with_context(|| "Failed to parse optimizer config JSON")?;
-
-        // Serialize current optimizer config to JSON Value
-        let mut current_optim = serde_json::to_value(&room_config.optimizer)
-            .with_context(|| "Failed to serialize current optimizer config")?;
-
-        // Merge: override values from optim_config onto current config
-        if let (Some(current_obj), Some(override_obj)) =
-            (current_optim.as_object_mut(), optim_override.as_object())
-        {
-            for (key, value) in override_obj {
-                current_obj.insert(key.clone(), value.clone());
-            }
-        }
-
-        // Deserialize back to OptimizerConfig
-        room_config.optimizer = serde_json::from_value(current_optim)
-            .with_context(|| "Failed to parse merged optimizer config")?;
-
-        info!("Optimizer config overridden successfully");
-    }
-
     info!("Found {} speakers", room_config.speakers.len());
 
     // Run optimization using the library
     let callback = create_progress_callback();
-    let result = optimize_room(&room_config, sample_rate, Some(callback))
+    let out_dir = output_path.parent();
+    let result = optimize_room(&room_config, sample_rate, Some(callback), out_dir)
         .map_err(|e| anyhow!("{}", e))
         .with_context(|| "Room optimization failed")?;
 

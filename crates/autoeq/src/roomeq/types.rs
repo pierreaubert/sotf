@@ -216,12 +216,13 @@ fn default_group_delay_max_freq() -> f64 {
 }
 
 /// Speaker configuration (can be single measurement or group)
+///
+/// Variant order matters for serde untagged deserialization: serde tries each variant
+/// in order. Group/MultiSub/Dba all require a `name` field that `MeasurementSource`
+/// doesn't have, so they are tried first. `Single` is last as a catch-all.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum SpeakerConfig {
-    /// Single channel (simple case)
-    Single(MeasurementSource),
-
     /// Group of measurements (multi-driver case)
     Group(SpeakerGroup),
 
@@ -230,6 +231,9 @@ pub enum SpeakerConfig {
 
     /// Double Bass Array (DBA) optimization
     Dba(DBAConfig),
+
+    /// Single channel (simple case)
+    Single(MeasurementSource),
 }
 
 impl SpeakerConfig {
@@ -1101,6 +1105,10 @@ pub struct DriverDspChain {
 
     /// Ordered list of plugins for this driver (gain, crossover filters)
     pub plugins: Vec<PluginConfigWrapper>,
+
+    /// Initial frequency response curve for this driver before optimization (optional)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initial_curve: Option<CurveData>,
 }
 
 /// Wrapper for AudioEngine PluginConfig (re-exported from src-audio)

@@ -166,7 +166,7 @@ pub fn optimize_dba(
 /// This function uses complex summation to properly model interference patterns.
 /// If any measurement is missing phase data, a warning is logged and 0° phase
 /// is assumed for that measurement.
-fn sum_array_response(
+pub fn sum_array_response(
     sources: &[super::types::MeasurementSource],
 ) -> Result<Curve, Box<dyn Error>> {
     if sources.is_empty() {

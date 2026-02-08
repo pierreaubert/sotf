@@ -322,5 +322,5 @@ cargo clippy --workspace --all-targets
 
 ## Contributing
 
-- Open an issue on [GitHub](https://github.com/pierreaubert/autoeq)
+- Open an issue on [GitHub](https://github.com/pierreaubert/sotf)
 - Send a PR

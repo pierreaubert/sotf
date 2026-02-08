@@ -59,6 +59,9 @@ DEFAULT_SMOOTHING = 1.0  # 1/1 octave
 
 def load_roomeq_json(filepath: Path) -> dict:
     """Load and parse roomeq JSON output file."""
+    if not filepath.exists():
+        print(f"Error: File not found: {filepath}")
+        sys.exit(1)
     with open(filepath, "r") as f:
         return json.load(f)
 
@@ -580,6 +583,210 @@ def compute_eq_response(
     return combined_db
 
 
+def compute_biquad_response_db(
+    b0: float, b1: float, b2: float, a1: float, a2: float, freq_points: list[float], sample_rate: float
+) -> list[float]:
+    """Compute magnitude response in dB for a single biquad section (already normalized by a0)."""
+    result = []
+    for f in freq_points:
+        if f <= 0:
+            result.append(0.0)
+            continue
+        w = 2 * math.pi * f / sample_rate
+        cos_w = math.cos(w)
+        cos_2w = math.cos(2 * w)
+        sin_w = math.sin(w)
+        sin_2w = math.sin(2 * w)
+
+        num_real = b0 + b1 * cos_w + b2 * cos_2w
+        num_imag = -b1 * sin_w - b2 * sin_2w
+        den_real = 1 + a1 * cos_w + a2 * cos_2w
+        den_imag = -a1 * sin_w - a2 * sin_2w
+
+        num_mag = math.sqrt(num_real**2 + num_imag**2)
+        den_mag = math.sqrt(den_real**2 + den_imag**2)
+
+        if den_mag > 1e-10 and num_mag > 1e-10:
+            result.append(20 * math.log10(num_mag / den_mag))
+        else:
+            result.append(-200.0)
+    return result
+
+
+def compute_crossover_response(
+    crossover_type: str,
+    frequency: float,
+    output: str,
+    freq_points: list[float],
+    sample_rate: float = 48000.0,
+) -> list[float]:
+    """Compute magnitude response of a crossover filter.
+
+    Args:
+        crossover_type: "LinkwitzRiley4", "LinkwitzRiley2", or "Butterworth2"
+        frequency: Crossover frequency in Hz
+        output: "lowpass" or "highpass"
+        freq_points: Frequency points to evaluate at
+        sample_rate: Sample rate in Hz
+
+    Returns:
+        Magnitude response in dB at the given frequency points
+    """
+    w0 = 2 * math.pi * frequency / sample_rate
+    sin_w0 = math.sin(w0)
+    cos_w0 = math.cos(w0)
+
+    # Butterworth Q for 2nd-order
+    q = math.sqrt(2) / 2  # 0.7071
+
+    alpha = sin_w0 / (2 * q)
+
+    if output == "lowpass":
+        # 2nd-order Butterworth lowpass
+        b0 = (1 - cos_w0) / 2
+        b1 = 1 - cos_w0
+        b2 = (1 - cos_w0) / 2
+    else:
+        # 2nd-order Butterworth highpass
+        b0 = (1 + cos_w0) / 2
+        b1 = -(1 + cos_w0)
+        b2 = (1 + cos_w0) / 2
+
+    a0 = 1 + alpha
+    a1_coeff = -2 * cos_w0
+    a2_coeff = 1 - alpha
+
+    # Normalize
+    b0 /= a0
+    b1 /= a0
+    b2 /= a0
+    a1_coeff /= a0
+    a2_coeff /= a0
+
+    # Single 2nd-order section response
+    section_db = compute_biquad_response_db(b0, b1, b2, a1_coeff, a2_coeff, freq_points, sample_rate)
+
+    ct = crossover_type.lower()
+    if ct in ("linkwitzriley4", "lr4", "lr24"):
+        # LR4 = two cascaded 2nd-order Butterworth => double the dB
+        return [2 * d for d in section_db]
+    elif ct in ("linkwitzriley2", "lr2", "lr12"):
+        # LR2 = single 2nd-order Butterworth (Q=0.5 ideally, but standard BW Q is used)
+        # For LR2, use Q=0.5
+        alpha_lr2 = sin_w0 / (2 * 0.5)
+        if output == "lowpass":
+            b0_lr2 = (1 - cos_w0) / 2
+            b1_lr2 = 1 - cos_w0
+            b2_lr2 = (1 - cos_w0) / 2
+        else:
+            b0_lr2 = (1 + cos_w0) / 2
+            b1_lr2 = -(1 + cos_w0)
+            b2_lr2 = (1 + cos_w0) / 2
+        a0_lr2 = 1 + alpha_lr2
+        a1_lr2 = -2 * cos_w0 / a0_lr2
+        a2_lr2 = (1 - alpha_lr2) / a0_lr2
+        b0_lr2 /= a0_lr2
+        b1_lr2 /= a0_lr2
+        b2_lr2 /= a0_lr2
+        return compute_biquad_response_db(b0_lr2, b1_lr2, b2_lr2, a1_lr2, a2_lr2, freq_points, sample_rate)
+    elif ct in ("butterworth2", "bw2", "butterworth12"):
+        # Single 2nd-order Butterworth
+        return section_db
+    else:
+        # Default: LR4
+        return [2 * d for d in section_db]
+
+
+def compute_minimum_phase_from_spl(
+    freq: list[float], spl: list[float]
+) -> list[float] | None:
+    """Compute minimum phase from magnitude response using cepstral method.
+
+    Args:
+        freq: Frequency points in Hz
+        spl: SPL values in dB
+
+    Returns:
+        Phase in degrees at the given frequency points, or None if unable to compute
+    """
+    if not freq or not spl or len(freq) < 2:
+        return None
+
+    freq_arr = np.array(freq, dtype=np.float64)
+    spl_arr = np.array(spl, dtype=np.float64)
+
+    # Dense linear frequency grid for FFT-based computation
+    n_fft = 16384
+    sample_rate = float(max(freq)) * 3.0
+    freq_fft = np.fft.rfftfreq(n_fft, d=1.0 / sample_rate)
+
+    # Interpolate magnitude (dB) to FFT grid
+    mag_db_interp = np.interp(freq_fft, freq_arr, spl_arr, left=float(spl_arr[0]), right=float(spl_arr[-1]))
+
+    # Convert dB to natural log of linear magnitude: ln(|H|) = dB * ln(10) / 20
+    log_mag = mag_db_interp * (np.log(10.0) / 20.0)
+
+    # Real cepstrum via inverse FFT
+    cepstrum = np.fft.irfft(log_mag)
+
+    # Minimum phase cepstrum: keep causal part, double it (except DC and Nyquist)
+    n = len(cepstrum)
+    min_cep = np.zeros(n)
+    min_cep[0] = cepstrum[0]
+    min_cep[1:n // 2] = 2.0 * cepstrum[1:n // 2]
+    if n % 2 == 0:
+        min_cep[n // 2] = cepstrum[n // 2]
+
+    # Back to frequency domain
+    spectrum = np.fft.rfft(min_cep)
+
+    # Minimum phase is the angle of the complex spectrum
+    phase_deg = np.degrees(np.angle(np.exp(spectrum)))
+
+    # Interpolate to original frequency points
+    result = np.interp(freq_arr, freq_fft, phase_deg)
+    return result.tolist()
+
+
+def compute_fir_frequency_response(
+    ir_path: Path, freq_points: list[float]
+) -> list[float] | None:
+    """
+    Compute frequency response of an FIR filter from its impulse response WAV file.
+
+    Args:
+        ir_path: Path to the impulse response WAV file
+        freq_points: Frequency points (Hz) to evaluate at
+
+    Returns:
+        Magnitude response in dB at the given frequency points, or None if unable to compute
+    """
+    result = load_wav_file(ir_path)
+    if result is None:
+        return None
+
+    _, ir_samples, sample_rate = result
+
+    # Compute FFT with good frequency resolution
+    n_fft = max(len(ir_samples), 8192)
+    n_fft = 1 << (n_fft - 1).bit_length()  # Next power of 2
+
+    spectrum = np.fft.rfft(ir_samples, n=n_fft)
+    magnitudes = np.abs(spectrum)
+
+    # Frequency bins
+    fft_freqs = np.fft.rfftfreq(n_fft, d=1.0 / sample_rate)
+
+    # Convert to dB (avoid log of zero)
+    magnitudes_db = np.where(magnitudes > 1e-10, 20 * np.log10(magnitudes), -200.0)
+
+    # Interpolate at desired frequency points
+    freq_array = np.array(freq_points)
+    response_db = np.interp(freq_array, fft_freqs, magnitudes_db)
+
+    return response_db.tolist()
+
+
 def generate_freq_points(min_freq: float = 20.0, max_freq: float = 20000.0, n_points: int = 200) -> list[float]:
     """Generate logarithmically spaced frequency points."""
     log_min = math.log10(min_freq)
@@ -601,54 +808,86 @@ def load_wav_file(wav_path: Path) -> tuple[np.ndarray, np.ndarray, int] | None:
         print(f"Warning: WAV file not found: {wav_path}")
         return None
 
-    try:
-        with wave.open(str(wav_path), 'rb') as wf:
-            sample_rate = wf.getframerate()
-            n_channels = wf.getnchannels()
-            n_frames = wf.getnframes()
-            sample_width = wf.getsampwidth()
+    samples = None
+    sample_rate = None
 
-            # Read raw audio data
-            raw_data = wf.readframes(n_frames)
+    # Try scipy first (handles IEEE float and other extended formats)
+    if HAS_SCIPY:
+        try:
+            from scipy.io import wavfile
+            sr, data = wavfile.read(str(wav_path))
+            sample_rate = sr
+            samples = data.astype(np.float64)
 
-            # Convert to numpy array based on sample width
-            if sample_width == 1:
-                samples = np.frombuffer(raw_data, dtype=np.uint8).astype(np.float64) - 128
-                samples /= 128.0
-            elif sample_width == 2:
-                samples = np.frombuffer(raw_data, dtype=np.int16).astype(np.float64)
+            # Normalize integer formats to [-1, 1]
+            if data.dtype == np.int16:
                 samples /= 32768.0
-            elif sample_width == 3:
-                # 24-bit audio - need to handle byte by byte
-                samples = np.zeros(n_frames * n_channels, dtype=np.float64)
-                for i in range(n_frames * n_channels):
-                    b = raw_data[i*3:(i+1)*3]
-                    val = int.from_bytes(b, byteorder='little', signed=True)
-                    samples[i] = val / 8388608.0
-            elif sample_width == 4:
-                samples = np.frombuffer(raw_data, dtype=np.int32).astype(np.float64)
+            elif data.dtype == np.int32:
                 samples /= 2147483648.0
-            else:
-                print(f"Warning: Unsupported sample width {sample_width} in {wav_path}")
-                return None
+            elif data.dtype == np.uint8:
+                samples = (samples - 128) / 128.0
+            # float32/float64 are already in [-1, 1] range
 
             # If stereo or more, take first channel
-            if n_channels > 1:
-                samples = samples[::n_channels]
+            if samples.ndim > 1:
+                samples = samples[:, 0]
+        except Exception:
+            samples = None
 
-            # Normalize
-            max_val = np.max(np.abs(samples))
-            if max_val > 0:
-                samples = samples / max_val
+    # Fall back to wave module (PCM integer only)
+    if samples is None:
+        try:
+            with wave.open(str(wav_path), 'rb') as wf:
+                sample_rate = wf.getframerate()
+                n_channels = wf.getnchannels()
+                n_frames = wf.getnframes()
+                sample_width = wf.getsampwidth()
 
-            # Create time axis in milliseconds
-            time_ms = np.arange(len(samples)) / sample_rate * 1000.0
+                # Read raw audio data
+                raw_data = wf.readframes(n_frames)
 
-            return time_ms, samples, sample_rate
+                # Convert to numpy array based on sample width
+                if sample_width == 1:
+                    samples = np.frombuffer(raw_data, dtype=np.uint8).astype(np.float64) - 128
+                    samples /= 128.0
+                elif sample_width == 2:
+                    samples = np.frombuffer(raw_data, dtype=np.int16).astype(np.float64)
+                    samples /= 32768.0
+                elif sample_width == 3:
+                    # 24-bit audio - need to handle byte by byte
+                    samples = np.zeros(n_frames * n_channels, dtype=np.float64)
+                    for i in range(n_frames * n_channels):
+                        b = raw_data[i*3:(i+1)*3]
+                        val = int.from_bytes(b, byteorder='little', signed=True)
+                        samples[i] = val / 8388608.0
+                elif sample_width == 4:
+                    samples = np.frombuffer(raw_data, dtype=np.int32).astype(np.float64)
+                    samples /= 2147483648.0
+                else:
+                    print(f"Warning: Unsupported sample width {sample_width} in {wav_path}")
+                    return None
 
-    except Exception as e:
-        print(f"Warning: Failed to load WAV file {wav_path}: {e}")
+                # If stereo or more, take first channel
+                if n_channels > 1:
+                    samples = samples[::n_channels]
+
+        except Exception as e:
+            print(f"Warning: Failed to load WAV file {wav_path}: {e}")
+            return None
+
+    if samples is None or sample_rate is None:
+        print(f"Warning: Could not load WAV file {wav_path}")
         return None
+
+    # Normalize
+    max_val = np.max(np.abs(samples))
+    if max_val > 0:
+        samples = samples / max_val
+
+    # Create time axis in milliseconds
+    time_ms = np.arange(len(samples)) / sample_rate * 1000.0
+
+    return time_ms, samples, sample_rate
 
 
 def extract_ir_wav_paths(channel_data: dict) -> list[tuple[str, str]]:
@@ -746,6 +985,90 @@ def extract_crossover_frequencies(channel_data: dict) -> list[float]:
                     crossover_freqs.add(float(freq))
 
     return sorted(crossover_freqs)
+
+
+def get_driver_initial_curves(channel_data: dict) -> list[tuple[str, dict]] | None:
+    """Extract per-driver initial curves from a channel's driver chains.
+
+    Returns:
+        List of (driver_name, curve_data) tuples, or None if no per-driver curves exist.
+        Each curve_data has "freq" and "spl" keys.
+    """
+    drivers = channel_data.get("drivers", [])
+    if not drivers:
+        return None
+
+    result = []
+    for driver in drivers:
+        initial_curve = driver.get("initial_curve")
+        if initial_curve and "freq" in initial_curve and "spl" in initial_curve:
+            name = driver.get("name", f"driver_{driver.get('index', '?')}")
+            result.append((name, initial_curve))
+
+    return result if result else None
+
+
+def compute_driver_correction_db(
+    driver: dict,
+    channel_plugins: list[dict],
+    freq_points: list[float],
+    sample_rate: float = 48000.0,
+) -> list[float]:
+    """Compute the total correction in dB for a single driver.
+
+    Includes:
+    - Per-driver gain
+    - Per-driver crossover filters (LP/HP)
+    - Channel-level EQ filters
+
+    Args:
+        driver: Driver dict from the output JSON
+        channel_plugins: Channel-level plugins list
+        freq_points: Frequency points to evaluate at
+        sample_rate: Sample rate in Hz
+
+    Returns:
+        Correction in dB at each frequency point
+    """
+    correction_db = [0.0] * len(freq_points)
+
+    # Per-driver plugins (gain, crossover)
+    driver_plugins = driver.get("plugins", [])
+    for plugin in driver_plugins:
+        ptype = plugin.get("plugin_type", "")
+        params = plugin.get("parameters", {})
+
+        if ptype == "gain":
+            gain_db = params.get("gain_db", 0.0)
+            correction_db = [c + gain_db for c in correction_db]
+
+        elif ptype == "crossover":
+            xover_type = params.get("crossover_type", "LinkwitzRiley4")
+            xover_freq = params.get("frequency", 1000.0)
+            xover_output = params.get("output", "lowpass")
+            xover_db = compute_crossover_response(
+                xover_type, xover_freq, xover_output, freq_points, sample_rate
+            )
+            correction_db = [c + x for c, x in zip(correction_db, xover_db)]
+
+    # Channel-level EQ
+    eq_filters = []
+    for plugin in channel_plugins:
+        if plugin.get("plugin_type") == "eq":
+            filters = plugin.get("parameters", {}).get("filters", [])
+            eq_filters.extend(filters)
+
+    if eq_filters:
+        eq_db = compute_eq_response(eq_filters, freq_points, sample_rate)
+        correction_db = [c + e for c, e in zip(correction_db, eq_db)]
+
+    # Channel-level gain
+    for plugin in channel_plugins:
+        if plugin.get("plugin_type") == "gain":
+            gain_db = plugin.get("parameters", {}).get("gain_db", 0.0)
+            correction_db = [c + gain_db for c in correction_db]
+
+    return correction_db
 
 
 def get_all_crossover_frequencies(data: dict) -> list[float]:
@@ -1178,17 +1501,19 @@ def create_combined_figure(
     if has_ir_wavs:
         ir_title = "Corrected Room Impulse Responses" if has_corrected_ir else "FIR Correction Filters"
         fig = make_subplots(
-            rows=3,
+            rows=4,
             cols=1,
-            subplot_titles=["All EQ Responses", "All Corrected Curves", ir_title],
-            vertical_spacing=0.08,
+            subplot_titles=["All Original Curves", "All EQ Responses", "All Corrected Curves", ir_title],
+            vertical_spacing=0.06,
+            specs=[[{"secondary_y": True}], [{}], [{"secondary_y": True}], [{}]],
         )
     else:
         fig = make_subplots(
-            rows=2,
+            rows=3,
             cols=1,
-            subplot_titles=["All EQ Responses", "All Corrected Curves"],
-            vertical_spacing=0.10,
+            subplot_titles=["All Original Curves", "All EQ Responses", "All Corrected Curves"],
+            vertical_spacing=0.08,
+            specs=[[{"secondary_y": True}], [{}], [{"secondary_y": True}]],
         )
 
     # Color palette for channels
@@ -1206,15 +1531,29 @@ def create_combined_figure(
     # Generate frequency points for EQ response
     freq_points = generate_freq_points(20.0, 20000.0, 500)
 
-    # Collect all final curves to compute y-range for corrected curves plot
-    all_final_curves = []
+    # Collect all curves and pre-compute full-range corrected curves
+    all_initial_curves = []
     all_eq_responses = []
+    corrected_curves = {}  # channel_name -> {"freq": [...], "spl": [...]}
+    # Per-driver data for channels that are speaker groups
+    # channel_name -> list of (driver_name, initial_curve_data)
+    per_driver_initial: dict[str, list[tuple[str, dict]]] = {}
+    # channel_name -> list of (driver_name, corrected_curve_data)
+    per_driver_corrected: dict[str, list[tuple[str, dict]]] = {}
 
-    for channel_data in channels.values():
-        all_final_curves.append(channel_data.get("final_curve"))
-
-    # First pass: compute EQ responses and collect for y-range
     for channel_name, channel_data in channels.items():
+        # Check for per-driver initial curves
+        driver_curves = get_driver_initial_curves(channel_data)
+        if driver_curves:
+            per_driver_initial[channel_name] = driver_curves
+            # Use per-driver curves for y-range (these are what gets plotted)
+            for _, dcurve in driver_curves:
+                all_initial_curves.append(dcurve)
+        else:
+            # Only include combined curve when it's the one being plotted
+            all_initial_curves.append(channel_data.get("initial_curve"))
+
+        # Get EQ filters for this channel
         plugins = channel_data.get("plugins", [])
         eq_filters = []
         for plugin in plugins:
@@ -1226,8 +1565,72 @@ def create_combined_figure(
             eq_response = compute_eq_response(eq_filters, freq_points)
             all_eq_responses.append(eq_response)
 
-    # Compute y-ranges
-    final_y_min, final_y_max = compute_y_range(all_final_curves)
+        # Compute full-range corrected curve (initial + all corrections)
+        initial_curve = channel_data.get("initial_curve")
+        if initial_curve:
+            freq = initial_curve["freq"]
+            spl = initial_curve["spl"]
+            correction_db = [0.0] * len(freq)
+
+            # Add IIR EQ correction
+            if eq_filters:
+                eq_response = compute_eq_response(eq_filters, freq)
+                correction_db = [c + e for c, e in zip(correction_db, eq_response)]
+
+            # Add FIR convolution correction (main chain)
+            for plugin in plugins:
+                if plugin.get("plugin_type") == "convolution":
+                    ir_file = plugin.get("parameters", {}).get("ir_file")
+                    if ir_file:
+                        ir_path = Path(ir_file)
+                        if not ir_path.is_absolute():
+                            ir_path = json_dir / ir_path
+                        fir_response = compute_fir_frequency_response(ir_path, freq)
+                        if fir_response is not None:
+                            correction_db = [c + f for c, f in zip(correction_db, fir_response)]
+
+            # Add gain plugin offset
+            for plugin in plugins:
+                if plugin.get("plugin_type") == "gain":
+                    gain_db = plugin.get("parameters", {}).get("gain_db", 0.0)
+                    correction_db = [c + gain_db for c in correction_db]
+
+            corrected_spl = [s + c for s, c in zip(spl, correction_db)]
+            corrected_curves[channel_name] = {"freq": freq, "spl": corrected_spl}
+
+        # Compute per-driver corrected curves
+        if driver_curves:
+            drivers = channel_data.get("drivers", [])
+            driver_corrected_list = []
+            for driver_idx, (driver_name, dcurve) in enumerate(driver_curves):
+                dfreq = dcurve["freq"]
+                dspl = dcurve["spl"]
+                # Find the matching driver dict by index
+                driver_dict = drivers[driver_idx] if driver_idx < len(drivers) else {}
+                corr_db = compute_driver_correction_db(driver_dict, plugins, dfreq)
+                corrected_dspl = [s + c for s, c in zip(dspl, corr_db)]
+                driver_corrected_list.append(
+                    (driver_name, {"freq": dfreq, "spl": corrected_dspl})
+                )
+            per_driver_corrected[channel_name] = driver_corrected_list
+
+    # Compute y-ranges: max SPL rounded up to next multiple of 5, range of 50 dB
+    def _compute_fixed_range(curves):
+        all_spl = []
+        for curve in curves:
+            if curve and "spl" in curve:
+                all_spl.extend(curve["spl"])
+        if not all_spl:
+            return (-20, 30)
+        upper = math.ceil(max(all_spl) / 5) * 5
+        return (upper - 50, upper)
+
+    initial_y_min, initial_y_max = _compute_fixed_range(all_initial_curves)
+    all_corrected_for_range = list(corrected_curves.values())
+    for dc_list in per_driver_corrected.values():
+        for _, dc in dc_list:
+            all_corrected_for_range.append(dc)
+    corrected_y_min, corrected_y_max = _compute_fixed_range(all_corrected_for_range)
 
     # Compute EQ y-range
     if all_eq_responses:
@@ -1242,11 +1645,129 @@ def create_combined_figure(
 
     # Track trace indices and raw data for smoothing
     trace_y_data = []  # Will hold y-data for each trace (None for non-smoothable)
+    original_freq_data = None  # Frequency data for original curves
+    original_raw_spl = []  # Raw SPL data for each original curve
+    original_trace_indices = []  # Indices of original curve traces
+    original_phase_trace_indices = []  # Indices of original phase traces
+    original_raw_phase = []  # Raw phase data for each original curve
+    original_phase_freq = []  # Frequency data for each original phase curve
     corrected_freq_data = None  # Frequency data for corrected curves
     corrected_raw_spl = []  # Raw SPL data for each corrected curve
     corrected_trace_indices = []  # Indices of corrected curve traces
+    corrected_phase_trace_indices = []  # Indices of corrected phase traces
+    corrected_raw_phase = []  # Raw phase data for each corrected curve
+    corrected_phase_freq = []  # Frequency data for each corrected phase curve
 
-    # Plot EQ responses (row 1)
+    # Driver line dash patterns for distinguishing drivers within a channel
+    driver_dashes = ["solid", "dash", "dot", "dashdot"]
+
+    # Plot original curves (row 1)
+    for i, (channel_name, channel_data) in enumerate(channels.items()):
+        color = channel_colors[i % len(channel_colors)]
+
+        if channel_name in per_driver_initial:
+            # Plot individual driver curves instead of combined
+            for d_idx, (driver_name, dcurve) in enumerate(per_driver_initial[channel_name]):
+                if original_freq_data is None:
+                    original_freq_data = dcurve["freq"]
+
+                spl_raw = dcurve["spl"]
+                spl_smoothed = smooth_octave(dcurve["freq"], spl_raw, DEFAULT_SMOOTHING)
+
+                original_trace_indices.append(len(trace_y_data))
+                original_raw_spl.append(spl_raw)
+
+                fig.add_trace(
+                    go.Scatter(
+                        x=dcurve["freq"],
+                        y=spl_smoothed,
+                        mode="lines",
+                        name=f"Original: {channel_name}/{driver_name}",
+                        line=dict(
+                            color=color,
+                            width=2,
+                            dash=driver_dashes[d_idx % len(driver_dashes)],
+                        ),
+                        legendgroup=f"ch_{channel_name}",
+                    ),
+                    row=1,
+                    col=1,
+                )
+                trace_y_data.append(spl_smoothed)
+        else:
+            # Single-driver channel: plot combined curve
+            initial_curve = channel_data.get("initial_curve")
+            if initial_curve:
+                if original_freq_data is None:
+                    original_freq_data = initial_curve["freq"]
+
+                spl_raw = initial_curve["spl"]
+                spl_smoothed = smooth_octave(initial_curve["freq"], spl_raw, DEFAULT_SMOOTHING)
+
+                original_trace_indices.append(len(trace_y_data))
+                original_raw_spl.append(spl_raw)
+
+                fig.add_trace(
+                    go.Scatter(
+                        x=initial_curve["freq"],
+                        y=spl_smoothed,
+                        mode="lines",
+                        name=f"Original: {channel_name}",
+                        line=dict(color=color, width=2),
+                        legendgroup=f"ch_{channel_name}",
+                    ),
+                    row=1,
+                    col=1,
+                )
+                trace_y_data.append(spl_smoothed)
+
+    # Add target line to original curves plot
+    if channels:
+        first_channel = next(iter(channels.values()))
+        ref_curve = first_channel.get("initial_curve")
+        if ref_curve:
+            freq = ref_curve["freq"]
+            fig.add_trace(
+                go.Scatter(
+                    x=[freq[0], freq[-1]],
+                    y=[0, 0],
+                    mode="lines",
+                    name="Target (0 dB)",
+                    line=dict(color="rgba(150, 150, 150, 0.5)", width=1, dash="dash"),
+                    showlegend=False,
+                ),
+                row=1,
+                col=1,
+            )
+            trace_y_data.append([0, 0])
+
+    # Add phase traces for original curves (row 1, secondary y-axis)
+    for i, (channel_name, channel_data) in enumerate(channels.items()):
+        color = channel_colors[i % len(channel_colors)]
+        phase_color = color.replace("0.9)", "0.5)")
+        initial_curve = channel_data.get("initial_curve")
+        if initial_curve:
+            phase_raw = compute_minimum_phase_from_spl(initial_curve["freq"], initial_curve["spl"])
+            if phase_raw is not None:
+                phase_smoothed = smooth_octave(initial_curve["freq"], phase_raw, DEFAULT_SMOOTHING)
+                original_phase_trace_indices.append(len(trace_y_data))
+                original_raw_phase.append(phase_raw)
+                original_phase_freq.append(initial_curve["freq"])
+                fig.add_trace(
+                    go.Scatter(
+                        x=initial_curve["freq"],
+                        y=phase_smoothed,
+                        mode="lines",
+                        name=f"Phase: {channel_name}",
+                        line=dict(color=phase_color, width=1, dash="dot"),
+                        legendgroup=f"ch_{channel_name}",
+                        showlegend=False,
+                    ),
+                    row=1, col=1, secondary_y=True,
+                )
+                trace_y_data.append(phase_smoothed)
+
+    # Plot EQ responses (row 2)
     for i, (channel_name, channel_data) in enumerate(channels.items()):
         color = channel_colors[i % len(channel_colors)]
 
@@ -1267,11 +1788,12 @@ def create_combined_figure(
                     name=f"EQ: {channel_name}",
                     line=dict(color=color, width=2),
                     legendgroup=f"ch_{channel_name}",
+                    showlegend=False,
                 ),
-                row=1,
+                row=2,
                 col=1,
             )
-            trace_y_data.append(eq_response)  # EQ traces don't get smoothed
+            trace_y_data.append(eq_response)
 
     # Add 0 dB reference line to EQ plot
     fig.add_trace(
@@ -1283,29 +1805,64 @@ def create_combined_figure(
             line=dict(color="rgba(150, 150, 150, 0.5)", width=1, dash="dash"),
             showlegend=False,
         ),
-        row=1,
+        row=2,
         col=1,
     )
-    trace_y_data.append([0, 0])  # Reference line
+    trace_y_data.append([0, 0])
 
-    # Plot corrected curves (row 2) with default smoothing
+    # Plot corrected curves (row 3) - full 20-20k Hz range using initial + EQ
     for i, (channel_name, channel_data) in enumerate(channels.items()):
         color = channel_colors[i % len(channel_colors)]
-        final_curve = channel_data.get("final_curve")
 
-        if final_curve:
+        if channel_name in per_driver_corrected:
+            # Plot individual driver corrected curves
+            for d_idx, (driver_name, dcurve) in enumerate(per_driver_corrected[channel_name]):
+                freq = dcurve["freq"]
+                spl_raw = dcurve["spl"]
+
+                if corrected_freq_data is None:
+                    corrected_freq_data = freq
+
+                spl_smoothed = smooth_octave(freq, spl_raw, DEFAULT_SMOOTHING)
+
+                corrected_trace_indices.append(len(trace_y_data))
+                corrected_raw_spl.append(spl_raw)
+
+                fig.add_trace(
+                    go.Scatter(
+                        x=freq,
+                        y=spl_smoothed,
+                        mode="lines",
+                        name=f"Corrected: {channel_name}/{driver_name}",
+                        line=dict(
+                            color=color,
+                            width=2,
+                            dash=driver_dashes[d_idx % len(driver_dashes)],
+                        ),
+                        legendgroup=f"ch_{channel_name}",
+                        showlegend=False,
+                    ),
+                    row=3,
+                    col=1,
+                )
+                trace_y_data.append(spl_smoothed)
+        elif channel_name in corrected_curves:
+            # Single-driver channel: plot combined corrected curve
+            curve_data = corrected_curves[channel_name]
+            freq = curve_data["freq"]
+            spl_raw = curve_data["spl"]
+
             if corrected_freq_data is None:
-                corrected_freq_data = final_curve["freq"]
+                corrected_freq_data = freq
 
-            spl_raw = final_curve["spl"]
-            spl_smoothed = smooth_octave(final_curve["freq"], spl_raw, DEFAULT_SMOOTHING)
+            spl_smoothed = smooth_octave(freq, spl_raw, DEFAULT_SMOOTHING)
 
             corrected_trace_indices.append(len(trace_y_data))
             corrected_raw_spl.append(spl_raw)
 
             fig.add_trace(
                 go.Scatter(
-                    x=final_curve["freq"],
+                    x=freq,
                     y=spl_smoothed,
                     mode="lines",
                     name=f"Corrected: {channel_name}",
@@ -1313,32 +1870,56 @@ def create_combined_figure(
                     legendgroup=f"ch_{channel_name}",
                     showlegend=False,
                 ),
-                row=2,
+                row=3,
                 col=1,
             )
             trace_y_data.append(spl_smoothed)
 
     # Add target line to corrected curves plot
-    if channels:
-        first_channel = next(iter(channels.values()))
-        ref_curve = first_channel.get("final_curve") or first_channel.get("initial_curve")
-        if ref_curve:
-            freq = ref_curve["freq"]
-            fig.add_trace(
-                go.Scatter(
-                    x=[freq[0], freq[-1]],
-                    y=[0, 0],
-                    mode="lines",
-                    name="Target (0 dB)",
-                    line=dict(color="rgba(150, 150, 150, 0.5)", width=1, dash="dash"),
-                    showlegend=False,
-                ),
-                row=2,
-                col=1,
-            )
-            trace_y_data.append([0, 0])  # Target line
+    if corrected_curves:
+        first_corrected = next(iter(corrected_curves.values()))
+        freq = first_corrected["freq"]
+        fig.add_trace(
+            go.Scatter(
+                x=[freq[0], freq[-1]],
+                y=[0, 0],
+                mode="lines",
+                name="Target (0 dB)",
+                line=dict(color="rgba(150, 150, 150, 0.5)", width=1, dash="dash"),
+                showlegend=False,
+            ),
+            row=3,
+            col=1,
+        )
+        trace_y_data.append([0, 0])
 
-    # Add crossover frequency vertical lines to EQ and corrected curves plots
+    # Add phase traces for corrected curves (row 3, secondary y-axis)
+    for i, (channel_name, channel_data) in enumerate(channels.items()):
+        color = channel_colors[i % len(channel_colors)]
+        phase_color = color.replace("0.9)", "0.5)")
+        if channel_name in corrected_curves:
+            curve_data = corrected_curves[channel_name]
+            phase_raw = compute_minimum_phase_from_spl(curve_data["freq"], curve_data["spl"])
+            if phase_raw is not None:
+                phase_smoothed = smooth_octave(curve_data["freq"], phase_raw, DEFAULT_SMOOTHING)
+                corrected_phase_trace_indices.append(len(trace_y_data))
+                corrected_raw_phase.append(phase_raw)
+                corrected_phase_freq.append(curve_data["freq"])
+                fig.add_trace(
+                    go.Scatter(
+                        x=curve_data["freq"],
+                        y=phase_smoothed,
+                        mode="lines",
+                        name=f"Phase: {channel_name}",
+                        line=dict(color=phase_color, width=1, dash="dot"),
+                        legendgroup=f"ch_{channel_name}",
+                        showlegend=False,
+                    ),
+                    row=3, col=1, secondary_y=True,
+                )
+                trace_y_data.append(phase_smoothed)
+
+    # Add crossover frequency vertical lines to all frequency plots
     crossover_freqs = get_all_crossover_frequencies(data)
     for xover_freq in crossover_freqs:
         # Format frequency label
@@ -1347,11 +1928,11 @@ def create_combined_figure(
         else:
             freq_label = f"{xover_freq:.0f}"
 
-        # Add to EQ plot (row 1)
+        # Add to original curves plot (row 1)
         fig.add_trace(
             go.Scatter(
                 x=[xover_freq, xover_freq],
-                y=[-eq_y_limit, eq_y_limit],
+                y=[initial_y_min, initial_y_max],
                 mode="lines",
                 name=f"Xover {freq_label} Hz",
                 line=dict(color="rgba(180, 80, 180, 0.7)", width=1.5, dash="dashdot"),
@@ -1361,13 +1942,13 @@ def create_combined_figure(
             row=1,
             col=1,
         )
-        trace_y_data.append([-eq_y_limit, eq_y_limit])
+        trace_y_data.append([initial_y_min, initial_y_max])
 
-        # Add to corrected curves plot (row 2)
+        # Add to EQ plot (row 2)
         fig.add_trace(
             go.Scatter(
                 x=[xover_freq, xover_freq],
-                y=[final_y_min, final_y_max],
+                y=[-eq_y_limit, eq_y_limit],
                 mode="lines",
                 name=f"Xover {freq_label} Hz",
                 line=dict(color="rgba(180, 80, 180, 0.7)", width=1.5, dash="dashdot"),
@@ -1377,7 +1958,23 @@ def create_combined_figure(
             row=2,
             col=1,
         )
-        trace_y_data.append([final_y_min, final_y_max])
+        trace_y_data.append([-eq_y_limit, eq_y_limit])
+
+        # Add to corrected curves plot (row 3)
+        fig.add_trace(
+            go.Scatter(
+                x=[xover_freq, xover_freq],
+                y=[corrected_y_min, corrected_y_max],
+                mode="lines",
+                name=f"Xover {freq_label} Hz",
+                line=dict(color="rgba(180, 80, 180, 0.7)", width=1.5, dash="dashdot"),
+                showlegend=False,
+                legendgroup="crossover",
+            ),
+            row=3,
+            col=1,
+        )
+        trace_y_data.append([corrected_y_min, corrected_y_max])
 
     # Plot impulse responses (row 3) - shifted vertically
     ir_shift = 1.5  # Vertical shift between impulse responses
@@ -1437,7 +2034,7 @@ def create_combined_figure(
                             legendgroup=f"ch_{channel_name}",
                             showlegend=False,
                         ),
-                        row=3,
+                        row=4,
                         col=1,
                     )
                     trace_y_data.append(ir_shifted.tolist())
@@ -1480,28 +2077,49 @@ def create_combined_figure(
                                 legendgroup=f"ch_{channel_name}",
                                 showlegend=False,
                             ),
-                            row=3,
+                            row=4,
                             col=1,
                         )
                         trace_y_data.append(ir_shifted.tolist())
                         ir_count += 1
 
-    # Create smoothing buttons for corrected curves
+    # Create smoothing buttons for original and corrected curves
     updatemenus = []
-    if corrected_freq_data and corrected_raw_spl:
+    has_smoothable = (corrected_freq_data and corrected_raw_spl) or (original_freq_data and original_raw_spl)
+    if has_smoothable:
         buttons = []
         for label, octave_frac in SMOOTHING_OPTIONS:
             # Build new y-data for all traces
             new_y_data = []
+            original_idx = 0
             corrected_idx = 0
+            orig_phase_idx = 0
+            corr_phase_idx = 0
             for trace_idx, y_data in enumerate(trace_y_data):
-                if trace_idx in corrected_trace_indices:
-                    # Apply smoothing to this corrected curve
+                if trace_idx in original_trace_indices:
+                    smoothed = smooth_octave(
+                        original_freq_data, original_raw_spl[original_idx], octave_frac
+                    )
+                    new_y_data.append(smoothed)
+                    original_idx += 1
+                elif trace_idx in original_phase_trace_indices:
+                    smoothed = smooth_octave(
+                        original_phase_freq[orig_phase_idx], original_raw_phase[orig_phase_idx], octave_frac
+                    )
+                    new_y_data.append(smoothed)
+                    orig_phase_idx += 1
+                elif trace_idx in corrected_trace_indices:
                     smoothed = smooth_octave(
                         corrected_freq_data, corrected_raw_spl[corrected_idx], octave_frac
                     )
                     new_y_data.append(smoothed)
                     corrected_idx += 1
+                elif trace_idx in corrected_phase_trace_indices:
+                    smoothed = smooth_octave(
+                        corrected_phase_freq[corr_phase_idx], corrected_raw_phase[corr_phase_idx], octave_frac
+                    )
+                    new_y_data.append(smoothed)
+                    corr_phase_idx += 1
                 else:
                     # Keep unchanged (EQ traces, reference lines, IR traces)
                     new_y_data.append(y_data)
@@ -1518,15 +2136,15 @@ def create_combined_figure(
             active=0,
             x=0.0,
             xanchor="left",
-            y=0.62,  # Position near the second subplot
+            y=0.62,
             yanchor="top",
             buttons=buttons,
             showactive=True,
             font=dict(size=10),
         )]
 
-    # Update axes for frequency plots (rows 1 and 2)
-    for row in [1, 2]:
+    # Update axes for frequency plots (rows 1, 2, and 3)
+    for row in [1, 2, 3]:
         fig.update_xaxes(
             type="log",
             tickvals=[20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000],
@@ -1538,6 +2156,17 @@ def create_combined_figure(
             col=1,
         )
 
+    # Original curves y-axis
+    fig.update_yaxes(
+        title_text="SPL (dB)",
+        title_font=dict(size=11),
+        tickfont=dict(size=10),
+        gridcolor="rgba(128, 128, 128, 0.2)",
+        range=[initial_y_min, initial_y_max],
+        row=1,
+        col=1,
+    )
+
     # EQ response y-axis (symmetric around 0)
     fig.update_yaxes(
         title_text="Gain (dB)",
@@ -1546,7 +2175,7 @@ def create_combined_figure(
         gridcolor="rgba(128, 128, 128, 0.2)",
         range=[-eq_y_limit, eq_y_limit],
         dtick=5,
-        row=1,
+        row=2,
         col=1,
     )
 
@@ -1556,10 +2185,31 @@ def create_combined_figure(
         title_font=dict(size=11),
         tickfont=dict(size=10),
         gridcolor="rgba(128, 128, 128, 0.2)",
-        range=[final_y_min, final_y_max],
-        row=2,
+        range=[corrected_y_min, corrected_y_max],
+        row=3,
         col=1,
     )
+
+    # Phase secondary y-axes (rows 1 and 3)
+    all_phase_values = []
+    for phase_data in original_raw_phase + corrected_raw_phase:
+        all_phase_values.extend(phase_data)
+    if all_phase_values:
+        phase_abs_max = max(abs(min(all_phase_values)), abs(max(all_phase_values)))
+        phase_limit = max(90, math.ceil(phase_abs_max / 45) * 45)
+    else:
+        phase_limit = 180
+    for row in [1, 3]:
+        fig.update_yaxes(
+            title_text="Phase (\u00b0)",
+            title_font=dict(size=11),
+            tickfont=dict(size=10),
+            gridcolor="rgba(128, 128, 128, 0.0)",
+            range=[-phase_limit, phase_limit],
+            secondary_y=True,
+            row=row,
+            col=1,
+        )
 
     # Configure impulse response axes if we have WAV files
     if has_ir_wavs:
@@ -1570,7 +2220,7 @@ def create_combined_figure(
             tickfont=dict(size=10),
             gridcolor="rgba(128, 128, 128, 0.2)",
             range=[0, ir_time_limit],
-            row=3,
+            row=4,
             col=1,
         )
 
@@ -1583,14 +2233,14 @@ def create_combined_figure(
             gridcolor="rgba(128, 128, 128, 0.2)",
             range=[-0.5, ir_y_max + 0.5],
             showticklabels=False,  # Hide tick labels since values are shifted
-            row=3,
+            row=4,
             col=1,
         )
-        fig_height = 950
-        dropdown_y = 0.62
+        fig_height = 1250
+        dropdown_y = 0.70
     else:
-        fig_height = 650
-        dropdown_y = 0.45
+        fig_height = 950
+        dropdown_y = 0.60
 
     # Update smoothing dropdown position
     if updatemenus:
@@ -1601,7 +2251,7 @@ def create_combined_figure(
         plot_bgcolor="white",
         paper_bgcolor="white",
         legend=dict(yanchor="top", y=0.99, xanchor="right", x=0.99, font=dict(size=10)),
-        margin=dict(l=60, r=40, t=80, b=60),
+        margin=dict(l=60, r=60, t=80, b=60),
         updatemenus=updatemenus,
     )
 
@@ -1628,15 +2278,22 @@ def create_html_report(
     metadata = data.get("metadata", {})
     version = data.get("version", "unknown")
 
+    # Short name for title: parent_dir/filename
+    if output_json_path:
+        short_name = f"{output_json_path.parent.name}/{output_json_path.name}"
+    else:
+        short_name = ""
+    page_title = f"RoomEQ Results - {short_name}" if short_name else "RoomEQ Results"
+
     # Build HTML content
     html_parts = [
-        """<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>RoomEQ Results</title>
-    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
-    <style>
+        "<!DOCTYPE html>\n"
+        "<html>\n"
+        "<head>\n"
+        '    <meta charset="utf-8">\n'
+        f"    <title>{page_title}</title>\n"
+        '    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>\n'
+        """    <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             margin: 0;
@@ -1737,8 +2394,8 @@ def create_html_report(
 </head>
 <body>
     <div class="container">
-        <h1>RoomEQ Optimization Results</h1>
 """
+        f"        <h1>{page_title}</h1>\n"
     ]
 
     # Metadata section

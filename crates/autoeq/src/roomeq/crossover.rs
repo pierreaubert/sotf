@@ -43,6 +43,8 @@ use super::types::OptimizerConfig;
 /// * `sample_rate` - Sample rate for filter design
 /// * `config` - Optimizer configuration
 /// * `fixed_freqs` - Optional fixed crossover frequencies (skips frequency optimization)
+/// * `crossover_freq_range` - Optional (min, max) frequency range for crossover optimization
+///   (overrides config.min_freq/max_freq for the crossover search bounds)
 ///
 /// # Returns
 /// * Tuple of (optimal_gains, optimal_delays, optimal_crossover_freqs, combined_curve)
@@ -58,6 +60,7 @@ pub fn optimize_crossover(
     sample_rate: f64,
     config: &OptimizerConfig,
     fixed_freqs: Option<Vec<f64>>,
+    crossover_freq_range: Option<(f64, f64)>,
 ) -> Result<(Vec<f64>, Vec<f64>, Vec<f64>, Curve), Box<dyn Error>> {
     // Check for missing phase data and warn
     let missing_phase_count = drivers.iter().filter(|c| c.phase.is_none()).count();
@@ -109,11 +112,15 @@ pub fn optimize_crossover(
         }
     );
 
+    // Use crossover-specific frequency range if provided, otherwise fall back to config
+    let (xover_min_freq, xover_max_freq) = crossover_freq_range
+        .unwrap_or((config.min_freq, config.max_freq));
+
     // Call library workflow to perform optimization
     let result = crate::workflow::optimize_drivers_crossover(
         drivers_data.clone(),
-        config.min_freq,
-        config.max_freq,
+        xover_min_freq,
+        xover_max_freq,
         sample_rate,
         &config.algorithm,
         config.max_iter,

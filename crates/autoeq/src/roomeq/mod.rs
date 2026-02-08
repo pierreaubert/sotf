@@ -21,7 +21,7 @@
 //!   "optimizer": { "loss_type": "flat", "algorithm": "cobyla" }
 //! }"#;
 //! let config: RoomConfig = serde_json::from_str(config_json)?;
-//! let result = optimize_room(&config, 48000.0, None)?;
+//! let result = optimize_room(&config, 48000.0, None, None)?;
 //!
 //! for (channel, chain) in &result.channels {
 //!     println!("Channel {}: {} plugins", channel, chain.plugins.len());

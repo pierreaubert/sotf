@@ -27,12 +27,27 @@ pub fn optimize_channel_eq(
     target_config: Option<&TargetCurveConfig>,
     sample_rate: f64,
 ) -> Result<(Vec<Biquad>, f64), Box<dyn Error>> {
+    // Clamp optimizer frequency range to measurement data range.
+    // Without this, filters get distributed into regions with no data and produce
+    // nonsensical gains (e.g. -70 dB) that don't affect the loss function.
+    let data_min_freq = curve.freq[0];
+    let data_max_freq = curve.freq[curve.freq.len() - 1];
+    let effective_min_freq = config.min_freq.max(data_min_freq);
+    let effective_max_freq = config.max_freq.min(data_max_freq);
+
+    if effective_max_freq < config.max_freq || effective_min_freq > config.min_freq {
+        log::warn!(
+            "  Clamping optimizer freq range [{:.1}, {:.1}] to measurement data range [{:.1}, {:.1}]",
+            config.min_freq, config.max_freq, effective_min_freq, effective_max_freq
+        );
+    }
+
     // Normalize the input curve by subtracting the mean SPL in the optimization range
     // This is critical for room measurements which may have arbitrary absolute levels
     let mut sum = 0.0;
     let mut count = 0;
     for i in 0..curve.freq.len() {
-        if curve.freq[i] >= config.min_freq && curve.freq[i] <= config.max_freq {
+        if curve.freq[i] >= effective_min_freq && curve.freq[i] <= effective_max_freq {
             sum += curve.spl[i];
             count += 1;
         }
@@ -112,9 +127,9 @@ pub fn optimize_channel_eq(
         // Sample rate
         sample_rate,
 
-        // Frequency constraints
-        min_freq: config.min_freq,
-        max_freq: config.max_freq,
+        // Frequency constraints (clamped to measurement data range)
+        min_freq: effective_min_freq,
+        max_freq: effective_max_freq,
 
         // Q factor constraints
         min_q: config.min_q,

@@ -1,6 +1,6 @@
 [package]
 name = "autoeq-datagen"
-version = "0.3.1"
+version = "0.3.2"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Generate room measurement data for RoomEQ testing using BEM/FEM acoustic solvers"

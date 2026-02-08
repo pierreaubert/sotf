@@ -1,6 +1,6 @@
 //! AutoEQ - A library for audio equalization and filter optimization
 //!
-//! Copyright (C) 2025 Pierre Aubert pierre(at)spinorama(dot)org
+//! Copyright (C) 2025-2026 Pierre Aubert pierre(at)spinorama(dot)org
 //!
 //! This program is free software: you can redistribute it and/or modify
 //! it under the terms of the GNU General Public License as published by

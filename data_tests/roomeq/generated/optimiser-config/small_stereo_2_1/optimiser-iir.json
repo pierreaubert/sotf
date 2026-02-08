@@ -5,7 +5,8 @@
       "measurements": [
 	"left_lp0.csv",
 	"subwoofer_lp0.csv"
-      ]
+      ],
+      "crossover": "left_crossovers"
     },
     "right": "right_lp0.csv"
   },
@@ -29,14 +30,7 @@
     "psychoacoustic": true,
     "asymmetric_loss": true
   },
-  "group_delay": [
-    {
-      "subwoofer": "lfe",
-      "speakers": ["left", "right"],
-      "min_freq": 30.0,
-      "max_freq": 120.0
-    }
-  ],
+  "group_delay": [],
   "crossovers": {
     "left_crossovers": {
       "type": "LR24",

@@ -5,9 +5,78 @@ use super::types::{
     PluginConfigWrapper,
 };
 use math_audio_iir_fir::Biquad;
+use ndarray::Array1;
 use serde_json::json;
 use std::collections::HashMap;
 use std::error::Error;
+
+/// Standard display frequency range: 20 Hz
+const DISPLAY_MIN_FREQ: f64 = 20.0;
+/// Standard display frequency range: 20 kHz
+const DISPLAY_MAX_FREQ: f64 = 20000.0;
+
+/// Extend a curve's frequency range to cover 20 Hz – 20 kHz for display.
+///
+/// Points outside the measurement range are extrapolated with the nearest
+/// boundary SPL value. The original measurement data points are preserved.
+pub fn extend_curve_to_full_range(curve: &crate::Curve) -> crate::Curve {
+    if curve.freq.is_empty() {
+        return curve.clone();
+    }
+
+    let meas_min = curve.freq[0];
+    let meas_max = *curve.freq.last().unwrap();
+
+    // If curve already approximately covers 20 Hz – 20 kHz, return as-is
+    if meas_min <= DISPLAY_MIN_FREQ * 1.05 && meas_max >= DISPLAY_MAX_FREQ * 0.95 {
+        return curve.clone();
+    }
+
+    let first_spl = curve.spl[0];
+    let last_spl = *curve.spl.last().unwrap();
+    let points_per_decade = 50;
+
+    let mut freq_vec = Vec::new();
+    let mut spl_vec = Vec::new();
+
+    // Prepend log-spaced points from 20 Hz to first measurement frequency
+    if meas_min > DISPLAY_MIN_FREQ * 1.05 {
+        let log_start = DISPLAY_MIN_FREQ.log10();
+        let log_end = meas_min.log10();
+        let decades = log_end - log_start;
+        let n_points = ((decades * points_per_decade as f64).ceil() as usize).max(1);
+        for i in 0..n_points {
+            let t = i as f64 / n_points as f64;
+            let f = 10f64.powf(log_start + t * (log_end - log_start));
+            freq_vec.push(f);
+            spl_vec.push(first_spl);
+        }
+    }
+
+    // Copy original data
+    freq_vec.extend(curve.freq.iter());
+    spl_vec.extend(curve.spl.iter());
+
+    // Append log-spaced points from last measurement frequency to 20 kHz
+    if meas_max < DISPLAY_MAX_FREQ * 0.95 {
+        let log_start = meas_max.log10();
+        let log_end = DISPLAY_MAX_FREQ.log10();
+        let decades = log_end - log_start;
+        let n_points = ((decades * points_per_decade as f64).ceil() as usize).max(1);
+        for i in 1..=n_points {
+            let t = i as f64 / n_points as f64;
+            let f = 10f64.powf(log_start + t * (log_end - log_start)).min(DISPLAY_MAX_FREQ);
+            freq_vec.push(f);
+            spl_vec.push(last_spl);
+        }
+    }
+
+    crate::Curve {
+        freq: Array1::from(freq_vec),
+        spl: Array1::from(spl_vec),
+        phase: None,
+    }
+}
 
 /// Convert Biquad filter to JSON configuration
 fn biquad_to_json(biquad: &Biquad) -> serde_json::Value {
@@ -180,10 +249,15 @@ pub fn build_multidriver_dsp_chain(
         eq_filters,
         None,
         None,
+        None,
     )
 }
 
 /// Build a DSP chain for a multi-driver speaker with curves
+///
+/// # Arguments
+/// * `driver_initial_curves` - Optional per-driver initial curves (extended to full range).
+///   When provided, each `DriverDspChain` gets its `initial_curve` populated.
 pub fn build_multidriver_dsp_chain_with_curves(
     channel_name: &str,
     gains: &[f64],
@@ -193,6 +267,7 @@ pub fn build_multidriver_dsp_chain_with_curves(
     eq_filters: &[Biquad],
     initial_curve: Option<&crate::Curve>,
     final_curve: Option<&crate::Curve>,
+    driver_initial_curves: Option<&[crate::Curve]>,
 ) -> ChannelDspChain {
     let n_drivers = gains.len();
 
@@ -232,10 +307,13 @@ pub fn build_multidriver_dsp_chain_with_curves(
             ));
         }
 
+        let driver_curve = driver_initial_curves.and_then(|curves| curves.get(i)).map(|c| c.into());
+
         driver_chains.push(DriverDspChain {
             name: get_driver_name(i, n_drivers),
             index: i,
             plugins: driver_plugins,
+            initial_curve: driver_curve,
         });
     }
 
@@ -280,10 +358,14 @@ pub fn build_multisub_dsp_chain(
         eq_filters,
         None,
         None,
+        None,
     )
 }
 
 /// Build a DSP chain for a multi-subwoofer system with curves
+///
+/// # Arguments
+/// * `driver_initial_curves` - Optional per-sub initial curves (extended to full range).
 pub fn build_multisub_dsp_chain_with_curves(
     channel_name: &str,
     group_name: &str,
@@ -293,6 +375,7 @@ pub fn build_multisub_dsp_chain_with_curves(
     eq_filters: &[Biquad],
     initial_curve: Option<&crate::Curve>,
     final_curve: Option<&crate::Curve>,
+    driver_initial_curves: Option<&[crate::Curve]>,
 ) -> ChannelDspChain {
     // Build per-sub chains
     let mut driver_chains = Vec::new();
@@ -310,10 +393,13 @@ pub fn build_multisub_dsp_chain_with_curves(
             sub_plugins.push(create_delay_plugin(delays[i]));
         }
 
+        let driver_curve = driver_initial_curves.and_then(|curves| curves.get(i)).map(|c| c.into());
+
         driver_chains.push(DriverDspChain {
             name: format!("{}_{}", group_name, i + 1),
             index: i,
             plugins: sub_plugins,
+            initial_curve: driver_curve,
         });
     }
 
@@ -339,10 +425,14 @@ pub fn build_dba_dsp_chain(
     delays: &[f64],
     eq_filters: &[Biquad],
 ) -> ChannelDspChain {
-    build_dba_dsp_chain_with_curves(channel_name, gains, delays, eq_filters, None, None)
+    build_dba_dsp_chain_with_curves(channel_name, gains, delays, eq_filters, None, None, None)
 }
 
 /// Build a DSP chain for a DBA system with curves
+///
+/// # Arguments
+/// * `driver_initial_curves` - Optional per-array initial curves (extended to full range).
+///   Index 0 = Front Array, Index 1 = Rear Array.
 pub fn build_dba_dsp_chain_with_curves(
     channel_name: &str,
     gains: &[f64],
@@ -350,6 +440,7 @@ pub fn build_dba_dsp_chain_with_curves(
     eq_filters: &[Biquad],
     initial_curve: Option<&crate::Curve>,
     final_curve: Option<&crate::Curve>,
+    driver_initial_curves: Option<&[crate::Curve]>,
 ) -> ChannelDspChain {
     // 2 "drivers": Front and Rear
     let mut driver_chains = Vec::new();
@@ -362,10 +453,12 @@ pub fn build_dba_dsp_chain_with_curves(
     if delays[0].abs() > 0.001 {
         front_plugins.push(create_delay_plugin(delays[0]));
     }
+    let front_curve = driver_initial_curves.and_then(|curves| curves.first()).map(|c| c.into());
     driver_chains.push(DriverDspChain {
         name: "Front Array".to_string(),
         index: 0,
         plugins: front_plugins,
+        initial_curve: front_curve,
     });
 
     // Rear (Index 1) - Inverted
@@ -376,10 +469,12 @@ pub fn build_dba_dsp_chain_with_curves(
     if delays[1].abs() > 0.001 {
         rear_plugins.push(create_delay_plugin(delays[1]));
     }
+    let rear_curve = driver_initial_curves.and_then(|curves| curves.get(1)).map(|c| c.into());
     driver_chains.push(DriverDspChain {
         name: "Rear Array".to_string(),
         index: 1,
         plugins: rear_plugins,
+        initial_curve: rear_curve,
     });
 
     // Combined EQ
@@ -858,5 +953,61 @@ mod tests {
 
         // Fallback
         assert_eq!(get_driver_name(5, 8), "driver_5");
+    }
+
+    #[test]
+    fn test_extend_curve_to_full_range_already_full() {
+        // Curve already covers 20 Hz – 20 kHz → returned as-is
+        let curve = crate::Curve {
+            freq: Array1::from(vec![20.0, 100.0, 1000.0, 10000.0, 20000.0]),
+            spl: Array1::from(vec![0.0, 1.0, 2.0, 1.0, 0.0]),
+            phase: None,
+        };
+        let extended = extend_curve_to_full_range(&curve);
+        assert_eq!(extended.freq.len(), curve.freq.len());
+    }
+
+    #[test]
+    fn test_extend_curve_to_full_range_narrow() {
+        // Curve only covers 100 Hz – 500 Hz → extended to 20 Hz – 20 kHz
+        let curve = crate::Curve {
+            freq: Array1::from(vec![100.0, 200.0, 300.0, 400.0, 500.0]),
+            spl: Array1::from(vec![-5.0, -3.0, 0.0, -2.0, -4.0]),
+            phase: None,
+        };
+        let extended = extend_curve_to_full_range(&curve);
+
+        // Should have more points than the original
+        assert!(extended.freq.len() > curve.freq.len());
+
+        // First frequency should be ~20 Hz
+        assert!(extended.freq[0] < 25.0);
+        assert!(extended.freq[0] >= 20.0);
+
+        // Last frequency should be ~20 kHz
+        let last = *extended.freq.last().unwrap();
+        assert!(last > 19000.0);
+        assert!(last <= 20000.0);
+
+        // SPL at extended low end should equal first measurement value
+        assert_eq!(extended.spl[0], -5.0);
+
+        // SPL at extended high end should equal last measurement value
+        assert_eq!(*extended.spl.last().unwrap(), -4.0);
+
+        // Original data points should be preserved in the middle
+        let orig_start = extended.freq.iter().position(|&f| f == 100.0).unwrap();
+        assert_eq!(extended.spl[orig_start], -5.0);
+    }
+
+    #[test]
+    fn test_extend_curve_to_full_range_empty() {
+        let curve = crate::Curve {
+            freq: Array1::from(vec![]),
+            spl: Array1::from(vec![]),
+            phase: None,
+        };
+        let extended = extend_curve_to_full_range(&curve);
+        assert!(extended.freq.is_empty());
     }
 }

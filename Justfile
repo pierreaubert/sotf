@@ -729,16 +729,35 @@ qa-plugin-fuzzer:
 		done; \
 	done
 
-qa-roomeq:
-	mkdir -p ./data_generated/roomeq/generated/bem/small_stereo_2.0
+qa-roomeq: qa-roomeq-small-stereo-20 qa-roomeq-small-stereo-21
+
+qa-roomeq-small-stereo-20:
 	@for method in iir fir mixed; do \
+	  for algo in bem fem; do \
+	      mkdir -p ./data_generated/roomeq/generated/$algo/small_stereo_2_0; \
+	      cargo run --bin roomeq --release -- \
+	        --config       ./data_tests/roomeq/generated/$algo/small_stereo_2_0/config.json \
+		    --override-config ./data_tests/roomeq/generated/optimiser-config/small_stereo_2_0/optimiser-$method.json \
+		    --output       ./data_generated/roomeq/generated/$algo/small_stereo_2_0/dsp_$method.json; \
+		  python3 ./scripts/display-roomeq.py \
+	        --input        ./data_tests/roomeq/generated/$algo/small_stereo_2_0/config.json \
+		                   ./data_generated/roomeq/generated/$algo/small_stereo_2_0/dsp_$method.json; \
+	  done \
+	done
+
+
+qa-roomeq-small-stereo-21:
+	@for method in iir fir mixed; do \
+	  for algo in bem fem; do \
+	    mkdir -p ./data_generated/roomeq/generated/$algo/small_stereo_2_1; \
 	    cargo run --bin roomeq --release -- \
-	        --config       ./data_tests/roomeq/generated/bem/small_stereo_2_0/config.json \
-		    --optim-config ./data_tests/roomeq/generated/optimiser-$method.json \
-		    --output       ./data_generated/roomeq/generated/bem/small_stereo_2.0/dsp_$method.json; \
+	        --config       ./data_tests/roomeq/generated/$algo/small_stereo_2_1/config.json \
+		    --override-config ./data_tests/roomeq/generated/optimiser-config/small_stereo_2_1/optimiser-$method.json \
+		    --output       ./data_generated/roomeq/generated/$algo/small_stereo_2_1/dsp_$method.json; \
 		python3 ./scripts/display-roomeq.py \
-	        --input        ./data_tests/roomeq/generated/bem/small_stereo_2.0/config.json \
-		                   ./data_generated/roomeq/generated/bem/small_stereo_2.0/dsp_$method.json; \
+	        --input        ./data_tests/roomeq/generated/$algo/small_stereo_2_1/config.json \
+		                   ./data_generated/roomeq/generated/$algo/small_stereo_2_1/dsp_$method.json; \
+	  done \
 	done
 
 

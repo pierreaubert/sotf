@@ -40,7 +40,7 @@ fn run_roomeq_on_generated(scenario_name: &str) {
     config.optimizer.max_iter = 1000;
     config.optimizer.refine = false;
 
-    let result = optimize_room(&config, 48000.0, None)
+    let result = optimize_room(&config, 48000.0, None, None)
         .unwrap_or_else(|e| panic!("Optimization failed for {scenario_name}: {e}"));
 
     // Verify optimization improved the response

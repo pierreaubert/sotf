@@ -46,16 +46,23 @@ type SpeakerProcessResult = std::result::Result<
 type MixedModeResult = (ChannelDspChain, f64, f64, Curve, Curve, Vec<Biquad>, f64, Option<f64>);
 
 /// Detect passband and compute mean SPL for normalization
+///
+/// Finds the -3 dB points relative to the peak SPL, then computes the
+/// average response within that passband.
 fn detect_passband_and_mean(curve: &Curve) -> (Option<(f64, f64)>, f64) {
     let freqs_f32: Vec<f32> = curve.freq.iter().map(|&f| f as f32).collect();
     let spl_f32: Vec<f32> = curve.spl.iter().map(|&s| s as f32).collect();
-    
-    let f_low = find_db_point(&freqs_f32, &spl_f32, -3.0, true).unwrap_or(freqs_f32[0]);
-    let f_high = find_db_point(&freqs_f32, &spl_f32, -3.0, false).unwrap_or(freqs_f32[freqs_f32.len()-1]);
-    
+
+    // find_db_point uses an absolute threshold, so compute peak - 3 dB
+    let peak_spl = spl_f32.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+    let threshold = peak_spl - 3.0;
+
+    let f_low = find_db_point(&freqs_f32, &spl_f32, threshold, true).unwrap_or(freqs_f32[0]);
+    let f_high = find_db_point(&freqs_f32, &spl_f32, threshold, false).unwrap_or(freqs_f32[freqs_f32.len()-1]);
+
     let norm_range_f32 = Some((f_low, f_high));
     let mean = compute_average_response(&freqs_f32, &spl_f32, norm_range_f32) as f64;
-    
+
     (Some((f_low as f64, f_high as f64)), mean)
 }
 
@@ -814,8 +821,17 @@ fn process_single_speaker(
     let normalized_spl = &curve.spl - mean;
     let pre_score = crate::loss::flat_loss(&curve.freq, &normalized_spl, min_freq, max_freq);
 
-    // Compute full-range mean SPL for level alignment between channels
-    let mean_spl = curve.spl.mean().unwrap_or(0.0);
+    // Level alignment: use mean SPL within the EQ optimization range.
+    // Passband mean (-3 dB from peak) is too narrow for resonant room data;
+    // full-range mean is misleading for bandpass speakers (subwoofers).
+    // The optimizer range gives a consistent reference across channel types.
+    let freqs_f32: Vec<f32> = curve.freq.iter().map(|&f| f as f32).collect();
+    let spl_f32: Vec<f32> = curve.spl.iter().map(|&s| s as f32).collect();
+    let mean_spl = compute_average_response(
+        &freqs_f32,
+        &spl_f32,
+        Some((min_freq as f32, max_freq as f32)),
+    ) as f64;
 
     match room_config.optimizer.mode.as_str() {
         "fir" => {
@@ -1304,6 +1320,12 @@ fn process_speaker_group(
         room_config.optimizer.max_freq,
     );
 
+    // Clone driver curves before crossover optimization consumes them
+    let driver_curves_for_display: Vec<Curve> = driver_curves
+        .iter()
+        .map(output::extend_curve_to_full_range)
+        .collect();
+
     // Optimize crossover
     let (gains, delays, crossover_freqs, combined_curve) = crossover::optimize_crossover(
         driver_curves,
@@ -1311,6 +1333,7 @@ fn process_speaker_group(
         sample_rate,
         &room_config.optimizer,
         fixed_freqs,
+        crossover_config.frequency_range,
     )
     .map_err(|e| AutoeqError::OptimizationFailed { message: format!("Crossover optimization failed: {}", e) })?;
 
@@ -1344,14 +1367,24 @@ fn process_speaker_group(
         &eq_filters,
         None,
         None,
+        Some(&driver_curves_for_display),
     );
 
     let iir_resp =
         response::compute_peq_complex_response(&eq_filters, &combined_curve.freq, sample_rate);
     let final_curve = response::apply_complex_response(&combined_curve, &iir_resp);
 
-    // Detect passband for normalization
-    let (norm_range, mean_spl) = detect_passband_and_mean(&combined_curve);
+    // Detect passband for normalization (used for display curves)
+    let (norm_range, _passband_mean) = detect_passband_and_mean(&combined_curve);
+
+    // Level alignment: use mean SPL within the EQ optimization range
+    let freqs_f32: Vec<f32> = combined_curve.freq.iter().map(|&f| f as f32).collect();
+    let spl_f32: Vec<f32> = combined_curve.spl.iter().map(|&s| s as f32).collect();
+    let mean_spl = compute_average_response(
+        &freqs_f32,
+        &spl_f32,
+        Some((min_freq as f32, max_freq as f32)),
+    ) as f64;
 
     // Extend curves to 20 Hz – 20 kHz for display output
     let display_initial = output::extend_curve_to_full_range(&combined_curve);
@@ -1412,6 +1445,22 @@ fn process_multisub_group(
         post_score
     );
 
+    // Load individual sub curves for per-driver display
+    let driver_curves_for_display: Vec<Curve> = group
+        .subwoofers
+        .iter()
+        .filter_map(|source| {
+            load::load_source(source)
+                .ok()
+                .map(|c| output::extend_curve_to_full_range(&c))
+        })
+        .collect();
+    let driver_display_ref = if driver_curves_for_display.len() == group.subwoofers.len() {
+        Some(driver_curves_for_display.as_slice())
+    } else {
+        None
+    };
+
     let mut chain = output::build_multisub_dsp_chain_with_curves(
         channel_name,
         &group.name,
@@ -1421,14 +1470,26 @@ fn process_multisub_group(
         &eq_filters,
         None,
         None,
+        driver_display_ref,
     );
 
     let iir_resp =
         response::compute_peq_complex_response(&eq_filters, &combined_curve.freq, sample_rate);
     let final_curve = response::apply_complex_response(&combined_curve, &iir_resp);
 
-    // Detect passband for normalization
-    let (norm_range, mean_spl) = detect_passband_and_mean(&combined_curve);
+    // Detect passband for normalization (used for display curves)
+    let (norm_range, _passband_mean) = detect_passband_and_mean(&combined_curve);
+
+    // Level alignment: use mean SPL within the EQ optimization range
+    let min_freq = room_config.optimizer.min_freq;
+    let max_freq = room_config.optimizer.max_freq;
+    let freqs_f32: Vec<f32> = combined_curve.freq.iter().map(|&f| f as f32).collect();
+    let spl_f32: Vec<f32> = combined_curve.spl.iter().map(|&s| s as f32).collect();
+    let mean_spl = compute_average_response(
+        &freqs_f32,
+        &spl_f32,
+        Some((min_freq as f32, max_freq as f32)),
+    ) as f64;
 
     // Extend curves to 20 Hz – 20 kHz for display output
     let display_initial = output::extend_curve_to_full_range(&combined_curve);
@@ -1489,6 +1550,20 @@ fn process_dba(
         post_score
     );
 
+    // Load front/rear array curves for per-driver display
+    // DBA has 2 "drivers": front aggregate and rear aggregate
+    let driver_display_ref = match (
+        dba::sum_array_response(&dba_config.front),
+        dba::sum_array_response(&dba_config.rear),
+    ) {
+        (Ok(front), Ok(rear)) => Some(vec![
+            output::extend_curve_to_full_range(&front),
+            output::extend_curve_to_full_range(&rear),
+        ]),
+        _ => None,
+    };
+    let driver_display_slice = driver_display_ref.as_deref();
+
     let mut chain = output::build_dba_dsp_chain_with_curves(
         channel_name,
         &result.gains,
@@ -1496,14 +1571,26 @@ fn process_dba(
         &eq_filters,
         None,
         None,
+        driver_display_slice,
     );
 
     let iir_resp =
         response::compute_peq_complex_response(&eq_filters, &combined_curve.freq, sample_rate);
     let final_curve = response::apply_complex_response(&combined_curve, &iir_resp);
 
-    // Detect passband for normalization
-    let (norm_range, mean_spl) = detect_passband_and_mean(&combined_curve);
+    // Detect passband for normalization (used for display curves)
+    let (norm_range, _passband_mean) = detect_passband_and_mean(&combined_curve);
+
+    // Level alignment: use mean SPL within the EQ optimization range
+    let min_freq = room_config.optimizer.min_freq;
+    let max_freq = room_config.optimizer.max_freq;
+    let freqs_f32: Vec<f32> = combined_curve.freq.iter().map(|&f| f as f32).collect();
+    let spl_f32: Vec<f32> = combined_curve.spl.iter().map(|&s| s as f32).collect();
+    let mean_spl = compute_average_response(
+        &freqs_f32,
+        &spl_f32,
+        Some((min_freq as f32, max_freq as f32)),
+    ) as f64;
 
     // Extend curves to 20 Hz – 20 kHz for display output
     let display_initial = output::extend_curve_to_full_range(&combined_curve);

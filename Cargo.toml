@@ -133,11 +133,12 @@ sotf-head-tracker = { path = "crates/head-tracker" }
 # update-aubio-bindings uses bindgen to generate bindings (needed for macOS which has no prebuilt)
 bliss-audio = { version = "0.11", default-features = false, features = ["aubio-static", "update-aubio-bindings"] }
 cpal = "0.17"
-ebur128 = "0.1"
+ebur128 = "0.1.10"
 hound = "3.5"
 id3 = "1.16"
 metaflac = "0.2"
-rubato = "0.15"
+rubato = "1.0"
+audioadapter-buffers = "2.0"
 symphonia = { version = "0.5", default-features = false }
 symphonia-core = "0.5"
 symphonia-metadata = "0.5"
