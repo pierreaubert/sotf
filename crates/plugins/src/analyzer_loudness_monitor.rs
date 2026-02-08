@@ -297,10 +297,6 @@ pub struct LoudnessMonitorPlugin {
     sample_rate: u32,
     /// Cached Arc for zero-alloc get_data()
     cached_data: Option<Arc<dyn Any + Send + Sync>>,
-    /// Samples since last metadata update (throttling)
-    samples_since_update: usize,
-    /// How often to update metadata (sample_rate / 10 = every 100ms)
-    update_interval_samples: usize,
 }
 
 impl LoudnessMonitorPlugin {
@@ -317,8 +313,6 @@ impl LoudnessMonitorPlugin {
             num_channels,
             sample_rate,
             cached_data: None,
-            samples_since_update: 0,
-            update_interval_samples: sample_rate as usize / 10,
         })
     }
 
@@ -377,8 +371,6 @@ impl Plugin for LoudnessMonitorPlugin {
 
     fn initialize(&mut self, sample_rate: u32) -> PluginResult<()> {
         self.sample_rate = sample_rate;
-        self.update_interval_samples = sample_rate as usize / 10;
-        self.samples_since_update = 0;
         self.monitor = LoudnessMonitor::new(self.num_channels as u32, sample_rate)
             .map_err(|e| format!("Failed to initialize loudness monitor: {}", e))?;
         self.rebuild_cached_data();
@@ -388,7 +380,6 @@ impl Plugin for LoudnessMonitorPlugin {
 
     fn reset(&mut self) {
         self.monitor.reset().ok();
-        self.samples_since_update = 0;
         self.rebuild_cached_data();
     }
 
@@ -422,13 +413,11 @@ impl Plugin for LoudnessMonitorPlugin {
             .add_frames(input)
             .map_err(|e| format!("Failed to add frames to loudness monitor: {}", e))?;
 
-        // Rebuild cached Arc for zero-alloc get_data().
-        // Throttled to every ~100ms to reduce overhead.
-        self.samples_since_update += context.num_frames;
-        if self.samples_since_update >= self.update_interval_samples {
-            self.samples_since_update = 0;
-            self.rebuild_cached_data();
-        }
+        // Rebuild cached Arc for get_data() every process() call.
+        // The expensive LUFS computation inside add_frames() is already
+        // throttled to ~100ms; this just publishes the latest values
+        // (including per-frame peaks) to consumers.
+        self.rebuild_cached_data();
 
         Ok(context.num_frames)
     }
