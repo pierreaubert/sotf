@@ -1,0 +1,26 @@
+{
+  "optimizer": {
+    "mode": "fir",
+    "loss_type": "flat",
+    "fir": {
+      "taps": 4096,
+      "phase": "kirkeby"
+    },
+    "algorithm": "autoeq:de",
+    "num_filters": 7,
+    "min_q": 0.5,
+    "max_q": 6.0,
+    "min_db": -6.0,
+    "max_db": 3.0,
+    "min_freq": 20.0,
+    "max_freq": 1500.0,
+    "max_iter": 15000,
+    "population": 60,
+    "peq_model": "pk",
+    "seed": 42,
+    "refine": true,
+    "local_algo": "cobyla",
+    "psychoacoustic": true,
+    "asymmetric_loss": true
+  }
+}

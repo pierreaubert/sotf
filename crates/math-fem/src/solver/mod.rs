@@ -1502,6 +1502,115 @@ pub fn solve_csr_with_guess(
     }
 }
 
+/// Solve a Helmholtz system using GMRES with an externally-provided preconditioner matrix
+///
+/// Builds AMG on `precond_matrix` and uses it to precondition GMRES applied to `system`.
+/// This is the recommended entry point for Shifted-Laplacian preconditioning when the
+/// assembler can directly produce both A and P matrices with matching sparsity patterns.
+///
+/// # Arguments
+/// * `system` - System matrix A (e.g. K - k²M + boundary terms)
+/// * `precond_matrix` - Preconditioner matrix P (e.g. K + (α+iβ)M from shifted-Laplacian)
+/// * `rhs` - Right-hand side vector
+/// * `x0` - Optional initial guess
+/// * `config` - Solver configuration (uses `gmres` field for iteration parameters)
+pub fn solve_csr_with_preconditioner_matrix(
+    system: &CsrMatrix<Complex64>,
+    precond_matrix: &CsrMatrix<Complex64>,
+    rhs: &Array1<Complex64>,
+    x0: Option<&Array1<Complex64>>,
+    config: &SolverConfig,
+) -> Result<Solution, SolverError> {
+    if system.num_rows != rhs.len() {
+        return Err(SolverError::DimensionMismatch {
+            expected: system.num_rows,
+            actual: rhs.len(),
+        });
+    }
+
+    if let Some(guess) = x0
+        && guess.len() != rhs.len()
+    {
+        return Err(SolverError::DimensionMismatch {
+            expected: rhs.len(),
+            actual: guess.len(),
+        });
+    }
+
+    // Build AMG preconditioner on the shifted-Laplacian matrix
+    let mut amg_config = AmgConfig::for_parallel();
+    amg_config.smoother = math_audio_solvers::AmgSmoother::L1Jacobi;
+    amg_config.strong_threshold = 0.5;
+    let precond = AmgPreconditioner::from_csr(precond_matrix, amg_config);
+
+    let result = gmres_preconditioned_with_guess(system, &precond, rhs, x0, &config.gmres);
+
+    if !result.converged {
+        return Err(SolverError::ConvergenceFailure(
+            result.iterations,
+            result.residual,
+        ));
+    }
+
+    Ok(Solution {
+        values: result.x,
+        iterations: result.iterations,
+        residual: result.residual,
+        converged: result.converged,
+    })
+}
+
+/// Solve a Helmholtz system using GMRES with ILU(0) built on an external preconditioner matrix
+///
+/// Uses ILU(0) factorisation of `precond_matrix` as the preconditioner for GMRES on `system`.
+/// For moderate-sized problems (< ~10 000 DOFs) this is significantly faster than AMG because
+/// ILU factorisation and triangular solves are nearly instant at this scale, while AMG has
+/// considerable setup cost and per-cycle overhead.
+///
+/// Combined with warm-starting (passing a previous solution as `x0`), this typically converges
+/// in 5–20 iterations for Helmholtz frequency sweeps.
+pub fn solve_csr_with_ilu_preconditioned_matrix(
+    system: &CsrMatrix<Complex64>,
+    precond_matrix: &CsrMatrix<Complex64>,
+    rhs: &Array1<Complex64>,
+    x0: Option<&Array1<Complex64>>,
+    config: &SolverConfig,
+) -> Result<Solution, SolverError> {
+    if system.num_rows != rhs.len() {
+        return Err(SolverError::DimensionMismatch {
+            expected: system.num_rows,
+            actual: rhs.len(),
+        });
+    }
+
+    if let Some(guess) = x0
+        && guess.len() != rhs.len()
+    {
+        return Err(SolverError::DimensionMismatch {
+            expected: rhs.len(),
+            actual: guess.len(),
+        });
+    }
+
+    // ILU(0) on the shifted-Laplacian: fast to build, fast to apply, effective for moderate sizes
+    let precond = IluPreconditioner::from_csr(precond_matrix);
+    let result = gmres_preconditioned_with_guess(system, &precond, rhs, x0, &config.gmres);
+
+    if !result.converged {
+        return Err(SolverError::ConvergenceFailure(
+            result.iterations,
+            result.residual,
+        ));
+    }
+
+    Ok(Solution {
+        values: result.x,
+        iterations: result.iterations,
+        residual: result.residual,
+        converged: result.converged,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

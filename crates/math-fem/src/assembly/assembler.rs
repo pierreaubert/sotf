@@ -256,6 +256,34 @@ impl HelmholtzAssembler {
         )
     }
 
+    /// Assemble Shifted-Laplacian preconditioner P = K + (α + iβ)M
+    ///
+    /// Uses the same CSR sparsity pattern as `assemble()` but with different
+    /// linear combination coefficients. The complex shift (α + iβ) transforms
+    /// the indefinite Helmholtz operator to a more favorable spectrum for AMG.
+    ///
+    /// Reference: Erlangga et al. (2006) "A class of preconditioners for the Helmholtz equation"
+    pub fn assemble_shifted_laplacian(&self, alpha: f64, beta: f64) -> CsrMatrix<Complex64> {
+        let shift = Complex64::new(alpha, beta);
+        let nnz = self.k_values.len();
+
+        let values: Vec<Complex64> = (0..nnz)
+            .into_par_iter()
+            .map(|i| {
+                Complex64::new(self.k_values[i], 0.0)
+                    + shift * Complex64::new(self.m_values[i], 0.0)
+            })
+            .collect();
+
+        CsrMatrix::from_raw_parts(
+            self.num_rows,
+            self.num_rows,
+            self.row_ptrs.clone(),
+            self.col_indices.clone(),
+            values,
+        )
+    }
+
     /// Estimate memory usage in bytes
     pub fn memory_usage(&self) -> usize {
         let usize_size = std::mem::size_of::<usize>();
