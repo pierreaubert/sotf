@@ -551,6 +551,9 @@ pub fn optimize_room(
     for (group_name, group_channels) in &acoustic_groups {
         if group_channels.len() > 1 {
             debug!("Acoustic Group '{}': {:?}", group_name, group_channels);
+            
+            // Perform consistency checks between speakers in the same group
+            check_group_consistency(group_name, group_channels, &channel_means, &curves);
         }
     }
 
@@ -1797,4 +1800,93 @@ fn compute_lr24_crossover_responses(
     }
 
     (lp_resp, hp_resp)
+}
+
+/// Perform consistency checks between speakers in the same Acoustic Group
+fn check_group_consistency(
+    group_name: &str,
+    channels: &[String],
+    channel_means: &HashMap<String, f64>,
+    curves: &HashMap<String, Curve>,
+) {
+    if channels.len() < 2 {
+        return;
+    }
+
+    // 1. Range Difference Check (3 dB threshold)
+    let mut means = Vec::new();
+    for ch in channels {
+        if let Some(&mean) = channel_means.get(ch) {
+            means.push((ch, mean));
+        }
+    }
+
+    for i in 0..means.len() {
+        for j in i + 1..means.len() {
+            let (ch1, m1) = means[i];
+            let (ch2, m2) = means[j];
+            let diff = (m1 - m2).abs();
+            if diff > 3.0 {
+                warn!(
+                    "Speaker group '{}' has significant difference: range SPL between '{}' and '{}' is {:.1} dB (> 3.0 dB threshold).",
+                    group_name, ch1, ch2, diff
+                );
+            }
+        }
+    }
+
+    // 2. Octave-Wise Difference Check (6 dB threshold)
+    // Compare all pairs in the group
+    for i in 0..channels.len() {
+        for j in i + 1..channels.len() {
+            let ch1 = &channels[i];
+            let ch2 = &channels[j];
+            if let (Some(curve1), Some(curve2)) = (curves.get(ch1), curves.get(ch2)) {
+                check_octave_consistency(group_name, ch1, ch2, curve1, curve2);
+            }
+        }
+    }
+}
+
+/// Check if two curves are consistent across all octaves (6 dB threshold)
+fn check_octave_consistency(
+    group_name: &str,
+    ch1: &str,
+    ch2: &str,
+    curve1: &Curve,
+    curve2: &Curve,
+) {
+    // Standard acoustic octaves
+    let octave_centers = [31.25, 62.5, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0];
+    
+    for &center in &octave_centers {
+        let f_min = center / 2.0_f64.sqrt();
+        let f_max = center * 2.0_f64.sqrt();
+        
+        // Find overlap range
+        let start_freq = f_min.max(curve1.freq[0]).max(curve2.freq[0]);
+        let end_freq = f_max.min(curve1.freq[curve1.freq.len()-1]).min(curve2.freq[curve2.freq.len()-1]);
+        
+        if end_freq <= start_freq * 1.1 {
+            continue; // Not enough bandwidth in this octave for comparison
+        }
+        
+        // Compute average SPL for this octave in both curves
+        let freqs1_f32: Vec<f32> = curve1.freq.iter().map(|&f| f as f32).collect();
+        let spl1_f32: Vec<f32> = curve1.spl.iter().map(|&s| s as f32).collect();
+        let freqs2_f32: Vec<f32> = curve2.freq.iter().map(|&f| f as f32).collect();
+        let spl2_f32: Vec<f32> = curve2.spl.iter().map(|&s| s as f32).collect();
+        
+        let range = Some((start_freq as f32, end_freq as f32));
+        let avg1 = compute_average_response(&freqs1_f32, &spl1_f32, range);
+        let avg2 = compute_average_response(&freqs2_f32, &spl2_f32, range);
+        
+        let diff = (avg1 - avg2).abs() as f64;
+        if diff > 6.0 {
+            warn!(
+                "Speaker group '{}' has significant difference: octave around {:.0} Hz between '{}' and '{}' differs by {:.1} dB (> 6.0 dB threshold).",
+                group_name, center, ch1, ch2, diff
+            );
+        }
+    }
 }

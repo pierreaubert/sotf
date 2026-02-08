@@ -1,7 +1,7 @@
 //! Room scenario definitions for RoomEQ data generation
 //!
-//! Defines 12 scenarios covering small/medium/large rooms with
-//! stereo, 2.1, multi-sub, and multi-seat configurations.
+//! Defines 17 scenarios covering small/medium/large rooms with
+//! stereo, 2.1, multi-sub, multi-seat, and surround (5.0/5.1/5.1.4) configurations.
 
 use math_audio_xem_common::{
     BoundaryConfig, CrossoverFilter, Point3D, RectangularRoom, RoomGeometry, RoomSimulation,
@@ -81,7 +81,7 @@ fn make_simulation(
     sim
 }
 
-/// Generate all 12 scenarios
+/// Generate all 17 scenarios
 pub fn all_scenarios() -> Vec<Scenario> {
     vec![
         scenario_01_small_stereo(),
@@ -96,6 +96,11 @@ pub fn all_scenarios() -> Vec<Scenario> {
         scenario_10_large_multi_sub_4(),
         scenario_11_large_multi_seat_2_1(),
         scenario_12_medium_multi_sub_multi_seat(),
+        scenario_13_medium_surround_5_0(),
+        scenario_14_medium_surround_5_1(),
+        scenario_15_medium_surround_5_1_4(),
+        scenario_16_large_surround_5_1(),
+        scenario_17_large_surround_5_1_4(),
     ]
 }
 
@@ -361,6 +366,194 @@ fn scenario_12_medium_multi_sub_multi_seat() -> Scenario {
     }
 }
 
+// ============================================================================
+// Medium room surround: 5 x 4 x 2.5 m
+// Speaker placement follows ITU-R BS.775 / Dolby guidelines:
+//   - L/R at ±30° from center, front wall
+//   - Center at 0° (front wall center)
+//   - SL/SR at ±110° from center, behind listener
+//   - Sub at front-left corner, floor level
+//   - Height channels (Atmos) near ceiling, at ±45° front / ±135° rear
+// ============================================================================
+
+/// Scenario 13: Medium room, 5.0 surround (L/R/C/SL/SR), fullrange, 1 LP
+fn scenario_13_medium_surround_5_0() -> Scenario {
+    let room = medium_room();
+    let left = make_fullrange_source(Point3D::new(1.2, 0.4, 1.1), "left");
+    let right = make_fullrange_source(Point3D::new(3.8, 0.4, 1.1), "right");
+    let center = make_fullrange_source(Point3D::new(2.5, 0.4, 1.1), "center");
+    let surr_left = make_fullrange_source(Point3D::new(0.4, 3.5, 1.1), "surround_left");
+    let surr_right = make_fullrange_source(Point3D::new(4.6, 3.5, 1.1), "surround_right");
+    let lp = Point3D::new(2.5, 2.5, 1.1);
+
+    Scenario {
+        name: "medium_surround_5_0".to_string(),
+        description: "Medium 5x4x2.5m room, 5.0 surround, fullrange".to_string(),
+        simulation: make_simulation(
+            room,
+            vec![left, right, center, surr_left, surr_right],
+            vec![lp],
+        ),
+        source_names: vec![
+            "left".to_string(),
+            "right".to_string(),
+            "center".to_string(),
+            "surround_left".to_string(),
+            "surround_right".to_string(),
+        ],
+    }
+}
+
+/// Scenario 14: Medium room, 5.1 surround (L/R/C/SL/SR + LFE), HP mains, 1 LP
+fn scenario_14_medium_surround_5_1() -> Scenario {
+    let room = medium_room();
+    let left = make_hp_source(Point3D::new(1.2, 0.4, 1.1), "left");
+    let right = make_hp_source(Point3D::new(3.8, 0.4, 1.1), "right");
+    let center = make_hp_source(Point3D::new(2.5, 0.4, 1.1), "center");
+    let surr_left = make_hp_source(Point3D::new(0.4, 3.5, 1.1), "surround_left");
+    let surr_right = make_hp_source(Point3D::new(4.6, 3.5, 1.1), "surround_right");
+    let sub = make_lp_source(Point3D::new(0.5, 0.5, 0.15), "subwoofer");
+    let lp = Point3D::new(2.5, 2.5, 1.1);
+
+    Scenario {
+        name: "medium_surround_5_1".to_string(),
+        description: "Medium 5x4x2.5m room, 5.1 surround".to_string(),
+        simulation: make_simulation(
+            room,
+            vec![left, right, center, surr_left, surr_right, sub],
+            vec![lp],
+        ),
+        source_names: vec![
+            "left".to_string(),
+            "right".to_string(),
+            "center".to_string(),
+            "surround_left".to_string(),
+            "surround_right".to_string(),
+            "subwoofer".to_string(),
+        ],
+    }
+}
+
+/// Scenario 15: Medium room, 5.1.4 Atmos (5.1 + 4 height channels), HP all, 1 LP
+fn scenario_15_medium_surround_5_1_4() -> Scenario {
+    let room = medium_room();
+    // Ear-level speakers
+    let left = make_hp_source(Point3D::new(1.2, 0.4, 1.1), "left");
+    let right = make_hp_source(Point3D::new(3.8, 0.4, 1.1), "right");
+    let center = make_hp_source(Point3D::new(2.5, 0.4, 1.1), "center");
+    let surr_left = make_hp_source(Point3D::new(0.4, 3.5, 1.1), "surround_left");
+    let surr_right = make_hp_source(Point3D::new(4.6, 3.5, 1.1), "surround_right");
+    // Height speakers near ceiling
+    let top_fl = make_hp_source(Point3D::new(1.2, 1.0, 2.3), "top_front_left");
+    let top_fr = make_hp_source(Point3D::new(3.8, 1.0, 2.3), "top_front_right");
+    let top_rl = make_hp_source(Point3D::new(1.2, 3.5, 2.3), "top_rear_left");
+    let top_rr = make_hp_source(Point3D::new(3.8, 3.5, 2.3), "top_rear_right");
+    // Subwoofer
+    let sub = make_lp_source(Point3D::new(0.5, 0.5, 0.15), "subwoofer");
+    let lp = Point3D::new(2.5, 2.5, 1.1);
+
+    Scenario {
+        name: "medium_surround_5_1_4".to_string(),
+        description: "Medium 5x4x2.5m room, 5.1.4 Dolby Atmos".to_string(),
+        simulation: make_simulation(
+            room,
+            vec![
+                left, right, center, surr_left, surr_right, top_fl, top_fr, top_rl, top_rr, sub,
+            ],
+            vec![lp],
+        ),
+        source_names: vec![
+            "left".to_string(),
+            "right".to_string(),
+            "center".to_string(),
+            "surround_left".to_string(),
+            "surround_right".to_string(),
+            "top_front_left".to_string(),
+            "top_front_right".to_string(),
+            "top_rear_left".to_string(),
+            "top_rear_right".to_string(),
+            "subwoofer".to_string(),
+        ],
+    }
+}
+
+// ============================================================================
+// Large room surround: 7 x 5.5 x 2.6 m
+// ============================================================================
+
+/// Scenario 16: Large room, 5.1 surround, HP mains, 1 LP
+fn scenario_16_large_surround_5_1() -> Scenario {
+    let room = large_room();
+    let left = make_hp_source(Point3D::new(1.5, 0.4, 1.1), "left");
+    let right = make_hp_source(Point3D::new(5.5, 0.4, 1.1), "right");
+    let center = make_hp_source(Point3D::new(3.5, 0.4, 1.1), "center");
+    let surr_left = make_hp_source(Point3D::new(0.5, 4.5, 1.1), "surround_left");
+    let surr_right = make_hp_source(Point3D::new(6.5, 4.5, 1.1), "surround_right");
+    let sub = make_lp_source(Point3D::new(0.5, 0.5, 0.15), "subwoofer");
+    let lp = Point3D::new(3.5, 3.5, 1.1);
+
+    Scenario {
+        name: "large_surround_5_1".to_string(),
+        description: "Large 7x5.5x2.6m room, 5.1 surround".to_string(),
+        simulation: make_simulation(
+            room,
+            vec![left, right, center, surr_left, surr_right, sub],
+            vec![lp],
+        ),
+        source_names: vec![
+            "left".to_string(),
+            "right".to_string(),
+            "center".to_string(),
+            "surround_left".to_string(),
+            "surround_right".to_string(),
+            "subwoofer".to_string(),
+        ],
+    }
+}
+
+/// Scenario 17: Large room, 5.1.4 Atmos, HP all, 1 LP
+fn scenario_17_large_surround_5_1_4() -> Scenario {
+    let room = large_room();
+    // Ear-level speakers
+    let left = make_hp_source(Point3D::new(1.5, 0.4, 1.1), "left");
+    let right = make_hp_source(Point3D::new(5.5, 0.4, 1.1), "right");
+    let center = make_hp_source(Point3D::new(3.5, 0.4, 1.1), "center");
+    let surr_left = make_hp_source(Point3D::new(0.5, 4.5, 1.1), "surround_left");
+    let surr_right = make_hp_source(Point3D::new(6.5, 4.5, 1.1), "surround_right");
+    // Height speakers near ceiling
+    let top_fl = make_hp_source(Point3D::new(1.5, 1.0, 2.4), "top_front_left");
+    let top_fr = make_hp_source(Point3D::new(5.5, 1.0, 2.4), "top_front_right");
+    let top_rl = make_hp_source(Point3D::new(1.5, 4.5, 2.4), "top_rear_left");
+    let top_rr = make_hp_source(Point3D::new(5.5, 4.5, 2.4), "top_rear_right");
+    // Subwoofer
+    let sub = make_lp_source(Point3D::new(0.5, 0.5, 0.15), "subwoofer");
+    let lp = Point3D::new(3.5, 3.5, 1.1);
+
+    Scenario {
+        name: "large_surround_5_1_4".to_string(),
+        description: "Large 7x5.5x2.6m room, 5.1.4 Dolby Atmos".to_string(),
+        simulation: make_simulation(
+            room,
+            vec![
+                left, right, center, surr_left, surr_right, top_fl, top_fr, top_rl, top_rr, sub,
+            ],
+            vec![lp],
+        ),
+        source_names: vec![
+            "left".to_string(),
+            "right".to_string(),
+            "center".to_string(),
+            "surround_left".to_string(),
+            "surround_right".to_string(),
+            "top_front_left".to_string(),
+            "top_front_right".to_string(),
+            "top_rear_left".to_string(),
+            "top_rear_right".to_string(),
+            "subwoofer".to_string(),
+        ],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -368,7 +561,7 @@ mod tests {
     #[test]
     fn test_all_scenarios_count() {
         let scenarios = all_scenarios();
-        assert_eq!(scenarios.len(), 12);
+        assert_eq!(scenarios.len(), 17);
     }
 
     #[test]

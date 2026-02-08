@@ -205,6 +205,79 @@ fn test_hf_extension_pipeline() {
 }
 
 #[test]
+fn test_config_5_0_has_surround_channels() {
+    let scenario = scenarios::scenario_by_name("medium_surround_5_0").unwrap();
+    let temp_dir = TempDir::new().unwrap();
+    let config = roomeq_config_gen::generate_config(&scenario, temp_dir.path()).unwrap();
+
+    assert!(config.speakers.contains_key("left"), "Missing 'left'");
+    assert!(config.speakers.contains_key("right"), "Missing 'right'");
+    assert!(config.speakers.contains_key("center"), "Missing 'center'");
+    assert!(
+        config.speakers.contains_key("surround_left"),
+        "Missing 'surround_left'"
+    );
+    assert!(
+        config.speakers.contains_key("surround_right"),
+        "Missing 'surround_right'"
+    );
+    assert!(
+        !config.speakers.contains_key("lfe"),
+        "5.0 should not have LFE"
+    );
+}
+
+#[test]
+fn test_config_5_1_has_surround_and_lfe() {
+    let scenario = scenarios::scenario_by_name("medium_surround_5_1").unwrap();
+    let temp_dir = TempDir::new().unwrap();
+    let config = roomeq_config_gen::generate_config(&scenario, temp_dir.path()).unwrap();
+
+    assert!(config.speakers.contains_key("left"));
+    assert!(config.speakers.contains_key("right"));
+    assert!(config.speakers.contains_key("center"));
+    assert!(config.speakers.contains_key("surround_left"));
+    assert!(config.speakers.contains_key("surround_right"));
+    assert!(config.speakers.contains_key("lfe"), "5.1 should have LFE");
+    assert_eq!(config.speakers.len(), 6, "5.1 should have 6 speaker entries");
+}
+
+#[test]
+fn test_config_5_1_4_has_height_channels() {
+    let scenario = scenarios::scenario_by_name("medium_surround_5_1_4").unwrap();
+    let temp_dir = TempDir::new().unwrap();
+    let config = roomeq_config_gen::generate_config(&scenario, temp_dir.path()).unwrap();
+
+    assert!(config.speakers.contains_key("left"));
+    assert!(config.speakers.contains_key("right"));
+    assert!(config.speakers.contains_key("center"));
+    assert!(config.speakers.contains_key("surround_left"));
+    assert!(config.speakers.contains_key("surround_right"));
+    assert!(config.speakers.contains_key("lfe"), "5.1.4 should have LFE");
+    assert!(
+        config.speakers.contains_key("top_front_left"),
+        "Missing 'top_front_left'"
+    );
+    assert!(
+        config.speakers.contains_key("top_front_right"),
+        "Missing 'top_front_right'"
+    );
+    assert!(
+        config.speakers.contains_key("top_rear_left"),
+        "Missing 'top_rear_left'"
+    );
+    assert!(
+        config.speakers.contains_key("top_rear_right"),
+        "Missing 'top_rear_right'"
+    );
+    assert_eq!(
+        config.speakers.len(),
+        10,
+        "5.1.4 should have 10 speaker entries"
+    );
+}
+
+#[test]
 fn test_all_scenario_configs_serialize() {
     let temp_dir = TempDir::new().unwrap();
     for scenario in scenarios::all_scenarios() {
