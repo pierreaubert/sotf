@@ -22,6 +22,12 @@ pub fn handle_events(timeout: Duration) -> std::io::Result<Option<AppEvent>> {
 }
 
 pub fn handle_key_event(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    // Ctrl+C always quits, regardless of input mode
+    if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+        app.should_quit = true;
+        return None;
+    }
+
     match app.input_mode {
         InputMode::Search => handle_search_mode(app, key),
         InputMode::AddDirectory => handle_add_directory_mode(app, key),

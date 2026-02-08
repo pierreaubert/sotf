@@ -198,13 +198,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
 
-    // Stop playback
-    let _ = player.stop();
-
     log::info!("SOTF UI Player exiting...");
 
-    // Propagate any errors from the main loop
-    result
+    // Force exit — audio engine threads (decoder, processing, playback) use blocking
+    // channel operations that can deadlock during sequential shutdown. The OS will
+    // clean up all threads. Config is already saved and terminal is restored above.
+    std::process::exit(if result.is_ok() { 0 } else { 1 });
 }
 
 fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
