@@ -546,6 +546,14 @@ pub fn optimize_room(
         avg_pre_score, avg_post_score
     );
 
+    // Identify acoustic groups for consistency checks
+    let acoustic_groups = identify_acoustic_groups(config);
+    for (group_name, group_channels) in &acoustic_groups {
+        if group_channels.len() > 1 {
+            debug!("Acoustic Group '{}': {:?}", group_name, group_channels);
+        }
+    }
+
     let metadata = OptimizationMetadata {
         pre_score: avg_pre_score,
         post_score: avg_post_score,
@@ -561,6 +569,47 @@ pub fn optimize_room(
         combined_post_score: avg_post_score,
         metadata,
     })
+}
+
+/// Identify Acoustic Groups from RoomConfig
+///
+/// Acoustic Groups are speakers expected to be acoustically similar (e.g., L/R pair).
+/// Uses explicit speaker_name metadata if available, otherwise falls back to
+/// positional heuristics (L/R, SL/SR, etc.).
+fn identify_acoustic_groups(config: &RoomConfig) -> HashMap<String, Vec<String>> {
+    let mut groups: HashMap<String, Vec<String>> = HashMap::new();
+    let mut positioned_channels: HashMap<String, String> = HashMap::new();
+
+    // 1. Group by explicit speaker_name
+    for (channel_name, speaker_cfg) in &config.speakers {
+        if let Some(speaker_name) = speaker_cfg.speaker_name() {
+            groups.entry(speaker_name.to_string()).or_default().push(channel_name.clone());
+        } else {
+            positioned_channels.insert(channel_name.clone(), channel_name.clone());
+        }
+    }
+
+    // 2. Positional heuristics for remaining channels
+    let pairs = [
+        ("L", "R"),
+        ("SL", "SR"),
+        ("SBL", "SBR"),
+        ("TFL", "TFR"),
+        ("TRL", "TRR"),
+        ("FWL", "FWR"),
+    ];
+
+    for (p1, p2) in pairs {
+        if positioned_channels.contains_key(p1) && positioned_channels.contains_key(p2) {
+            let group_name = format!("{}-{}", p1, p2);
+            let mut group = Vec::new();
+            if let Some(c1) = positioned_channels.remove(p1) { group.push(c1); }
+            if let Some(c2) = positioned_channels.remove(p2) { group.push(c2); }
+            groups.insert(group_name, group);
+        }
+    }
+
+    groups
 }
 
 /// Optimize a single speaker (simple or group)
