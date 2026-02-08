@@ -282,8 +282,8 @@ impl DenoiserPlugin {
             learning_frames_target: LEARN_FRAMES,
             is_learning: false,
 
-            attack_coeff: 0.0,
-            release_coeff: 0.0,
+            attack_coeff: Self::time_to_coeff(ATTACK_MS_DEFAULT, 44100, hop_size),
+            release_coeff: Self::time_to_coeff(RELEASE_MS_DEFAULT, 44100, hop_size),
             floor_linear: 10.0_f32.powf(FLOOR_DB_DEFAULT / 20.0),
 
             window,
@@ -375,8 +375,8 @@ impl DenoiserPlugin {
 
         // Phase 2: MCRA noise estimation
         for ch in 0..self.channels {
-            if self.is_initializing(ch) {
-                // Bootstrap noise estimate from first frames
+            if self.frame_counter[ch] == 0 {
+                // Bootstrap noise estimate from very first frame only
                 self.initialize_mcra_from_frame(ch);
             }
             self.update_mcra(ch);
@@ -404,8 +404,8 @@ impl DenoiserPlugin {
     /// Add processed block to output accumulator using overlap-add
     fn overlap_add_to_accumulator(&mut self) {
         // FFT scaling: 1/fft_size
-        // COLA scaling: 2.0 for Hann window at 50% overlap
-        let combined_scale = 2.0 / self.fft_size as f32;
+        // Hann window at 50% overlap has COLA sum = 1.0, no extra compensation needed
+        let combined_scale = 1.0 / self.fft_size as f32;
 
         for ch in 0..self.channels {
             let accum = &mut self.output_accumulator[ch];

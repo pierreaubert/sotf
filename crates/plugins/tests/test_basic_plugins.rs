@@ -83,6 +83,18 @@ fn test_matrix_plugin() {
     matrix.set_gain(0, 0, 0.0).unwrap();
     matrix.set_gain(1, 1, 0.0).unwrap();
 
+    // Let gain smoother converge (5ms time constant needs ~2400 samples)
+    let settle_frames = 4096;
+    let settle_input = vec![0.0_f32; settle_frames * 2];
+    let mut settle_output = vec![0.0_f32; settle_frames * 2];
+    let settle_context = ProcessContext {
+        sample_rate: 44100,
+        num_frames: settle_frames,
+    };
+    matrix
+        .process(&settle_input, &mut settle_output, &settle_context)
+        .unwrap();
+
     let input = vec![0.1, 0.8]; // L=0.1, R=0.8
     let mut output = vec![0.0; 2];
 

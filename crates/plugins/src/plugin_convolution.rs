@@ -579,6 +579,17 @@ impl Plugin for ConvolutionPlugin {
 
         let num_frames = input.len() / self.channels;
 
+        // Without an IR loaded, passthrough
+        if self.state.read().is_none() {
+            output[..input.len()].copy_from_slice(input);
+            for _ in 0..num_frames {
+                self.gain_linear.next();
+                self.mix.next();
+            }
+            flush_denormals_inplace(output);
+            return Ok(num_frames);
+        }
+
         // Initialize output to zero or dry signal
         let dry_mix = 1.0 - self.mix.current();
         if dry_mix > 0.0 {

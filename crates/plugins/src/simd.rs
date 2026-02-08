@@ -597,7 +597,7 @@ pub fn flush_denormals_inplace(samples: &mut [f32]) {
                 let ptr = samples.as_mut_ptr().add(i);
                 let val = vld1q_f32(ptr);
                 let abs_val = vabsq_f32(val);
-                let mask = vcleq_f32(abs_val, threshold);
+                let mask = vcltq_f32(abs_val, threshold);
                 let result = vbslq_f32(mask, zero, val);
                 vst1q_f32(ptr, result);
             }

@@ -16,13 +16,14 @@ impl UpmixerPlugin {
     pub(super) fn smooth_height_gains(&mut self) {
         let spectrum_size = self.fft_size / 2 + 1;
 
-        // Temporal smoothing coefficient (higher = more smoothing)
-        // 0.3 provides good balance: responsive but reduces frame-to-frame variance
-        let temporal_alpha = 0.3_f32;
+        // Asymmetric temporal smoothing: fast attack for transient ducking,
+        // slow release to prevent crackle on mask recovery
+        let attack_alpha = 0.25_f32;
+        let release_alpha = 0.08_f32;
 
-        // Spectral smoothing window size (3-point moving average)
-        // Larger windows over-blur and lose frequency resolution
-        let window_radius = 1_usize;
+        // Spectral smoothing window size (5-point moving average)
+        // Wider window smooths ERB-band staircase edges
+        let window_radius = 2_usize;
 
         // Use pre-allocated temporary buffer for spectral smoothing result
         let mut smoothed = std::mem::take(&mut self.height_band_gains_temp);
@@ -47,12 +48,17 @@ impl UpmixerPlugin {
             };
         }
 
-        // 2. Temporal smoothing: blend with previous frame
+        // 2. Temporal smoothing: asymmetric attack/release blend with previous frame
         for (i, current) in smoothed.iter().enumerate().take(spectrum_size) {
             let previous = self.height_band_gains_prev[i];
 
-            // Exponential moving average
-            let blended = temporal_alpha * current + (1.0 - temporal_alpha) * previous;
+            // Use fast attack when mask decreases (ducking), slow release when recovering
+            let alpha = if *current < previous {
+                attack_alpha
+            } else {
+                release_alpha
+            };
+            let blended = alpha * current + (1.0 - alpha) * previous;
 
             self.height_band_gains[i] = blended;
             self.height_band_gains_prev[i] = blended;

@@ -104,11 +104,4 @@ impl DenoiserPlugin {
         self.speech_presence[channel].fill(0.0);
         self.frame_counter[channel] = 0;
     }
-
-    /// Check if noise estimation is still in initialization phase
-    #[inline]
-    pub(super) fn is_initializing(&self, channel: usize) -> bool {
-        // Consider first L frames as initialization phase
-        self.frame_counter[channel] < self.mcra_l
-    }
 }

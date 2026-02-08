@@ -988,6 +988,8 @@ mod upmixer_tests {
     fn test_height_mask_diffuse_high_frequency_is_significant() {
         // Diffuse HF content (different L/R frequencies) should produce
         // noticeable height mask values in the top of the band.
+        // Multiple frames are needed because temporal smoothing ramps up gradually
+        // from zero (asymmetric attack/release prevents crackle artifacts).
         let mut plugin = UpmixerPlugin::new(
             2048, "5.1.4", 1.0, 0.5, 1.0, 120.0, 0.5, 250.0, 1.0, 1.0, false, 0.5,
         );
@@ -1002,7 +1004,10 @@ mod upmixer_tests {
         }
         let mut output = vec![0.0f32; fft_size * plugin.num_output_channels];
 
-        plugin.process_fft_block(&input, &mut output);
+        // Process multiple frames to let temporal smoothing converge
+        for _ in 0..10 {
+            plugin.process_fft_block(&input, &mut output);
+        }
 
         let nbins = plugin.height_band_gains.len();
         let start = (nbins as f32 * 0.75) as usize;

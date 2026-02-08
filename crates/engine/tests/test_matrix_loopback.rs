@@ -42,6 +42,7 @@ fn find_device(
 }
 
 #[test]
+#[ignore] // Requires BlackHole loopback audio routing to be configured
 fn test_matrix_swap_channels_loopback_verification() {
     let device_names = ["BlackHole 2ch", "BlackHole 16ch", "BlackHole 64ch"];
     let mut output_setup = None;
@@ -194,6 +195,7 @@ fn test_matrix_swap_channels_loopback_verification() {
 }
 
 #[test]
+#[ignore] // Requires BlackHole loopback audio routing to be configured
 fn test_matrix_mono_sum_loopback_verification() {
     let device_names = ["BlackHole 2ch", "BlackHole 16ch", "BlackHole 64ch"];
     let mut output_setup = None;

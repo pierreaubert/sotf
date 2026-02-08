@@ -56,9 +56,21 @@ fn test_mono_summing_loudness_correlated() {
     let matrix_normalized = vec![0.5, 0.5];
     plugin.set_matrix(matrix_normalized).unwrap();
 
-    // Clear output
-    output.fill(0.0);
+    // Process enough frames for the one-pole gain smoother to converge
+    // (5ms time constant at 44100Hz needs ~2400 samples to reach 1e-5 threshold)
+    let settle_frames = 4096;
+    let settle_input = vec![1.0_f32; settle_frames * input_channels];
+    let mut settle_output = vec![0.0_f32; settle_frames * output_channels];
+    let settle_context = ProcessContext {
+        sample_rate: 44100,
+        num_frames: settle_frames,
+    };
+    plugin
+        .process(&settle_input, &mut settle_output, &settle_context)
+        .unwrap();
 
+    // Clear output and process one more block — smoother should have converged
+    output.fill(0.0);
     plugin.process(&input, &mut output, &context).unwrap();
 
     // Verify Output: 0.5*1.0 + 0.5*1.0 = 1.0

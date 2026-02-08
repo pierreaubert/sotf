@@ -6,6 +6,9 @@ use super::UpmixerPlugin;
 use crate::simd::{compute_covariance_simd, flush_denormals_complex_inplace, flush_denormals_inplace};
 use rustfft::num_complex::Complex;
 
+/// Minimum height mask value — prevents deep spectral notches that cause time-domain ringing
+const HEIGHT_MASK_FLOOR: f32 = 0.02;
+
 fn base_ambient_gain_from_coherence(coherence: f32, ambient_boost: f32) -> f32 {
     let coherence_clamped = coherence.clamp(0.0, 1.0);
     let ambient_base = (1.0 - coherence_clamped).max(0.0);
@@ -263,7 +266,8 @@ impl UpmixerPlugin {
                             .min(self.height_transient_reduction);
                         
                         if i < self.height_band_gains.len() {
-                            self.height_band_gains[i] = (height_suitability * transient_reduction).min(1.0);
+                            // Floor prevents deep spectral notches that cause time-domain ringing
+                            self.height_band_gains[i] = (height_suitability * transient_reduction).clamp(HEIGHT_MASK_FLOOR, 1.0);
                         }
                     }
                 } else {
@@ -274,7 +278,7 @@ impl UpmixerPlugin {
                         let diffuse = (1.0 - coherence).max(0.0);
                         let height_suitability = (freq_weight * 0.5 + diffuse * 0.5).min(1.0);
                         if i < self.height_band_gains.len() {
-                            self.height_band_gains[i] = (height_suitability * transient_reduction).min(1.0);
+                            self.height_band_gains[i] = (height_suitability * transient_reduction).clamp(HEIGHT_MASK_FLOOR, 1.0);
                         }
                     }
                 }

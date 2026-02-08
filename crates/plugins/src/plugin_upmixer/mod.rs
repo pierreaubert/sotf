@@ -1673,6 +1673,8 @@ Upper bound for dialogue detection analysis.",
 
         // Clear height mask; it will be recomputed in process_fft_block
         self.height_band_gains.fill(0.0);
+        self.height_band_gains_prev.fill(0.0);
+        self.height_band_gains_temp.fill(0.0);
     }
 
     fn process(

@@ -13,6 +13,26 @@ impl UpmixerPlugin {
         // 1. Applying window ONCE during analysis (before FFT)
         // 2. Overlap-add with hop_size = fft_size/2
         // Applying window again here would break COLA and cause amplitude modulation artifacts
+
+        // Apply raised cosine edge taper to height channels only.
+        // The magnitude mask applied to height bins in the frequency domain can cause
+        // frame-edge discontinuities at overlap-add boundaries. A short taper at the
+        // edges smooths these discontinuities without affecting the COLA sum for
+        // non-height channels.
+        const TAPER_LEN: usize = 64;
+        for ch in 0..self.num_output_channels {
+            let speaker = &self.speaker_config.speakers[ch];
+            if speaker.elevation > 10.0 {
+                let taper_end = TAPER_LEN.min(self.fft_size / 2);
+                for i in 0..taper_end {
+                    let t = i as f32 / TAPER_LEN as f32;
+                    let fade = 0.5 * (1.0 - (std::f32::consts::PI * t).cos());
+                    self.time_out_channels[ch][i] *= fade;
+                    self.time_out_channels[ch][self.fft_size - 1 - i] *= fade;
+                }
+            }
+        }
+
         // Safety cap: optionally reduce overall gain so that the block peak does not
         // exceed safety_cap_db (in dB) above unit amplitude.
         let mut target_safety_scale = 1.0_f32;
