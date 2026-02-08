@@ -800,23 +800,27 @@ impl DawHost {
             current_frames,
         )?;
 
-        // Verify frame count hasn't changed unexpectedly (no resampler should mean same count)
-        let has_resampler = self.chain_nodes.iter().any(|node_id| {
+        // Verify frame count hasn't changed unexpectedly.
+        // Plugins that legitimately change frame count:
+        // - Resamplers: output_frames_for_input(100) != 100
+        // - STFT/FFT plugins (upmixer, XTC, denoiser): latency_samples() > 0, may return
+        //   fewer frames during initial fill-up period
+        let has_variable_frame_plugin = self.chain_nodes.iter().any(|node_id| {
             self.nodes.get(node_id).is_some_and(|node| {
                 let plugin = node.plugin.lock().unwrap();
-                plugin.output_frames_for_input(100) != 100 // Simple heuristic: resampler changes frame count
+                plugin.output_frames_for_input(100) != 100 || plugin.latency_samples() > 0
             })
         });
-        if !has_resampler && current_frames != num_frames {
+        if !has_variable_frame_plugin && current_frames != num_frames {
             log::error!(
-                "[PluginHost] Frame count changed without resampler: {} -> {} (plugins: {})",
+                "[PluginHost] Frame count changed without resampler or latency plugin: {} -> {} (plugins: {})",
                 num_frames,
                 current_frames,
                 self.chain_nodes.len(),
             );
             debug_assert_eq!(
                 current_frames, num_frames,
-                "Frame count changed unexpectedly: {} -> {} (no resampler in chain)",
+                "Frame count changed unexpectedly: {} -> {} (no resampler or latency plugin in chain)",
                 num_frames, current_frames,
             );
         }
@@ -1776,5 +1780,139 @@ mod tests {
         for &sample in &output {
             assert!((sample - 1.414_f32).abs() < 0.05);
         }
+    }
+
+    // ========================================================================
+    // STFT/FFT Plugin Tests — Verifies host handles fill-up latency correctly
+    // ========================================================================
+
+    #[test]
+    fn test_upmixer_frame_count_during_fillup() {
+        use crate::UpmixerPlugin;
+
+        let upmixer = UpmixerPlugin::new(
+            2048,   // fft_size
+            "5.0",  // speaker config
+            1.0, 0.7, 0.5,   // front_direct, front_ambient, rear_ambient
+            80.0, 0.5, 200.0, // lfe_cutoff, stereo_width, bandpass
+            0.0, 0.0,         // height_gain, lfe_gain
+            false, 0.0,       // subharmonic
+        );
+        let output_channels = upmixer.output_channels();
+
+        let mut graph = DawHost::new(2, 48000);
+        graph.add_plugin(Box::new(upmixer)).unwrap();
+
+        let num_frames = 256;
+        let input = vec![0.5_f32; num_frames * 2]; // stereo
+        let mut output = vec![0.0_f32; num_frames * output_channels];
+
+        // First call: FFT fill-up, upmixer returns 0 frames — host must NOT panic
+        let frames = graph.process(&input, &mut output).unwrap();
+        // During fill-up, frames may be 0
+        assert!(frames <= num_frames, "frames={}", frames);
+
+        // After enough calls the upmixer should start producing output
+        let mut got_output = false;
+        for _ in 0..20 {
+            output.fill(0.0);
+            let frames = graph.process(&input, &mut output).unwrap();
+            if frames > 0 && output.iter().any(|&s| s.abs() > 1e-10) {
+                got_output = true;
+                break;
+            }
+        }
+        assert!(got_output, "Upmixer never produced output after fill-up");
+    }
+
+    #[test]
+    fn test_xtc_in_host() {
+        use crate::{XtcPlugin, XtcPluginParams};
+
+        let params = XtcPluginParams::default();
+        let xtc = XtcPlugin::new(params, 48000).unwrap();
+
+        let mut graph = DawHost::new(2, 48000);
+        graph.add_plugin(Box::new(xtc)).unwrap();
+
+        let num_frames = 256;
+        let input: Vec<f32> = (0..num_frames * 2)
+            .map(|i| ((i as f32) * 0.01).sin())
+            .collect();
+        let mut output = vec![0.0_f32; num_frames * 2];
+
+        // XTC returns context.num_frames always, should not panic
+        let frames = graph.process(&input, &mut output).unwrap();
+        assert_eq!(frames, num_frames);
+
+        // After fill-up, output should be non-zero
+        let mut got_output = false;
+        for _ in 0..20 {
+            output.fill(0.0);
+            let frames = graph.process(&input, &mut output).unwrap();
+            assert_eq!(frames, num_frames);
+            if output.iter().any(|&s| s.abs() > 1e-10) {
+                got_output = true;
+                break;
+            }
+        }
+        assert!(got_output, "XTC never produced non-zero output");
+    }
+
+    #[test]
+    fn test_denoiser_in_host() {
+        use crate::{DenoiserPlugin, InPlacePluginAdapter};
+
+        let denoiser = DenoiserPlugin::new(2, false);
+
+        let mut graph = DawHost::new(2, 48000);
+        graph
+            .add_plugin(Box::new(InPlacePluginAdapter::new(denoiser)))
+            .unwrap();
+
+        let num_frames = 256;
+        let input = vec![0.5_f32; num_frames * 2];
+        let mut output = vec![0.0_f32; num_frames * 2];
+
+        // InPlacePluginAdapter always returns context.num_frames
+        let frames = graph.process(&input, &mut output).unwrap();
+        assert_eq!(frames, num_frames);
+    }
+
+    #[test]
+    fn test_downmix_in_host() {
+        use crate::{DownmixPlugin, UpmixerPlugin};
+
+        // Upmixer: 2ch → 5ch, then Downmix: 5ch → 2ch
+        let upmixer = UpmixerPlugin::new(
+            2048, "5.0", 1.0, 0.7, 0.5, 80.0, 0.5, 200.0, 0.0, 0.0, false, 0.0,
+        );
+        let output_channels = upmixer.output_channels();
+        let downmix = DownmixPlugin::new(output_channels);
+
+        let mut graph = DawHost::new(2, 48000);
+        graph.add_plugin(Box::new(upmixer)).unwrap();
+        graph.add_plugin(Box::new(downmix)).unwrap();
+
+        // Output is stereo (downmix output)
+        let num_frames = 256;
+        let input = vec![0.5_f32; num_frames * 2];
+        let mut output = vec![0.0_f32; num_frames * 2];
+
+        // Should not panic even during upmixer fill-up
+        let frames = graph.process(&input, &mut output).unwrap();
+        assert!(frames <= num_frames);
+
+        // After fill-up, should produce output
+        let mut got_output = false;
+        for _ in 0..20 {
+            output.fill(0.0);
+            let frames = graph.process(&input, &mut output).unwrap();
+            if frames > 0 && output.iter().any(|&s| s.abs() > 1e-10) {
+                got_output = true;
+                break;
+            }
+        }
+        assert!(got_output, "Upmixer+Downmix chain never produced output");
     }
 }

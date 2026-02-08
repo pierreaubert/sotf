@@ -280,8 +280,10 @@ impl DownmixPlugin {
                 let pan_rad = azimuth.to_radians();
                 // Map: 0° → equal L/R, +90° → full L, -90° → full R
                 let angle = (pan_rad + std::f32::consts::FRAC_PI_2) * 0.5;
-                let left_gain = category_gain * angle.cos();
-                let right_gain = category_gain * angle.sin();
+                // sin gives left (high at +90°), cos gives right (high at -90°)
+                // Clamp to 0: speakers beyond ±90° from center shouldn't subtract
+                let left_gain = (category_gain * angle.sin()).max(0.0);
+                let right_gain = (category_gain * angle.cos()).max(0.0);
 
                 self.coeffs.push(DownmixCoeffs {
                     left_gain,
@@ -304,6 +306,20 @@ impl DownmixPlugin {
                         right_gain: t,
                     });
                 }
+            }
+        }
+
+        // Normalize coefficients to prevent saturation.
+        // The worst case is all channels fully correlated at full scale,
+        // so we normalize by the max L1 sum across L and R.
+        let sum_left: f32 = self.coeffs.iter().map(|c| c.left_gain.abs()).sum();
+        let sum_right: f32 = self.coeffs.iter().map(|c| c.right_gain.abs()).sum();
+        let max_sum = sum_left.max(sum_right);
+        if max_sum > 1.0 {
+            let norm = 1.0 / max_sum;
+            for coeff in &mut self.coeffs {
+                coeff.left_gain *= norm;
+                coeff.right_gain *= norm;
             }
         }
     }
@@ -899,6 +915,68 @@ mod tests {
         let plugin = DownmixPlugin::new(6);
         assert_eq!(plugin.input_channels(), 6);
         assert_eq!(plugin.output_channels(), 2);
+    }
+
+    #[test]
+    fn test_downmix_normalization_no_saturation() {
+        // All channels at full scale should NOT produce output > 1.0
+        for &num_ch in &[5, 6, 8, 10, 12] {
+            let mut plugin = DownmixPlugin::new(num_ch);
+            plugin.phase_coherence = false;
+            plugin.initialize(44100).unwrap();
+
+            let num_frames = 1024;
+            // All channels at +1.0 (worst case correlated)
+            let input = vec![1.0f32; num_frames * num_ch];
+            let mut output = vec![0.0f32; num_frames * 2];
+            let context = ProcessContext {
+                sample_rate: 44100,
+                num_frames,
+            };
+
+            plugin.process(&input, &mut output, &context).unwrap();
+
+            let max_val = output.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
+            // Allow up to 2% overshoot from LFE lowpass filter transient
+            assert!(
+                max_val <= 1.02,
+                "{}ch downmix saturated: max output = {:.4}",
+                num_ch,
+                max_val,
+            );
+        }
+    }
+
+    #[test]
+    fn test_downmix_panning_direction() {
+        // FL signal should appear more in Left than Right output
+        let mut plugin = DownmixPlugin::new(5);
+        plugin.phase_coherence = false;
+        plugin.initialize(44100).unwrap();
+
+        let num_frames = 1024;
+        let mut input = vec![0.0f32; num_frames * 5];
+        // Put signal only in FL (channel 0)
+        for i in 0..num_frames {
+            input[i * 5] = 1.0;
+        }
+        let mut output = vec![0.0f32; num_frames * 2];
+        let context = ProcessContext {
+            sample_rate: 44100,
+            num_frames,
+        };
+
+        plugin.process(&input, &mut output, &context).unwrap();
+
+        // FL at azimuth +30° should go more to Left than Right
+        let left_level: f32 = output.iter().step_by(2).map(|s| s.abs()).sum::<f32>() / num_frames as f32;
+        let right_level: f32 = output.iter().skip(1).step_by(2).map(|s| s.abs()).sum::<f32>() / num_frames as f32;
+        assert!(
+            left_level > right_level,
+            "FL should send more to L ({:.4}) than R ({:.4})",
+            left_level,
+            right_level,
+        );
     }
 
     #[test]

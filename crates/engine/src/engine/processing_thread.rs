@@ -1128,7 +1128,7 @@ mod tests {
             // Some plugins produce silence in normal operation:
             // - Gate/Expander: gate signal to zero for quiet inputs
             // - ABCompare: may bypass
-            // - XTC/Denoiser: STFT latency causes silent output on first block
+            // - XTC/Denoiser/Downmix: STFT latency causes silent output on first block
             let may_produce_silence = matches!(
                 plugin_type,
                 PluginType::Gate
@@ -1136,6 +1136,7 @@ mod tests {
                     | PluginType::ABCompare
                     | PluginType::XTC
                     | PluginType::Denoiser
+                    | PluginType::Downmix
             );
 
             if !may_produce_silence {
