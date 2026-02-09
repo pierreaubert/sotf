@@ -26,7 +26,7 @@ use super::phase_alignment;
 use super::target_tilt;
 use super::types::{
     ChannelDspChain, DspChainOutput, MeasurementSource, MixedModeConfig, MultiSubGroup,
-    OptimizerConfig, OptimizationMetadata, RoomConfig, SpeakerConfig, SpeakerGroup,
+    OptimizerConfig, OptimizationMetadata, ProcessingMode, RoomConfig, SpeakerConfig, SpeakerGroup,
     TargetCurveConfig, TiltType,
 };
 
@@ -429,7 +429,67 @@ pub fn optimize_room(
         }
     }
 
-    // Group Delay Optimization
+    // ========================================================================
+    // Group Delay Optimization (v2) - IIR Mode
+    // ========================================================================
+    // Align Main speakers to Subwoofer using All-Pass filters to match phase slope
+    if let Some(gd_opt) = &config.optimizer.gd_opt
+        && gd_opt.enabled
+        && config.optimizer.processing_mode == ProcessingMode::LowLatency
+    {
+        info!("Running Group Delay Optimization (IIR Mode)...");
+
+        // Identify subwoofer channel
+        let sub_channel = curves.keys().find(|name| *name == "lfe" || name.starts_with("sub")).cloned();
+
+        if let Some(sub_name) = sub_channel {
+            if let Some(sub_curve) = curves.get(&sub_name) {
+                // Find Mains (non-sub channels)
+                let main_channels: Vec<String> = curves
+                    .keys()
+                    .filter(|name| *name != &sub_name && !name.starts_with("sub"))
+                    .cloned()
+                    .collect();
+
+                let min_freq = config.optimizer.min_freq;
+                let max_freq = 200.0; // GD optimization typically relevant in bass/crossover region
+
+                for main_name in main_channels {
+                    if let Some(main_curve) = curves.get(&main_name) {
+                        info!("  Optimizing GD for '{}' vs '{}'", main_name, sub_name);
+                        
+                        match group_delay::optimize_gd_iir(
+                            sub_curve,
+                            main_curve,
+                            min_freq,
+                            max_freq,
+                            sample_rate,
+                        ) {
+                            Ok(filters) => {
+                                if !filters.is_empty() {
+                                    info!("    Generated {} All-Pass filters for GD alignment", filters.len());
+                                    if let Some(chain) = channel_chains.get_mut(&main_name) {
+                                        // Add AP filters to chain (after other filters)
+                                        let plugin = output::create_eq_plugin(&filters);
+                                        chain.plugins.push(plugin);
+                                    }
+                                } else {
+                                    info!("    No AP filters needed");
+                                }
+                            }
+                            Err(e) => {
+                                warn!("    GD optimization failed for '{}': {}", main_name, e);
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            warn!("GD-Opt enabled but no subwoofer channel found (looking for 'lfe' or 'sub*')");
+        }
+    }
+
+    // Group Delay Optimization (Legacy v1)
     if let Some(gd_configs) = &config.group_delay {
         info!("Optimizing group delay alignments...");
 
@@ -834,12 +894,24 @@ fn process_single_speaker(
         Some((min_freq as f32, max_freq as f32)),
     ) as f64;
 
-    match room_config.optimizer.mode.as_str() {
-        "fir" => {
+    match room_config.optimizer.processing_mode {
+        ProcessingMode::PhaseLinear => {
             info!("  Generating FIR filter...");
+            
+            // Check if we should force excess phase correction for GD-Opt on subwoofer
+            let mut opt_config = room_config.optimizer.clone();
+            if let Some(gd_opt) = &room_config.optimizer.gd_opt {
+                if gd_opt.enabled && (channel_name == "lfe" || channel_name.starts_with("sub")) {
+                    if let Some(fir) = &mut opt_config.fir {
+                        fir.correct_excess_phase = true;
+                        info!("  GD-Opt: Forcing excess phase correction for '{}'", channel_name);
+                    }
+                }
+            }
+
             let coeffs = fir::generate_fir_correction(
                 &curve,
-                &room_config.optimizer,
+                &opt_config,
                 room_config.target_curve.as_ref(),
                 sample_rate,
             )
@@ -895,7 +967,7 @@ fn process_single_speaker(
 
             Ok((chain, pre_score, post_score, curve.clone(), final_curve, vec![], mean_spl, arrival_time_ms))
         }
-        "mixed" => {
+        ProcessingMode::Hybrid => {
             // Check for frequency-based crossover configuration
             if let Some(mixed_config) = &room_config.optimizer.mixed_config {
                 // New frequency-based mixed mode: FIR on one band, IIR on the other
@@ -915,9 +987,20 @@ fn process_single_speaker(
             }
 
             // Legacy sequential mixed mode: IIR first, then FIR on residual
+            // Check if we should force excess phase correction for GD-Opt on subwoofer
+            let mut opt_config = room_config.optimizer.clone();
+            if let Some(gd_opt) = &room_config.optimizer.gd_opt {
+                if gd_opt.enabled && (channel_name == "lfe" || channel_name.starts_with("sub")) {
+                    if let Some(fir) = &mut opt_config.fir {
+                        fir.correct_excess_phase = true;
+                        info!("  GD-Opt: Forcing excess phase correction for '{}'", channel_name);
+                    }
+                }
+            }
+
             let (eq_filters, _opt_loss) = eq::optimize_channel_eq(
                 &curve,
-                &room_config.optimizer,
+                &opt_config, // Use modified config
                 room_config.target_curve.as_ref(),
                 sample_rate,
             )
@@ -933,7 +1016,7 @@ fn process_single_speaker(
             info!("  Generating FIR for residual...");
             let coeffs = fir::generate_fir_correction(
                 &input_plus_iir,
-                &room_config.optimizer,
+                &opt_config, // Use modified config
                 room_config.target_curve.as_ref(),
                 sample_rate,
             )
@@ -985,7 +1068,7 @@ fn process_single_speaker(
 
             Ok((chain, pre_score, post_score, curve.clone(), final_curve, eq_filters, mean_spl, arrival_time_ms))
         }
-        _ => {
+        ProcessingMode::LowLatency => {
             // Default IIR mode with enhanced processing
 
             // Apply target tilt to the curve (subtract tilt from measurement)

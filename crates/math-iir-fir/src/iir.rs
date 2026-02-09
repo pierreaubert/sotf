@@ -3,6 +3,7 @@
 use base64::{Engine as _, engine::general_purpose};
 use byteorder::{BigEndian, WriteBytesExt};
 use ndarray::Array1;
+use num_complex::Complex64;
 use std::f64::consts::PI;
 use std::fmt;
 
@@ -35,6 +36,8 @@ pub enum BiquadFilterType {
     Lowshelf,
     /// High-shelf filter
     Highshelf,
+    /// All-pass filter
+    AllPass,
 }
 
 impl BiquadFilterType {
@@ -49,6 +52,7 @@ impl BiquadFilterType {
             BiquadFilterType::Notch => "NO",
             BiquadFilterType::Lowshelf => "LS",
             BiquadFilterType::Highshelf => "HS",
+            BiquadFilterType::AllPass => "AP",
         }
     }
 
@@ -63,6 +67,7 @@ impl BiquadFilterType {
             BiquadFilterType::Notch => "Notch",
             BiquadFilterType::Lowshelf => "Lowshelf",
             BiquadFilterType::Highshelf => "Highshelf",
+            BiquadFilterType::AllPass => "AllPass",
         }
     }
 }
@@ -302,6 +307,14 @@ impl Biquad {
                 a1 = 2.0 * ((a - 1.0) - (a + 1.0) * cs);
                 a2 = (a + 1.0) - (a - 1.0) * cs - beta * sn;
             }
+            BiquadFilterType::AllPass => {
+                b0 = 1.0 - alpha;
+                b1 = -2.0 * cs;
+                b2 = 1.0 + alpha;
+                a0 = 1.0 + alpha;
+                a1 = -2.0 * cs;
+                a2 = 1.0 - alpha;
+            }
         }
 
         // Normalize coefficients
@@ -365,6 +378,19 @@ impl Biquad {
         self.x2 = x2;
         self.y1 = y1;
         self.y2 = y2;
+    }
+
+    /// Calculates the filter's complex frequency response at a single frequency `f`.
+    pub fn complex_response(&self, f: f64) -> Complex64 {
+        let omega = 2.0 * PI * f / self.srate;
+        let z_inv = Complex64::from_polar(1.0, -omega);
+        let z_inv2 = z_inv * z_inv;
+
+        // Note: coeffs are already normalized by a0
+        let num = self.b0 + self.b1 * z_inv + self.b2 * z_inv2;
+        let den = 1.0 + self.a1 * z_inv + self.a2 * z_inv2;
+
+        num / den
     }
 
     /// Calculates the filter's magnitude response at a single frequency `f`.
@@ -1549,6 +1575,14 @@ pub fn peq_format_apo(comment: &str, peq: &Peq) -> String {
             BiquadFilterType::HighpassVariableQ => {
                 res.push(format!(
                     "Filter {:2}: ON HPQ Fc {:5} Hz Q {:0.2}",
+                    i + 1,
+                    iir.freq as i32,
+                    iir.q
+                ));
+            }
+            BiquadFilterType::AllPass => {
+                res.push(format!(
+                    "Filter {:2}: ON AP Fc {:5} Hz Q {:0.2}",
                     i + 1,
                     iir.freq as i32,
                     iir.q

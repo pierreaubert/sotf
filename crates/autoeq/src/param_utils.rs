@@ -150,6 +150,7 @@ pub fn decode_filter_type(type_value: f64) -> BiquadFilterType {
     // Map [5, 6) -> HighpassVariableQ
     // Map [6, 7) -> Bandpass
     // Map [7, 8) -> Notch
+    // Map [8, 9) -> AllPass
 
     let idx = type_value.floor() as i32;
     match idx {
@@ -161,6 +162,7 @@ pub fn decode_filter_type(type_value: f64) -> BiquadFilterType {
         5 => BiquadFilterType::HighpassVariableQ,
         6 => BiquadFilterType::Bandpass,
         7 => BiquadFilterType::Notch,
+        8 => BiquadFilterType::AllPass,
         _ => BiquadFilterType::Peak, // Default
     }
 }
@@ -176,12 +178,13 @@ pub fn encode_filter_type(filter_type: BiquadFilterType) -> f64 {
         BiquadFilterType::HighpassVariableQ => 5.0,
         BiquadFilterType::Bandpass => 6.0,
         BiquadFilterType::Notch => 7.0,
+        BiquadFilterType::AllPass => 8.0,
     }
 }
 
 /// Get bounds for filter type parameter
 pub fn filter_type_bounds() -> (f64, f64) {
-    (0.0, 7.999) // Almost 8, but not quite to avoid edge cases
+    (0.0, 8.999) // Almost 9, but not quite to avoid edge cases
 }
 
 /// Convert log10 frequency parameter to Hz
