@@ -1196,6 +1196,7 @@ impl PlayerView {
             // Build RoomConfig
             let room_config = RoomConfig {
                 version: "1.1.0".to_string(),
+                system: None,
                 speakers,
                 crossovers: None,
                 target_curve: None,

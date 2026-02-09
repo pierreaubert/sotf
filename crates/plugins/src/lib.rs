@@ -132,8 +132,9 @@ pub use plugin_compressor::{
     default_sidechain_hpf_hz as compressor_default_sidechain_hpf_hz,
 };
 pub use speaker_config::{
-    SpeakerConfig, SpeakerPosition, calculate_panning_gain, get_available_configs,
-    get_speaker_config, get_speaker_config_by_channels,
+    MeterChannelSpec, MeterGroupSpec, SpeakerConfig, SpeakerPosition, calculate_panning_gain,
+    get_available_configs, get_meter_groups, get_meter_groups_by_channels, get_speaker_config,
+    get_speaker_config_by_channels,
 };
 
 pub use sofa::{HrtfData, SofaFile, SourcePosition};

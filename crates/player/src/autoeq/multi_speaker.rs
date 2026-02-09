@@ -283,6 +283,7 @@ pub fn run_multi_speaker_optimization(
 
     let room_config = RoomConfig {
         version: autoeq::roomeq::default_config_version(),
+        system: None,
         speakers: speakers_map,
         crossovers: None,
         target_curve: None,
@@ -426,6 +427,7 @@ pub fn build_room_config_from_curves(
 
     RoomConfig {
         version: autoeq::roomeq::default_config_version(),
+        system: None,
         speakers: speakers_map,
         crossovers: None,
         target_curve: None,

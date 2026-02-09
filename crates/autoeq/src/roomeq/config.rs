@@ -535,6 +535,7 @@ mod tests {
     fn test_validate_empty_speakers() {
         let config = RoomConfig {
             version: default_config_version(),
+            system: None,
             speakers: HashMap::new(),
             crossovers: None,
             target_curve: None,
@@ -566,6 +567,7 @@ mod tests {
 
         let config = RoomConfig {
             version: default_config_version(),
+            system: None,
             speakers,
             crossovers: None,
             target_curve: None,
@@ -604,6 +606,7 @@ mod tests {
 
         let config = RoomConfig {
             version: default_config_version(),
+            system: None,
             speakers,
             crossovers: Some(HashMap::new()), // Empty crossovers
             target_curve: None,
@@ -636,6 +639,7 @@ mod tests {
 
         let config = RoomConfig {
             version: default_config_version(),
+            system: None,
             speakers,
             crossovers: None,
             target_curve: None,
@@ -673,6 +677,7 @@ mod tests {
 
         let config = RoomConfig {
             version: default_config_version(),
+            system: None,
             speakers,
             crossovers: None,
             target_curve: None,

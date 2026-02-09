@@ -705,6 +705,7 @@ pub fn optimize_speaker(
     // Create a minimal RoomConfig for internal processing
     let room_config = RoomConfig {
         version: super::types::default_config_version(),
+        system: None,
         speakers: HashMap::new(),
         crossovers: None,
         target_curve: target_curve.cloned(),

@@ -309,6 +309,8 @@ pub enum ThreadEvent {
     DecoderEndOfStream,
     /// Decoder error
     DecoderError(String),
+    /// Playback thread has fully drained its ring buffer after end-of-stream
+    PlaybackDrained,
     /// Playback buffer underrun
     PlaybackUnderrun,
     /// Processing error

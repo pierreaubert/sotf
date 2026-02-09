@@ -1321,6 +1321,7 @@ fn get_filter_type_index(filter_type: &BiquadFilterType) -> usize {
         BiquadFilterType::Highpass => 4,
         BiquadFilterType::Bandpass => 5,
         BiquadFilterType::Notch => 6,
+        BiquadFilterType::AllPass => 7,
         BiquadFilterType::HighpassVariableQ => 4, // Map to Highpass
     }
 }
@@ -1344,6 +1345,7 @@ fn render_filter_type_selector(
         (4, "HP"), // High Pass
         (5, "BP"), // Band Pass
         (6, "NO"), // Notch
+        (7, "AP"), // All Pass
     ];
 
     let current_index = get_filter_type_index(current_type);

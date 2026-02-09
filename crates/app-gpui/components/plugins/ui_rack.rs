@@ -1494,6 +1494,13 @@ impl PlayerView {
                                         }
                                     };
 
+                                    let app_st = self.state.read(cx);
+                                    let upmixer_config_open = app_st.app.upmixer_config_open;
+                                    let selected_eq_band = app_st.app.plugin_state.selected_eq_band;
+                                    let spectrum_tilt_open = app_st.app.spectrum_tilt_select_open;
+                                    let spectrum_ref_open = app_st.app.spectrum_reference_select_open;
+                                    let plugin_chain = app_st.app.plugin_state.plugin_chain.clone();
+
                                     render_plugin_content(
                                         self.state.clone(),
                                         selected_idx, // Pass index
@@ -1501,12 +1508,13 @@ impl PlayerView {
                                         is_editing,
                                         param_selection,
                                         &theme,
-                                        self.state.read(cx).app.upmixer_config_open,
-                                        self.state.read(cx).app.plugin_state.selected_eq_band,
+                                        upmixer_config_open,
+                                        selected_eq_band,
                                         loudness_for_plugin,
                                         plugin_data,
-                                        self.state.read(cx).app.spectrum_tilt_select_open,
-                                        self.state.read(cx).app.spectrum_reference_select_open,
+                                        spectrum_tilt_open,
+                                        spectrum_ref_open,
+                                        &plugin_chain,
                                         cx,
                                     )
                                 }),

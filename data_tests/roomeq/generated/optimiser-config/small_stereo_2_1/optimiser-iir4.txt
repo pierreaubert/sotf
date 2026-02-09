@@ -1,8 +1,21 @@
 {
   "speakers": {
-    "left": "left_lp0.csv",
-    "right": "right_lp0.csv",
-    "lfe": "subwoofer_lp0.csv"
+    "left": {
+      "name": "left+lfe",
+      "measurements": [
+	"left_lp0.csv",
+	"subwoofer_lp0.csv"
+      ],
+      "crossover": "left_crossovers"
+    },
+    "right": {
+      "name": "right+lfe",
+      "measurements": [
+	"right_lp0.csv",
+	"subwoofer_lp0.csv"
+      ],
+      "crossover": "right_crossovers"
+    }
   },
   "optimizer": {
     "mode": "iir",
@@ -26,7 +39,11 @@
   },
   "group_delay": [],
   "crossovers": {
-    "crossovers": {
+    "left_crossovers": {
+      "type": "LR24",
+      "frequency_range": [60.0, 120.0]
+    },
+    "right_crossovers": {
       "type": "LR24",
       "frequency_range": [60.0, 120.0]
     }

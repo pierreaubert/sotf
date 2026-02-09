@@ -1538,6 +1538,7 @@ impl RoomEqState {
 
         RoomConfig {
             version: autoeq::roomeq::default_config_version(),
+            system: None,
             speakers,
             crossovers: Some(crossovers),
             target_curve: None,

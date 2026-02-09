@@ -229,7 +229,7 @@ fn run_playback_thread(
     };
 
     // Create shared state (ring buffer with ~500ms capacity)
-    let buffer_capacity = (sample_rate as usize * 500) / 1000 * channels; // 500ms * channels
+    let mut buffer_capacity = (sample_rate as usize * 500) / 1000 * channels; // 500ms * channels
     let (mut producer, consumer) = RingBuffer::<f32>::new(buffer_capacity);
     let mut state = Arc::new(PlaybackState::new(consumer, buffer_capacity));
 
@@ -288,6 +288,11 @@ fn run_playback_thread(
     let mut frames_dropped: u64 = 0;
     let mut frames_blocked: u64 = 0;
     let mut total_samples_written: u64 = 0;
+
+    // End-of-stream drain tracking
+    let mut end_of_stream = false;
+    let mut drain_start: Option<std::time::Instant> = None;
+    let drain_timeout = std::time::Duration::from_secs(2);
 
     // Main loop: read from queue and write to ring buffer
     loop {
@@ -386,6 +391,7 @@ fn run_playback_thread(
                                     config = new_config;
                                     state = new_state;
                                     producer = new_producer;
+                                    buffer_capacity = new_buffer_capacity;
 
                                     // Final drain
                                     while message_rx.try_recv().is_ok() {}
@@ -526,7 +532,8 @@ fn run_playback_thread(
                                     config = new_config;
                                     state = new_state;
                                     channels = new_channels;
-                                    producer = new_producer; // Update producer
+                                    producer = new_producer;
+                                    buffer_capacity = new_buffer_capacity;
 
                                     // Final drain - discard any frames that arrived during rebuild
                                     // These might have wrong channel count
@@ -724,17 +731,61 @@ fn run_playback_thread(
                 total_samples_written += frame_samples as u64;
             }
             Ok(ProcessingMessage::EndOfStream) => {
-                log::debug!("[Playback Thread] End of stream");
+                log::debug!("[Playback Thread] End of stream - starting drain");
+                end_of_stream = true;
+                drain_start = Some(std::time::Instant::now());
             }
             Ok(ProcessingMessage::Flush) => {
                 // Cannot easily clear rtrb producer side without consumer access
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => {
-                // No message available, sleep briefly to avoid 100% CPU
-                std::thread::sleep(std::time::Duration::from_millis(1));
+                if end_of_stream {
+                    // Check if ring buffer has been fully consumed by cpal callback
+                    if producer.slots() >= buffer_capacity {
+                        log::info!("[Playback Thread] Ring buffer drained, signaling completion");
+                        event_tx.send(ThreadEvent::PlaybackDrained).ok();
+                        break;
+                    }
+                    // Safety timeout: if drain takes too long (cpal callback stopped?),
+                    // force completion to avoid hanging forever.
+                    if let Some(start) = drain_start {
+                        if start.elapsed() > drain_timeout {
+                            log::warn!("[Playback Thread] Drain timeout, forcing PlaybackDrained (slots={}, capacity={})",
+                                producer.slots(), buffer_capacity);
+                            event_tx.send(ThreadEvent::PlaybackDrained).ok();
+                            break;
+                        }
+                    }
+                    // Still draining, sleep briefly
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                } else {
+                    // No message available, sleep briefly to avoid 100% CPU
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
             }
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                log::debug!("[Playback Thread] Queue disconnected");
+                if end_of_stream {
+                    // Processing channel closed during drain — wait for ring buffer
+                    // to empty so the remaining audio reaches hardware.
+                    log::debug!("[Playback Thread] Queue disconnected during drain, waiting for ring buffer");
+                    let drain_start = std::time::Instant::now();
+                    let drain_timeout = std::time::Duration::from_secs(2);
+                    loop {
+                        if producer.slots() >= buffer_capacity {
+                            log::info!("[Playback Thread] Ring buffer drained (post-disconnect), signaling completion");
+                            event_tx.send(ThreadEvent::PlaybackDrained).ok();
+                            break;
+                        }
+                        if drain_start.elapsed() > drain_timeout {
+                            log::warn!("[Playback Thread] Drain timeout after disconnect, forcing PlaybackDrained");
+                            event_tx.send(ThreadEvent::PlaybackDrained).ok();
+                            break;
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(5));
+                    }
+                } else {
+                    log::debug!("[Playback Thread] Queue disconnected");
+                }
                 break;
             }
         }

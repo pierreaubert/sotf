@@ -106,6 +106,7 @@ pub fn generate_config(scenario: &Scenario, _csv_dir: &Path) -> Result<RoomConfi
 
     let config = RoomConfig {
         version: "1.2.0".to_string(),
+        system: None,
         speakers,
         crossovers: None,
         target_curve: None,

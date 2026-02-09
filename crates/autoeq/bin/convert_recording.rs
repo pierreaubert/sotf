@@ -148,6 +148,7 @@ fn convert_legacy_to_room_config(legacy: &LegacyMeasurementsFile) -> RoomConfig 
 
     RoomConfig {
         version: "1.2.0".to_string(),
+        system: None,
         speakers,
         crossovers: None,
         target_curve: None,

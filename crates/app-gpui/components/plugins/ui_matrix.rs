@@ -13,7 +13,7 @@ use crate::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
 use sotf_audio_player::{
-    apply_matrix_preset, db_to_linear, detect_matrix_preset, get_channel_label,
+    apply_matrix_preset, db_to_linear, detect_matrix_preset, get_channel_label_from_config,
 };
 
 // Constants for matrix cell sizing
@@ -28,6 +28,8 @@ pub struct MatrixRenderState<'a> {
     pub input_channels: usize,
     pub output_channels: usize,
     pub matrix: &'a [f32],
+    pub channel_states: &'a [sotf_plugins::ChannelState],
+    pub speaker_config: Option<String>,
     pub is_editing: bool,
     pub selected_param: usize,
     /// Currently selected cell (input_idx, output_idx) for editing
@@ -216,53 +218,315 @@ fn render_preset_buttons(
         }))
 }
 
-/// Render the matrix grid with input columns and output rows
+/// Compute output channel groups from MeterGroupSpec
+fn compute_output_groups(
+    output_channels: usize,
+    speaker_config: Option<&str>,
+) -> Vec<(String, Vec<usize>)> {
+    let groups = speaker_config
+        .and_then(sotf_plugins::get_meter_groups)
+        .or_else(|| sotf_plugins::get_meter_groups_by_channels(output_channels));
+    if let Some(groups) = groups {
+        groups
+            .iter()
+            .map(|g| {
+                (
+                    g.name.to_string(),
+                    g.channels.iter().map(|c| c.index).collect(),
+                )
+            })
+            .collect()
+    } else {
+        (0..output_channels)
+            .map(|i| (format!("Ch{}", i), vec![i]))
+            .collect()
+    }
+}
+
+/// M/S/D button width
+const MSD_BTN_SIZE: f32 = 20.0;
+/// M/S/D column total width (3 buttons + gaps + padding)
+const MSD_COL_WIDTH: f32 = 80.0;
+
+/// Render the matrix grid with input columns and output rows, plus M/S/D sidebar
 fn render_matrix_grid(
     entity: Entity<AppState>,
     plugin_idx: usize,
     state: &MatrixRenderState,
     theme: &Theme,
 ) -> impl IntoElement {
+    let output_groups = compute_output_groups(
+        state.output_channels,
+        state.speaker_config.as_deref(),
+    );
+
     div()
         .flex()
-        .flex_col()
+        .gap_2()
         .param_section_style_lg(theme)
-        // Column headers (input labels)
+        // Left: the matrix grid
         .child(
             div()
                 .flex()
+                .flex_col()
+                // Column headers (input labels)
                 .child(
-                    // Empty corner cell
                     div()
-                        .w(px(LABEL_WIDTH))
-                        .h(px(24.0))
                         .flex()
-                        .items_center()
-                        .justify_center()
+                        .child(
+                            // Empty corner cell
+                            div()
+                                .w(px(LABEL_WIDTH))
+                                .h(px(24.0))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .text_xs()
+                                .text_color(theme.text_muted)
+                                .child("OUT\\IN"),
+                        )
+                        .children((0..state.input_channels).map(|in_idx| {
+                            let label = get_channel_label_from_config(
+                                in_idx,
+                                state.input_channels,
+                                state.speaker_config.as_deref(),
+                            );
+                            div()
+                                .w(px(CELL_SIZE))
+                                .h(px(24.0))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .text_xs()
+                                .font_weight(FontWeight::BOLD)
+                                .text_color(theme.text_secondary)
+                                .child(label)
+                        })),
+                )
+                // Grid rows
+                .children(
+                    (0..state.output_channels).map(|out_idx| {
+                        render_matrix_row(entity.clone(), plugin_idx, out_idx, state, theme)
+                    }),
+                ),
+        )
+        // Right: M/S/D sidebar
+        .child(
+            render_msd_sidebar(
+                entity.clone(),
+                plugin_idx,
+                state,
+                &output_groups,
+                theme,
+            ),
+        )
+}
+
+/// Render the M/S/D sidebar column
+fn render_msd_sidebar(
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    state: &MatrixRenderState,
+    output_groups: &[(String, Vec<usize>)],
+    theme: &Theme,
+) -> impl IntoElement {
+    // Row height for each output channel: CELL_SIZE + 2px margin (m_px on each side)
+    let row_height = CELL_SIZE + 2.0;
+
+    div()
+        .flex()
+        .flex_col()
+        .w(px(MSD_COL_WIDTH))
+        // Header spacer to align with column header row
+        .child(
+            div()
+                .h(px(24.0))
+                .flex()
+                .items_center()
+                .justify_center()
+                .text_xs()
+                .font_weight(FontWeight::BOLD)
+                .text_color(theme.text_muted)
+                .child("M S D"),
+        )
+        // One group row per group, height = number of channels * row_height
+        .children(output_groups.iter().map(|(group_name, channels)| {
+            let group_height = channels.len() as f32 * row_height;
+            let has_label = channels.len() > 1;
+
+            // Check current states for this group
+            let any_muted = channels
+                .iter()
+                .any(|&ch| state.channel_states.get(ch).is_some_and(|s| s.muted));
+            let any_soloed = channels
+                .iter()
+                .any(|&ch| state.channel_states.get(ch).is_some_and(|s| s.soloed));
+            let any_dimmed = channels
+                .iter()
+                .any(|&ch| state.channel_states.get(ch).is_some_and(|s| s.dimmed));
+
+            let output_channels = state.output_channels;
+
+            // Build the button row
+            let buttons = div()
+                .flex()
+                .gap_1()
+                .child(render_msd_button(
+                    "M",
+                    any_muted,
+                    theme.error,
+                    theme,
+                    plugin_idx,
+                    entity.clone(),
+                    channels.clone(),
+                    output_channels,
+                    MsdAction::Mute,
+                ))
+                .child(render_msd_button(
+                    "S",
+                    any_soloed,
+                    theme.warning,
+                    theme,
+                    plugin_idx,
+                    entity.clone(),
+                    channels.clone(),
+                    output_channels,
+                    MsdAction::Solo,
+                ))
+                .child(render_msd_button(
+                    "D",
+                    any_dimmed,
+                    theme.info,
+                    theme,
+                    plugin_idx,
+                    entity.clone(),
+                    channels.clone(),
+                    output_channels,
+                    MsdAction::Dim,
+                ));
+
+            let mut container = div()
+                .h(px(group_height))
+                .flex()
+                .flex_col()
+                .items_center()
+                .justify_center()
+                .gap_1()
+                .border_l_1()
+                .border_color(theme.border)
+                .pl_2();
+
+            if has_label {
+                container = container.child(
+                    div()
                         .text_xs()
                         .text_color(theme.text_muted)
-                        .child("OUT\\IN"),
-                )
-                .children((0..state.input_channels).map(|in_idx| {
-                    let label = get_channel_label(in_idx, state.input_channels);
-                    div()
-                        .w(px(CELL_SIZE))
-                        .h(px(24.0))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .text_xs()
-                        .font_weight(FontWeight::BOLD)
-                        .text_color(theme.text_secondary)
-                        .child(label)
-                })),
-        )
-        // Grid rows
-        .children(
-            (0..state.output_channels).map(|out_idx| {
-                render_matrix_row(entity.clone(), plugin_idx, out_idx, state, theme)
-            }),
-        )
+                        .child(group_name.clone()),
+                );
+            }
+
+            container.child(buttons)
+        }))
+}
+
+#[derive(Clone, Copy)]
+enum MsdAction {
+    Mute,
+    Solo,
+    Dim,
+}
+
+/// Render a single M, S, or D button
+fn render_msd_button(
+    label: &'static str,
+    is_active: bool,
+    active_color: Rgba,
+    theme: &Theme,
+    plugin_idx: usize,
+    entity: Entity<AppState>,
+    channels: Vec<usize>,
+    output_channels: usize,
+    action: MsdAction,
+) -> impl IntoElement {
+    div()
+        .id(ElementId::Name(
+            format!(
+                "msd-{}-{}-{:?}",
+                plugin_idx,
+                channels.first().copied().unwrap_or(0),
+                label
+            )
+            .into(),
+        ))
+        .w(px(MSD_BTN_SIZE))
+        .h(px(18.0))
+        .rounded_sm()
+        .cursor_pointer()
+        .bg(if is_active {
+            active_color
+        } else {
+            theme.background
+        })
+        .border_1()
+        .border_color(if is_active {
+            active_color
+        } else {
+            theme.border
+        })
+        .hover(|s| {
+            s.bg(if is_active {
+                active_color
+            } else {
+                theme.surface_hover
+            })
+        })
+        .flex()
+        .items_center()
+        .justify_center()
+        .text_xs()
+        .font_weight(FontWeight::BOLD)
+        .text_color(if is_active {
+            theme.text_on_accent
+        } else {
+            theme.text_muted
+        })
+        .child(label)
+        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+            entity.update(cx, |state, _| {
+                if let Some(plugin) = state
+                    .app
+                    .plugin_state
+                    .plugin_chain
+                    .get_plugin_mut(plugin_idx)
+                {
+                    if let sotf_audio_player::PluginSettings::Matrix {
+                        ref mut channel_states,
+                        output_channels: out_ch,
+                        ..
+                    } = plugin.settings
+                    {
+                        // Resize channel_states if needed
+                        let target_len = out_ch.max(output_channels);
+                        while channel_states.len() < target_len {
+                            channel_states.push(sotf_plugins::ChannelState::default());
+                        }
+                        // Toggle: if any channel in group has the flag set, clear all; else set all
+                        let new_value = !is_active;
+                        for &ch in &channels {
+                            if ch < channel_states.len() {
+                                match action {
+                                    MsdAction::Mute => channel_states[ch].muted = new_value,
+                                    MsdAction::Solo => channel_states[ch].soloed = new_value,
+                                    MsdAction::Dim => channel_states[ch].dimmed = new_value,
+                                }
+                            }
+                        }
+                        state.app.plugin_state.pending_plugin_update =
+                            Some(PluginUpdateType::Structural);
+                    }
+                }
+            });
+        })
 }
 
 /// Render a single row of the matrix grid
@@ -273,7 +537,11 @@ fn render_matrix_row(
     state: &MatrixRenderState,
     theme: &Theme,
 ) -> impl IntoElement {
-    let output_label = get_channel_label(output_idx, state.output_channels);
+    let output_label = get_channel_label_from_config(
+        output_idx,
+        state.output_channels,
+        state.speaker_config.as_deref(),
+    );
 
     div()
         .flex()
@@ -392,7 +660,7 @@ fn render_matrix_cell(
         .on_mouse_down(MouseButton::Left, move |event, _, cx| {
             entity_click.update(cx, |state, _| {
                 if event.click_count >= 2 {
-                    // Double-click to reset to 0
+                    // Double-click to reset cell to 0 and clear M/S/D for that output channel
                     if let Some(plugin) = state
                         .app
                         .plugin_state
@@ -402,15 +670,20 @@ fn render_matrix_cell(
                         if let sotf_audio_player::PluginSettings::Matrix {
                             input_channels,
                             ref mut matrix,
+                            ref mut channel_states,
                             ..
                         } = plugin.settings
                         {
                             let idx = cell_index(input_idx, output_idx, input_channels);
                             if idx < matrix.len() {
                                 matrix[idx] = 0.0;
-                                state.app.plugin_state.pending_plugin_update =
-                                    Some(PluginUpdateType::Structural);
                             }
+                            if output_idx < channel_states.len() {
+                                channel_states[output_idx] =
+                                    sotf_plugins::ChannelState::default();
+                            }
+                            state.app.plugin_state.pending_plugin_update =
+                                Some(PluginUpdateType::Structural);
                         }
                     }
                 } else {

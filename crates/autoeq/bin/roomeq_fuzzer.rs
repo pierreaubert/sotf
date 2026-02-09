@@ -541,6 +541,7 @@ fn generate_random_config(
 
     let room_config = RoomConfig {
         version: autoeq::roomeq::default_config_version(),
+        system: None,
         speakers,
         crossovers: if crossovers.is_empty() { None } else { Some(crossovers) },
         target_curve,

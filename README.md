@@ -53,15 +53,11 @@ just install-...
 
 On MacOS, select the correct install just command for your platform:
 ```shell
-# temporary fix, hdf5 v2 is not yet supported
-brew install hdf5@1.10
-export HDF5_DIR=/opt/homebrew/Cellar/hdf5@1.10/1.10.11
-# normal
 just install-macos
 ```
 On Windows,
 ```shell
-.\player\windows\build-windows.bat
+.\scripts\build-windows.bat
 ```
 
 Then run post-install:

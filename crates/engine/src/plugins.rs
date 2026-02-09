@@ -2293,6 +2293,27 @@ pub fn get_channel_label(index: usize, total: usize) -> String {
     format!("Ch{}", index)
 }
 
+/// Get channel label using MeterGroupSpec from speaker config, with fallback to channel-count lookup
+pub fn get_channel_label_from_config(
+    index: usize,
+    total: usize,
+    speaker_config: Option<&str>,
+) -> String {
+    let groups = speaker_config
+        .and_then(sotf_plugins::get_meter_groups)
+        .or_else(|| sotf_plugins::get_meter_groups_by_channels(total));
+    if let Some(groups) = groups {
+        for group in groups {
+            for ch in group.channels {
+                if ch.index == index {
+                    return ch.label.to_string();
+                }
+            }
+        }
+    }
+    get_channel_label(index, total)
+}
+
 /// Convert linear gain to dB string for display
 /// Returns "-∞" for gains below threshold (effectively silent)
 pub fn linear_to_db_string(linear: f32) -> String {
@@ -2930,6 +2951,32 @@ impl PluginChain {
             }
         }
         None
+    }
+
+    /// Get the speaker configuration string active at a given plugin index
+    /// Walks forward through the chain, tracking config changes from upmixer/binaural/downmix/mono-to-stereo
+    pub fn speaker_config_at_index(&self, target_index: usize) -> Option<String> {
+        let mut config: Option<String> = None;
+        for (i, plugin) in self.plugins.iter().enumerate() {
+            if i >= target_index {
+                break;
+            }
+            if !plugin.enabled {
+                continue;
+            }
+            match &plugin.settings {
+                PluginSettings::Upmixer { speaker_config, .. } => {
+                    config = Some(speaker_config.clone());
+                }
+                PluginSettings::BinauralDecoder { .. }
+                | PluginSettings::Downmix { .. }
+                | PluginSettings::MonoToStereo { .. } => {
+                    config = Some("2.0".to_string());
+                }
+                _ => {}
+            }
+        }
+        config
     }
 
     pub fn output_channels(&self) -> usize {

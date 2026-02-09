@@ -82,7 +82,7 @@ use crate::app::AppState;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::*;
-use sotf_audio_player::PluginSettings;
+use sotf_audio_player::{PluginChain, PluginSettings};
 
 /// Render plugin-specific content based on plugin type
 /// Uses Entity<AppState> for direct state updates
@@ -99,6 +99,7 @@ pub fn render_plugin_content(
     plugin_data: Option<std::sync::Arc<dyn std::any::Any + Send + Sync>>,
     spectrum_tilt_select_open: bool,
     spectrum_reference_select_open: bool,
+    plugin_chain: &PluginChain,
     cx: &mut Context<PlayerView>,
 ) -> AnyElement {
     match settings {
@@ -481,21 +482,26 @@ pub fn render_plugin_content(
             input_channels,
             output_channels,
             matrix,
-            ..
-        } => render_matrix_plugin(
-            entity.clone(),
-            plugin_idx,
-            ui_matrix::MatrixRenderState {
-                input_channels: *input_channels,
-                output_channels: *output_channels,
-                matrix,
-                is_editing,
-                selected_param,
-                selected_cell: None, // Will be connected to app state later
-            },
-            theme,
-        )
-        .into_any_element(),
+            channel_states,
+        } => {
+            let speaker_config = plugin_chain.speaker_config_at_index(plugin_idx);
+            render_matrix_plugin(
+                entity.clone(),
+                plugin_idx,
+                ui_matrix::MatrixRenderState {
+                    input_channels: *input_channels,
+                    output_channels: *output_channels,
+                    matrix,
+                    channel_states,
+                    speaker_config,
+                    is_editing,
+                    selected_param,
+                    selected_cell: None,
+                },
+                theme,
+            )
+            .into_any_element()
+        }
         PluginSettings::Expander {
             threshold_db,
             ratio,

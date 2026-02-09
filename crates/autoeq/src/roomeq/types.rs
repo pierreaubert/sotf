@@ -236,6 +236,56 @@ pub struct VoiceOfGodConfig {
     pub reference_channel: String,
 }
 
+// ============================================================================
+// System Configuration (v2.1 Refactor)
+// ============================================================================
+
+/// System topology model
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum SystemModel {
+    Stereo,
+    HomeCinema,
+    Custom,
+}
+
+impl Default for SystemModel {
+    fn default() -> Self {
+        Self::Custom
+    }
+}
+
+/// Subwoofer system configuration (part of SystemConfig)
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SubwooferSystemConfig {
+    /// Strategy for subwoofer optimization
+    #[serde(default)]
+    pub config: SubwooferStrategy,
+
+    /// Mapping of subwoofer measurement key to main speaker logical role
+    /// Key: Subwoofer measurement name (e.g., "sub0")
+    /// Value: Logical main channel role to align with (e.g., "L")
+    #[serde(flatten)]
+    pub mapping: HashMap<String, String>,
+}
+
+/// Explicit system configuration mapping logical roles to measurements
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SystemConfig {
+    /// System topology model
+    #[serde(default)]
+    pub model: SystemModel,
+
+    /// Map of logical role to measurement key
+    /// Key: Logical role (e.g., "L", "R", "C", "LFE")
+    /// Value: Key in the `speakers` measurement map (e.g., "left", "right")
+    pub speakers: HashMap<String, String>,
+
+    /// Subwoofer configuration and mapping
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subwoofers: Option<SubwooferSystemConfig>,
+}
+
 /// Complete room configuration
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct RoomConfig {
@@ -243,7 +293,13 @@ pub struct RoomConfig {
     #[serde(default = "default_config_version")]
     pub version: String,
 
+    /// System configuration (v2.1) - Decouples logical roles from measurements
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system: Option<SystemConfig>,
+
     /// Map of channel name to speaker configuration
+    /// In v2.1 with `system` config, keys here are "measurement keys" referenced by `system.speakers`.
+    /// In legacy mode, keys are logical channel names.
     pub speakers: HashMap<String, SpeakerConfig>,
 
     /// Optional crossover configuration for multi-driver groups

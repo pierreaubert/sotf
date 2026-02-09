@@ -655,7 +655,12 @@ fn run_manager_thread(
 fn handle_thread_event(event: ThreadEvent, state: &Arc<Mutex<AudioEngineState>>) {
     match event {
         ThreadEvent::DecoderEndOfStream => {
-            log::debug!("[Manager Thread] Decoder end of stream");
+            log::debug!("[Manager Thread] Decoder end of stream (waiting for playback drain)");
+            // Don't set Stopped here - wait for PlaybackDrained so remaining
+            // audio in the ring buffer gets played to hardware first.
+        }
+        ThreadEvent::PlaybackDrained => {
+            log::debug!("[Manager Thread] Playback drained - all audio played");
             if let Ok(mut state) = safe_lock(state) {
                 state.playback_state = PlaybackState::Stopped;
                 state.last_error = None;
