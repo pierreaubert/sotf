@@ -12,16 +12,16 @@
 - [x] Task: Conductor - User Manual Verification 'Configuration Schema & Ecosystem Migration' (Protocol in workflow.md) 6b3865b
 
 ## Phase 2: Pipeline Orchestration (The "Conductor" Engine)
-- [ ] Task: Refactor `optimize_room` entry point to enforce v2 Workflow
-    - [ ] Implement "Phase 2: Computation" sequence from spec:
+- [x] Task: Refactor `optimize_room` entry point to enforce v2 Workflow f64595a
+    - [x] Implement "Phase 2: Computation" sequence from spec:
         1. Sanity Check (Polarity/Dead channels).
         2. Bass Logic (Route to existing MSO/DBA/Single modules).
         3. Main Alignment (T-Zero).
         4. Processing Mode Execution (A/B/C).
-- [ ] Task: Validate & Wire "Bass Logic"
-    - [ ] Ensure MSO/DBA modules return a "Virtual Sub" response that feeds into the Main Alignment step correctly.
-    - [ ] Verify Pre-Correction (Linearization) happens *before* this stage.
-- [ ] Task: Conductor - User Manual Verification 'Pipeline Orchestration' (Protocol in workflow.md)
+- [x] Task: Validate & Wire "Bass Logic" f64595a
+    - [x] Ensure MSO/DBA modules return a "Virtual Sub" response that feeds into the Main Alignment step correctly.
+    - [x] Verify Pre-Correction (Linearization) happens *before* this stage.
+- [x] Task: Conductor - User Manual Verification 'Pipeline Orchestration' (Protocol in workflow.md) f64595a
 
 ## Phase 3: Processing Modes & Advanced Calibration
 - [ ] Task: Validate & Refine Mode Logic
