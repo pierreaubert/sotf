@@ -27,7 +27,7 @@ use super::target_tilt;
 use super::types::{
     ChannelDspChain, DspChainOutput, MeasurementSource, MixedModeConfig, MultiSubGroup,
     OptimizerConfig, OptimizationMetadata, ProcessingMode, RoomConfig, SpeakerConfig, SpeakerGroup,
-    TargetCurveConfig, TiltType,
+    SystemConfig, SystemModel, TargetCurveConfig, TiltType,
 };
 
 // ============================================================================
@@ -209,26 +209,59 @@ pub fn optimize_room(
         });
     }
 
-    info!("Found {} speakers", config.speakers.len());
+    // Dispatch to specific workflows based on topology
+    if let Some(sys) = &config.system {
+        if sys.model == SystemModel::Stereo {
+            // Check if subwoofers are configured
+            // Either by presence of `sys.subwoofers` or by checking keys for `LFE`.
+            // But `sys.subwoofers` is the explicit config.
+            if sys.subwoofers.is_some() {
+                return super::workflows::optimize_stereo_2_1(config, sys, sample_rate, output_dir.unwrap_or(Path::new(".")));
+            } else {
+                return super::workflows::optimize_stereo_2_0(config, sys, sample_rate, output_dir.unwrap_or(Path::new(".")));
+            }
+        }
+    }
+
+    // Determine channels to process based on system config or legacy config
+    // Returns list of (output_channel_name, speaker_config)
+    let channels_to_process: Vec<(String, SpeakerConfig)> = if let Some(sys) = &config.system {
+        info!("Using SystemConfig for channel mapping");
+        sys.speakers
+            .iter()
+            .filter_map(|(role, key)| {
+                match config.speakers.get(key) {
+                    Some(cfg) => Some((role.clone(), cfg.clone())),
+                    None => {
+                        warn!("System config references missing speaker key '{}' for role '{}'", key, role);
+                        None
+                    }
+                }
+            })
+            .collect()
+    } else {
+        config.speakers.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+    };
+
+    info!("Processing {} channels", channels_to_process.len());
 
     // Process each speaker in parallel
-    let results: Vec<SpeakerProcessResult> = config
-        .speakers
-        .par_iter()
+    let results: Vec<SpeakerProcessResult> = channels_to_process
+        .into_par_iter()
         .map(|(channel_name, speaker_config)| {
             info!("Processing channel: {}", channel_name);
 
             let (chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms) =
                 process_speaker_internal(
-                    channel_name,
-                    speaker_config,
+                    &channel_name,
+                    &speaker_config,
                     config,
                     sample_rate,
                     output_dir,
                 )?;
 
             Ok((
-                channel_name.clone(),
+                channel_name,
                 chain,
                 pre_score,
                 post_score,
@@ -439,53 +472,74 @@ pub fn optimize_room(
     {
         info!("Running Group Delay Optimization (IIR Mode)...");
 
-        // Identify subwoofer channel
-        let sub_channel = curves.keys().find(|name| *name == "lfe" || name.starts_with("sub")).cloned();
+        let mut pairings = Vec::new();
 
-        if let Some(sub_name) = sub_channel {
-            if let Some(sub_curve) = curves.get(&sub_name) {
-                // Find Mains (non-sub channels)
+        if let Some(sys) = &config.system {
+            // Use explicit system configuration
+            if let Some(subs) = &sys.subwoofers {
+                // Invert speakers map to find roles from measurement keys
+                // measurement_key -> role
+                let meas_to_role: HashMap<&String, &String> = sys.speakers.iter().map(|(r, m)| (m, r)).collect();
+
+                for (sub_meas_key, main_role) in &subs.mapping {
+                    if let Some(sub_role) = meas_to_role.get(sub_meas_key) {
+                        pairings.push((sub_role.to_string(), main_role.clone()));
+                    } else {
+                        warn!("GD-Opt: Subwoofer measurement '{}' not mapped to any output channel", sub_meas_key);
+                    }
+                }
+            }
+        } else {
+            // Legacy heuristic
+            let sub_channel = curves.keys().find(|name| *name == "lfe" || name.starts_with("sub")).cloned();
+            if let Some(sub_name) = sub_channel {
                 let main_channels: Vec<String> = curves
                     .keys()
                     .filter(|name| *name != &sub_name && !name.starts_with("sub"))
                     .cloned()
                     .collect();
-
-                let min_freq = config.optimizer.min_freq;
-                let max_freq = 200.0; // GD optimization typically relevant in bass/crossover region
-
-                for main_name in main_channels {
-                    if let Some(main_curve) = curves.get(&main_name) {
-                        info!("  Optimizing GD for '{}' vs '{}'", main_name, sub_name);
-                        
-                        match group_delay::optimize_gd_iir(
-                            sub_curve,
-                            main_curve,
-                            min_freq,
-                            max_freq,
-                            sample_rate,
-                        ) {
-                            Ok(filters) => {
-                                if !filters.is_empty() {
-                                    info!("    Generated {} All-Pass filters for GD alignment", filters.len());
-                                    if let Some(chain) = channel_chains.get_mut(&main_name) {
-                                        // Add AP filters to chain (after other filters)
-                                        let plugin = output::create_eq_plugin(&filters);
-                                        chain.plugins.push(plugin);
-                                    }
-                                } else {
-                                    info!("    No AP filters needed");
-                                }
-                            }
-                            Err(e) => {
-                                warn!("    GD optimization failed for '{}': {}", main_name, e);
-                            }
-                        }
-                    }
+                for main in main_channels {
+                    pairings.push((sub_name.clone(), main));
                 }
             }
-        } else {
-            warn!("GD-Opt enabled but no subwoofer channel found (looking for 'lfe' or 'sub*')");
+        }
+
+        if pairings.is_empty() {
+             warn!("GD-Opt enabled but no valid sub-main pairings found.");
+        }
+
+        let min_freq = config.optimizer.min_freq;
+        let max_freq = 200.0;
+
+        for (sub_name, main_name) in pairings {
+            if let (Some(sub_curve), Some(main_curve)) = (curves.get(&sub_name), curves.get(&main_name)) {
+                info!("  Optimizing GD for '{}' vs '{}'", main_name, sub_name);
+                
+                match group_delay::optimize_gd_iir(
+                    sub_curve,
+                    main_curve,
+                    min_freq,
+                    max_freq,
+                    sample_rate,
+                ) {
+                    Ok(filters) => {
+                        if !filters.is_empty() {
+                            info!("    Generated {} All-Pass filters for GD alignment", filters.len());
+                            if let Some(chain) = channel_chains.get_mut(&main_name) {
+                                let plugin = output::create_eq_plugin(&filters);
+                                chain.plugins.push(plugin);
+                            }
+                        } else {
+                            info!("    No AP filters needed");
+                        }
+                    }
+                    Err(e) => {
+                        warn!("    GD optimization failed for '{}': {}", main_name, e);
+                    }
+                }
+            } else {
+                warn!("GD-Opt: Channel '{}' or '{}' not found in results", sub_name, main_name);
+            }
         }
     }
 
@@ -991,10 +1045,28 @@ fn process_single_speaker(
             // Check if we should force excess phase correction for GD-Opt on subwoofer
             let mut opt_config = room_config.optimizer.clone();
             if let Some(gd_opt) = &room_config.optimizer.gd_opt {
-                if gd_opt.enabled && (channel_name == "lfe" || channel_name.starts_with("sub")) {
-                    if let Some(fir) = &mut opt_config.fir {
-                        fir.correct_excess_phase = true;
-                        info!("  GD-Opt: Forcing excess phase correction for '{}'", channel_name);
+                if gd_opt.enabled {
+                    let is_sub = if let Some(sys) = &room_config.system {
+                        // V2.1 System Config
+                        if let Some(meas_key) = sys.speakers.get(channel_name) {
+                            if let Some(subs) = &sys.subwoofers {
+                                subs.mapping.contains_key(meas_key)
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        }
+                    } else {
+                        // Legacy
+                        channel_name == "lfe" || channel_name.starts_with("sub")
+                    };
+
+                    if is_sub {
+                        if let Some(fir) = &mut opt_config.fir {
+                            fir.correct_excess_phase = true;
+                            info!("  GD-Opt: Forcing excess phase correction for '{}'", channel_name);
+                        }
                     }
                 }
             }

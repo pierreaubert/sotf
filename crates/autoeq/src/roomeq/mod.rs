@@ -54,6 +54,7 @@ mod multisub;
 mod dba;
 mod fir;
 mod group_delay;
+pub mod workflows; // Make public to access from optimize.rs or tests
 
 // DSP chain building
 mod output;
