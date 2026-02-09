@@ -545,6 +545,7 @@ fn generate_random_config(
         crossovers: if crossovers.is_empty() { None } else { Some(crossovers) },
         target_curve,
         group_delay: None,
+        bass_management: None,
         optimizer: OptimizerConfig {
             algorithm: "autoeq:de".to_string(),
             num_filters: 7,

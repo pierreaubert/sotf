@@ -137,6 +137,105 @@ pub struct RecordingConfiguration {
     pub sweep_end_freq: Option<f32>,
 }
 
+// ============================================================================
+// RoomEQ v2 Configuration
+// ============================================================================
+
+/// Processing mode for the optimization engine
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ProcessingMode {
+    /// Low-latency mode (IIR filters only) - < 5ms latency
+    #[default]
+    LowLatency,
+    /// Phase-linear mode (FIR filters only) - High latency allowed
+    PhaseLinear,
+    /// Hybrid mode (IIR for bass, FIR for mids/highs) - Variable latency
+    Hybrid,
+}
+
+/// Strategy for subwoofer optimization
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, Default, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum SubwooferStrategy {
+    /// Single subwoofer optimization (default)
+    #[default]
+    Single,
+    /// Multi-Sub Optimizer (minimize seat-to-seat variance)
+    Mso,
+    /// Double Bass Array (active cancellation)
+    Dba,
+}
+
+/// Configuration for bass management and subwoofer integration
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct BassManagementConfig {
+    /// Strategy to use for subwoofer optimization
+    #[serde(default)]
+    pub strategy: SubwooferStrategy,
+
+    /// Crossover frequency between subs and mains (Hz)
+    /// Default: 80.0 Hz
+    #[serde(default = "default_bass_crossover_freq")]
+    pub crossover_freq: f64,
+
+    /// Low-pass filter slope for LFE channel (dB/octave)
+    /// Default: 24.0 dB/octave
+    #[serde(default = "default_lfe_slope")]
+    pub lfe_slope: f64,
+}
+
+fn default_bass_crossover_freq() -> f64 {
+    80.0
+}
+
+fn default_lfe_slope() -> f64 {
+    24.0
+}
+
+impl Default for BassManagementConfig {
+    fn default() -> Self {
+        Self {
+            strategy: SubwooferStrategy::Single,
+            crossover_freq: default_bass_crossover_freq(),
+            lfe_slope: default_lfe_slope(),
+        }
+    }
+}
+
+/// Configuration for Group Delay Optimization (GD-Opt)
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct GroupDelayOptimizationConfig {
+    /// Enable Group Delay Optimization
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Target group delay at crossover (ms)
+    /// Default: 0.0 ms (perfect alignment)
+    #[serde(default)]
+    pub target_ms: f64,
+}
+
+impl Default for GroupDelayOptimizationConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            target_ms: 0.0,
+        }
+    }
+}
+
+/// Configuration for Voice of God (Timbre Matching)
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct VoiceOfGodConfig {
+    /// Enable Voice of God optimization
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Reference channel name (e.g., "Center" or "Left")
+    pub reference_channel: String,
+}
+
 /// Complete room configuration
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct RoomConfig {
@@ -155,9 +254,13 @@ pub struct RoomConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_curve: Option<TargetCurveConfig>,
 
-    /// Optional group delay optimization configuration
+    /// Optional group delay optimization configuration (Legacy v1 - prefer bass_management in v2)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group_delay: Option<Vec<GroupDelayConfig>>,
+
+    /// Bass management configuration (v2)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bass_management: Option<BassManagementConfig>,
 
     /// Optimizer configuration
     #[serde(default)]
@@ -190,7 +293,7 @@ pub fn default_config_version() -> String {
     "1.2.0".to_string()
 }
 
-/// Group delay optimization configuration
+/// Group delay optimization configuration (Legacy v1)
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct GroupDelayConfig {
     /// Subwoofer channel name
@@ -742,7 +845,7 @@ fn default_phase_max_freq() -> f64 {
 }
 
 fn default_max_delay_ms() -> f64 {
-    30.0
+    3.0
 }
 
 impl Default for PhaseAlignmentConfig {
@@ -830,8 +933,13 @@ impl Default for MultiSeatConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct OptimizerConfig {
     /// Optimization mode: "iir" (default), "fir", "mixed"
+    /// (Legacy field, prefer `processing_mode` in v2)
     #[serde(default = "default_opt_mode")]
     pub mode: String,
+
+    /// Processing mode for RoomEQ v2
+    #[serde(default)]
+    pub processing_mode: ProcessingMode,
 
     /// FIR configuration (if mode is "fir" or "mixed")
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -955,6 +1063,14 @@ pub struct OptimizerConfig {
     /// Multi-seat optimization configuration
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub multi_seat: Option<MultiSeatConfig>,
+
+    /// Group Delay Optimization configuration (v2)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gd_opt: Option<GroupDelayOptimizationConfig>,
+
+    /// Voice of God optimization configuration (v2)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vog: Option<VoiceOfGodConfig>,
 }
 
 // Default values for OptimizerConfig
@@ -1035,6 +1151,7 @@ impl Default for OptimizerConfig {
             population: default_population(),
             peq_model: default_peq_model(),
             mode: default_opt_mode(),
+            processing_mode: ProcessingMode::LowLatency,
             fir: None,
             mixed_config: None,
             seed: None,
@@ -1049,6 +1166,9 @@ impl Default for OptimizerConfig {
             // Scenario A configs
             phase_alignment: None,
             multi_seat: None,
+            // V2 Configs
+            gd_opt: None,
+            vog: None,
         }
     }
 }
@@ -1186,6 +1306,7 @@ mod tests {
             crossovers: None,
             target_curve: None,
             group_delay: None,
+            bass_management: None,
             optimizer: OptimizerConfig::default(),
             recording_config: None,
         };

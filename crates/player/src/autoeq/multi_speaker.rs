@@ -75,6 +75,10 @@ pub use autoeq::roomeq::{
     SpeakerConfig,
     SpeakerGroup,
     TargetCurveConfig,
+    // V2 types
+    BassManagementConfig,
+    ProcessingMode,
+    SubwooferStrategy,
 };
 
 use super::speaker::{CallbackConfig, OptimizationStage, SpeakerOptimizationResult};
@@ -283,6 +287,7 @@ pub fn run_multi_speaker_optimization(
         crossovers: None,
         target_curve: None,
         group_delay: None,
+        bass_management: None,
         optimizer: OptimizerConfig {
             loss_type: format!("{:?}", config.args.loss).to_lowercase(),
             algorithm: config.args.algo.clone(),
@@ -297,6 +302,7 @@ pub fn run_multi_speaker_optimization(
             population: config.args.population,
             peq_model: format!("{:?}", config.args.peq_model).to_lowercase(),
             mode: "iir".to_string(),
+            processing_mode: ProcessingMode::LowLatency,
             fir: None,
             seed: None,
             mixed_config: None,
@@ -309,6 +315,8 @@ pub fn run_multi_speaker_optimization(
             schroeder_split: None,
             phase_alignment: None,
             multi_seat: None,
+            gd_opt: None,
+            vog: None,
         },
         recording_config: None,
     };
@@ -422,6 +430,7 @@ pub fn build_room_config_from_curves(
         crossovers: None,
         target_curve: None,
         group_delay: None,
+        bass_management: None,
         optimizer,
         recording_config: None,
     }
@@ -443,6 +452,7 @@ pub fn optimizer_config_from_args(args: &autoeq::Args) -> OptimizerConfig {
         population: args.population,
         peq_model: format!("{:?}", args.peq_model).to_lowercase(),
         mode: "iir".to_string(),
+        processing_mode: ProcessingMode::LowLatency,
         fir: None,
         seed: None,
         mixed_config: None,
@@ -455,6 +465,8 @@ pub fn optimizer_config_from_args(args: &autoeq::Args) -> OptimizerConfig {
         schroeder_split: None,
         phase_alignment: None,
         multi_seat: None,
+        gd_opt: None,
+        vog: None,
     }
 }
 

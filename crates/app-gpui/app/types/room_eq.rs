@@ -11,7 +11,7 @@ use autoeq::roomeq::{
     MeasurementSource, MultiSeatConfig as BackendMultiSeatConfig, MultiSeatStrategy,
     OptimizerConfig as BackendOptimizerConfig, PhaseAlignmentConfig as BackendPhaseAlignmentConfig,
     RoomConfig, SchroederSplitConfig as BackendSchroederSplitConfig, SpeakerConfig,
-    SpeakerGroup, TargetTiltConfig as BackendTargetTiltConfig, TiltType,
+    SpeakerGroup, TargetTiltConfig as BackendTargetTiltConfig, TiltType, ProcessingMode as BackendProcessingMode,
 };
 use std::collections::HashMap;
 
@@ -1422,6 +1422,12 @@ impl RoomEqState {
 
         let algorithm = self.optimizer_config.algorithm.to_autoeq_string().to_string();
 
+        let processing_mode = match self.optimizer_config.mode {
+            RoomEqOptimizationMode::Iir => BackendProcessingMode::LowLatency,
+            RoomEqOptimizationMode::Fir => BackendProcessingMode::PhaseLinear,
+            RoomEqOptimizationMode::Mixed => BackendProcessingMode::Hybrid,
+        };
+
         let optimizer = BackendOptimizerConfig {
             loss_type: self.optimizer_config.loss_type.clone(),
             algorithm,
@@ -1436,6 +1442,7 @@ impl RoomEqState {
             population: self.optimizer_config.population,
             peq_model: self.optimizer_config.peq_model.clone(),
             mode: self.optimizer_config.mode.to_code().to_string(),
+            processing_mode,
             fir: Some(BackendFirConfig {
                 taps: self.optimizer_config.fir.taps,
                 phase: self.optimizer_config.fir.phase.clone(),
@@ -1525,6 +1532,8 @@ impl RoomEqState {
             } else {
                 None
             },
+            gd_opt: None,
+            vog: None,
         };
 
         RoomConfig {
@@ -1533,6 +1542,7 @@ impl RoomEqState {
             crossovers: Some(crossovers),
             target_curve: None,
             group_delay: None,
+            bass_management: None,
             optimizer,
             recording_config: None,
         }

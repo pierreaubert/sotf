@@ -3,7 +3,10 @@
 //! Creates the configuration JSON that the `roomeq` optimizer reads.
 
 use anyhow::Result;
-use autoeq::roomeq::{MultiSubGroup, OptimizerConfig, RoomConfig, SpeakerConfig};
+use autoeq::roomeq::{
+    BassManagementConfig, MultiSubGroup, OptimizerConfig, ProcessingMode, RoomConfig,
+    SpeakerConfig, SubwooferStrategy,
+};
 use autoeq::{MeasurementRef, MeasurementSingle, MeasurementSource};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -42,9 +45,9 @@ pub fn generate_config(scenario: &Scenario, _csv_dir: &Path) -> Result<RoomConfi
         );
     }
 
-    // Add subwoofers
-    match sub_sources.len() {
-        0 => {} // No subs
+    // Configure Bass Management
+    let bass_management = match sub_sources.len() {
+        0 => None,
         1 => {
             // Single sub: SpeakerConfig::Single
             let name = sub_sources[0];
@@ -56,6 +59,10 @@ pub fn generate_config(scenario: &Scenario, _csv_dir: &Path) -> Result<RoomConfi
                     speaker_name: None,
                 })),
             );
+            Some(BassManagementConfig {
+                strategy: SubwooferStrategy::Single,
+                ..BassManagementConfig::default()
+            })
         }
         _ => {
             // Multiple subs: SpeakerConfig::MultiSub
@@ -77,8 +84,12 @@ pub fn generate_config(scenario: &Scenario, _csv_dir: &Path) -> Result<RoomConfi
                     subwoofers,
                 }),
             );
+            Some(BassManagementConfig {
+                strategy: SubwooferStrategy::Mso, // Default to MSO for multi-sub
+                ..BassManagementConfig::default()
+            })
         }
-    }
+    };
 
     let optimizer = OptimizerConfig {
         algorithm: "autoeq:de".to_string(),
@@ -89,15 +100,17 @@ pub fn generate_config(scenario: &Scenario, _csv_dir: &Path) -> Result<RoomConfi
         max_iter: 5000,
         refine: true,
         asymmetric_loss: true,
+        processing_mode: ProcessingMode::LowLatency, // Default to Mode A
         ..OptimizerConfig::default()
     };
 
     let config = RoomConfig {
-        version: "1.1.0".to_string(),
+        version: "1.2.0".to_string(),
         speakers,
         crossovers: None,
         target_curve: None,
         group_delay: None,
+        bass_management,
         optimizer,
         recording_config: None,
     };

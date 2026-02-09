@@ -340,10 +340,10 @@ pub fn setup_drivers_bounds(
         upper_bounds.push(args.max_db);
     }
 
-    // Bounds for delays: [-5.0, 5.0] ms
+    // Bounds for delays: [-20.0, 20.0] ms
     for _ in 0..n_drivers {
-        lower_bounds.push(-5.0);
-        upper_bounds.push(5.0);
+        lower_bounds.push(-20.0);
+        upper_bounds.push(20.0);
     }
 
     // Bounds for crossover frequencies
@@ -436,10 +436,10 @@ pub fn setup_drivers_bounds_fixed_freqs(
         upper_bounds.push(args.max_db);
     }
 
-    // Bounds for delays: [-5.0, 5.0] ms
+    // Bounds for delays: [-20.0, 20.0] ms
     for _ in 0..n_drivers {
-        lower_bounds.push(-5.0);
-        upper_bounds.push(5.0);
+        lower_bounds.push(-20.0);
+        upper_bounds.push(20.0);
     }
 
     (lower_bounds, upper_bounds)

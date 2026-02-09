@@ -649,6 +649,7 @@ pub fn optimize_speaker(
         crossovers: None,
         target_curve: target_curve.cloned(),
         group_delay: None,
+        bass_management: None,
         optimizer: optimizer_config.clone(),
         recording_config: None,
     };
@@ -1193,6 +1194,82 @@ fn optimize_with_schroeder_split(
     Ok((low_eq_filters, high_eq_filters))
 }
 
+/// Determine optimization frequency bands for each driver
+///
+/// Returns a vector of (min_freq, max_freq) tuples for each driver.
+/// Bandwidth extends 1 octave beyond the intended crossover region.
+fn determine_optimization_bands(
+    n_drivers: usize,
+    room_config: &RoomConfig,
+    crossover_config: &super::types::CrossoverConfig,
+) -> Vec<(f64, f64)> {
+    let global_min = room_config.optimizer.min_freq;
+    let global_max = room_config.optimizer.max_freq;
+
+    let mut bands = Vec::with_capacity(n_drivers);
+
+    // Determine crossover points estimates
+    // If fixed frequencies or range provided, use those.
+    // Otherwise, assume log-spaced distribution.
+    let xover_points = if let Some(ref freqs) = crossover_config.frequencies {
+        freqs.clone()
+    } else if let Some(freq) = crossover_config.frequency {
+        vec![freq]
+    } else if let Some((min, max)) = crossover_config.frequency_range {
+        // If range provided for 2-way, use geometric mean as center estimate
+        // but for bounds calculation, we use the range limits.
+        // Actually, for optimization limits:
+        // Low driver max = max_range * 2
+        // High driver min = min_range / 2
+        vec![min, max] // Placeholder, logic below handles range
+    } else {
+        Vec::new() // No info
+    };
+
+    // Helper to get safe crossover bounds
+    let get_xover_bounds = |idx: usize| -> (f64, f64) {
+        if let Some((min, max)) = crossover_config.frequency_range {
+            // If explicit range is given, use it for the single crossover (2-way)
+            if n_drivers == 2 && idx == 0 {
+                return (min, max);
+            }
+        }
+        
+        if !xover_points.is_empty() {
+            if idx < xover_points.len() {
+                let f = xover_points[idx];
+                return (f, f);
+            }
+        }
+        
+        // Fallback: log-distribute between 80Hz and 3000Hz
+        // This is a rough heuristic if no info is present
+        (80.0, 3000.0)
+    };
+
+    for i in 0..n_drivers {
+        let min_f = if i == 0 {
+            global_min
+        } else {
+            // Highpass: 1 octave below crossover
+            let (xover_min, _) = get_xover_bounds(i - 1);
+            xover_min * 0.5
+        };
+
+        let max_f = if i == n_drivers - 1 {
+            global_max
+        } else {
+            // Lowpass: 1 octave above crossover
+            let (_, xover_max) = get_xover_bounds(i);
+            xover_max * 2.0
+        };
+
+        bands.push((min_f.max(global_min), max_f.min(global_max)));
+    }
+
+    bands
+}
+
 /// Process a speaker group with multiple drivers and crossovers
 ///
 /// Returns: (DSP chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms)
@@ -1203,7 +1280,7 @@ fn process_speaker_group(
     sample_rate: f64,
     _output_dir: &Path,
 ) -> Result<MixedModeResult> {
-    // Load all measurements in the group
+    // 1. Load all measurements in the group
     let mut driver_curves = Vec::new();
     for (i, source) in group.measurements.iter().enumerate() {
         let curve = load::load_source(source)
@@ -1218,43 +1295,17 @@ fn process_speaker_group(
 
     debug!("  Loaded {} driver measurements", driver_curves.len());
 
-    let min_freq = room_config.optimizer.min_freq;
-    let max_freq = room_config.optimizer.max_freq;
-    let max_db = room_config.optimizer.max_db;
+    // 2. Sort drivers by mean frequency (Low to High)
+    driver_curves.sort_by(|a, b| {
+        let get_mean = |c: &Curve| {
+            let min_f = c.freq.iter().copied().fold(f64::INFINITY, f64::min);
+            let max_f = c.freq.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            (min_f * max_f).sqrt()
+        };
+        get_mean(a).partial_cmp(&get_mean(b)).unwrap_or(std::cmp::Ordering::Equal)
+    });
 
-    // Compute peak SPL for each driver
-    let mut peaks = Vec::with_capacity(driver_curves.len());
-    for driver in &driver_curves {
-        let mut peak_spl = f64::NEG_INFINITY;
-        for j in 0..driver.freq.len() {
-            if driver.freq[j] >= min_freq && driver.freq[j] <= max_freq && driver.spl[j] > peak_spl
-            {
-                peak_spl = driver.spl[j];
-            }
-        }
-        peaks.push(peak_spl);
-    }
-
-    let max_peak = peaks.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-    let min_peak = peaks.iter().cloned().fold(f64::INFINITY, f64::min);
-    let peak_spread = max_peak - min_peak;
-
-    for (i, peak) in peaks.iter().enumerate() {
-        debug!("    Driver {}: peak {:.1} dB", i, peak);
-    }
-    debug!(
-        "    Level spread: {:.1} dB (max gain bounds: ±{:.1} dB)",
-        peak_spread, max_db
-    );
-
-    if peak_spread > max_db {
-        warn!(
-            "Driver levels differ by {:.1} dB, which exceeds the gain bounds of ±{:.1} dB.",
-            peak_spread, max_db
-        );
-    }
-
-    // Get crossover configuration
+    // 3. Get crossover config
     let crossover_config = if let Some(crossover_ref) = &group.crossover {
         room_config
             .crossovers
@@ -1269,6 +1320,40 @@ fn process_speaker_group(
         });
     };
 
+    // 4. Per-Driver Linearization (Pre-Correction)
+    info!("  Linearizing {} drivers...", driver_curves.len());
+    let optimization_bands = determine_optimization_bands(driver_curves.len(), room_config, crossover_config);
+    let mut linearized_drivers = Vec::with_capacity(driver_curves.len());
+    let mut per_driver_filters = Vec::with_capacity(driver_curves.len());
+
+    for (i, curve) in driver_curves.iter().enumerate() {
+        let (min_f, max_f) = optimization_bands[i];
+        info!("    Driver {}: optimizing bandwidth {:.1}-{:.1} Hz", i, min_f, max_f);
+
+        // Create driver-specific config
+        let mut driver_opt_config = room_config.optimizer.clone();
+        driver_opt_config.min_freq = min_f;
+        driver_opt_config.max_freq = max_f;
+        
+        // Optimize EQ for this driver
+        let (filters, _) = eq::optimize_channel_eq(
+            curve,
+            &driver_opt_config,
+            room_config.target_curve.as_ref(), // Use global target (usually flat)
+            sample_rate,
+        ).map_err(|e| AutoeqError::OptimizationFailed { 
+            message: format!("Linearization failed for driver {}: {}", i, e) 
+        })?;
+
+        // Apply filters to get linearized curve
+        let resp = response::compute_peq_complex_response(&filters, &curve.freq, sample_rate);
+        let linear_curve = response::apply_complex_response(curve, &resp);
+        
+        linearized_drivers.push(linear_curve);
+        per_driver_filters.push(filters);
+    }
+
+    // 5. Setup Crossover Optimization
     let crossover_type = crossover::parse_crossover_type(&crossover_config.crossover_type)
         .map_err(|e| AutoeqError::InvalidConfiguration { message: e.to_string() })?;
 
@@ -1280,25 +1365,21 @@ fn process_speaker_group(
         None
     };
 
-    if let Some(ref freqs) = fixed_freqs {
-        info!("  Using fixed crossover frequencies: {:?} Hz", freqs);
-    }
-
-    // Compute pre-score
-    let n_drivers = driver_curves.len();
+    // 6. Compute pre-score (using linearized drivers)
+    let n_drivers = linearized_drivers.len();
     let initial_gains = vec![0.0; n_drivers];
-
+    let initial_delays = vec![0.0; n_drivers];
     let mut initial_xover_freqs = Vec::new();
+    // Simple geometric mean estimate for initial guess
     for i in 0..(n_drivers - 1) {
-        let lower_mean =
-            driver_curves[i].freq.iter().sum::<f64>() / driver_curves[i].freq.len() as f64;
-        let upper_mean =
-            driver_curves[i + 1].freq.iter().sum::<f64>() / driver_curves[i + 1].freq.len() as f64;
-        let geom_mean = (lower_mean * upper_mean).sqrt();
-        initial_xover_freqs.push(geom_mean);
+        let (min, max) = match crossover_config.frequency_range {
+            Some((a,b)) => (a,b),
+            None => (80.0, 3000.0)
+        };
+        initial_xover_freqs.push((min * max).sqrt());
     }
 
-    let driver_measurements: Vec<crate::loss::DriverMeasurement> = driver_curves
+    let driver_measurements: Vec<crate::loss::DriverMeasurement> = linearized_drivers
         .iter()
         .map(|curve| crate::loss::DriverMeasurement {
             freq: curve.freq.clone(),
@@ -1306,8 +1387,6 @@ fn process_speaker_group(
             phase: curve.phase.clone(),
         })
         .collect();
-
-    let initial_delays = vec![0.0; n_drivers];
 
     let drivers_data = crate::loss::DriversLossData::new(driver_measurements, crossover_type);
     let pre_score = crate::loss::drivers_flat_loss(
@@ -1320,15 +1399,9 @@ fn process_speaker_group(
         room_config.optimizer.max_freq,
     );
 
-    // Clone driver curves before crossover optimization consumes them
-    let driver_curves_for_display: Vec<Curve> = driver_curves
-        .iter()
-        .map(output::extend_curve_to_full_range)
-        .collect();
-
-    // Optimize crossover
-    let (gains, delays, crossover_freqs, combined_curve) = crossover::optimize_crossover(
-        driver_curves,
+    // 7. Optimize Crossover (using linearized drivers)
+    let (gains, delays, crossover_freqs, combined_curve, inversions) = crossover::optimize_crossover(
+        linearized_drivers.clone(), // Use linearized curves!
         crossover_type,
         sample_rate,
         &room_config.optimizer,
@@ -1338,58 +1411,64 @@ fn process_speaker_group(
     .map_err(|e| AutoeqError::OptimizationFailed { message: format!("Crossover optimization failed: {}", e) })?;
 
     info!(
-        "  Optimized crossover: freqs={:?}, gains={:?}, delays={:?}",
-        crossover_freqs, gains, delays
+        "  Optimized crossover: freqs={:?}, gains={:?}, delays={:?}, inversions={:?}",
+        crossover_freqs, gains, delays, inversions
     );
 
-    // Optimize EQ on the combined response
-    let (eq_filters, post_score) = eq::optimize_channel_eq(
+    // 8. Global EQ (Optional Touch-up)
+    // Run global EQ on the combined response to fix any remaining issues
+    // but constrain it to be gentle if possible, or normal full optimization.
+    // The user's issue was deep bass cuts on mains - linearization should prevent that
+    // because mains linearization would be constrained to >30Hz.
+    let (global_eq_filters, post_score) = eq::optimize_channel_eq(
         &combined_curve,
         &room_config.optimizer,
         room_config.target_curve.as_ref(),
         sample_rate,
     )
-    .map_err(|e| AutoeqError::OptimizationFailed { message: format!("EQ optimization failed for channel {}: {}", channel_name, e) })?;
+    .map_err(|e| AutoeqError::OptimizationFailed { message: format!("Global EQ optimization failed for channel {}: {}", channel_name, e) })?;
 
-    info!("  Optimized {} EQ filters", eq_filters.len());
+    info!("  Optimized {} Global EQ filters", global_eq_filters.len());
     info!(
         "  Pre-score: {:.6}, Post-score: {:.6}",
         pre_score, post_score
     );
 
-    // Build multi-driver DSP chain
+    // 9. Build Output DSP Chain
+    // We now have per-driver filters AND global filters.
+    
+    // Prepare display curves (raw drivers extended)
+    let driver_curves_for_display: Vec<Curve> = driver_curves
+        .iter()
+        .map(output::extend_curve_to_full_range)
+        .collect();
+
     let mut chain = output::build_multidriver_dsp_chain_with_curves(
         channel_name,
         &gains,
         &delays,
+        Some(&inversions),
         &crossover_freqs,
         crossover::crossover_type_to_string(&crossover_type),
-        &eq_filters,
+        &global_eq_filters,
+        Some(&per_driver_filters), // Pass the per-driver EQ filters here!
         None,
         None,
         Some(&driver_curves_for_display),
     );
 
-    let iir_resp =
-        response::compute_peq_complex_response(&eq_filters, &combined_curve.freq, sample_rate);
-    let final_curve = response::apply_complex_response(&combined_curve, &iir_resp);
+    // 10. Compute Final Response for validation
+    let global_resp =
+        response::compute_peq_complex_response(&global_eq_filters, &combined_curve.freq, sample_rate);
+    let final_curve = response::apply_complex_response(&combined_curve, &global_resp);
 
-    // Detect passband for normalization (used for display curves)
+    // Detect passband
     let (norm_range, _passband_mean) = detect_passband_and_mean(&combined_curve);
 
-    // Level alignment: use mean SPL within the EQ optimization range
-    let freqs_f32: Vec<f32> = combined_curve.freq.iter().map(|&f| f as f32).collect();
-    let spl_f32: Vec<f32> = combined_curve.spl.iter().map(|&s| s as f32).collect();
-    let mean_spl = compute_average_response(
-        &freqs_f32,
-        &spl_f32,
-        Some((min_freq as f32, max_freq as f32)),
-    ) as f64;
-
-    // Extend curves to 20 Hz – 20 kHz for display output
+    // Extend curves for display
     let display_initial = output::extend_curve_to_full_range(&combined_curve);
     let display_resp =
-        response::compute_peq_complex_response(&eq_filters, &display_initial.freq, sample_rate);
+        response::compute_peq_complex_response(&global_eq_filters, &display_initial.freq, sample_rate);
     let display_final = response::apply_complex_response(&display_initial, &display_resp);
 
     let mut initial_data: super::types::CurveData = (&display_initial).into();
@@ -1400,13 +1479,24 @@ fn process_speaker_group(
     chain.initial_curve = Some(initial_data);
     chain.final_curve = Some(final_data);
 
+    // Use global mean for level alignment
+    let min_freq = room_config.optimizer.min_freq;
+    let max_freq = room_config.optimizer.max_freq;
+    let freqs_f32: Vec<f32> = combined_curve.freq.iter().map(|&f| f as f32).collect();
+    let spl_f32: Vec<f32> = combined_curve.spl.iter().map(|&s| s as f32).collect();
+    let mean_spl = compute_average_response(
+        &freqs_f32,
+        &spl_f32,
+        Some((min_freq as f32, max_freq as f32)),
+    ) as f64;
+
     Ok((
         chain,
         pre_score,
         post_score,
         combined_curve.clone(),
         final_curve,
-        eq_filters,
+        global_eq_filters,
         mean_spl,
         None, // No single WAV for speaker groups
     ))

@@ -147,11 +147,12 @@ fn convert_legacy_to_room_config(legacy: &LegacyMeasurementsFile) -> RoomConfig 
     });
 
     RoomConfig {
-        version: "1.1.0".to_string(),
+        version: "1.2.0".to_string(),
         speakers,
         crossovers: None,
         target_curve: None,
         group_delay: None,
+        bass_management: None,
         optimizer: OptimizerConfig::default(),
         recording_config,
     }

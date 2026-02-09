@@ -226,27 +226,34 @@ pub fn create_convolution_plugin(wav_path: &str) -> PluginConfigWrapper {
 /// * `channel_name` - Channel name (e.g., "left")
 /// * `gains` - Per-driver gains in dB (one per driver)
 /// * `delays` - Per-driver delays in ms (one per driver)
+/// * `inverts` - Per-driver polarity inversion (optional, one per driver)
 /// * `crossover_freqs` - Crossover frequencies in Hz (n_drivers - 1 values)
 /// * `crossover_type` - Crossover type string (e.g., "LR24", "Butterworth12")
 /// * `eq_filters` - EQ filters for the combined response
+/// * `driver_eqs` - Optional per-driver EQ filters (linearization)
 ///
 /// # Returns
 /// * ChannelDspChain with per-driver chains and combined EQ
+#[allow(clippy::too_many_arguments)]
 pub fn build_multidriver_dsp_chain(
     channel_name: &str,
     gains: &[f64],
     delays: &[f64],
+    inverts: Option<&[bool]>,
     crossover_freqs: &[f64],
     crossover_type: &str,
     eq_filters: &[Biquad],
+    driver_eqs: Option<&[Vec<Biquad>]>,
 ) -> ChannelDspChain {
     build_multidriver_dsp_chain_with_curves(
         channel_name,
         gains,
         delays,
+        inverts,
         crossover_freqs,
         crossover_type,
         eq_filters,
+        driver_eqs,
         None,
         None,
         None,
@@ -258,13 +265,16 @@ pub fn build_multidriver_dsp_chain(
 /// # Arguments
 /// * `driver_initial_curves` - Optional per-driver initial curves (extended to full range).
 ///   When provided, each `DriverDspChain` gets its `initial_curve` populated.
+#[allow(clippy::too_many_arguments)]
 pub fn build_multidriver_dsp_chain_with_curves(
     channel_name: &str,
     gains: &[f64],
     delays: &[f64],
+    inverts: Option<&[bool]>,
     crossover_freqs: &[f64],
     crossover_type: &str,
     eq_filters: &[Biquad],
+    driver_eqs: Option<&[Vec<Biquad>]>,
     initial_curve: Option<&crate::Curve>,
     final_curve: Option<&crate::Curve>,
     driver_initial_curves: Option<&[crate::Curve]>,
@@ -277,14 +287,29 @@ pub fn build_multidriver_dsp_chain_with_curves(
     for i in 0..n_drivers {
         let mut driver_plugins = Vec::new();
 
-        // Add gain plugin if non-zero
-        if gains[i].abs() > 0.01 {
-            driver_plugins.push(create_gain_plugin(gains[i]));
+        let invert = inverts.and_then(|inv| inv.get(i)).copied().unwrap_or(false);
+
+        // Add gain plugin if non-zero OR if inverted
+        if invert || gains[i].abs() > 0.01 {
+            if invert {
+                driver_plugins.push(create_gain_plugin_with_invert(gains[i], true));
+            } else {
+                driver_plugins.push(create_gain_plugin(gains[i]));
+            }
         }
 
         // Add delay plugin if non-zero
         if i < delays.len() && delays[i].abs() > 0.001 {
             driver_plugins.push(create_delay_plugin(delays[i]));
+        }
+
+        // Add per-driver EQ (linearization) if provided
+        if let Some(eqs) = driver_eqs {
+            if let Some(filters) = eqs.get(i) {
+                if !filters.is_empty() {
+                    driver_plugins.push(create_eq_plugin(filters));
+                }
+            }
         }
 
         // Add highpass crossover from previous driver (if not first driver)

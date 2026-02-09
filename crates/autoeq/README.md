@@ -150,59 +150,72 @@ The `roomeq` binary optimizes multi-channel speaker systems with JSON configurat
 cargo run --bin roomeq --release -- --config room_config.json --output dsp_chain.json
 ```
 
-### Features
+### Features (v2)
 
-- **Stereo Optimization:** Independent EQ for left/right channels
-- **2.1 Systems:** Bass management with crossover optimization
-- **Multi-Driver Speakers:** Active crossover optimization for multi-way systems
-- **Multi-Subwoofer Arrays:** Gain/delay alignment to minimize seat-to-seat variation
-- **Double Bass Array (DBA):** Front/rear array optimization for room mode cancellation
+- **Processing Modes:**
+  - `low_latency` (Mode A): IIR-only filters (< 5ms latency)
+  - `phase_linear` (Mode B): FIR filters for linear phase
+  - `hybrid` (Mode C): IIR for bass, FIR for mids/highs (best balance)
+- **Bass Management:** Unified configuration for Single Sub, Multi-Sub (MSO), and Double Bass Array (DBA) strategies.
+- **Advanced Calibration:**
+  - **Group Delay Optimization (GD-Opt):** Aligns subwoofer phase slope to mains.
+  - **Voice of God (VoG):** Timbre matches satellite channels to a reference.
+- **Multi-Driver Speakers:** Active crossover optimization with polarity inversion testing.
 
-### Configuration File Format
+### Configuration File Format (v2)
 
-**Stereo system:**
-
-```json
-{
-  "speakers": {
-    "left": { "path": "measurements/left.csv" },
-    "right": { "path": "measurements/right.csv" }
-  },
-  "optimizer": {
-    "loss_type": "flat",
-    "algorithm": "cobyla",
-    "num_filters": 10,
-    "min_q": 0.5, "max_q": 10.0,
-    "min_db": -12.0, "max_db": 12.0,
-    "min_freq": 20.0, "max_freq": 20000.0,
-    "max_iter": 10000
-  }
-}
-```
-
-**2.1 system with bass management:**
+**2.1 System with Bass Management (Hybrid Mode):**
 
 ```json
 {
+  "version": "1.2.0",
   "speakers": {
     "left": { "path": "measurements/left.csv" },
     "right": { "path": "measurements/right.csv" },
     "lfe": { "path": "measurements/subwoofer.csv" }
   },
-  "crossovers": {
-    "bass_management": {
-      "type": "LR24",
-      "frequency_range": [60, 100]
-    }
+  "bass_management": {
+    "strategy": "single",
+    "crossover_freq": 80.0,
+    "lfe_slope": 24.0
   },
   "optimizer": {
+    "processing_mode": "hybrid",
     "loss_type": "flat",
-    "algorithm": "cobyla",
+    "algorithm": "autoeq:de",
     "num_filters": 10,
     "min_q": 0.5, "max_q": 10.0,
     "min_db": -12.0, "max_db": 12.0,
     "min_freq": 20.0, "max_freq": 20000.0,
-    "max_iter": 10000
+    "max_iter": 10000,
+    "gd_opt": {
+      "enabled": true,
+      "target_ms": 0.0
+    }
+  }
+}
+```
+
+**Double Bass Array (DBA):**
+
+```json
+{
+  "version": "1.2.0",
+  "speakers": {
+    "left": { "path": "left.csv" },
+    "right": { "path": "right.csv" },
+    "dba_system": {
+      "name": "DBA",
+      "front": [ { "path": "front_sub1.csv" }, { "path": "front_sub2.csv" } ],
+      "rear": [ { "path": "rear_sub1.csv" }, { "path": "rear_sub2.csv" } ]
+    }
+  },
+  "bass_management": {
+    "strategy": "dba",
+    "crossover_freq": 100.0
+  },
+  "optimizer": {
+    "processing_mode": "low_latency"
   }
 }
 ```
