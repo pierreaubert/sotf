@@ -34,9 +34,9 @@
 - [x] Task: Conductor - User Manual Verification 'Processing Modes & Advanced Calibration' (Protocol in workflow.md) 9c4bfdf
 
 ## Phase 4: System Verification
-- [ ] Task: End-to-End Regression Testing
-    - [ ] Run `roomeq` with v2 configs for a 2.1 system (Mode A).
-    - [ ] Run `roomeq` with v2 configs for a DBA system (Mode C).
-    - [ ] Verify output `dsp_chain` matches the expected filter types for each mode.
-- [ ] Task: Conductor - User Manual Verification 'System Verification' (Protocol in workflow.md)
+- [x] Task: End-to-End Regression Testing 9c4bfdf
+    - [x] Run `roomeq` with v2 configs for a 2.1 system (Mode A).
+    - [x] Run `roomeq` with v2 configs for a DBA system (Mode C).
+    - [x] Verify output `dsp_chain` matches the expected filter types for each mode.
+- [x] Task: Conductor - User Manual Verification 'System Verification' (Protocol in workflow.md) 9c4bfdf
 ```
