@@ -24,14 +24,14 @@
 - [x] Task: Conductor - User Manual Verification 'Pipeline Orchestration' (Protocol in workflow.md) f64595a
 
 ## Phase 3: Processing Modes & Advanced Calibration
-- [ ] Task: Validate & Refine Mode Logic
-    - [ ] **Mode A (Low-Latency):** Enforce IIR-only + LR4 crossovers.
-    - [ ] **Mode B/C (FIR/Hybrid):** Enforce Brick Wall crossovers (if selected) and Windowing.
-- [ ] Task: Implement Group Delay Optimization (GD-Opt)
-    - [ ] *Note: This appears to be the primary new logic to integrate.*
-    - [ ] Compute GD derivative.
-    - [ ] Generate All-Pass (IIR) or Excess Phase Inversion (FIR) based on selected Mode.
-- [ ] Task: Conductor - User Manual Verification 'Processing Modes & Advanced Calibration' (Protocol in workflow.md)
+- [x] Task: Validate & Refine Mode Logic 9c4bfdf
+    - [x] **Mode A (Low-Latency):** Enforce IIR-only + LR4 crossovers.
+    - [x] **Mode B/C (FIR/Hybrid):** Enforce Brick Wall crossovers (if selected) and Windowing.
+- [x] Task: Implement Group Delay Optimization (GD-Opt) 9c4bfdf
+    - [x] *Note: This appears to be the primary new logic to integrate.*
+    - [x] Compute GD derivative.
+    - [x] Generate All-Pass (IIR) or Excess Phase Inversion (FIR) based on selected Mode.
+- [x] Task: Conductor - User Manual Verification 'Processing Modes & Advanced Calibration' (Protocol in workflow.md) 9c4bfdf
 
 ## Phase 4: System Verification
 - [ ] Task: End-to-End Regression Testing
