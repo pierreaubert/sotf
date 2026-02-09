@@ -1388,6 +1388,8 @@ fn process_speaker_group(
         })
         .collect();
 
+    let initial_delays = vec![0.0; n_drivers];
+
     let drivers_data = crate::loss::DriversLossData::new(driver_measurements, crossover_type);
     let pre_score = crate::loss::drivers_flat_loss(
         &drivers_data,
@@ -1418,8 +1420,6 @@ fn process_speaker_group(
     // 8. Global EQ (Optional Touch-up)
     // Run global EQ on the combined response to fix any remaining issues
     // but constrain it to be gentle if possible, or normal full optimization.
-    // The user's issue was deep bass cuts on mains - linearization should prevent that
-    // because mains linearization would be constrained to >30Hz.
     let (global_eq_filters, post_score) = eq::optimize_channel_eq(
         &combined_curve,
         &room_config.optimizer,
