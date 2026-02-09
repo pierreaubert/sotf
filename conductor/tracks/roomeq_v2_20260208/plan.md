@@ -1,15 +1,15 @@
 # Implementation Plan - RoomEQ v2 Core Optimizer Refactor
 
 ## Phase 1: Configuration Schema & Ecosystem Migration
-- [ ] Task: Update `RoomConfig` and `OptimizerConfig` to match v2 Spec
-    - [ ] Define explicit `ProcessingMode` enum (LowLatency, PhaseLinear, Hybrid).
-    - [ ] Consolidate Subwoofer strategies into a `BassManagement` config section.
-    - [ ] Add configuration fields for GD-Opt and VoG targets.
-- [ ] Task: Update Ecosystem Adapters
-    - [ ] Update `autoeq-datagen` to generate v2-compliant config files.
-    - [ ] Update `convert_recording` tool to handle new schema.
-    - [ ] Update documentation to reflect the new JSON structure.
-- [ ] Task: Conductor - User Manual Verification 'Configuration Schema & Ecosystem Migration' (Protocol in workflow.md)
+- [x] Task: Update `RoomConfig` and `OptimizerConfig` to match v2 Spec 6b3865b
+    - [x] Define explicit `ProcessingMode` enum (LowLatency, PhaseLinear, Hybrid).
+    - [x] Consolidate Subwoofer strategies into a `BassManagement` config section.
+    - [x] Add configuration fields for GD-Opt and VoG targets.
+- [x] Task: Update Ecosystem Adapters 6b3865b
+    - [x] Update `autoeq-datagen` to generate v2-compliant config files.
+    - [x] Update `convert_recording` tool to handle new schema.
+    - [x] Update documentation to reflect the new JSON structure.
+- [x] Task: Conductor - User Manual Verification 'Configuration Schema & Ecosystem Migration' (Protocol in workflow.md) 6b3865b
 
 ## Phase 2: Pipeline Orchestration (The "Conductor" Engine)
 - [ ] Task: Refactor `optimize_room` entry point to enforce v2 Workflow
