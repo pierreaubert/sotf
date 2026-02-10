@@ -351,6 +351,14 @@ fn validate_speakers(speakers: &HashMap<String, SpeakerConfig>, result: &mut Val
                     result.add_error(format!("DBA '{}' has no rear speakers", name));
                 }
             }
+            SpeakerConfig::Cardioid(cardioid) => {
+                if cardioid.separation_meters <= 0.0 {
+                    result.add_error(format!(
+                        "Cardioid '{}' has invalid separation {:.2}m (must be > 0)",
+                        name, cardioid.separation_meters
+                    ));
+                }
+            }
             SpeakerConfig::Single(_) => {
                 // Single speaker - minimal validation, path existence checked at load time
             }

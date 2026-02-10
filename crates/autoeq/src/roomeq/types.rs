@@ -37,6 +37,9 @@ pub struct CurveData {
     pub freq: Vec<f64>,
     /// Sound Pressure Level in dB (normalized)
     pub spl: Vec<f64>,
+    /// Phase in degrees (optional)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase: Option<Vec<f64>>,
     /// Optional frequency range used for normalization
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub norm_range: Option<(f64, f64)>,
@@ -47,6 +50,7 @@ impl From<Curve> for CurveData {
         CurveData {
             freq: curve.freq.to_vec(),
             spl: curve.spl.to_vec(),
+            phase: curve.phase.map(|p| p.to_vec()),
             norm_range: None,
         }
     }
@@ -57,6 +61,7 @@ impl From<&Curve> for CurveData {
         CurveData {
             freq: curve.freq.to_vec(),
             spl: curve.spl.to_vec(),
+            phase: curve.phase.as_ref().map(|p| p.to_vec()),
             norm_range: None,
         }
     }
@@ -67,7 +72,7 @@ impl From<CurveData> for Curve {
         Curve {
             freq: ndarray::Array1::from(data.freq),
             spl: ndarray::Array1::from(data.spl),
-            phase: None,
+            phase: data.phase.map(ndarray::Array1::from),
         }
     }
 }
@@ -167,42 +172,6 @@ pub enum SubwooferStrategy {
     Dba,
 }
 
-/// Configuration for bass management and subwoofer integration
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct BassManagementConfig {
-    /// Strategy to use for subwoofer optimization
-    #[serde(default)]
-    pub strategy: SubwooferStrategy,
-
-    /// Crossover frequency between subs and mains (Hz)
-    /// Default: 80.0 Hz
-    #[serde(default = "default_bass_crossover_freq")]
-    pub crossover_freq: f64,
-
-    /// Low-pass filter slope for LFE channel (dB/octave)
-    /// Default: 24.0 dB/octave
-    #[serde(default = "default_lfe_slope")]
-    pub lfe_slope: f64,
-}
-
-fn default_bass_crossover_freq() -> f64 {
-    80.0
-}
-
-fn default_lfe_slope() -> f64 {
-    24.0
-}
-
-impl Default for BassManagementConfig {
-    fn default() -> Self {
-        Self {
-            strategy: SubwooferStrategy::Single,
-            crossover_freq: default_bass_crossover_freq(),
-            lfe_slope: default_lfe_slope(),
-        }
-    }
-}
-
 /// Configuration for Group Delay Optimization (GD-Opt)
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct GroupDelayOptimizationConfig {
@@ -262,6 +231,10 @@ pub struct SubwooferSystemConfig {
     #[serde(default)]
     pub config: SubwooferStrategy,
 
+    /// Crossover reference key (points to entry in `crossovers` map)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub crossover: Option<String>,
+
     /// Mapping of subwoofer measurement key to main speaker logical role
     /// Key: Subwoofer measurement name (e.g., "sub0")
     /// Value: Logical main channel role to align with (e.g., "L")
@@ -313,10 +286,6 @@ pub struct RoomConfig {
     /// Optional group delay optimization configuration (Legacy v1 - prefer bass_management in v2)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group_delay: Option<Vec<GroupDelayConfig>>,
-
-    /// Bass management configuration (v2)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub bass_management: Option<BassManagementConfig>,
 
     /// Optimizer configuration
     #[serde(default)]
@@ -391,6 +360,9 @@ pub enum SpeakerConfig {
     /// Double Bass Array (DBA) optimization
     Dba(DBAConfig),
 
+    /// Gradient Cardioid subwoofer optimization
+    Cardioid(CardioidConfig),
+
     /// Single channel (simple case)
     Single(MeasurementSource),
 }
@@ -403,6 +375,7 @@ impl SpeakerConfig {
             SpeakerConfig::Group(group) => group.speaker_name.as_deref(),
             SpeakerConfig::MultiSub(ms) => ms.speaker_name.as_deref(),
             SpeakerConfig::Dba(dba) => dba.speaker_name.as_deref(),
+            SpeakerConfig::Cardioid(c) => c.speaker_name.as_deref(),
         }
     }
 
@@ -413,6 +386,7 @@ impl SpeakerConfig {
             SpeakerConfig::Group(group) => group.resolve_paths(base_dir),
             SpeakerConfig::MultiSub(group) => group.resolve_paths(base_dir),
             SpeakerConfig::Dba(config) => config.resolve_paths(base_dir),
+            SpeakerConfig::Cardioid(config) => config.resolve_paths(base_dir),
         }
     }
 }
@@ -464,6 +438,34 @@ impl MultiSubGroup {
         for m in &mut self.subwoofers {
             m.resolve_paths(base_dir);
         }
+    }
+}
+
+/// Configuration for Gradient Cardioid Subwoofer (2 subwoofers)
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CardioidConfig {
+    /// Name of the cardioid system
+    pub name: String,
+
+    /// Optional speaker model name
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speaker_name: Option<String>,
+
+    /// Measurement for the front (primary) subwoofer
+    pub front: MeasurementSource,
+
+    /// Measurement for the rear (cancellation) subwoofer
+    pub rear: MeasurementSource,
+
+    /// Physical separation distance in meters (between acoustic centers)
+    pub separation_meters: f64,
+}
+
+impl CardioidConfig {
+    /// Resolve relative paths in this cardioid config against a base directory.
+    pub fn resolve_paths(&mut self, base_dir: &std::path::Path) {
+        self.front.resolve_paths(base_dir);
+        self.rear.resolve_paths(base_dir);
     }
 }
 
@@ -1362,7 +1364,6 @@ mod tests {
             crossovers: None,
             target_curve: None,
             group_delay: None,
-            bass_management: None,
             optimizer: OptimizerConfig::default(),
             recording_config: None,
         };

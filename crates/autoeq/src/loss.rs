@@ -146,6 +146,8 @@ pub enum CrossoverType {
     LinkwitzRiley2,
     /// 4th order Linkwitz-Riley (24 dB/octave)
     LinkwitzRiley4,
+    /// 8th order Linkwitz-Riley (48 dB/octave)
+    LinkwitzRiley8,
     /// No crossover filter (for multi-sub optimization)
     None,
 }
@@ -611,6 +613,7 @@ fn build_crossover_filters_for_driver(
             CrossoverType::Butterworth2 => peq_butterworth_highpass(2, xover_freq, sample_rate),
             CrossoverType::LinkwitzRiley2 => peq_linkwitzriley_highpass(2, xover_freq, sample_rate),
             CrossoverType::LinkwitzRiley4 => peq_linkwitzriley_highpass(4, xover_freq, sample_rate),
+            CrossoverType::LinkwitzRiley8 => peq_linkwitzriley_highpass(8, xover_freq, sample_rate),
             CrossoverType::None => vec![],
         };
         filters.extend(hp_peq);
@@ -621,6 +624,7 @@ fn build_crossover_filters_for_driver(
             CrossoverType::Butterworth2 => peq_butterworth_lowpass(2, xover_freq, sample_rate),
             CrossoverType::LinkwitzRiley2 => peq_linkwitzriley_lowpass(2, xover_freq, sample_rate),
             CrossoverType::LinkwitzRiley4 => peq_linkwitzriley_lowpass(4, xover_freq, sample_rate),
+            CrossoverType::LinkwitzRiley8 => peq_linkwitzriley_lowpass(8, xover_freq, sample_rate),
             CrossoverType::None => vec![],
         };
         filters.extend(lp_peq);

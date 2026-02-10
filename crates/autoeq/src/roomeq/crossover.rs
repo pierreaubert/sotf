@@ -19,6 +19,7 @@ pub fn parse_crossover_type(type_str: &str) -> Result<CrossoverType, Box<dyn Err
         "butterworth2" | "bw2" | "butterworth12" => Ok(CrossoverType::Butterworth2),
         "lr2" | "linkwitzriley2" | "linkwitzriley12" => Ok(CrossoverType::LinkwitzRiley2),
         "lr4" | "lr24" | "linkwitzriley4" | "linkwitzriley24" => Ok(CrossoverType::LinkwitzRiley4),
+        "lr8" | "lr48" | "linkwitzriley8" | "linkwitzriley48" => Ok(CrossoverType::LinkwitzRiley8),
         _ => Err(format!("Unknown crossover type: {}", type_str).into()),
     }
 }
@@ -29,6 +30,7 @@ pub fn crossover_type_to_string(ct: &CrossoverType) -> &'static str {
         CrossoverType::Butterworth2 => "Butterworth12",
         CrossoverType::LinkwitzRiley2 => "LR12",
         CrossoverType::LinkwitzRiley4 => "LR24",
+        CrossoverType::LinkwitzRiley8 => "LR48",
         CrossoverType::None => "None",
     }
 }
@@ -262,6 +264,10 @@ mod tests {
         assert!(matches!(
             parse_crossover_type("butterworth2"),
             Ok(CrossoverType::Butterworth2)
+        ));
+        assert!(matches!(
+            parse_crossover_type("lr48"),
+            Ok(CrossoverType::LinkwitzRiley8)
         ));
         assert!(parse_crossover_type("invalid").is_err());
     }

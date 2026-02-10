@@ -3,7 +3,7 @@ mod tests {
     use autoeq::roomeq::{
         RoomConfig, SystemConfig, SystemModel, OptimizerConfig,
         SubwooferSystemConfig, SubwooferStrategy, SpeakerConfig,
-        BassManagementConfig,
+        CrossoverConfig,
     };
     use autoeq::{MeasurementRef, MeasurementSingle, MeasurementSource};
     use std::collections::HashMap;
@@ -53,7 +53,6 @@ mod tests {
             crossovers: None,
             target_curve: None,
             group_delay: None,
-            bass_management: None,
             optimizer: OptimizerConfig {
                 max_iter: 100, // Fast
                 ..OptimizerConfig::default()
@@ -107,6 +106,14 @@ mod tests {
         let mut sub_map = HashMap::new();
         sub_map.insert("sub".to_string(), "L".to_string());
 
+        let mut crossovers = HashMap::new();
+        crossovers.insert("sub_xover".to_string(), CrossoverConfig {
+            crossover_type: "LR24".to_string(),
+            frequency: Some(80.0),
+            frequencies: None,
+            frequency_range: None,
+        });
+
         let config = RoomConfig {
             version: "1.2.0".to_string(),
             system: Some(SystemConfig {
@@ -114,17 +121,14 @@ mod tests {
                 speakers: sys_spk,
                 subwoofers: Some(SubwooferSystemConfig {
                     config: SubwooferStrategy::Single,
+                    crossover: Some("sub_xover".to_string()),
                     mapping: sub_map,
                 }),
             }),
             speakers,
-            crossovers: None,
+            crossovers: Some(crossovers),
             target_curve: None,
             group_delay: None,
-            bass_management: Some(BassManagementConfig {
-                crossover_freq: 80.0,
-                ..Default::default()
-            }),
             optimizer: OptimizerConfig {
                 max_iter: 100,
                 ..OptimizerConfig::default()

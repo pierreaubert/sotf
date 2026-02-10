@@ -54,6 +54,41 @@ cargo run --bin roomeq -- --config <config.json> --output <output.json> [OPTIONS
 }
 ```
 
+### 2.1 System with Explicit Topology (v2.1)
+
+```json
+{
+  "system": {
+    "model": "stereo",
+    "speakers": {
+      "L": "left_meas",
+      "R": "right_meas",
+      "LFE": "sub_meas"
+    },
+    "subwoofers": {
+      "config": "single",
+      "crossover": "bass_xo",
+      "sub_meas": "L"
+    }
+  },
+  "crossovers": {
+    "bass_xo": {
+      "type": "LR24",
+      "frequency": 80.0
+    }
+  },
+  "speakers": {
+    "left_meas": "measurements/left.csv",
+    "right_meas": "measurements/right.csv",
+    "sub_meas": "measurements/sub.csv"
+  },
+  "optimizer": {
+    "num_filters": 10,
+    "algorithm": "cobyla"
+  }
+}
+```
+
 ### Multi-driver Speaker (2-way)
 
 ```json

@@ -31,7 +31,58 @@ check-jsonschema --schemafile input_schema.json your_config.json
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `version` | string | No | `"1.1.0"` | Configuration version (semantic versioning) |
+| `system` | object | No | - | System topology and logical channel mapping (v2.1) |
 | `speakers` | object | **Yes** | - | Map of channel names to speaker configurations |
+
+---
+
+## System Configuration (v2.1)
+
+The `system` section decouples logical channel roles (e.g., "L", "R", "LFE") from physical measurement files. This allows for explicit topology definitions and automatic alignment strategies.
+
+```json
+{
+  "system": {
+    "model": "stereo",
+    "speakers": {
+      "L": "left_meas",
+      "R": "right_meas",
+      "LFE": "sub_meas"
+    },
+    "subwoofers": {
+      "config": "single",
+      "crossover": "bass_xover",
+      "sub_meas": "L"
+    }
+  },
+  "crossovers": {
+    "bass_xover": {
+      "type": "LR24",
+      "frequency": 80.0
+    }
+  }
+}
+```
+
+### System Fields
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `model` | string | No | `"custom"` | Topology model: `"stereo"`, `"home_cinema"`, `"custom"` |
+| `speakers` | map | **Yes** | - | Map of Logical Role → Measurement Key. The key must exist in the root `speakers` object. |
+| `subwoofers` | object | No | - | Subwoofer configuration and alignment mapping |
+
+### Subwoofers Configuration
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `config` | string | No | `"single"` | Strategy: `"single"`, `"mso"`, `"dba"` |
+| `crossover` | string | No | - | Reference to a crossover definition in the `crossovers` map (required for 2.1+ systems) |
+| `*` | string | - | - | Any other key is treated as a mapping: `Subwoofer Measurement Key` → `Main Speaker Logical Role` (for alignment) |
+
+---
+
+## Speakers Configuration
 | `crossovers` | object | No | - | Crossover configurations referenced by multi-driver speakers |
 | `target_curve` | string or path | No | - | Target frequency response curve |
 | `group_delay` | array | No | - | Group delay optimization configurations |
@@ -48,6 +99,7 @@ RoomEQ supports four speaker types:
 2. **Group** - Multi-driver speaker with crossover optimization
 3. **MultiSub** - Multiple subwoofers with gain/delay optimization
 4. **DBA** - Double Bass Array with front/rear optimization
+5. **Cardioid** - Gradient Cardioid configuration (2 subs)
 
 ### Measurement References
 
@@ -200,6 +252,32 @@ For optimizing front and rear bass arrays with phase cancellation.
 | `name` | string | **Yes** | Name of the DBA system |
 | `front` | array | **Yes** | Measurements for the front array |
 | `rear` | array | **Yes** | Measurements for the rear array (will be phase-inverted) |
+
+### Gradient Cardioid (2 Subs)
+
+For optimizing a pair of subwoofers in a gradient cardioid configuration (e.g., stacked front/back) to reduce rear radiation.
+
+```json
+{
+  "speakers": {
+    "lfe": {
+      "name": "Cardioid Stack",
+      "front": "measurements/sub_front.csv",
+      "rear": "measurements/sub_rear.csv",
+      "separation_meters": 0.5
+    }
+  }
+}
+```
+
+**CardioidConfig Fields:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | **Yes** | Name of the cardioid system |
+| `front` | source | **Yes** | Measurement for the front (primary) subwoofer |
+| `rear` | source | **Yes** | Measurement for the rear (cancellation) subwoofer |
+| `separation_meters` | number | **Yes** | Physical separation distance between acoustic centers (meters) |
 
 ---
 
@@ -423,10 +501,27 @@ freq,spl,phase
 }
 ```
 
-### Example 2: 2.1 System with Subwoofer
+### Example 2: 2.1 System with Subwoofer (v2.1)
 
 ```json
 {
+  "version": "1.2.0",
+  "system": {
+    "model": "stereo",
+    "speakers": {
+      "L": "left",
+      "R": "right",
+      "LFE": "sub"
+    },
+    "subwoofers": {
+      "config": "single",
+      "sub": "L"
+    }
+  },
+  "bass_management": {
+    "crossover_freq": 80.0,
+    "lfe_slope": 24.0
+  },
   "speakers": {
     "left": {
       "path": "measurements/left_speaker.csv"
@@ -434,7 +529,7 @@ freq,spl,phase
     "right": {
       "path": "measurements/right_speaker.csv"
     },
-    "lfe": {
+    "sub": {
       "path": "measurements/subwoofer.csv"
     }
   },

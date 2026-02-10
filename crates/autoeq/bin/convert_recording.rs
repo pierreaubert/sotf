@@ -153,7 +153,6 @@ fn convert_legacy_to_room_config(legacy: &LegacyMeasurementsFile) -> RoomConfig 
         crossovers: None,
         target_curve: None,
         group_delay: None,
-        bass_management: None,
         optimizer: OptimizerConfig::default(),
         recording_config,
     }

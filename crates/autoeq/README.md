@@ -169,15 +169,27 @@ cargo run --bin roomeq --release -- --config room_config.json --output dsp_chain
 ```json
 {
   "version": "1.2.0",
+  "system": {
+    "model": "stereo",
+    "speakers": {
+      "L": "left", "R": "right", "LFE": "sub"
+    },
+    "subwoofers": {
+      "config": "single",
+      "crossover": "bass_xo",
+      "sub": "L"
+    }
+  },
+  "crossovers": {
+    "bass_xo": {
+      "type": "LR24",
+      "frequency": 80.0
+    }
+  },
   "speakers": {
     "left": { "path": "measurements/left.csv" },
     "right": { "path": "measurements/right.csv" },
-    "lfe": { "path": "measurements/subwoofer.csv" }
-  },
-  "bass_management": {
-    "strategy": "single",
-    "crossover_freq": 80.0,
-    "lfe_slope": 24.0
+    "sub": { "path": "measurements/subwoofer.csv" }
   },
   "optimizer": {
     "processing_mode": "hybrid",
@@ -201,18 +213,25 @@ cargo run --bin roomeq --release -- --config room_config.json --output dsp_chain
 ```json
 {
   "version": "1.2.0",
+  "system": {
+    "model": "stereo",
+    "speakers": { "L": "l", "R": "r", "LFE": "dba" },
+    "subwoofers": {
+      "config": "dba",
+      "crossover": "dba_xo"
+    }
+  },
+  "crossovers": {
+    "dba_xo": { "type": "LR24", "frequency": 100.0 }
+  },
   "speakers": {
-    "left": { "path": "left.csv" },
-    "right": { "path": "right.csv" },
-    "dba_system": {
+    "l": { "path": "left.csv" },
+    "r": { "path": "right.csv" },
+    "dba": {
       "name": "DBA",
       "front": [ { "path": "front_sub1.csv" }, { "path": "front_sub2.csv" } ],
       "rear": [ { "path": "rear_sub1.csv" }, { "path": "rear_sub2.csv" } ]
     }
-  },
-  "bass_management": {
-    "strategy": "dba",
-    "crossover_freq": 100.0
   },
   "optimizer": {
     "processing_mode": "low_latency"

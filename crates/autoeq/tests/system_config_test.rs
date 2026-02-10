@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use autoeq::roomeq::{
-        optimize_room, BassManagementConfig, OptimizerConfig, ProcessingMode, RoomConfig,
+        optimize_room, CrossoverConfig, OptimizerConfig, ProcessingMode, RoomConfig,
         SpeakerConfig, SubwooferStrategy, SystemConfig, SystemModel,
     };
     use autoeq::{MeasurementRef, MeasurementSingle, MeasurementSource};
@@ -91,6 +91,14 @@ mod tests {
         let mut sub_mapping = HashMap::new();
         sub_mapping.insert("sub_meas".to_string(), "L".to_string()); // Align sub to L
 
+        let mut crossovers = HashMap::new();
+        crossovers.insert("sub_xo".to_string(), CrossoverConfig {
+            crossover_type: "LR24".to_string(),
+            frequency: Some(80.0),
+            frequencies: None,
+            frequency_range: None,
+        });
+
         let config = RoomConfig {
             version: "1.2.0".to_string(),
             system: Some(SystemConfig {
@@ -98,14 +106,14 @@ mod tests {
                 speakers: system_speakers,
                 subwoofers: Some(autoeq::roomeq::SubwooferSystemConfig {
                     config: SubwooferStrategy::Single,
+                    crossover: Some("sub_xo".to_string()),
                     mapping: sub_mapping,
                 }),
             }),
             speakers,
-            crossovers: None,
+            crossovers: Some(crossovers),
             target_curve: None,
             group_delay: None,
-            bass_management: None,
             optimizer: OptimizerConfig::default(),
             recording_config: None,
         };

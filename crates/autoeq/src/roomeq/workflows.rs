@@ -129,12 +129,16 @@ pub fn optimize_stereo_2_0(
             plugins.push(output::create_eq_plugin(&filters));
         }
 
+        // Compute final response
+        let resp = response::compute_peq_complex_response(&filters, &aligned_curve.freq, sample_rate);
+        let final_curve_obj = response::apply_complex_response(&aligned_curve, &resp);
+
         let chain = ChannelDspChain {
             channel: role.clone(),
             plugins,
             drivers: None,
             initial_curve: Some((&aligned_curve).into()), 
-            final_curve: None, // Simplified
+            final_curve: Some((&final_curve_obj).into()),
         };
 
         channel_chains.insert(role.clone(), chain);
@@ -144,7 +148,7 @@ pub fn optimize_stereo_2_0(
             pre_score: 0.0, // TODO
             post_score: score,
             initial_curve: curve.clone(),
-            final_curve: aligned_curve, // Simplified
+            final_curve: final_curve_obj,
             biquads: filters,
             fir_coeffs: None,
         });
@@ -187,16 +191,42 @@ pub fn optimize_stereo_2_1(
         });
     }
 
-    let bass_mgr = config.bass_management.as_ref().ok_or(
-        AutoeqError::InvalidConfiguration { message: "Bass management config required".to_string() }
+    // Resolve Crossover from System Config
+    let sub_sys = sys.subwoofers.as_ref().ok_or(
+        AutoeqError::InvalidConfiguration { message: "Missing subwoofers configuration".to_string() }
     )?;
-    let xover_freq = bass_mgr.crossover_freq;
+    
+    let xover_key = sub_sys.crossover.as_deref().ok_or(
+        AutoeqError::InvalidConfiguration { message: "Subwoofer config requires 'crossover' reference".to_string() }
+    )?;
+    
+    let xover_config = config.crossovers.as_ref()
+        .and_then(|m| m.get(xover_key))
+        .ok_or(AutoeqError::InvalidConfiguration { 
+            message: format!("Crossover '{}' not found in crossovers section", xover_key) 
+        })?;
+        
+    let xover_type_str = &xover_config.crossover_type;
+
+    // Handle fixed frequency vs range
+    let (min_xo, max_xo, est_xo) = if let Some(f) = xover_config.frequency {
+        (f, f, f)
+    } else if let Some((min, max)) = xover_config.frequency_range {
+        (min, max, (min * max).sqrt())
+    } else {
+        return Err(AutoeqError::InvalidConfiguration { 
+            message: "Subwoofer crossover requires 'frequency' or 'frequency_range'".to_string() 
+        });
+    };
 
     // 1. Level Measurement & Alignment
+    // Use max_xo for boundary to ensure we measure Sub fully and Mains safely.
+    // For Sub, restrict to octave below crossover to avoid deep bass peaks skewing level.
     let mut ranges = HashMap::new();
-    ranges.insert("L".to_string(), (xover_freq, 2000.0));
-    ranges.insert("R".to_string(), (xover_freq, 2000.0));
-    ranges.insert(sub_role.to_string(), (20.0, xover_freq));
+    ranges.insert("L".to_string(), (max_xo, 2000.0));
+    ranges.insert("R".to_string(), (max_xo, 2000.0));
+    let sub_min_align = (max_xo * 0.5).max(20.0);
+    ranges.insert(sub_role.to_string(), (sub_min_align, max_xo));
 
     let gains = align_channels_to_lowest(&curves, &ranges);
 
@@ -210,15 +240,15 @@ pub fn optimize_stereo_2_1(
     }
 
     // 3. Pre-EQ (Linearization) for L and R
-    // Min freq = xover_freq
+    // Min freq = min_xo to ensure coverage even if crossover drops to min
     let mut pre_eq_filters = HashMap::new();
     let mut linearized_curves = aligned_curves.clone();
 
     for role in ["L", "R"] {
         let mut opt_config = config.optimizer.clone();
-        opt_config.min_freq = xover_freq;
+        opt_config.min_freq = min_xo;
         
-        info!("  Pre-EQ Linearization for '{}'", role);
+        info!("  Pre-EQ Linearization for '{}' (min {:.1} Hz)", role, min_xo);
         let (filters, _) = eq::optimize_channel_eq(
             &aligned_curves[role],
             &opt_config,
@@ -258,53 +288,44 @@ pub fn optimize_stereo_2_1(
     // Optimize Crossover between Virtual Main and Sub
     // We reuse crossover::optimize_crossover. It expects a list of drivers.
     // [VirtualMain, Sub]
-    // And it expects `CrossoverConfig`. We need to synthesize one.
-    use super::types::CrossoverConfig;
-    let xover_config = CrossoverConfig {
-        crossover_type: "LR24".to_string(), // Default or from config?
-        frequency: Some(xover_freq),
-        frequencies: None,
-        frequency_range: None, 
-    };
     
     // We need to parse crossover type for the optimizer
-    let crossover_type_enum = crossover::parse_crossover_type(&xover_config.crossover_type)
+    let crossover_type_enum = crossover::parse_crossover_type(xover_type_str)
         .map_err(|e| AutoeqError::InvalidConfiguration { message: e.to_string() })?;
 
+    // Determine fixed freqs vs range for optimizer
+    let (fixed_freqs, range_opt) = if xover_config.frequency.is_some() {
+        (Some(vec![est_xo]), None)
+    } else {
+        (None, Some((min_xo, max_xo)))
+    };
+
     // Optimize
-    let (xo_gains, xo_delays, _, _, inversions) = crossover::optimize_crossover(
+    let (xo_gains, xo_delays, xo_freqs, _, inversions) = crossover::optimize_crossover(
         vec![virtual_main.clone(), sub_curve.clone()],
         crossover_type_enum,
         sample_rate,
         &config.optimizer,
-        Some(vec![xover_freq]), // Fixed frequency
-        None,
+        fixed_freqs,
+        range_opt,
     ).map_err(|e| AutoeqError::OptimizationFailed { message: e.to_string() })?;
 
     // Results: index 0 = Mains, index 1 = Sub
     let main_gain_post = xo_gains[0];
-    let main_delay_post = xo_delays[0];
+    let _main_delay_post = xo_delays[0];
     let sub_gain_post = xo_gains[1];
-    let sub_delay_post = xo_delays[1];
+    let _sub_delay_post = xo_delays[1];
     let sub_inverted = inversions[1];
+    let final_xo_freq = xo_freqs[0];
 
-    info!("  Crossover Optimized: Main Gain={:.2}, Sub Gain={:.2}, Sub Delay={:.2}", 
-          main_gain_post, sub_gain_post, sub_delay_post);
+    info!("  Crossover Optimized: Freq={:.1} Hz, Main Gain={:.2}, Sub Gain={:.2}, Sub Delay={:.2}", 
+          final_xo_freq, main_gain_post, sub_gain_post, _sub_delay_post);
 
     // 6. Apply Crossover (Filters + Gain/Delay)
-    // We calculate the post-crossover curves for Post-EQ
-    // Main HighPass, Sub LowPass
-    // LR24 HP/LP
+    // We calculate the post-crossover curves for Post-EQ using FINAL frequency
     
-    // We need helper to apply LR24 filter response to curve
-    // We can use Biquad filters.
-    // LR24 = 2x Butterworth 2nd Order.
-    let hp_filters = math_audio_iir_fir::peq_linkwitzriley_highpass(4, xover_freq, sample_rate);
-    let lp_filters = math_audio_iir_fir::peq_linkwitzriley_lowpass(4, xover_freq, sample_rate);
-    
-    // Unwrap Peq (gain, biquad) -> biquads
-    let hp_biquads: Vec<Biquad> = hp_filters.into_iter().map(|(_, b)| b).collect();
-    let lp_biquads: Vec<Biquad> = lp_filters.into_iter().map(|(_, b)| b).collect();
+    let hp_biquads = create_crossover_filters(xover_type_str, final_xo_freq, sample_rate, false);
+    let lp_biquads = create_crossover_filters(xover_type_str, final_xo_freq, sample_rate, true);
 
     let apply_chain = |curve: &Curve, filters: &[Biquad], gain: f64, delay: f64, invert: bool| -> Curve {
         let resp = response::compute_peq_complex_response(filters, &curve.freq, sample_rate);
@@ -317,9 +338,32 @@ pub fn optimize_stereo_2_1(
         c
     };
 
-    let l_post = apply_chain(&linearized_curves["L"], &hp_biquads, main_gain_post, main_delay_post, false);
-    let r_post = apply_chain(&linearized_curves["R"], &hp_biquads, main_gain_post, main_delay_post, false);
-    let sub_post = apply_chain(&linearized_curves[sub_role], &lp_biquads, sub_gain_post, sub_delay_post, sub_inverted);
+    // Note: Applying to ALIGNED curves (not linearized), and ignoring optimized delay per user request.
+    let l_post = apply_chain(&aligned_curves["L"], &hp_biquads, main_gain_post, 0.0, false);
+    let r_post = apply_chain(&aligned_curves["R"], &hp_biquads, main_gain_post, 0.0, false);
+    let sub_post_initial = apply_chain(&aligned_curves[sub_role], &lp_biquads, sub_gain_post, 0.0, sub_inverted);
+
+    // Re-align Subwoofer level after crossover application
+    // Calculate mean SPL of filtered curves to ensure levels match at crossover
+    let freqs_f32: Vec<f32> = l_post.freq.iter().map(|&f| f as f32).collect();
+    let main_spl_f32: Vec<f32> = l_post.spl.iter().map(|&s| s as f32).collect();
+    let sub_spl_f32: Vec<f32> = sub_post_initial.spl.iter().map(|&s| s as f32).collect();
+
+    // Mains: measure above crossover
+    let main_mean = compute_average_response(&freqs_f32, &main_spl_f32, Some((final_xo_freq as f32, 2000.0))) as f64;
+    
+    // Sub: measure below crossover (full passband)
+    let sub_mean = compute_average_response(&freqs_f32, &sub_spl_f32, Some((20.0, final_xo_freq as f32))) as f64;
+    
+    let sub_correction = main_mean - sub_mean;
+    info!("  Re-aligning Subwoofer: Main={:.2} dB, Sub={:.2} dB, Correction={:+.2} dB", 
+          main_mean, sub_mean, sub_correction);
+    
+    // Apply correction
+    let mut sub_post = sub_post_initial.clone();
+    for s in sub_post.spl.iter_mut() { *s += sub_correction; }
+    
+    let sub_gain_post = sub_gain_post + sub_correction;
 
     // 7. Post-EQ (Global)
     // L/R: min_freq = xover + 20
@@ -328,7 +372,7 @@ pub fn optimize_stereo_2_1(
     
     for role in ["L", "R"] {
         let mut opt_config = config.optimizer.clone();
-        opt_config.min_freq = xover_freq + 20.0;
+        opt_config.min_freq = final_xo_freq + 20.0;
         
         let (filters, _) = eq::optimize_channel_eq(
             &l_post, // Using l_post for L
@@ -342,7 +386,7 @@ pub fn optimize_stereo_2_1(
     // Sub Post-EQ
     {
         let mut opt_config = config.optimizer.clone();
-        opt_config.max_freq = xover_freq - 20.0;
+        opt_config.max_freq = final_xo_freq - 20.0;
         let (filters, _) = eq::optimize_channel_eq(
             &sub_post,
             &opt_config,
@@ -355,62 +399,75 @@ pub fn optimize_stereo_2_1(
     // 8. Construct Output Chains
     let mut channel_chains = HashMap::new();
     
-    // L Chain: AlignGain -> PreEQ -> Crossover(HP) -> MainGain/Delay -> PostEQ
-    let build_main_chain = |role: &str| -> ChannelDspChain {
+    // L/R Chain: AlignGain -> Crossover(HP) -> MainGain -> PostEQ (No PreEQ, No Delay)
+    for role in ["L", "R"] {
         let mut plugins = Vec::new();
         let align_gain = *gains.get(role).unwrap_or(&0.0);
         if align_gain.abs() > 0.01 { plugins.push(output::create_gain_plugin(align_gain)); }
         
-        if let Some(eqs) = pre_eq_filters.get(role) {
-            plugins.push(output::create_eq_plugin(eqs));
-        }
+        // Pre-EQ removed per user request (optimization relies on Post-EQ)
         
         // Crossover HP
-        plugins.push(output::create_crossover_plugin("LR24", xover_freq, "high"));
+        plugins.push(output::create_crossover_plugin(xover_type_str, final_xo_freq, "high"));
         
-        // Main Post Gain/Delay
+        // Main Post Gain (Delay removed)
         if main_gain_post.abs() > 0.01 { plugins.push(output::create_gain_plugin(main_gain_post)); }
-        if main_delay_post.abs() > 0.001 { plugins.push(output::create_delay_plugin(main_delay_post)); }
         
-        if let Some(eqs) = post_eq_filters.get(role) {
-            plugins.push(output::create_eq_plugin(eqs));
+        let eqs = post_eq_filters.get(role);
+        if let Some(e) = eqs {
+            plugins.push(output::create_eq_plugin(e));
         }
         
-        ChannelDspChain {
+        // Compute final curve
+        let intermediate = if role == "L" { &l_post } else { &r_post };
+        let final_curve_obj = if let Some(e) = eqs {
+            let resp = response::compute_peq_complex_response(e, &intermediate.freq, sample_rate);
+            response::apply_complex_response(intermediate, &resp)
+        } else {
+            intermediate.clone()
+        };
+
+        let chain = ChannelDspChain {
             channel: role.to_string(),
             plugins,
             drivers: None,
-            initial_curve: None,
-            final_curve: None,
-        }
-    };
+            initial_curve: Some((&aligned_curves[role]).into()),
+            final_curve: Some((&final_curve_obj).into()),
+        };
+        channel_chains.insert(role.to_string(), chain);
+    }
 
-    channel_chains.insert("L".to_string(), build_main_chain("L"));
-    channel_chains.insert("R".to_string(), build_main_chain("R"));
-
-    // Sub Chain: AlignGain -> Crossover(LP) -> SubGain/Delay/Invert -> PostEQ
-    // Note: Sub had no Pre-EQ in this workflow
+    // Sub Chain: AlignGain -> Crossover(LP) -> SubGain(Invert) -> PostEQ (No Delay)
     let mut sub_plugins = Vec::new();
     let sub_align_gain = *gains.get(sub_role).unwrap_or(&0.0);
     if sub_align_gain.abs() > 0.01 { sub_plugins.push(output::create_gain_plugin(sub_align_gain)); }
     
-    sub_plugins.push(output::create_crossover_plugin("LR24", xover_freq, "low"));
+    sub_plugins.push(output::create_crossover_plugin(xover_type_str, final_xo_freq, "low"));
     
+    // Sub Gain + Invert (Delay removed)
     if sub_inverted || sub_gain_post.abs() > 0.01 {
         sub_plugins.push(output::create_gain_plugin_with_invert(sub_gain_post, sub_inverted));
     }
-    if sub_delay_post.abs() > 0.001 { sub_plugins.push(output::create_delay_plugin(sub_delay_post)); }
     
-    if let Some(eqs) = post_eq_filters.get(sub_role) {
-        sub_plugins.push(output::create_eq_plugin(eqs));
+    let sub_eqs = post_eq_filters.get(sub_role);
+    if let Some(e) = sub_eqs {
+        sub_plugins.push(output::create_eq_plugin(e));
     }
+    
+    // Compute final curve
+    let final_sub_curve = if let Some(e) = sub_eqs {
+        let resp = response::compute_peq_complex_response(e, &sub_post.freq, sample_rate);
+        response::apply_complex_response(&sub_post, &resp)
+    } else {
+        sub_post.clone()
+    };
     
     let sub_chain = ChannelDspChain {
         channel: sub_role.to_string(),
         plugins: sub_plugins,
         drivers: None,
-        initial_curve: None,
-        final_curve: None,
+        initial_curve: Some((&aligned_curves[sub_role]).into()),
+        final_curve: Some((&final_sub_curve).into()),
     };
     channel_chains.insert(sub_role.to_string(), sub_chain);
 
@@ -427,4 +484,20 @@ pub fn optimize_stereo_2_1(
             timestamp: chrono::Utc::now().to_rfc3339(),
         },
     })
+}
+
+fn create_crossover_filters(type_str: &str, freq: f64, sample_rate: f64, is_lowpass: bool) -> Vec<Biquad> {
+    use math_audio_iir_fir::*;
+    let type_lower = type_str.to_lowercase();
+    let peq = match type_lower.as_str() {
+        "lr24" | "lr4" => if is_lowpass { peq_linkwitzriley_lowpass(4, freq, sample_rate) } else { peq_linkwitzriley_highpass(4, freq, sample_rate) },
+        "lr48" | "lr8" => if is_lowpass { peq_linkwitzriley_lowpass(8, freq, sample_rate) } else { peq_linkwitzriley_highpass(8, freq, sample_rate) },
+        "bw12" | "butterworth12" => if is_lowpass { peq_butterworth_lowpass(2, freq, sample_rate) } else { peq_butterworth_highpass(2, freq, sample_rate) },
+        "bw24" | "butterworth24" => if is_lowpass { peq_butterworth_lowpass(4, freq, sample_rate) } else { peq_butterworth_highpass(4, freq, sample_rate) },
+        _ => {
+            log::warn!("Unknown crossover type '{}', defaulting to LR24", type_str);
+            if is_lowpass { peq_linkwitzriley_lowpass(4, freq, sample_rate) } else { peq_linkwitzriley_highpass(4, freq, sample_rate) }
+        }
+    };
+    peq.into_iter().map(|(_, b)| b).collect()
 }

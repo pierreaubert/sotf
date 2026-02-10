@@ -517,6 +517,81 @@ pub fn build_dba_dsp_chain_with_curves(
     }
 }
 
+/// Build a DSP chain for a Gradient Cardioid subwoofer system
+pub fn build_cardioid_dsp_chain(
+    channel_name: &str,
+    gains: &[f64],
+    delays: &[f64],
+    eq_filters: &[Biquad],
+) -> ChannelDspChain {
+    build_cardioid_dsp_chain_with_curves(channel_name, gains, delays, eq_filters, None, None, None)
+}
+
+/// Build a DSP chain for a Gradient Cardioid subwoofer system with curves
+///
+/// # Arguments
+/// * `driver_initial_curves` - Optional per-sub initial curves (extended to full range).
+///   Index 0 = Front, Index 1 = Rear.
+pub fn build_cardioid_dsp_chain_with_curves(
+    channel_name: &str,
+    gains: &[f64],
+    delays: &[f64],
+    eq_filters: &[Biquad],
+    initial_curve: Option<&crate::Curve>,
+    final_curve: Option<&crate::Curve>,
+    driver_initial_curves: Option<&[crate::Curve]>,
+) -> ChannelDspChain {
+    // 2 "drivers": Front and Rear
+    let mut driver_chains = Vec::new();
+
+    // Front (Index 0) - Primary
+    let mut front_plugins = Vec::new();
+    if gains[0].abs() > 0.01 {
+        front_plugins.push(create_gain_plugin(gains[0]));
+    }
+    if delays[0].abs() > 0.001 {
+        front_plugins.push(create_delay_plugin(delays[0]));
+    }
+    let front_curve = driver_initial_curves.and_then(|curves| curves.first()).map(|c| c.into());
+    driver_chains.push(DriverDspChain {
+        name: "Front Sub".to_string(),
+        index: 0,
+        plugins: front_plugins,
+        initial_curve: front_curve,
+    });
+
+    // Rear (Index 1) - Cancellation (Inverted + Delayed)
+    let mut rear_plugins = Vec::new();
+    
+    // Always add gain plugin to handle inversion
+    rear_plugins.push(create_gain_plugin_with_invert(gains[1], true));
+
+    if delays[1].abs() > 0.001 {
+        rear_plugins.push(create_delay_plugin(delays[1]));
+    }
+    let rear_curve = driver_initial_curves.and_then(|curves| curves.get(1)).map(|c| c.into());
+    driver_chains.push(DriverDspChain {
+        name: "Rear Sub".to_string(),
+        index: 1,
+        plugins: rear_plugins,
+        initial_curve: rear_curve,
+    });
+
+    // Combined EQ
+    let mut combined_plugins = Vec::new();
+    if !eq_filters.is_empty() {
+        combined_plugins.push(create_eq_plugin(eq_filters));
+    }
+
+    ChannelDspChain {
+        channel: channel_name.to_string(),
+        plugins: combined_plugins,
+        drivers: Some(driver_chains),
+        initial_curve: initial_curve.map(|c| c.into()),
+        final_curve: final_curve.map(|c| c.into()),
+    }
+}
+
 /// Create complete DSP chain output
 pub fn create_dsp_chain_output(
     channels: HashMap<String, ChannelDspChain>,

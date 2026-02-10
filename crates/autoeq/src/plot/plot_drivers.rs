@@ -96,6 +96,9 @@ pub fn plot_drivers(
                     crate::loss::CrossoverType::LinkwitzRiley4 => {
                         crate::iir::peq_linkwitzriley_highpass(4, xover_freq, sample_rate)
                     }
+                    crate::loss::CrossoverType::LinkwitzRiley8 => {
+                        crate::iir::peq_linkwitzriley_highpass(8, xover_freq, sample_rate)
+                    }
                     crate::loss::CrossoverType::None => vec![],
                 };
                 let hp_response =
@@ -115,6 +118,9 @@ pub fn plot_drivers(
                     }
                     crate::loss::CrossoverType::LinkwitzRiley4 => {
                         crate::iir::peq_linkwitzriley_lowpass(4, xover_freq, sample_rate)
+                    }
+                    crate::loss::CrossoverType::LinkwitzRiley8 => {
+                        crate::iir::peq_linkwitzriley_lowpass(8, xover_freq, sample_rate)
                     }
                     crate::loss::CrossoverType::None => vec![],
                 };
@@ -197,6 +203,7 @@ pub fn plot_drivers(
         crate::loss::CrossoverType::Butterworth2 => "2nd order Butterworth",
         crate::loss::CrossoverType::LinkwitzRiley2 => "2nd order Linkwitz-Riley",
         crate::loss::CrossoverType::LinkwitzRiley4 => "4th order Linkwitz-Riley",
+        crate::loss::CrossoverType::LinkwitzRiley8 => "8th order Linkwitz-Riley",
         crate::loss::CrossoverType::None => "No Crossover (Multi-Sub)",
     };
 

@@ -764,7 +764,6 @@ pub fn optimize_speaker(
         crossovers: None,
         target_curve: target_curve.cloned(),
         group_delay: None,
-        bass_management: None,
         optimizer: optimizer_config.clone(),
         recording_config: None,
     };
@@ -811,6 +810,9 @@ fn process_speaker_internal(
         }
         SpeakerConfig::Dba(config) => {
             process_dba(channel_name, config, room_config, sample_rate, output_dir)
+        }
+        SpeakerConfig::Cardioid(config) => {
+            process_cardioid(channel_name, config, room_config, sample_rate, output_dir)
         }
     }
 }
@@ -2222,4 +2224,145 @@ fn check_octave_consistency(
             );
         }
     }
+}
+/// Process Gradient Cardioid configuration
+///
+/// Returns: (DSP chain, pre_score, post_score, initial_curve, final_curve, biquads, mean_spl, arrival_time_ms)
+fn process_cardioid(
+    channel_name: &str,
+    config: &super::types::CardioidConfig,
+    room_config: &RoomConfig,
+    sample_rate: f64,
+    _output_dir: &Path,
+) -> Result<MixedModeResult> {
+    // 1. Load measurements
+    let front_curve = load::load_source(&config.front)
+        .map_err(|e| AutoeqError::InvalidMeasurement { message: format!("Failed to load Front measurement: {}", e) })?;
+    let rear_curve = load::load_source(&config.rear)
+        .map_err(|e| AutoeqError::InvalidMeasurement { message: format!("Failed to load Rear measurement: {}", e) })?;
+
+    // 2. Calculate Delay
+    let delay_ms = config.separation_meters / 343.0 * 1000.0;
+    info!("  Cardioid: Separation {:.2}m -> Delay {:.2}ms", config.separation_meters, delay_ms);
+
+    // 3. Simulate Combined Response
+    use num_complex::Complex;
+    let n_points = front_curve.freq.len();
+    let mut combined_spl = ndarray::Array1::zeros(n_points);
+    
+    // We need phase. If missing, assume 0.
+    let front_phase_zeros = ndarray::Array1::zeros(n_points);
+    let rear_phase_zeros = ndarray::Array1::zeros(n_points);
+    let front_phase = front_curve.phase.as_ref().unwrap_or(&front_phase_zeros);
+    let rear_phase = rear_curve.phase.as_ref().unwrap_or(&rear_phase_zeros);
+    
+    for i in 0..n_points {
+        let f = front_curve.freq[i];
+        let omega = 2.0 * std::f64::consts::PI * f;
+        
+        // Front
+        let f_mag = 10.0_f64.powf(front_curve.spl[i] / 20.0);
+        let f_phi = front_phase[i].to_radians();
+        let f_c = Complex::from_polar(f_mag, f_phi);
+        
+        // Rear (Inverted + Delayed)
+        let r_mag = 10.0_f64.powf(rear_curve.spl[i] / 20.0);
+        let r_phi_meas = rear_phase[i].to_radians();
+        
+        // Delay phase shift: -omega * delay
+        let delay_s = delay_ms / 1000.0;
+        let delay_phi = -omega * delay_s;
+        
+        // Inversion: +180 deg (PI rad)
+        let invert_phi = std::f64::consts::PI;
+        
+        let r_phi_total = r_phi_meas + delay_phi + invert_phi;
+        let r_c = Complex::from_polar(r_mag, r_phi_total);
+        
+        let sum = f_c + r_c;
+        combined_spl[i] = 20.0 * sum.norm().log10();
+    }
+    
+    let combined_curve = Curve {
+        freq: front_curve.freq.clone(),
+        spl: combined_spl,
+        phase: None, // Optimized for magnitude
+    };
+
+    // 4. Optimize EQ
+    let (eq_filters, post_score) = eq::optimize_channel_eq(
+        &combined_curve,
+        &room_config.optimizer,
+        room_config.target_curve.as_ref(),
+        sample_rate,
+    )
+    .map_err(|e| AutoeqError::OptimizationFailed { message: format!("EQ optimization failed for Cardioid sum: {}", e) })?;
+
+    // Compute pre-score
+    let min_freq = room_config.optimizer.min_freq;
+    let max_freq = room_config.optimizer.max_freq;
+    let (norm_range, mean) = detect_passband_and_mean(&combined_curve);
+    let normalized_spl = &combined_curve.spl - mean;
+    let pre_score = crate::loss::flat_loss(&combined_curve.freq, &normalized_spl, min_freq, max_freq);
+
+    info!(
+        "  Global EQ: {} filters, score={:.6}",
+        eq_filters.len(),
+        post_score
+    );
+
+    // 5. Build Output Chain
+    // Prepare display curves
+    let driver_curves_for_display = vec![
+        output::extend_curve_to_full_range(&front_curve),
+        output::extend_curve_to_full_range(&rear_curve),
+    ];
+    
+    let mut chain = output::build_cardioid_dsp_chain_with_curves(
+        channel_name,
+        &[0.0, 0.0], // Gains (0 for now)
+        &[0.0, delay_ms], // Delays
+        &eq_filters,
+        None,
+        None,
+        Some(&driver_curves_for_display),
+    );
+
+    // Final Curve calculation
+    let iir_resp = response::compute_peq_complex_response(&eq_filters, &combined_curve.freq, sample_rate);
+    let final_curve = response::apply_complex_response(&combined_curve, &iir_resp);
+
+    // Populate initial/final curves in chain
+    let display_initial = output::extend_curve_to_full_range(&combined_curve);
+    let display_resp =
+        response::compute_peq_complex_response(&eq_filters, &display_initial.freq, sample_rate);
+    let display_final = response::apply_complex_response(&display_initial, &display_resp);
+
+    let mut initial_data: super::types::CurveData = (&display_initial).into();
+    initial_data.norm_range = norm_range;
+    let mut final_data: super::types::CurveData = (&display_final).into();
+    final_data.norm_range = norm_range;
+
+    chain.initial_curve = Some(initial_data);
+    chain.final_curve = Some(final_data);
+
+    // Mean SPL
+    let freqs_f32: Vec<f32> = combined_curve.freq.iter().map(|&f| f as f32).collect();
+    let spl_f32: Vec<f32> = combined_curve.spl.iter().map(|&s| s as f32).collect();
+    let mean_spl = compute_average_response(
+        &freqs_f32,
+        &spl_f32,
+        Some((min_freq as f32, max_freq as f32)),
+    ) as f64;
+
+    Ok((
+        chain,
+        pre_score,
+        post_score,
+        combined_curve,
+        final_curve,
+        eq_filters,
+        mean_spl,
+        None,
+    ))
 }

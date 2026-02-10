@@ -12,6 +12,10 @@
       "default": "1.1.0",
       "pattern": "^\\d+\\.\\d+\\.\\d+$"
     },
+    "system": {
+      "$ref": "#/$defs/SystemConfig",
+      "description": "System topology and logical channel mapping (v2.1)"
+    },
     "speakers": {
       "type": "object",
       "description": "Map of channel names to speaker configurations",
@@ -44,6 +48,51 @@
     }
   },
   "$defs": {
+    "SystemConfig": {
+      "type": "object",
+      "description": "Explicit system configuration mapping logical roles to measurements",
+      "properties": {
+        "model": {
+          "type": "string",
+          "description": "System topology model",
+          "enum": ["stereo", "home_cinema", "custom"],
+          "default": "custom"
+        },
+        "speakers": {
+          "type": "object",
+          "description": "Map of Logical Role -> Measurement Key (e.g., \"L\": \"left_meas\")",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "subwoofers": {
+          "$ref": "#/$defs/SubwooferSystemConfig",
+          "description": "Subwoofer configuration and mapping"
+        }
+      },
+      "required": ["speakers"],
+      "additionalProperties": false
+    },
+    "SubwooferSystemConfig": {
+      "type": "object",
+      "description": "Subwoofer configuration. Includes 'config' strategy, optional 'crossover' reference, and a map of Subwoofer Measurement Key -> Main Speaker Logical Role (flattened).",
+      "properties": {
+        "config": {
+          "type": "string",
+          "description": "Strategy for subwoofer optimization",
+          "enum": ["single", "mso", "dba"],
+          "default": "single"
+        },
+        "crossover": {
+          "type": "string",
+          "description": "Reference to a crossover definition in the 'crossovers' map"
+        }
+      },
+      "additionalProperties": {
+        "type": "string",
+        "description": "Logical main channel role to align with"
+      }
+    },
     "SpeakerConfig": {
       "description": "Speaker configuration (single, multi-driver group, multi-sub, or DBA)",
       "oneOf": [
@@ -62,6 +111,10 @@
         {
           "$ref": "#/$defs/DBAConfig",
           "description": "Double Bass Array"
+        },
+        {
+          "$ref": "#/$defs/CardioidConfig",
+          "description": "Gradient Cardioid Subwoofer"
         }
       ]
     },
@@ -174,6 +227,31 @@
             "$ref": "#/$defs/MeasurementSource"
           },
           "minItems": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "CardioidConfig": {
+      "type": "object",
+      "description": "Gradient Cardioid subwoofer configuration (2 subs). Optimizes a pair of subwoofers (Front/Rear) to create a directional pattern by applying delay and inversion to the rear sub. Delay is calculated from physical separation.",
+      "required": ["name", "front", "rear", "separation_meters"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the cardioid system"
+        },
+        "front": {
+          "$ref": "#/$defs/MeasurementSource",
+          "description": "Measurement for the front (primary) subwoofer"
+        },
+        "rear": {
+          "$ref": "#/$defs/MeasurementSource",
+          "description": "Measurement for the rear (cancellation) subwoofer"
+        },
+        "separation_meters": {
+          "type": "number",
+          "description": "Physical separation distance between acoustic centers (meters)",
+          "minimum": 0.0
         }
       },
       "additionalProperties": false
