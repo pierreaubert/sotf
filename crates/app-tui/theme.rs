@@ -85,31 +85,31 @@ impl Theme {
     /// Create a light theme
     pub fn light() -> Self {
         Self {
-            // Backgrounds
+            // Backgrounds — use subtle warm grays instead of light blue/cyan
             bg_primary: Color::White,
-            bg_secondary: Color::LightBlue,
-            bg_selected: Color::Black,
-            bg_highlight: Color::LightCyan,
+            bg_secondary: Color::Rgb(230, 230, 230),
+            bg_selected: Color::Rgb(185, 205, 235),
+            bg_highlight: Color::Rgb(220, 225, 235),
 
             // Foregrounds
             fg_primary: Color::Black,
-            fg_secondary: Color::DarkGray,
-            fg_selected: Color::White,
-            fg_muted: Color::Gray,
+            fg_secondary: Color::Rgb(80, 80, 80),
+            fg_selected: Color::Black,
+            fg_muted: Color::Rgb(140, 140, 140),
 
-            // Accent colors
-            accent_primary: Color::Blue,
-            accent_secondary: Color::Magenta,
-            accent_success: Color::Green,
-            accent_warning: Color::Yellow,
-            accent_error: Color::Red,
-            accent_info: Color::Blue,
+            // Accent colors — darker shades for white-background readability
+            accent_primary: Color::Rgb(0, 60, 180),
+            accent_secondary: Color::Rgb(140, 30, 120),
+            accent_success: Color::Rgb(0, 130, 50),
+            accent_warning: Color::Rgb(180, 120, 0),
+            accent_error: Color::Rgb(190, 20, 20),
+            accent_info: Color::Rgb(0, 60, 180),
 
             // UI elements
-            border_color: Color::Blue,
-            title_color: Color::Magenta,
-            playing_indicator: Color::Green,
-            current_track: Color::Blue,
+            border_color: Color::Rgb(100, 100, 120),
+            title_color: Color::Rgb(140, 30, 120),
+            playing_indicator: Color::Rgb(0, 130, 50),
+            current_track: Color::Rgb(0, 60, 180),
         }
     }
 
@@ -159,7 +159,8 @@ mod tests {
         let theme = Theme::light();
         assert_eq!(theme.bg_primary, Color::White);
         assert_eq!(theme.fg_primary, Color::Black);
-        assert_eq!(theme.border_color, Color::Blue);
+        assert_eq!(theme.fg_selected, Color::Black);
+        assert_eq!(theme.border_color, Color::Rgb(100, 100, 120));
     }
 
     #[test]

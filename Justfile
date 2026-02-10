@@ -4,7 +4,7 @@
 # ----------------------------------------------------------------------
 
 # macos specific
-HDF5_DIR := '/opt/homebrew/Cellar/hdf5@1.10/1.10.11'
+HDF5_DIR := '/opt/homebrew/Cellar/hdf5/2.0'
 
 # should be done automatically
 dyld_fallback_library_path := '/Applications/Xcode.app/Contents/Framework'
@@ -63,8 +63,8 @@ test-proptest:
 
 # Note: --lib is intentionally omitted to respect `test = false` in crates like sotf-gpui
 # which have deeply nested GPUI macros that cause stack overflow in syn
-ntest:
-	HDF5_DIR=/opt/homebrew/Cellar/hdf5@1.10/1.10.11 RUST_MIN_STACK=16777216 cargo nextest run --release --no-fail-fast --workspace --lib
+ntest: test-negative test-proptest
+	HDF5_DIR=$HDF5_DIR RUST_MIN_STACK=16777216 cargo nextest run --release --no-fail-fast --workspace --lib
 
 # ----------------------------------------------------------------------
 # RUN

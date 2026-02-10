@@ -49,6 +49,7 @@ pub use sotf_audio::plugins::{
     PluginChain,
     PluginSettings,
     PluginType,
+    ReleaseChannel,
     // Matrix helper functions
     apply_matrix_preset,
     db_to_linear,

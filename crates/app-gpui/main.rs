@@ -3,11 +3,11 @@ use clap::Parser;
 use gpui::*;
 use mimalloc::MiMalloc;
 use rust_embed::RustEmbed;
-use sotf_audio_player::Player;
+use sotf_audio_player::{Player, ReleaseChannel};
 use sotf_audio_player_gpui::app::actions::*;
 use sotf_audio_player_gpui::app::state::ui::LayoutState;
 use sotf_audio_player_gpui::app::{
-    App, AppState,
+    App, AppState, Screen,
     i18n::{Language, Translations},
 };
 use sotf_audio_player_gpui::config::Config;
@@ -89,15 +89,28 @@ fn main() {
 
         // Load configuration to get language, keymap preset, and window geometry
         let config = Config::load().ok();
-        let (language, keymap_preset) = config
+        let (language, keymap_preset, release_channel) = config
             .as_ref()
-            .map(|c| (c.language, c.keymap_preset))
-            .unwrap_or_else(|| (Language::default(), KeymapPreset::default()));
+            .map(|c| (c.language, c.keymap_preset, c.release_channel))
+            .unwrap_or_else(|| (Language::default(), KeymapPreset::default(), ReleaseChannel::default()));
 
         let translations = Translations::for_language(language);
 
         // Register keyboard shortcuts
         cx.bind_keys(get_keybindings(keymap_preset));
+
+        // Build View menu items, filtering by release channel
+        let mut view_menu_items = vec![
+            MenuItem::action(translations.screen_library, SwitchToLibrary),
+            MenuItem::action(translations.screen_studio, SwitchToStudio),
+            MenuItem::action(translations.screen_studio_full, SwitchToPluginGraph),
+            MenuItem::action(translations.screen_recording, SwitchToRecording),
+        ];
+        if release_channel.allows(Screen::RoomEq.maturity()) {
+            view_menu_items.push(MenuItem::action(translations.screen_room_eq, SwitchToRoomEQ));
+        }
+        view_menu_items.push(MenuItem::action(translations.screen_headphone_eq, SwitchToHeadphoneEQ));
+        view_menu_items.push(MenuItem::action(translations.screen_spinorama, SwitchToSpinorama));
 
         cx.set_menus(vec![
             Menu {
@@ -114,15 +127,7 @@ fn main() {
             },
             Menu {
                 name: translations.menu_view.into(),
-                items: vec![
-                    MenuItem::action(translations.screen_library, SwitchToLibrary),
-                    MenuItem::action(translations.screen_studio, SwitchToStudio),
-                    MenuItem::action(translations.screen_studio_full, SwitchToPluginGraph),
-                    MenuItem::action(translations.screen_recording, SwitchToRecording),
-                    MenuItem::action(translations.screen_room_eq, SwitchToRoomEQ),
-                    MenuItem::action(translations.screen_headphone_eq, SwitchToHeadphoneEQ),
-                    MenuItem::action(translations.screen_spinorama, SwitchToSpinorama),
-                ],
+                items: view_menu_items,
             },
             Menu {
                 name: translations.menu_help.into(),

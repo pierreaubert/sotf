@@ -76,7 +76,6 @@ pub use autoeq::roomeq::{
     SpeakerGroup,
     TargetCurveConfig,
     // V2 types
-    BassManagementConfig,
     ProcessingMode,
     SubwooferStrategy,
 };
@@ -288,7 +287,6 @@ pub fn run_multi_speaker_optimization(
         crossovers: None,
         target_curve: None,
         group_delay: None,
-        bass_management: None,
         optimizer: OptimizerConfig {
             loss_type: format!("{:?}", config.args.loss).to_lowercase(),
             algorithm: config.args.algo.clone(),
@@ -311,6 +309,7 @@ pub fn run_multi_speaker_optimization(
             local_algo: "cobyla".to_string(),
             psychoacoustic: true,
             asymmetric_loss: true,
+            allow_delay: None,
             target_tilt: None,
             excursion_protection: None,
             schroeder_split: None,
@@ -432,7 +431,6 @@ pub fn build_room_config_from_curves(
         crossovers: None,
         target_curve: None,
         group_delay: None,
-        bass_management: None,
         optimizer,
         recording_config: None,
     }
@@ -462,6 +460,7 @@ pub fn optimizer_config_from_args(args: &autoeq::Args) -> OptimizerConfig {
         local_algo: "cobyla".to_string(),
         psychoacoustic: true,
         asymmetric_loss: true,
+        allow_delay: None,
         target_tilt: None,
         excursion_protection: None,
         schroeder_split: None,

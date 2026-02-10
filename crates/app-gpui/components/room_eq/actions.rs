@@ -44,6 +44,7 @@ impl PlayerView {
                 .channel_measurements
                 .len();
 
+            let max_channels = state.app.max_room_eq_channels();
             if channel_count == 0 {
                 state.app.measurement_state.room_eq_state.error_message =
                     Some("Failed to load measurements: no valid channel data found.".to_string());
@@ -53,6 +54,25 @@ impl PlayerView {
                     .room_eq_state
                     .status_message
                     .clear();
+            } else if max_channels > 0 && channel_count > max_channels {
+                // Truncate to max allowed channels at current release level
+                state
+                    .app
+                    .measurement_state
+                    .room_eq_state
+                    .channel_measurements
+                    .truncate(max_channels);
+                state
+                    .app
+                    .measurement_state
+                    .room_eq_state
+                    .speaker_configs
+                    .truncate(max_channels);
+                state.app.measurement_state.room_eq_state.status_message = format!(
+                    "Loaded {} channel(s) (truncated from {} — upgrade release channel for more)",
+                    max_channels, channel_count
+                );
+                state.app.measurement_state.room_eq_state.error_message = None;
             } else {
                 state.app.measurement_state.room_eq_state.status_message = format!(
                     "Successfully loaded {} channel(s) from recording session",
@@ -103,7 +123,7 @@ impl PlayerView {
                             );
 
                             // Convert RoomConfig speakers to ChannelMeasurement
-                            let channel_measurements: Vec<ChannelMeasurement> = room_config
+                            let mut channel_measurements: Vec<ChannelMeasurement> = room_config
                                 .speakers
                                 .into_iter()
                                 .enumerate()
@@ -215,7 +235,7 @@ impl PlayerView {
                             }
 
                             // Create speaker configs
-                            let speaker_configs: Vec<RoomEqSpeakerConfig> = channel_measurements
+                            let mut speaker_configs: Vec<RoomEqSpeakerConfig> = channel_measurements
                                 .iter()
                                 .map(|m| RoomEqSpeakerConfig {
                                     channel_name: m.channel_name.clone(),
@@ -227,17 +247,30 @@ impl PlayerView {
 
                             let channel_count = channel_measurements.len();
                             let _ = state_entity.update(cx, |state, _| {
+                                let max_ch = state.app.max_room_eq_channels();
+                                let truncated = max_ch > 0 && channel_count > max_ch;
+                                if truncated {
+                                    channel_measurements.truncate(max_ch);
+                                    speaker_configs.truncate(max_ch);
+                                }
                                 state.app.measurement_state.room_eq_state.channel_measurements =
                                     channel_measurements;
                                 state.app.measurement_state.room_eq_state.speaker_configs =
                                     speaker_configs;
                                 state.app.measurement_state.room_eq_state.data_source =
                                     RoomEqDataSource::FromFile(file_path.clone());
-                                state.app.measurement_state.room_eq_state.status_message = format!(
-                                    "Successfully loaded {} channel(s) from {} (RoomConfig format)",
-                                    channel_count,
-                                    file_path.display()
-                                );
+                                if truncated {
+                                    state.app.measurement_state.room_eq_state.status_message = format!(
+                                        "Loaded {} channel(s) from {} (truncated from {} — upgrade release channel for more)",
+                                        max_ch, file_path.display(), channel_count
+                                    );
+                                } else {
+                                    state.app.measurement_state.room_eq_state.status_message = format!(
+                                        "Successfully loaded {} channel(s) from {} (RoomConfig format)",
+                                        channel_count,
+                                        file_path.display()
+                                    );
+                                }
                                 state.app.measurement_state.room_eq_state.error_message = None;
                             });
                             return;
@@ -315,7 +348,7 @@ impl PlayerView {
                                 }
 
                                 // Create speaker configs from loaded measurements
-                                let speaker_configs: Vec<RoomEqSpeakerConfig> = measurements_file
+                                let mut speaker_configs: Vec<RoomEqSpeakerConfig> = measurements_file
                                     .channels
                                     .iter()
                                     .map(|m| {
@@ -339,18 +372,32 @@ impl PlayerView {
                                     .collect();
 
                                 let channel_count = measurements_file.channels.len();
+                                let mut channels = measurements_file.channels;
                                 let _ = state_entity.update(cx, |state, _| {
+                                    let max_ch = state.app.max_room_eq_channels();
+                                    let truncated = max_ch > 0 && channel_count > max_ch;
+                                    if truncated {
+                                        channels.truncate(max_ch);
+                                        speaker_configs.truncate(max_ch);
+                                    }
                                     state.app.measurement_state.room_eq_state.channel_measurements =
-                                        measurements_file.channels;
+                                        channels;
                                     state.app.measurement_state.room_eq_state.speaker_configs =
                                         speaker_configs;
                                     state.app.measurement_state.room_eq_state.data_source =
                                         RoomEqDataSource::FromFile(file_path.clone());
-                                    state.app.measurement_state.room_eq_state.status_message = format!(
-                                        "Successfully loaded {} channel(s) from {}",
-                                        channel_count,
-                                        file_path.display()
-                                    );
+                                    if truncated {
+                                        state.app.measurement_state.room_eq_state.status_message = format!(
+                                            "Loaded {} channel(s) from {} (truncated from {} — upgrade release channel for more)",
+                                            max_ch, file_path.display(), channel_count
+                                        );
+                                    } else {
+                                        state.app.measurement_state.room_eq_state.status_message = format!(
+                                            "Successfully loaded {} channel(s) from {}",
+                                            channel_count,
+                                            file_path.display()
+                                        );
+                                    }
                                     state.app.measurement_state.room_eq_state.error_message = None;
                                 });
                             }

@@ -6,6 +6,48 @@ use sotf_plugins::{
     BandCompressorParams, BandExpanderParams, SpectralTiltCorrection, TiltReferenceFreq,
 };
 
+/// Feature maturity classification for gating experimental features.
+///
+/// Ordering: Prod < Beta < Alpha. A user on `Beta` channel sees Prod + Beta features.
+/// `allows(item_level)` returns true when `self >= item_level`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Default)]
+pub enum ReleaseChannel {
+    /// Stable, production-ready features (default)
+    #[default]
+    Prod,
+    /// Features in testing, mostly stable
+    Beta,
+    /// Experimental features, may change or break
+    Alpha,
+}
+
+impl ReleaseChannel {
+    pub fn all() -> &'static [ReleaseChannel] {
+        &[ReleaseChannel::Prod, ReleaseChannel::Beta, ReleaseChannel::Alpha]
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            ReleaseChannel::Prod => "Stable",
+            ReleaseChannel::Beta => "Beta",
+            ReleaseChannel::Alpha => "Alpha",
+        }
+    }
+
+    pub fn description(&self) -> &'static str {
+        match self {
+            ReleaseChannel::Prod => "Only stable, production-ready features",
+            ReleaseChannel::Beta => "Includes beta features in testing",
+            ReleaseChannel::Alpha => "All features including experimental ones",
+        }
+    }
+
+    /// Returns true if this channel level allows access to features at `item_level`.
+    pub fn allows(&self, item_level: ReleaseChannel) -> bool {
+        *self >= item_level
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum PluginType {
     EQ,
@@ -132,6 +174,39 @@ impl PluginType {
             self,
             Self::LoudnessMonitor | Self::SpectrumAnalyzer | Self::ChannelMuteSolo
         )
+    }
+
+    /// Returns the maturity level of this plugin type.
+    pub fn maturity(&self) -> ReleaseChannel {
+        match self {
+            Self::EQ
+            | Self::Gain
+            | Self::Compressor
+            | Self::Limiter
+            | Self::Gate
+            | Self::Expander
+            | Self::MultibandCompressor
+            | Self::MultibandExpander
+            | Self::Matrix
+            | Self::FletcherMunson
+            | Self::LoudnessMonitor
+            | Self::SpectrumAnalyzer
+            | Self::ChannelMuteSolo => ReleaseChannel::Prod,
+
+            Self::Upmixer
+            | Self::Downmix
+            | Self::BandSplit
+            | Self::BandMerge
+            | Self::MonoToStereo
+            | Self::LoudnessCompensation => ReleaseChannel::Beta,
+
+            Self::BinauralDecoder
+            | Self::Convolution
+            | Self::XTC
+            | Self::Pnd
+            | Self::ABCompare
+            | Self::Denoiser => ReleaseChannel::Alpha,
+        }
     }
 }
 
@@ -2628,6 +2703,63 @@ impl PluginChain {
         chain
     }
 
+    /// Ensure the default rack (input monitor, matrix, output monitor) is present.
+    /// Adds missing permanent plugins without disturbing existing user plugins.
+    /// Call this after loading a preset to guarantee the rack structure.
+    pub fn ensure_default_rack(&mut self) {
+        let has_permanent_lm = self
+            .plugins
+            .iter()
+            .any(|p| p.permanent && matches!(p.plugin_type(), PluginType::LoudnessMonitor));
+        let has_permanent_matrix = self
+            .plugins
+            .iter()
+            .any(|p| p.permanent && matches!(p.plugin_type(), PluginType::Matrix));
+
+        if has_permanent_lm && has_permanent_matrix {
+            // Check we have at least two permanent LoudnessMonitors (input + output)
+            let lm_count = self
+                .plugins
+                .iter()
+                .filter(|p| p.permanent && matches!(p.plugin_type(), PluginType::LoudnessMonitor))
+                .count();
+            if lm_count >= 2 {
+                return; // Rack is already complete
+            }
+        }
+
+        // Rebuild: collect user (non-permanent) plugins, then wrap them in the default rack
+        let user_plugins: Vec<Plugin> = self
+            .plugins
+            .drain(..)
+            .filter(|p| !p.permanent)
+            .collect();
+
+        // Build fresh rack
+        let input_id = self.next_id;
+        self.next_id += 1;
+        self.plugins
+            .push(Plugin::new_permanent(input_id, &PluginType::LoudnessMonitor));
+
+        // Insert user plugins between input monitor and matrix
+        self.plugins.extend(user_plugins);
+
+        let matrix_id = self.next_id;
+        self.next_id += 1;
+        self.plugins
+            .push(Plugin::new_permanent(matrix_id, &PluginType::Matrix));
+
+        let output_id = self.next_id;
+        self.next_id += 1;
+        self.plugins
+            .push(Plugin::new_permanent(output_id, &PluginType::LoudnessMonitor));
+
+        log::info!(
+            "Ensured default rack: {} plugins total",
+            self.plugins.len()
+        );
+    }
+
     /// Find the index where user plugins should be inserted (before Matrix)
     /// Returns the index of the Matrix plugin, or the first permanent plugin after user plugins
     pub fn user_plugin_insert_index(&self) -> usize {
@@ -3159,6 +3291,10 @@ impl PluginChain {
         self.next_id = max_id + 1;
 
         self.plugins = preset.plugins;
+
+        // Ensure the default rack (input monitor, matrix, output monitor) is present
+        // even if the saved preset predates the rack system.
+        self.ensure_default_rack();
 
         log::info!(
             "Loaded plugin chain from {} ({} plugins)",

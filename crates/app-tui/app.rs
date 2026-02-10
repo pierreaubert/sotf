@@ -559,8 +559,8 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                     4 => *knee_db = (*knee_db + delta * 0.1).clamp(0.0, 12.0),
                     5 => *makeup_gain_db = (*makeup_gain_db + delta * 0.1).clamp(-20.0, 20.0),
                     6 => *mix = (*mix + delta * 0.01).clamp(0.0, 1.0),
-                    7 => if delta.abs() > 0.1 { *auto_makeup = !*auto_makeup },
-                    8 => if delta.abs() > 0.1 { *link_channels = !*link_channels },
+                    7 => *auto_makeup = !*auto_makeup,
+                    8 => *link_channels = !*link_channels,
                     9 => *sidechain_hpf_hz = (*sidechain_hpf_hz + delta).clamp(20.0, 500.0),
                     _ => return false,
                 }
@@ -577,7 +577,7 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                     0 => *threshold_db = (*threshold_db + delta * 0.1).clamp(-20.0, 0.0),
                     1 => *release_ms = (*release_ms + delta).clamp(1.0, 500.0),
                     2 => *lookahead_ms = (*lookahead_ms + delta * 0.1).clamp(0.0, 20.0),
-                    3 => if delta.abs() > 0.1 { *soft = !*soft },
+                    3 => *soft = !*soft,
                     4 => *mix = (*mix + delta * 0.05).clamp(0.0, 1.0),
                     _ => return false,
                 }
@@ -590,6 +590,7 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                 gain_rear_ambient,
                 lfe_cutoff_hz,
                 stereo_width,
+                bandpass_hz,
                 height_gain,
                 lfe_gain,
                 enable_subharmonic_synth,
@@ -597,8 +598,13 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                 enable_hr_direct,
                 hr_sharpen,
                 safety_cap_db,
+                decorrelation_mode,
+                bypass_decorrelation,
+                bypass_transient_detection,
+                bypass_all_processing,
                 ..
             } => {
+                // Indices must match get_plugin_parameters order
                 match index {
                     0 => {
                         let configs = ["2.0", "5.0", "5.1", "7.1", "5.1.2", "5.1.4", "7.1.2", "7.1.4", "9.1.4", "9.1.6"];
@@ -611,13 +617,18 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                     3 => *gain_rear_ambient = (*gain_rear_ambient + delta * 0.1).clamp(0.0, 2.0),
                     4 => *lfe_cutoff_hz = (*lfe_cutoff_hz + delta * 5.0).clamp(20.0, 200.0),
                     5 => *stereo_width = (*stereo_width + delta * 0.05).clamp(0.0, 1.0),
-                    6 => *height_gain = (*height_gain + delta * 0.1).clamp(0.0, 2.0),
-                    7 => *lfe_gain = (*lfe_gain + delta * 0.1).clamp(0.0, 2.0),
-                    8 => if delta.abs() > 0.1 { *enable_subharmonic_synth = !*enable_subharmonic_synth },
-                    9 => *subharmonic_gain = (*subharmonic_gain + delta * 0.05).clamp(0.0, 1.0),
-                    10 => if delta.abs() > 0.1 { *enable_hr_direct = !*enable_hr_direct },
-                    11 => *hr_sharpen = (*hr_sharpen + delta * 0.05).clamp(0.0, 1.0),
-                    12 => *safety_cap_db = (*safety_cap_db + delta * 0.5).clamp(0.0, 12.0),
+                    6 => *bandpass_hz = (*bandpass_hz + delta * 10.0).clamp(100.0, 5000.0),
+                    7 => *height_gain = (*height_gain + delta * 0.1).clamp(0.0, 2.0),
+                    8 => *lfe_gain = (*lfe_gain + delta * 0.1).clamp(0.0, 2.0),
+                    9 => *enable_subharmonic_synth = !*enable_subharmonic_synth,
+                    10 => *subharmonic_gain = (*subharmonic_gain + delta * 0.05).clamp(0.0, 1.0),
+                    11 => *enable_hr_direct = !*enable_hr_direct,
+                    12 => *hr_sharpen = (*hr_sharpen + delta * 0.05).clamp(0.0, 1.0),
+                    13 => *safety_cap_db = (*safety_cap_db + delta * 0.5).clamp(0.0, 12.0),
+                    14 => *decorrelation_mode = (*decorrelation_mode + 1) % 2,
+                    15 => *bypass_decorrelation = !*bypass_decorrelation,
+                    16 => *bypass_transient_detection = !*bypass_transient_detection,
+                    17 => *bypass_all_processing = !*bypass_all_processing,
                     _ => return false,
                 }
                 return true;
@@ -639,7 +650,7 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                     3 => *hold_ms = (*hold_ms + delta).clamp(0.0, 500.0),
                     4 => *release_ms = (*release_ms + delta).clamp(1.0, 1000.0),
                     5 => *mix = (*mix + delta * 0.01).clamp(0.0, 1.0),
-                    6 => if delta.abs() > 0.1 { *link_channels = !*link_channels },
+                    6 => *link_channels = !*link_channels,
                     7 => *sidechain_hpf_hz = (*sidechain_hpf_hz + delta).clamp(20.0, 500.0),
                     _ => return false,
                 }
@@ -671,7 +682,7 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                 match index {
                     0 => return false, // SOFA file - not adjustable with delta
                     1 => *input_channels = (*input_channels as i64 + delta as i64).clamp(2, 16) as usize,
-                    2 => if delta.abs() > 0.1 { *enable_optimization = !*enable_optimization },
+                    2 => *enable_optimization = !*enable_optimization,
                     3 => *externalization = (*externalization + delta * 0.05).clamp(0.0, 1.0),
                     4 => *near_field_strength = (*near_field_strength + delta * 0.05).clamp(0.0, 1.0),
                     _ => return false,
@@ -707,7 +718,7 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                     1 => *surround_gain_db = (*surround_gain_db + delta * 0.5).clamp(SURROUND_GAIN_DB_MIN as f64, SURROUND_GAIN_DB_MAX as f64),
                     2 => *height_gain_db = (*height_gain_db + delta * 0.5).clamp(HEIGHT_GAIN_DB_MIN as f64, HEIGHT_GAIN_DB_MAX as f64),
                     3 => *lfe_gain_db = (*lfe_gain_db + delta * 0.5).clamp(LFE_GAIN_DB_MIN as f64, LFE_GAIN_DB_MAX as f64),
-                    4 => if delta.abs() > 0.1 { *phase_coherence = !*phase_coherence },
+                    4 => *phase_coherence = !*phase_coherence,
                     5 => *phase_blend_low_hz = (*phase_blend_low_hz + delta * 10.0).clamp(PHASE_BLEND_LOW_HZ_MIN as f64, PHASE_BLEND_LOW_HZ_MAX as f64),
                     6 => *phase_blend_high_hz = (*phase_blend_high_hz + delta * 10.0).clamp(PHASE_BLEND_HIGH_HZ_MIN as f64, PHASE_BLEND_HIGH_HZ_MAX as f64),
                     _ => return false,
@@ -726,7 +737,7 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                 match index {
                     0 => *stereo_width = (*stereo_width + delta * 0.05).clamp(STEREO_WIDTH_MIN as f64, STEREO_WIDTH_MAX as f64),
                     1 => *haas_delay_ms = (*haas_delay_ms + delta * 0.1).clamp(HAAS_DELAY_MS_MIN as f64, HAAS_DELAY_MS_MAX as f64),
-                    2 => if delta.abs() > 0.1 { *enable_comp_eq = !*enable_comp_eq },
+                    2 => *enable_comp_eq = !*enable_comp_eq,
                     3 => *comp_eq_depth_db = (*comp_eq_depth_db + delta * 0.1).clamp(COMP_EQ_DEPTH_DB_MIN as f64, COMP_EQ_DEPTH_DB_MAX as f64),
                     4 => *decor_low_hz = (*decor_low_hz + delta * 10.0).clamp(DECOR_LOW_HZ_MIN as f64, DECOR_LOW_HZ_MAX as f64),
                     5 => *decor_high_hz = (*decor_high_hz + delta * 10.0).clamp(DECOR_HIGH_HZ_MIN as f64, DECOR_HIGH_HZ_MAX as f64),
@@ -738,9 +749,9 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                 use sotf_plugins::param_specs::band_split::*;
                 match index {
                     0 => *frequency = (*frequency + delta * 10.0).clamp(FREQUENCY_MIN, FREQUENCY_MAX),
-                    1 => if delta.abs() > 0.1 {
+                    1 => {
                         *crossover_type = if crossover_type == "LR24" { "LR48".to_string() } else { "LR24".to_string() };
-                    },
+                    }
                     _ => return false,
                 }
                 return true;
@@ -930,10 +941,8 @@ impl App {
             artist_tree: Vec::new(),
             selected_tree_index: 0,
             plugin_chain: {
-                let mut chain = PluginChain::new();
-                // Add default analyzer plugins for LUFS and level meters
-                chain.add_plugin(&PluginType::LoudnessMonitor);
-                // Add ChannelMuteSolo plugin as last plugin (disabled by default)
+                let mut chain = PluginChain::with_default_rack();
+                // Add ChannelMuteSolo plugin after the default rack (disabled by default)
                 chain.add_plugin(&PluginType::ChannelMuteSolo);
                 chain
             },

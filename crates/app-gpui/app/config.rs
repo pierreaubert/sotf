@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use sotf_audio_player::DirectoryInfo;
+use sotf_audio_player::{DirectoryInfo, ReleaseChannel};
 
 use crate::app::types::{PlaybackDeviceConfig, RecordingDeviceConfig, RecordingSignalType};
 use crate::i18n::Language;
@@ -204,6 +204,9 @@ pub struct Config {
     /// Font scale factor (1.0 = normal)
     #[serde(default = "default_font_scale")]
     pub font_scale: f32,
+    /// Feature release channel (Prod/Beta/Alpha)
+    #[serde(default)]
+    pub release_channel: ReleaseChannel,
 }
 
 fn default_font_scale() -> f32 {
@@ -232,6 +235,7 @@ impl Config {
                 muted: false,
                 recording_config: RecordingConfigState::default(),
                 font_scale: default_font_scale(),
+                release_channel: ReleaseChannel::default(),
             });
         }
 

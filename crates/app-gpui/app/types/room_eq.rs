@@ -3,6 +3,7 @@
 // ============================================================================
 
 use serde::{Deserialize, Serialize};
+use sotf_audio_player::ReleaseChannel;
 
 use super::recording::{RecordingResult, RecordingState};
 use autoeq::roomeq::{
@@ -553,6 +554,24 @@ impl RoomEqOptimizationMode {
             "mixed" => RoomEqOptimizationMode::Mixed,
             _ => RoomEqOptimizationMode::Iir,
         }
+    }
+
+    /// Returns the maturity level of this optimization mode.
+    pub fn maturity(&self) -> ReleaseChannel {
+        match self {
+            RoomEqOptimizationMode::Iir => ReleaseChannel::Beta,
+            RoomEqOptimizationMode::Fir => ReleaseChannel::Alpha,
+            RoomEqOptimizationMode::Mixed => ReleaseChannel::Alpha,
+        }
+    }
+
+    /// Returns modes available at the given release channel level.
+    pub fn available(channel: ReleaseChannel) -> Vec<Self> {
+        Self::all()
+            .iter()
+            .copied()
+            .filter(|mode| channel.allows(mode.maturity()))
+            .collect()
     }
 }
 
@@ -1455,6 +1474,7 @@ impl RoomEqState {
             local_algo: self.optimizer_config.local_algo.clone(),
             psychoacoustic: self.optimizer_config.psychoacoustic,
             asymmetric_loss: self.optimizer_config.asymmetric_loss,
+            allow_delay: None,
             target_tilt: if self.optimizer_config.target_tilt.enabled {
                 let tilt_type = match self.optimizer_config.target_tilt.tilt_type.as_str() {
                     "harman" => TiltType::Harman,
@@ -1543,7 +1563,6 @@ impl RoomEqState {
             crossovers: Some(crossovers),
             target_curve: None,
             group_delay: None,
-            bass_management: None,
             optimizer,
             recording_config: None,
         }

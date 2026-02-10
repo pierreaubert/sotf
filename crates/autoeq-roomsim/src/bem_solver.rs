@@ -16,6 +16,7 @@
 //! Use hybrid mode for full frequency range (BEM for low freq, ISM for high freq).
 
 use math_audio_bem::room_acoustics::{
+    Directivity as BemDirectivity, DirectivityGrid as BemDirectivityGrid,
     Point3D as BemPoint3D, RectangularRoom as BemRectangularRoom, RoomGeometry as BemRoomGeometry,
     RoomMesh, Source as BemSource,
 };
@@ -43,7 +44,7 @@ pub fn from_bem_point(p: &BemPoint3D) -> Point3D {
 /// Convert our Source to math-bem's Source
 pub fn to_bem_source(source: &Source) -> BemSource {
     let bem_position = to_bem_point(&source.position);
-    let bem_directivity = math_audio_bem::room_acoustics::DirectivityPattern::omnidirectional();
+    let bem_directivity = BemDirectivity::Grid(BemDirectivityGrid::omnidirectional());
 
     let bem_crossover = match &source.crossover {
         crate::CrossoverFilter::FullRange => {

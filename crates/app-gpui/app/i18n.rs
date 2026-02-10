@@ -222,6 +222,9 @@ pub struct Translations {
     pub settings_tab_room_eq: &'static str,
     pub settings_tab_headphone: &'static str,
     pub settings_tab_spinorama: &'static str,
+    pub settings_tab_release_channel: &'static str,
+    pub settings_release_channel_title: &'static str,
+    pub settings_release_channel_description: &'static str,
 
     // Playback controls
     pub playback_play: &'static str,
@@ -449,6 +452,9 @@ impl Translations {
             settings_tab_room_eq: "Room EQ",
             settings_tab_headphone: "Headphone",
             settings_tab_spinorama: "Spinorama",
+            settings_tab_release_channel: "Features",
+            settings_release_channel_title: "Feature Release Channel",
+            settings_release_channel_description: "Control which features are visible. Stable shows only production-ready features. Beta and Alpha unlock experimental features.",
 
             playback_play: "Play",
             playback_pause: "Pause",
@@ -658,6 +664,9 @@ impl Translations {
             settings_tab_room_eq: "EQ Pièce",
             settings_tab_headphone: "Casque",
             settings_tab_spinorama: "Spinorama",
+            settings_tab_release_channel: "Fonctions",
+            settings_release_channel_title: "Canal de fonctionnalités",
+            settings_release_channel_description: "Contrôlez les fonctionnalités visibles. Stable affiche uniquement les fonctions prêtes pour la production. Bêta et Alpha débloquent les fonctions expérimentales.",
 
             playback_play: "Lecture",
             playback_pause: "Pause",
@@ -867,6 +876,9 @@ impl Translations {
             settings_tab_room_eq: "Raum-EQ",
             settings_tab_headphone: "Kopfhörer",
             settings_tab_spinorama: "Spinorama",
+            settings_tab_release_channel: "Funktionen",
+            settings_release_channel_title: "Feature-Kanal",
+            settings_release_channel_description: "Steuern Sie, welche Funktionen sichtbar sind. Stabil zeigt nur produktionsreife Funktionen. Beta und Alpha schalten experimentelle Funktionen frei.",
 
             playback_play: "Wiedergabe",
             playback_pause: "Pause",
@@ -1076,6 +1088,9 @@ impl Translations {
             settings_tab_room_eq: "EQ de sala",
             settings_tab_headphone: "Auriculares",
             settings_tab_spinorama: "Spinorama",
+            settings_tab_release_channel: "Funciones",
+            settings_release_channel_title: "Canal de funciones",
+            settings_release_channel_description: "Controle qué funciones son visibles. Estable muestra solo funciones listas para producción. Beta y Alpha desbloquean funciones experimentales.",
 
             playback_play: "Reproducir",
             playback_pause: "Pausa",

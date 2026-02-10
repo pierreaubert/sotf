@@ -50,6 +50,9 @@ impl PlayerView {
             crate::app::SettingsTab::Plugins => {
                 self.render_plugins_settings_content(cx).into_any_element()
             }
+            crate::app::SettingsTab::ReleaseChannel => self
+                .render_release_channel_settings_content(cx)
+                .into_any_element(),
         };
 
         // Tabs are now custom-rendered to avoid context issues
@@ -121,6 +124,10 @@ impl PlayerView {
                             (
                                 translations.settings_tab_plugins,
                                 crate::app::SettingsTab::Plugins,
+                            ),
+                            (
+                                translations.settings_tab_release_channel,
+                                crate::app::SettingsTab::ReleaseChannel,
                             ),
                         ];
 

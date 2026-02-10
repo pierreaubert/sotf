@@ -16,7 +16,7 @@ rustflags = [
   "-C", "link-arg=Accelerate",
   "-C", "link-arg=-L /Applications/Xcode.app/Contents/Frameworks",
   # for hdf5
-  "-C", "link-args=-Wl,-rpath,/opt/homebrew/Cellar/hdf5@1.10/lib",
+  "-C", "link-args=-Wl,-rpath,/opt/homebrew/Cellar/hdf5/2.0.0/lib",
   # for clang but why?
   "-C", "link-arg=-L /opt/homebrew/Cellar/llvm/21.1.7/lib",
   # link with llvm or sold (commented out - using system default linker)

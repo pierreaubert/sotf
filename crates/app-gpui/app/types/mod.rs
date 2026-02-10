@@ -238,6 +238,7 @@ pub struct OptimizationUiState {
 }
 
 pub mod calibration;
+pub mod maturity;
 pub mod queue;
 pub mod settings;
 pub mod stats;

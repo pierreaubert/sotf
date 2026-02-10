@@ -1,21 +1,21 @@
 """Functions for extracting data from roomeq output JSON."""
 
+import math
 from pathlib import Path
 
 
-def compute_y_range(curves: list[dict | None], padding: float = 2.0) -> tuple[float, float]:
-    """Compute dynamic y-axis range from curve data."""
+def compute_y_range(curves: list[dict | None]) -> tuple[float, float]:
+    """Compute y-axis range from curve data: 50 dB span, max rounded up to next multiple of 5."""
     all_spl = []
     for curve in curves:
         if curve and "spl" in curve:
             all_spl.extend(curve["spl"])
 
     if not all_spl:
-        return (-20, 20)
+        return (-20, 30)
 
-    min_spl = min(all_spl)
-    max_spl = max(all_spl)
-    return (min_spl - padding, max_spl + padding)
+    upper = math.ceil(max(all_spl) / 5) * 5
+    return (upper - 50, upper)
 
 
 def compute_average_spl_in_range(

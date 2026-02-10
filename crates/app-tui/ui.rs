@@ -1151,12 +1151,7 @@ fn draw_plugin_chain(f: &mut Frame, area: Rect, app: &App) {
                 plugin.plugin_type().name()
             );
 
-            let style = if i == app.selected_plugin_index {
-                Style::default()
-                    .fg(app.theme.fg_selected)
-                    .bg(app.theme.bg_selected)
-                    .add_modifier(Modifier::BOLD)
-            } else if plugin.enabled {
+            let style = if plugin.enabled {
                 Style::default().fg(app.theme.accent_success)
             } else {
                 Style::default().fg(app.theme.fg_muted)
@@ -1182,13 +1177,26 @@ fn draw_plugin_chain(f: &mut Frame, area: Rect, app: &App) {
         " | 'e'=edit, 't'=toggle, 'd'=remove, '↑/↓'=move, 'a'=add, 's'=save, 'l'=load"
     };
 
-    let list = List::new(items).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(format!("{}{}", title, help_text)),
-    );
+    let list = List::new(items)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(format!("{}{}", title, help_text)),
+        )
+        .highlight_style(
+            Style::default()
+                .fg(app.theme.fg_selected)
+                .bg(app.theme.bg_selected)
+                .add_modifier(Modifier::BOLD),
+        );
 
-    f.render_widget(list, area);
+    let mut state = ListState::default();
+    if !app.plugin_chain.is_empty() {
+        state.select(Some(app.selected_plugin_index));
+    }
+
+    use ratatui::widgets::StatefulWidget;
+    StatefulWidget::render(list, area, f.buffer_mut(), &mut state);
 }
 
 fn draw_available_plugins(f: &mut Frame, area: Rect, app: &App) {
@@ -1197,18 +1205,9 @@ fn draw_available_plugins(f: &mut Frame, area: Rect, app: &App) {
 
     let items: Vec<ListItem> = plugins
         .iter()
-        .enumerate()
-        .map(|(i, plugin_type)| {
+        .map(|plugin_type| {
             let content = format!("{}\n  {}", plugin_type.name(), plugin_type.description());
-            let style = if is_selecting && i == app.add_plugin_selected_index {
-                Style::default()
-                    .fg(app.theme.fg_selected)
-                    .bg(app.theme.bg_selected)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(app.theme.accent_primary)
-            };
-            ListItem::new(content).style(style)
+            ListItem::new(content).style(Style::default().fg(app.theme.accent_primary))
         })
         .collect();
 
@@ -1224,14 +1223,27 @@ fn draw_available_plugins(f: &mut Frame, area: Rect, app: &App) {
         Style::default()
     };
 
-    let list = List::new(items).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_style(border_style)
-            .title(title),
-    );
+    let list = List::new(items)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(border_style)
+                .title(title),
+        )
+        .highlight_style(
+            Style::default()
+                .fg(app.theme.fg_selected)
+                .bg(app.theme.bg_selected)
+                .add_modifier(Modifier::BOLD),
+        );
 
-    f.render_widget(list, area);
+    let mut state = ListState::default();
+    if is_selecting {
+        state.select(Some(app.add_plugin_selected_index));
+    }
+
+    use ratatui::widgets::StatefulWidget;
+    StatefulWidget::render(list, area, f.buffer_mut(), &mut state);
 }
 
 fn draw_devices_screen(f: &mut Frame, area: Rect, app: &App) {
@@ -2250,10 +2262,12 @@ fn draw_plugin_editor_modal(f: &mut Frame, app: &App) {
             height: modal_height,
         };
 
-        // Clear the background with a block
+        // Clear the background
+        f.render_widget(Clear, modal_area);
+
         let block = Block::default()
             .borders(Borders::ALL)
-            .style(Style::default().bg(app.theme.bg_primary))
+            .style(Style::default().bg(app.theme.bg_primary).fg(app.theme.fg_primary))
             .title(format!(
                 "Edit {} Plugin (ESC to close)",
                 plugin.plugin_type().name()
@@ -2269,18 +2283,24 @@ fn draw_plugin_editor_modal(f: &mut Frame, app: &App) {
             height: modal_area.height.saturating_sub(2),
         };
 
+        let base_style = Style::default().bg(app.theme.bg_primary).fg(app.theme.fg_primary);
+
         // Build parameter list
         let mut lines = Vec::new();
         lines.push(Line::from(vec![
-            Span::styled("Use ", Style::default()),
-            Span::styled("↑/↓", Style::default().fg(app.theme.accent_primary)),
-            Span::styled(" to select parameter, ", Style::default()),
-            Span::styled("←/→", Style::default().fg(app.theme.accent_primary)),
-            Span::styled(" to adjust value", Style::default()),
+            Span::styled("Use ", base_style),
+            Span::styled("↑/↓", base_style.fg(app.theme.accent_primary)),
+            Span::styled(" to select parameter, ", base_style),
+            Span::styled("←/→", base_style.fg(app.theme.accent_primary)),
+            Span::styled(" to adjust value", base_style),
         ]));
-        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled("", base_style)));
 
         let params = get_plugin_parameters(&plugin.settings, app.plugin_param_selection);
+
+        // Compute the max label width for right-alignment
+        let max_label_width = params.iter().map(|(name, _)| name.len()).max().unwrap_or(0);
+
         for (i, (name, value)) in params.iter().enumerate() {
             let style = if i == app.plugin_param_selection {
                 Style::default()
@@ -2288,17 +2308,21 @@ fn draw_plugin_editor_modal(f: &mut Frame, app: &App) {
                     .bg(app.theme.bg_selected)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default()
+                base_style
             };
 
+            // Right-align the label by padding on the left
+            let padded_name = format!("{:>width$}", name, width = max_label_width + 1);
+
             lines.push(Line::from(vec![
-                Span::styled(format!("  {}: ", name), style),
+                Span::styled(format!("{} ", padded_name), style),
                 Span::styled(value.to_string(), style.fg(app.theme.title_color)),
             ]));
         }
 
         let paragraph = Paragraph::new(lines)
             .block(Block::default())
+            .style(base_style)
             .wrap(Wrap { trim: false });
 
         f.render_widget(paragraph, inner);

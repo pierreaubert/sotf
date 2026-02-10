@@ -13,10 +13,9 @@ impl PlayerView {
         let theme = state.app.ui_state.theme.clone();
         let room_eq = &state.app.measurement_state.room_eq_state;
         let current_mode = room_eq.optimizer_config.mode;
+        let release_channel = state.app.ui_state.release_channel;
 
-        // Check if we have phase data (required for FIR/Mixed)
-        // For now, let's assume all modes are available, but maybe warn if data seems limited.
-        // Or simply allow selection.
+        let available_modes = RoomEqOptimizationMode::available(release_channel);
 
         VStack::new()
             .spacing(StackSpacing::Lg)
@@ -34,7 +33,7 @@ impl PlayerView {
                 HStack::new()
                     .spacing(StackSpacing::Md)
                     .align(StackAlign::Stretch)
-                    .children(RoomEqOptimizationMode::all().iter().map(|mode| {
+                    .children(available_modes.iter().map(|mode| {
                         let is_selected = current_mode == *mode;
                         let mode_val = *mode;
 

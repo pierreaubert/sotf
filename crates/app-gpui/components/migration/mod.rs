@@ -195,7 +195,6 @@ pub fn write_room_config(
         crossovers: None,
         target_curve: None,
         group_delay: None,
-        bass_management: None,
         optimizer: OptimizerConfig::default(),
         recording_config,
     };

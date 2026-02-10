@@ -10,6 +10,7 @@ use crate::app::theme::{Theme, ThemeId};
 use crate::app::types::{ContextMenuState, ToastMessage};
 use crate::app::{ActiveMenu, InputMode, LayoutMode, Screen, SettingsTab};
 use gpui::EventEmitter;
+use sotf_audio_player::ReleaseChannel;
 
 #[derive(Debug, Clone)]
 pub struct LayoutState {
@@ -89,6 +90,8 @@ pub struct UIState {
     pub startup_db_check_done: bool,
     /// Font scale factor (1.0 = normal, >1.0 = larger, <1.0 = smaller)
     pub font_scale: f32,
+    /// Feature release channel controlling visibility of beta/alpha features
+    pub release_channel: ReleaseChannel,
 }
 
 impl Default for UIState {
@@ -116,6 +119,7 @@ impl Default for UIState {
             should_quit: false,
             startup_db_check_done: false,
             font_scale: 1.0,
+            release_channel: ReleaseChannel::default(),
         }
     }
 }

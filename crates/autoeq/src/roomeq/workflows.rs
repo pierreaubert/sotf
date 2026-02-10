@@ -6,7 +6,7 @@ use crate::response;
 use crate::Curve;
 use log::info;
 use math_audio_dsp::analysis::compute_average_response;
-use math_audio_iir_fir::{Biquad, BiquadFilterType};
+use math_audio_iir_fir::Biquad;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -14,11 +14,11 @@ use super::eq;
 use super::crossover;
 use super::output;
 use super::optimize::{
-    ChannelOptimizationResult, RoomOptimizationResult, 
+    ChannelOptimizationResult, RoomOptimizationResult,
 };
 use super::types::{
-    ChannelDspChain, OptimizationMetadata, RoomConfig, SystemConfig, 
-    SpeakerConfig, PluginConfigWrapper,
+    ChannelDspChain, OptimizationMetadata, RoomConfig, SystemConfig,
+    SpeakerConfig,
 };
 
 /// Align channel levels by normalizing down to the lowest level.
@@ -55,6 +55,22 @@ pub fn align_channels_to_lowest(
               name, diff, mean, min_mean);
     }
     gains
+}
+
+/// Compute flat_loss score for a curve within a frequency range.
+///
+/// Normalizes SPL by subtracting the mean in the given range, then computes
+/// the weighted MSE — same metric used in the main optimization path.
+fn compute_flat_score(curve: &Curve, min_freq: f64, max_freq: f64) -> f64 {
+    let freqs_f32: Vec<f32> = curve.freq.iter().map(|&f| f as f32).collect();
+    let spl_f32: Vec<f32> = curve.spl.iter().map(|&s| s as f32).collect();
+    let mean = compute_average_response(
+        &freqs_f32,
+        &spl_f32,
+        Some((min_freq as f32, max_freq as f32)),
+    ) as f64;
+    let normalized_spl = &curve.spl - mean;
+    crate::loss::flat_loss(&curve.freq, &normalized_spl, min_freq, max_freq)
 }
 
 /// Helper to load curves for all logical channels
@@ -99,21 +115,28 @@ pub fn optimize_stereo_2_0(
     let gains = align_channels_to_lowest(&curves, &ranges);
 
     // 3. Optimization
+    let min_freq = config.optimizer.min_freq;
+    let max_freq = config.optimizer.max_freq;
     let mut channel_chains = HashMap::new();
     let mut channel_results = HashMap::new();
+    let mut pre_scores = Vec::new();
+    let mut post_scores = Vec::new();
 
     for (role, curve) in &curves {
         let gain = *gains.get(role).unwrap_or(&0.0);
-        
+
         // Apply gain to curve for optimization context
         let mut aligned_curve = curve.clone();
         for s in aligned_curve.spl.iter_mut() {
             *s += gain;
         }
 
-        info!("  Optimizing '{}' with alignment gain {:.2} dB", role, gain);
+        // Pre-optimization score
+        let pre_score = compute_flat_score(&aligned_curve, min_freq, max_freq);
 
-        let (filters, score) = eq::optimize_channel_eq(
+        info!("  Optimizing '{}' with alignment gain {:.2} dB (pre_score={:.4})", role, gain, pre_score);
+
+        let (filters, _loss) = eq::optimize_channel_eq(
             &aligned_curve,
             &config.optimizer,
             config.target_curve.as_ref(),
@@ -133,20 +156,27 @@ pub fn optimize_stereo_2_0(
         let resp = response::compute_peq_complex_response(&filters, &aligned_curve.freq, sample_rate);
         let final_curve_obj = response::apply_complex_response(&aligned_curve, &resp);
 
+        // Post-optimization score
+        let post_score = compute_flat_score(&final_curve_obj, min_freq, max_freq);
+
+        info!("  '{}' post_score={:.4}", role, post_score);
+
         let chain = ChannelDspChain {
             channel: role.clone(),
             plugins,
             drivers: None,
-            initial_curve: Some((&aligned_curve).into()), 
+            initial_curve: Some((&aligned_curve).into()),
             final_curve: Some((&final_curve_obj).into()),
         };
 
         channel_chains.insert(role.clone(), chain);
-        
+        pre_scores.push(pre_score);
+        post_scores.push(post_score);
+
         channel_results.insert(role.clone(), ChannelOptimizationResult {
             name: role.clone(),
-            pre_score: 0.0, // TODO
-            post_score: score,
+            pre_score,
+            post_score,
             initial_curve: curve.clone(),
             final_curve: final_curve_obj,
             biquads: filters,
@@ -154,14 +184,19 @@ pub fn optimize_stereo_2_0(
         });
     }
 
+    let avg_pre = pre_scores.iter().sum::<f64>() / pre_scores.len() as f64;
+    let avg_post = post_scores.iter().sum::<f64>() / post_scores.len() as f64;
+
+    info!("Average pre-score: {:.4}, post-score: {:.4}", avg_pre, avg_post);
+
     Ok(RoomOptimizationResult {
         channels: channel_chains,
         channel_results,
-        combined_pre_score: 0.0,
-        combined_post_score: 0.0,
+        combined_pre_score: avg_pre,
+        combined_post_score: avg_post,
         metadata: OptimizationMetadata {
-            pre_score: 0.0,
-            post_score: 0.0,
+            pre_score: avg_pre,
+            post_score: avg_post,
             algorithm: config.optimizer.algorithm.clone(),
             iterations: config.optimizer.max_iter,
             timestamp: chrono::Utc::now().to_rfc3339(),
@@ -471,14 +506,69 @@ pub fn optimize_stereo_2_1(
     };
     channel_chains.insert(sub_role.to_string(), sub_chain);
 
+    // Compute scores per channel
+    let min_freq = config.optimizer.min_freq;
+    let max_freq = config.optimizer.max_freq;
+    let mut channel_results = HashMap::new();
+    let mut pre_scores = Vec::new();
+    let mut post_scores = Vec::new();
+
+    for role in ["L", "R"] {
+        let pre_score = compute_flat_score(&aligned_curves[role], min_freq, max_freq);
+        let final_curve_obj = if let Some(e) = post_eq_filters.get(role) {
+            let intermediate = if role == "L" { &l_post } else { &r_post };
+            let resp = response::compute_peq_complex_response(e, &intermediate.freq, sample_rate);
+            response::apply_complex_response(intermediate, &resp)
+        } else if role == "L" {
+            l_post.clone()
+        } else {
+            r_post.clone()
+        };
+        let post_score = compute_flat_score(&final_curve_obj, min_freq, max_freq);
+
+        pre_scores.push(pre_score);
+        post_scores.push(post_score);
+        channel_results.insert(role.to_string(), ChannelOptimizationResult {
+            name: role.to_string(),
+            pre_score,
+            post_score,
+            initial_curve: aligned_curves[role].clone(),
+            final_curve: final_curve_obj,
+            biquads: post_eq_filters.get(role).cloned().unwrap_or_default(),
+            fir_coeffs: None,
+        });
+    }
+
+    // Sub channel
+    {
+        let pre_score = compute_flat_score(&aligned_curves[sub_role], min_freq.max(20.0), final_xo_freq);
+        let post_score = compute_flat_score(&final_sub_curve, min_freq.max(20.0), final_xo_freq);
+        pre_scores.push(pre_score);
+        post_scores.push(post_score);
+        channel_results.insert(sub_role.to_string(), ChannelOptimizationResult {
+            name: sub_role.to_string(),
+            pre_score,
+            post_score,
+            initial_curve: aligned_curves[sub_role].clone(),
+            final_curve: final_sub_curve.clone(),
+            biquads: post_eq_filters.get(sub_role).cloned().unwrap_or_default(),
+            fir_coeffs: None,
+        });
+    }
+
+    let avg_pre = pre_scores.iter().sum::<f64>() / pre_scores.len() as f64;
+    let avg_post = post_scores.iter().sum::<f64>() / post_scores.len() as f64;
+
+    info!("Average pre-score: {:.4}, post-score: {:.4}", avg_pre, avg_post);
+
     Ok(RoomOptimizationResult {
         channels: channel_chains,
-        channel_results: HashMap::new(), // TODO: Populate
-        combined_pre_score: 0.0,
-        combined_post_score: 0.0,
+        channel_results,
+        combined_pre_score: avg_pre,
+        combined_post_score: avg_post,
         metadata: OptimizationMetadata {
-            pre_score: 0.0,
-            post_score: 0.0,
+            pre_score: avg_pre,
+            post_score: avg_post,
             algorithm: config.optimizer.algorithm.clone(),
             iterations: config.optimizer.max_iter,
             timestamp: chrono::Utc::now().to_rfc3339(),

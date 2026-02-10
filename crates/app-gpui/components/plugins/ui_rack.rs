@@ -1104,6 +1104,7 @@ impl PlayerView {
     fn render_add_plugin_buttons(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
+        let release_channel = state.app.ui_state.release_channel;
 
         // Get list of plugins already in chain
         let present_plugins: Vec<_> = state
@@ -1158,6 +1159,9 @@ impl PlayerView {
             .into_iter()
             .enumerate()
             .filter_map(|(i, pt)| {
+                if !release_channel.allows(pt.maturity()) {
+                    return None;
+                }
                 let is_single_instance =
                     matches!(pt, PluginType::Upmixer | PluginType::BinauralDecoder);
                 if is_single_instance && present_plugins.contains(&pt) {
@@ -1202,6 +1206,9 @@ impl PlayerView {
             .into_iter()
             .enumerate()
             .filter_map(|(i, pt)| {
+                if !release_channel.allows(pt.maturity()) {
+                    return None;
+                }
                 let is_single_instance =
                     matches!(pt, PluginType::Upmixer | PluginType::BinauralDecoder);
                 if is_single_instance && present_plugins.contains(&pt) {

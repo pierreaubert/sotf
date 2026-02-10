@@ -326,19 +326,68 @@ impl App {
         }
     }
 
-    /// Set current screen with debug logging and state history capture
+    /// Set current screen with debug logging and state history capture.
+    /// If the screen's maturity exceeds the current release channel, redirects to Library.
     pub fn set_screen(&mut self, screen: crate::app::Screen, trigger: &str) {
+        let target = if self.ui_state.release_channel.allows(screen.maturity()) {
+            screen
+        } else {
+            log::info!(
+                "Screen {:?} requires {:?}, but release channel is {:?} — redirecting to Library",
+                screen,
+                screen.maturity(),
+                self.ui_state.release_channel
+            );
+            crate::app::Screen::Library
+        };
         let old_screen = self.ui_state.current_screen;
-        if old_screen != screen {
-            crate::app::debug::log_screen_transition(old_screen, screen, trigger);
+        if old_screen != target {
+            crate::app::debug::log_screen_transition(old_screen, target, trigger);
             self.ui_state.last_screen = old_screen;
             self.state_history.capture(
-                screen,
+                target,
                 self.ui_state.input_mode,
                 self.audio_device_state.current_output_device_name.clone(),
                 format!("screen: {}", trigger),
             );
-            self.ui_state.current_screen = screen;
+            self.ui_state.current_screen = target;
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Release channel helpers
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Current feature release channel.
+    pub fn release_channel(&self) -> sotf_audio_player::ReleaseChannel {
+        self.ui_state.release_channel
+    }
+
+    /// Whether the given screen is accessible at the current release channel.
+    pub fn is_screen_available(&self, screen: &crate::app::Screen) -> bool {
+        self.ui_state.release_channel.allows(screen.maturity())
+    }
+
+    /// Whether the given plugin type is accessible at the current release channel.
+    pub fn is_plugin_available(&self, plugin_type: &sotf_audio_player::PluginType) -> bool {
+        self.ui_state.release_channel.allows(plugin_type.maturity())
+    }
+
+    /// Maximum number of RoomEQ channels at the current release channel.
+    pub fn max_room_eq_channels(&self) -> usize {
+        match self.ui_state.release_channel {
+            sotf_audio_player::ReleaseChannel::Prod => 0,
+            sotf_audio_player::ReleaseChannel::Beta => 3,
+            sotf_audio_player::ReleaseChannel::Alpha => 128,
+        }
+    }
+
+    /// Set the release channel and redirect if current screen is no longer available.
+    pub fn set_release_channel(&mut self, channel: sotf_audio_player::ReleaseChannel) {
+        self.ui_state.release_channel = channel;
+        // If current screen is no longer available, redirect to Library
+        if !self.is_screen_available(&self.ui_state.current_screen) {
+            self.ui_state.current_screen = crate::app::Screen::Library;
         }
     }
 
@@ -764,6 +813,9 @@ impl App {
         // Restore font scale
         self.ui_state.font_scale = config.font_scale;
 
+        // Restore release channel
+        self.ui_state.release_channel = config.release_channel;
+
         // Build LayoutState from config
         let layout_state = LayoutState {
             queue_panel_ratio: config.panel_layout.queue_ratio,
@@ -912,6 +964,7 @@ impl App {
                     .clone(),
             },
             font_scale: self.ui_state.font_scale,
+            release_channel: self.ui_state.release_channel,
         };
         config.save()?;
         Ok(())

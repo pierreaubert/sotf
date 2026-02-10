@@ -3,7 +3,9 @@ macro_rules! quick_add_plugin_handler {
     ($fn_name:ident, $action:ty, $plugin_type:expr) => {
         fn $fn_name(&mut self, _: &$action, _: &mut Window, cx: &mut Context<Self>) {
             self.state.update(cx, |state, _cx| {
-                state.app.add_plugin(&$plugin_type);
+                if state.app.is_plugin_available(&$plugin_type) {
+                    state.app.add_plugin(&$plugin_type);
+                }
             });
             cx.notify();
         }
