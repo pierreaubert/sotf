@@ -1,7 +1,7 @@
 //! JSON configuration for room acoustics simulations
 
 use crate::geometry::{LShapedRoom, RectangularRoom, RoomGeometry};
-use crate::source::{CrossoverFilter, DirectivityPattern, Source};
+use crate::source::{CrossoverFilter, Directivity, DirectivityGrid, Source};
 use crate::types::{Point3D, log_space};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -193,7 +193,7 @@ fn default_amplitude() -> f64 {
 impl SourceConfig {
     /// Convert to Source
     pub fn to_source(&self) -> Result<Source, String> {
-        let directivity = self.directivity.to_pattern()?;
+        let directivity = self.directivity.to_directivity()?;
         let crossover = self.crossover.to_filter();
 
         let source = Source::new(self.position.into(), directivity, self.amplitude)
@@ -205,13 +205,20 @@ impl SourceConfig {
 }
 
 /// Directivity pattern configuration
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum DirectivityConfig {
     /// Omnidirectional (spherical) radiation pattern
     #[serde(rename = "omnidirectional")]
-    #[default]
     Omnidirectional,
+    /// Classical frequency-dependent directional source
+    #[serde(rename = "classical")]
+    Classical {
+        /// Horizontal beamwidth (degrees)
+        horizontal_angle: f64,
+        /// Vertical beamwidth (degrees)
+        vertical_angle: f64,
+    },
     /// Custom directivity from measured data
     #[serde(rename = "custom")]
     Custom {
@@ -224,11 +231,20 @@ pub enum DirectivityConfig {
     },
 }
 
+impl Default for DirectivityConfig {
+    fn default() -> Self {
+        Self::Omnidirectional
+    }
+}
+
 impl DirectivityConfig {
-    /// Convert to DirectivityPattern
-    pub fn to_pattern(&self) -> Result<DirectivityPattern, String> {
+    /// Convert to Directivity
+    pub fn to_directivity(&self) -> Result<Directivity, String> {
         match self {
-            DirectivityConfig::Omnidirectional => Ok(DirectivityPattern::omnidirectional()),
+            DirectivityConfig::Omnidirectional => Ok(Directivity::Grid(DirectivityGrid::omnidirectional())),
+            DirectivityConfig::Classical { horizontal_angle, vertical_angle } => {
+                Ok(Directivity::Classical { h_angle: *horizontal_angle, v_angle: *vertical_angle })
+            }
             DirectivityConfig::Custom {
                 horizontal_angles,
                 vertical_angles,
@@ -265,11 +281,11 @@ impl DirectivityConfig {
                 let mag_array = Array2::from_shape_vec((n_vert, n_horiz), flat)
                     .map_err(|e| format!("Failed to create magnitude array: {}", e))?;
 
-                Ok(DirectivityPattern {
+                Ok(Directivity::Grid(DirectivityGrid {
                     horizontal_angles: horizontal_angles.clone(),
                     vertical_angles: vertical_angles.clone(),
                     magnitude: mag_array,
-                })
+                }))
             }
         }
     }
