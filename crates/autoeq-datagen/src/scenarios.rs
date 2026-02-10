@@ -32,7 +32,7 @@ const CROSSOVER_FREQ: f64 = 80.0;
 const CROSSOVER_ORDER: u32 = 4;
 
 fn make_hp_source(position: Point3D, name: &str) -> Source {
-    Source::omnidirectional(position, 1.0)
+    Source::classical(position, 60.0, 40.0, 1.0)
         .with_name(name.to_string())
         .with_crossover(CrossoverFilter::Highpass {
             cutoff_freq: CROSSOVER_FREQ,
@@ -50,7 +50,7 @@ fn make_lp_source(position: Point3D, name: &str) -> Source {
 }
 
 fn make_fullrange_source(position: Point3D, name: &str) -> Source {
-    Source::omnidirectional(position, 1.0).with_name(name.to_string())
+    Source::classical(position, 60.0, 40.0, 1.0).with_name(name.to_string())
 }
 
 /// Typical domestic room boundary absorption coefficients.
@@ -84,9 +84,10 @@ fn make_simulation(
 /// Generate all 17 scenarios
 pub fn all_scenarios() -> Vec<Scenario> {
     vec![
-        scenario_01_small_stereo(),
-        scenario_02_small_2_1(),
-        scenario_03_small_multi_sub(),
+        scenario_01_small_stereo_2_0(),
+        scenario_02_small_stereo_2_1(),
+        scenario_03_small_stereo_2_2_mso(),
+        scenario_03_small_stereo_2_2_cardioid(),
         scenario_04_medium_stereo(),
         scenario_05_medium_2_1(),
         scenario_06_medium_multi_sub_4(),
@@ -118,7 +119,7 @@ fn small_room() -> RectangularRoom {
 }
 
 /// Scenario 1: Small room, stereo 2.0, fullrange, 1 LP
-fn scenario_01_small_stereo() -> Scenario {
+fn scenario_01_small_stereo_2_0() -> Scenario {
     let room = small_room();
     let left = make_fullrange_source(Point3D::new(0.8, 0.3, 1.1), "left");
     let right = make_fullrange_source(Point3D::new(2.2, 0.3, 1.1), "right");
@@ -133,7 +134,7 @@ fn scenario_01_small_stereo() -> Scenario {
 }
 
 /// Scenario 2: Small room, 2.1, HP@80Hz mains + LP@80Hz sub, 1 LP
-fn scenario_02_small_2_1() -> Scenario {
+fn scenario_02_small_stereo_2_1() -> Scenario {
     let room = small_room();
     let left = make_hp_source(Point3D::new(0.8, 0.3, 1.1), "left");
     let right = make_hp_source(Point3D::new(2.2, 0.3, 1.1), "right");
@@ -148,8 +149,8 @@ fn scenario_02_small_2_1() -> Scenario {
     }
 }
 
-/// Scenario 3: Small room, 2 subs (corners) + HP mains, 1 LP
-fn scenario_03_small_multi_sub() -> Scenario {
+/// Scenario 3a: Small room, 2 subs (corners) + HP mains, 1 LP (MSO)
+fn scenario_03_small_stereo_2_2_mso() -> Scenario {
     let room = small_room();
     let left = make_hp_source(Point3D::new(0.8, 0.3, 1.1), "left");
     let right = make_hp_source(Point3D::new(2.2, 0.3, 1.1), "right");
@@ -158,14 +159,38 @@ fn scenario_03_small_multi_sub() -> Scenario {
     let lp = Point3D::new(1.5, 2.0, 1.1);
 
     Scenario {
-        name: "small_multi_sub_2".to_string(),
-        description: "Small 3x3x2.4m room, 2 subs in front corners".to_string(),
+        name: "small_stereo_2_2_mso".to_string(),
+        description: "Small 3x3x2.4m room, 2 subs in front corners (MSO)".to_string(),
         simulation: make_simulation(room, vec![left, right, sub1, sub2], vec![lp]),
         source_names: vec![
             "left".to_string(),
             "right".to_string(),
             "sub1".to_string(),
             "sub2".to_string(),
+        ],
+    }
+}
+
+/// Scenario 3b: Small room, 2 subs (stacked cardioid) + HP mains, 1 LP
+fn scenario_03_small_stereo_2_2_cardioid() -> Scenario {
+    let room = small_room();
+    let left = make_hp_source(Point3D::new(0.8, 0.3, 1.1), "left");
+    let right = make_hp_source(Point3D::new(2.2, 0.3, 1.1), "right");
+    // Stacked subs at front-left (like single sub in scenario 2)
+    // Bottom sub at Z=0.15, Top sub at Z=0.65 (0.5m separation)
+    let sub_bottom = make_lp_source(Point3D::new(0.3, 0.3, 0.15), "sub_bottom");
+    let sub_top = make_lp_source(Point3D::new(0.3, 0.3, 0.65), "sub_top");
+    let lp = Point3D::new(1.5, 2.0, 1.1);
+
+    Scenario {
+        name: "small_stereo_2_2_cardioid".to_string(),
+        description: "Small 3x3x2.4m room, stacked cardioid subs".to_string(),
+        simulation: make_simulation(room, vec![left, right, sub_bottom, sub_top], vec![lp]),
+        source_names: vec![
+            "left".to_string(),
+            "right".to_string(),
+            "sub_bottom".to_string(),
+            "sub_top".to_string(),
         ],
     }
 }
@@ -561,7 +586,7 @@ mod tests {
     #[test]
     fn test_all_scenarios_count() {
         let scenarios = all_scenarios();
-        assert_eq!(scenarios.len(), 17);
+        assert_eq!(scenarios.len(), 18);
     }
 
     #[test]

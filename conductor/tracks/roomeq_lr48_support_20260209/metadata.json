@@ -1,0 +1,13 @@
+{
+  "id": "roomeq_lr48_support_20260209",
+  "name": "RoomEQ LR48 Support",
+  "description": "Add full support for Linkwitz-Riley 48 dB/oct (8th order) crossovers.",
+  "status": "done",
+  "created_date": "2026-02-09",
+  "phases": [
+    "Update Loss Type",
+    "Update Parsing",
+    "Verify"
+  ],
+  "completed_date": "2026-02-09"
+}

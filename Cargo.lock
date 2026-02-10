@@ -805,7 +805,7 @@ dependencies = [
 
 [[package]]
 name = "autoeq-datagen"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "anyhow",
  "autoeq",
@@ -5438,7 +5438,7 @@ dependencies = [
 
 [[package]]
 name = "math-xem-common"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "approx",
  "chrono",

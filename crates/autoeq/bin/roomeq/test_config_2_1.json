@@ -1,0 +1,40 @@
+{
+  "version": "1.2.0",
+  "system": {
+    "model": "stereo",
+    "speakers": {
+      "L": "left",
+      "R": "right",
+      "LFE": "sub"
+    },
+    "subwoofers": {
+      "config": "single",
+      "crossover": "bass_xo",
+      "sub": "L"
+    }
+  },
+  "crossovers": {
+    "bass_xo": {
+      "type": "LR24",
+      "frequency": 80.0
+    }
+  },
+  "speakers": {
+    "left": {
+      "path": "measurements/left_speaker.csv"
+    },
+    "right": {
+      "path": "measurements/right_speaker.csv"
+    },
+    "sub": {
+      "path": "measurements/subwoofer.csv"
+    }
+  },
+  "optimizer": {
+    "num_filters": 10,
+    "algorithm": "cobyla",
+    "max_iter": 10000,
+    "min_freq": 20.0,
+    "max_freq": 20000.0
+  }
+}

@@ -111,7 +111,7 @@ fn test_bem_pipeline_small_2_1() {
 
 #[test]
 fn test_bem_pipeline_small_multi_sub() {
-    run_bem_pipeline("small_multi_sub_2");
+    run_bem_pipeline("small_stereo_2_2_mso");
 }
 
 #[test]
@@ -143,7 +143,7 @@ fn test_config_2_1_has_lfe() {
 
 #[test]
 fn test_config_multi_sub_has_multisub_lfe() {
-    let scenario = scenarios::scenario_by_name("small_multi_sub_2").unwrap();
+    let scenario = scenarios::scenario_by_name("small_stereo_2_2_mso").unwrap();
     let temp_dir = TempDir::new().unwrap();
     let config = roomeq_config_gen::generate_config(&scenario, temp_dir.path()).unwrap();
 

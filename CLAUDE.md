@@ -9,6 +9,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
+This is a Rust-heavy audio DSP project. Primary language is Rust with Python scripts for visualization/plotting. Always run `cargo test` after making changes and ensure all tests pass before considering work complete.
+
 SOTF (Sound of the Future) is a comprehensive audio optimization and playback system. The project consists of:
 
 1. **AutoEQ CLI tools** for speaker/headphone EQ optimization using measurements from spinorama.org or custom data
@@ -652,3 +654,23 @@ just validate-au      # Run auval validation
 - Read @GPUI.md before working on GPUI code.
 - when adding features to the players the business logic goes into the common library player/src
 - never use unsafe without asking
+
+## Debugging Guidelines
+
+When fixing audio bugs (crackling, saturation, speed issues), always investigate the full signal chain — don't stop at the first symptom fix. Check: sample rate mismatches, frame allocation in hot paths, plugin propagation, and normalization. A surface-level fix often masks a deeper root cause.
+
+## Python / Visualization
+
+Python visualization scripts use a virtual environment. Always check for and activate the local venv before running Python scripts. Use `pyright` from the local venv for type checking.
+
+## Known Gotchas
+
+When working with clap CLI argument structs, be aware that flattened plugin structs can cause ID conflicts if they share field names (e.g., 'enabled'). Always check for duplicate field names across flattened structs.
+
+## Domain Knowledge — Room EQ
+
+For roomeq/EQ work: filters must be placed within measurement data frequency bounds. Passband detection uses relative-to-peak thresholds, not absolute dB values. Always verify optimizer frequency ranges against actual data bounds.
+
+## Workflow Rules
+
+Before implementing a fix, read any relevant format docs or specifications the user points to. Do not start editing code until you understand the data format or protocol involved.

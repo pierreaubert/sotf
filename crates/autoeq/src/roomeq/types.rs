@@ -1091,6 +1091,14 @@ pub struct OptimizerConfig {
     #[serde(default = "default_asymmetric_loss")]
     pub asymmetric_loss: bool,
 
+    /// Allow inter-speaker delay optimization
+    /// When true, the optimizer generates delay plugins to align speakers in time.
+    /// This includes time alignment from WAV measurements, phase alignment, and group delay optimization.
+    /// Default: false for IIR mode (low-latency), true for FIR and mixed modes.
+    /// When None (omitted from JSON), the default is inferred from the mode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_delay: Option<bool>,
+
     // ========================================================================
     // Scenario B (WITHOUT Subwoofers) Configuration
     // ========================================================================
@@ -1160,25 +1168,25 @@ fn default_min_q() -> f64 {
     0.5
 }
 fn default_max_q() -> f64 {
-    10.0
+    6.0
 }
 fn default_min_db() -> f64 {
     -12.0
 }
 fn default_max_db() -> f64 {
-    12.0
+    4.0
 }
 fn default_min_freq() -> f64 {
     20.0
 }
 fn default_max_freq() -> f64 {
-    1200.0
+    1600.0
 }
 fn default_max_iter() -> usize {
-    10000
+    50000
 }
 fn default_population() -> usize {
-    300
+    50
 }
 fn default_refine() -> bool {
     true // Enable hybrid optimization by default for best results
@@ -1217,6 +1225,7 @@ impl Default for OptimizerConfig {
             local_algo: default_local_algo(),
             psychoacoustic: default_psychoacoustic(),
             asymmetric_loss: default_asymmetric_loss(),
+            allow_delay: None,
             // Scenario B configs
             target_tilt: None,
             excursion_protection: None,
@@ -1228,6 +1237,15 @@ impl Default for OptimizerConfig {
             gd_opt: None,
             vog: None,
         }
+    }
+}
+
+impl OptimizerConfig {
+    /// Resolve the effective `allow_delay` value based on the mode.
+    /// - Explicit `Some(true/false)` takes precedence
+    /// - Default: false for IIR mode, true for FIR and mixed modes
+    pub fn allow_delay(&self) -> bool {
+        self.allow_delay.unwrap_or(self.mode != "iir")
     }
 }
 
@@ -1360,6 +1378,7 @@ mod tests {
 
         let config = RoomConfig {
             version: default_config_version(),
+            system: None,
             speakers,
             crossovers: None,
             target_curve: None,

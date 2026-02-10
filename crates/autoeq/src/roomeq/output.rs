@@ -866,7 +866,7 @@ mod tests {
         let crossover_freqs = vec![2500.0];
 
         let chain =
-            build_multidriver_dsp_chain("left", &gains, &delays, &crossover_freqs, "LR24", &[]);
+            build_multidriver_dsp_chain("left", &gains, &delays, None, &crossover_freqs, "LR24", &[], None);
 
         assert_eq!(chain.channel, "left");
         assert!(chain.drivers.is_some());
@@ -904,7 +904,7 @@ mod tests {
         let crossover_freqs = vec![500.0, 3000.0];
 
         let chain =
-            build_multidriver_dsp_chain("center", &gains, &delays, &crossover_freqs, "LR24", &[]);
+            build_multidriver_dsp_chain("center", &gains, &delays, None, &crossover_freqs, "LR24", &[], None);
 
         let drivers = chain.drivers.as_ref().unwrap();
         assert_eq!(drivers.len(), 3);

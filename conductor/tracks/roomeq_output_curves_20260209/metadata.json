@@ -1,0 +1,13 @@
+{
+  "id": "roomeq_output_curves_20260209",
+  "name": "RoomEQ Output Curves & Phase",
+  "description": "Add phase data to output curves and ensure final curves are populated in all workflows.",
+  "status": "done",
+  "created_date": "2026-02-09",
+  "phases": [
+    "Update Types",
+    "Update Workflows",
+    "Verify"
+  ],
+  "completed_date": "2026-02-09"
+}

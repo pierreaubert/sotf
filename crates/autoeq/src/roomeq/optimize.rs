@@ -311,7 +311,7 @@ pub fn optimize_room(
 
     // Time alignment: add delay plugins to align all channels to the slowest one
     // This is done PRE-EQ by inserting at the beginning of the plugin chain
-    if channel_arrivals.len() > 1 {
+    if config.optimizer.allow_delay() && channel_arrivals.len() > 1 {
         let arrivals: Vec<f64> = channel_arrivals.values().copied().collect();
         let min_arrival = arrivals.iter().cloned().fold(f64::INFINITY, f64::min);
         let max_arrival = arrivals.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
@@ -397,7 +397,8 @@ pub fn optimize_room(
     // delay and polarity. This runs BEFORE group delay optimization.
     let mut phase_alignment_results: HashMap<String, (f64, bool)> = HashMap::new();
 
-    if let Some(phase_config) = &config.optimizer.phase_alignment
+    if config.optimizer.allow_delay()
+        && let Some(phase_config) = &config.optimizer.phase_alignment
         && phase_config.enabled
         && let Some(gd_configs) = &config.group_delay
     {
@@ -544,7 +545,7 @@ pub fn optimize_room(
     }
 
     // Group Delay Optimization (Legacy v1)
-    if let Some(gd_configs) = &config.group_delay {
+    if config.optimizer.allow_delay() && let Some(gd_configs) = &config.group_delay {
         info!("Optimizing group delay alignments...");
 
         let mut calculated_rel_delays = Vec::new();

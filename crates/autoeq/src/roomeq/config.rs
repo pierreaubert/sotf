@@ -548,7 +548,6 @@ mod tests {
             crossovers: None,
             target_curve: None,
             group_delay: None,
-            bass_management: None,
             optimizer: OptimizerConfig::default(),
             recording_config: None,
         };
@@ -580,7 +579,6 @@ mod tests {
             crossovers: None,
             target_curve: None,
             group_delay: None,
-            bass_management: None,
             optimizer,
             recording_config: None,
         };
@@ -619,7 +617,6 @@ mod tests {
             crossovers: Some(HashMap::new()), // Empty crossovers
             target_curve: None,
             group_delay: None,
-            bass_management: None,
             optimizer: OptimizerConfig::default(),
             recording_config: None,
         };
@@ -657,7 +654,6 @@ mod tests {
                 min_freq: 30.0,
                 max_freq: 120.0,
             }]),
-            bass_management: None,
             optimizer: OptimizerConfig::default(),
             recording_config: None,
         };
@@ -690,7 +686,6 @@ mod tests {
             crossovers: None,
             target_curve: None,
             group_delay: None,
-            bass_management: None,
             optimizer: OptimizerConfig::default(),
             recording_config: None,
         };

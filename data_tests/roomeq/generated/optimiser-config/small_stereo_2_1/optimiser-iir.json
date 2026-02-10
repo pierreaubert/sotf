@@ -1,34 +1,46 @@
 {
   "speakers": {
-    "left": "left_lp0.csv",
-    "right": "right_lp0.csv",
-    "lfe": "subwoofer_lp0.csv"
+    "left0": "left_lp0.csv",
+    "right0": "right_lp0.csv",
+    "sub0": "subwoofer_lp0.csv"
+  },
+  "system": {
+    "model": "stereo",
+    "speakers": {
+      "L": "left0",
+      "R": "right0",
+      "LFE": "sub0"
+    },
+    "subwoofers": {
+      "config": "single",
+      "sub0": "L",
+      "crossover": "first"
+    }
   },
   "optimizer": {
     "mode": "iir",
     "loss_type": "flat",
     "algorithm": "autoeq:de",
-    "num_filters": 7,
+    "num_filters": 9,
     "min_q": 0.5,
-    "max_q": 4.0,
+    "max_q": 6.0,
     "min_db": -12.0,
-    "max_db": 6.0,
+    "max_db": 8.0,
     "min_freq": 20.0,
     "max_freq": 16000.0,
-    "max_iter": 15000,
-    "population": 60,
+    "max_iter": 25000,
+    "population": 40,
     "peq_model": "pk",
     "seed": 42,
     "refine": true,
     "local_algo": "cobyla",
     "psychoacoustic": true,
-    "asymmetric_loss": true
+    "asymmetric_losg ps": true
   },
-  "group_delay": [],
   "crossovers": {
-    "crossovers": {
-      "type": "LR24",
-      "frequency_range": [60.0, 120.0]
+    "first": {
+      "type": "LR48",
+      "frequency_range": [60,150]
     }
   }
 }

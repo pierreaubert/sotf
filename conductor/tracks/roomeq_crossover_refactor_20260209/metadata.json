@@ -1,0 +1,14 @@
+{
+  "id": "roomeq_crossover_refactor_20260209",
+  "name": "RoomEQ Crossover Refactor",
+  "description": "Replace separate bass_management section with a crossover reference in system.subwoofers, unifying crossover configuration.",
+  "status": "done",
+  "created_date": "2026-02-09",
+  "phases": [
+    "Refactor Types",
+    "Update Workflows",
+    "Update Schema & Docs",
+    "Verify"
+  ],
+  "completed_date": "2026-02-09"
+}

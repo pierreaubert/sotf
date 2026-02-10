@@ -1,0 +1,12 @@
+{
+  "id": "roomeq_simplify_chain_20260209",
+  "name": "RoomEQ Simplify Chain",
+  "description": "Simplify Stereo 2.1 chain: Remove Pre-EQ and Delay plugins. Optimize Post-EQ on original aligned curves.",
+  "status": "done",
+  "created_date": "2026-02-09",
+  "phases": [
+    "Update Workflow",
+    "Verify"
+  ],
+  "completed_date": "2026-02-09"
+}

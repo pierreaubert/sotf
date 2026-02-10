@@ -729,7 +729,7 @@ qa-plugin-fuzzer:
 		done; \
 	done
 
-qa-roomeq: qa-roomeq-small-stereo-20 qa-roomeq-small-stereo-21
+qa-roomeq: qa-roomeq-small-stereo-20 qa-roomeq-small-stereo-21 qa-roomeq-small-stereo-22
 
 qa-roomeq-small-stereo-20:
 	@for method in iir fir mixed; do \
@@ -748,7 +748,7 @@ qa-roomeq-small-stereo-20:
 
 qa-roomeq-small-stereo-21:
 	@for method in iir fir mixed; do \
-	  for algo in bem fem; do \
+	  for algo in fem; do \
 	    mkdir -p ./data_generated/roomeq/generated/$algo/small_stereo_2_1; \
 	    cargo run --bin roomeq --release -- \
 	        --config       ./data_tests/roomeq/generated/$algo/small_stereo_2_1/config.json \
@@ -757,6 +757,21 @@ qa-roomeq-small-stereo-21:
 		python3 ./scripts/display-roomeq.py \
 	        --input        ./data_tests/roomeq/generated/$algo/small_stereo_2_1/config.json \
 		                   ./data_generated/roomeq/generated/$algo/small_stereo_2_1/dsp_$method.json; \
+	  done \
+	done
+
+
+qa-roomeq-small-stereo-22:
+	@for method in iir fir mixed; do \
+	  for algo in fem; do \
+	    mkdir -p ./data_generated/roomeq/generated/$algo/small_stereo_2_2; \
+	    cargo run --bin roomeq --release -- \
+	        --config       ./data_tests/roomeq/generated/$algo/small_stereo_2_2/config.json \
+		    --override-config ./data_tests/roomeq/generated/optimiser-config/small_stereo_2_2/optimiser-$method.json \
+		    --output       ./data_generated/roomeq/generated/$algo/small_stereo_2_2/dsp_$method.json; \
+		python3 ./scripts/display-roomeq.py \
+	        --input        ./data_tests/roomeq/generated/$algo/small_stereo_2_2/config.json \
+		                   ./data_generated/roomeq/generated/$algo/small_stereo_2_2/dsp_$method.json; \
 	  done \
 	done
 

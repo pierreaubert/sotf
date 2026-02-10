@@ -20,7 +20,7 @@ pub use solver::*;
 
 // Re-export common types from math-xem-common
 pub use math_audio_xem_common::{
-    BoundaryConfig, CrossoverFilter, DirectivityPattern, FrequencyResult, LShapedRoom,
+    BoundaryConfig, CrossoverFilter, Directivity, DirectivityGrid, FrequencyResult, LShapedRoom,
     ListeningPosition, Point3D, RectangularRoom, RoomGeometry, RoomMesh, RoomSimulation,
     SimulationResults, SliceData, Source, SurfaceElement, constants, log_space, pressure_to_spl,
     wavenumber,
@@ -46,11 +46,11 @@ mod tests {
 
     #[test]
     fn test_omnidirectional_pattern() {
-        let pattern = DirectivityPattern::omnidirectional();
+        let grid = DirectivityGrid::omnidirectional();
         // Should be 1.0 in all directions
-        assert!((pattern.interpolate(0.0, 0.0) - 1.0).abs() < 1e-6);
-        assert!((pattern.interpolate(PI / 2.0, PI) - 1.0).abs() < 1e-6);
-        assert!((pattern.interpolate(PI, 0.0) - 1.0).abs() < 1e-6);
+        assert!((grid.interpolate(0.0, 0.0) - 1.0).abs() < 1e-6);
+        assert!((grid.interpolate(PI / 2.0, PI) - 1.0).abs() < 1e-6);
+        assert!((grid.interpolate(PI, 0.0) - 1.0).abs() < 1e-6);
     }
 
     #[test]

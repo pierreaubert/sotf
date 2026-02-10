@@ -1,5 +1,18 @@
 {
   "enabledPlugins": {
     "code-simplifier@claude-plugins-official": true
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cargo check --message-format=short 2>&1 | head -20"
+          }
+        ]
+      }
+    ]
   }
 }
