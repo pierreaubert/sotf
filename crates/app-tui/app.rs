@@ -499,7 +499,180 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
             sotf_audio_player::PluginSettings::BandMerge { bands, .. } => vec![
                 TuiParamSpec { name: "Bands".to_string(), value: format!("{}", bands), unit: "".to_string() },
             ],
-            _ => vec![],
+            sotf_audio_player::PluginSettings::Expander {
+                threshold_db,
+                ratio,
+                attack_ms,
+                release_ms,
+                range_db,
+                knee_db,
+                hysteresis_db,
+                hold_ms,
+                mix,
+                link_channels,
+                sidechain_hpf_hz,
+            } => vec![
+                TuiParamSpec { name: "Threshold".to_string(), value: format!("{:.1}", threshold_db), unit: "dB".to_string() },
+                TuiParamSpec { name: "Ratio".to_string(), value: format!("{:.1}", ratio), unit: ":1".to_string() },
+                TuiParamSpec { name: "Attack".to_string(), value: format!("{:.1}", attack_ms), unit: "ms".to_string() },
+                TuiParamSpec { name: "Release".to_string(), value: format!("{:.0}", release_ms), unit: "ms".to_string() },
+                TuiParamSpec { name: "Range".to_string(), value: format!("{:.1}", range_db), unit: "dB".to_string() },
+                TuiParamSpec { name: "Knee".to_string(), value: format!("{:.1}", knee_db), unit: "dB".to_string() },
+                TuiParamSpec { name: "Hysteresis".to_string(), value: format!("{:.1}", hysteresis_db), unit: "dB".to_string() },
+                TuiParamSpec { name: "Hold".to_string(), value: format!("{:.0}", hold_ms), unit: "ms".to_string() },
+                TuiParamSpec { name: "Mix".to_string(), value: format!("{:.0}", mix * 100.0), unit: "%".to_string() },
+                TuiParamSpec { name: "Link".to_string(), value: (if *link_channels { "Linked" } else { "Unlinked" }).to_string(), unit: "".to_string() },
+                TuiParamSpec { name: "Sidechain HPF".to_string(), value: format!("{:.0}", sidechain_hpf_hz), unit: "Hz".to_string() },
+            ],
+            sotf_audio_player::PluginSettings::MultibandCompressor {
+                num_bands,
+                crossover_freq_1,
+                crossover_freq_2,
+                crossover_freq_3,
+                crossover_freq_4,
+                threshold_db,
+                ratio,
+                attack_ms,
+                release_ms,
+                knee_db,
+                mix,
+                link_channels,
+                ..
+            } => vec![
+                TuiParamSpec { name: "Bands".to_string(), value: format!("{}", num_bands), unit: "".to_string() },
+                TuiParamSpec { name: "Crossover 1".to_string(), value: format!("{:.0}", crossover_freq_1), unit: "Hz".to_string() },
+                TuiParamSpec { name: "Crossover 2".to_string(), value: format!("{:.0}", crossover_freq_2), unit: "Hz".to_string() },
+                TuiParamSpec { name: "Crossover 3".to_string(), value: format!("{:.0}", crossover_freq_3), unit: "Hz".to_string() },
+                TuiParamSpec { name: "Crossover 4".to_string(), value: format!("{:.0}", crossover_freq_4), unit: "Hz".to_string() },
+                TuiParamSpec { name: "Threshold".to_string(), value: format!("{:.1}", threshold_db), unit: "dB".to_string() },
+                TuiParamSpec { name: "Ratio".to_string(), value: format!("{:.1}", ratio), unit: ":1".to_string() },
+                TuiParamSpec { name: "Attack".to_string(), value: format!("{:.1}", attack_ms), unit: "ms".to_string() },
+                TuiParamSpec { name: "Release".to_string(), value: format!("{:.0}", release_ms), unit: "ms".to_string() },
+                TuiParamSpec { name: "Knee".to_string(), value: format!("{:.1}", knee_db), unit: "dB".to_string() },
+                TuiParamSpec { name: "Mix".to_string(), value: format!("{:.0}", mix * 100.0), unit: "%".to_string() },
+                TuiParamSpec { name: "Link".to_string(), value: (if *link_channels { "Linked" } else { "Unlinked" }).to_string(), unit: "".to_string() },
+            ],
+            sotf_audio_player::PluginSettings::MultibandExpander {
+                num_bands,
+                crossover_freq_1,
+                crossover_freq_2,
+                crossover_freq_3,
+                crossover_freq_4,
+                threshold_db,
+                ratio,
+                attack_ms,
+                release_ms,
+                range_db,
+                knee_db,
+                hysteresis_db,
+                hold_ms,
+                mix,
+                link_channels,
+                ..
+            } => vec![
+                TuiParamSpec { name: "Bands".to_string(), value: format!("{}", num_bands), unit: "".to_string() },
+                TuiParamSpec { name: "Crossover 1".to_string(), value: format!("{:.0}", crossover_freq_1), unit: "Hz".to_string() },
+                TuiParamSpec { name: "Crossover 2".to_string(), value: format!("{:.0}", crossover_freq_2), unit: "Hz".to_string() },
+                TuiParamSpec { name: "Crossover 3".to_string(), value: format!("{:.0}", crossover_freq_3), unit: "Hz".to_string() },
+                TuiParamSpec { name: "Crossover 4".to_string(), value: format!("{:.0}", crossover_freq_4), unit: "Hz".to_string() },
+                TuiParamSpec { name: "Threshold".to_string(), value: format!("{:.1}", threshold_db), unit: "dB".to_string() },
+                TuiParamSpec { name: "Ratio".to_string(), value: format!("{:.1}", ratio), unit: ":1".to_string() },
+                TuiParamSpec { name: "Attack".to_string(), value: format!("{:.1}", attack_ms), unit: "ms".to_string() },
+                TuiParamSpec { name: "Release".to_string(), value: format!("{:.0}", release_ms), unit: "ms".to_string() },
+                TuiParamSpec { name: "Range".to_string(), value: format!("{:.1}", range_db), unit: "dB".to_string() },
+                TuiParamSpec { name: "Knee".to_string(), value: format!("{:.1}", knee_db), unit: "dB".to_string() },
+                TuiParamSpec { name: "Hysteresis".to_string(), value: format!("{:.1}", hysteresis_db), unit: "dB".to_string() },
+                TuiParamSpec { name: "Hold".to_string(), value: format!("{:.0}", hold_ms), unit: "ms".to_string() },
+                TuiParamSpec { name: "Mix".to_string(), value: format!("{:.0}", mix * 100.0), unit: "%".to_string() },
+                TuiParamSpec { name: "Link".to_string(), value: (if *link_channels { "Linked" } else { "Unlinked" }).to_string(), unit: "".to_string() },
+            ],
+            sotf_audio_player::PluginSettings::XTC {
+                distance_m,
+                speaker_angle_deg,
+                head_radius_m,
+                beta_base,
+                beta_low_freq_boost,
+                beta_high_freq_boost,
+                head_shadow_cutoff_hz,
+                head_shadow_slope_db_per_octave,
+            } => vec![
+                TuiParamSpec { name: "Distance".to_string(), value: format!("{:.2}", distance_m), unit: "m".to_string() },
+                TuiParamSpec { name: "Speaker Angle".to_string(), value: format!("{:.1}", speaker_angle_deg), unit: "\u{00b0}".to_string() },
+                TuiParamSpec { name: "Head Radius".to_string(), value: format!("{:.4}", head_radius_m), unit: "m".to_string() },
+                TuiParamSpec { name: "Beta Base".to_string(), value: format!("{:.4}", beta_base), unit: "".to_string() },
+                TuiParamSpec { name: "Beta Low Boost".to_string(), value: format!("{:.1}", beta_low_freq_boost), unit: "".to_string() },
+                TuiParamSpec { name: "Beta High Boost".to_string(), value: format!("{:.1}", beta_high_freq_boost), unit: "".to_string() },
+                TuiParamSpec { name: "Shadow Cutoff".to_string(), value: format!("{:.0}", head_shadow_cutoff_hz), unit: "Hz".to_string() },
+                TuiParamSpec { name: "Shadow Slope".to_string(), value: format!("{:.1}", head_shadow_slope_db_per_octave), unit: "dB/oct".to_string() },
+            ],
+            sotf_audio_player::PluginSettings::Denoiser {
+                reduction_db,
+                floor_db,
+                smoothing,
+                attack_ms,
+                release_ms,
+                low_latency,
+                polyphonic_detection,
+                ..
+            } => vec![
+                TuiParamSpec { name: "Reduction".to_string(), value: format!("{:.1}", reduction_db), unit: "dB".to_string() },
+                TuiParamSpec { name: "Floor".to_string(), value: format!("{:.1}", floor_db), unit: "dB".to_string() },
+                TuiParamSpec { name: "Smoothing".to_string(), value: format!("{:.2}", smoothing), unit: "".to_string() },
+                TuiParamSpec { name: "Attack".to_string(), value: format!("{:.1}", attack_ms), unit: "ms".to_string() },
+                TuiParamSpec { name: "Release".to_string(), value: format!("{:.1}", release_ms), unit: "ms".to_string() },
+                TuiParamSpec { name: "Low Latency".to_string(), value: (if *low_latency { "On" } else { "Off" }).to_string(), unit: "".to_string() },
+                TuiParamSpec { name: "Polyphonic".to_string(), value: (if *polyphonic_detection { "On" } else { "Off" }).to_string(), unit: "".to_string() },
+            ],
+            sotf_audio_player::PluginSettings::Pnd {
+                correction_strength,
+                analysis_window_ms,
+                drift_smoothing,
+            } => vec![
+                TuiParamSpec { name: "Correction".to_string(), value: format!("{:.2}", correction_strength), unit: "".to_string() },
+                TuiParamSpec { name: "Analysis Window".to_string(), value: format!("{:.1}", analysis_window_ms), unit: "ms".to_string() },
+                TuiParamSpec { name: "Drift Smoothing".to_string(), value: format!("{:.3}", drift_smoothing), unit: "".to_string() },
+            ],
+            sotf_audio_player::PluginSettings::ABCompare {
+                mix,
+                mix_mode,
+                selected_path,
+                bypass,
+                auto_gain_enabled,
+                loudness_type,
+                max_auto_gain_db,
+                gain_smoothing_ms,
+                mix_transition_ms,
+                path_a_config,
+                path_b_config,
+            } => vec![
+                TuiParamSpec { name: "Mix (A/B)".to_string(), value: format!("{:.2}", mix), unit: "".to_string() },
+                TuiParamSpec { name: "Mix Mode".to_string(), value: (if *mix_mode == 0 { "Pot" } else { "Binary" }).to_string(), unit: "".to_string() },
+                TuiParamSpec { name: "Selected Path".to_string(), value: (if *selected_path == 0 { "A" } else { "B" }).to_string(), unit: "".to_string() },
+                TuiParamSpec { name: "Bypass".to_string(), value: (if *bypass { "Yes" } else { "No" }).to_string(), unit: "".to_string() },
+                TuiParamSpec { name: "Auto Gain".to_string(), value: (if *auto_gain_enabled { "On" } else { "Off" }).to_string(), unit: "".to_string() },
+                TuiParamSpec { name: "Loudness Type".to_string(), value: (if *loudness_type == 0 { "Momentary" } else { "Short-term" }).to_string(), unit: "".to_string() },
+                TuiParamSpec { name: "Max Auto Gain".to_string(), value: format!("{:.1}", max_auto_gain_db), unit: "dB".to_string() },
+                TuiParamSpec { name: "Gain Smoothing".to_string(), value: format!("{:.1}", gain_smoothing_ms), unit: "ms".to_string() },
+                TuiParamSpec { name: "Mix Transition".to_string(), value: format!("{:.1}", mix_transition_ms), unit: "ms".to_string() },
+                TuiParamSpec { name: "Path A".to_string(), value: path_a_config.clone(), unit: "".to_string() },
+                TuiParamSpec { name: "Path B".to_string(), value: path_b_config.clone(), unit: "".to_string() },
+            ],
+            sotf_audio_player::PluginSettings::SpectrumAnalyzer {
+                num_bins,
+                min_freq,
+                max_freq,
+                smoothing,
+                ..
+            } => vec![
+                TuiParamSpec { name: "Bins".to_string(), value: format!("{}", num_bins), unit: "".to_string() },
+                TuiParamSpec { name: "Min Freq".to_string(), value: format!("{:.0}", min_freq), unit: "Hz".to_string() },
+                TuiParamSpec { name: "Max Freq".to_string(), value: format!("{:.0}", max_freq), unit: "Hz".to_string() },
+                TuiParamSpec { name: "Smoothing".to_string(), value: format!("{:.2}", smoothing), unit: "".to_string() },
+            ],
+            sotf_audio_player::PluginSettings::LoudnessMonitor => vec![],
+            sotf_audio_player::PluginSettings::ChannelMuteSolo { .. } => vec![], // Managed via level meter editor
+            sotf_audio_player::PluginSettings::Matrix { .. } => vec![], // Managed via matrix grid editor
+            sotf_audio_player::PluginSettings::FletcherMunson { .. } => vec![], // Not yet user-editable in TUI
         }
     }
 
@@ -745,6 +918,29 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                 }
                 return true;
             }
+            sotf_audio_player::PluginSettings::Denoiser {
+                reduction_db,
+                floor_db,
+                smoothing,
+                attack_ms,
+                release_ms,
+                low_latency,
+                polyphonic_detection,
+                ..
+            } => {
+                use sotf_plugins::param_specs::denoiser::*;
+                match index {
+                    0 => *reduction_db = (*reduction_db + delta).clamp(REDUCTION_DB_MIN as f64, REDUCTION_DB_MAX as f64),
+                    1 => *floor_db = (*floor_db + delta).clamp(FLOOR_DB_MIN as f64, FLOOR_DB_MAX as f64),
+                    2 => *smoothing = (*smoothing + delta * 0.01).clamp(SMOOTHING_MIN as f64, SMOOTHING_MAX as f64),
+                    3 => *attack_ms = (*attack_ms + delta * 0.1).clamp(ATTACK_MS_MIN as f64, ATTACK_MS_MAX as f64),
+                    4 => *release_ms = (*release_ms + delta).clamp(RELEASE_MS_MIN as f64, RELEASE_MS_MAX as f64),
+                    5 => *low_latency = !*low_latency,
+                    6 => *polyphonic_detection = !*polyphonic_detection,
+                    _ => return false,
+                }
+                return true;
+            }
             sotf_audio_player::PluginSettings::BandSplit { frequency, crossover_type, .. } => {
                 use sotf_plugins::param_specs::band_split::*;
                 match index {
@@ -764,7 +960,196 @@ impl TuiEditablePlugin for sotf_audio_player::PluginSettings {
                 }
                 return true;
             }
-            _ => {}
+            sotf_audio_player::PluginSettings::Expander {
+                threshold_db,
+                ratio,
+                attack_ms,
+                release_ms,
+                range_db,
+                knee_db,
+                hysteresis_db,
+                hold_ms,
+                mix,
+                link_channels,
+                sidechain_hpf_hz,
+            } => {
+                use sotf_plugins::param_specs::expander::*;
+                match index {
+                    0 => *threshold_db = (*threshold_db + delta).clamp(THRESHOLD_MIN as f64, THRESHOLD_MAX as f64),
+                    1 => *ratio = (*ratio + delta * 0.1).clamp(RATIO_MIN as f64, RATIO_MAX as f64),
+                    2 => *attack_ms = (*attack_ms + delta * 0.1).clamp(ATTACK_MIN as f64, ATTACK_MAX as f64),
+                    3 => *release_ms = (*release_ms + delta).clamp(RELEASE_MIN as f64, RELEASE_MAX as f64),
+                    4 => *range_db = (*range_db + delta).clamp(RANGE_MIN as f64, RANGE_MAX as f64),
+                    5 => *knee_db = (*knee_db + delta * 0.1).clamp(KNEE_MIN as f64, KNEE_MAX as f64),
+                    6 => *hysteresis_db = (*hysteresis_db + delta * 0.1).clamp(HYSTERESIS_MIN as f64, HYSTERESIS_MAX as f64),
+                    7 => *hold_ms = (*hold_ms + delta).clamp(HOLD_MIN as f64, HOLD_MAX as f64),
+                    8 => *mix = (*mix + delta * 0.01).clamp(MIX_MIN as f64, MIX_MAX as f64),
+                    9 => *link_channels = !*link_channels,
+                    10 => *sidechain_hpf_hz = (*sidechain_hpf_hz + delta).clamp(SIDECHAIN_HPF_HZ_MIN as f64, SIDECHAIN_HPF_HZ_MAX as f64),
+                    _ => return false,
+                }
+                return true;
+            }
+            sotf_audio_player::PluginSettings::MultibandCompressor {
+                num_bands,
+                crossover_freq_1,
+                crossover_freq_2,
+                crossover_freq_3,
+                crossover_freq_4,
+                threshold_db,
+                ratio,
+                attack_ms,
+                release_ms,
+                knee_db,
+                mix,
+                link_channels,
+                ..
+            } => {
+                use sotf_plugins::param_specs::multiband_compressor::*;
+                match index {
+                    0 => *num_bands = ((*num_bands as i64) + delta as i64).clamp(NUM_BANDS_MIN as i64, NUM_BANDS_MAX as i64) as usize,
+                    1 => *crossover_freq_1 = (*crossover_freq_1 + delta * 5.0).clamp(CROSSOVER_FREQ_1_MIN as f64, CROSSOVER_FREQ_1_MAX as f64),
+                    2 => *crossover_freq_2 = (*crossover_freq_2 + delta * 10.0).clamp(CROSSOVER_FREQ_2_MIN as f64, CROSSOVER_FREQ_2_MAX as f64),
+                    3 => *crossover_freq_3 = (*crossover_freq_3 + delta * 50.0).clamp(CROSSOVER_FREQ_3_MIN as f64, CROSSOVER_FREQ_3_MAX as f64),
+                    4 => *crossover_freq_4 = (*crossover_freq_4 + delta * 50.0).clamp(CROSSOVER_FREQ_4_MIN as f64, CROSSOVER_FREQ_4_MAX as f64),
+                    5 => *threshold_db = (*threshold_db + delta).clamp(THRESHOLD_MIN as f64, THRESHOLD_MAX as f64),
+                    6 => *ratio = (*ratio + delta * 0.1).clamp(RATIO_MIN as f64, RATIO_MAX as f64),
+                    7 => *attack_ms = (*attack_ms + delta * 0.1).clamp(ATTACK_MIN as f64, ATTACK_MAX as f64),
+                    8 => *release_ms = (*release_ms + delta).clamp(RELEASE_MIN as f64, RELEASE_MAX as f64),
+                    9 => *knee_db = (*knee_db + delta * 0.1).clamp(KNEE_MIN as f64, KNEE_MAX as f64),
+                    10 => *mix = (*mix + delta * 0.01).clamp(MIX_MIN as f64, MIX_MAX as f64),
+                    11 => *link_channels = !*link_channels,
+                    _ => return false,
+                }
+                return true;
+            }
+            sotf_audio_player::PluginSettings::MultibandExpander {
+                num_bands,
+                crossover_freq_1,
+                crossover_freq_2,
+                crossover_freq_3,
+                crossover_freq_4,
+                threshold_db,
+                ratio,
+                attack_ms,
+                release_ms,
+                range_db,
+                knee_db,
+                hysteresis_db,
+                hold_ms,
+                mix,
+                link_channels,
+                ..
+            } => {
+                use sotf_plugins::param_specs::multiband_expander::*;
+                match index {
+                    0 => *num_bands = ((*num_bands as i64) + delta as i64).clamp(NUM_BANDS_MIN as i64, NUM_BANDS_MAX as i64) as usize,
+                    1 => *crossover_freq_1 = (*crossover_freq_1 + delta * 5.0).clamp(CROSSOVER_FREQ_1_MIN as f64, CROSSOVER_FREQ_1_MAX as f64),
+                    2 => *crossover_freq_2 = (*crossover_freq_2 + delta * 10.0).clamp(CROSSOVER_FREQ_2_MIN as f64, CROSSOVER_FREQ_2_MAX as f64),
+                    3 => *crossover_freq_3 = (*crossover_freq_3 + delta * 50.0).clamp(CROSSOVER_FREQ_3_MIN as f64, CROSSOVER_FREQ_3_MAX as f64),
+                    4 => *crossover_freq_4 = (*crossover_freq_4 + delta * 50.0).clamp(CROSSOVER_FREQ_4_MIN as f64, CROSSOVER_FREQ_4_MAX as f64),
+                    5 => *threshold_db = (*threshold_db + delta).clamp(THRESHOLD_MIN as f64, THRESHOLD_MAX as f64),
+                    6 => *ratio = (*ratio + delta * 0.1).clamp(RATIO_MIN as f64, RATIO_MAX as f64),
+                    7 => *attack_ms = (*attack_ms + delta * 0.1).clamp(ATTACK_MIN as f64, ATTACK_MAX as f64),
+                    8 => *release_ms = (*release_ms + delta).clamp(RELEASE_MIN as f64, RELEASE_MAX as f64),
+                    9 => *range_db = (*range_db + delta).clamp(RANGE_MIN as f64, RANGE_MAX as f64),
+                    10 => *knee_db = (*knee_db + delta * 0.1).clamp(KNEE_MIN as f64, KNEE_MAX as f64),
+                    11 => *hysteresis_db = (*hysteresis_db + delta * 0.1).clamp(HYSTERESIS_MIN as f64, HYSTERESIS_MAX as f64),
+                    12 => *hold_ms = (*hold_ms + delta).clamp(HOLD_MIN as f64, HOLD_MAX as f64),
+                    13 => *mix = (*mix + delta * 0.01).clamp(MIX_MIN as f64, MIX_MAX as f64),
+                    14 => *link_channels = !*link_channels,
+                    _ => return false,
+                }
+                return true;
+            }
+            sotf_audio_player::PluginSettings::XTC {
+                distance_m,
+                speaker_angle_deg,
+                head_radius_m,
+                beta_base,
+                beta_low_freq_boost,
+                beta_high_freq_boost,
+                head_shadow_cutoff_hz,
+                head_shadow_slope_db_per_octave,
+            } => {
+                use sotf_plugins::param_specs::xtc::*;
+                match index {
+                    0 => *distance_m = (*distance_m + delta * 0.1).clamp(DISTANCE_M_MIN, DISTANCE_M_MAX),
+                    1 => *speaker_angle_deg = (*speaker_angle_deg + delta).clamp(SPEAKER_ANGLE_DEG_MIN, SPEAKER_ANGLE_DEG_MAX),
+                    2 => *head_radius_m = (*head_radius_m + delta * 0.001).clamp(HEAD_RADIUS_M_MIN, HEAD_RADIUS_M_MAX),
+                    3 => *beta_base = (*beta_base + delta * 0.0001).clamp(BETA_BASE_MIN, BETA_BASE_MAX),
+                    4 => *beta_low_freq_boost = (*beta_low_freq_boost + delta).clamp(BETA_LOW_FREQ_BOOST_MIN, BETA_LOW_FREQ_BOOST_MAX),
+                    5 => *beta_high_freq_boost = (*beta_high_freq_boost + delta).clamp(BETA_HIGH_FREQ_BOOST_MIN, BETA_HIGH_FREQ_BOOST_MAX),
+                    6 => *head_shadow_cutoff_hz = (*head_shadow_cutoff_hz + delta * 100.0).clamp(HEAD_SHADOW_CUTOFF_HZ_MIN, HEAD_SHADOW_CUTOFF_HZ_MAX),
+                    7 => *head_shadow_slope_db_per_octave = (*head_shadow_slope_db_per_octave + delta * 0.5).clamp(HEAD_SHADOW_SLOPE_DB_PER_OCTAVE_MIN, HEAD_SHADOW_SLOPE_DB_PER_OCTAVE_MAX),
+                    _ => return false,
+                }
+                return true;
+            }
+            sotf_audio_player::PluginSettings::Pnd {
+                correction_strength,
+                analysis_window_ms,
+                drift_smoothing,
+            } => {
+                use sotf_plugins::param_specs::pnd::*;
+                match index {
+                    0 => *correction_strength = (*correction_strength + delta * 0.05).clamp(CORRECTION_STRENGTH_MIN as f64, CORRECTION_STRENGTH_MAX as f64),
+                    1 => *analysis_window_ms = (*analysis_window_ms + delta * 5.0).clamp(ANALYSIS_WINDOW_MS_MIN as f64, ANALYSIS_WINDOW_MS_MAX as f64),
+                    2 => *drift_smoothing = (*drift_smoothing + delta * 0.01).clamp(DRIFT_SMOOTHING_MIN as f64, DRIFT_SMOOTHING_MAX as f64),
+                    _ => return false,
+                }
+                return true;
+            }
+            sotf_audio_player::PluginSettings::ABCompare {
+                mix,
+                mix_mode,
+                selected_path,
+                bypass,
+                auto_gain_enabled,
+                loudness_type,
+                max_auto_gain_db,
+                gain_smoothing_ms,
+                mix_transition_ms,
+                path_a_config: _,
+                path_b_config: _,
+            } => {
+                use sotf_plugins::param_specs::ab_compare::*;
+                match index {
+                    0 => *mix = (*mix + delta * 0.05).clamp(MIX_MIN, MIX_MAX),
+                    1 => *mix_mode = if *mix_mode == 0 { 1 } else { 0 },
+                    2 => *selected_path = if *selected_path == 0 { 1 } else { 0 },
+                    3 => *bypass = !*bypass,
+                    4 => *auto_gain_enabled = !*auto_gain_enabled,
+                    5 => *loudness_type = if *loudness_type == 0 { 1 } else { 0 },
+                    6 => *max_auto_gain_db = (*max_auto_gain_db + delta).clamp(MAX_AUTO_GAIN_DB_MIN, MAX_AUTO_GAIN_DB_MAX),
+                    7 => *gain_smoothing_ms = (*gain_smoothing_ms + delta * 5.0).clamp(GAIN_SMOOTHING_MS_MIN, GAIN_SMOOTHING_MS_MAX),
+                    8 => *mix_transition_ms = (*mix_transition_ms + delta * 5.0).clamp(MIX_TRANSITION_MS_MIN, MIX_TRANSITION_MS_MAX),
+                    9 | 10 => return false, // path_a/path_b configs are strings, not adjustable with delta
+                    _ => return false,
+                }
+                return true;
+            }
+            sotf_audio_player::PluginSettings::SpectrumAnalyzer {
+                num_bins,
+                min_freq,
+                max_freq,
+                smoothing,
+                ..
+            } => {
+                use sotf_plugins::param_specs::spectrum::*;
+                match index {
+                    0 => *num_bins = ((*num_bins as i64) + delta as i64).clamp(NUM_BINS_MIN as i64, NUM_BINS_MAX as i64) as usize,
+                    1 => *min_freq = (*min_freq + delta as f32).clamp(MIN_FREQ_MIN, MIN_FREQ_MAX),
+                    2 => *max_freq = (*max_freq + delta as f32 * 100.0).clamp(MAX_FREQ_MIN, MAX_FREQ_MAX),
+                    3 => *smoothing = (*smoothing + delta as f32 * 0.01).clamp(SMOOTHING_MIN, SMOOTHING_MAX),
+                    _ => return false,
+                }
+                return true;
+            }
+            sotf_audio_player::PluginSettings::LoudnessMonitor => return false,
+            sotf_audio_player::PluginSettings::ChannelMuteSolo { .. } => return false, // Managed via level meter editor
+            sotf_audio_player::PluginSettings::Matrix { .. } => return false, // Managed via matrix grid editor
+            sotf_audio_player::PluginSettings::FletcherMunson { .. } => return false, // Not yet user-editable in TUI
         }
         false
     }
@@ -942,8 +1327,9 @@ impl App {
             selected_tree_index: 0,
             plugin_chain: {
                 let mut chain = PluginChain::with_default_rack();
-                // Add ChannelMuteSolo plugin after the default rack (disabled by default)
-                chain.add_plugin(&PluginType::ChannelMuteSolo);
+                // Add ChannelMuteSolo plugin before the permanent tail (disabled by default)
+                let idx = chain.user_plugin_insert_index();
+                chain.insert_plugin(idx, &PluginType::ChannelMuteSolo);
                 chain
             },
             needs_plugin_update: false,
@@ -2138,7 +2524,8 @@ impl App {
     }
 
     pub fn add_plugin(&mut self, plugin_type: &PluginType) {
-        self.plugin_chain.add_plugin(plugin_type);
+        let insert_idx = self.plugin_chain.user_plugin_insert_index();
+        self.plugin_chain.insert_plugin(insert_idx, plugin_type);
         // Update BinauralDecoder input channels after adding
         self.plugin_chain.update_channel_dependent_plugins();
         self.request_plugin_update();
@@ -3594,7 +3981,7 @@ fn get_param_count(settings: &sotf_audio_player::PluginSettings) -> usize {
         PluginSettings::Compressor { .. } => 10, // threshold, ratio, attack, release, knee, makeup_gain, mix, auto_makeup, link_channels, sidechain_hpf_hz
         PluginSettings::Limiter { .. } => 5,     // threshold, release, lookahead, soft, mix
         PluginSettings::Gate { .. } => 8, // threshold, ratio, attack, hold, release, mix, link_channels, sidechain_hpf_hz
-        PluginSettings::LoudnessCompensation { .. } => 3, // target_lufs, min_gain, max_gain
+        PluginSettings::LoudnessCompensation { .. } => 4, // low_freq, low_gain, high_freq, high_gain
         PluginSettings::BinauralDecoder { .. } => 5, // sofa_file, input_channels, enable_optimization, externalization, near_field_strength
         PluginSettings::Convolution { .. } => 3,     // ir_file, mix, gain_db
         PluginSettings::LoudnessMonitor => 0,        // No parameters
@@ -4744,7 +5131,7 @@ mod tests {
     #[test]
     fn test_move_plugin_up() {
         let mut app = App::new(Theme::default());
-        let base_idx = app.plugin_chain.len();
+        let base_idx = app.plugin_chain.user_plugin_insert_index();
         app.add_plugin(&PluginType::Gain);
         app.add_plugin(&PluginType::EQ);
         app.add_plugin(&PluginType::Limiter);
@@ -4760,7 +5147,7 @@ mod tests {
     #[test]
     fn test_move_plugin_down() {
         let mut app = App::new(Theme::default());
-        let base_idx = app.plugin_chain.len();
+        let base_idx = app.plugin_chain.user_plugin_insert_index();
         app.add_plugin(&PluginType::Gain);
         app.add_plugin(&PluginType::EQ);
         app.add_plugin(&PluginType::Limiter);

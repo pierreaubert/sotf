@@ -103,11 +103,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // This allows proper configuration when used after an upmixer
         let input_channels = app.plugin_chain.output_channels();
 
-        // Add binaural decoder plugin to the chain
-        let plugin_idx = app.plugin_chain.add_plugin(&PluginType::BinauralDecoder);
+        // Add binaural decoder plugin to the chain (before permanent tail)
+        let insert_idx = app.plugin_chain.user_plugin_insert_index();
+        app.plugin_chain.insert_plugin(insert_idx, &PluginType::BinauralDecoder);
 
         // Configure the plugin with SOFA file path and detected input channels
-        if let Some(plugin) = app.plugin_chain.get_plugin_mut(plugin_idx) {
+        if let Some(plugin) = app.plugin_chain.get_plugin_mut(insert_idx) {
             plugin.settings = PluginSettings::BinauralDecoder {
                 sofa_file: sofa_file.to_string_lossy().to_string(),
                 input_channels,

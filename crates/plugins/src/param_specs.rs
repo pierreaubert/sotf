@@ -406,8 +406,14 @@ pub mod binaural {
 
 pub mod spectrum {
     pub const NUM_BINS_DEFAULT: usize = 30;
+    pub const NUM_BINS_MIN: usize = 8;
+    pub const NUM_BINS_MAX: usize = 120;
     pub const MIN_FREQ_DEFAULT: f32 = 20.0;
+    pub const MIN_FREQ_MIN: f32 = 10.0;
+    pub const MIN_FREQ_MAX: f32 = 100.0;
     pub const MAX_FREQ_DEFAULT: f32 = 20000.0;
+    pub const MAX_FREQ_MIN: f32 = 5000.0;
+    pub const MAX_FREQ_MAX: f32 = 22050.0;
     pub const SMOOTHING_DEFAULT: f32 = 0.7;
     pub const SMOOTHING_MIN: f32 = 0.0;
     pub const SMOOTHING_MAX: f32 = 1.0;
@@ -527,11 +533,11 @@ pub mod denoiser {
     pub const REDUCTION_DB_MIN: f32 = 0.0;
     pub const REDUCTION_DB_MAX: f32 = 40.0;
 
-    pub const FLOOR_DB_DEFAULT: f32 = -30.0;
+    pub const FLOOR_DB_DEFAULT: f32 = -20.0;
     pub const FLOOR_DB_MIN: f32 = -60.0;
     pub const FLOOR_DB_MAX: f32 = -10.0;
 
-    pub const SMOOTHING_DEFAULT: f32 = 0.8;
+    pub const SMOOTHING_DEFAULT: f32 = 0.3;
     pub const SMOOTHING_MIN: f32 = 0.0;
     pub const SMOOTHING_MAX: f32 = 0.99;
 
@@ -547,7 +553,7 @@ pub mod denoiser {
 
     // MCRA-specific parameters (advanced/expert use)
     pub const MCRA_ALPHA_S_DEFAULT: f32 = 0.9; // Noise PSD smoothing
-    pub const MCRA_ALPHA_P_DEFAULT: f32 = 0.2; // Speech presence probability smoothing
+    pub const MCRA_ALPHA_P_DEFAULT: f32 = 0.7; // Speech presence probability smoothing
     pub const MCRA_L_DEFAULT: usize = 50; // Minimum tracking window (frames)
     pub const MCRA_DELTA_DEFAULT: f32 = 5.0; // Speech presence threshold
 
@@ -561,7 +567,7 @@ pub mod denoiser {
     pub const LEARN_FRAMES: usize = 50; // ~1s at typical hop rates
 
     // Decision-Directed SNR estimation
-    pub const DD_ENABLED_DEFAULT: bool = false;
+    pub const DD_ENABLED_DEFAULT: bool = true;
     pub const DD_ALPHA_DEFAULT: f32 = 0.98;
     pub const DD_ALPHA_MIN: f32 = 0.5;
     pub const DD_ALPHA_MAX: f32 = 0.999;
@@ -805,4 +811,76 @@ pub mod band_merge {
     pub const BANDS_DEFAULT: usize = 2;
     pub const BANDS_MIN: usize = 2;
     pub const BANDS_MAX: usize = 8;
+}
+
+// ============================================================================
+// XTC (Crosstalk Cancellation) Plugin
+// ============================================================================
+
+pub mod xtc {
+    pub const DISTANCE_M_DEFAULT: f64 = 2.0;
+    pub const DISTANCE_M_MIN: f64 = 0.5;
+    pub const DISTANCE_M_MAX: f64 = 10.0;
+
+    pub const SPEAKER_ANGLE_DEG_DEFAULT: f64 = 30.0;
+    pub const SPEAKER_ANGLE_DEG_MIN: f64 = 10.0;
+    pub const SPEAKER_ANGLE_DEG_MAX: f64 = 90.0;
+
+    pub const HEAD_RADIUS_M_DEFAULT: f64 = 0.0875;
+    pub const HEAD_RADIUS_M_MIN: f64 = 0.05;
+    pub const HEAD_RADIUS_M_MAX: f64 = 0.12;
+
+    pub const BETA_BASE_DEFAULT: f64 = 0.001;
+    pub const BETA_BASE_MIN: f64 = 0.0001;
+    pub const BETA_BASE_MAX: f64 = 0.1;
+
+    pub const BETA_LOW_FREQ_BOOST_DEFAULT: f64 = 10.0;
+    pub const BETA_LOW_FREQ_BOOST_MIN: f64 = 0.0;
+    pub const BETA_LOW_FREQ_BOOST_MAX: f64 = 30.0;
+
+    pub const BETA_HIGH_FREQ_BOOST_DEFAULT: f64 = 10.0;
+    pub const BETA_HIGH_FREQ_BOOST_MIN: f64 = 0.0;
+    pub const BETA_HIGH_FREQ_BOOST_MAX: f64 = 30.0;
+
+    pub const HEAD_SHADOW_CUTOFF_HZ_DEFAULT: f64 = 4000.0;
+    pub const HEAD_SHADOW_CUTOFF_HZ_MIN: f64 = 1000.0;
+    pub const HEAD_SHADOW_CUTOFF_HZ_MAX: f64 = 10000.0;
+
+    pub const HEAD_SHADOW_SLOPE_DB_PER_OCTAVE_DEFAULT: f64 = 6.0;
+    pub const HEAD_SHADOW_SLOPE_DB_PER_OCTAVE_MIN: f64 = 0.0;
+    pub const HEAD_SHADOW_SLOPE_DB_PER_OCTAVE_MAX: f64 = 12.0;
+}
+
+// ============================================================================
+// AB Compare Plugin
+// ============================================================================
+
+pub mod ab_compare {
+    pub const MIX_DEFAULT: f64 = 0.0;
+    pub const MIX_MIN: f64 = -1.0;
+    pub const MIX_MAX: f64 = 1.0;
+
+    pub const MIX_MODE_DEFAULT: i32 = 0;
+    pub const MIX_MODE_MIN: i32 = 0;
+    pub const MIX_MODE_MAX: i32 = 1;
+
+    pub const SELECTED_PATH_DEFAULT: i32 = 0;
+    pub const SELECTED_PATH_MIN: i32 = 0;
+    pub const SELECTED_PATH_MAX: i32 = 1;
+
+    pub const MAX_AUTO_GAIN_DB_DEFAULT: f64 = 12.0;
+    pub const MAX_AUTO_GAIN_DB_MIN: f64 = 0.0;
+    pub const MAX_AUTO_GAIN_DB_MAX: f64 = 24.0;
+
+    pub const GAIN_SMOOTHING_MS_DEFAULT: f64 = 100.0;
+    pub const GAIN_SMOOTHING_MS_MIN: f64 = 1.0;
+    pub const GAIN_SMOOTHING_MS_MAX: f64 = 500.0;
+
+    pub const MIX_TRANSITION_MS_DEFAULT: f64 = 50.0;
+    pub const MIX_TRANSITION_MS_MIN: f64 = 1.0;
+    pub const MIX_TRANSITION_MS_MAX: f64 = 500.0;
+
+    pub const LOUDNESS_TYPE_DEFAULT: i32 = 0;
+    pub const LOUDNESS_TYPE_MIN: i32 = 0;
+    pub const LOUDNESS_TYPE_MAX: i32 = 1;
 }
