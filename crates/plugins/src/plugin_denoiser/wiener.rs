@@ -23,7 +23,7 @@ impl DenoiserPlugin {
     /// 2. Smooth gains across frequency bins (prevents musical noise)
     /// 3. Apply temporal smoothing with attack/release envelope
     pub(super) fn calculate_wiener_gains(&mut self) {
-        let reduction_factor = 10.0_f32.powf(self.reduction_db / 10.0);
+        let reduction_factor = 10.0_f32.powf(self.reduction_db / 20.0);
         let floor_linear = 10.0_f32.powf(self.floor_db / 20.0);
 
         let mut total_reduction = 0.0_f32;
@@ -104,37 +104,41 @@ impl DenoiserPlugin {
         }
     }
 
-    /// Smooth gains across frequency bins using a 3-tap triangular kernel [β, 1-2β, β]
-    /// where β = smoothing / 2. Uses freq_smooth_temp as scratch buffer.
+    /// Smooth gains across frequency bins using a 5-tap Gaussian kernel.
+    /// The `smoothing` parameter controls the kernel width (σ = smoothing × 2 bins).
+    /// Uses replicate boundary conditions at edges.
     pub(super) fn smooth_gains_across_frequency(&mut self, channel: usize) {
-        let beta = self.smoothing / 2.0;
-        if beta < EPSILON {
+        if self.smoothing < EPSILON {
             return; // No smoothing needed
         }
 
         let n = self.spectrum_size;
+        let sigma = self.smoothing * 2.0;
+        let inv_2sigma_sq = 0.5 / (sigma * sigma);
+
+        // 5-tap Gaussian weights: center always dominates
+        let w0 = 1.0_f32;
+        let w1 = (-inv_2sigma_sq).exp();
+        let w2 = (-4.0 * inv_2sigma_sq).exp();
+        let sum = w0 + 2.0 * w1 + 2.0 * w2;
+        let c0 = w0 / sum;
+        let c1 = w1 / sum;
+        let c2 = w2 / sum;
+
         // Copy current gains to scratch buffer
         self.freq_smooth_temp[..n].copy_from_slice(&self.gain[channel][..n]);
 
-        // Apply 3-tap kernel: out[k] = β * in[k-1] + (1-2β) * in[k] + β * in[k+1]
-        let center = 1.0 - 2.0 * beta;
         let src = &self.freq_smooth_temp;
         let dst = &mut self.gain[channel];
 
-        // First bin: no left neighbor
-        dst[0] = center * src[0] + beta * src[1];
-        // Normalize: center + beta = 1-beta, so divide by (1-beta)
-        dst[0] /= 1.0 - beta;
+        // Apply 5-tap kernel with replicate boundary conditions
+        for k in 0..n {
+            let km2 = k.saturating_sub(2);
+            let km1 = k.saturating_sub(1);
+            let kp1 = (k + 1).min(n - 1);
+            let kp2 = (k + 2).min(n - 1);
 
-        // Interior bins
-        for k in 1..n - 1 {
-            dst[k] = beta * src[k - 1] + center * src[k] + beta * src[k + 1];
-        }
-
-        // Last bin: no right neighbor
-        if n > 1 {
-            dst[n - 1] = beta * src[n - 2] + center * src[n - 1];
-            dst[n - 1] /= 1.0 - beta;
+            dst[k] = c2 * src[km2] + c1 * src[km1] + c0 * src[k] + c1 * src[kp1] + c2 * src[kp2];
         }
     }
 

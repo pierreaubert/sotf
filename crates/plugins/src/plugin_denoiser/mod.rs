@@ -152,7 +152,8 @@ pub struct DenoiserPlugin {
     // MCRA state (per-channel, per-bin)
     noise_psd: Vec<Vec<f32>>,       // Estimated noise power spectrum
     smoothed_psd: Vec<Vec<f32>>,    // Smoothed signal PSD (S_tmp)
-    min_psd: Vec<Vec<f32>>,         // Minimum PSD tracker (S_min)
+    min_psd: Vec<Vec<f32>>,         // Minimum PSD tracker — window A
+    min_psd_b: Vec<Vec<f32>>,       // Minimum PSD tracker — window B (IMCRA)
     speech_presence: Vec<Vec<f32>>, // Speech presence probability (p)
     frame_counter: Vec<usize>,      // Per-channel frame count
 
@@ -212,6 +213,7 @@ impl DenoiserPlugin {
         let noise_psd = vec![vec![0.0_f32; spectrum_size]; channels];
         let smoothed_psd = vec![vec![0.0_f32; spectrum_size]; channels];
         let min_psd = vec![vec![0.0_f32; spectrum_size]; channels];
+        let min_psd_b = vec![vec![0.0_f32; spectrum_size]; channels];
         let speech_presence = vec![vec![0.0_f32; spectrum_size]; channels];
         let frame_counter = vec![0_usize; channels];
 
@@ -294,6 +296,7 @@ impl DenoiserPlugin {
             noise_psd,
             smoothed_psd,
             min_psd,
+            min_psd_b,
             speech_presence,
             frame_counter,
 
@@ -373,25 +376,21 @@ impl DenoiserPlugin {
         self.input_buffer.copy_within(shift_samples.., 0);
         self.input_buffer_fill -= shift_samples;
 
-        // Phase 2: MCRA noise estimation
-        for ch in 0..self.channels {
-            if self.frame_counter[ch] == 0 {
-                // Bootstrap noise estimate from very first frame only
-                self.initialize_mcra_from_frame(ch);
-            }
-            self.update_mcra(ch);
-        }
+        // Phase 2: Noise estimation (multi-frame bootstrap then IMCRA)
+        let bootstrapping = self.update_noise_estimation();
 
         // Phase 2b: Noise profile learning (if active)
         if self.is_learning {
             self.accumulate_noise_frame();
         }
 
-        // Phase 3: Calculate Gains (Wiener or Polyphonic)
-        if self.polyphonic_detection {
-            self.calculate_polyphonic_gains();
-        } else {
-            self.calculate_wiener_gains();
+        // Phase 3: Calculate Gains (skip during bootstrap — gains stay at 1.0)
+        if !bootstrapping {
+            if self.polyphonic_detection {
+                self.calculate_polyphonic_gains();
+            } else {
+                self.calculate_wiener_gains();
+            }
         }
 
         // Phase 4: Apply gains and inverse FFT
