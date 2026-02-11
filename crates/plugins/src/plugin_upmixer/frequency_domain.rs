@@ -247,43 +247,31 @@ impl UpmixerPlugin {
                         + self.ambient_right[i].norm_sqr();
                 }
 
-                // 3F: Energy preservation correction (ONCE per band)
-                if output_energy_band > 1e-12 && input_energy_band > 1e-12 {
-                    let correction = (input_energy_band / output_energy_band).sqrt();
-                    let correction = correction.clamp(0.707, 1.414);
-                    
-                    for i in upmix_start..upmix_end {
-                        self.direct[i] *= correction;
-                        self.direct_left[i] *= correction;
-                        self.direct_right[i] *= correction;
-                        self.ambient_left[i] *= correction;
-                        self.ambient_right[i] *= correction;
-
-                        let freq_weight = self.height_freq_weights[i];
-                        let diffuse = (1.0 - coherence).max(0.0);
-                        let height_suitability = (freq_weight * 0.5 + diffuse * 0.5).min(1.0);
-                        let transient_reduction = 1.0 - (self.hr_transient_env * self.height_transient_reduction)
-                            .min(self.height_transient_reduction);
-                        
-                        if i < self.height_band_gains.len() {
-                            // Floor prevents deep spectral notches that cause time-domain ringing
-                            self.height_band_gains[i] = (height_suitability * transient_reduction).clamp(HEIGHT_MASK_FLOOR, 1.0);
-                        }
-                    }
+                // 3F: Energy preservation correction — store per-bin for later smoothing
+                let correction = if output_energy_band > 1e-12 && input_energy_band > 1e-12 {
+                    (input_energy_band / output_energy_band).sqrt().clamp(0.707, 1.414)
                 } else {
-                    let transient_reduction = 1.0 - (self.hr_transient_env * self.height_transient_reduction)
-                        .min(self.height_transient_reduction);
-                    for i in upmix_start..upmix_end {
-                        let freq_weight = self.height_freq_weights[i];
-                        let diffuse = (1.0 - coherence).max(0.0);
-                        let height_suitability = (freq_weight * 0.5 + diffuse * 0.5).min(1.0);
-                        if i < self.height_band_gains.len() {
-                            self.height_band_gains[i] = (height_suitability * transient_reduction).clamp(HEIGHT_MASK_FLOOR, 1.0);
-                        }
+                    1.0
+                };
+
+                let transient_reduction = 1.0 - (self.hr_transient_env * self.height_transient_reduction)
+                    .min(self.height_transient_reduction);
+
+                for i in upmix_start..upmix_end {
+                    self.energy_correction_per_bin[i] = correction;
+
+                    let freq_weight = self.height_freq_weights[i];
+                    let diffuse = (1.0 - coherence).max(0.0);
+                    let height_suitability = (freq_weight * 0.5 + diffuse * 0.5).min(1.0);
+                    if i < self.height_band_gains.len() {
+                        self.height_band_gains[i] = (height_suitability * transient_reduction).clamp(HEIGHT_MASK_FLOOR, 1.0);
                     }
                 }
             }
         }
+
+        // Smooth energy correction across ERB band boundaries and apply to decomposition
+        self.smooth_and_apply_energy_correction();
 
         // Calculate adaptive decorrelation strength once per frame
         let base_decorr_strength = (1.0 - self.hr_transient_env * 0.5).max(0.3);
@@ -343,6 +331,68 @@ impl UpmixerPlugin {
 
         // Apply spectral and temporal smoothing to height_band_gains
         self.smooth_height_gains();
+    }
+
+    /// Smooth energy correction factors across ERB band boundaries and apply to decomposition.
+    ///
+    /// Without smoothing, the per-band energy correction creates a spectral staircase:
+    /// adjacent ERB bands can differ by up to 6 dB, causing audible raspiness on L/R.
+    /// This method applies:
+    /// 1. 3-point spectral moving average (narrower than height's 5-point to preserve spatial detail)
+    /// 2. Asymmetric temporal smoothing (fast attack, slow release) vs previous frame
+    /// 3. Applies the smoothed correction to all 5 decomposition arrays
+    #[inline]
+    fn smooth_and_apply_energy_correction(&mut self) {
+        let spectrum_size = self.fft_size / 2 + 1;
+
+        // Temporal smoothing coefficients (asymmetric: fast attack, slow release)
+        let attack_alpha = 0.3_f32;
+        let release_alpha = 0.10_f32;
+
+        // Spectral smoothing: 3-point moving average (radius = 1)
+        let window_radius = 1_usize;
+
+        let mut smoothed = std::mem::take(&mut self.energy_correction_temp);
+
+        for (i, smoothed_val) in smoothed.iter_mut().enumerate().take(spectrum_size) {
+            let start = i.saturating_sub(window_radius);
+            let end = (i + window_radius + 1).min(spectrum_size);
+
+            let mut sum = 0.0_f32;
+            let mut count = 0_usize;
+            for j in start..end {
+                sum += self.energy_correction_per_bin[j];
+                count += 1;
+            }
+            *smoothed_val = if count > 0 {
+                sum / count as f32
+            } else {
+                self.energy_correction_per_bin[i]
+            };
+        }
+
+        // Temporal smoothing and apply
+        for (i, &current) in smoothed.iter().enumerate().take(spectrum_size) {
+            let previous = self.energy_correction_prev[i];
+
+            let alpha = if current < previous {
+                attack_alpha
+            } else {
+                release_alpha
+            };
+            let blended = alpha * current + (1.0 - alpha) * previous;
+
+            self.energy_correction_prev[i] = blended;
+
+            // Apply smoothed correction to all decomposition arrays
+            self.direct[i] *= blended;
+            self.direct_left[i] *= blended;
+            self.direct_right[i] *= blended;
+            self.ambient_left[i] *= blended;
+            self.ambient_right[i] *= blended;
+        }
+
+        self.energy_correction_temp = smoothed;
     }
 }
 

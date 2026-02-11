@@ -236,6 +236,11 @@ pub struct UpmixerPlugin {
     // Temporary buffer for height gain smoothing (avoid real-time allocation)
     height_band_gains_temp: Vec<f32>,
 
+    // Energy correction smoothing for L/R decomposition (eliminates ERB band-edge gain jumps)
+    energy_correction_per_bin: Vec<f32>,
+    energy_correction_temp: Vec<f32>,
+    energy_correction_prev: Vec<f32>,
+
     // Precomputed per-bin frequency weights for height mask (hf_ratio^0.7)
     // Depends only on sample_rate, bandpass_hz, height_hf_cap_hz — recomputed in initialize()
     height_freq_weights: Vec<f32>,
@@ -577,6 +582,10 @@ impl UpmixerPlugin {
             height_band_gains: vec![0.0; spectrum_size],
             height_band_gains_prev: vec![0.0; spectrum_size],
             height_band_gains_temp: vec![0.0; spectrum_size],
+
+            energy_correction_per_bin: vec![1.0; spectrum_size],
+            energy_correction_temp: vec![1.0; spectrum_size],
+            energy_correction_prev: vec![1.0; spectrum_size],
 
             height_freq_weights: vec![0.0; spectrum_size],
 
@@ -1675,6 +1684,11 @@ Upper bound for dialogue detection analysis.",
         self.height_band_gains.fill(0.0);
         self.height_band_gains_prev.fill(0.0);
         self.height_band_gains_temp.fill(0.0);
+
+        // Reset energy correction smoothing to unity
+        self.energy_correction_per_bin.fill(1.0);
+        self.energy_correction_temp.fill(1.0);
+        self.energy_correction_prev.fill(1.0);
     }
 
     fn process(
