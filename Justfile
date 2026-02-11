@@ -729,7 +729,10 @@ qa-plugin-fuzzer:
 		done; \
 	done
 
-qa-roomeq: qa-roomeq-small-stereo-20 qa-roomeq-small-stereo-21 qa-roomeq-small-stereo-22
+qa-roomeq: qa-roomeq-small-stereo-20 qa-roomeq-small-stereo-21 qa-roomeq-small-stereo-22 qa-roomeq-convergence
+
+qa-roomeq-convergence:
+	cargo run --bin roomeq-qa --release
 
 qa-roomeq-small-stereo-20:
 	@for method in iir fir mixed; do \

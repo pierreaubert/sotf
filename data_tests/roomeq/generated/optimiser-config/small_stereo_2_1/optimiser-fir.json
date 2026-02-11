@@ -40,7 +40,7 @@
     "refine": true,
     "local_algo": "cobyla",
     "psychoacoustic": true,
-    "asymmetric_losg ps": true
+    "asymmetric_loss": true
   },
   "crossovers": {
     "first": {

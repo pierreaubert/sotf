@@ -35,6 +35,10 @@ pub use types::*;
 // Re-export RecordingConfiguration explicitly for clarity
 pub use types::RecordingConfiguration;
 
+// Configuration loading (shared between roomeq and roomeq_qa binaries)
+mod config_loader;
+pub use config_loader::{SHALLOW_MERGE_KEYS, load_config, merge_json_objects};
+
 // Configuration validation
 mod config;
 pub use config::{ValidationResult, validate_room_config};

@@ -7,7 +7,9 @@
 use anyhow::{Context, Result, anyhow};
 use std::path::{Path, PathBuf};
 
-use autoeq::roomeq::{CallbackAction, ProcessingMode, RoomConfig, optimize_room};
+use autoeq::roomeq::{
+    CallbackAction, ProcessingMode, RoomConfig, load_config, merge_json_objects, optimize_room,
+};
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -33,64 +35,9 @@ const SEED: u64 = 42;
 const FEM_DIR: &str = "data_tests/roomeq/generated/fem";
 const OPTIM_CONFIG_DIR: &str = "data_tests/roomeq/generated/optimiser-config";
 
-/// Keys that are shallow-merged (same as roomeq main.rs)
-const SHALLOW_MERGE_KEYS: &[&str] = &["optimizer"];
-
 // ---------------------------------------------------------------------------
-// Config loading helpers (replicated from roomeq/main.rs)
+// Config loading helpers
 // ---------------------------------------------------------------------------
-
-fn merge_json_objects(base: &mut serde_json::Value, overrides: &serde_json::Value) {
-    if let (Some(base_obj), Some(override_obj)) = (base.as_object_mut(), overrides.as_object()) {
-        for (key, override_value) in override_obj {
-            if SHALLOW_MERGE_KEYS.contains(&key.as_str()) {
-                if let (Some(base_inner), Some(override_inner)) = (
-                    base_obj.get_mut(key).and_then(|v| v.as_object_mut()),
-                    override_value.as_object(),
-                ) {
-                    for (k, v) in override_inner {
-                        base_inner.insert(k.clone(), v.clone());
-                    }
-                } else {
-                    base_obj.insert(key.clone(), override_value.clone());
-                }
-            } else {
-                base_obj.insert(key.clone(), override_value.clone());
-            }
-        }
-    }
-}
-
-fn load_config(
-    base_config_path: &Path,
-    override_config_path: Option<&Path>,
-) -> Result<(RoomConfig, PathBuf)> {
-    let config_json = std::fs::read_to_string(base_config_path)
-        .with_context(|| format!("Failed to read config: {:?}", base_config_path))?;
-
-    let mut config_value: serde_json::Value =
-        serde_json::from_str(&config_json).with_context(|| "Failed to parse config JSON")?;
-
-    if let Some(override_path) = override_config_path {
-        let override_json = std::fs::read_to_string(override_path)
-            .with_context(|| format!("Failed to read override config: {:?}", override_path))?;
-        let override_value: serde_json::Value = serde_json::from_str(&override_json)
-            .with_context(|| "Failed to parse override config JSON")?;
-        merge_json_objects(&mut config_value, &override_value);
-    }
-
-    let config_dir = base_config_path
-        .parent()
-        .unwrap_or(Path::new("."))
-        .to_path_buf();
-
-    let mut room_config: RoomConfig = serde_json::from_value(config_value)
-        .with_context(|| "Failed to deserialize merged config into RoomConfig")?;
-
-    room_config.resolve_paths(&config_dir);
-
-    Ok((room_config, config_dir))
-}
 
 fn load_config_for_generic_path(
     base_config_path: &Path,
@@ -458,12 +405,21 @@ fn main() -> Result<()> {
         &mut results,
     )?;
 
-    // 2.1: SKIPPED — optimize_stereo_2_1 workflow produces post_score > pre_score
-    // on the small_stereo_2_1 test data (crossover optimization degrades results).
-    // This is a known issue in the optimizer, not in the QA binary.
-    // TODO: re-enable when the 2.1 crossover optimizer is fixed.
-    println!("\n--- Stereo 2.1 (IIR workflow) ---");
-    println!("  SKIPPED: crossover optimization produces post > pre on test data");
+    // 2.1: stereo with subwoofer and crossover optimization
+    run_stereo_workflow_tests(
+        "Stereo 2.1",
+        &fem_dir.join("small_stereo_2_1/config.json"),
+        Some(&optim_dir.join("small_stereo_2_1/optimiser-iir.json")),
+        &mut results,
+    )?;
+
+    // 2.2: stereo with subwoofer and crossover optimization
+    run_stereo_workflow_tests(
+        "Stereo 2.2",
+        &fem_dir.join("small_stereo_2_2/config.json"),
+        Some(&optim_dir.join("small_stereo_2_2/optimiser-iir.json")),
+        &mut results,
+    )?;
 
     // Part B: Generic path (all 3 modes) — uses small_stereo_2_0 with system removed
     run_generic_path_tests(

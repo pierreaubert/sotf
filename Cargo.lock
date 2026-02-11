@@ -767,7 +767,6 @@ dependencies = [
  "csv",
  "env_logger",
  "hound",
- "libfuzzer-sys",
  "log",
  "math-differential-evolution",
  "math-dsp",

@@ -408,9 +408,10 @@ pub fn optimize_stereo_2_1(
     for role in ["L", "R"] {
         let mut opt_config = config.optimizer.clone();
         opt_config.min_freq = final_xo_freq + 20.0;
-        
+
+        let post_curve = if role == "L" { &l_post } else { &r_post };
         let (filters, _) = eq::optimize_channel_eq(
-            &l_post, // Using l_post for L
+            post_curve,
             &opt_config,
             config.target_curve.as_ref(),
             sample_rate,
@@ -507,24 +508,27 @@ pub fn optimize_stereo_2_1(
     channel_chains.insert(sub_role.to_string(), sub_chain);
 
     // Compute scores per channel
-    let min_freq = config.optimizer.min_freq;
+    // Each channel is scored in its operating range:
+    //   L/R: above crossover frequency (HP-filtered by crossover)
+    //   Sub: below crossover frequency (LP-filtered by crossover)
+    // Pre-score baseline uses the post-crossover curve (before post-EQ),
+    // so pre vs post measures the improvement from post-EQ alone.
     let max_freq = config.optimizer.max_freq;
+    let sub_min_score = config.optimizer.min_freq.max(20.0);
     let mut channel_results = HashMap::new();
     let mut pre_scores = Vec::new();
     let mut post_scores = Vec::new();
 
     for role in ["L", "R"] {
-        let pre_score = compute_flat_score(&aligned_curves[role], min_freq, max_freq);
+        let intermediate = if role == "L" { &l_post } else { &r_post };
+        let pre_score = compute_flat_score(intermediate, final_xo_freq, max_freq);
         let final_curve_obj = if let Some(e) = post_eq_filters.get(role) {
-            let intermediate = if role == "L" { &l_post } else { &r_post };
             let resp = response::compute_peq_complex_response(e, &intermediate.freq, sample_rate);
             response::apply_complex_response(intermediate, &resp)
-        } else if role == "L" {
-            l_post.clone()
         } else {
-            r_post.clone()
+            intermediate.clone()
         };
-        let post_score = compute_flat_score(&final_curve_obj, min_freq, max_freq);
+        let post_score = compute_flat_score(&final_curve_obj, final_xo_freq, max_freq);
 
         pre_scores.push(pre_score);
         post_scores.push(post_score);
@@ -541,8 +545,8 @@ pub fn optimize_stereo_2_1(
 
     // Sub channel
     {
-        let pre_score = compute_flat_score(&aligned_curves[sub_role], min_freq.max(20.0), final_xo_freq);
-        let post_score = compute_flat_score(&final_sub_curve, min_freq.max(20.0), final_xo_freq);
+        let pre_score = compute_flat_score(&sub_post, sub_min_score, final_xo_freq);
+        let post_score = compute_flat_score(&final_sub_curve, sub_min_score, final_xo_freq);
         pre_scores.push(pre_score);
         post_scores.push(post_score);
         channel_results.insert(sub_role.to_string(), ChannelOptimizationResult {
