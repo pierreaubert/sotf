@@ -188,7 +188,7 @@ pub fn optimize_channel_eq(
         parallel_threads: num_cpus::get(),
 
         // Random seed
-        seed: None,
+        seed: config.seed,
 
         // QA mode (disabled)
         qa: None,

@@ -96,6 +96,10 @@ name = "roomeq-fuzzer"
 path = "bin/roomeq_fuzzer.rs"
 
 [[bin]]
+name = "roomeq-qa"
+path = "bin/roomeq_qa.rs"
+
+[[bin]]
 name = "convert-recording"
 path = "bin/convert_recording.rs"
 
