@@ -78,7 +78,7 @@ pub enum PluginType {
 }
 
 impl PluginType {
-    pub fn name(&self) -> &str {
+    pub fn name(&self) -> &'static str {
         match self {
             Self::EQ => "EQ",
             Self::Gain => "Gain",

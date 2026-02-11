@@ -68,6 +68,8 @@ pub struct MatrixPlugin {
     physical_output_channels: usize,
     /// Mute/Solo/Dim state for each logical output channel
     channel_states: Vec<ChannelState>,
+    /// Per-output-channel smoothers for mute/solo/dim transitions (avoids clicks)
+    channel_state_smoothers: Vec<Smoother>,
 }
 
 impl MatrixPlugin {
@@ -95,6 +97,7 @@ impl MatrixPlugin {
             physical_input_channels: input_channels,
             physical_output_channels: output_channels,
             channel_states: Vec::new(),
+            channel_state_smoothers: Vec::new(),
         }
     }
 
@@ -148,6 +151,7 @@ impl MatrixPlugin {
             physical_input_channels: input_channels,
             physical_output_channels: output_channels,
             channel_states: Vec::new(),
+            channel_state_smoothers: Vec::new(),
         })
     }
 
@@ -228,12 +232,15 @@ impl MatrixPlugin {
             physical_input_channels,
             physical_output_channels,
             channel_states: Vec::new(),
+            channel_state_smoothers: Vec::new(),
         })
     }
 
     /// Set initial channel states (builder pattern)
     pub fn with_channel_states(mut self, channel_states: Vec<ChannelState>) -> Self {
         self.channel_states = channel_states;
+        // Reset smoothers to initial state immediately (no fade-in on creation)
+        self.reset_channel_state_smoothers();
         self
     }
 
@@ -263,6 +270,60 @@ impl MatrixPlugin {
         } else {
             self.output_channel_map.len()
         }
+    }
+
+    /// Compute the target gain for an output channel based on mute/solo/dim state
+    fn compute_channel_state_gain(state: &ChannelState, any_soloed: bool) -> f32 {
+        if any_soloed {
+            if state.soloed { 1.0 } else { 0.0 }
+        } else if state.muted {
+            0.0
+        } else if state.dimmed {
+            0.1 // -20dB
+        } else {
+            1.0
+        }
+    }
+
+    /// Ensure channel_state_smoothers has the right size and update targets
+    fn ensure_channel_state_smoothers(&mut self) {
+        let num_outputs = self.num_outputs();
+        if self.channel_state_smoothers.len() != num_outputs {
+            self.channel_state_smoothers = vec![Smoother::new(1.0, GAIN_SMOOTH_MS, self.sample_rate); num_outputs];
+        }
+        self.update_channel_state_smoother_targets();
+    }
+
+    /// Update smoother targets based on current channel states
+    fn update_channel_state_smoother_targets(&mut self) {
+        let any_soloed = self.channel_states.iter().any(|s| s.soloed);
+        let num_outputs = self.num_outputs();
+        for ch in 0..num_outputs {
+            let target = if let Some(state) = self.channel_states.get(ch) {
+                Self::compute_channel_state_gain(state, any_soloed)
+            } else {
+                1.0
+            };
+            if ch < self.channel_state_smoothers.len() {
+                self.channel_state_smoothers[ch].set_target(target);
+            }
+        }
+    }
+
+    /// Reset smoothers to current state immediately (no fade, for initialization)
+    fn reset_channel_state_smoothers(&mut self) {
+        let num_outputs = self.num_outputs();
+        let any_soloed = self.channel_states.iter().any(|s| s.soloed);
+        self.channel_state_smoothers = (0..num_outputs)
+            .map(|ch| {
+                let target = if let Some(state) = self.channel_states.get(ch) {
+                    Self::compute_channel_state_gain(state, any_soloed)
+                } else {
+                    1.0
+                };
+                Smoother::new(target, GAIN_SMOOTH_MS, self.sample_rate)
+            })
+            .collect();
     }
 
     /// Get the gain from logical input channel to logical output channel
@@ -506,6 +567,7 @@ impl Plugin for MatrixPlugin {
                     .resize(self.num_outputs(), ChannelState::default());
             }
             self.channel_states[ch].muted = val;
+            self.ensure_channel_state_smoothers();
             return Ok(());
         }
 
@@ -525,6 +587,7 @@ impl Plugin for MatrixPlugin {
                     .resize(self.num_outputs(), ChannelState::default());
             }
             self.channel_states[ch].soloed = val;
+            self.ensure_channel_state_smoothers();
             return Ok(());
         }
 
@@ -544,6 +607,7 @@ impl Plugin for MatrixPlugin {
                     .resize(self.num_outputs(), ChannelState::default());
             }
             self.channel_states[ch].dimmed = val;
+            self.ensure_channel_state_smoothers();
             return Ok(());
         }
 
@@ -598,6 +662,9 @@ impl Plugin for MatrixPlugin {
         for smoother in &mut self.gain_smoothers {
             smoother.set_time(GAIN_SMOOTH_MS, sample_rate);
         }
+        for smoother in &mut self.channel_state_smoothers {
+            smoother.set_time(GAIN_SMOOTH_MS, sample_rate);
+        }
         Ok(())
     }
 
@@ -631,12 +698,10 @@ impl Plugin for MatrixPlugin {
 
         let num_inputs = self.num_inputs();
         let num_outputs = self.num_outputs();
+        let has_channel_states = !self.channel_state_smoothers.is_empty();
 
         // Zero output buffer first (needed for sparse mapping)
         output.fill(0.0);
-
-        // Check if any channel is soloed
-        let any_soloed = self.channel_states.iter().any(|s| s.soloed);
 
         // Process frame by frame with smoothed gains
         for frame in 0..num_frames {
@@ -663,13 +728,10 @@ impl Plugin for MatrixPlugin {
                     sum += gain * input_sample;
                 }
 
-                // Apply Mute/Solo/Dim logic if states available
-                if let Some(state) = self.channel_states.get(logical_out_ch) {
-                    if state.muted || (any_soloed && !state.soloed) {
-                        sum = 0.0;
-                    } else if state.dimmed {
-                        sum *= 0.1;
-                    }
+                // Apply smoothed Mute/Solo/Dim gain
+                if has_channel_states {
+                    let channel_gain = self.channel_state_smoothers[logical_out_ch].next();
+                    sum *= channel_gain;
                 }
 
                 // Map logical output to physical output
