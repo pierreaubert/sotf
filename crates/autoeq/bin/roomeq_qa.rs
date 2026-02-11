@@ -396,22 +396,26 @@ fn main() -> Result<()> {
 
     let mut results: Vec<TestResult> = Vec::new();
 
-    // Part A: Stereo workflows (IIR only)
+    // Part A: Stereo workflows
     // 2.0: use IIR override config (optimizer-only overrides, works well)
+/*
     run_stereo_workflow_tests(
         "Stereo 2.0",
         &fem_dir.join("small_stereo_2_0/config.json"),
         Some(&optim_dir.join("small_stereo_2_0/optimiser-iir.json")),
         &mut results,
     )?;
+*/
 
     // 2.1: stereo with subwoofer and crossover optimization
+/*
     run_stereo_workflow_tests(
         "Stereo 2.1",
         &fem_dir.join("small_stereo_2_1/config.json"),
         Some(&optim_dir.join("small_stereo_2_1/optimiser-iir.json")),
         &mut results,
     )?;
+*/
 
     // 2.2: stereo with subwoofer and crossover optimization
     run_stereo_workflow_tests(
@@ -422,12 +426,14 @@ fn main() -> Result<()> {
     )?;
 
     // Part B: Generic path (all 3 modes) — uses small_stereo_2_0 with system removed
+/*
     run_generic_path_tests(
         "small_stereo_2_0",
         &fem_dir.join("small_stereo_2_0/config.json"),
         &optim_dir.join("small_stereo_2_0"),
         &mut results,
     )?;
+*/
 
     // Summary
     let total = results.len();

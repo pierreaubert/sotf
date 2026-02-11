@@ -12,12 +12,15 @@ use std::path::Path;
 
 use super::eq;
 use super::crossover;
+use super::dba;
+use super::multisub;
 use super::output;
 use super::optimize::{
     ChannelOptimizationResult, RoomOptimizationResult,
 };
 use super::types::{
-    ChannelDspChain, OptimizationMetadata, RoomConfig, SystemConfig,
+    CardioidConfig, ChannelDspChain, DBAConfig, DriverDspChain, MultiSubGroup,
+    OptimizationMetadata, RoomConfig, SubwooferStrategy, SystemConfig,
     SpeakerConfig,
 };
 
@@ -93,6 +96,262 @@ fn load_logical_channels(
         }
     }
     Ok(curves)
+}
+
+// ============================================================================
+// Sub Preprocessing for Stereo Workflows
+// ============================================================================
+
+/// Information about an individual subwoofer driver from multi-sub preprocessing
+struct SubDriverInfo {
+    /// Driver name (e.g., "subs_1", "Front Sub")
+    name: String,
+    /// Gain in dB from MSO/DBA optimization
+    gain: f64,
+    /// Delay in ms from MSO/DBA optimization
+    delay: f64,
+    /// Whether this driver is polarity-inverted
+    inverted: bool,
+    /// Initial measurement curve for this driver
+    initial_curve: Option<Curve>,
+}
+
+/// Result of subwoofer preprocessing
+struct SubPreprocessResult {
+    /// Combined curve (for crossover optimization and shared post-EQ)
+    combined_curve: Curve,
+    /// Per-driver info (None for single sub)
+    drivers: Option<Vec<SubDriverInfo>>,
+}
+
+/// Preprocess the LFE channel's SpeakerConfig into a combined curve and per-driver info.
+///
+/// Dispatches by SpeakerConfig variant:
+/// - Single: load curve, no drivers
+/// - MultiSub + Mso: run MSO optimization, return combined + per-sub gains/delays
+/// - MultiSub + Single: average all subs, return combined + per-sub info (zero gains/delays)
+/// - MultiSub + Dba: error (should use SpeakerConfig::Dba)
+/// - Cardioid: simulate combined response from front + delayed/inverted rear
+/// - Dba: run DBA optimization, return combined + front/rear info
+/// - Group: error (handled by generic path)
+fn preprocess_sub(
+    lfe_config: &SpeakerConfig,
+    strategy: &SubwooferStrategy,
+    optimizer: &super::types::OptimizerConfig,
+    sample_rate: f64,
+) -> Result<SubPreprocessResult> {
+    match lfe_config {
+        SpeakerConfig::Single(source) => {
+            let curve = load_source(source)
+                .map_err(|e| AutoeqError::InvalidMeasurement { message: e.to_string() })?;
+            Ok(SubPreprocessResult {
+                combined_curve: curve,
+                drivers: None,
+            })
+        }
+        SpeakerConfig::MultiSub(ms) => match strategy {
+            SubwooferStrategy::Mso => preprocess_multisub_mso(ms, optimizer, sample_rate),
+            SubwooferStrategy::Single => preprocess_multisub_independent(ms),
+            SubwooferStrategy::Dba => Err(AutoeqError::InvalidConfiguration {
+                message: "SubwooferStrategy::Dba requires SpeakerConfig::Dba, not MultiSub".to_string(),
+            }),
+        },
+        SpeakerConfig::Cardioid(c) => preprocess_cardioid(c),
+        SpeakerConfig::Dba(d) => preprocess_dba(d, optimizer, sample_rate),
+        SpeakerConfig::Group(_) => Err(AutoeqError::InvalidConfiguration {
+            message: "Group speaker config should not reach stereo sub workflow; use generic path".to_string(),
+        }),
+    }
+}
+
+/// MSO: optimize inter-sub gains/delays, return combined curve + per-sub info
+fn preprocess_multisub_mso(
+    ms: &MultiSubGroup,
+    optimizer: &super::types::OptimizerConfig,
+    sample_rate: f64,
+) -> Result<SubPreprocessResult> {
+    info!("  MSO optimization for {} subwoofers", ms.subwoofers.len());
+
+    let (result, combined) = multisub::optimize_multisub(&ms.subwoofers, optimizer, sample_rate)
+        .map_err(|e| AutoeqError::OptimizationFailed { message: format!("MSO optimization failed: {}", e) })?;
+
+    info!("  MSO result: gains={:?}, delays={:?}", result.gains, result.delays);
+
+    // Load individual curves for driver info
+    let mut drivers = Vec::new();
+    for (i, source) in ms.subwoofers.iter().enumerate() {
+        let curve = load_source(source)
+            .map_err(|e| AutoeqError::InvalidMeasurement { message: e.to_string() })?;
+        drivers.push(SubDriverInfo {
+            name: format!("{}_{}", ms.name, i + 1),
+            gain: result.gains.get(i).copied().unwrap_or(0.0),
+            delay: result.delays.get(i).copied().unwrap_or(0.0),
+            inverted: false,
+            initial_curve: Some(curve),
+        });
+    }
+
+    Ok(SubPreprocessResult {
+        combined_curve: combined,
+        drivers: Some(drivers),
+    })
+}
+
+/// Independent subs: average all sub curves, return combined + per-sub info (zero gains/delays)
+fn preprocess_multisub_independent(ms: &MultiSubGroup) -> Result<SubPreprocessResult> {
+    info!("  Independent sub averaging for {} subwoofers", ms.subwoofers.len());
+
+    let mut curves = Vec::new();
+    for source in &ms.subwoofers {
+        let curve = load_source(source)
+            .map_err(|e| AutoeqError::InvalidMeasurement { message: e.to_string() })?;
+        curves.push(curve);
+    }
+
+    // Average SPL (dB domain) on the first sub's frequency grid
+    let ref_freq = curves[0].freq.clone();
+    let mut avg_spl = ndarray::Array1::<f64>::zeros(ref_freq.len());
+    for curve in &curves {
+        let interp = crate::read::interpolate_log_space(&ref_freq, curve);
+        avg_spl = avg_spl + &interp.spl;
+    }
+    avg_spl /= curves.len() as f64;
+
+    let combined = Curve {
+        freq: ref_freq,
+        spl: avg_spl,
+        phase: None,
+    };
+
+    let drivers: Vec<SubDriverInfo> = curves
+        .into_iter()
+        .enumerate()
+        .map(|(i, curve)| SubDriverInfo {
+            name: format!("{}_{}", ms.name, i + 1),
+            gain: 0.0,
+            delay: 0.0,
+            inverted: false,
+            initial_curve: Some(curve),
+        })
+        .collect();
+
+    Ok(SubPreprocessResult {
+        combined_curve: combined,
+        drivers: Some(drivers),
+    })
+}
+
+/// Cardioid: simulate combined response from front + delayed/inverted rear sub
+fn preprocess_cardioid(c: &CardioidConfig) -> Result<SubPreprocessResult> {
+    let front_curve = load_source(&c.front)
+        .map_err(|e| AutoeqError::InvalidMeasurement { message: format!("Cardioid front: {}", e) })?;
+    let rear_curve = load_source(&c.rear)
+        .map_err(|e| AutoeqError::InvalidMeasurement { message: format!("Cardioid rear: {}", e) })?;
+
+    let delay_ms = c.separation_meters / 343.0 * 1000.0;
+    info!("  Cardioid: separation={:.2}m, delay={:.2}ms", c.separation_meters, delay_ms);
+
+    // Simulate combined response (complex sum of front + delayed/inverted rear)
+    use num_complex::Complex;
+    let n_points = front_curve.freq.len();
+    let mut combined_spl = ndarray::Array1::zeros(n_points);
+
+    let front_phase_zeros = ndarray::Array1::zeros(n_points);
+    let rear_phase_zeros = ndarray::Array1::zeros(n_points);
+    let front_phase = front_curve.phase.as_ref().unwrap_or(&front_phase_zeros);
+    let rear_phase = rear_curve.phase.as_ref().unwrap_or(&rear_phase_zeros);
+
+    for i in 0..n_points {
+        let f = front_curve.freq[i];
+        let omega = 2.0 * std::f64::consts::PI * f;
+
+        // Front
+        let f_mag = 10.0_f64.powf(front_curve.spl[i] / 20.0);
+        let f_phi = front_phase[i].to_radians();
+        let f_c = Complex::from_polar(f_mag, f_phi);
+
+        // Rear (Inverted + Delayed)
+        let r_mag = 10.0_f64.powf(rear_curve.spl[i] / 20.0);
+        let r_phi_meas = rear_phase[i].to_radians();
+        let delay_s = delay_ms / 1000.0;
+        let delay_phi = -omega * delay_s;
+        let invert_phi = std::f64::consts::PI;
+        let r_phi_total = r_phi_meas + delay_phi + invert_phi;
+        let r_c = Complex::from_polar(r_mag, r_phi_total);
+
+        let sum = f_c + r_c;
+        combined_spl[i] = 20.0 * sum.norm().log10();
+    }
+
+    let combined = Curve {
+        freq: front_curve.freq.clone(),
+        spl: combined_spl,
+        phase: None,
+    };
+
+    let drivers = vec![
+        SubDriverInfo {
+            name: "Front Sub".to_string(),
+            gain: 0.0,
+            delay: 0.0,
+            inverted: false,
+            initial_curve: Some(front_curve),
+        },
+        SubDriverInfo {
+            name: "Rear Sub".to_string(),
+            gain: 0.0,
+            delay: delay_ms,
+            inverted: true,
+            initial_curve: Some(rear_curve),
+        },
+    ];
+
+    Ok(SubPreprocessResult {
+        combined_curve: combined,
+        drivers: Some(drivers),
+    })
+}
+
+/// DBA: run DBA optimization, return combined curve + front/rear driver info
+fn preprocess_dba(
+    d: &DBAConfig,
+    optimizer: &super::types::OptimizerConfig,
+    sample_rate: f64,
+) -> Result<SubPreprocessResult> {
+    info!("  DBA optimization");
+
+    let (result, combined) = dba::optimize_dba(d, optimizer, sample_rate)
+        .map_err(|e| AutoeqError::OptimizationFailed { message: format!("DBA optimization failed: {}", e) })?;
+
+    info!("  DBA result: gains={:?}, delays={:?}", result.gains, result.delays);
+
+    // Load front and rear array responses for display
+    let front_curve = dba::sum_array_response(&d.front)
+        .map_err(|e| AutoeqError::InvalidMeasurement { message: format!("DBA front array: {}", e) })?;
+    let rear_curve = dba::sum_array_response(&d.rear)
+        .map_err(|e| AutoeqError::InvalidMeasurement { message: format!("DBA rear array: {}", e) })?;
+
+    let drivers = vec![
+        SubDriverInfo {
+            name: "Front Array".to_string(),
+            gain: result.gains.get(0).copied().unwrap_or(0.0),
+            delay: result.delays.get(0).copied().unwrap_or(0.0),
+            inverted: false,
+            initial_curve: Some(front_curve),
+        },
+        SubDriverInfo {
+            name: "Rear Array".to_string(),
+            gain: result.gains.get(1).copied().unwrap_or(0.0),
+            delay: result.delays.get(1).copied().unwrap_or(0.0),
+            inverted: true,
+            initial_curve: Some(rear_curve),
+        },
+    ];
+
+    Ok(SubPreprocessResult {
+        combined_curve: combined,
+        drivers: Some(drivers),
+    })
 }
 
 /// Workflow for Stereo 2.0 (No Subwoofer)
@@ -213,23 +472,42 @@ pub fn optimize_stereo_2_1(
 ) -> Result<RoomOptimizationResult> {
     info!("Running Stereo 2.1 Optimization Workflow");
 
-    let curves = load_logical_channels(config, sys)?;
-    
-    // Identify channels
-    // Assuming keys "L", "R", "LFE" from spec example
-    // Or use sys.subwoofers to identify Sub
-    let sub_role = "LFE"; // Hardcoded for now based on typical 2.1
-    // Verify existence
-    if !curves.contains_key("L") || !curves.contains_key("R") || !curves.contains_key(sub_role) {
-        return Err(AutoeqError::InvalidConfiguration { 
-            message: "Stereo 2.1 workflow requires 'L', 'R', and 'LFE' channels".to_string() 
-        });
+    let sub_role = "LFE";
+
+    // Load L and R (must be Single speaker configs)
+    let mut curves = HashMap::new();
+    for role in ["L", "R"] {
+        let meas_key = sys.speakers.get(role).ok_or(AutoeqError::InvalidConfiguration {
+            message: format!("Missing speaker mapping for '{}'", role),
+        })?;
+        let cfg = config.speakers.get(meas_key).ok_or(AutoeqError::InvalidConfiguration {
+            message: format!("Missing speaker config for key '{}'", meas_key),
+        })?;
+        let source = match cfg {
+            SpeakerConfig::Single(s) => s,
+            _ => return Err(AutoeqError::InvalidConfiguration {
+                message: format!("'{}' must be a Single speaker config", role),
+            }),
+        };
+        let curve = load_source(source)
+            .map_err(|e| AutoeqError::InvalidMeasurement { message: e.to_string() })?;
+        curves.insert(role.to_string(), curve);
     }
 
-    // Resolve Crossover from System Config
+    // Preprocess LFE (handles Single, MultiSub/MSO, Cardioid, DBA)
     let sub_sys = sys.subwoofers.as_ref().ok_or(
         AutoeqError::InvalidConfiguration { message: "Missing subwoofers configuration".to_string() }
     )?;
+
+    let lfe_meas_key = sys.speakers.get(sub_role).ok_or(AutoeqError::InvalidConfiguration {
+        message: "Missing speaker mapping for 'LFE'".to_string(),
+    })?;
+    let lfe_speaker_config = config.speakers.get(lfe_meas_key).ok_or(AutoeqError::InvalidConfiguration {
+        message: format!("Missing speaker config for key '{}'", lfe_meas_key),
+    })?;
+
+    let sub_preprocess = preprocess_sub(lfe_speaker_config, &sub_sys.config, &config.optimizer, sample_rate)?;
+    curves.insert(sub_role.to_string(), sub_preprocess.combined_curve.clone());
     
     let xover_key = sub_sys.crossover.as_deref().ok_or(
         AutoeqError::InvalidConfiguration { message: "Subwoofer config requires 'crossover' reference".to_string() }
@@ -473,23 +751,24 @@ pub fn optimize_stereo_2_1(
         channel_chains.insert(role.to_string(), chain);
     }
 
-    // Sub Chain: AlignGain -> Crossover(LP) -> SubGain(Invert) -> PostEQ (No Delay)
+    // Sub Chain: AlignGain -> Crossover(LP) -> SubGain(Invert) -> PostEQ
+    // With optional per-driver chains for multi-sub configurations
     let mut sub_plugins = Vec::new();
     let sub_align_gain = *gains.get(sub_role).unwrap_or(&0.0);
     if sub_align_gain.abs() > 0.01 { sub_plugins.push(output::create_gain_plugin(sub_align_gain)); }
-    
+
     sub_plugins.push(output::create_crossover_plugin(xover_type_str, final_xo_freq, "low"));
-    
+
     // Sub Gain + Invert (Delay removed)
     if sub_inverted || sub_gain_post.abs() > 0.01 {
         sub_plugins.push(output::create_gain_plugin_with_invert(sub_gain_post, sub_inverted));
     }
-    
+
     let sub_eqs = post_eq_filters.get(sub_role);
     if let Some(e) = sub_eqs {
         sub_plugins.push(output::create_eq_plugin(e));
     }
-    
+
     // Compute final curve
     let final_sub_curve = if let Some(e) = sub_eqs {
         let resp = response::compute_peq_complex_response(e, &sub_post.freq, sample_rate);
@@ -497,11 +776,37 @@ pub fn optimize_stereo_2_1(
     } else {
         sub_post.clone()
     };
-    
+
+    // Build per-driver chains if multi-sub
+    let driver_chains = sub_preprocess.drivers.as_ref().map(|drivers| {
+        drivers.iter().enumerate().map(|(i, d)| {
+            let mut driver_plugins = Vec::new();
+            if d.inverted || d.gain.abs() > 0.01 {
+                if d.inverted {
+                    driver_plugins.push(output::create_gain_plugin_with_invert(d.gain, true));
+                } else {
+                    driver_plugins.push(output::create_gain_plugin(d.gain));
+                }
+            }
+            if d.delay.abs() > 0.001 {
+                driver_plugins.push(output::create_delay_plugin(d.delay));
+            }
+            let driver_curve = d.initial_curve.as_ref()
+                .map(|c| output::extend_curve_to_full_range(c))
+                .map(|c| (&c).into());
+            DriverDspChain {
+                name: d.name.clone(),
+                index: i,
+                plugins: driver_plugins,
+                initial_curve: driver_curve,
+            }
+        }).collect()
+    });
+
     let sub_chain = ChannelDspChain {
         channel: sub_role.to_string(),
         plugins: sub_plugins,
-        drivers: None,
+        drivers: driver_chains,
         initial_curve: Some((&aligned_curves[sub_role]).into()),
         final_curve: Some((&final_sub_curve).into()),
     };
