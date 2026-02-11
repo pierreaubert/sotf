@@ -1036,17 +1036,25 @@ impl PlayerView {
         translations: &crate::i18n::Translations,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let theme = self.state.read(cx).app.ui_state.theme.clone();
+        let app = &self.state.read(cx).app;
+        let theme = app.ui_state.theme.clone();
+        let channel = app.ui_state.release_channel;
         let state = self.state.clone();
 
         Menu::new(
             "studio-menu",
             vec![
                 MenuItem::new("library", translations.screen_library).with_shortcut("⌘0"),
-                MenuItem::new("studio", translations.screen_studio_rack).with_shortcut("⌘1"),
-                MenuItem::new("plugingraph", translations.screen_studio_full).with_shortcut("⌘2"),
+                MenuItem::new("studio", translations.screen_studio_rack)
+                    .with_shortcut("⌘1")
+                    .disabled(!channel.allows(crate::app::Screen::Studio.maturity())),
+                MenuItem::new("plugingraph", translations.screen_studio_full)
+                    .with_shortcut("⌘2")
+                    .disabled(!channel.allows(crate::app::Screen::PluginGraph.maturity())),
                 MenuItem::new("recording", translations.screen_recording).with_shortcut("⌘3"),
-                MenuItem::new("roomeq", translations.screen_room_eq).with_shortcut("⌘4"),
+                MenuItem::new("roomeq", translations.screen_room_eq)
+                    .with_shortcut("⌘4")
+                    .disabled(!channel.allows(crate::app::Screen::RoomEq.maturity())),
                 MenuItem::new("headphoneeq", translations.screen_headphone_eq).with_shortcut("⌘5"),
                 MenuItem::new("spinorama", translations.screen_spinorama).with_shortcut("⌘6"),
             ],

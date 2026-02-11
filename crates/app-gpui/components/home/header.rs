@@ -184,6 +184,7 @@ impl PlayerView {
     fn render_show_dropdown(&self, theme: Theme, cx: &mut Context<Self>) -> impl IntoElement {
         let app_state = self.state.read(cx);
         let translations = app_state.app.ui_state.translations.clone();
+        let channel = app_state.app.ui_state.release_channel;
         let _ = app_state;
 
         let state = self.state.clone();
@@ -191,9 +192,13 @@ impl PlayerView {
         Menu::new(
             "view-menu",
             vec![
-                MenuItem::new("studio", translations.screen_studio).with_shortcut("⌘1"),
+                MenuItem::new("studio", translations.screen_studio)
+                    .with_shortcut("⌘1")
+                    .disabled(!channel.allows(Screen::Studio.maturity())),
                 MenuItem::new("recording", translations.screen_recording).with_shortcut("⌘2"),
-                MenuItem::new("roomeq", translations.screen_room_eq).with_shortcut("⌘3"),
+                MenuItem::new("roomeq", translations.screen_room_eq)
+                    .with_shortcut("⌘3")
+                    .disabled(!channel.allows(Screen::RoomEq.maturity())),
                 MenuItem::new("headphoneeq", translations.screen_headphone_eq).with_shortcut("⌘4"),
                 MenuItem::new("spinorama", translations.screen_spinorama).with_shortcut("⌘5"),
                 MenuItem::separator(),

@@ -225,11 +225,26 @@ impl PlayerView {
                                 })
                                 .collect();
 
+                            // Filter out channels with empty frequency data (can happen with
+                            // older RoomConfig versions where CSV paths are unresolvable)
+                            let empty_count = channel_measurements
+                                .iter()
+                                .filter(|m| m.measurement.frequencies.is_empty())
+                                .count();
+                            if empty_count > 0 {
+                                log::warn!(
+                                    "{} channel(s) have empty frequency data and will be skipped",
+                                    empty_count
+                                );
+                            }
+                            channel_measurements
+                                .retain(|m| !m.measurement.frequencies.is_empty());
+
                             if channel_measurements.is_empty() {
                                 log::error!("No valid inline measurements found in RoomConfig");
                                 let _ = state_entity.update(cx, |state, _| {
                                     state.app.measurement_state.room_eq_state.error_message =
-                                        Some("No valid inline measurements found in file".to_string());
+                                        Some("No valid measurement data found. The file may be an older format — try re-recording or re-exporting.".to_string());
                                 });
                                 return;
                             }

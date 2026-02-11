@@ -10,13 +10,13 @@ impl Screen {
             | Screen::Queue
             | Screen::Spectrum
             | Screen::Settings
-            | Screen::Studio
             | Screen::Recording
             | Screen::HeadphoneEq
-            | Screen::Spinorama
-            | Screen::PluginGraph => ReleaseChannel::Prod,
+            | Screen::Spinorama => ReleaseChannel::Prod,
 
             Screen::RoomEq => ReleaseChannel::Beta,
+
+            Screen::Studio | Screen::PluginGraph => ReleaseChannel::Alpha,
         }
     }
 }

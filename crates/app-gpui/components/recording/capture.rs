@@ -1470,6 +1470,17 @@ impl PlayerView {
                     })
                     .collect();
 
+                // Filter out channels with empty frequency data (can happen with
+                // older RoomConfig versions where CSV paths are unresolvable)
+                let recordings: Vec<ChannelRecording> = recordings
+                    .into_iter()
+                    .filter(|r| {
+                        r.result
+                            .as_ref()
+                            .map_or(false, |res| !res.frequencies.is_empty())
+                    })
+                    .collect();
+
                 let rec_state = &mut state.app.measurement_state.recording_state;
                 rec_state.channel_recordings = recordings.clone();
 

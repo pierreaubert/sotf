@@ -88,6 +88,12 @@ pub fn render_line_chart(
     theme: &Theme,
     interactive_state: Option<&gpui_px::interaction::InteractiveChartState>,
 ) -> impl IntoElement {
+    // Filter out series with empty data to prevent EmptyData errors from the chart builder
+    let series: Vec<Series> = series
+        .into_iter()
+        .filter(|s| !s.x_values.is_empty() && !s.y_values.is_empty())
+        .collect();
+
     if series.is_empty() {
         return div().child("No data").into_any_element();
     }
@@ -144,7 +150,13 @@ pub fn render_line_chart(
         );
     }
 
-    let chart_element = chart.build().unwrap().into_any_element();
+    let chart_element = match chart.build() {
+        Ok(c) => c.into_any_element(),
+        Err(e) => {
+            log::warn!("Chart build failed: {:?}", e);
+            return div().child("No data available").into_any_element();
+        }
+    };
 
     if let Some(state) = interactive_state {
         gpui_px::interaction::interactive("shared-response-chart", chart_element, state.clone())
