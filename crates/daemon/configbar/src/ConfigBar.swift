@@ -1,4 +1,3 @@
-#!/usr/bin/swift
 //
 // AutoEQ Menu Bar Application
 //
@@ -11,7 +10,6 @@
 import SwiftUI
 import Cocoa
 import UserNotifications
-import WebKit
 import CoreAudio
 
 // MARK: - Audio Source Selection
@@ -424,6 +422,131 @@ class AudioEngineClient {
         }
 
         return loudness
+    }
+
+    // MARK: - Metering Commands
+
+    struct MeteringData {
+        var input: LoudnessData?
+        var output: LoudnessData?
+    }
+
+    func getMetering() -> MeteringData? {
+        let command: [String: Any] = ["command": "get_metering"]
+
+        guard let response = sendCommand(command),
+              response.success,
+              let data = response.data else {
+            return nil
+        }
+
+        var metering = MeteringData()
+
+        if let inputDict = data["input"]?.value as? [String: Any] {
+            metering.input = parseLoudnessDict(inputDict)
+        }
+        if let outputDict = data["output"]?.value as? [String: Any] {
+            metering.output = parseLoudnessDict(outputDict)
+        }
+
+        return metering
+    }
+
+    private func parseLoudnessDict(_ dict: [String: Any]) -> LoudnessData {
+        var loudness = LoudnessData()
+        loudness.momentary = dict["momentary"] as? Double ?? -60.0
+        loudness.shortTerm = dict["short_term"] as? Double ?? -60.0
+        loudness.integrated = dict["integrated"] as? Double ?? -60.0
+        loudness.peak = dict["peak"] as? Double ?? 0.0
+
+        if let peaks = dict["channel_peaks"] as? [Any] {
+            loudness.channelPeaks = peaks.compactMap { $0 as? Double }
+        }
+        if let truePeaks = dict["true_peaks_dbtp"] as? [Any] {
+            loudness.truePeaksDbtp = truePeaks.compactMap { $0 as? Double }
+        }
+        if let correlation = dict["correlation_lr"] as? Double {
+            loudness.correlationLR = correlation
+        }
+
+        return loudness
+    }
+
+    // MARK: - Plugin Management Commands
+
+    /// Get current plugin chain from daemon (user plugins only)
+    func getPlugins() -> [[String: Any]]? {
+        let command: [String: Any] = ["command": "get_plugins"]
+
+        guard let response = sendCommand(command),
+              response.success,
+              let data = response.data,
+              let plugins = data["plugins"]?.value as? [Any] else {
+            return nil
+        }
+
+        return plugins.compactMap { $0 as? [String: Any] }
+    }
+
+    /// Get available plugin types from daemon
+    func getAvailablePlugins() -> [AvailablePlugin]? {
+        let command: [String: Any] = ["command": "get_available_plugins"]
+
+        guard let response = sendCommand(command),
+              response.success,
+              let data = response.data,
+              let plugins = data["plugins"]?.value as? [Any] else {
+            return nil
+        }
+
+        return plugins.compactMap { item -> AvailablePlugin? in
+            guard let dict = item as? [String: Any],
+                  let type_ = dict["type"] as? String,
+                  let name = dict["name"] as? String,
+                  let description = dict["description"] as? String,
+                  let category = dict["category"] as? String,
+                  let maturity = dict["maturity"] as? String else {
+                return nil
+            }
+            return AvailablePlugin(type_: type_, name: name, description: description, category: category, maturity: maturity)
+        }
+    }
+
+    /// Add a plugin to the chain
+    func addPlugin(type: String, parameters: [String: Any], index: Int?) -> Bool {
+        var command: [String: Any] = [
+            "command": "add_plugin",
+            "plugin": [
+                "plugin_type": type,
+                "parameters": parameters,
+            ] as [String: Any],
+        ]
+        if let idx = index {
+            command["index"] = idx
+        }
+        return sendCommand(command)?.success ?? false
+    }
+
+    /// Remove a plugin by index
+    func removePlugin(at index: Int) -> Bool {
+        let command: [String: Any] = ["command": "remove_plugin", "index": index]
+        return sendCommand(command)?.success ?? false
+    }
+
+    /// Update plugin parameters
+    func updatePlugin(at index: Int, parameters: [String: Any]) -> Bool {
+        let command: [String: Any] = [
+            "command": "update_plugin",
+            "index": index,
+            "parameters": parameters,
+        ]
+        return sendCommand(command)?.success ?? false
+    }
+
+    /// Reorder plugins
+    func reorderPlugins(order: [Int]) -> Bool {
+        let command: [String: Any] = ["command": "reorder_plugins", "order": order]
+        return sendCommand(command)?.success ?? false
     }
 
     // MARK: - Encryption Commands
@@ -1128,8 +1251,6 @@ struct ConfigurationView: View {
     @State private var devices: [AudioEngineClient.AudioDevice] = []
     @State private var selectedDevice: String = ""
     @State private var volume: Float = 1.0
-    @State private var showingPluginConfig = false
-
     // Audio Source Configuration
     @State private var availableSources: [AudioSource] = []
     @State private var selectedSource: AudioSource = .halDriver
@@ -1391,16 +1512,11 @@ struct ConfigurationView: View {
                         }
 
                         Spacer()
-
-                        Button("Edit Plugins") {
-                            showingPluginConfig = true
-                        }
                     }
 
-                    if showingPluginConfig {
-                        Divider()
-                        PluginHostView()
-                    }
+                    Divider()
+
+                    PluginRackView(client: client, outputChannels: halOutputChannels)
                 }
                 .padding()
             }
@@ -1663,18 +1779,20 @@ struct ConfigurationView: View {
     }
 
     private func updateMetering() {
-        if let loudness = client.getLoudness() {
-            // Update output peaks from the loudness data
-            if !loudness.channelPeaks.isEmpty {
-                outputPeaks = loudness.channelPeaks
+        if let metering = client.getMetering() {
+            // Input peaks from pre-processing monitor
+            if let input = metering.input, !input.channelPeaks.isEmpty {
+                inputPeaks = input.channelPeaks
             }
-            // For input, we currently show the same data
-            // TODO: Add separate input metering plugin
-            inputPeaks = loudness.channelPeaks
 
-            // Update LUFS values
-            momentaryLufs = loudness.momentary
-            shortTermLufs = loudness.shortTerm
+            // Output peaks from post-processing monitor
+            if let output = metering.output {
+                if !output.channelPeaks.isEmpty {
+                    outputPeaks = output.channelPeaks
+                }
+                momentaryLufs = output.momentary
+                shortTermLufs = output.shortTerm
+            }
         }
     }
 
@@ -1817,41 +1935,21 @@ struct ConfigurationView: View {
 
     private func applyHALConfiguration() {
         // Validate channel configuration
-        guard halInputChannels >= 1 && halInputChannels <= 16 else {
-            errorMessage = "Invalid input channel count: \(halInputChannels). Must be between 1 and 16."
-            showingError = true
-            return
-        }
-
         guard halOutputChannels >= 1 && halOutputChannels <= 16 else {
             errorMessage = "Invalid output channel count: \(halOutputChannels). Must be between 1 and 16."
             showingError = true
             return
         }
 
-        // Build HAL plugin chain with configured channels and metering
-        let plugins: [[String: Any]] = [
-            [
-                "plugin_type": "hal_input",
-                "parameters": ["channels": halInputChannels]
-            ],
-            [
-                "plugin_type": "loudness_monitor",
-                "parameters": ["channels": halInputChannels, "position": "input"]
-            ],
-            [
-                "plugin_type": "loudness_monitor",
-                "parameters": ["channels": halOutputChannels, "position": "output"]
-            ],
-            [
-                "plugin_type": "hal_output",
-                "parameters": ["channels": halOutputChannels]
-            ]
-        ]
+        // Send empty plugin chain — daemon auto-injects loudness monitors
+        // hal_input/hal_output are NOT needed: decoder thread reads from HAL shared memory,
+        // cpal handles output directly.
+        let plugins: [[String: Any]] = []
 
         let command: [String: Any] = [
             "command": "load_plugins",
-            "plugins": plugins
+            "plugins": plugins,
+            "output_channels": halOutputChannels
         ]
 
         guard let response = client.sendCommand(command) else {
@@ -1861,7 +1959,7 @@ struct ConfigurationView: View {
         }
 
         if response.success {
-            print("✅ HAL configuration applied: \(halInputChannels)ch in → \(halOutputChannels)ch out")
+            print("✅ HAL configuration applied: \(halOutputChannels)ch out")
         } else {
             errorMessage = response.error ?? "Unknown error occurred while applying HAL configuration."
             showingError = true
@@ -1925,72 +2023,24 @@ struct ConfigurationView: View {
                     return
                 }
 
-                // Check if HAL plugins are already present
-                let hasHalInput = plugins.contains { ($0["plugin_type"] as? String) == "hal_input" }
-                let hasHalOutput = plugins.contains { ($0["plugin_type"] as? String) == "hal_output" }
-                let hasLoudnessMonitor = plugins.contains { ($0["plugin_type"] as? String) == "loudness_monitor" }
-
-                // Wrap with HAL plugins and metering if not present
-                var finalPlugins: [[String: Any]] = []
-
-                // HAL input
-                if !hasHalInput {
-                    finalPlugins.append([
-                        "plugin_type": "hal_input",
-                        "parameters": ["channels": halInputChannels]
-                    ])
+                // Strip obsolete hal_input/hal_output and loudness_monitor from loaded config
+                // The daemon auto-injects loudness monitors and handles HAL I/O directly
+                let userPlugins = plugins.filter { plugin in
+                    let pt = plugin["plugin_type"] as? String ?? ""
+                    return pt != "hal_input" && pt != "hal_output" && pt != "loudness_monitor"
                 }
 
-                // Input metering (right after HAL input)
-                if !hasLoudnessMonitor {
-                    finalPlugins.append([
-                        "plugin_type": "loudness_monitor",
-                        "parameters": ["channels": halInputChannels, "position": "input"]
-                    ])
-                }
-
-                // User's plugins
-                finalPlugins.append(contentsOf: plugins)
-
-                // Output metering (right before HAL output)
-                if !hasLoudnessMonitor {
-                    finalPlugins.append([
-                        "plugin_type": "loudness_monitor",
-                        "parameters": ["channels": halOutputChannels, "position": "output"]
-                    ])
-                }
-
-                // HAL output
-                if !hasHalOutput {
-                    finalPlugins.append([
-                        "plugin_type": "hal_output",
-                        "parameters": ["channels": halOutputChannels]
-                    ])
-                }
-
-                // Send plugins to daemon
+                // Send plugins to daemon (daemon auto-injects metering)
                 let command: [String: Any] = [
                     "command": "load_plugins",
-                    "plugins": finalPlugins
+                    "plugins": userPlugins,
+                    "output_channels": halOutputChannels
                 ]
 
                 let response = client.sendCommand(command)
                 if let resp = response, resp.success {
                     print("✅ Plugin configuration loaded from: \(url.path)")
-                    print("   Total plugins: \(finalPlugins.count) (HAL wrapped: \(!hasHalInput || !hasHalOutput))")
-
-                    // Update local state if HAL plugins found in original config
-                    for plugin in plugins {
-                        if let pluginType = plugin["plugin_type"] as? String,
-                           let params = plugin["parameters"] as? [String: Any] {
-                            if pluginType == "hal_input", let ch = params["channels"] as? Int {
-                                halInputChannels = ch
-                            }
-                            if pluginType == "hal_output", let ch = params["channels"] as? Int {
-                                halOutputChannels = ch
-                            }
-                        }
-                    }
+                    print("   User plugins: \(userPlugins.count) (stripped obsolete hal_input/hal_output)")
                 } else {
                     errorMessage = response?.error ?? "Failed to apply plugin configuration"
                     showingError = true
@@ -2009,24 +2059,18 @@ struct ConfigurationView: View {
         panel.message = "Save plugin configuration"
 
         if panel.runModal() == .OK, let url = panel.url {
-            // Build current plugin configuration
-            let plugins: [[String: Any]] = [
-                [
-                    "plugin_type": "hal_input",
-                    "parameters": ["channels": halInputChannels]
-                ],
-                [
-                    "plugin_type": "hal_output",
-                    "parameters": ["channels": halOutputChannels]
-                ]
-            ]
-
-            do {
-                let data = try JSONSerialization.data(withJSONObject: plugins, options: .prettyPrinted)
-                try data.write(to: url)
-                print("✅ Plugin configuration saved to: \(url.path)")
-            } catch {
-                errorMessage = "Failed to save configuration: \(error.localizedDescription)"
+            // Query daemon for the current active plugin list
+            if let currentPlugins = client.getPlugins() {
+                do {
+                    let data = try JSONSerialization.data(withJSONObject: currentPlugins, options: .prettyPrinted)
+                    try data.write(to: url)
+                    print("✅ Plugin configuration saved to: \(url.path)")
+                } catch {
+                    errorMessage = "Failed to save configuration: \(error.localizedDescription)"
+                    showingError = true
+                }
+            } else {
+                errorMessage = "Failed to retrieve current plugin list from daemon"
                 showingError = true
             }
         }
@@ -2134,53 +2178,6 @@ struct ConfigurationView: View {
         default:
             return ("questionmark.circle", "Unknown", .secondary)
         }
-    }
-}
-
-// MARK: - Plugin Host View (WebView for TypeScript UI)
-
-struct PluginHostView: NSViewRepresentable {
-    func makeNSView(context: Context) -> WKWebView {
-        let webView = WKWebView()
-
-        // Try to load from bundle resources first
-        if let url = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "ui") {
-            webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
-        } else {
-            // Show placeholder if UI not available
-            let html = """
-            <html>
-            <head>
-                <style>
-                    body {
-                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                        padding: 40px;
-                        text-align: center;
-                        color: #666;
-                        background: #f5f5f7;
-                    }
-                    h2 { color: #333; margin-bottom: 20px; }
-                    p { margin: 10px 0; line-height: 1.6; }
-                    .icon { font-size: 48px; margin-bottom: 20px; }
-                </style>
-            </head>
-            <body>
-                <div class="icon">🎛️</div>
-                <h2>Plugin Configuration</h2>
-                <p>Advanced plugin configuration UI is not yet available.</p>
-                <p>Use the channel settings above to configure HAL input/output,<br>
-                   or load a plugin configuration JSON file.</p>
-            </body>
-            </html>
-            """
-            webView.loadHTMLString(html, baseURL: nil)
-        }
-
-        return webView
-    }
-
-    func updateNSView(_ nsView: WKWebView, context: Context) {
-        // Update if needed
     }
 }
 
@@ -2293,7 +2290,12 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
 
 // MARK: - Main
 
-let app = NSApplication.shared
-let delegate = AppDelegate()
-app.delegate = delegate
-app.run()
+@main
+struct SotFToolbarApp {
+    static func main() {
+        let app = NSApplication.shared
+        let delegate = AppDelegate()
+        app.delegate = delegate
+        app.run()
+    }
+}

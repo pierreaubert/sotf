@@ -34,6 +34,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sotf_audio::PluginConfig;
 use sotf_audio::manager::AudioEngineManager;
+use sotf_audio::plugins::PluginType;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
@@ -41,6 +42,10 @@ use std::sync::Arc;
 
 /// Legacy socket path for backwards compatibility
 const LEGACY_SOCKET_PATH: &str = "/tmp/autoeq_audio.sock";
+
+fn default_output_channels() -> usize {
+    2
+}
 
 /// Get the socket path to use
 /// Uses secure per-user path, with fallback to legacy path if SOTF_LEGACY_SOCKET is set
@@ -74,9 +79,35 @@ enum Command {
     #[serde(rename = "set_device")]
     SetDevice { device: String },
     #[serde(rename = "load_plugins")]
-    LoadPlugins { plugins: Vec<PluginConfig> },
+    LoadPlugins {
+        plugins: Vec<PluginConfig>,
+        #[serde(default = "default_output_channels")]
+        output_channels: usize,
+    },
     #[serde(rename = "get_loudness")]
     GetLoudness,
+    #[serde(rename = "get_metering")]
+    GetMetering,
+    // Plugin management commands
+    #[serde(rename = "get_plugins")]
+    GetPlugins,
+    #[serde(rename = "get_available_plugins")]
+    GetAvailablePlugins,
+    #[serde(rename = "add_plugin")]
+    AddPlugin {
+        plugin: PluginConfig,
+        #[serde(default)]
+        index: Option<usize>,
+    },
+    #[serde(rename = "remove_plugin")]
+    RemovePlugin { index: usize },
+    #[serde(rename = "update_plugin")]
+    UpdatePlugin {
+        index: usize,
+        parameters: serde_json::Value,
+    },
+    #[serde(rename = "reorder_plugins")]
+    ReorderPlugins { order: Vec<usize> },
     #[serde(rename = "hal_status")]
     HalStatus,
     #[serde(rename = "shutdown")]
@@ -145,10 +176,14 @@ struct AudioDaemon {
     shared_buffer: Arc<Mutex<Option<driver_hal::SharedAudioBuffer>>>,
     /// Shared Tokio runtime for async operations
     runtime: Arc<tokio::runtime::Runtime>,
-    /// Current plugin configuration (user plugins, excluding auto-added resampler)
+    /// Current plugin configuration (user plugins, excluding auto-added monitors)
     current_plugins: Arc<Mutex<Vec<PluginConfig>>>,
     /// Current output channel count
     current_output_channels: Arc<Mutex<usize>>,
+    /// Index of the auto-injected input loudness monitor in the final plugin chain
+    input_loudness_index: Arc<Mutex<Option<usize>>>,
+    /// Index of the auto-injected output loudness monitor in the final plugin chain
+    output_loudness_index: Arc<Mutex<Option<usize>>>,
 }
 
 impl AudioDaemon {
@@ -167,6 +202,8 @@ impl AudioDaemon {
             runtime: Arc::new(runtime),
             current_plugins: Arc::new(Mutex::new(Vec::new())),
             current_output_channels: Arc::new(Mutex::new(2)),
+            input_loudness_index: Arc::new(Mutex::new(None)),
+            output_loudness_index: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -208,8 +245,15 @@ impl AudioDaemon {
             Command::SetVolume { volume } => self.handle_set_volume(volume).await,
             Command::ListDevices => self.handle_list_devices().await,
             Command::SetDevice { device } => self.handle_set_device(&device).await,
-            Command::LoadPlugins { plugins } => self.handle_load_plugins(plugins).await,
+            Command::LoadPlugins { plugins, output_channels } => self.handle_load_plugins_with_channels(plugins, output_channels).await,
             Command::GetLoudness => self.handle_get_loudness().await,
+            Command::GetMetering => self.handle_get_metering().await,
+            Command::GetPlugins => self.handle_get_plugins().await,
+            Command::GetAvailablePlugins => self.handle_get_available_plugins().await,
+            Command::AddPlugin { plugin, index } => self.handle_add_plugin(plugin, index).await,
+            Command::RemovePlugin { index } => self.handle_remove_plugin(index).await,
+            Command::UpdatePlugin { index, parameters } => self.handle_update_plugin(index, parameters).await,
+            Command::ReorderPlugins { order } => self.handle_reorder_plugins(order).await,
             Command::HalStatus => self.handle_hal_status().await,
             Command::Shutdown => {
                 *self.running.lock() = false;
@@ -324,12 +368,28 @@ impl AudioDaemon {
         }
     }
 
-    async fn handle_load_plugins(&self, plugins: Vec<PluginConfig>) -> Response {
-        self.handle_load_plugins_with_channels(plugins, 2).await
-    }
+    async fn handle_load_plugins_with_channels(&self, plugins: Vec<PluginConfig>, output_channels: usize) -> Response {
+        // Strip obsolete hal_input/hal_output plugins (toolbar may still send them)
+        let plugins: Vec<PluginConfig> = plugins
+            .into_iter()
+            .filter(|p| {
+                let pt = p.plugin_type.as_str();
+                if pt == "hal_input" || pt == "hal_output" {
+                    log::warn!("Stripping obsolete '{}' plugin from chain — decoder thread handles HAL I/O directly", pt);
+                    false
+                } else {
+                    true
+                }
+            })
+            .collect();
 
-    async fn handle_load_plugins_with_channels(&self, mut plugins: Vec<PluginConfig>, output_channels: usize) -> Response {
-        // Store user's plugin configuration BEFORE adding resampler
+        // Also strip loudness_monitor — we auto-inject them at known positions
+        let plugins: Vec<PluginConfig> = plugins
+            .into_iter()
+            .filter(|p| p.plugin_type != "loudness_monitor")
+            .collect();
+
+        // Store user's plugin configuration BEFORE adding monitors
         *self.current_plugins.lock() = plugins.clone();
         *self.current_output_channels.lock() = output_channels;
 
@@ -347,16 +407,12 @@ impl AudioDaemon {
         // Stop current playback if running
         let _ = manager.stop();
 
-        // Note: hal_input/hal_output plugins are no longer required.
-        // The decoder thread's HalInputReader is the audio source, and cpal is the output.
-        // Any plugins in the chain are purely for processing (EQ, upmixer, etc.)
-
-        // Check HAL sample rate and add resampler if needed
+        // Check HAL sample rate
         #[cfg(target_os = "macos")]
         {
             if let Some(buffer) = self.get_shared_buffer() {
                 let hal_rate = buffer.sample_rate();
-                let target_rate = 48000u32; // Engine's target sample rate
+                let target_rate = 48000u32;
 
                 if hal_rate != 0 && hal_rate != target_rate {
                     log::info!(
@@ -367,15 +423,43 @@ impl AudioDaemon {
             }
         }
 
+        // Build final plugin chain: input_monitor + user plugins + output_monitor
+        let mut final_plugins = Vec::with_capacity(plugins.len() + 2);
+
+        // Index 0: input loudness monitor (measures signal before processing)
+        let input_monitor_index = 0;
+        final_plugins.push(PluginConfig {
+            plugin_type: "loudness_monitor".to_string(),
+            parameters: serde_json::json!({}),
+        });
+
+        // User's processing plugins
+        final_plugins.extend(plugins);
+
+        // Last: output loudness monitor (measures signal after processing)
+        let output_monitor_index = final_plugins.len();
+        final_plugins.push(PluginConfig {
+            plugin_type: "loudness_monitor".to_string(),
+            parameters: serde_json::json!({}),
+        });
+
+        // Store monitor indices for get_metering
+        *self.input_loudness_index.lock() = Some(input_monitor_index);
+        *self.output_loudness_index.lock() = Some(output_monitor_index);
+
         log::info!(
-            "Loading HAL plugin chain: {} plugins, {} output channels, device: {:?}",
-            plugins.len(),
+            "Loading HAL plugin chain: {} user plugins + 2 monitors = {} total, {} output channels, device: {:?}",
+            final_plugins.len() - 2,
+            final_plugins.len(),
             output_channels,
             output_device
         );
 
+        // Set the output loudness index for backward compat (get_loudness command)
+        manager.set_loudness_plugin_index(output_monitor_index);
+
         // Start HAL playback (no file source needed)
-        match manager.start_hal_playback(output_device, plugins, output_channels) {
+        match manager.start_hal_playback(output_device, final_plugins, output_channels) {
             Ok(_) => {
                 log::info!("HAL plugin chain loaded successfully");
 
@@ -427,12 +511,173 @@ impl AudioDaemon {
                 "short_term": loudness.shortterm_lufs,
                 "integrated": loudness.integrated_lufs,
                 "peak": loudness.peak,
-                "channel_peaks": loudness.channel_peaks,
-                "true_peaks_dbtp": loudness.true_peaks_dbtp,
-                "correlation_lr": loudness.correlation_lr,
             })),
             None => Response::err("Loudness monitoring not enabled"),
         }
+    }
+
+    async fn handle_get_metering(&self) -> Response {
+        let manager = self.manager.lock();
+        let input_idx = *self.input_loudness_index.lock();
+        let output_idx = *self.output_loudness_index.lock();
+
+        let loudness_to_json = |info: &sotf_audio::LoudnessInfo| -> Value {
+            serde_json::json!({
+                "momentary": info.momentary_lufs,
+                "short_term": info.shortterm_lufs,
+                "integrated": info.integrated_lufs,
+                "peak": info.peak,
+            })
+        };
+
+        let input_data = input_idx.and_then(|idx| {
+            manager
+                .get_cached_plugin_data(idx)
+                .and_then(|data| data.downcast_ref::<sotf_audio::LoudnessInfo>().cloned())
+        });
+
+        let output_data = output_idx.and_then(|idx| {
+            manager
+                .get_cached_plugin_data(idx)
+                .and_then(|data| data.downcast_ref::<sotf_audio::LoudnessInfo>().cloned())
+        });
+
+        let input_json = input_data
+            .as_ref()
+            .map(loudness_to_json)
+            .unwrap_or(serde_json::json!(null));
+        let output_json = output_data
+            .as_ref()
+            .map(loudness_to_json)
+            .unwrap_or(serde_json::json!(null));
+
+        Response::ok(serde_json::json!({
+            "input": input_json,
+            "output": output_json,
+        }))
+    }
+
+    // =========================================================================
+    // Plugin management handlers
+    // =========================================================================
+
+    async fn handle_get_plugins(&self) -> Response {
+        let plugins = self.current_plugins.lock();
+        let result: Vec<Value> = plugins
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                serde_json::json!({
+                    "index": i,
+                    "plugin_type": p.plugin_type,
+                    "parameters": p.parameters,
+                })
+            })
+            .collect();
+        Response::ok(serde_json::json!({ "plugins": result }))
+    }
+
+    async fn handle_get_available_plugins(&self) -> Response {
+        // User-facing plugins only (exclude internal/monitoring types)
+        let excluded = [
+            "loudness_monitor",
+            "spectrum_analyzer",
+            "resampler",
+            "hal_input",
+            "hal_output",
+            "band_split",
+            "band_merge",
+            "ab_compare",
+        ];
+
+        let available: Vec<Value> = PluginType::all()
+            .into_iter()
+            .filter(|pt| {
+                let engine_type = plugin_type_to_engine_str(pt);
+                !excluded.contains(&engine_type)
+            })
+            .map(|pt| {
+                let engine_type = plugin_type_to_engine_str(&pt);
+                let category = plugin_type_category(&pt);
+                serde_json::json!({
+                    "type": engine_type,
+                    "name": pt.name(),
+                    "description": pt.description(),
+                    "category": category,
+                    "maturity": format!("{:?}", pt.maturity()),
+                })
+            })
+            .collect();
+
+        Response::ok(serde_json::json!({ "plugins": available }))
+    }
+
+    async fn handle_add_plugin(&self, plugin: PluginConfig, index: Option<usize>) -> Response {
+        {
+            let mut plugins = self.current_plugins.lock();
+            match index {
+                Some(i) if i <= plugins.len() => plugins.insert(i, plugin),
+                _ => plugins.push(plugin),
+            }
+        }
+        self.reload_plugins().await
+    }
+
+    async fn handle_remove_plugin(&self, index: usize) -> Response {
+        {
+            let mut plugins = self.current_plugins.lock();
+            if index >= plugins.len() {
+                return Response::err(format!("Plugin index {} out of range (have {})", index, plugins.len()));
+            }
+            plugins.remove(index);
+        }
+        self.reload_plugins().await
+    }
+
+    async fn handle_update_plugin(&self, index: usize, parameters: Value) -> Response {
+        {
+            let mut plugins = self.current_plugins.lock();
+            if index >= plugins.len() {
+                return Response::err(format!("Plugin index {} out of range (have {})", index, plugins.len()));
+            }
+            plugins[index].parameters = parameters;
+        }
+        self.reload_plugins().await
+    }
+
+    async fn handle_reorder_plugins(&self, order: Vec<usize>) -> Response {
+        {
+            let mut plugins = self.current_plugins.lock();
+            let n = plugins.len();
+
+            // Validate: order must be a permutation of 0..n
+            if order.len() != n {
+                return Response::err(format!("Order length {} doesn't match plugin count {}", order.len(), n));
+            }
+            let mut seen = vec![false; n];
+            for &idx in &order {
+                if idx >= n || seen[idx] {
+                    return Response::err(format!("Invalid order: duplicate or out-of-range index {}", idx));
+                }
+                seen[idx] = true;
+            }
+
+            let old = plugins.clone();
+            for (new_pos, &old_pos) in order.iter().enumerate() {
+                plugins[new_pos] = old[old_pos].clone();
+            }
+        }
+        self.reload_plugins().await
+    }
+
+    /// Reload the plugin chain from current_plugins (re-injects monitors)
+    async fn reload_plugins(&self) -> Response {
+        let plugins = self.current_plugins.lock().clone();
+        let output_channels = *self.current_output_channels.lock();
+        // Re-use the full load path which auto-injects monitors.
+        // We need to temporarily put back the plugins since handle_load_plugins_with_channels
+        // will strip and re-store them.
+        self.handle_load_plugins_with_channels(plugins, output_channels).await
     }
 
     async fn handle_hal_status(&self) -> Response {
@@ -754,6 +999,8 @@ impl AudioDaemon {
                         runtime: Arc::clone(&self.runtime),
                         current_plugins: Arc::clone(&self.current_plugins),
                         current_output_channels: Arc::clone(&self.current_output_channels),
+                        input_loudness_index: Arc::clone(&self.input_loudness_index),
+                        output_loudness_index: Arc::clone(&self.output_loudness_index),
                     };
 
                     // Handle each client in a separate thread
@@ -984,7 +1231,7 @@ fn reconfigure_audio_pipeline(
 
     // Build plugin chain: resampler (if needed) + user plugins
     let target_rate = 48000u32;
-    let mut plugins = user_plugins;
+    let plugins = user_plugins;
 
     if hal_sample_rate != 0 && hal_sample_rate != target_rate {
         log::info!(
@@ -1013,6 +1260,54 @@ fn reconfigure_audio_pipeline(
             log::error!("Failed to restart HAL playback: {}", e);
             Err(format!("Failed to restart HAL playback: {}", e))
         }
+    }
+}
+
+/// Map PluginType enum to the string the engine's create_plugin() expects
+fn plugin_type_to_engine_str(pt: &PluginType) -> &'static str {
+    match pt {
+        PluginType::EQ => "eq",
+        PluginType::Gain => "gain",
+        PluginType::Upmixer => "upmixer",
+        PluginType::Compressor => "compressor",
+        PluginType::Limiter => "limiter",
+        PluginType::Gate => "gate",
+        PluginType::Expander => "expander",
+        PluginType::MultibandCompressor => "multiband_compressor",
+        PluginType::MultibandExpander => "multiband_expander",
+        PluginType::LoudnessCompensation => "loudness_compensation",
+        PluginType::FletcherMunson => "fletcher_munson",
+        PluginType::BinauralDecoder => "binaural_decoder",
+        PluginType::Convolution => "convolution",
+        PluginType::LoudnessMonitor => "loudness_monitor",
+        PluginType::SpectrumAnalyzer => "spectrum_analyzer",
+        PluginType::ChannelMuteSolo => "channel_mute_solo",
+        PluginType::Matrix => "matrix",
+        PluginType::XTC => "xtc",
+        PluginType::Denoiser => "denoiser",
+        PluginType::Pnd => "pnd",
+        PluginType::ABCompare => "ab_compare",
+        PluginType::BandSplit => "band_split",
+        PluginType::BandMerge => "band_merge",
+        PluginType::Downmix => "downmix",
+        PluginType::MonoToStereo => "mono_to_stereo",
+    }
+}
+
+/// Categorize plugins for the UI picker
+fn plugin_type_category(pt: &PluginType) -> &'static str {
+    match pt {
+        PluginType::EQ | PluginType::FletcherMunson | PluginType::LoudnessCompensation => "EQ & Tone",
+        PluginType::Gain => "Utility",
+        PluginType::Compressor | PluginType::Limiter | PluginType::Gate | PluginType::Expander => "Dynamics",
+        PluginType::MultibandCompressor | PluginType::MultibandExpander => "Dynamics",
+        PluginType::Upmixer | PluginType::Downmix | PluginType::MonoToStereo | PluginType::Matrix | PluginType::ChannelMuteSolo => "Spatial & Routing",
+        PluginType::BinauralDecoder | PluginType::XTC => "Spatial & Routing",
+        PluginType::Convolution => "Effects",
+        PluginType::Denoiser | PluginType::Pnd => "Restoration",
+        PluginType::LoudnessMonitor | PluginType::SpectrumAnalyzer => "Monitoring",
+        PluginType::ABCompare => "Utility",
+        PluginType::BandSplit | PluginType::BandMerge => "Utility",
     }
 }
 
