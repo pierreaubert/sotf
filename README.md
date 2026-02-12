@@ -13,8 +13,6 @@ What can you do with it?
 
 *Sound of the Future* or *SotF* in short comes from the song from [Giorgio Moroder](https://en.wikipedia.org/wiki/Giorgio_Moroder) made popular by [Daft Punk](https://en.wikipedia.org/wiki/Daft_Punk). You can find many versions on Youtube. Here is an [official one](https://youtu.be/zhl-Cs1-sG4?si=H4hgakoEdQn-HMH6&t=73).
 
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/pierreaubert/sotf)
-
 ## A picture is worth a thousand words.
 
 ### Player

@@ -99,7 +99,6 @@ impl TestScenario for RoomEqParameterCheckScenario {
                     crossover_type: CrossoverType::LR24,
                     driver_names: vec![],
                     crossover_freq_hints: vec![],
-                    cardioid_separation_m: None,
                 });
         });
 

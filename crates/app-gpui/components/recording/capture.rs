@@ -8,7 +8,7 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Card, HStack, NumberInput, NumberInputSize, Progress,
-    ProgressSize, ProgressVariant, Select, SelectOption, StackAlign, StackJustify,
+    ProgressSize, ProgressVariant, Select, SelectOption, StackAlign, StackJustify, StackSize,
     StackSpacing, Text, TextSize, TextWeight, VStack,
 };
 
@@ -1097,11 +1097,6 @@ impl PlayerView {
             InlineMeasurement, MeasurementRef, MeasurementSource, OptimizerConfig,
             RecordingConfiguration, RoomConfig, SpeakerConfig,
         };
-        use autoeq::roomeq::{
-            SystemConfig, SubwooferSystemConfig, SubwooferStrategy,
-            MultiSubGroup, DBAConfig, CardioidConfig,
-        };
-        use crate::app::types::recording::SubwooferMode;
         use std::collections::HashMap;
 
         // Get recordings, recording directory, configuration, and convert to RoomConfig format
@@ -1155,156 +1150,41 @@ impl PlayerView {
                 sweep_end_freq: Some(rec_state.sweep_end_freq),
             };
 
-            // Helper: create inline measurement from a recording result
-            let make_inline = |result: &crate::app::types::recording::RecordingResult, name: &str| -> InlineMeasurement {
-                let relative_wav = result
-                    .wav_path
-                    .as_ref()
-                    .and_then(|p| std::path::Path::new(p).file_name())
-                    .map(|f| f.to_string_lossy().to_string());
-                let relative_csv = result
-                    .csv_path
-                    .as_ref()
-                    .and_then(|p| std::path::Path::new(p).file_name())
-                    .map(|f| f.to_string_lossy().to_string());
-
-                InlineMeasurement {
-                    frequencies: result.frequencies.iter().map(|&f| f as f64).collect(),
-                    magnitude_db: result.magnitude_db.iter().map(|&m| m as f64).collect(),
-                    phase_deg: Some(result.phase_deg.iter().map(|&p| p as f64).collect()),
-                    name: Some(name.to_string()),
-                    wav_path: relative_wav,
-                    csv_path: relative_csv,
-                }
-            };
-
-            let make_source = |inline: InlineMeasurement| -> MeasurementSource {
-                MeasurementSource::Single(autoeq::read::MeasurementSingle {
-                    measurement: MeasurementRef::Inline(inline),
-                    speaker_name: None,
-                })
-            };
-
-            let speaker_config_type = rec_state.playback_config.speaker_configuration;
-            let has_sub = speaker_config_type.has_subwoofer();
-            let sub_mode = rec_state.subwoofer_mode;
-            let system_model = speaker_config_type.to_system_model();
-
             // Convert ChannelRecording to speakers HashMap with inline measurements
             let mut speakers: HashMap<String, SpeakerConfig> = HashMap::new();
-            // Build system speakers mapping: logical role → measurement key
-            let mut system_speakers: HashMap<String, String> = HashMap::new();
-
-            // Collect LFE recordings for subwoofer assembly
-            let lfe_recordings: Vec<_> = recordings
-                .iter()
-                .filter(|r| r.channel_name.starts_with("LFE") && r.result.is_some())
-                .collect();
 
             for rec in recordings.iter() {
                 if let Some(result) = &rec.result {
-                    if rec.channel_name.starts_with("LFE") {
-                        // LFE channels are handled below as a group
-                        continue;
-                    }
-                    let inline = make_inline(result, &rec.channel_name);
-                    let speaker_config = SpeakerConfig::Single(make_source(inline));
-                    speakers.insert(rec.channel_name.clone(), speaker_config);
-                    system_speakers.insert(rec.channel_name.clone(), rec.channel_name.clone());
-                }
-            }
+                    // Convert absolute paths to relative (just filename)
+                    let relative_wav = result
+                        .wav_path
+                        .as_ref()
+                        .and_then(|p| std::path::Path::new(p).file_name())
+                        .map(|f| f.to_string_lossy().to_string());
+                    let relative_csv = result
+                        .csv_path
+                        .as_ref()
+                        .and_then(|p| std::path::Path::new(p).file_name())
+                        .map(|f| f.to_string_lossy().to_string());
 
-            // Build subwoofer speaker config based on mode
-            if has_sub && !lfe_recordings.is_empty() {
-                match sub_mode {
-                    SubwooferMode::Single => {
-                        // Single sub — just insert as Single
-                        if let Some(rec) = lfe_recordings.first() {
-                            if let Some(result) = &rec.result {
-                                let inline = make_inline(result, &rec.channel_name);
-                                speakers.insert("LFE".to_string(), SpeakerConfig::Single(make_source(inline)));
-                                system_speakers.insert("LFE".to_string(), "LFE".to_string());
-                            }
-                        }
-                    }
-                    SubwooferMode::MultiSub => {
-                        let sub_sources: Vec<MeasurementSource> = lfe_recordings
-                            .iter()
-                            .filter_map(|rec| {
-                                rec.result.as_ref().map(|result| {
-                                    make_source(make_inline(result, &rec.channel_name))
-                                })
-                            })
-                            .collect();
-                        if !sub_sources.is_empty() {
-                            speakers.insert(
-                                "LFE".to_string(),
-                                SpeakerConfig::MultiSub(MultiSubGroup {
-                                    name: "LFE".to_string(),
-                                    speaker_name: None,
-                                    subwoofers: sub_sources,
-                                }),
-                            );
-                            system_speakers.insert("LFE".to_string(), "LFE".to_string());
-                        }
-                    }
-                    SubwooferMode::Dba => {
-                        let front_sources: Vec<MeasurementSource> = lfe_recordings
-                            .iter()
-                            .filter(|r| r.channel_name.starts_with("LFE_F"))
-                            .filter_map(|rec| {
-                                rec.result.as_ref().map(|result| {
-                                    make_source(make_inline(result, &rec.channel_name))
-                                })
-                            })
-                            .collect();
-                        let rear_sources: Vec<MeasurementSource> = lfe_recordings
-                            .iter()
-                            .filter(|r| r.channel_name.starts_with("LFE_R"))
-                            .filter_map(|rec| {
-                                rec.result.as_ref().map(|result| {
-                                    make_source(make_inline(result, &rec.channel_name))
-                                })
-                            })
-                            .collect();
-                        if !front_sources.is_empty() || !rear_sources.is_empty() {
-                            speakers.insert(
-                                "LFE".to_string(),
-                                SpeakerConfig::Dba(DBAConfig {
-                                    name: "LFE".to_string(),
-                                    speaker_name: None,
-                                    front: front_sources,
-                                    rear: rear_sources,
-                                }),
-                            );
-                            system_speakers.insert("LFE".to_string(), "LFE".to_string());
-                        }
-                    }
-                    SubwooferMode::Cardioid => {
-                        let front_rec = lfe_recordings
-                            .iter()
-                            .find(|r| r.channel_name == "LFE_Front");
-                        let rear_rec = lfe_recordings
-                            .iter()
-                            .find(|r| r.channel_name == "LFE_Rear");
-                        if let (Some(front), Some(rear)) = (front_rec, rear_rec) {
-                            if let (Some(front_result), Some(rear_result)) =
-                                (&front.result, &rear.result)
-                            {
-                                speakers.insert(
-                                    "LFE".to_string(),
-                                    SpeakerConfig::Cardioid(CardioidConfig {
-                                        name: "LFE".to_string(),
-                                        speaker_name: None,
-                                        front: make_source(make_inline(front_result, "LFE_Front")),
-                                        rear: make_source(make_inline(rear_result, "LFE_Rear")),
-                                        separation_meters: rec_state.cardioid_separation_m as f64,
-                                    }),
-                                );
-                                system_speakers.insert("LFE".to_string(), "LFE".to_string());
-                            }
-                        }
-                    }
+                    // Create inline measurement with frequency response data
+                    let inline_measurement = InlineMeasurement {
+                        frequencies: result.frequencies.iter().map(|&f| f as f64).collect(),
+                        magnitude_db: result.magnitude_db.iter().map(|&m| m as f64).collect(),
+                        phase_deg: Some(result.phase_deg.iter().map(|&p| p as f64).collect()),
+                        name: Some(rec.channel_name.clone()),
+                        wav_path: relative_wav,
+                        csv_path: relative_csv,
+                    };
+
+                    let measurement_ref = MeasurementRef::Inline(inline_measurement);
+                    let measurement_source = MeasurementSource::Single(autoeq::read::MeasurementSingle {
+                        measurement: measurement_ref,
+                        speaker_name: None,
+                    });
+                    let speaker_config = SpeakerConfig::Single(measurement_source);
+
+                    speakers.insert(rec.channel_name.clone(), speaker_config);
                 }
             }
 
@@ -1313,33 +1193,10 @@ impl PlayerView {
                 return;
             }
 
-            // Build SubwooferSystemConfig if applicable
-            let subwoofers = if has_sub && system_speakers.contains_key("LFE") {
-                let strategy = match sub_mode {
-                    SubwooferMode::Single => SubwooferStrategy::Single,
-                    SubwooferMode::MultiSub | SubwooferMode::Cardioid => SubwooferStrategy::Mso,
-                    SubwooferMode::Dba => SubwooferStrategy::Dba,
-                };
-                Some(SubwooferSystemConfig {
-                    config: strategy,
-                    crossover: None,
-                    mapping: HashMap::new(),
-                })
-            } else {
-                None
-            };
-
-            // Build SystemConfig
-            let system = Some(SystemConfig {
-                model: system_model,
-                speakers: system_speakers,
-                subwoofers,
-            });
-
             // Build RoomConfig
             let room_config = RoomConfig {
-                version: autoeq::roomeq::default_config_version(),
-                system,
+                version: "1.1.0".to_string(),
+                system: None,
                 speakers,
                 crossovers: None,
                 target_curve: None,

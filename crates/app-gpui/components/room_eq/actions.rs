@@ -85,9 +85,8 @@ impl PlayerView {
 
     pub(crate) fn load_room_eq_from_file(&mut self, cx: &mut Context<Self>) {
         use crate::app::types::{
-            ChannelMeasurement, GdOptConfig, RecordingResult, RoomEqDataSource,
-            RoomEqMeasurementsFile, RoomEqSpeakerConfig, SpeakerConfigType, UiSubwooferStrategy,
-            UiSystemModel, VogConfig,
+            ChannelMeasurement, RecordingResult, RoomEqDataSource, RoomEqMeasurementsFile,
+            RoomEqSpeakerConfig, SpeakerConfigType,
         };
 
         let state_entity = self.state.clone();
@@ -261,38 +260,6 @@ impl PlayerView {
                                 })
                                 .collect();
 
-                            // Extract system config, gd_opt, vog, allow_delay from RoomConfig
-                            let system_model = room_config
-                                .system
-                                .as_ref()
-                                .map(|s| UiSystemModel::from_backend(&s.model))
-                                .unwrap_or_default();
-                            let (has_sub, sub_strategy) = room_config
-                                .system
-                                .as_ref()
-                                .and_then(|s| s.subwoofers.as_ref())
-                                .map(|sub| (true, UiSubwooferStrategy::from_backend(&sub.config)))
-                                .unwrap_or((false, UiSubwooferStrategy::default()));
-                            let gd_opt = room_config
-                                .optimizer
-                                .gd_opt
-                                .as_ref()
-                                .map(|g| GdOptConfig {
-                                    enabled: g.enabled,
-                                    target_ms: g.target_ms,
-                                })
-                                .unwrap_or_default();
-                            let vog = room_config
-                                .optimizer
-                                .vog
-                                .as_ref()
-                                .map(|v| VogConfig {
-                                    enabled: v.enabled,
-                                    reference_channel: v.reference_channel.clone(),
-                                })
-                                .unwrap_or_default();
-                            let allow_delay = room_config.optimizer.allow_delay.unwrap_or(false);
-
                             let channel_count = channel_measurements.len();
                             let _ = state_entity.update(cx, |state, _| {
                                 let max_ch = state.app.max_room_eq_channels();
@@ -307,16 +274,6 @@ impl PlayerView {
                                     speaker_configs;
                                 state.app.measurement_state.room_eq_state.data_source =
                                     RoomEqDataSource::FromFile(file_path.clone());
-
-                                // Apply parsed system topology config
-                                let opt = &mut state.app.measurement_state.room_eq_state.optimizer_config;
-                                opt.system_model = system_model;
-                                opt.has_subwoofer = has_sub;
-                                opt.subwoofer_strategy = sub_strategy;
-                                opt.gd_opt = gd_opt;
-                                opt.vog = vog;
-                                opt.allow_delay = allow_delay;
-
                                 if truncated {
                                     state.app.measurement_state.room_eq_state.status_message = format!(
                                         "Loaded {} channel(s) from {} (truncated from {} — upgrade release channel for more)",

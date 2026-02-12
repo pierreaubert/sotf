@@ -7216,7 +7216,6 @@ dependencies = [
  "id3",
  "libc",
  "log",
- "math-dsp",
  "math-iir-fir",
  "metaflac",
  "ndarray 0.17.2",

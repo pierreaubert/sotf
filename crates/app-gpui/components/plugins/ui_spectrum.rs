@@ -696,8 +696,6 @@ pub fn render_spectrum_analyzer_plugin(
                                         SpectralTiltCorrection::None => "none".to_string(),
                                         SpectralTiltCorrection::Pink => "pink".to_string(),
                                         SpectralTiltCorrection::Custom(_) => "none".to_string(),
-                                        SpectralTiltCorrection::ThreeDbPerOctave => "pink".to_string(),
-                                        SpectralTiltCorrection::SixDbPerOctave => "none".to_string(),
                                     })
                                     .is_open(state.tilt_select_open)
                                     .size(SelectSize::Sm)
@@ -752,8 +750,6 @@ pub fn render_spectrum_analyzer_plugin(
                                     .selected(match state.tilt_reference {
                                         TiltReferenceFreq::Standard => "standard".to_string(),
                                         TiltReferenceFreq::MinFreq => "minfreq".to_string(),
-                                        TiltReferenceFreq::OneKilohertz => "standard".to_string(),
-                                        TiltReferenceFreq::TwoKilohertz => "standard".to_string(),
                                     })
                                     .is_open(state.reference_select_open)
                                     .size(SelectSize::Sm)

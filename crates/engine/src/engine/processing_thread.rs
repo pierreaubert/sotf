@@ -863,13 +863,13 @@ fn create_plugin(
 
         #[cfg(all(target_os = "macos", feature = "hal"))]
         "hal_output" => {
-            use sotf_plugins::{HalOutputPlugin, HalOutputPluginParams};
+            use sotf_plugins::{HalOutputPlugin, HalOutputPluginParams, InPlacePluginAdapter};
 
             let params: HalOutputPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse HAL output plugin parameters: {}", e))?;
 
-            let plugin = HalOutputPlugin::from_params(params)?;
-            Ok(Box::new(plugin))
+            let plugin = HalOutputPlugin::from_params(channels, params)?;
+            Ok(Box::new(InPlacePluginAdapter::new(plugin)))
         }
 
         "channel_mute_solo" => {
@@ -1000,7 +1000,7 @@ fn create_plugin(
             let params: MonoToStereoPluginParams = serde_json::from_value(parameters.clone())
                 .map_err(|e| format!("Failed to parse mono_to_stereo parameters: {}", e))?;
 
-            let plugin = MonoToStereoPlugin::from_params(channels, params);
+            let plugin = MonoToStereoPlugin::from_params(params);
             Ok(Box::new(plugin))
         }
 

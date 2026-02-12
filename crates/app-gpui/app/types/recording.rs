@@ -5,7 +5,6 @@
 use serde::{Deserialize, Serialize};
 
 use super::calibration::CalibrationData;
-use autoeq::roomeq::SystemModel;
 
 /// Recording screen workflow step
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -264,40 +263,6 @@ impl RecordingSignalType {
     }
 }
 
-/// Subwoofer recording mode — determines how many sub recordings are needed
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub enum SubwooferMode {
-    /// One sub, one recording
-    #[default]
-    Single,
-    /// N subs, each recorded separately (optimized gains/delays)
-    MultiSub,
-    /// Front + rear arrays (Double Bass Array)
-    Dba,
-    /// Front + rear sub (gradient cardioid)
-    Cardioid,
-}
-
-impl SubwooferMode {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            SubwooferMode::Single => "Single",
-            SubwooferMode::MultiSub => "Multi-Sub (MSO)",
-            SubwooferMode::Dba => "Double Bass Array",
-            SubwooferMode::Cardioid => "Cardioid",
-        }
-    }
-
-    pub fn all() -> &'static [SubwooferMode] {
-        &[
-            SubwooferMode::Single,
-            SubwooferMode::MultiSub,
-            SubwooferMode::Dba,
-            SubwooferMode::Cardioid,
-        ]
-    }
-}
-
 /// Speaker configuration presets
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SpeakerConfiguration {
@@ -424,53 +389,6 @@ impl SpeakerConfiguration {
             _ => SpeakerConfiguration::Custom,
         }
     }
-
-    /// Map speaker configuration to backend SystemModel
-    pub fn to_system_model(&self) -> SystemModel {
-        match self {
-            SpeakerConfiguration::Stereo
-            | SpeakerConfiguration::Stereo21 => SystemModel::Stereo,
-            SpeakerConfiguration::Custom => SystemModel::Custom,
-            // All surround/atmos configs are home cinema
-            SpeakerConfiguration::Surround50
-            | SpeakerConfiguration::Surround51
-            | SpeakerConfiguration::Surround71
-            | SpeakerConfiguration::Surround91
-            | SpeakerConfiguration::Atmos512
-            | SpeakerConfiguration::Atmos514
-            | SpeakerConfiguration::Atmos712
-            | SpeakerConfiguration::Atmos714
-            | SpeakerConfiguration::Atmos912
-            | SpeakerConfiguration::Atmos914
-            | SpeakerConfiguration::Atmos916 => SystemModel::HomeCinema,
-        }
-    }
-
-    /// Whether this configuration includes a subwoofer (LFE)
-    pub fn has_subwoofer(&self) -> bool {
-        matches!(
-            self,
-            SpeakerConfiguration::Stereo21
-                | SpeakerConfiguration::Surround51
-                | SpeakerConfiguration::Surround71
-                | SpeakerConfiguration::Surround91
-                | SpeakerConfiguration::Atmos512
-                | SpeakerConfiguration::Atmos514
-                | SpeakerConfiguration::Atmos712
-                | SpeakerConfiguration::Atmos714
-                | SpeakerConfiguration::Atmos912
-                | SpeakerConfiguration::Atmos914
-                | SpeakerConfiguration::Atmos916
-        )
-    }
-
-    /// Get non-LFE channel names
-    pub fn main_channel_names(&self) -> Vec<&'static str> {
-        self.default_channel_names()
-            .into_iter()
-            .filter(|n| *n != "LFE")
-            .collect()
-    }
 }
 
 /// Complete recording screen state
@@ -520,20 +438,6 @@ pub struct RecordingState {
     pub speaker_mode_dropdown_open: Option<usize>,
     /// Expanded accordion sections in config step
     pub config_accordion_expanded: Vec<gpui::SharedString>,
-
-    // === Subwoofer Recording Config ===
-    /// Subwoofer recording mode (only relevant when speaker config has subwoofer)
-    pub subwoofer_mode: SubwooferMode,
-    /// For MultiSub: how many subwoofers (2-8)
-    pub num_subwoofers: usize,
-    /// For DBA: front array count
-    pub num_dba_front: usize,
-    /// For DBA: rear array count
-    pub num_dba_rear: usize,
-    /// For Cardioid: separation in meters
-    pub cardioid_separation_m: f32,
-    /// Subwoofer mode dropdown open state
-    pub subwoofer_mode_dropdown_open: bool,
 
     // === Evaluating Step State ===
     /// Selected channel filter for plots (None = all channels)
@@ -588,12 +492,6 @@ impl Default for RecordingState {
             auto_record_remaining: false,
             recording_directory: None,
             recording_base_directory: None,
-            subwoofer_mode: SubwooferMode::default(),
-            num_subwoofers: 2,
-            num_dba_front: 2,
-            num_dba_rear: 2,
-            cardioid_separation_m: 0.3,
-            subwoofer_mode_dropdown_open: false,
             playback_device_dropdown_open: false,
             recording_device_dropdown_open: false,
             playback_sample_rate_dropdown_open: false,
@@ -621,86 +519,20 @@ impl Default for RecordingState {
 }
 
 impl RecordingState {
-    /// Initialize channel recordings from playback config.
-    /// When the speaker configuration has a subwoofer, the LFE channel(s) are expanded
-    /// based on the selected SubwooferMode (Single, MultiSub, DBA, Cardioid).
+    /// Initialize channel recordings from playback config
     pub fn init_channel_recordings(&mut self) {
-        let has_sub = self.playback_config.speaker_configuration.has_subwoofer();
-        let mut recordings = Vec::new();
-        let mut idx = 0usize;
-
-        for mapping in &self.playback_config.channel_mappings {
-            if has_sub && mapping.group_name == "LFE" {
-                // Expand LFE based on subwoofer mode
-                match self.subwoofer_mode {
-                    SubwooferMode::Single => {
-                        recordings.push(ChannelRecording {
-                            channel_index: idx,
-                            channel_name: "LFE".to_string(),
-                            state: ChannelRecordingState::Empty,
-                            result: None,
-                        });
-                        idx += 1;
-                    }
-                    SubwooferMode::MultiSub => {
-                        for i in 1..=self.num_subwoofers {
-                            recordings.push(ChannelRecording {
-                                channel_index: idx,
-                                channel_name: format!("LFE_{}", i),
-                                state: ChannelRecordingState::Empty,
-                                result: None,
-                            });
-                            idx += 1;
-                        }
-                    }
-                    SubwooferMode::Dba => {
-                        for i in 1..=self.num_dba_front {
-                            recordings.push(ChannelRecording {
-                                channel_index: idx,
-                                channel_name: format!("LFE_F{}", i),
-                                state: ChannelRecordingState::Empty,
-                                result: None,
-                            });
-                            idx += 1;
-                        }
-                        for i in 1..=self.num_dba_rear {
-                            recordings.push(ChannelRecording {
-                                channel_index: idx,
-                                channel_name: format!("LFE_R{}", i),
-                                state: ChannelRecordingState::Empty,
-                                result: None,
-                            });
-                            idx += 1;
-                        }
-                    }
-                    SubwooferMode::Cardioid => {
-                        recordings.push(ChannelRecording {
-                            channel_index: idx,
-                            channel_name: "LFE_Front".to_string(),
-                            state: ChannelRecordingState::Empty,
-                            result: None,
-                        });
-                        idx += 1;
-                        recordings.push(ChannelRecording {
-                            channel_index: idx,
-                            channel_name: "LFE_Rear".to_string(),
-                            state: ChannelRecordingState::Empty,
-                            result: None,
-                        });
-                        idx += 1;
-                    }
-                }
-            } else {
-                recordings.push(ChannelRecording {
-                    channel_index: idx,
-                    channel_name: mapping.group_name.clone(),
-                    state: ChannelRecordingState::Empty,
-                    result: None,
-                });
-                idx += 1;
-            }
-        }
-        self.channel_recordings = recordings;
+        self.channel_recordings = self
+            .playback_config
+            .channel_mappings
+            .iter()
+            .enumerate()
+            .map(|(idx, mapping)| ChannelRecording {
+                channel_index: idx,
+                channel_name: mapping.group_name.clone(),
+                state: ChannelRecordingState::Empty,
+                result: None,
+            })
+            .collect();
     }
 
     /// Check if all channels have been recorded

@@ -258,15 +258,14 @@ pub use queue::QueueItem;
 pub use recording::{
     ChannelMapping, ChannelRecording, ChannelRecordingState, PlaybackDeviceConfig, PlotSmoothing,
     RecordingDeviceConfig, RecordingResult, RecordingSignalType, RecordingState, RecordingStep,
-    SpeakerConfiguration, SubwooferMode,
+    SpeakerConfiguration,
 };
 pub use room_eq::{
     ChannelDspChain, ChannelMeasurement, ChannelOptResult, CrossoverType, CustomTargetCurve,
     DriverDspChain, DspChainMetadata, DspChainOutput, DspPluginConfig, EqFilterConfig,
-    GdOptConfig, MultiSpeakerMode, OptimizationStatus, RecordingConfiguration, RoomEqAlgorithm,
+    MultiSpeakerMode, OptimizationStatus, RecordingConfiguration, RoomEqAlgorithm,
     RoomEqDataSource, RoomEqMeasurementsFile, RoomEqOptimizationMode, RoomEqOptimizerConfig,
     RoomEqSpeakerConfig, RoomEqState, RoomEqStep, SpeakerConfigType, TargetCurveControlPoint,
-    UiSubwooferStrategy, UiSystemModel, VogConfig,
 };
 pub use settings::{ScanProgressModal, ScanType, SettingsTab};
 pub use spinorama_eq::{
