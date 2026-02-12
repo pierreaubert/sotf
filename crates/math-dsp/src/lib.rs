@@ -20,6 +20,7 @@
 
 pub mod analysis;
 pub mod signals;
+pub mod fast_math;
 
 // Re-export commonly used types
 pub use analysis::{
