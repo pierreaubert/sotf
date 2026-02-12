@@ -142,6 +142,21 @@ impl MatrixPlugin {
         if self.output_channel_map.is_empty() { self.physical_output_channels } else { self.output_channel_map.len() }
     }
 
+    pub fn set_matrix(&mut self, matrix: Vec<f32>) -> Result<(), String> {
+        let num_inputs = self.num_inputs();
+        let num_outputs = self.num_outputs();
+        let expected = num_outputs * num_inputs;
+        if matrix.len() != expected {
+            return Err(format!("Size mismatch: expected {} but got {}", expected, matrix.len()));
+        }
+        for (idx, &gain) in matrix.iter().enumerate() {
+            self.matrix[idx] = gain;
+            self.gain_smoothers[idx].set_target(gain);
+        }
+        self.update_active_connections();
+        Ok(())
+    }
+
     pub fn set_gain(&mut self, input_ch: usize, output_ch: usize, gain: f32) -> Result<(), String> {
         let num_inputs = self.num_inputs();
         let idx = output_ch * num_inputs + input_ch;
@@ -218,6 +233,15 @@ impl Plugin for MatrixPlugin {
                 return Ok(());
             }
         }
+        if let Some(rest) = id_str.strip_prefix("dim_") {
+            let ch = rest.parse::<usize>().map_err(|_| "Invalid ch")?;
+            if ch < self.num_outputs() {
+                if self.channel_states.len() <= ch { self.channel_states.resize(self.num_outputs(), ChannelState::default()); }
+                self.channel_states[ch].dimmed = value.as_bool().ok_or("Invalid bool")?;
+                self.ensure_channel_state_smoothers();
+                return Ok(());
+            }
+        }
         Ok(())
     }
 
@@ -228,6 +252,14 @@ impl Plugin for MatrixPlugin {
             let in_ch = parts[1].parse::<usize>().ok()?;
             let out_ch = parts[2].parse::<usize>().ok()?;
             return self.get_gain(in_ch, out_ch).map(ParameterValue::Float);
+        }
+        if let Some(rest) = id_str.strip_prefix("mute_") {
+            let ch = rest.parse::<usize>().ok()?;
+            return self.channel_states.get(ch).map(|s| ParameterValue::Bool(s.muted));
+        }
+        if let Some(rest) = id_str.strip_prefix("dim_") {
+            let ch = rest.parse::<usize>().ok()?;
+            return self.channel_states.get(ch).map(|s| ParameterValue::Bool(s.dimmed));
         }
         None
     }

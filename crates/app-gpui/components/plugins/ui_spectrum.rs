@@ -690,10 +690,14 @@ pub fn render_spectrum_analyzer_plugin(
                                 Select::new("tilt-correction-select")
                                     .options(vec![
                                         SelectOption::new("none".to_string(), "None"),
+                                        SelectOption::new("3db".to_string(), "+3dB/oct"),
+                                        SelectOption::new("6db".to_string(), "+6dB/oct"),
                                         SelectOption::new("pink".to_string(), "Pink (+3dB/oct)"),
                                     ])
                                     .selected(match state.tilt_correction {
                                         SpectralTiltCorrection::None => "none".to_string(),
+                                        SpectralTiltCorrection::ThreeDbPerOctave => "3db".to_string(),
+                                        SpectralTiltCorrection::SixDbPerOctave => "6db".to_string(),
                                         SpectralTiltCorrection::Pink => "pink".to_string(),
                                         SpectralTiltCorrection::Custom(_) => "none".to_string(),
                                     })
@@ -714,6 +718,8 @@ pub fn render_spectrum_analyzer_plugin(
                                         move |value, _, cx| {
                                             entity.update(cx, |state, _cx| {
                                                 let tilt = match value.as_ref() {
+                                                    "3db" => SpectralTiltCorrection::ThreeDbPerOctave,
+                                                    "6db" => SpectralTiltCorrection::SixDbPerOctave,
                                                     "pink" => SpectralTiltCorrection::Pink,
                                                     _ => SpectralTiltCorrection::None,
                                                 };
@@ -744,11 +750,15 @@ pub fn render_spectrum_analyzer_plugin(
                             div().w(px(90.0)).child(
                                 Select::new("tilt-reference-select")
                                     .options(vec![
-                                        SelectOption::new("standard".to_string(), "1kHz"),
+                                        SelectOption::new("standard".to_string(), "Standard"),
+                                        SelectOption::new("1khz".to_string(), "1 kHz"),
+                                        SelectOption::new("2khz".to_string(), "2 kHz"),
                                         SelectOption::new("minfreq".to_string(), "Min Freq"),
                                     ])
                                     .selected(match state.tilt_reference {
                                         TiltReferenceFreq::Standard => "standard".to_string(),
+                                        TiltReferenceFreq::OneKilohertz => "1khz".to_string(),
+                                        TiltReferenceFreq::TwoKilohertz => "2khz".to_string(),
                                         TiltReferenceFreq::MinFreq => "minfreq".to_string(),
                                     })
                                     .is_open(state.reference_select_open)
@@ -768,6 +778,8 @@ pub fn render_spectrum_analyzer_plugin(
                                         move |value, _, cx| {
                                             entity.update(cx, |state, _cx| {
                                                 let reference = match value.as_ref() {
+                                                    "1khz" => TiltReferenceFreq::OneKilohertz,
+                                                    "2khz" => TiltReferenceFreq::TwoKilohertz,
                                                     "minfreq" => TiltReferenceFreq::MinFreq,
                                                     _ => TiltReferenceFreq::Standard,
                                                 };

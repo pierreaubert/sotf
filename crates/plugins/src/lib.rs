@@ -74,9 +74,9 @@ pub use plugin_fletcher_munson::{FletcherMunsonPlugin, FletcherMunsonPluginParam
 pub use plugin_resampler::ResamplerPlugin;
 pub use plugin_convolution::{ConvolutionPlugin, ConvolutionPluginParams};
 pub use plugin_upmixer::{UpmixerPlugin, UpmixerPluginParams, default_hr_sharpen as upmixer_default_hr_sharpen, default_safety_cap_db as upmixer_default_safety_cap_db, default_subharmonic_gain as upmixer_default_subharmonic_gain};
-pub use plugin_binaural::{BinauralDecoderPlugin, BinauralDecoderParams, binaural_default_enable_optimization};
+pub use plugin_binaural::{BinauralDecoderPlugin, BinauralDecoderParams, RoomModel, binaural_default_enable_optimization};
 pub use plugin_xtc::{XtcPlugin, XtcPluginParams};
-pub use plugin_denoiser::{DenoiserPlugin, DenoiserPluginParams};
+pub use plugin_denoiser::{DenoiserData, DenoiserPlugin, DenoiserPluginParams};
 pub use plugin_pnd::{PndPlugin, PndPluginParams};
 pub use plugin_ab_compare::{ABComparePlugin, ABComparePluginParams};
 pub use plugin_band_split::{BandSplitPlugin, BandSplitPluginParams};

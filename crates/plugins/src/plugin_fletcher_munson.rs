@@ -8,7 +8,7 @@ use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use super::simd::{enable_ftz_daz, flush_denormals_inplace};
 use super::smoothing::Smoother;
-use math_audio_dsp::fast_math::fast_pow10;
+
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use serde::{Deserialize, Serialize};
 use std::any::Any;
@@ -67,7 +67,7 @@ impl FletcherMunsonPlugin {
             self.gain_smoothers[i].set_target(g);
             max_g = max_g.max(g);
         }
-        self.compensation_smoother.set_target(fast_pow10(-max_g / 20.0));
+        self.compensation_smoother.set_target(10.0_f32.powf(-max_g / 20.0));
     }
 
     fn rebuild_filters(&mut self) {

@@ -5,7 +5,7 @@
 use crate::analyzer_loudness_monitor::LoudnessMonitor;
 use crate::smoothing::Smoother;
 use crate::simd::enable_ftz_daz;
-use math_audio_dsp::fast_math::fast_pow10;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -107,7 +107,7 @@ impl AutoGain {
     pub fn next_gain_linear(&mut self) -> f32 {
         if !self.enabled { return 1.0; }
         self.current_gain_db = self.gain_smoother.next();
-        fast_pow10(self.current_gain_db / 20.0)
+        10.0_f32.powf(self.current_gain_db / 20.0)
     }
 
     pub fn current_gain_db(&self) -> f32 { if !self.enabled { 0.0 } else { self.gain_smoother.current() } }

@@ -105,7 +105,17 @@ mod tests {
             _ => panic!("Expected Bool"),
         }
 
-        // Verify via process (audio engine effect)
+        // Verify via process — smoother needs time to converge (5ms at 48000Hz)
+        let settle_frames = 4096;
+        let settle_input = vec![1.0_f32; settle_frames * 2];
+        let mut settle_output = vec![0.0_f32; settle_frames * 2];
+        let settle_context = ProcessContext {
+            sample_rate: 48000,
+            num_frames: settle_frames,
+        };
+        plugin.process(&settle_input, &mut settle_output, &settle_context).unwrap();
+
+        // After settling, process one more frame to verify
         let input = vec![1.0, 1.0];
         let mut output = vec![0.0; 2];
         let context = ProcessContext {
@@ -113,7 +123,7 @@ mod tests {
             num_frames: 1,
         };
         plugin.process(&input, &mut output, &context).unwrap();
-        assert_eq!(output[0], 0.0, "Audio should be muted via parameter");
+        assert!(output[0].abs() < 1e-5, "Audio should be muted via parameter, got {}", output[0]);
 
         // Check Dim Parameter
         let dim1_id = ParameterId("dim_1".to_string());
@@ -127,11 +137,15 @@ mod tests {
             _ => panic!("Expected Bool"),
         }
 
+        // Settle the dim smoother
+        plugin.process(&settle_input, &mut settle_output, &settle_context).unwrap();
+
         // Verify via process (audio engine effect)
         plugin.process(&input, &mut output, &context).unwrap();
         assert!(
             (output[1] - 0.1).abs() < 0.001,
-            "Audio Ch1 should be dimmed via parameter"
+            "Audio Ch1 should be dimmed via parameter, got {}",
+            output[1]
         );
     }
 }

@@ -4,7 +4,7 @@
 
 use super::UpmixerPlugin;
 use crate::simd::{compute_covariance_simd, flush_denormals_complex_inplace, flush_denormals_inplace};
-use math_audio_dsp::fast_math::fast_sin; // Removed unused fast_cos
+
 use rustfft::num_complex::Complex;
 
 /// Minimum height mask value — prevents deep spectral notches that cause time-domain ringing

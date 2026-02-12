@@ -8,7 +8,7 @@ use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use super::simd::{enable_ftz_daz, flush_denormals_inplace};
 use super::smoothing::Smoother;
-use math_audio_dsp::fast_math::fast_pow10;
+
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -82,7 +82,7 @@ impl LoudnessCompensationPlugin {
                 Biquad::new(BiquadFilterType::Highshelf, self.high_freq as f64, sr, q, hg as f64),
                 Biquad::new(BiquadFilterType::Highshelf, self.high_freq as f64, sr, q, hg as f64),
             ];
-            let target = fast_pow10(-self.low_gain.max(self.high_gain) / 20.0);
+            let target = 10.0_f32.powf(-self.low_gain.max(self.high_gain) / 20.0);
             self.comp_gain_smoother[ch].set_target(target);
         }
     }

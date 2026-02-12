@@ -539,8 +539,8 @@ fn run_manager_thread(
     playback_thread.send_command(PlaybackCommand::SetVolume(config.volume))?;
     playback_thread.send_command(PlaybackCommand::Mute(config.muted))?;
 
-    // Start silent source mode if no input channels (HAL playback)
-    if config.input_channels == 0 {
+    // Start silent source mode (HAL playback: audio from shared memory, not file)
+    if config.hal_mode {
         log::info!("[Manager Thread] Starting silent source mode for HAL input");
         decoder_thread.send_command(super::DecoderCommand::StartSilentSource)?;
     }

@@ -7,7 +7,7 @@ use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterVa
 use super::plugin::{InPlacePlugin, PluginInfo, PluginResult, ProcessContext};
 use super::simd::{apply_gain_simd, apply_per_channel_gain_simd};
 use super::smoothing::Smoother;
-use math_audio_dsp::fast_math::fast_pow10;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,7 +78,7 @@ impl GainPlugin {
     pub fn gain_db(&self) -> f32 { self.global_gain_db }
     pub fn gain_linear(&self) -> f32 { self.global_gain_smoother.current() }
     pub fn channel_gain_db(&self, ch: usize) -> Option<f32> { if self.is_per_channel() { self.channel_gains_db.get(ch).copied() } else if ch < self.channels { Some(self.global_gain_db) } else { None } }
-    #[inline] fn db_to_linear(db: f32) -> f32 { fast_pow10(db / 20.0) }
+    #[inline] fn db_to_linear(db: f32) -> f32 { 10.0_f32.powf(db / 20.0) }
     fn linear_to_db(l: f32) -> f32 { 20.0 * l.log10() }
 }
 

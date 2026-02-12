@@ -5,7 +5,7 @@
 use super::analyzer::SpectrumData;
 use super::parameters::{Parameter, ParameterId, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
-use math_audio_dsp::fast_math::fast_log10;
+
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::sync::Arc;
@@ -110,7 +110,7 @@ impl Plugin for SpectrumAnalyzerPlugin {
                 if freq < self.config.min_freq { continue; }
                 if freq > self.config.max_freq { break; }
                 let amp = bin.norm() * 2.0 / FFT_SIZE as f32;
-                let db = 20.0 * fast_log10(amp.max(1e-5));
+                let db = 20.0 * amp.max(1e-5).log10();
                 let bin_idx = (((freq.log10() - log_min) / (log_max - log_min)) * self.config.num_bins as f32).floor() as usize;
                 if bin_idx < self.config.num_bins { new_mags[bin_idx] = new_mags[bin_idx].max(db); }
             }

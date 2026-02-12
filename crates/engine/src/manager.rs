@@ -215,6 +215,7 @@ impl AudioEngineManager {
             muted,
             config_path: None,
             watch_config: self.watch_signals, // Enable signal watching if requested
+            hal_mode: false,
         };
 
         log::warn!(
@@ -317,7 +318,7 @@ impl AudioEngineManager {
             frame_size: 1024,
             buffer_ms: 200,               // 200ms latency
             output_sample_rate: sample_rate,
-            input_channels: 0,            // No file input - HAL input plugin is the source
+            input_channels: 2,            // HAL always provides stereo
             output_channels,
             output_device,
             plugins,
@@ -325,6 +326,7 @@ impl AudioEngineManager {
             muted,
             config_path: None,
             watch_config: self.watch_signals,
+            hal_mode: true,
         };
 
         log::info!(

@@ -3,7 +3,7 @@
 // ============================================================================
 
 use super::UpmixerPlugin;
-use math_audio_dsp::fast_math::fast_pow10;
+
 
 impl UpmixerPlugin {
     #[inline]

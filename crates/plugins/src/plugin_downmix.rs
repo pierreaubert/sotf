@@ -6,7 +6,7 @@ use super::param_specs::downmix::*;
 use super::parameters::{Parameter, ParameterId, ParameterImportance, ParameterValue};
 use super::plugin::{Plugin, PluginInfo, PluginResult, ProcessContext};
 use super::speaker_config::{SpeakerConfig, get_speaker_config_by_channels};
-use math_audio_dsp::fast_math::fast_pow10;
+
 use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rustfft::num_complex::Complex;
@@ -159,10 +159,10 @@ impl DownmixPlugin {
     fn compute_coefficients(&mut self, reset: bool) {
         let mut new_coeffs = Vec::with_capacity(self.input_ch);
         self.lfe_channels.clear();
-        let c_lin = fast_pow10(self.center_gain_db / 20.0);
-        let s_lin = fast_pow10(self.surround_gain_db / 20.0);
-        let h_lin = fast_pow10(self.height_gain_db / 20.0);
-        let l_lin = fast_pow10(self.lfe_gain_db / 20.0);
+        let c_lin = 10.0_f32.powf(self.center_gain_db / 20.0);
+        let s_lin = 10.0_f32.powf(self.surround_gain_db / 20.0);
+        let h_lin = 10.0_f32.powf(self.height_gain_db / 20.0);
+        let l_lin = 10.0_f32.powf(self.lfe_gain_db / 20.0);
 
         if let Some(config) = self.speaker_config {
             for s in config.speakers {

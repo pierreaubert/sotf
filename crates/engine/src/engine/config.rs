@@ -48,6 +48,10 @@ pub struct EngineConfig {
     /// Watch config file and Unix signals for reload/shutdown
     #[serde(skip)]
     pub watch_config: bool,
+
+    /// HAL mode: audio comes from shared memory instead of file decoder
+    #[serde(default)]
+    pub hal_mode: bool,
 }
 
 fn default_engine_config_version() -> u32 {
@@ -63,6 +67,7 @@ impl Default for EngineConfig {
             output_sample_rate: 48000,
             input_channels: 2,
             output_channels: 2,
+            hal_mode: false,
             output_device: None,
             plugins: Vec::new(),
             volume: 1.0,
